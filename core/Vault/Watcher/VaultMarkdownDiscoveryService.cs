@@ -116,22 +116,23 @@ public sealed class VaultMarkdownDiscoveryService(
 		}
 
 		var markdown = await File.ReadAllTextAsync(fullPath, cancellationToken);
+		var (pathId, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(fullPath);
+		var knownIds = knownIdsByType.TryGetValue(model.EntityType, out var ids)
+			? ids
+			: new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var isNewEntity = string.IsNullOrWhiteSpace(pathId) || !knownIds.Contains(pathId);
 		var parsedModel = CreatePathComposedModel(model.EntityType, fullPath);
-		var issues = DeserializeInto(parsedModel, model.EntityType, markdown)
+		var issues = DeserializeInto(parsedModel, model.EntityType, markdown, preserveDefaultsForMissingFields: isNewEntity)
 			.Select(issue => issue)
 			.ToList();
 		ApplyPathAuthorities(parsedModel, fullPath, issues);
 
-		var (pathId, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(fullPath);
 		if (string.IsNullOrWhiteSpace(pathId) && puckCreationService.RequiresCallerInputFor(model.EntityType))
 		{
 			issues.Add(new MarkdownValidationIssue("id", "Path identity is missing required caller-provided PUCK input."));
 		}
 
 		var issueMessages = issues.Select(issue => $"{issue.FieldPath}: {issue.Message}").ToArray();
-		var knownIds = knownIdsByType.TryGetValue(model.EntityType, out var ids)
-			? ids
-			: new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var (action, reason) = decisionService.Decide(model, pathId, issueMessages, knownIds);
 
 		return new VaultSyncCandidate(
@@ -159,11 +160,13 @@ public sealed class VaultMarkdownDiscoveryService(
 		return result;
 	}
 
-	private IEnumerable<MarkdownValidationIssue> DeserializeInto(object model, Type modelType, string markdown)
+	private IEnumerable<MarkdownValidationIssue> DeserializeInto(object model, Type modelType, string markdown, bool preserveDefaultsForMissingFields)
 	{
 		var method = typeof(MarkdownFrontMatterSerializer)
 			.GetMethods(BindingFlags.Public | BindingFlags.Instance)
-			.Single(candidate => candidate.Name == nameof(MarkdownFrontMatterSerializer.Deserialize)
+			.Single(candidate => candidate.Name == (preserveDefaultsForMissingFields
+				? nameof(MarkdownFrontMatterSerializer.DeserializePreservingDefaults)
+				: nameof(MarkdownFrontMatterSerializer.Deserialize))
 				&& candidate.IsGenericMethodDefinition
 				&& candidate.GetParameters().Length == 2);
 

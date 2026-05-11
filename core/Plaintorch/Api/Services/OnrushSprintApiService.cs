@@ -51,7 +51,7 @@ public sealed class OnrushSprintApiService(
 		var previous = Clone(sprint);
 		sprint.StartDate ??= startDate ?? DateOnly.FromDateTime(DateTime.Today);
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken);
+		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.begin", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
@@ -66,7 +66,7 @@ public sealed class OnrushSprintApiService(
 		var previous = Clone(sprint);
 		sprint.EndDate = endDate ?? DateOnly.FromDateTime(DateTime.Today);
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken);
+		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.end", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}

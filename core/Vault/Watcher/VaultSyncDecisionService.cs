@@ -19,9 +19,19 @@ public sealed class VaultSyncDecisionService(PuckCreationService puckCreationSer
 		var requiresCallerInput = puckCreationService.RequiresCallerInputFor(model.EntityType);
 		if (string.IsNullOrWhiteSpace(pathId))
 		{
-			return requiresCallerInput
-				? (VaultSyncAction.Conflict, "Path identity is missing required caller-provided PUCK input.")
-				: (VaultSyncAction.Conflict, "Path identity is missing a PUCK identifier.");
+			if (requiresCallerInput)
+			{
+				return (VaultSyncAction.Conflict, "Path identity is missing required caller-provided PUCK input.");
+			}
+
+			return model.Mode switch
+			{
+				VaultStorageMode.Optional => (VaultSyncAction.Ignore, "Optional storage does not create new title-only files by default."),
+				VaultStorageMode.Enforced => (VaultSyncAction.CreateFromFile, "Title-only file discovered for an auto-generated PUCK entity; the core should issue a new identifier."),
+				VaultStorageMode.Synced => (VaultSyncAction.CreateFromFile, "Title-only file discovered for an auto-generated PUCK entity; synced storage allows file-originated creation."),
+				VaultStorageMode.FileFirst => (VaultSyncAction.CreateFromFile, "Title-only file discovered for an auto-generated PUCK entity; file-first storage requires file-originated creation."),
+				_ => (VaultSyncAction.Conflict, "Path identity is missing a PUCK identifier."),
+			};
 		}
 
 		var exists = knownIds.Contains(pathId);

@@ -21,21 +21,26 @@ public sealed class PlaintorchMarkdownStorageService(
 	/// <summary>
 	/// Writes the canonical markdown file for a directive.
 	/// </summary>
-	public async Task SaveDirectiveAsync(Directive directive, Directive? previous = null, CancellationToken cancellationToken = default)
+	public async Task SaveDirectiveAsync(Directive directive, Directive? previous = null, string? sourcePath = null, CancellationToken cancellationToken = default)
 	{
 		var previousParent = previous is null ? null : await LoadDirectiveHierarchyAsync(previous.ParentDirectiveId, cancellationToken);
 		var currentParent = await LoadDirectiveHierarchyAsync(directive.ParentDirectiveId, cancellationToken);
 		var previousPath = previous is null ? null : markdownFileLocator.GetDirectiveFilePath(previous, previousParent);
 		var newPath = markdownFileLocator.GetDirectiveFilePath(directive, currentParent);
-		var body = await ResolveBodyAsync(previousPath, newPath, $"# {directive.Title}", cancellationToken);
+		var body = await ResolveBodyAsync(previousPath, sourcePath, newPath, $"# {directive.Title}", cancellationToken);
 		await WriteMarkdownAsync(newPath, markdownSerializer.Serialize(directive, body), cancellationToken);
 		writeBarrier.Suppress(newPath);
 		if (!string.IsNullOrWhiteSpace(previousPath))
 		{
 			writeBarrier.Suppress(previousPath);
 		}
+		if (!string.IsNullOrWhiteSpace(sourcePath))
+		{
+			writeBarrier.Suppress(sourcePath);
+		}
 
 		DeleteOldPath(previousPath, newPath, layout.DirectivesRoot);
+		DeleteSourcePath(sourcePath, newPath);
 	}
 
 	/// <summary>
@@ -49,21 +54,26 @@ public sealed class PlaintorchMarkdownStorageService(
 	/// <summary>
 	/// Writes the canonical markdown file for an objective.
 	/// </summary>
-	public async Task SaveObjectiveAsync(Objective objective, Objective? previous = null, CancellationToken cancellationToken = default)
+	public async Task SaveObjectiveAsync(Objective objective, Objective? previous = null, string? sourcePath = null, CancellationToken cancellationToken = default)
 	{
 		var previousDirective = previous is null ? null : await LoadDirectiveHierarchyAsync(previous.DirectiveId, cancellationToken);
 		var currentDirective = await LoadDirectiveHierarchyAsync(objective.DirectiveId, cancellationToken);
 		var previousPath = previous is null ? null : markdownFileLocator.GetObjectiveFilePath(previous, previousDirective);
 		var newPath = markdownFileLocator.GetObjectiveFilePath(objective, currentDirective);
-		var body = await ResolveBodyAsync(previousPath, newPath, $"# {objective.Title}", cancellationToken);
+		var body = await ResolveBodyAsync(previousPath, sourcePath, newPath, $"# {objective.Title}", cancellationToken);
 		await WriteMarkdownAsync(newPath, markdownSerializer.Serialize(objective, body), cancellationToken);
 		writeBarrier.Suppress(newPath);
 		if (!string.IsNullOrWhiteSpace(previousPath))
 		{
 			writeBarrier.Suppress(previousPath);
 		}
+		if (!string.IsNullOrWhiteSpace(sourcePath))
+		{
+			writeBarrier.Suppress(sourcePath);
+		}
 
 		DeleteOldPath(previousPath, newPath, previousDirective is null ? layout.ObjectivesRoot : markdownFileLocator.GetDirectiveDirectoryPath(previousDirective, previousDirective.ParentDirective));
+		DeleteSourcePath(sourcePath, newPath);
 	}
 
 	/// <summary>
@@ -77,19 +87,24 @@ public sealed class PlaintorchMarkdownStorageService(
 	/// <summary>
 	/// Writes the canonical markdown file for an onrush sprint.
 	/// </summary>
-	public async Task SaveOnrushSprintAsync(OnrushSprint sprint, OnrushSprint? previous = null, CancellationToken cancellationToken = default)
+	public async Task SaveOnrushSprintAsync(OnrushSprint sprint, OnrushSprint? previous = null, string? sourcePath = null, CancellationToken cancellationToken = default)
 	{
 		var previousPath = previous is null ? null : markdownFileLocator.GetOnrushSprintFilePath(previous);
 		var newPath = markdownFileLocator.GetOnrushSprintFilePath(sprint);
-		var body = await ResolveBodyAsync(previousPath, newPath, $"# {sprint.Title}", cancellationToken);
+		var body = await ResolveBodyAsync(previousPath, sourcePath, newPath, $"# {sprint.Title}", cancellationToken);
 		await WriteMarkdownAsync(newPath, markdownSerializer.Serialize(sprint, body), cancellationToken);
 		writeBarrier.Suppress(newPath);
 		if (!string.IsNullOrWhiteSpace(previousPath))
 		{
 			writeBarrier.Suppress(previousPath);
 		}
+		if (!string.IsNullOrWhiteSpace(sourcePath))
+		{
+			writeBarrier.Suppress(sourcePath);
+		}
 
 		DeleteOldPath(previousPath, newPath, layout.OnrushRoot);
+		DeleteSourcePath(sourcePath, newPath);
 	}
 
 	/// <summary>
@@ -103,19 +118,24 @@ public sealed class PlaintorchMarkdownStorageService(
 	/// <summary>
 	/// Writes the canonical markdown file for a Polaris cycle.
 	/// </summary>
-	public async Task SavePolarisCycleAsync(PolarisCycle cycle, PolarisCycle? previous = null, string? defaultBody = null, CancellationToken cancellationToken = default)
+	public async Task SavePolarisCycleAsync(PolarisCycle cycle, PolarisCycle? previous = null, string? defaultBody = null, string? sourcePath = null, CancellationToken cancellationToken = default)
 	{
 		var previousPath = previous is null ? null : markdownFileLocator.GetPolarisCycleFilePath(previous);
 		var newPath = markdownFileLocator.GetPolarisCycleFilePath(cycle);
-		var body = await ResolveBodyAsync(previousPath, newPath, defaultBody ?? $"# {cycle.Title}", cancellationToken);
+		var body = await ResolveBodyAsync(previousPath, sourcePath, newPath, defaultBody ?? $"# {cycle.Title}", cancellationToken);
 		await WriteMarkdownAsync(newPath, markdownSerializer.Serialize(cycle, body), cancellationToken);
 		writeBarrier.Suppress(newPath);
 		if (!string.IsNullOrWhiteSpace(previousPath))
 		{
 			writeBarrier.Suppress(previousPath);
 		}
+		if (!string.IsNullOrWhiteSpace(sourcePath))
+		{
+			writeBarrier.Suppress(sourcePath);
+		}
 
 		DeleteOldPath(previousPath, newPath, layout.JournalRoot);
+		DeleteSourcePath(sourcePath, newPath);
 	}
 
 	/// <summary>
@@ -142,13 +162,24 @@ public sealed class PlaintorchMarkdownStorageService(
 	private static async Task WriteMarkdownAsync(string path, string markdown, CancellationToken cancellationToken)
 	{
 		Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+		if (File.Exists(path))
+		{
+			var existing = await File.ReadAllTextAsync(path, cancellationToken);
+			if (string.Equals(existing, markdown, StringComparison.Ordinal))
+			{
+				return;
+			}
+		}
+
 		await File.WriteAllTextAsync(path, markdown, cancellationToken);
 	}
 
-	private static async Task<string> ResolveBodyAsync(string? previousPath, string currentPath, string fallbackBody, CancellationToken cancellationToken)
+	private static async Task<string> ResolveBodyAsync(string? previousPath, string? sourcePath, string currentPath, string fallbackBody, CancellationToken cancellationToken)
 	{
 		var candidatePath = previousPath is not null && File.Exists(previousPath)
 			? previousPath
+			: sourcePath is not null && File.Exists(sourcePath)
+				? sourcePath
 			: File.Exists(currentPath)
 				? currentPath
 				: null;
@@ -191,6 +222,42 @@ public sealed class PlaintorchMarkdownStorageService(
 		}
 
 		DeletePath(previousPath, rootPath);
+	}
+
+	private void DeleteSourcePath(string? sourcePath, string currentPath)
+	{
+		if (string.IsNullOrWhiteSpace(sourcePath))
+		{
+			return;
+		}
+
+		var fullSourcePath = Path.GetFullPath(sourcePath);
+		if (string.Equals(fullSourcePath, currentPath, StringComparison.OrdinalIgnoreCase) || !File.Exists(fullSourcePath))
+		{
+			return;
+		}
+
+		DeletePath(fullSourcePath, ResolveRootPath(fullSourcePath));
+	}
+
+	private string ResolveRootPath(string path)
+	{
+		var fullPath = Path.GetFullPath(path);
+		var candidateRoots = new[]
+		{
+			layout.DirectivesRoot,
+			layout.ObjectivesRoot,
+			layout.OnrushRoot,
+			layout.JournalRoot,
+		};
+
+		var matchingRoot = candidateRoots
+			.Where(root => fullPath.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(fullPath, root, StringComparison.OrdinalIgnoreCase))
+			.OrderByDescending(root => root.Length)
+			.FirstOrDefault();
+
+		return matchingRoot ?? Path.GetDirectoryName(fullPath) ?? layout.VaultRoot;
 	}
 
 	private async Task<FileGraveyardEntry?> DeletePathAsync(

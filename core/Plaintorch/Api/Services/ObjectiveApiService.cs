@@ -125,7 +125,7 @@ public sealed class ObjectiveApiService(
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveObjectiveAsync(objective, previous, cancellationToken);
+		await markdownStorageService.SaveObjectiveAsync(objective, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.update", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}

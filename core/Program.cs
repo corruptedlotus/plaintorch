@@ -133,9 +133,23 @@ public static class Program
 	{
 		await using var scope = application.Services.CreateAsyncScope();
 		var lockService = scope.ServiceProvider.GetRequiredService<PlaintorchVaultLockService>();
-		await using var lockHandle = await lockService.AcquireAsync();
-		await application.RunAsync();
-		return 0;
+		var splashService = scope.ServiceProvider.GetRequiredService<PlaintorchCoreSplashService>();
+
+		try
+		{
+			await splashService.ShowLoadingAsync("Acquiring vault lock...");
+			await using var lockHandle = await lockService.AcquireAsync();
+			await splashService.ShowLoadingAsync("Starting PLAINTORCH core...");
+			await application.RunAsync();
+			await splashService.CloseAsync();
+			return 0;
+		}
+		catch (Exception exception)
+		{
+			await splashService.ShowErrorAsync("PLAINTORCH core failed to start.", exception);
+			Console.Error.WriteLine(exception.Message);
+			return 1;
+		}
 	}
 
 	private static void TryDeleteStaleSocket(string socketPath)

@@ -129,7 +129,7 @@ public sealed class DirectiveApiService(
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(directive, previous, cancellationToken);
+		await markdownFileService.SaveDirectiveAsync(directive, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.update",
@@ -151,7 +151,7 @@ public sealed class DirectiveApiService(
 		var previous = Clone(directive);
 		directive.Status = shift.Status;
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(directive, previous, cancellationToken);
+		await markdownFileService.SaveDirectiveAsync(directive, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.workflow-shift",

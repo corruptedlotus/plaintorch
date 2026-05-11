@@ -29,6 +29,21 @@ public sealed class PlaintorchUserLayout
 	public string SocketPath => Path.Combine(RootPath, "plaintorch.sock");
 
 	/// <summary>
+	/// Gets the directory that stores optional splash-screen assets and runtime state.
+	/// </summary>
+	public string SplashRootPath => Path.Combine(RootPath, "splash");
+
+	/// <summary>
+	/// Gets the runtime state file path used by the interactive splash popup.
+	/// </summary>
+	public string SplashStatePath => Path.Combine(SplashRootPath, "state.json");
+
+	/// <summary>
+	/// Gets the generated PowerShell script path used to render the interactive splash popup.
+	/// </summary>
+	public string SplashScriptPath => Path.Combine(SplashRootPath, "plaintorch-core-splash.ps1");
+
+	/// <summary>
 	/// Creates the default per-user PLAINTORCH host layout for the current platform.
 	/// </summary>
 	/// <returns>The resolved host layout.</returns>

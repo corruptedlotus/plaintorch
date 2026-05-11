@@ -106,12 +106,31 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 	public MarkdownDeserializationResult<T> Deserialize<T>(string markdown, T model)
 		where T : class
 	{
+		return DeserializeCore(markdown, model, validateMissingFields: true);
+	}
+
+	/// <summary>
+	/// Maps markdown frontmatter into an existing CLR model instance while preserving any preinitialized defaults for missing fields.
+	/// </summary>
+	/// <typeparam name="T">The model type.</typeparam>
+	/// <param name="markdown">The markdown content to deserialize.</param>
+	/// <param name="model">The target model to populate.</param>
+	/// <returns>The hydrated model and any validation issues.</returns>
+	public MarkdownDeserializationResult<T> DeserializePreservingDefaults<T>(string markdown, T model)
+		where T : class
+	{
+		return DeserializeCore(markdown, model, validateMissingFields: false);
+	}
+
+	private MarkdownDeserializationResult<T> DeserializeCore<T>(string markdown, T model, bool validateMissingFields)
+		where T : class
+	{
 		ArgumentNullException.ThrowIfNull(markdown);
 		ArgumentNullException.ThrowIfNull(model);
 
 		var frontMatter = ParseFrontMatter(markdown);
 		var issues = new List<MarkdownValidationIssue>();
-		PopulateAnnotatedProperties(model, typeof(T), frontMatter, issues, null);
+		PopulateAnnotatedProperties(model, typeof(T), frontMatter, issues, null, validateMissingFields);
 		ValidateNestedAnnotatedProperties(model, typeof(T), issues, null);
 		return new MarkdownDeserializationResult<T>(model, issues);
 	}
@@ -177,7 +196,8 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		Type modelType,
 		IReadOnlyDictionary<string, string> frontMatter,
 		ICollection<MarkdownValidationIssue> issues,
-		string? pathPrefix)
+		string? pathPrefix,
+		bool validateMissingFields)
 	{
 		foreach (var property in GetAnnotatedProperties(modelType))
 		{
@@ -186,7 +206,7 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 
 			if (!frontMatter.TryGetValue(attribute.Name, out var rawValue))
 			{
-				if (!CanBeNull(property))
+				if (validateMissingFields && !CanBeNull(property))
 				{
 					issues.Add(new MarkdownValidationIssue(fieldPath, "Field is required."));
 				}

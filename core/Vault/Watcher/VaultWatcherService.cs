@@ -46,20 +46,32 @@ public sealed class VaultWatcherService(
 	{
 		using var scope = scopeFactory.CreateScope();
 		var discovery = scope.ServiceProvider.GetRequiredService<VaultMarkdownDiscoveryService>();
+		var syncService = scope.ServiceProvider.GetRequiredService<VaultWatcherSyncService>();
 		var result = await discovery.ScanAsync("startup", cancellationToken);
 		logger.LogInformation(
 			"Vault discovery completed: {CandidateCount} candidates, {InvalidCount} invalid, {IgnoredCount} ignored.",
 			result.Candidates.Count,
 			result.InvalidCount,
 			result.IgnoredPaths);
-		foreach (var candidate in result.Candidates.Where(candidate => !candidate.IsValid))
+		foreach (var candidate in result.Candidates)
 		{
-			logger.LogWarning(
-				"Invalid watcher candidate {Path} for {EntityType}: {IssueCount} issue(s). Suggested action: {Action}.",
+			logger.LogInformation(
+				"Startup discovery candidate {Path} for {EntityType} suggested action {Action}.",
 				candidate.VaultRelativePath,
 				candidate.Model.EntityName,
-				candidate.Issues.Count,
 				candidate.SuggestedAction);
+
+			if (!candidate.IsValid)
+			{
+				logger.LogWarning(
+					"Startup candidate {Path} for {EntityType} has {IssueCount} issue(s). Suggested action: {Action}.",
+					candidate.VaultRelativePath,
+					candidate.Model.EntityName,
+					candidate.Issues.Count,
+					candidate.SuggestedAction);
+			}
+
+			await syncService.ExecuteAsync(candidate, "startup", cancellationToken);
 		}
 	}
 
@@ -134,6 +146,7 @@ public sealed class VaultWatcherService(
 	{
 		using var scope = scopeFactory.CreateScope();
 		var discovery = scope.ServiceProvider.GetRequiredService<VaultMarkdownDiscoveryService>();
+		var syncService = scope.ServiceProvider.GetRequiredService<VaultWatcherSyncService>();
 		var candidate = await discovery.InspectPathAsync(path, "watcher", cancellationToken);
 		if (candidate is null)
 		{
@@ -153,6 +166,8 @@ public sealed class VaultWatcherService(
 				candidate.VaultRelativePath,
 				candidate.Issues.Count);
 		}
+
+		await syncService.ExecuteAsync(candidate, "watcher", cancellationToken);
 	}
 
 	private void DisposeWatchers()
