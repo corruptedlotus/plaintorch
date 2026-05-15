@@ -11,4 +11,14 @@ public interface ISystemApi
 	/// Gets a compact system brief.
 	/// </summary>
 	Task<SystemBrief> BriefAsync(CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Gets the richer system briefing payload for dashboard-like surfaces.
+	/// </summary>
+	Task<SystemBriefing> GetBriefingAsync(CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Resolves the authoritative PLAINTORCH entity interpretation for a vault-relative markdown path.
+	/// </summary>
+	Task<VaultNoteAuthorityResolution> ResolveVaultNoteAsync(string vaultRelativePath, CancellationToken cancellationToken = default);
 }

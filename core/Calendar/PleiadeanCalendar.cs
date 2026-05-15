@@ -8,6 +8,7 @@ namespace Pleiades.Calendar;
 public class PleiadeanCalendar
 {
 	private static readonly PersianCalendar PersianCalendar = new PersianCalendar();
+	private static readonly string[] MonthNames = [ "Niloumehr", "Solaria", "Xuntaš", "Tarāxriz", "Lunaria", "Tārvan" ];
 	private static readonly DateTime Epoch = PersianCalendar.ToDateTime(1402, 1, 1, 0, 0, 0, 0);
 
 	/// <summary>
@@ -24,6 +25,11 @@ public class PleiadeanCalendar
 	/// Gets the Pleiadean day of month.
 	/// </summary>
 	public int Day { get; }
+
+	/// <summary>
+	/// Gets the Pleiadean month name.
+	/// </summary>
+	public string MonthName => MonthNames[Month - 1];
 
 	/// <summary>
 	/// Initializes a Pleiadean calendar date.
@@ -119,8 +125,6 @@ public class PleiadeanCalendar
 	/// <inheritdoc />
 	public override string ToString()
 	{
-		string[] monthNames = [ "Niloumehr", "Solaria", "Xuntaš", "Tarāxriz", "Lunaria", "Tārvan" ];
-
 		var yearStr = Year switch
 		{
 			0 => "Zero", // Year Zero
@@ -144,6 +148,6 @@ public class PleiadeanCalendar
 			_ => "Tears",
 		};
 		
-		return $"{dayStr} of {monthNames[Month - 1]}, {yearStr} (Year of {yearMark})";
+		return $"{dayStr} of {MonthName}, {yearStr} (Year of {yearMark})";
 	}
 }

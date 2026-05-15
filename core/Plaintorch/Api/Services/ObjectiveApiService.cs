@@ -138,9 +138,11 @@ public sealed class ObjectiveApiService(
 
 		var objective = await context.Objectives.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
 			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
+		var previous = Clone(objective);
 
 		objective.Status = shift.Status;
 		await context.SaveChangesAsync(cancellationToken);
+		await markdownStorageService.SaveObjectiveAsync(objective, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.workflow-shift", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}

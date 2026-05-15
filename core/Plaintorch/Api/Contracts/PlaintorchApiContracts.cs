@@ -18,6 +18,80 @@ public sealed record SystemBrief(
 	int CelestronBanked);
 
 /// <summary>
+/// Represents the system-facing briefing payload used by the Obsidian briefing surface.
+/// </summary>
+public sealed record SystemBriefing(
+	string Status,
+	DateTimeOffset Timestamp,
+	string ActiveVaultPath,
+	string PleiadeanToday,
+	int CelestronBanked,
+	SystemBriefingOnrushSprint? CurrentOnrush,
+	SystemBriefingPolarisCycle? CurrentPolaris);
+
+/// <summary>
+/// Represents an onrush sprint payload for the briefing surface.
+/// </summary>
+public sealed record SystemBriefingOnrushSprint(
+	string SelectionMode,
+	string Id,
+	string Title,
+	DateOnly? StartDate,
+	DateOnly? EndDate,
+	IReadOnlyList<SystemBriefingObjective> Objectives);
+
+/// <summary>
+/// Represents an objective summary for the briefing surface.
+/// </summary>
+public sealed record SystemBriefingObjective(
+	string Id,
+	string Title,
+	string Status,
+	string College,
+	int CelestronValue,
+	bool IsEnduring);
+
+/// <summary>
+/// Represents a Polaris cycle payload for the briefing surface.
+/// </summary>
+public sealed record SystemBriefingPolarisCycle(
+	string Id,
+	string Title,
+	DateTimeOffset? StartTime,
+	DateTimeOffset? EndTime,
+	bool IsForecast,
+	IReadOnlyList<SystemBriefingExecutive> Executives);
+
+/// <summary>
+/// Represents an executive summary for the briefing surface.
+/// </summary>
+public sealed record SystemBriefingExecutive(
+	long Id,
+	string? Title,
+	bool Executed,
+	string? ObjectiveId,
+	string? ObjectiveTitle);
+
+/// <summary>
+/// Represents the authoritative PLAINTORCH interpretation of a vault markdown path.
+/// </summary>
+/// <param name="VaultRelativePath">The vault-relative markdown path that was resolved.</param>
+/// <param name="IsPlaintorchEntity">Indicates whether the path resolves to a PLAINTORCH-backed entity.</param>
+/// <param name="EntityKind">The normalized plugin-facing entity kind when the path is recognized.</param>
+/// <param name="EntityName">The CLR/domain entity name when the path is recognized.</param>
+/// <param name="TagName">The matching custom-element tag name when the path is recognized.</param>
+/// <param name="Puck">The parsed PUCK token when one is present in the file identity.</param>
+/// <param name="Title">The resolved entity title from the file identity.</param>
+public sealed record VaultNoteAuthorityResolution(
+	string VaultRelativePath,
+	bool IsPlaintorchEntity,
+	string? EntityKind = null,
+	string? EntityName = null,
+	string? TagName = null,
+	string? Puck = null,
+	string? Title = null);
+
+/// <summary>
 /// Represents a generic text search request used by list/find style API actions.
 /// </summary>
 /// <param name="Query">The query text to search for.</param>

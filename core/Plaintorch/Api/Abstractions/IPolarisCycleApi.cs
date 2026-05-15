@@ -19,6 +19,11 @@ public interface IPolarisCycleApi
 	Task<PolarisCycle> BeginAsync(string? polarisCycleId = null, DateTimeOffset? startTime = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Creates and immediately begins a new Polaris cycle.
+	/// </summary>
+	Task<PolarisCycle> StartNewAsync(DateTimeOffset? startTime = null, string? body = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Ends a Polaris cycle.
 	/// </summary>
 	Task<PolarisCycle> EndAsync(string? polarisCycleId = null, DateTimeOffset? endTime = null, CancellationToken cancellationToken = default);
@@ -27,6 +32,11 @@ public interface IPolarisCycleApi
 	/// Gets a Polaris cycle by identifier, or the active cycle when no identifier is supplied.
 	/// </summary>
 	Task<PolarisCycle?> GetAsync(string? polarisCycleId = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Lists forecast Polaris cycles with their assigned executives.
+	/// </summary>
+	Task<IReadOnlyList<PolarisCycle>> ListForecastsAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Plans an executive against a Polaris cycle.

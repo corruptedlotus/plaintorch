@@ -1,0 +1,41 @@
+{
+	"folders": [
+		{
+			"path": "core",
+			"name": "Daemon Core",
+		},
+		{
+			"path": "cli",
+			"name": "CLI",
+		},
+		{
+			"path": "obsidian",
+			"name": "Obsidian Plugin",
+		},
+		{
+			"path": "sipa",
+			"name": "Sunnyside Interface"
+		}
+	],
+	"settings": {
+		"chat.tools.terminal.autoApprove": {
+			"dotnet build": true
+		},
+		"workbench.colorCustomizations": {
+			"activityBar.foreground": "#18bbc7",
+			"activityBar.activeBorder": "#18bbc7",
+			"activityBarBadge.background": "#3b2d34",
+			"activityBarBadge.foreground": "#e7e7e7",
+			"statusBarItem.hoverBackground": "#207e855e",
+			"statusBarItem.remoteBackground": "#2d6164",
+			"statusBarItem.remoteForeground": "#e7e7e7",
+			"tab.activeBorderTop": "#18bbc7",
+			"button.background": "#3b2932",
+			"button.foreground": "#b9b9b9",
+			"button.hoverBackground": "#3b29323f",
+			"titleBar.activeBackground": "#924c6f38",
+			"titleBar.inactiveForeground": "#18bbc7",
+		},
+		"window.title": "${dirty}${activeEditorShort}${separator}${rootNameShort} / ${folderName}",
+	}
+}

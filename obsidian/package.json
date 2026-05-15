@@ -1,0 +1,17 @@
+{
+  "name": "plaintorch-obsidian-plugin",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Obsidian plugin scaffold for PLAINTORCH entity rendering and briefing surfaces.",
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "esbuild": "^0.25.4",
+    "obsidian": "^1.8.10",
+    "typescript": "^5.8.3"
+  }
+}

@@ -67,7 +67,7 @@ public sealed class PlaintorchEngine(
 			ParentDirectiveId = parentDirectiveId,
 		};
 		repository.UpsertDirective(directive);
-		WriteVaultMarkdown(directive, markdownSerializer.Serialize(directive, $"# {directive.Title}"), parentDirective: parentDirective);
+		WriteVaultMarkdown(directive, markdownSerializer.Serialize(directive, string.Empty), parentDirective: parentDirective);
 		return directive;
 	}
 
@@ -97,11 +97,11 @@ public sealed class PlaintorchEngine(
 		var sprint = new OnrushSprint
 		{
 			Id = puckCreationService.CreateIdFor<OnrushSprint>(systemSegments: [new PuckSegmentInput(Date: sprintDate)]),
-			Title = title,
+			Title = string.IsNullOrWhiteSpace(title) ? PlaintorchDefaultTitleFactory.CreateOnrushTitle(sprintDate) : title,
 			StartDate = startDate,
 		};
 		repository.UpsertOnrushSprint(sprint);
-		WriteVaultMarkdown(sprint, markdownSerializer.Serialize(sprint, $"# {sprint.Title}"));
+		WriteVaultMarkdown(sprint, markdownSerializer.Serialize(sprint, string.Empty));
 		return sprint;
 	}
 
@@ -118,11 +118,13 @@ public sealed class PlaintorchEngine(
 
 		if (string.IsNullOrWhiteSpace(cycle.Title))
 		{
-			cycle.Title = $"Polaris Cycle {cycle.Id}";
+			cycle.Title = PlaintorchDefaultTitleFactory.TryResolveGregorianDate(cycle.Id, out var cycleDate)
+				? PlaintorchDefaultTitleFactory.CreatePolarisTitle(cycleDate)
+				: $"Polaris Cycle {cycle.Id}";
 		}
 
 		repository.UpsertPolarisCycle(cycle);
-		WriteVaultMarkdown(cycle, markdownSerializer.Serialize(cycle, body ?? $"# {cycle.Title}"));
+		WriteVaultMarkdown(cycle, markdownSerializer.Serialize(cycle, body ?? string.Empty));
 		return cycle;
 	}
 
@@ -138,7 +140,7 @@ public sealed class PlaintorchEngine(
 		var targetDate = forecastReference.AddDays(daysAhead);
 		var id = puckCreationService.CreateIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: targetDate)]);
 		var cycle = polarisCycleLifecycle.PlanForecast(forecastReference, daysAhead, id);
-		return SavePolarisCycle(cycle, body ?? "# Forecast");
+		return SavePolarisCycle(cycle, body);
 	}
 
 	/// <summary>
@@ -153,7 +155,7 @@ public sealed class PlaintorchEngine(
 		}
 
 		repository.UpsertObjective(objective);
-		WriteVaultMarkdown(objective, markdownSerializer.Serialize(objective, $"# {objective.Title}"), objectiveDirective: string.IsNullOrWhiteSpace(objective.DirectiveId) ? null : repository.GetDirective(objective.DirectiveId));
+		WriteVaultMarkdown(objective, markdownSerializer.Serialize(objective, string.Empty), objectiveDirective: string.IsNullOrWhiteSpace(objective.DirectiveId) ? null : repository.GetDirective(objective.DirectiveId));
 		return objective;
 	}
 
@@ -170,7 +172,7 @@ public sealed class PlaintorchEngine(
 			OnrushSprintId = onrushSprintId,
 		};
 		repository.UpsertObjective(objective);
-		WriteVaultMarkdown(objective, markdownSerializer.Serialize(objective, $"# {objective.Title}"), objectiveDirective: string.IsNullOrWhiteSpace(directiveId) ? null : repository.GetDirective(directiveId));
+		WriteVaultMarkdown(objective, markdownSerializer.Serialize(objective, string.Empty), objectiveDirective: string.IsNullOrWhiteSpace(directiveId) ? null : repository.GetDirective(directiveId));
 		return objective;
 	}
 

@@ -19,6 +19,11 @@ public interface IOnrushSprintApi
 	Task<OnrushSprint> BeginAsync(string onrushSprintId, DateOnly? startDate = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Creates and immediately begins a new onrush sprint.
+	/// </summary>
+	Task<OnrushSprint> StartNewAsync(DateOnly? startDate = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Ends an onrush sprint.
 	/// </summary>
 	Task<OnrushSprint> EndAsync(string onrushSprintId, DateOnly? endDate = null, CancellationToken cancellationToken = default);
@@ -27,6 +32,11 @@ public interface IOnrushSprintApi
 	/// Gets an onrush sprint by identifier, or the active sprint when no identifier is supplied.
 	/// </summary>
 	Task<OnrushSprint?> GetAsync(string? onrushSprintId = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Gets the current in-planning onrush sprint, when one exists.
+	/// </summary>
+	Task<OnrushSprint?> GetPlanningAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Lists onrush sprints.

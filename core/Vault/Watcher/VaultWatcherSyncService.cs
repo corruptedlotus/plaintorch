@@ -8,7 +8,8 @@ using Pleiades.Vault.Markdown;
 namespace Pleiades.Vault.Watcher;
 
 /// <summary>
-/// Executes watcher discovery decisions by reconciling markdown candidates with database state and canonical markdown output.
+/// Executes watcher discovery decisions by reconciling markdown candidates with database state and canonical markdown metadata.
+/// Watcher rewrites may normalize frontmatter, file name, and path, but must preserve markdown body content.
 /// </summary>
 public sealed class VaultWatcherSyncService(
 	PlainfraContext context,

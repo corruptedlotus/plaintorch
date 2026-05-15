@@ -28,12 +28,20 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	/// <returns>The absolute markdown file path.</returns>
 	public string GetFilePath(object entity)
 	{
+		return GetFilePath(entity, null);
+	}
+
+	/// <summary>
+	/// Resolves the markdown file path for a vault-backed entity with an optional resolved parent entity.
+	/// </summary>
+	public string GetFilePath(object entity, object? parentEntity)
+	{
 		ArgumentNullException.ThrowIfNull(entity);
 
 		return entity switch
 		{
-			Directive directive => GetDirectiveFilePath(directive),
-			Objective objective => GetObjectiveFilePath(objective),
+			Directive directive => GetDirectiveFilePath(directive, parentEntity as Directive),
+			Objective objective => GetObjectiveFilePath(objective, parentEntity as Directive),
 			OnrushSprint sprint => GetOnrushSprintFilePath(sprint),
 			PolarisCycle cycle => GetPolarisCycleFilePath(cycle),
 			_ => throw new InvalidOperationException($"Type '{entity.GetType().Name}' is not configured for vault markdown storage."),

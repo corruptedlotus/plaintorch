@@ -30,7 +30,7 @@ public sealed class PolarisCycleApiService(
 
 		context.PolarisCycles.Add(cycle);
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SavePolarisCycleAsync(cycle, defaultBody: body ?? "# Forecast", cancellationToken: cancellationToken);
+		await markdownFileService.SavePolarisCycleAsync(cycle, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "polaris.plan", subject: cycle, cancellationToken: cancellationToken);
 		return cycle;
 	}
@@ -41,12 +41,36 @@ public sealed class PolarisCycleApiService(
 		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, requireTodayFallback: true, cancellationToken)
 			?? throw new InvalidOperationException("No Polaris cycle is available to begin.");
 
+		if (cycle.StartTime is not null && cycle.EndTime is null)
+		{
+			return cycle;
+		}
+
 		var previous = Clone(cycle);
 		var started = lifecycle.Start(cycle, startTime ?? DateTimeOffset.UtcNow);
 		ApplyCycle(cycle, started);
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownFileService.SavePolarisCycleAsync(cycle, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "polaris.begin", subject: cycle, cancellationToken: cancellationToken);
+		return cycle;
+	}
+
+	/// <inheritdoc />
+	public async Task<PolarisCycle> StartNewAsync(DateTimeOffset? startTime = null, string? body = null, CancellationToken cancellationToken = default)
+	{
+		var resolvedStartTime = startTime ?? DateTimeOffset.UtcNow;
+		var targetDate = DateOnly.FromDateTime(resolvedStartTime.LocalDateTime);
+		var cycle = new PolarisCycle
+		{
+			Id = puckCreationService.CreateIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: targetDate)]),
+			Title = PlaintorchDefaultTitleFactory.CreatePolarisTitle(targetDate),
+			StartTime = resolvedStartTime,
+		};
+
+		context.PolarisCycles.Add(cycle);
+		await context.SaveChangesAsync(cancellationToken);
+		await markdownFileService.SavePolarisCycleAsync(cycle, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync("api", "polaris.start-new", subject: cycle, cancellationToken: cancellationToken);
 		return cycle;
 	}
 
@@ -72,10 +96,34 @@ public sealed class PolarisCycleApiService(
 		{
 			return await context.PolarisCycles
 				.AsNoTracking()
+				.Include(cycle => cycle.Executives)
+					.ThenInclude(executive => executive.Objective)
 				.FirstOrDefaultAsync(cycle => cycle.Id == polarisCycleId, cancellationToken);
 		}
 
-		return await stateService.GetActivePolarisCycleAsync(cancellationToken);
+		var activeCycle = await stateService.GetActivePolarisCycleAsync(cancellationToken);
+		if (activeCycle is null)
+		{
+			return null;
+		}
+
+		return await context.PolarisCycles
+			.AsNoTracking()
+			.Include(cycle => cycle.Executives)
+				.ThenInclude(executive => executive.Objective)
+			.FirstOrDefaultAsync(cycle => cycle.Id == activeCycle.Id, cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public async Task<IReadOnlyList<PolarisCycle>> ListForecastsAsync(CancellationToken cancellationToken = default)
+	{
+		return await context.PolarisCycles
+			.AsNoTracking()
+			.Include(cycle => cycle.Executives)
+				.ThenInclude(executive => executive.Objective)
+			.Where(cycle => cycle.Forecast != null && cycle.StartTime == null)
+			.OrderBy(cycle => cycle.Id)
+			.ToListAsync(cancellationToken);
 	}
 
 	/// <inheritdoc />
@@ -284,6 +332,7 @@ public sealed class PolarisCycleApiService(
 
 		return await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == DateOnly.FromDateTime(DateTime.Today).ToString("yyyyMMdd", CultureInfo.InvariantCulture), cancellationToken);
 	}
+
 
 	private async Task<Objective> CreateObjectiveAsync(string title, string? directiveId, string? onrushSprintId, ObjectiveCollege? college, int? celestronValue, bool isEnduring, CancellationToken cancellationToken)
 	{

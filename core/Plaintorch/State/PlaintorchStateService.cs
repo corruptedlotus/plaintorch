@@ -27,14 +27,25 @@ public sealed class PlaintorchStateService(
 	/// </summary>
 	public Task<OnrushSprint?> GetActiveOnrushSprintAsync(CancellationToken cancellationToken = default)
 	{
-		var today = DateOnly.FromDateTime(DateTime.Today);
 		return context.OnrushSprints
 			.AsNoTracking()
-			.Where(sprint => sprint.StartDate != null
-				&& sprint.StartDate <= today
-				&& (sprint.EndDate == null || sprint.EndDate >= today))
+			.Where(sprint => sprint.Id != "0"
+				&& sprint.StartDate != null
+				&& sprint.EndDate == null)
 			.OrderByDescending(sprint => sprint.StartDate)
 			.ThenByDescending(sprint => sprint.Id)
+			.FirstOrDefaultAsync(cancellationToken);
+	}
+
+	/// <summary>
+	/// Gets the most relevant planned onrush sprint when no sprint is currently active.
+	/// </summary>
+	public async Task<OnrushSprint?> GetPlanningOnrushSprintAsync(CancellationToken cancellationToken = default)
+	{
+		return await context.OnrushSprints
+			.AsNoTracking()
+			.Where(sprint => sprint.Id == "0")
+			.OrderByDescending(sprint => sprint.StartDate)
 			.FirstOrDefaultAsync(cancellationToken);
 	}
 

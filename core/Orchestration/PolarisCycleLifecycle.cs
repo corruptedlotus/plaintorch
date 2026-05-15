@@ -1,3 +1,5 @@
+using Pleiades.Plaintorch;
+
 namespace Pleiades.Orchestration;
 
 /// <summary>
@@ -25,7 +27,7 @@ public sealed class PolarisCycleLifecycle
 		return new PolarisCycle
 		{
 			Id = id,
-			Title = $"Polaris Cycle {targetDate:yyyy-MM-dd}",
+			Title = PlaintorchDefaultTitleFactory.CreatePolarisTitle(targetDate),
 			Forecast = new PolarisForecast
 			{
 				ForecastReference = forecastReference,

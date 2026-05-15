@@ -53,6 +53,10 @@ public static class Program
 		{
 			userLayout.EnsureExists();
 			TryDeleteStaleSocket(userLayout.SocketPath);
+			options.ListenLocalhost(userLayout.LoopbackPort, listenOptions =>
+			{
+				listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1;
+			});
 			options.ListenUnixSocket(userLayout.SocketPath, listenOptions =>
 			{
 				listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1;
@@ -117,6 +121,7 @@ public static class Program
 			Console.WriteLine($"Vault: {activeVaultPath}");
 			Console.WriteLine($"User Config: {userLayout.ConfigurationPath}");
 			Console.WriteLine($"Socket: {userLayout.SocketPath}");
+			Console.WriteLine($"Loopback API: {userLayout.LoopbackBaseUrl}");
 			return 0;
 		}
 		catch (InvalidOperationException exception)

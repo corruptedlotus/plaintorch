@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
+using Pleiades.Plaintorch.State;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
@@ -20,11 +21,15 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<PlaintorchUserConfigurationStore>();
 		services.AddSingleton<PlaintorchVaultActivationService>();
 		services.AddSingleton<VaultLayout>();
+		services.AddScoped<PlaintorchStatePolicyProcessor>();
+		services.AddScoped<PlaintorchStatePolicyFileSyncService>();
+		services.AddScoped<PlaintorchStatePolicyInterceptor>();
 		services.AddDbContext<PlainfraContext>((serviceProvider, options) =>
 		{
 			var layout = serviceProvider.GetRequiredService<VaultLayout>();
 			Directory.CreateDirectory(layout.MetadataRoot);
 			options.UseSqlite($"Data Source={layout.DatabasePath}");
+			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchStatePolicyInterceptor>());
 		});
 
 		services.AddScoped<PlainfraContextInitializer>();

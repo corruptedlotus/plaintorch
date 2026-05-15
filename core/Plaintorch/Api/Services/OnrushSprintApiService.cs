@@ -25,10 +25,9 @@ public sealed class OnrushSprintApiService(
 		ArgumentNullException.ThrowIfNull(plan);
 		ArgumentException.ThrowIfNullOrWhiteSpace(plan.Title);
 
-		var sprintDate = plan.StartDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
 		var sprint = new OnrushSprint
 		{
-			Id = puckCreationService.CreateIdFor<OnrushSprint>(systemSegments: [new PuckSegmentInput(Date: sprintDate)]),
+			Id = "0",
 			Title = plan.Title,
 			StartDate = plan.StartDate,
 			EndDate = plan.EndDate,
@@ -45,14 +44,64 @@ public sealed class OnrushSprintApiService(
 	public async Task<OnrushSprint> BeginAsync(string onrushSprintId, DateOnly? startDate = null, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
-		var sprint = await context.OnrushSprints.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
+		var sprint = await context.OnrushSprints
+			.Include(item => item.Objectives)
+			.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
 			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
 
+		if (sprint.StartDate is not null && sprint.EndDate is null && sprint.Id != "0")
+		{
+			return sprint;
+		}
+
 		var previous = Clone(sprint);
-		sprint.StartDate ??= startDate ?? DateOnly.FromDateTime(DateTime.Today);
+		var resolvedStartDate = startDate ?? sprint.StartDate ?? DateOnly.FromDateTime(DateTime.Today);
+
+		if (sprint.Id == "0")
+		{
+			var activatedSprint = new OnrushSprint
+			{
+				Id = puckCreationService.CreateIdFor<OnrushSprint>(systemSegments: [new PuckSegmentInput(Date: resolvedStartDate)]),
+				Title = sprint.Title,
+				StartDate = resolvedStartDate,
+				EndDate = sprint.EndDate,
+			};
+
+			context.OnrushSprints.Add(activatedSprint);
+			foreach (var objective in sprint.Objectives)
+			{
+				objective.OnrushSprintId = activatedSprint.Id;
+			}
+
+			context.OnrushSprints.Remove(sprint);
+			await context.SaveChangesAsync(cancellationToken);
+			await markdownFileService.SaveOnrushSprintAsync(activatedSprint, previous, cancellationToken: cancellationToken);
+			await auditLogService.WriteAsync("api", "onrush.begin", subject: activatedSprint, cancellationToken: cancellationToken);
+			return activatedSprint;
+		}
+
+		sprint.StartDate = resolvedStartDate;
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.begin", subject: sprint, cancellationToken: cancellationToken);
+		return sprint;
+	}
+
+	/// <inheritdoc />
+	public async Task<OnrushSprint> StartNewAsync(DateOnly? startDate = null, CancellationToken cancellationToken = default)
+	{
+		var resolvedStartDate = startDate ?? DateOnly.FromDateTime(DateTime.Today);
+		var sprint = new OnrushSprint
+		{
+			Id = puckCreationService.CreateIdFor<OnrushSprint>(systemSegments: [new PuckSegmentInput(Date: resolvedStartDate)]),
+			Title = PlaintorchDefaultTitleFactory.CreateOnrushTitle(resolvedStartDate),
+			StartDate = resolvedStartDate,
+		};
+
+		context.OnrushSprints.Add(sprint);
+		await context.SaveChangesAsync(cancellationToken);
+		await markdownFileService.SaveOnrushSprintAsync(sprint, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync("api", "onrush.start-new", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
 
@@ -78,10 +127,35 @@ public sealed class OnrushSprintApiService(
 		{
 			return await context.OnrushSprints
 				.AsNoTracking()
+				.Include(sprint => sprint.Objectives)
 				.FirstOrDefaultAsync(sprint => sprint.Id == onrushSprintId, cancellationToken);
 		}
 
-		return await stateService.GetActiveOnrushSprintAsync(cancellationToken);
+		var activeSprint = await stateService.GetActiveOnrushSprintAsync(cancellationToken);
+		if (activeSprint is null)
+		{
+			return null;
+		}
+
+		return await context.OnrushSprints
+			.AsNoTracking()
+			.Include(sprint => sprint.Objectives)
+			.FirstOrDefaultAsync(sprint => sprint.Id == activeSprint.Id, cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public async Task<OnrushSprint?> GetPlanningAsync(CancellationToken cancellationToken = default)
+	{
+		var planningSprint = await stateService.GetPlanningOnrushSprintAsync(cancellationToken);
+		if (planningSprint is null)
+		{
+			return null;
+		}
+
+		return await context.OnrushSprints
+			.AsNoTracking()
+			.Include(sprint => sprint.Objectives)
+			.FirstOrDefaultAsync(sprint => sprint.Id == planningSprint.Id, cancellationToken);
 	}
 
 	/// <inheritdoc />

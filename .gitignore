@@ -1,5 +1,7 @@
 obj/
 bin/
-dist/
+_dist/
 build/
 _sandbox/
+node_modules/
+.pt-temp/

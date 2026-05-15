@@ -24,7 +24,7 @@ public sealed class OnrushSprintModule : Module
 	/// <inheritdoc />
 	public override void ConfigureEndpoints(IEndpointRouteBuilder endpoints)
 	{
-		var group = endpoints.MapGroup("/api/onrush-sprints");
+		var group = endpoints.MapGroup("/api/onrush");
 
 		group.MapGet("/", async (IOnrushSprintApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListAsync(cancellationToken)));
@@ -32,6 +32,12 @@ public sealed class OnrushSprintModule : Module
 		group.MapGet("/current", async (IOnrushSprintApi api, CancellationToken cancellationToken) =>
 		{
 			var sprint = await api.GetAsync(null, cancellationToken);
+			return sprint is null ? Results.NotFound() : Results.Ok(sprint);
+		});
+
+		group.MapGet("/planning", async (IOnrushSprintApi api, CancellationToken cancellationToken) =>
+		{
+			var sprint = await api.GetPlanningAsync(cancellationToken);
 			return sprint is null ? Results.NotFound() : Results.Ok(sprint);
 		});
 
@@ -44,8 +50,11 @@ public sealed class OnrushSprintModule : Module
 		group.MapPost("/plan", async (OnrushSprintPlan request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 		{
 			var sprint = await api.PlanAsync(request, cancellationToken);
-			return Results.Created($"/api/onrush-sprints/{sprint.Id}", sprint);
+			return Results.Created($"/api/onrush/{sprint.Id}", sprint);
 		});
+
+		group.MapPost("/start-new", async (OnrushSprintDateRequest request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.StartNewAsync(request.Date, cancellationToken)));
 
 		group.MapPost("/{onrushSprintId}/begin", async (string onrushSprintId, OnrushSprintDateRequest request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.BeginAsync(onrushSprintId, request.Date, cancellationToken)));

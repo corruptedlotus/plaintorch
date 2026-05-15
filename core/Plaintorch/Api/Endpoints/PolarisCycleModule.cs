@@ -24,13 +24,16 @@ public sealed class PolarisCycleModule : Module
 	/// <inheritdoc />
 	public override void ConfigureEndpoints(IEndpointRouteBuilder endpoints)
 	{
-		var cycles = endpoints.MapGroup("/api/polaris-cycles");
+		var cycles = endpoints.MapGroup("/api/polaris");
 
 		cycles.MapGet("/current", async (IPolarisCycleApi api, CancellationToken cancellationToken) =>
 		{
 			var cycle = await api.GetAsync(null, cancellationToken);
 			return cycle is null ? Results.NotFound() : Results.Ok(cycle);
 		});
+
+		cycles.MapGet("/forecasts", async (IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.ListForecastsAsync(cancellationToken)));
 
 		cycles.MapGet("/{polarisCycleId}", async (string polarisCycleId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 		{
@@ -41,8 +44,11 @@ public sealed class PolarisCycleModule : Module
 		cycles.MapPost("/plan", async (PolarisCyclePlanRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 		{
 			var cycle = await api.PlanAsync(request.ForecastReference, request.DaysAhead, request.Body, cancellationToken);
-			return Results.Created($"/api/polaris-cycles/{cycle.Id}", cycle);
+			return Results.Created($"/api/polaris/{cycle.Id}", cycle);
 		});
+
+		cycles.MapPost("/start-new", async (PolarisCycleTimeRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.StartNewAsync(request.Time, null, cancellationToken)));
 
 		cycles.MapPost("/{polarisCycleId}/begin", async (string polarisCycleId, PolarisCycleTimeRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.BeginAsync(polarisCycleId, request.Time, cancellationToken)));

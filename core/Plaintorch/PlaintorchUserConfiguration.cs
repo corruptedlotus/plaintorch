@@ -29,6 +29,16 @@ public sealed class PlaintorchUserLayout
 	public string SocketPath => Path.Combine(RootPath, "plaintorch.sock");
 
 	/// <summary>
+	/// Gets the loopback HTTP port exposed for desktop integrations that cannot reliably use the socket transport.
+	/// </summary>
+	public int LoopbackPort => 43118;
+
+	/// <summary>
+	/// Gets the loopback HTTP base URL exposed for desktop integrations.
+	/// </summary>
+	public string LoopbackBaseUrl => $"http://127.0.0.1:{LoopbackPort}";
+
+	/// <summary>
 	/// Gets the directory that stores optional splash-screen assets and runtime state.
 	/// </summary>
 	public string SplashRootPath => Path.Combine(RootPath, "splash");
