@@ -1,10 +1,12 @@
 import { Plugin, type WorkspaceLeaf } from "obsidian";
 import { PlaintorchBriefingView, PLAINTORCH_BRIEFING_VIEW_TYPE } from "./briefing/PlaintorchBriefingView";
-import { createHelloPlaintorchEditorExtension } from "./hello/helloPlaintorchEditorExtension";
+import { createHelloPlaintorchEditorExtension } from "./banner/helloPlaintorchEditorExtension";
+import { createHelloPlaintorchReadingModeRenderer } from "./banner/helloPlaintorchReadingModeRenderer";
 
 export default class PlaintorchObsidianPlugin extends Plugin {
 	public override async onload(): Promise<void> {
 		this.registerEditorExtension(createHelloPlaintorchEditorExtension());
+		this.registerMarkdownPostProcessor(createHelloPlaintorchReadingModeRenderer);
 
 		this.registerView(
 			PLAINTORCH_BRIEFING_VIEW_TYPE,

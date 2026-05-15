@@ -1,4 +1,5 @@
 import { EditorView, WidgetType } from "@codemirror/view";
+import { Component } from "obsidian";
 
 export class HelloPlaintorchWidget extends WidgetType {
   public override toDOM(view: EditorView): HTMLElement {
