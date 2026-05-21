@@ -1,6 +1,7 @@
 using System.Reflection;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
+using Pleiades.Saga;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
@@ -85,6 +86,14 @@ public sealed class PlaintorchMarkdownStorageService(
 	}
 
 	/// <summary>
+	/// Writes the canonical markdown file for a lore page.
+	/// </summary>
+	public async Task SaveLorePageAsync(LorePage lorePage, LorePage? previous = null, string? sourcePath = null, CancellationToken cancellationToken = default)
+	{
+		await SaveCanonicalMarkdownAsync(lorePage, previous, sourcePath, cancellationToken);
+	}
+
+	/// <summary>
 	/// Deletes a Polaris cycle markdown file.
 	/// </summary>
 	public Task<FileGraveyardEntry?> DeletePolarisCycleAsync(PolarisCycle cycle, CancellationToken cancellationToken = default)
@@ -97,8 +106,14 @@ public sealed class PlaintorchMarkdownStorageService(
 		var previousPath = previous is null ? null : await ResolveCanonicalPathAsync(previous, cancellationToken);
 		var newPath = await ResolveCanonicalPathAsync(entity, cancellationToken);
 		var body = await ResolveBodyAsync(previousPath, sourcePath, newPath, cancellationToken);
+		SuppressWatcherPaths(
+			newPath,
+			previousPath,
+			sourcePath,
+			Path.GetDirectoryName(newPath),
+			Path.GetDirectoryName(previousPath),
+			Path.GetDirectoryName(sourcePath));
 		await WriteMarkdownAsync(newPath, markdownSerializer.Serialize(entity, body), cancellationToken);
-		SuppressWatcherPaths(newPath, previousPath, sourcePath);
 		DeleteOldPath(previousPath, newPath, ResolveStorageRoot(entity.GetType()));
 		DeleteSourcePath(sourcePath, newPath);
 	}
@@ -112,11 +127,11 @@ public sealed class PlaintorchMarkdownStorageService(
 
 	private async Task<string> ResolveCanonicalPathAsync(object entity, CancellationToken cancellationToken)
 	{
-		var parent = await LoadParentHierarchyAsync(entity, cancellationToken);
+		var parent = await LoadParentHierarchyAsync(entity, new HashSet<string>(StringComparer.OrdinalIgnoreCase), cancellationToken);
 		return markdownFileLocator.GetFilePath(entity, parent);
 	}
 
-	private async Task<object?> LoadParentHierarchyAsync(object entity, CancellationToken cancellationToken)
+	private async Task<object?> LoadParentHierarchyAsync(object entity, HashSet<string> visited, CancellationToken cancellationToken)
 	{
 		var storage = GetStorageAttribute(entity.GetType());
 		if (string.IsNullOrWhiteSpace(storage.ParentIdProperty) || storage.ParentEntityType is null)
@@ -130,13 +145,26 @@ public sealed class PlaintorchMarkdownStorageService(
 			return null;
 		}
 
+		if (entity is IPuckNamedEntity namedEntity
+			&& storage.ParentEntityType == entity.GetType()
+			&& string.Equals(namedEntity.Id, parentId, StringComparison.OrdinalIgnoreCase))
+		{
+			return null;
+		}
+
+		var parentKey = $"{storage.ParentEntityType.FullName}:{parentId}";
+		if (!visited.Add(parentKey))
+		{
+			return null;
+		}
+
 		var parent = await FindEntityAsync(storage.ParentEntityType, parentId, cancellationToken);
 		if (parent is null)
 		{
 			return null;
 		}
 
-		var parentParent = await LoadParentHierarchyAsync(parent, cancellationToken);
+		var parentParent = await LoadParentHierarchyAsync(parent, visited, cancellationToken);
 		HydrateParentNavigation(parent, parentParent);
 		return parent;
 	}
@@ -232,13 +260,13 @@ public sealed class PlaintorchMarkdownStorageService(
 
 	private static string ExtractBody(string markdown)
 	{
-		if (!markdown.StartsWith("---", StringComparison.Ordinal))
+		using var reader = new StringReader(markdown);
+		var firstLine = reader.ReadLine();
+		if (!string.Equals(NormalizeFrontMatterDelimiterLine(firstLine), "---", StringComparison.Ordinal))
 		{
 			return markdown;
 		}
 
-		using var reader = new StringReader(markdown);
-		reader.ReadLine();
 		while (reader.ReadLine() is { } line)
 		{
 			if (line == "---")
@@ -248,6 +276,21 @@ public sealed class PlaintorchMarkdownStorageService(
 		}
 
 		return reader.ReadToEnd().TrimStart('\r', '\n');
+	}
+
+	private static string? NormalizeFrontMatterDelimiterLine(string? line)
+	{
+		if (line is null)
+		{
+			return null;
+		}
+
+		if (line.Length > 0 && line[0] == '\uFEFF')
+		{
+			line = line[1..];
+		}
+
+		return line.Trim();
 	}
 
 	private static void DeleteOldPath(string? previousPath, string currentPath, string rootPath)
@@ -285,6 +328,7 @@ public sealed class PlaintorchMarkdownStorageService(
 			layout.ObjectivesRoot,
 			layout.OnrushRoot,
 			layout.JournalRoot,
+			layout.SagaRoot,
 		};
 
 		var matchingRoot = candidateRoots

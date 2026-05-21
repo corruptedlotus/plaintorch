@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
+using Pleiades.Saga;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
 
@@ -31,12 +32,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		var missing = 0;
 		var knownIdsByType = await LoadKnownIdsAsync(cancellationToken);
 
-		var allPaths = pathSyncModelCatalog.GetModels()
-			.SelectMany(model => model.ScanRoots)
-			.Where(Directory.Exists)
-			.SelectMany(root => Directory.EnumerateFiles(root, "*.md", SearchOption.AllDirectories))
-			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.ToList();
+		var allPaths = pathSyncModelCatalog.EnumerateCandidateMarkdownPaths();
 
 		foreach (var path in allPaths)
 		{
@@ -104,24 +100,36 @@ public sealed class VaultMarkdownDiscoveryService(
 		IReadOnlyDictionary<Type, HashSet<string>> knownIdsByType,
 		CancellationToken cancellationToken)
 	{
-		var fullPath = Path.GetFullPath(path);
-		if (!File.Exists(fullPath))
+		if (!pathSyncModelCatalog.TryResolveWatchPath(path, out var resolvedPath, out var model)
+			|| string.IsNullOrWhiteSpace(resolvedPath)
+			|| model is null)
 		{
 			return null;
 		}
 
-		if (!pathSyncModelCatalog.TryResolve(fullPath, out var model) || model is null)
-		{
-			return null;
-		}
-
-		var markdown = await File.ReadAllTextAsync(fullPath, cancellationToken);
+		var fullPath = Path.GetFullPath(resolvedPath);
+		var markdown = File.Exists(fullPath)
+			? await File.ReadAllTextAsync(fullPath, cancellationToken)
+			: string.Empty;
 		var (pathId, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(fullPath);
+		var parsedModel = CreatePathComposedModel(model.EntityType, fullPath);
+		if (parsedModel is IPuckNamedEntity namedEntity)
+		{
+			if (!string.IsNullOrWhiteSpace(namedEntity.Id))
+			{
+				pathId = namedEntity.Id;
+			}
+
+			if (!string.IsNullOrWhiteSpace(namedEntity.Title))
+			{
+				pathTitle = namedEntity.Title;
+			}
+		}
+
 		var knownIds = knownIdsByType.TryGetValue(model.EntityType, out var ids)
 			? ids
 			: new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var isNewEntity = string.IsNullOrWhiteSpace(pathId) || !knownIds.Contains(pathId);
-		var parsedModel = CreatePathComposedModel(model.EntityType, fullPath);
 		var issues = DeserializeInto(parsedModel, model.EntityType, markdown, preserveDefaultsForMissingFields: isNewEntity)
 			.Select(issue => issue)
 			.ToList();
@@ -144,7 +152,7 @@ public sealed class VaultMarkdownDiscoveryService(
 			parsedModel,
 			issues,
 			ComputeHash(ExtractBody(markdown)),
-			File.GetLastWriteTimeUtc(fullPath),
+			File.Exists(fullPath) ? File.GetLastWriteTimeUtc(fullPath) : DateTime.UtcNow,
 			action,
 			reason);
 	}
@@ -194,6 +202,9 @@ public sealed class VaultMarkdownDiscoveryService(
 			case Objective objective:
 				MarkdownFileLocator.ApplyObjectiveCompositionFromPath(objective, path);
 				break;
+			case LorePage lorePage:
+				MarkdownFileLocator.ApplyLorePageCompositionFromPath(lorePage, path, layout.VaultRoot, layout.SagaRoot);
+				break;
 			case IPuckNamedEntity namedEntity:
 				MarkdownFileLocator.ApplyLoosePuckIdentityFromPath(namedEntity, path);
 				break;
@@ -202,7 +213,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		return model;
 	}
 
-	private static void ApplyPathAuthorities(object model, string path, ICollection<MarkdownValidationIssue> issues)
+	private void ApplyPathAuthorities(object model, string path, ICollection<MarkdownValidationIssue> issues)
 	{
 		switch (model)
 		{
@@ -236,18 +247,21 @@ public sealed class VaultMarkdownDiscoveryService(
 
 				break;
 			}
+			case LorePage lorePage:
+				lorePage.RelativePath = Path.GetRelativePath(layout.VaultRoot, path);
+				break;
 		}
 	}
 
 	private static string ExtractBody(string markdown)
 	{
-		if (!markdown.StartsWith("---", StringComparison.Ordinal))
+		using var reader = new StringReader(markdown);
+		var firstLine = reader.ReadLine();
+		if (!string.Equals(NormalizeFrontMatterDelimiterLine(firstLine), "---", StringComparison.Ordinal))
 		{
 			return markdown;
 		}
 
-		using var reader = new StringReader(markdown);
-		reader.ReadLine();
 		while (reader.ReadLine() is { } line)
 		{
 			if (line == "---")
@@ -257,6 +271,21 @@ public sealed class VaultMarkdownDiscoveryService(
 		}
 
 		return reader.ReadToEnd().TrimStart('\r', '\n');
+	}
+
+	private static string? NormalizeFrontMatterDelimiterLine(string? line)
+	{
+		if (line is null)
+		{
+			return null;
+		}
+
+		if (line.Length > 0 && line[0] == '\uFEFF')
+		{
+			line = line[1..];
+		}
+
+		return line.Trim();
 	}
 
 	private static string ComputeHash(string value)

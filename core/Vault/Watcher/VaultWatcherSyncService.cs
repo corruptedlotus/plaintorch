@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Puck;
+using Pleiades.Saga;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
 
@@ -137,6 +138,10 @@ public sealed class VaultWatcherSyncService(
 
 		var previous = CloneEntity(existing);
 		context.Entry(existing).CurrentValues.SetValues(candidate.ParsedModel);
+		if (existing is IPuckNamedEntity namedEntity && !string.IsNullOrWhiteSpace(candidate.PathTitle))
+		{
+			namedEntity.Title = candidate.PathTitle;
+		}
 		await context.SaveChangesAsync(cancellationToken);
 		await SaveCanonicalMarkdownAsync(existing, previous, candidate.AbsolutePath, cancellationToken);
 
@@ -253,6 +258,11 @@ public sealed class VaultWatcherSyncService(
 			return await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
 		}
 
+		if (entityType == typeof(LorePage))
+		{
+			return await context.LorePages.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+		}
+
 		throw new InvalidOperationException($"Watcher synchronization does not support entity type '{entityType.Name}'.");
 	}
 
@@ -271,6 +281,9 @@ public sealed class VaultWatcherSyncService(
 				break;
 			case PolarisCycle cycle:
 				await markdownStorageService.SavePolarisCycleAsync(cycle, previous as PolarisCycle, sourcePath: sourcePath, cancellationToken: cancellationToken);
+				break;
+			case LorePage lorePage:
+				await markdownStorageService.SaveLorePageAsync(lorePage, previous as LorePage, sourcePath: sourcePath, cancellationToken: cancellationToken);
 				break;
 			default:
 				throw new InvalidOperationException($"Watcher synchronization does not support markdown save for entity type '{entity.GetType().Name}'.");
@@ -325,6 +338,19 @@ public sealed class VaultWatcherSyncService(
 					},
 				StartTime = cycle.StartTime,
 				EndTime = cycle.EndTime,
+			},
+			LorePage lorePage => new LorePage
+			{
+				Id = lorePage.Id,
+				Title = lorePage.Title,
+				ParentId = lorePage.ParentId,
+				Level = lorePage.Level,
+				RelativePath = lorePage.RelativePath,
+				Era = lorePage.Era,
+				Chapter = lorePage.Chapter,
+				Act = lorePage.Act,
+				Phase = lorePage.Phase,
+				IndexedUtc = lorePage.IndexedUtc,
 			},
 			_ => throw new InvalidOperationException($"Watcher synchronization cannot clone entity type '{entity.GetType().Name}'."),
 		};

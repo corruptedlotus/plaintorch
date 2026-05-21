@@ -1,5 +1,5 @@
 {
-  "name": "@pleiades/sdk-ts",
+  "name": "@pleiades/sdk",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -7,12 +7,17 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./plaintorch": "./src/plaintorch/index.ts",
-    "./plaintorch/node": "./src/plaintorch/node.ts"
+    ".": "./index.ts",
+    "./plaintorch": "./plaintorch/index.ts",
+    "./plaintorch/node": "./plaintorch/node.ts"
   },
   "devDependencies": {
     "@types/node": "^22.15.17",
+    "tslib": "^2.8.1",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@a11d/api": "^0.4.0",
+    "@a11d/api-dotnet": "^0.1.0"
   }
 }

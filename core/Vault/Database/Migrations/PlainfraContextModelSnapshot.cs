@@ -266,6 +266,50 @@ namespace plaintorch.Vault.Database.Migrations
                     b.ToTable("PuckSequences");
                 });
 
+            modelBuilder.Entity("Pleiades.Saga.LorePage", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("Puck");
+
+                    b.Property<int?>("Act")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("Chapter")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("Era")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("IndexedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ParentId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("ParentPuck");
+
+                    b.Property<int?>("Phase")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RelativePath")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParentId");
+
+                    b.ToTable("LoreIndexEntries");
+                });
+
             modelBuilder.Entity("Pleiades.Vault.Database.AuditLogEntry", b =>
                 {
                     b.Property<long>("Id")
@@ -412,46 +456,6 @@ namespace plaintorch.Vault.Database.Migrations
                     b.ToTable("FileGraveyardEntries");
                 });
 
-            modelBuilder.Entity("Pleiades.Vault.Database.LoreIndexEntry", b =>
-                {
-                    b.Property<string>("Puck")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("Act")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("Chapter")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("Era")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("IndexedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Level")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ParentPuck")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("Phase")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("RelativePath")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Puck");
-
-                    b.ToTable("LoreIndexEntries");
-                });
-
             modelBuilder.Entity("Pleiades.Orchestration.Directive", b =>
                 {
                     b.HasOne("Pleiades.Orchestration.Directive", "ParentDirective")
@@ -527,6 +531,15 @@ namespace plaintorch.Vault.Database.Migrations
                         .IsRequired();
 
                     b.Navigation("PolarisCycle");
+                });
+
+            modelBuilder.Entity("Pleiades.Saga.LorePage", b =>
+                {
+                    b.HasOne("Pleiades.Saga.LorePage", "Parent")
+                        .WithMany()
+                        .HasForeignKey("ParentId");
+
+                    b.Navigation("Parent");
                 });
 
             modelBuilder.Entity("Pleiades.Orchestration.Directive", b =>

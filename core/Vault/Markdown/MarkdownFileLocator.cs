@@ -1,6 +1,7 @@
 using System.Reflection;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
+using Pleiades.Saga;
 using Pleiades.Vault;
 
 namespace Pleiades.Vault.Markdown;
@@ -44,6 +45,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 			Objective objective => GetObjectiveFilePath(objective, parentEntity as Directive),
 			OnrushSprint sprint => GetOnrushSprintFilePath(sprint),
 			PolarisCycle cycle => GetPolarisCycleFilePath(cycle),
+			LorePage lorePage => GetLorePageFilePath(lorePage),
 			_ => throw new InvalidOperationException($"Type '{entity.GetType().Name}' is not configured for vault markdown storage."),
 		};
 	}
@@ -131,6 +133,29 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	}
 
 	/// <summary>
+	/// Resolves the markdown file path for a lore page.
+	/// </summary>
+	public string GetLorePageFilePath(LorePage lorePage)
+	{
+		ArgumentNullException.ThrowIfNull(lorePage);
+		EnsureFileBacking<LorePage>();
+
+		if (!string.IsNullOrWhiteSpace(lorePage.RelativePath))
+		{
+			var path = Path.GetFullPath(Path.Combine(layout.VaultRoot, lorePage.RelativePath));
+			var normalizedRoot = layout.VaultRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+			if (path.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+			{
+				return path;
+			}
+		}
+
+		var terminalId = lorePage.Id.Split('/').Last();
+		var folderName = PuckNamedIdentity.FormatFileName(terminalId, lorePage.Title);
+		return Path.Combine(layout.SagaRoot, folderName, $"{folderName}.md");
+	}
+
+	/// <summary>
 	/// Parses a PUCK identity from a markdown path using the "{Id} - {Title}" filename convention.
 	/// </summary>
 	/// <param name="path">The markdown file path.</param>
@@ -208,6 +233,14 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 		ArgumentNullException.ThrowIfNull(objective);
 		ApplyLoosePuckIdentityFromPath(objective, path);
 		objective.DirectiveId = TryGetContainingDirectiveId(path, skipCurrentIfSelfNamed: false);
+	}
+
+	/// <summary>
+	/// Derives lore page composition from a canonical saga markdown path.
+	/// </summary>
+	public static bool ApplyLorePageCompositionFromPath(LorePage lorePage, string path, string vaultRoot, string sagaRoot)
+	{
+		return LorePage.TryApplyCompositionFromPath(lorePage, path, vaultRoot, sagaRoot);
 	}
 
 	/// <summary>

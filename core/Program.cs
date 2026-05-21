@@ -1,8 +1,10 @@
 ﻿global using A11d.Module;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting.Systemd;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using System.Net.Sockets;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Pleiades.Calendar;
 using Pleiades.Vault;
 
@@ -44,6 +46,21 @@ public static class Program
 		builder.Services.ConfigureHttpJsonOptions(options =>
 		{
 			options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+			options.SerializerOptions.TypeInfoResolver = new DefaultJsonTypeInfoResolver
+			{
+				Modifiers =
+				{
+					AddRuntimeTypeNameProperty,
+				},
+			};
+		});
+		builder.Services.AddCors(options =>
+		{
+			options.AddPolicy("PlaintorchGlobalCors", policy =>
+				policy
+					.AllowAnyOrigin()
+					.AllowAnyHeader()
+					.AllowAnyMethod());
 		});
 		builder.Services.AddSingleton(new VaultOptions
 		{
@@ -65,6 +82,12 @@ public static class Program
 
 		var app = builder.Install<PLAINTORCH>().Build();
 		app.UseRouting();
+		app.UseCors("PlaintorchGlobalCors");
+		app.UseStaticFiles(new StaticFileOptions
+		{
+			FileProvider = new PhysicalFileProvider(Path.Combine(app.Environment.ContentRootPath, "Assets")),
+			RequestPath = "/assets"
+		});
 		app.Configure<PLAINTORCH>();
 
 		switch (command)
@@ -172,6 +195,25 @@ public static class Program
 		catch (IOException)
 		{
 		}
+	}
+
+	private static void AddRuntimeTypeNameProperty(JsonTypeInfo jsonTypeInfo)
+	{
+		if (jsonTypeInfo.Kind != JsonTypeInfoKind.Object)
+		{
+			return;
+		}
+
+		if (jsonTypeInfo.Properties.Any(property => string.Equals(property.Name, "@type", StringComparison.Ordinal)))
+		{
+			return;
+		}
+
+		var runtimeTypeProperty = jsonTypeInfo.CreateJsonPropertyInfo(typeof(string), "@type");
+		runtimeTypeProperty.Get = value => value?.GetType().Name;
+		runtimeTypeProperty.Set = null;
+		runtimeTypeProperty.Order = int.MinValue;
+		jsonTypeInfo.Properties.Add(runtimeTypeProperty);
 	}
 
 	/// <summary>

@@ -4,6 +4,7 @@ using Pleiades.Plaintorch.State;
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Calendar;
 using Pleiades.Orchestration;
+using Pleiades.Saga;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
@@ -84,6 +85,7 @@ public sealed class SystemApiService(
 			"Objective" => "objective",
 			"OnrushSprint" => "onrush-sprint",
 			"PolarisCycle" => "polaris-cycle",
+			"LorePage" => "lore-page",
 			_ => null,
 		};
 
@@ -138,6 +140,19 @@ public sealed class SystemApiService(
 		{
 			var cycle = await ResolveSinglePolarisCycleByTitleAsync(pathTitle, cancellationToken);
 			return cycle is null ? (null, pathTitle) : (cycle.Id, cycle.Title);
+		}
+
+		if (entityType == typeof(LorePage))
+		{
+			var lorePage = new LorePage
+			{
+				Id = string.Empty,
+				Title = string.Empty,
+			};
+			if (MarkdownFileLocator.ApplyLorePageCompositionFromPath(lorePage, absolutePath, layout.VaultRoot, layout.SagaRoot))
+			{
+				return (lorePage.Id, lorePage.Title);
+			}
 		}
 
 		return (null, pathTitle);

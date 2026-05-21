@@ -25,7 +25,7 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		ArgumentNullException.ThrowIfNull(model);
 
 		var lines = new List<string> { "---" };
-		foreach (var property in GetAnnotatedProperties(typeof(T)))
+		foreach (var property in GetAnnotatedProperties(model.GetType()))
 		{
 			var attribute = property.GetCustomAttribute<MarkdownFieldAttribute>()!;
 			var value = property.GetValue(model);
@@ -40,7 +40,6 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		lines.Add("---");
 		if (!string.IsNullOrWhiteSpace(body))
 		{
-			lines.Add(string.Empty);
 			lines.Add(body.TrimEnd());
 		}
 
@@ -57,7 +56,8 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		ArgumentNullException.ThrowIfNull(markdown);
 
 		using var reader = new StringReader(markdown);
-		if (!string.Equals(reader.ReadLine(), "---", StringComparison.Ordinal))
+		var firstLine = reader.ReadLine();
+		if (!string.Equals(NormalizeFrontMatterDelimiterLine(firstLine), "---", StringComparison.Ordinal))
 		{
 			return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		}
@@ -82,6 +82,21 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		}
 
 		return values;
+	}
+
+	private static string? NormalizeFrontMatterDelimiterLine(string? line)
+	{
+		if (line is null)
+		{
+			return null;
+		}
+
+		if (line.Length > 0 && line[0] == '\uFEFF')
+		{
+			line = line[1..];
+		}
+
+		return line.Trim();
 	}
 
 	/// <summary>

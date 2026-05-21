@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orchestration;
+using Pleiades.Saga;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Database;
 
@@ -39,12 +40,103 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 				.AsNoTracking()
 				.Select(item => item.Id)
 				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
+
+		CreateModel<LorePage>(layout, [layout.SagaRoot], VaultStorageShape.SelfNamedDirectory, static path =>
+			MarkdownFileLocator.IsPrimarySelfNamedFile(path), static (context, cancellationToken) =>
+			context.LorePages
+				.AsNoTracking()
+				.Select(item => item.Id)
+				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
 	];
 
 	/// <summary>
 	/// Gets all known path-resolvable sync models.
 	/// </summary>
 	public IReadOnlyList<VaultPathSyncModel> GetModels() => _models;
+
+	/// <summary>
+	/// Gets all distinct scan roots ordered by specificity.
+	/// </summary>
+	public IReadOnlyList<string> GetScanRoots()
+	{
+		return _models
+			.SelectMany(model => model.ScanRoots)
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.OrderByDescending(root => Path.GetFullPath(root).Length)
+			.ToList();
+	}
+
+	/// <summary>
+	/// Enumerates all existing markdown candidates discoverable by model rules.
+	/// </summary>
+	public IReadOnlyList<string> EnumerateCandidateMarkdownPaths()
+	{
+		return _models
+			.SelectMany(model => EnumerateCandidateMarkdownPaths(model))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+	}
+
+	/// <summary>
+	/// Enumerates existing markdown candidates discoverable for a specific model.
+	/// </summary>
+	public IReadOnlyList<string> EnumerateCandidateMarkdownPaths(VaultPathSyncModel model)
+	{
+		ArgumentNullException.ThrowIfNull(model);
+		return model.ScanRoots
+			.Where(Directory.Exists)
+			.SelectMany(root => Directory.EnumerateFiles(root, "*.md", SearchOption.AllDirectories))
+			.Where(model.IsCandidatePath)
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+	}
+
+	/// <summary>
+	/// Resolves an incoming watcher path to an inspectable markdown path and model.
+	/// </summary>
+	public bool TryResolveWatchPath(string path, out string? markdownPath, out VaultPathSyncModel? model)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(path);
+		var fullPath = Path.GetFullPath(path);
+
+		if (TryResolve(fullPath, out model) && model is not null)
+		{
+			markdownPath = fullPath;
+			return true;
+		}
+
+		if (!Directory.Exists(fullPath))
+		{
+			markdownPath = null;
+			model = null;
+			return false;
+		}
+
+		var directoryName = Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+		if (string.IsNullOrWhiteSpace(directoryName))
+		{
+			markdownPath = null;
+			model = null;
+			return false;
+		}
+
+		var selfNamedPrimary = Path.Combine(fullPath, $"{directoryName}.md");
+		model = _models
+			.Where(candidate => candidate.Shape == VaultStorageShape.SelfNamedDirectory)
+			.OrderByDescending(candidate => candidate.ScanRoots.Max(root => root.Length))
+			.FirstOrDefault(candidate =>
+				candidate.ScanRoots.Any(root => IsPathUnderRoot(fullPath, root))
+				&& candidate.IsCandidatePath(selfNamedPrimary));
+
+		if (model is null)
+		{
+			markdownPath = null;
+			return false;
+		}
+
+		markdownPath = selfNamedPrimary;
+		return true;
+	}
 
 	/// <summary>
 	/// Resolves a sync model for a markdown path using only path location and file shape.

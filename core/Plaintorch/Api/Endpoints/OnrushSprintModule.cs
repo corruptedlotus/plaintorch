@@ -41,6 +41,9 @@ public sealed class OnrushSprintModule : Module
 			return sprint is null ? Results.NotFound() : Results.Ok(sprint);
 		});
 
+		group.MapGet("/available", async (IOnrushSprintApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.GetAvailableAsync(cancellationToken)));
+
 		group.MapGet("/{onrushSprintId}", async (string onrushSprintId, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 		{
 			var sprint = await api.GetAsync(onrushSprintId, cancellationToken);

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
+using Pleiades.Saga;
 
 namespace Pleiades.Vault.Database;
 
@@ -62,9 +63,9 @@ public class PlainfraContext : DbContext
 	public DbSet<PuckSequence> PuckSequences => Set<PuckSequence>();
 
 	/// <summary>
-	/// Gets the lightweight lore index entries tracked in the database.
+	/// Gets the saga lore pages tracked in the database.
 	/// </summary>
-	public DbSet<LoreIndexEntry> LoreIndexEntries => Set<LoreIndexEntry>();
+	public DbSet<LorePage> LorePages => Set<LorePage>();
 
 	/// <summary>
 	/// Gets the deleted database entity snapshots tracked in the graveyard.
@@ -115,5 +116,9 @@ public class PlainfraContext : DbContext
 		modelBuilder.Entity<TagDefinition>()
 			.Property(x => x.Color)
 			.HasConversion<string>();
+
+		modelBuilder.Entity<LorePage>()
+			.Property(x => x.Id)
+			.HasColumnName("Puck");
 	}
 }

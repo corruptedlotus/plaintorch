@@ -77,7 +77,7 @@ public sealed class VaultWatcherService(
 
 	private void InitializeWatchers()
 	{
-		foreach (var root in pathSyncModelCatalog.GetModels().SelectMany(model => model.ScanRoots).Distinct(StringComparer.OrdinalIgnoreCase))
+		foreach (var root in pathSyncModelCatalog.GetScanRoots())
 		{
 			if (!Directory.Exists(root))
 			{
@@ -87,7 +87,7 @@ public sealed class VaultWatcherService(
 			var watcher = new FileSystemWatcher(root)
 			{
 				IncludeSubdirectories = true,
-				Filter = "*.md",
+				Filter = "*",
 				NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
 				EnableRaisingEvents = true,
 			};
@@ -115,12 +115,28 @@ public sealed class VaultWatcherService(
 			return;
 		}
 
+		var fullPath = Path.GetFullPath(path);
+		var isDirectoryEvent = Directory.Exists(fullPath);
+		var isMarkdownPath = string.Equals(Path.GetExtension(fullPath), ".md", StringComparison.OrdinalIgnoreCase);
+		if (!isDirectoryEvent && !isMarkdownPath)
+		{
+			return;
+		}
+
+		if (pathSyncModelCatalog.TryResolveWatchPath(path, out var inspectPath, out _)
+			&& !string.IsNullOrWhiteSpace(inspectPath)
+			&& !writeBarrier.IsSuppressed(inspectPath))
+		{
+			_pendingPaths[Path.GetFullPath(inspectPath)] = DateTimeOffset.UtcNow.Add(DebounceWindow);
+			return;
+		}
+
 		if (writeBarrier.IsSuppressed(path))
 		{
 			return;
 		}
 
-		_pendingPaths[Path.GetFullPath(path)] = DateTimeOffset.UtcNow.Add(DebounceWindow);
+		_pendingPaths[fullPath] = DateTimeOffset.UtcNow.Add(DebounceWindow);
 	}
 
 	private async Task DrainPendingAsync(CancellationToken cancellationToken)

@@ -159,6 +159,26 @@ public sealed class OnrushSprintApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task<IReadOnlyList<OnrushSprint>> GetAvailableAsync(CancellationToken cancellationToken = default)
+	{
+		var active = await GetAsync(null, cancellationToken);
+		var planning = await GetPlanningAsync(cancellationToken);
+
+		var available = new List<OnrushSprint>();
+		if (active is not null)
+		{
+			available.Add(active);
+		}
+
+		if (planning is not null && !available.Any(item => string.Equals(item.Id, planning.Id, StringComparison.OrdinalIgnoreCase)))
+		{
+			available.Add(planning);
+		}
+
+		return available;
+	}
+
+	/// <inheritdoc />
 	public async Task<IReadOnlyList<OnrushSprint>> ListAsync(CancellationToken cancellationToken = default)
 	{
 		return await context.OnrushSprints

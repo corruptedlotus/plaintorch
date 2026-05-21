@@ -39,6 +39,11 @@ public interface IOnrushSprintApi
 	Task<OnrushSprint?> GetPlanningAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Gets available onrush sprints for immediate use (active and in-planning), when they exist.
+	/// </summary>
+	Task<IReadOnlyList<OnrushSprint>> GetAvailableAsync(CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Lists onrush sprints.
 	/// </summary>
 	Task<IReadOnlyList<OnrushSprint>> ListAsync(CancellationToken cancellationToken = default);

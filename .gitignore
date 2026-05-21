@@ -4,4 +4,4 @@ _dist/
 build/
 _sandbox/
 node_modules/
-.pt-temp/
+**/.pt-temp/

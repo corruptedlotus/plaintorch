@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orchestration;
+using Pleiades.Saga;
 
 namespace Pleiades.Vault.Database;
 
@@ -9,40 +10,40 @@ namespace Pleiades.Vault.Database;
 public sealed class PlaintorchRepository(PlainfraContext context)
 {
 	/// <summary>
-	/// Replaces the current lore index with a newly rebuilt snapshot.
+	/// Replaces the current lore page index with a newly rebuilt snapshot.
 	/// </summary>
-	/// <param name="entries">The lore index entries to persist.</param>
-	public void ReplaceLoreIndexEntries(IReadOnlyCollection<LoreIndexEntry> entries)
+	/// <param name="entries">The lore pages to persist.</param>
+	public void ReplaceLoreIndexEntries(IReadOnlyCollection<LorePage> entries)
 	{
 		ArgumentNullException.ThrowIfNull(entries);
 
-		context.LoreIndexEntries.RemoveRange(context.LoreIndexEntries);
-		context.LoreIndexEntries.AddRange(entries);
+		context.LorePages.RemoveRange(context.LorePages);
+		context.LorePages.AddRange(entries);
 		context.SaveChanges();
 	}
 
 	/// <summary>
-	/// Replaces the current lore index with a newly rebuilt snapshot.
+	/// Replaces the current lore page index with a newly rebuilt snapshot.
 	/// </summary>
-	/// <param name="entries">The lore index entries to persist.</param>
+	/// <param name="entries">The lore pages to persist.</param>
 	/// <param name="cancellationToken">The cancellation token.</param>
-	public async Task ReplaceLoreIndexEntriesAsync(IReadOnlyCollection<LoreIndexEntry> entries, CancellationToken cancellationToken = default)
+	public async Task ReplaceLoreIndexEntriesAsync(IReadOnlyCollection<LorePage> entries, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(entries);
 
-		context.LoreIndexEntries.RemoveRange(context.LoreIndexEntries);
-		await context.LoreIndexEntries.AddRangeAsync(entries, cancellationToken);
+		context.LorePages.RemoveRange(context.LorePages);
+		await context.LorePages.AddRangeAsync(entries, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
 	}
 
 	/// <summary>
-	/// Gets the current lore index ordered by PUCK.
+	/// Gets the current lore page index ordered by PUCK.
 	/// </summary>
-	/// <returns>The indexed lore entries.</returns>
-	public IReadOnlyList<LoreIndexEntry> GetLoreIndexEntries()
+	/// <returns>The indexed lore pages.</returns>
+	public IReadOnlyList<LorePage> GetLoreIndexEntries()
 	{
-		return context.LoreIndexEntries
-			.OrderBy(x => x.Puck)
+		return context.LorePages
+			.OrderBy(x => x.Id)
 			.ToList();
 	}
 
@@ -256,6 +257,6 @@ public sealed class PlaintorchRepository(PlainfraContext context)
 			context.PolarisCycles.SelectMany(x => x.Reflectives).Count(),
 			context.CelestronLedger.Count(),
 			context.TagDefinitions.Count(),
-			context.LoreIndexEntries.Count());
+			context.LorePages.Count());
 	}
 }
