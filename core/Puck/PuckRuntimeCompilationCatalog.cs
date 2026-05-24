@@ -18,6 +18,8 @@ public sealed class PuckRuntimeCompilationCatalog(PuckNotationParser notationPar
 	/// </summary>
 	public void CompileForActiveVault(IReadOnlyModel? model = null)
 	{
+		_ = model;
+
 		var puckTypes = AppDomain.CurrentDomain.GetAssemblies()
 			.Where(assembly => !assembly.IsDynamic)
 			.SelectMany(static assembly =>
@@ -39,7 +41,7 @@ public sealed class PuckRuntimeCompilationCatalog(PuckNotationParser notationPar
 			.ToArray();
 
 		ValidateDeclarationUniqueness(compiled);
-		ValidateSiblingDiscriminatorBoundaries(compiled, model);
+		ValidateParseSpaceUniqueness(compiled);
 
 		_compiledByType.Clear();
 		_typeByDeclaration.Clear();
@@ -134,42 +136,27 @@ public sealed class PuckRuntimeCompilationCatalog(PuckNotationParser notationPar
 		throw new InvalidOperationException($"PUCK declaration uniqueness validation failed. Ambiguous signatures detected for: {collisions}.");
 	}
 
-	private static void ValidateSiblingDiscriminatorBoundaries(IEnumerable<PuckCompiledModel> compiledModels, IReadOnlyModel? model)
+	private static void ValidateParseSpaceUniqueness(IEnumerable<PuckCompiledModel> compiledModels)
 	{
-		if (model is null)
+		var duplicates = compiledModels
+			.GroupBy(item => BuildZeroFilledSample(item.Notation), StringComparer.Ordinal)
+			.Where(group => group.Count() > 1)
+			.ToArray();
+
+		if (duplicates.Length == 0)
 		{
 			return;
 		}
 
-		var compiledByType = compiledModels.ToDictionary(item => item.EntityType);
-		var siblingGroups = model.GetEntityTypes()
-			.Where(entityType => entityType.ClrType is not null && compiledByType.ContainsKey(entityType.ClrType))
-			.GroupBy(entityType => $"{entityType.GetSchema() ?? string.Empty}:{entityType.GetTableName() ?? string.Empty}", StringComparer.Ordinal)
-			.Where(group => group.Count() > 1)
-			.ToArray();
-
-		foreach (var siblingGroup in siblingGroups)
-		{
-			foreach (var entityType in siblingGroup)
-			{
-				var compiled = compiledByType[entityType.ClrType];
-				var missingBoundary = compiled.Notation.Segments.Any(segment =>
-					!string.IsNullOrWhiteSpace(segment.StaticDiscriminator)
-					&& !segment.HasDiscriminatorBoundary);
-
-				if (missingBoundary)
-				{
-					throw new InvalidOperationException($"PUCK declaration '{compiled.Declaration}' for '{compiled.EntityType.Name}' must use explicit discriminator boundaries like '(x)' when discriminating sibling entities sharing table '{entityType.GetTableName()}'.");
-				}
-			}
-		}
+		var collisions = string.Join(", ", duplicates.Select(group =>
+			$"'{group.Key}' => {string.Join("|", group.Select(item => item.EntityType.Name).OrderBy(name => name, StringComparer.Ordinal))}"));
+		throw new InvalidOperationException($"PUCK parse-space uniqueness validation failed. Declarations can intersect under zero-filled matching: {collisions}.");
 	}
 
 	private static string BuildDeclarationSignature(PuckNotation notation)
 	{
 		return string.Join(";", notation.Segments.Select(segment => string.Join(",",
 			Normalize(segment.StaticDiscriminator),
-			segment.HasDiscriminatorBoundary ? "b1" : "b0",
 			segment.UsesDynamicDiscriminator ? "d1" : "d0",
 			$"n{(int)segment.Numerator.Kind}",
 			$"w{segment.Numerator.Width}",
@@ -185,5 +172,46 @@ public sealed class PuckRuntimeCompilationCatalog(PuckNotationParser notationPar
 		return string.IsNullOrWhiteSpace(value)
 			? string.Empty
 			: value.Trim().ToLowerInvariant();
+	}
+
+	private static string BuildZeroFilledSample(PuckNotation notation)
+	{
+		var sample = new System.Text.StringBuilder();
+		for (var index = 0; index < notation.Segments.Count; index++)
+		{
+			var segment = notation.Segments[index];
+			if (segment.UsesDynamicDiscriminator)
+			{
+				sample.Append('x');
+			}
+			else
+			{
+				sample.Append(Normalize(segment.StaticDiscriminator));
+			}
+
+			sample.Append(new string('0', ResolveZeroFillLength(segment.Numerator)));
+
+			if (segment.Nesting == PuckNestingKind.Telescope)
+			{
+				sample.Append('-');
+			}
+			else if (segment.Nesting == PuckNestingKind.Filesystem)
+			{
+				sample.Append('/');
+			}
+		}
+
+		return sample.ToString();
+	}
+
+	private static int ResolveZeroFillLength(PuckNumeratorPattern numerator)
+	{
+		return numerator.Kind switch
+		{
+			PuckNumeratorKind.Spiritgem => Math.Max(1, numerator.Width),
+			PuckNumeratorKind.Incremental => Math.Max(1, numerator.Width),
+			PuckNumeratorKind.DateStamp => numerator.DateStampKind == PuckDateStampKind.Gregorian ? 8 : 6,
+			_ => 1,
+		};
 	}
 }

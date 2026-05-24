@@ -91,7 +91,6 @@ public sealed record PuckNumeratorPattern(
 /// </summary>
 public sealed record PuckSegmentPattern(
 	string? StaticDiscriminator,
-	bool HasDiscriminatorBoundary,
 	bool UsesDynamicDiscriminator,
 	PuckNumeratorPattern Numerator,
 	PuckNestingKind Nesting,
