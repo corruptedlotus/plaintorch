@@ -14,7 +14,8 @@ namespace Pleiades.Orchestration;
 	Mode = VaultStorageMode.Synced,
 	Shape = VaultStorageShape.SingleFile,
 	ParentIdProperty = nameof(DirectiveId),
-	ParentEntityType = typeof(Directive))]
+	ParentEntityType = typeof(Directive),
+	PartitionUnder = "Objectives")]
 public sealed class Objective : PuckNamedEntity
 {
 	/// <summary>

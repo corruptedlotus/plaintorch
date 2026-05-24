@@ -232,15 +232,19 @@ public sealed class SystemApiService(
 
 		while (!string.Equals(currentDirectory, directivesRoot, StringComparison.OrdinalIgnoreCase))
 		{
-			if (!MarkdownFileLocator.IsSelfNamedDirectory(currentDirectory))
+			if (MarkdownFileLocator.IsSelfNamedDirectory(currentDirectory))
 			{
-				return null;
+				var primaryFile = Path.Combine(currentDirectory, $"{Path.GetFileName(currentDirectory)}.md");
+				titles.Push(MarkdownFileLocator.ParseLoosePuckIdentityFromPath(primaryFile).Title);
 			}
 
-			var primaryFile = Path.Combine(currentDirectory, $"{Path.GetFileName(currentDirectory)}.md");
-			titles.Push(MarkdownFileLocator.ParseLoosePuckIdentityFromPath(primaryFile).Title);
 			currentDirectory = Directory.GetParent(currentDirectory)?.FullName
 				?? throw new InvalidOperationException("Directive path resolution lost its parent chain before reaching the directives root.");
+		}
+
+		if (titles.Count == 0)
+		{
+			return null;
 		}
 
 		Directive? resolved = null;

@@ -89,4 +89,9 @@ public sealed class VaultStorageAttribute : Attribute
 	/// Gets the optional property name containing a vault-relative parent directory override.
 	/// </summary>
 	public string? ParentDirectoryProperty { get; init; }
+
+	/// <summary>
+	/// Gets the optional subdirectory name used when storing this entity beneath a resolved parent directory.
+	/// </summary>
+	public string? PartitionUnder { get; init; }
 }

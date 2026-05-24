@@ -80,5 +80,22 @@ public sealed class VaultStorageTopologyValidator(
 				throw new InvalidOperationException($"Parent directory property '{entityType.Name}.{attribute.ParentDirectoryProperty}' must be a string.");
 			}
 		}
+
+		if (!string.IsNullOrWhiteSpace(attribute.PartitionUnder))
+		{
+			if (string.IsNullOrWhiteSpace(attribute.ParentIdProperty) || attribute.ParentEntityType is null)
+			{
+				throw new InvalidOperationException($"Type '{entityType.Name}' declares {nameof(VaultStorageAttribute.PartitionUnder)} but does not declare a parent relation through {nameof(VaultStorageAttribute.ParentIdProperty)} and {nameof(VaultStorageAttribute.ParentEntityType)}.");
+			}
+
+			var partition = attribute.PartitionUnder.Trim();
+			if (Path.IsPathRooted(partition)
+				|| partition.Contains(Path.DirectorySeparatorChar)
+				|| partition.Contains(Path.AltDirectorySeparatorChar)
+				|| partition.Contains("..", StringComparison.Ordinal))
+			{
+				throw new InvalidOperationException($"{nameof(VaultStorageAttribute.PartitionUnder)} for '{entityType.Name}' must be a single safe subdirectory name.");
+			}
+		}
 	}
 }

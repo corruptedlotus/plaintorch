@@ -236,6 +236,8 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 		}
 
 		return string.Equals(parentDirectory, layout.ObjectivesRoot, StringComparison.OrdinalIgnoreCase)
-			|| MarkdownFileLocator.IsSelfNamedDirectory(parentDirectory);
+			|| MarkdownFileLocator.IsSelfNamedDirectory(parentDirectory)
+			|| (IsPathUnderRoot(path, layout.DirectivesRoot)
+				&& !string.IsNullOrWhiteSpace(MarkdownFileLocator.TryGetContainingDirectiveId(path, skipCurrentIfSelfNamed: false)));
 	}
 }

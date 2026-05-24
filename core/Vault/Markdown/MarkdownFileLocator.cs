@@ -101,7 +101,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 		var fileName = PuckNamedIdentity.FormatFileName(objective.Id, objective.Title);
 		var container = owningDirective is null
 			? layout.ObjectivesRoot
-			: GetDirectiveDirectoryPath(owningDirective, owningDirective.ParentDirective);
+			: ResolvePartitionedParentDirectory(typeof(Objective), GetDirectiveDirectoryPath(owningDirective, owningDirective.ParentDirective));
 
 		return Path.Combine(container, $"{fileName}.md");
 	}
@@ -313,10 +313,32 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 
 		if (parentDirective is not null)
 		{
-			return GetDirectiveDirectoryPath(parentDirective, parentDirective.ParentDirective);
+			return ResolvePartitionedParentDirectory(typeof(Directive), GetDirectiveDirectoryPath(parentDirective, parentDirective.ParentDirective));
 		}
 
 		return layout.GetLocationRoot(VaultLocationKeys.Directives);
+	}
+
+	private string ResolvePartitionedParentDirectory(Type entityType, string parentDirectory)
+	{
+		var storage = entityType.GetCustomAttribute<VaultStorageAttribute>()
+			?? throw new InvalidOperationException($"Type '{entityType.Name}' is not configured for vault markdown storage.");
+
+		if (string.IsNullOrWhiteSpace(storage.PartitionUnder))
+		{
+			return parentDirectory;
+		}
+
+		var partition = storage.PartitionUnder.Trim();
+		if (Path.IsPathRooted(partition)
+			|| partition.Contains(Path.DirectorySeparatorChar)
+			|| partition.Contains(Path.AltDirectorySeparatorChar)
+			|| partition.Contains("..", StringComparison.Ordinal))
+		{
+			throw new InvalidOperationException($"{nameof(VaultStorageAttribute.PartitionUnder)} for '{entityType.Name}' must be a single safe subdirectory name.");
+		}
+
+		return Path.Combine(parentDirectory, partition);
 	}
 
 	private string ResolveVaultRelativeDirectory(string relativeDirectory)
