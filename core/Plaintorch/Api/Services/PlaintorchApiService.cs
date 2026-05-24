@@ -10,7 +10,8 @@ public sealed class PlaintorchApiService(
 	IDirectiveApi directiveApi,
 	IObjectiveApi objectiveApi,
 	IOnrushSprintApi onrushSprintApi,
-	IPolarisCycleApi polarisCycleApi) : IPlaintorchApi
+	IPolarisCycleApi polarisCycleApi,
+	ILorePageApi lorePageApi) : IPlaintorchApi
 {
 	/// <inheritdoc />
 	public ISystemApi System { get; } = systemApi;
@@ -26,4 +27,7 @@ public sealed class PlaintorchApiService(
 
 	/// <inheritdoc />
 	public IPolarisCycleApi PolarisCycles { get; } = polarisCycleApi;
+
+	/// <inheritdoc />
+	public ILorePageApi LorePages { get; } = lorePageApi;
 }

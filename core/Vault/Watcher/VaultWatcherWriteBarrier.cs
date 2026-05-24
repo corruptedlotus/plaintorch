@@ -13,6 +13,7 @@ public sealed class VaultWatcherWriteBarrier
 	/// <summary>
 	/// Marks a path as service-originated for a short suppression window.
 	/// </summary>
+	/// <param name="path">The path that should be temporarily suppressed.</param>
 	public void Suppress(string path)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -22,6 +23,8 @@ public sealed class VaultWatcherWriteBarrier
 	/// <summary>
 	/// Determines whether a watcher event for the path should currently be ignored.
 	/// </summary>
+	/// <param name="path">The path being evaluated by the watcher.</param>
+	/// <returns><see langword="true"/> when the event should be suppressed; otherwise <see langword="false"/>.</returns>
 	public bool IsSuppressed(string path)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(path);

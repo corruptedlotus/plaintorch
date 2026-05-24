@@ -1,4 +1,4 @@
 export * from './PleiadesIcon'
-export * from './EntityBanner'
-export * from './entities'
+export * from './banners/EntityBanner'
+export * from './banners'
 export * from './NoteBanner'

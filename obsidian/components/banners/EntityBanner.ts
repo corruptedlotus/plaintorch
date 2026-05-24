@@ -2,7 +2,7 @@ import { Component, component, css, html, property, state } from '@a11d/lit'
 import { App } from 'obsidian'
 
 @component('p7t-entity-banner')
-export class EntityBanner<T> extends Component {
+export class EntityBanner<T extends { id: string, title: string }> extends Component {
 	@property() xtype?: string
 	@property() puck = ''
 
@@ -34,15 +34,25 @@ export class EntityBanner<T> extends Component {
 				grid-template-columns: 48px 1fr;
 				gap: 10px;
 				align-items: center;
-				font-family: var(--font-interface);
-
-				& .icon {
-					grid-area: 1 / 1;
+				
+				& .heading {
+					display: flex;
+					flex-direction: column;
 				}
 
-				& h2 {
+				& .subheading {
+					font-size: .7em;
+					font-weight: 400;
+					opacity: .5;
+					display: block;
 					grid-area: 1 / 2;
-					margin-block: 5px;
+				}
+
+				& h1 {
+					grid-area: 1 / 2;
+					margin-block: -5px 5px;
+					font-family: var(--font-interface);
+					font-weight: 600;
 				}
 
 				& .indicator {
@@ -50,7 +60,7 @@ export class EntityBanner<T> extends Component {
 					display: block;
 					border-top: 2px solid var(--text-normal);
 					align-self: start;
-					margin: .8em 5px;
+					margin: .8em 10px;
 				}
 
 				& .info {
@@ -58,7 +68,8 @@ export class EntityBanner<T> extends Component {
 					display: flex;
 					flex-direction: column;
 					font-weight: 400;
-					font-size: 1.1em;
+					font-size: 1.06em;
+					font-family: var(--font-text);
 				}
 
 				& .actions {
@@ -97,27 +108,21 @@ export class EntityBanner<T> extends Component {
 				opacity: .6;
 				display: flex;
 				font-weight: 200;
-				flex-direction: column;
+				flex-direction: row;
 				align-items: center;
+				align-self: flex-end;
+				gap: 3px;
+				margin-bottom: -.4rem;
 
 				& p7t-icon {
-					height: 36px;
-					margin-bottom: -.3em;
+					height: 32px;
+					width: 32px;
+					flex: 0 0 32px;
 				}
 
 				& pre {
 					margin: 0;
 					font-size: .6em;
-
-					&::before {
-						content: '[';
-						opacity: .4;
-					}
-	
-					&::after {
-						content: ']';
-						opacity: .4;
-					}
 				}
 
 			}
@@ -128,7 +133,10 @@ export class EntityBanner<T> extends Component {
 		return html`
 			<div class='render-grid'>
 				<p7t-icon class='icon' icon='${this.icon}'></p7t-icon>
-				<h2>${this.heading}</h2>
+				<div class='heading'>
+					<span class='subheading'>${this.subheading}</span>
+					<h1>${this.heading}</h1>
+				</div>
 				<span class='indicator'></span>
 				<div class='info'>
 					${this.info}
@@ -145,6 +153,10 @@ export class EntityBanner<T> extends Component {
 	}
 
 	protected get heading() {
+		return html`${this.entity?.title}`
+	}
+
+	protected get subheading() {
 		return html`Pleiades Entity`
 	}
 

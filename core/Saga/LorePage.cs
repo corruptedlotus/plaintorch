@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using Pleiades.Puck;
 using Pleiades.Vault;
+using Pleiades.Vault.Markdown;
 
 namespace Pleiades.Saga;
 
@@ -17,6 +18,42 @@ namespace Pleiades.Saga;
 [Table("LoreIndexEntries")]
 public sealed class LorePage : PuckNamedEntity
 {
+	private static readonly IComparer<LorePage> _narrativeOrderComparer = Comparer<LorePage>.Create(CompareByNarrativeOrder);
+
+	/// <summary>
+	/// Gets the comparer used to order lore pages by hierarchical narrative index.
+	/// </summary>
+	public static IComparer<LorePage> NarrativeOrderComparer => _narrativeOrderComparer;
+
+	/// <summary>
+	/// Gets or sets the canonical lore PUCK persisted in frontmatter for path-override reconciliation.
+	/// </summary>
+	[NotMapped]
+	[MarkdownField("puck")]
+	public string? Puck
+	{
+		get => Id;
+		set
+		{
+			if (!string.IsNullOrWhiteSpace(value))
+			{
+				Id = value.Trim();
+			}
+		}
+	}
+
+	/// <summary>
+	/// Gets or sets an optional filename identifier override used for the terminal lore segment.
+	/// </summary>
+	[MarkdownField("overrideIdentifier")]
+	public string? OverrideIdentifier { get; set; }
+
+	/// <summary>
+	/// Gets or sets the optional beginning date for the lore period.
+	/// </summary>
+	[MarkdownField("beginning")]
+	public DateOnly? Beginning { get; set; }
+
 	/// <summary>
 	/// Gets or sets the parent lore page PUCK, when one exists.
 	/// </summary>
@@ -62,6 +99,67 @@ public sealed class LorePage : PuckNamedEntity
 	/// Gets or sets the parent lore navigation.
 	/// </summary>
 	public LorePage? Parent { get; set; }
+
+	/// <summary>
+	/// Gets the terminal PUCK segment.
+	/// </summary>
+	[NotMapped]
+	public string TerminalIdentifier => Id.Split('/').Last();
+
+	/// <summary>
+	/// Gets the identifier used for terminal folder and file naming.
+	/// </summary>
+	[NotMapped]
+	public string EffectiveIdentifier => string.IsNullOrWhiteSpace(OverrideIdentifier)
+		? TerminalIdentifier
+		: OverrideIdentifier.Trim();
+
+	/// <summary>
+	/// Determines whether the lore page was ongoing during a specific date.
+	/// </summary>
+	public bool WasOngoingIn(DateOnly date, DateOnly? endingExclusive)
+	{
+		if (Beginning is null)
+		{
+			return false;
+		}
+
+		if (date < Beginning.Value)
+		{
+			return false;
+		}
+
+		return endingExclusive is null || date < endingExclusive.Value;
+	}
+
+	/// <summary>
+	/// Determines whether the lore page is ongoing for a given date context.
+	/// </summary>
+	public bool IsOngoing(DateOnly? date = null, DateOnly? endingExclusive = null)
+	{
+		var effectiveDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+		return WasOngoingIn(effectiveDate, endingExclusive);
+	}
+
+	/// <summary>
+	/// Resolves the exclusive ending boundary from the next known sibling beginning.
+	/// </summary>
+	public static DateOnly? ResolveEndingExclusive(LorePage lorePage, IEnumerable<LorePage> siblings)
+	{
+		ArgumentNullException.ThrowIfNull(lorePage);
+		ArgumentNullException.ThrowIfNull(siblings);
+
+		if (lorePage.Beginning is null)
+		{
+			return null;
+		}
+
+		return siblings
+			.Where(item => item.Beginning is not null && item.Beginning.Value > lorePage.Beginning.Value)
+			.OrderBy(item => item.Beginning)
+			.Select(item => item.Beginning)
+			.FirstOrDefault();
+	}
 
 	/// <summary>
 	/// Applies saga lore composition from a canonical markdown path.
@@ -120,12 +218,6 @@ public sealed class LorePage : PuckNamedEntity
 			&& !string.Equals(currentDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), sagaRoot, StringComparison.OrdinalIgnoreCase))
 		{
 			var directoryName = Path.GetFileName(currentDirectory);
-			var primaryFile = Path.Combine(currentDirectory, $"{directoryName}.md");
-			if (!File.Exists(primaryFile))
-			{
-				return [];
-			}
-
 			result.Add(PuckNamedIdentity.ParseLoose(directoryName));
 			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
 		}
@@ -158,5 +250,57 @@ public sealed class LorePage : PuckNamedEntity
 
 		var digits = new string(match.SkipWhile(character => !char.IsDigit(character)).ToArray());
 		return int.TryParse(digits, out var parsed) ? parsed : null;
+	}
+
+	private static int CompareByNarrativeOrder(LorePage left, LorePage right)
+	{
+		ArgumentNullException.ThrowIfNull(left);
+		ArgumentNullException.ThrowIfNull(right);
+
+		var comparison = CompareNullableInt(left.Era, right.Era);
+		if (comparison != 0)
+		{
+			return comparison;
+		}
+
+		comparison = CompareNullableInt(left.Chapter, right.Chapter);
+		if (comparison != 0)
+		{
+			return comparison;
+		}
+
+		comparison = CompareNullableInt(left.Act, right.Act);
+		if (comparison != 0)
+		{
+			return comparison;
+		}
+
+		comparison = CompareNullableInt(left.Phase, right.Phase);
+		if (comparison != 0)
+		{
+			return comparison;
+		}
+
+		return string.Compare(left.TerminalIdentifier, right.TerminalIdentifier, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static int CompareNullableInt(int? left, int? right)
+	{
+		if (left.HasValue && right.HasValue)
+		{
+			return left.Value.CompareTo(right.Value);
+		}
+
+		if (left.HasValue)
+		{
+			return -1;
+		}
+
+		if (right.HasValue)
+		{
+			return 1;
+		}
+
+		return 0;
 	}
 }

@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.EntityFrameworkCore;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Saga;
@@ -24,6 +25,9 @@ public sealed class VaultMarkdownDiscoveryService(
 	/// <summary>
 	/// Scans all catalog-backed markdown paths and produces sync candidates.
 	/// </summary>
+	/// <param name="origin">The logical source performing the scan (for audit metadata).</param>
+	/// <param name="cancellationToken">A token used to cancel scan execution.</param>
+	/// <returns>A scan result containing discovered candidates and scan counters.</returns>
 	public async Task<VaultDiscoveryScanResult> ScanAsync(string origin, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(origin);
@@ -59,6 +63,10 @@ public sealed class VaultMarkdownDiscoveryService(
 	/// <summary>
 	/// Inspects a single path after a watcher event and returns a validated sync candidate when applicable.
 	/// </summary>
+	/// <param name="path">The filesystem path to inspect.</param>
+	/// <param name="origin">The logical source performing inspection.</param>
+	/// <param name="cancellationToken">A token used to cancel inspection.</param>
+	/// <returns>A resolved sync candidate, or <see langword="null"/> when the path is not managed.</returns>
 	public async Task<VaultSyncCandidate?> InspectPathAsync(string path, string origin, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -95,6 +103,13 @@ public sealed class VaultMarkdownDiscoveryService(
 		return candidate;
 	}
 
+	/// <summary>
+	/// Performs core inspection flow for a path by classifying, hydrating, validating, and deciding an action.
+	/// </summary>
+	/// <param name="path">The path to inspect.</param>
+	/// <param name="knownIdsByType">Cached identifier lookups grouped by entity type.</param>
+	/// <param name="cancellationToken">A token used to cancel inspection.</param>
+	/// <returns>A populated candidate when the path maps to a managed markdown entity; otherwise <see langword="null"/>.</returns>
 	private async Task<VaultSyncCandidate?> InspectPathCoreAsync(
 		string path,
 		IReadOnlyDictionary<Type, HashSet<string>> knownIdsByType,
@@ -134,6 +149,20 @@ public sealed class VaultMarkdownDiscoveryService(
 			.Select(issue => issue)
 			.ToList();
 		ApplyPathAuthorities(parsedModel, fullPath, issues);
+		if (parsedModel is IPuckNamedEntity resolvedNamedEntity)
+		{
+			if (!string.IsNullOrWhiteSpace(resolvedNamedEntity.Id))
+			{
+				pathId = resolvedNamedEntity.Id;
+			}
+
+			if (!string.IsNullOrWhiteSpace(resolvedNamedEntity.Title))
+			{
+				pathTitle = resolvedNamedEntity.Title;
+			}
+		}
+
+		await ApplyDomainValidationsAsync(parsedModel, issues, cancellationToken);
 
 		if (string.IsNullOrWhiteSpace(pathId) && puckCreationService.RequiresCallerInputFor(model.EntityType))
 		{
@@ -141,7 +170,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		}
 
 		var issueMessages = issues.Select(issue => $"{issue.FieldPath}: {issue.Message}").ToArray();
-		var (action, reason) = decisionService.Decide(model, pathId, issueMessages, knownIds);
+		var (action, reason) = decisionService.Decide(model, pathId, pathTitle, issueMessages, knownIds);
 
 		return new VaultSyncCandidate(
 			fullPath,
@@ -157,6 +186,95 @@ public sealed class VaultMarkdownDiscoveryService(
 			reason);
 	}
 
+	/// <summary>
+	/// Applies domain-specific validations that require cross-entity context not available in generic frontmatter validation.
+	/// </summary>
+	/// <param name="model">The parsed model being validated.</param>
+	/// <param name="issues">The mutable issue collection to append to.</param>
+	/// <param name="cancellationToken">A token used to cancel validation.</param>
+	private async Task ApplyDomainValidationsAsync(object model, ICollection<MarkdownValidationIssue> issues, CancellationToken cancellationToken)
+	{
+		if (model is not LorePage lorePage)
+		{
+			return;
+		}
+
+		var siblings = await context.LorePages
+			.AsNoTracking()
+			.Where(item => item.ParentId == lorePage.ParentId && item.Id != lorePage.Id)
+			.ToListAsync(cancellationToken);
+
+		var ordered = siblings
+			.Append(lorePage)
+			.OrderBy(item => item, LorePage.NarrativeOrderComparer)
+			.ToList();
+
+		var position = ordered.FindIndex(item => string.Equals(item.Id, lorePage.Id, StringComparison.OrdinalIgnoreCase));
+		if (position < 0)
+		{
+			return;
+		}
+
+		if (!string.IsNullOrWhiteSpace(lorePage.ParentId))
+		{
+			var parent = await context.LorePages
+				.AsNoTracking()
+				.FirstOrDefaultAsync(item => item.Id == lorePage.ParentId, cancellationToken);
+
+			if (parent is not null && position == 0 && lorePage.Beginning != parent.Beginning)
+			{
+				issues.Add(new MarkdownValidationIssue(
+					"beginning",
+					$"First child beginning must match parent beginning '{FormatDate(parent.Beginning)}'.",
+					FormatDate(lorePage.Beginning)));
+			}
+		}
+
+		if (lorePage.Beginning is null)
+		{
+			return;
+		}
+
+		var earlierWithLaterBeginning = ordered
+			.Take(position)
+			.FirstOrDefault(item => item.Beginning is not null && item.Beginning.Value > lorePage.Beginning.Value);
+
+		if (earlierWithLaterBeginning is not null)
+		{
+			issues.Add(new MarkdownValidationIssue(
+				"beginning",
+				"Lore beginning cannot be earlier than an earlier-index sibling beginning.",
+				FormatDate(lorePage.Beginning)));
+		}
+
+		var laterWithEarlierBeginning = ordered
+			.Skip(position + 1)
+			.FirstOrDefault(item => item.Beginning is not null && item.Beginning.Value < lorePage.Beginning.Value);
+
+		if (laterWithEarlierBeginning is not null)
+		{
+			issues.Add(new MarkdownValidationIssue(
+				"beginning",
+				"Lore beginning cannot be later than a later-index sibling beginning.",
+				FormatDate(lorePage.Beginning)));
+		}
+	}
+
+	/// <summary>
+	/// Formats a date value for human-readable validation payloads.
+	/// </summary>
+	/// <param name="date">The optional date to format.</param>
+	/// <returns>An ISO yyyy-MM-dd string, or <see langword="null"/>.</returns>
+	private static string? FormatDate(DateOnly? date)
+	{
+		return date?.ToString("yyyy-MM-dd");
+	}
+
+	/// <summary>
+	/// Loads known identifiers for each configured path sync model.
+	/// </summary>
+	/// <param name="cancellationToken">A token used to cancel the database fetch.</param>
+	/// <returns>A dictionary mapping entity types to their known identifiers.</returns>
 	private async Task<IReadOnlyDictionary<Type, HashSet<string>>> LoadKnownIdsAsync(CancellationToken cancellationToken)
 	{
 		var result = new Dictionary<Type, HashSet<string>>();
@@ -168,6 +286,14 @@ public sealed class VaultMarkdownDiscoveryService(
 		return result;
 	}
 
+	/// <summary>
+	/// Deserializes markdown frontmatter into a model instance using either strict or default-preserving behavior.
+	/// </summary>
+	/// <param name="model">The target model instance to hydrate.</param>
+	/// <param name="modelType">The CLR type of the model instance.</param>
+	/// <param name="markdown">The raw markdown text.</param>
+	/// <param name="preserveDefaultsForMissingFields">Whether missing fields should keep pre-initialized defaults.</param>
+	/// <returns>The validation issues produced during deserialization.</returns>
 	private IEnumerable<MarkdownValidationIssue> DeserializeInto(object model, Type modelType, string markdown, bool preserveDefaultsForMissingFields)
 	{
 		var method = typeof(MarkdownFrontMatterSerializer)
@@ -189,6 +315,12 @@ public sealed class VaultMarkdownDiscoveryService(
 			?? Array.Empty<MarkdownValidationIssue>());
 	}
 
+	/// <summary>
+	/// Creates a path-composed model instance and applies path-derived authorities before frontmatter hydration.
+	/// </summary>
+	/// <param name="entityType">The entity CLR type to instantiate.</param>
+	/// <param name="path">The candidate path supplying composition context.</param>
+	/// <returns>A newly created model populated with path-derived defaults.</returns>
 	private object CreatePathComposedModel(Type entityType, string path)
 	{
 		var model = Activator.CreateInstance(entityType)
@@ -213,6 +345,12 @@ public sealed class VaultMarkdownDiscoveryService(
 		return model;
 	}
 
+	/// <summary>
+	/// Applies authoritative path-derived relationships and identity fields over frontmatter values when conflicts occur.
+	/// </summary>
+	/// <param name="model">The hydrated model to normalize.</param>
+	/// <param name="path">The candidate source path.</param>
+	/// <param name="issues">The mutable issue collection to append relation mismatches to.</param>
 	private void ApplyPathAuthorities(object model, string path, ICollection<MarkdownValidationIssue> issues)
 	{
 		switch (model)
@@ -253,6 +391,11 @@ public sealed class VaultMarkdownDiscoveryService(
 		}
 	}
 
+	/// <summary>
+	/// Extracts markdown body content while removing YAML frontmatter delimiters and payload.
+	/// </summary>
+	/// <param name="markdown">The full markdown document.</param>
+	/// <returns>The markdown body section without frontmatter.</returns>
 	private static string ExtractBody(string markdown)
 	{
 		using var reader = new StringReader(markdown);
@@ -273,6 +416,11 @@ public sealed class VaultMarkdownDiscoveryService(
 		return reader.ReadToEnd().TrimStart('\r', '\n');
 	}
 
+	/// <summary>
+	/// Normalizes a potential frontmatter delimiter line (including BOM trimming).
+	/// </summary>
+	/// <param name="line">The raw line to normalize.</param>
+	/// <returns>The normalized delimiter candidate, or <see langword="null"/>.</returns>
 	private static string? NormalizeFrontMatterDelimiterLine(string? line)
 	{
 		if (line is null)
@@ -288,6 +436,11 @@ public sealed class VaultMarkdownDiscoveryService(
 		return line.Trim();
 	}
 
+	/// <summary>
+	/// Computes a stable SHA-256 hash string for body content comparison.
+	/// </summary>
+	/// <param name="value">The source value to hash.</param>
+	/// <returns>An uppercase hexadecimal SHA-256 digest.</returns>
 	private static string ComputeHash(string value)
 	{
 		var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));

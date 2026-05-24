@@ -10,23 +10,23 @@ public enum ObjectiveCollege
 	/// </summary>
 	Unspecified,
 	/// <summary>
-	/// Swords college.
+	/// Physical activity, chores, etc.
 	/// </summary>
 	Swords,
 	/// <summary>
-	/// Creation college.
+	/// Development and technical.
 	/// </summary>
 	Creation,
 	/// <summary>
-	/// Lore college.
+	/// Logistics and planning.
 	/// </summary>
 	Lore,
 	/// <summary>
-	/// Eloquence college.
+	/// Music and literature.
 	/// </summary>
 	Eloquence,
 	/// <summary>
-	/// Glamour college.
+	/// Visual arts.
 	/// </summary>
 	Glamour,
 }

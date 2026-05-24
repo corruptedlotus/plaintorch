@@ -12,12 +12,10 @@ export class CustomBanner implements PageBannerComponent {
 	}
 
 	render(document: HTMLDocument): HTMLElement {
-		const host = document.createElement("div")
+		const host = document.createElement("p7t-note-banner") as NoteBanner
 		host.className = "plaintorch-note-banner"
-		const banner = document.createElement("p7t-note-banner") as NoteBanner
-		banner.file = this.file
-		banner.app = this.app
-		host.appendChild(banner)
+		host.file = this.file
+		host.app = this.app
 		return host
 	}
 }

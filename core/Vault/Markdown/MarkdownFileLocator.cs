@@ -150,8 +150,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 			}
 		}
 
-		var terminalId = lorePage.Id.Split('/').Last();
-		var folderName = PuckNamedIdentity.FormatFileName(terminalId, lorePage.Title);
+		var folderName = PuckNamedIdentity.FormatFileName(lorePage.EffectiveIdentifier, lorePage.Title);
 		return Path.Combine(layout.SagaRoot, folderName, $"{folderName}.md");
 	}
 

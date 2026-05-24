@@ -10,6 +10,7 @@ import {
 import { PlaintorchObjectivesSdk } from "./objectives/objectivesSdk"
 import { PlaintorchOnrushSdk } from "./onrush/onrushSdk"
 import { PlaintorchPolarisSdk } from "./polaris/polarisSdk"
+import { PlaintorchLoreSdk } from "./lore/loreSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
 import { apiValueConstructor, ApiValueConstructor } from '@a11d/api'
 
@@ -33,6 +34,7 @@ export class PlaintorchCoreClient {
 	public readonly objectives: PlaintorchObjectivesSdk
 	public readonly onrush: PlaintorchOnrushSdk
 	public readonly polaris: PlaintorchPolarisSdk
+	public readonly lore: PlaintorchLoreSdk
 	public constructor(options: PlaintorchCoreClientOptions = {}) {
 		const host = options.host ?? defaultHost
 		const loopbackPort = options.loopbackPort ?? defaultLoopbackPort
@@ -49,6 +51,7 @@ export class PlaintorchCoreClient {
 		this.objectives = new PlaintorchObjectivesSdk(this)
 		this.onrush = new PlaintorchOnrushSdk(this)
 		this.polaris = new PlaintorchPolarisSdk(this)
+		this.lore = new PlaintorchLoreSdk(this)
 	}
 
 	public icon(icon: string): string {

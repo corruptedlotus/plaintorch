@@ -29,4 +29,9 @@ public interface IPlaintorchApi
 	/// Gets the Polaris cycle-facing API surface.
 	/// </summary>
 	IPolarisCycleApi PolarisCycles { get; }
+
+	/// <summary>
+	/// Gets the lore page-facing API surface.
+	/// </summary>
+	ILorePageApi LorePages { get; }
 }

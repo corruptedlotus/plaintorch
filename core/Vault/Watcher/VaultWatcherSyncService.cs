@@ -24,6 +24,9 @@ public sealed class VaultWatcherSyncService(
 	/// <summary>
 	/// Executes the suggested reconciliation action for a discovered candidate.
 	/// </summary>
+	/// <param name="candidate">The discovered candidate to reconcile.</param>
+	/// <param name="origin">The source initiating the reconciliation.</param>
+	/// <param name="cancellationToken">A token used to cancel reconciliation.</param>
 	public async Task ExecuteAsync(VaultSyncCandidate candidate, string origin, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(candidate);
@@ -72,9 +75,24 @@ public sealed class VaultWatcherSyncService(
 		}
 	}
 
+	/// <summary>
+	/// Creates a new entity from file-derived data and persists canonical markdown.
+	/// </summary>
+	/// <param name="candidate">The candidate used to create the entity.</param>
+	/// <param name="origin">The reconciliation source.</param>
+	/// <param name="cancellationToken">A token used to cancel processing.</param>
 	private async Task CreateFromFileAsync(VaultSyncCandidate candidate, string origin, CancellationToken cancellationToken)
 	{
 		var model = candidate.ParsedModel;
+		if (model is LorePage lorePage && !string.IsNullOrWhiteSpace(lorePage.ParentId))
+		{
+			var parentExists = await context.LorePages.AnyAsync(item => item.Id == lorePage.ParentId, cancellationToken);
+			if (!parentExists)
+			{
+				lorePage.ParentId = null;
+			}
+		}
+
 		if (model is not IPuckNamedEntity namedEntity)
 		{
 			throw new InvalidOperationException($"Watcher create-from-file requires a PUCK-named model, but '{candidate.Model.EntityName}' is not PUCK-backed.");
@@ -93,9 +111,13 @@ public sealed class VaultWatcherSyncService(
 
 		context.Add(model);
 		await context.SaveChangesAsync(cancellationToken);
-		await SaveCanonicalMarkdownAsync(model, sourcePath: candidate.AbsolutePath, cancellationToken: cancellationToken);
+		var shouldRewriteCanonical = string.IsNullOrWhiteSpace(candidate.PathId) || !candidate.IsValid;
+		if (shouldRewriteCanonical)
+		{
+			await SaveCanonicalMarkdownAsync(model, sourcePath: candidate.AbsolutePath, cancellationToken: cancellationToken);
+		}
 
-		if (ignoredPathId is null)
+		if (ignoredPathId is null && shouldRewriteCanonical)
 		{
 			logger.LogInformation(
 				"Watcher created {EntityType} '{EntityId}' from '{Path}' and rewrote canonical markdown.",
@@ -103,10 +125,27 @@ public sealed class VaultWatcherSyncService(
 				namedEntity.Id,
 				candidate.VaultRelativePath);
 		}
-		else
+		else if (ignoredPathId is null)
+		{
+			logger.LogInformation(
+				"Watcher created {EntityType} '{EntityId}' from '{Path}' without canonical rewrite because the file already matches authority.",
+				candidate.Model.EntityName,
+				namedEntity.Id,
+				candidate.VaultRelativePath);
+		}
+		else if (shouldRewriteCanonical)
 		{
 			logger.LogInformation(
 				"Watcher created {EntityType} '{EntityId}' from '{Path}' and rewrote canonical markdown, ignoring supplied path id '{IgnoredPathId}'.",
+				candidate.Model.EntityName,
+				namedEntity.Id,
+				candidate.VaultRelativePath,
+				ignoredPathId);
+		}
+		else
+		{
+			logger.LogInformation(
+				"Watcher created {EntityType} '{EntityId}' from '{Path}' without canonical rewrite, ignoring supplied path id '{IgnoredPathId}'.",
 				candidate.Model.EntityName,
 				namedEntity.Id,
 				candidate.VaultRelativePath,
@@ -117,10 +156,16 @@ public sealed class VaultWatcherSyncService(
 			"sync",
 			"create-from-file",
 			subject: model,
-			details: new { origin, candidate.VaultRelativePath, candidate.SuggestedReason, ignoredPathId },
+			details: new { origin, candidate.VaultRelativePath, candidate.SuggestedReason, ignoredPathId, canonicalRewriteApplied = shouldRewriteCanonical },
 			cancellationToken: cancellationToken);
 	}
 
+	/// <summary>
+	/// Updates an existing entity from file-derived data and rewrites canonical markdown when metadata changed.
+	/// </summary>
+	/// <param name="candidate">The candidate used to update the entity.</param>
+	/// <param name="origin">The reconciliation source.</param>
+	/// <param name="cancellationToken">A token used to cancel processing.</param>
 	private async Task UpdateFromFileAsync(VaultSyncCandidate candidate, string origin, CancellationToken cancellationToken)
 	{
 		if (string.IsNullOrWhiteSpace(candidate.PathId))
@@ -137,28 +182,81 @@ public sealed class VaultWatcherSyncService(
 		}
 
 		var previous = CloneEntity(existing);
-		context.Entry(existing).CurrentValues.SetValues(candidate.ParsedModel);
+		var existingEntry = context.Entry(existing);
+		existingEntry.CurrentValues.SetValues(candidate.ParsedModel);
+		if (existing is LorePage lorePage && !string.IsNullOrWhiteSpace(lorePage.ParentId))
+		{
+			var parentExists = await context.LorePages.AnyAsync(item => item.Id == lorePage.ParentId, cancellationToken);
+			if (!parentExists)
+			{
+				lorePage.ParentId = null;
+			}
+		}
+
 		if (existing is IPuckNamedEntity namedEntity && !string.IsNullOrWhiteSpace(candidate.PathTitle))
 		{
 			namedEntity.Title = candidate.PathTitle;
 		}
-		await context.SaveChangesAsync(cancellationToken);
-		await SaveCanonicalMarkdownAsync(existing, previous, candidate.AbsolutePath, cancellationToken);
 
-		logger.LogInformation(
-			"Watcher updated {EntityType} '{EntityId}' from '{Path}' and rewrote canonical markdown.",
-			candidate.Model.EntityName,
-			candidate.PathId,
-			candidate.VaultRelativePath);
+		if (!existingEntry.Properties.Any(property => property.IsModified))
+		{
+			logger.LogDebug(
+				"Watcher detected no metadata sync changes for {EntityType} '{EntityId}' from '{Path}'. Skipping rewrite.",
+				candidate.Model.EntityName,
+				candidate.PathId,
+				candidate.VaultRelativePath);
+
+			await auditLogService.WriteAsync(
+				"sync",
+				"update-skipped-noop",
+				subjectType: candidate.Model.EntityName,
+				subjectId: candidate.PathId,
+				subjectTitle: candidate.PathTitle,
+				details: new { origin, candidate.VaultRelativePath, reason = "No metadata changes detected." },
+				cancellationToken: cancellationToken);
+
+			return;
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+
+		var shouldRewriteCanonical = !candidate.IsValid;
+		if (shouldRewriteCanonical)
+		{
+			await SaveCanonicalMarkdownAsync(existing, previous, candidate.AbsolutePath, cancellationToken);
+		}
+
+		if (shouldRewriteCanonical)
+		{
+			logger.LogInformation(
+				"Watcher updated {EntityType} '{EntityId}' from '{Path}' and rewrote canonical markdown.",
+				candidate.Model.EntityName,
+				candidate.PathId,
+				candidate.VaultRelativePath);
+		}
+		else
+		{
+			logger.LogInformation(
+				"Watcher updated {EntityType} '{EntityId}' from '{Path}' without canonical rewrite because the file is authoritative.",
+				candidate.Model.EntityName,
+				candidate.PathId,
+				candidate.VaultRelativePath);
+		}
 
 		await auditLogService.WriteAsync(
 			"sync",
 			"update-from-file",
 			subject: existing,
-			details: new { origin, candidate.VaultRelativePath, candidate.SuggestedReason },
+			details: new { origin, candidate.VaultRelativePath, candidate.SuggestedReason, canonicalRewriteApplied = shouldRewriteCanonical },
 			cancellationToken: cancellationToken);
 	}
 
+	/// <summary>
+	/// Rewrites canonical markdown from database state for a candidate that should not be trusted as file-authoritative.
+	/// </summary>
+	/// <param name="candidate">The candidate requesting rewrite.</param>
+	/// <param name="origin">The reconciliation source.</param>
+	/// <param name="cancellationToken">A token used to cancel processing.</param>
 	private async Task RewriteFromDatabaseAsync(VaultSyncCandidate candidate, string origin, CancellationToken cancellationToken)
 	{
 		if (string.IsNullOrWhiteSpace(candidate.PathId))
@@ -203,6 +301,12 @@ public sealed class VaultWatcherSyncService(
 			cancellationToken: cancellationToken);
 	}
 
+	/// <summary>
+	/// Purges a disallowed file candidate by archiving it and emitting audit metadata.
+	/// </summary>
+	/// <param name="candidate">The candidate to purge.</param>
+	/// <param name="origin">The reconciliation source.</param>
+	/// <param name="cancellationToken">A token used to cancel processing.</param>
 	private async Task PurgeFileAsync(VaultSyncCandidate candidate, string origin, CancellationToken cancellationToken)
 	{
 		writeBarrier.Suppress(candidate.AbsolutePath);
@@ -236,6 +340,13 @@ public sealed class VaultWatcherSyncService(
 			cancellationToken: cancellationToken);
 	}
 
+	/// <summary>
+	/// Loads an existing entity instance by type and identifier.
+	/// </summary>
+	/// <param name="entityType">The entity CLR type to query.</param>
+	/// <param name="id">The identifier of the entity.</param>
+	/// <param name="cancellationToken">A token used to cancel lookup.</param>
+	/// <returns>The existing entity instance, or <see langword="null"/> when not found.</returns>
 	private async Task<object?> LoadExistingAsync(Type entityType, string id, CancellationToken cancellationToken)
 	{
 		if (entityType == typeof(Directive))
@@ -266,6 +377,13 @@ public sealed class VaultWatcherSyncService(
 		throw new InvalidOperationException($"Watcher synchronization does not support entity type '{entityType.Name}'.");
 	}
 
+	/// <summary>
+	/// Saves canonical markdown for a supported entity type.
+	/// </summary>
+	/// <param name="entity">The entity whose markdown should be saved.</param>
+	/// <param name="previous">An optional previous snapshot used for rename/delete decisions.</param>
+	/// <param name="sourcePath">An optional source file path that triggered reconciliation.</param>
+	/// <param name="cancellationToken">A token used to cancel save operations.</param>
 	private async Task SaveCanonicalMarkdownAsync(object entity, object? previous = null, string? sourcePath = null, CancellationToken cancellationToken = default)
 	{
 		switch (entity)
@@ -290,6 +408,11 @@ public sealed class VaultWatcherSyncService(
 		}
 	}
 
+	/// <summary>
+	/// Creates an isolated clone snapshot used for diff-aware canonical rewrite workflows.
+	/// </summary>
+	/// <param name="entity">The entity instance to clone.</param>
+	/// <returns>A detached clone with relevant persisted fields copied.</returns>
 	private static object CloneEntity(object entity)
 	{
 		return entity switch
@@ -343,6 +466,8 @@ public sealed class VaultWatcherSyncService(
 			{
 				Id = lorePage.Id,
 				Title = lorePage.Title,
+				OverrideIdentifier = lorePage.OverrideIdentifier,
+				Beginning = lorePage.Beginning,
 				ParentId = lorePage.ParentId,
 				Level = lorePage.Level,
 				RelativePath = lorePage.RelativePath,

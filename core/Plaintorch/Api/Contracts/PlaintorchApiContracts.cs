@@ -92,6 +92,23 @@ public sealed record VaultNoteAuthorityResolution(
 	string? Title = null);
 
 /// <summary>
+/// Represents a saga lore page payload exposed by the API.
+/// </summary>
+public sealed record LorePageRecord(
+	string Puck,
+	string Title,
+	string? OverrideIdentifier,
+	string? ParentPuck,
+	DateOnly? Beginning,
+	string Level,
+	string RelativePath,
+	int? Era,
+	int? Chapter,
+	int? Act,
+	int? Phase,
+	DateTimeOffset IndexedUtc);
+
+/// <summary>
 /// Represents a generic text search request used by list/find style API actions.
 /// </summary>
 /// <param name="Query">The query text to search for.</param>

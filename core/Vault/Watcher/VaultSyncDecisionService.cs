@@ -10,18 +10,37 @@ public sealed class VaultSyncDecisionService(PuckCreationService puckCreationSer
 	/// <summary>
 	/// Evaluates a discovered candidate against known entity identifiers and storage policy.
 	/// </summary>
-	public (VaultSyncAction Action, string Reason) Decide(VaultPathSyncModel model, string? pathId, IReadOnlyList<string> issueMessages, ISet<string> knownIds)
+	/// <param name="model">The path sync model classifying the candidate.</param>
+	/// <param name="pathId">The resolved candidate identifier, when available.</param>
+	/// <param name="pathTitle">The resolved candidate title parsed from path/frontmatter.</param>
+	/// <param name="issueMessages">Validation issue messages produced while hydrating the candidate.</param>
+	/// <param name="knownIds">The known identifiers currently present in storage for the model type.</param>
+	/// <returns>A provisional action and explanatory reason for watcher reconciliation.</returns>
+	public (VaultSyncAction Action, string Reason) Decide(VaultPathSyncModel model, string? pathId, string pathTitle, IReadOnlyList<string> issueMessages, ISet<string> knownIds)
 	{
 		ArgumentNullException.ThrowIfNull(model);
+		ArgumentException.ThrowIfNullOrWhiteSpace(pathTitle);
 		ArgumentNullException.ThrowIfNull(issueMessages);
 		ArgumentNullException.ThrowIfNull(knownIds);
+
+		if (string.IsNullOrWhiteSpace(pathId) && IsUntitledPlaceholder(pathTitle))
+		{
+			return (VaultSyncAction.Ignore, "Untitled placeholder file is ignored until the user finalizes naming and identifier.");
+		}
 
 		var requiresCallerInput = puckCreationService.RequiresCallerInputFor(model.EntityType);
 		if (string.IsNullOrWhiteSpace(pathId))
 		{
 			if (requiresCallerInput)
 			{
-				return (VaultSyncAction.Conflict, "Path identity is missing required caller-provided PUCK input.");
+				return model.Mode switch
+				{
+					VaultStorageMode.Enforced => (VaultSyncAction.PurgeFile, "Path identity is missing required caller-provided PUCK input and enforced storage disallows unresolved files."),
+					VaultStorageMode.Optional => (VaultSyncAction.Ignore, "Path identity is missing required caller-provided PUCK input and optional storage cannot create entities from this file."),
+					VaultStorageMode.Synced => (VaultSyncAction.Conflict, "Path identity is missing required caller-provided PUCK input."),
+					VaultStorageMode.FileFirst => (VaultSyncAction.Conflict, "Path identity is missing required caller-provided PUCK input."),
+					_ => (VaultSyncAction.Conflict, "Path identity is missing required caller-provided PUCK input."),
+				};
 			}
 
 			return model.Mode switch
@@ -37,6 +56,16 @@ public sealed class VaultSyncDecisionService(PuckCreationService puckCreationSer
 		var exists = knownIds.Contains(pathId);
 		if (issueMessages.Count > 0)
 		{
+			if (!exists)
+			{
+				return model.Mode switch
+				{
+					VaultStorageMode.Enforced => (VaultSyncAction.PurgeFile, "Unknown file with validation issues is disallowed by enforced storage policy."),
+					VaultStorageMode.Optional => (VaultSyncAction.Ignore, "Optional storage does not create new entities from invalid standalone files."),
+					_ => (VaultSyncAction.Conflict, "Candidate has validation issues that require reconciliation."),
+				};
+			}
+
 			return exists && model.Mode != VaultStorageMode.FileFirst
 				? (VaultSyncAction.RewriteFromDatabase, "Candidate has validation issues and policy prefers canonical rewrite.")
 				: (VaultSyncAction.Conflict, "Candidate has validation issues that require reconciliation.");
@@ -55,5 +84,21 @@ public sealed class VaultSyncDecisionService(PuckCreationService puckCreationSer
 			VaultStorageMode.FileFirst => (VaultSyncAction.CreateFromFile, "File-first storage requires file-originated creation."),
 			_ => (VaultSyncAction.Conflict, "No storage policy matched the discovered file."),
 		};
+	}
+
+	private static bool IsUntitledPlaceholder(string pathTitle)
+	{
+		var trimmed = pathTitle.Trim();
+		if (string.Equals(trimmed, "Untitled", StringComparison.OrdinalIgnoreCase))
+		{
+			return true;
+		}
+
+		if (!trimmed.StartsWith("Untitled ", StringComparison.OrdinalIgnoreCase))
+		{
+			return false;
+		}
+
+		return int.TryParse(trimmed["Untitled ".Length..], out _);
 	}
 }

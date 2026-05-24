@@ -1,5 +1,5 @@
 import { component, html } from "@a11d/lit"
-import { EntityBanner } from '../EntityBanner'
+import { EntityBanner } from './EntityBanner'
 import { Objective } from '@pleiades/sdk'
 import { plaintorchNodeCoreClient as core } from "@pleiades/sdk/plaintorch/node"
 import { OnrushSprint } from "@pleiades/sdk"
@@ -26,6 +26,10 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 	}
 
 	protected override get heading() {
+		return html`${this.entity?.title ?? '???'}`
+	}
+	
+	protected override get subheading() {
 		return html`Pleiades Objective`
 	}
 

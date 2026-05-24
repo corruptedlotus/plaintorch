@@ -80,6 +80,8 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	/// <summary>
 	/// Enumerates existing markdown candidates discoverable for a specific model.
 	/// </summary>
+	/// <param name="model">The model whose scan roots and candidate predicate should be applied.</param>
+	/// <returns>The distinct set of markdown paths currently matching the model.</returns>
 	public IReadOnlyList<string> EnumerateCandidateMarkdownPaths(VaultPathSyncModel model)
 	{
 		ArgumentNullException.ThrowIfNull(model);
@@ -94,6 +96,10 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	/// <summary>
 	/// Resolves an incoming watcher path to an inspectable markdown path and model.
 	/// </summary>
+	/// <param name="path">The raw filesystem path raised by watcher events.</param>
+	/// <param name="markdownPath">Returns the markdown path to inspect when resolution succeeds.</param>
+	/// <param name="model">Returns the matched sync model when resolution succeeds.</param>
+	/// <returns><see langword="true"/> when a managed markdown candidate was resolved; otherwise <see langword="false"/>.</returns>
 	public bool TryResolveWatchPath(string path, out string? markdownPath, out VaultPathSyncModel? model)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -141,6 +147,9 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	/// <summary>
 	/// Resolves a sync model for a markdown path using only path location and file shape.
 	/// </summary>
+	/// <param name="path">The path to classify.</param>
+	/// <param name="model">Returns the matched model when classification succeeds.</param>
+	/// <returns><see langword="true"/> when a model matched; otherwise <see langword="false"/>.</returns>
 	public bool TryResolve(string path, out VaultPathSyncModel? model)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -154,6 +163,16 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 		return model is not null;
 	}
 
+	/// <summary>
+	/// Creates a strongly-typed sync model from vault storage metadata and runtime lookup delegates.
+	/// </summary>
+	/// <typeparam name="T">The entity type represented by the model.</typeparam>
+	/// <param name="layout">The active vault layout.</param>
+	/// <param name="scanRoots">The roots to scan for candidates.</param>
+	/// <param name="expectedShape">The expected storage shape for the entity.</param>
+	/// <param name="isCandidatePath">A predicate identifying candidate markdown paths.</param>
+	/// <param name="loadKnownIdsAsync">A delegate that loads known entity identifiers.</param>
+	/// <returns>A configured path sync model for the entity type.</returns>
 	private static VaultPathSyncModel CreateModel<T>(
 		VaultLayout layout,
 		IReadOnlyList<string> scanRoots,
@@ -180,12 +199,24 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 			loadKnownIdsAsync);
 	}
 
+	/// <summary>
+	/// Determines whether a full path is located under a specific scan root.
+	/// </summary>
+	/// <param name="fullPath">The path being tested.</param>
+	/// <param name="rootPath">The candidate root path.</param>
+	/// <returns><see langword="true"/> when the path is under the root; otherwise <see langword="false"/>.</returns>
 	private static bool IsPathUnderRoot(string fullPath, string rootPath)
 	{
 		var normalizedRoot = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
 		return fullPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
 	}
 
+	/// <summary>
+	/// Determines whether a markdown file path should be classified as an objective file.
+	/// </summary>
+	/// <param name="path">The markdown file path to classify.</param>
+	/// <param name="layout">The active vault layout.</param>
+	/// <returns><see langword="true"/> when the file is an objective markdown candidate.</returns>
 	private static bool IsObjectiveMarkdownFile(string path, VaultLayout layout)
 	{
 		if (!string.Equals(Path.GetExtension(path), ".md", StringComparison.OrdinalIgnoreCase))

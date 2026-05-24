@@ -5,6 +5,17 @@ namespace Pleiades.Vault.Watcher;
 /// <summary>
 /// Captures a path-resolved markdown candidate discovered during startup scan or watcher reconciliation.
 /// </summary>
+/// <param name="AbsolutePath">The absolute filesystem path to the markdown file being reconciled.</param>
+/// <param name="VaultRelativePath">The vault-relative path to the markdown file.</param>
+/// <param name="Model">The path sync model that classified the candidate.</param>
+/// <param name="PathId">The resolved identity parsed from path and/or frontmatter, when available.</param>
+/// <param name="PathTitle">The resolved title parsed from path and/or frontmatter.</param>
+/// <param name="ParsedModel">The domain model hydrated from path composition and frontmatter.</param>
+/// <param name="Issues">Validation issues discovered during candidate hydration.</param>
+/// <param name="BodyHash">A deterministic hash of markdown body content (excluding frontmatter).</param>
+/// <param name="LastWriteUtc">The file last-write timestamp observed for the candidate.</param>
+/// <param name="SuggestedAction">The provisional reconciliation action suggested for this candidate.</param>
+/// <param name="SuggestedReason">The human-readable reason explaining the suggested action.</param>
 public sealed record VaultSyncCandidate(
 	string AbsolutePath,
 	string VaultRelativePath,

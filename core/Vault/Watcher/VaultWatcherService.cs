@@ -20,7 +20,15 @@ public sealed class VaultWatcherService(
 	/// <inheritdoc />
 	protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 	{
-		await RunStartupScanAsync(stoppingToken);
+		try
+		{
+			await RunStartupScanAsync(stoppingToken);
+		}
+		catch (Exception exception)
+		{
+			logger.LogError(exception, "Vault startup discovery scan failed. Watcher will continue with live filesystem observation.");
+		}
+
 		InitializeWatchers();
 
 		using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
@@ -28,7 +36,15 @@ public sealed class VaultWatcherService(
 		{
 			while (await timer.WaitForNextTickAsync(stoppingToken))
 			{
-				await DrainPendingAsync(stoppingToken);
+				try
+				{
+					await DrainPendingAsync(stoppingToken);
+				}
+				catch (Exception exception)
+				{
+					logger.LogError(exception, "Vault watcher tick failed while draining pending paths. Processing will continue.");
+				}
+
 				writeBarrier.PruneExpired();
 			}
 		}
@@ -42,6 +58,10 @@ public sealed class VaultWatcherService(
 		}
 	}
 
+	/// <summary>
+	/// Runs startup scan reconciliation once before live filesystem observation begins.
+	/// </summary>
+	/// <param name="cancellationToken">A token used to cancel startup processing.</param>
 	private async Task RunStartupScanAsync(CancellationToken cancellationToken)
 	{
 		using var scope = scopeFactory.CreateScope();
@@ -71,10 +91,24 @@ public sealed class VaultWatcherService(
 					candidate.SuggestedAction);
 			}
 
-			await syncService.ExecuteAsync(candidate, "startup", cancellationToken);
+			try
+			{
+				await syncService.ExecuteAsync(candidate, "startup", cancellationToken);
+			}
+			catch (Exception exception)
+			{
+				logger.LogError(
+					exception,
+					"Watcher failed to process startup candidate '{Path}' for {EntityType}. Processing will continue.",
+					candidate.VaultRelativePath,
+					candidate.Model.EntityName);
+			}
 		}
 	}
 
+	/// <summary>
+	/// Initializes filesystem watchers for all active scan roots.
+	/// </summary>
 	private void InitializeWatchers()
 	{
 		foreach (var root in pathSyncModelCatalog.GetScanRoots())
@@ -84,30 +118,41 @@ public sealed class VaultWatcherService(
 				continue;
 			}
 
-			var watcher = new FileSystemWatcher(root)
+			try
 			{
-				IncludeSubdirectories = true,
-				Filter = "*",
-				NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
-				EnableRaisingEvents = true,
-			};
+				var watcher = new FileSystemWatcher(root)
+				{
+					IncludeSubdirectories = true,
+					Filter = "*",
+					NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+					EnableRaisingEvents = true,
+				};
 
-			watcher.Created += (_, eventArgs) => QueuePath(eventArgs.FullPath);
-			watcher.Changed += (_, eventArgs) => QueuePath(eventArgs.FullPath);
-			watcher.Deleted += (_, eventArgs) => QueuePath(eventArgs.FullPath);
-			watcher.Renamed += (_, eventArgs) =>
+				watcher.Created += (_, eventArgs) => QueuePath(eventArgs.FullPath);
+				watcher.Changed += (_, eventArgs) => QueuePath(eventArgs.FullPath);
+				watcher.Deleted += (_, eventArgs) => QueuePath(eventArgs.FullPath);
+				watcher.Renamed += (_, eventArgs) =>
+				{
+					QueuePath(eventArgs.OldFullPath);
+					QueuePath(eventArgs.FullPath);
+				};
+				watcher.Error += (_, eventArgs) => logger.LogWarning(eventArgs.GetException(), "Vault watcher encountered a filesystem watcher error for '{Root}'.", root);
+
+				_watchers.Add(watcher);
+			}
+			catch (Exception exception)
 			{
-				QueuePath(eventArgs.OldFullPath);
-				QueuePath(eventArgs.FullPath);
-			};
-			watcher.Error += (_, eventArgs) => logger.LogWarning(eventArgs.GetException(), "Vault watcher encountered a filesystem watcher error for '{Root}'.", root);
-
-			_watchers.Add(watcher);
+				logger.LogError(exception, "Vault watcher failed to initialize filesystem watcher for '{Root}'. Processing will continue for remaining roots.", root);
+			}
 		}
 
 		logger.LogInformation("Vault watcher initialized for {RootCount} root(s).", _watchers.Count);
 	}
 
+	/// <summary>
+	/// Queues a path for debounced inspection when it resolves to a supported markdown candidate.
+	/// </summary>
+	/// <param name="path">The raw watcher event path.</param>
 	private void QueuePath(string path)
 	{
 		if (string.IsNullOrWhiteSpace(path))
@@ -139,6 +184,10 @@ public sealed class VaultWatcherService(
 		_pendingPaths[fullPath] = DateTimeOffset.UtcNow.Add(DebounceWindow);
 	}
 
+	/// <summary>
+	/// Drains pending debounced paths whose due time has elapsed.
+	/// </summary>
+	/// <param name="cancellationToken">A token used to cancel draining.</param>
 	private async Task DrainPendingAsync(CancellationToken cancellationToken)
 	{
 		var now = DateTimeOffset.UtcNow;
@@ -154,16 +203,38 @@ public sealed class VaultWatcherService(
 				continue;
 			}
 
-			await InspectPathAsync(path, cancellationToken);
+			try
+			{
+				await InspectPathAsync(path, cancellationToken);
+			}
+			catch (Exception exception)
+			{
+				logger.LogError(exception, "Watcher failed to inspect path '{Path}'. Processing will continue.", path);
+			}
 		}
 	}
 
+	/// <summary>
+	/// Inspects a single path and executes the resulting synchronization action.
+	/// </summary>
+	/// <param name="path">The path to inspect.</param>
+	/// <param name="cancellationToken">A token used to cancel inspection.</param>
 	private async Task InspectPathAsync(string path, CancellationToken cancellationToken)
 	{
 		using var scope = scopeFactory.CreateScope();
 		var discovery = scope.ServiceProvider.GetRequiredService<VaultMarkdownDiscoveryService>();
 		var syncService = scope.ServiceProvider.GetRequiredService<VaultWatcherSyncService>();
-		var candidate = await discovery.InspectPathAsync(path, "watcher", cancellationToken);
+		VaultSyncCandidate? candidate;
+		try
+		{
+			candidate = await discovery.InspectPathAsync(path, "watcher", cancellationToken);
+		}
+		catch (Exception exception)
+		{
+			logger.LogError(exception, "Watcher discovery failed for path '{Path}'. Processing will continue.", path);
+			return;
+		}
+
 		if (candidate is null)
 		{
 			logger.LogDebug("Watcher ignored path '{Path}'.", path);
@@ -183,9 +254,23 @@ public sealed class VaultWatcherService(
 				candidate.Issues.Count);
 		}
 
-		await syncService.ExecuteAsync(candidate, "watcher", cancellationToken);
+		try
+		{
+			await syncService.ExecuteAsync(candidate, "watcher", cancellationToken);
+		}
+		catch (Exception exception)
+		{
+			logger.LogError(
+				exception,
+				"Watcher failed to process candidate '{Path}' for {EntityType}. Processing will continue.",
+				candidate.VaultRelativePath,
+				candidate.Model.EntityName);
+		}
 	}
 
+	/// <summary>
+	/// Disposes all active filesystem watchers.
+	/// </summary>
 	private void DisposeWatchers()
 	{
 		foreach (var watcher in _watchers)
