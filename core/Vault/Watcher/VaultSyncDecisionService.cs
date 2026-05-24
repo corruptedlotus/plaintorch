@@ -31,6 +31,11 @@ public sealed class VaultSyncDecisionService(PuckCreationService puckCreationSer
 		var requiresCallerInput = puckCreationService.RequiresCallerInputFor(model.EntityType);
 		if (string.IsNullOrWhiteSpace(pathId))
 		{
+			if (model.Mode == VaultStorageMode.Freeform)
+			{
+				return (VaultSyncAction.Ignore, "Freeform storage does not auto-create entities from files without frontmatter PUCK identity.");
+			}
+
 			if (requiresCallerInput)
 			{
 				return model.Mode switch
@@ -78,6 +83,7 @@ public sealed class VaultSyncDecisionService(PuckCreationService puckCreationSer
 
 		return model.Mode switch
 		{
+			VaultStorageMode.Freeform => (VaultSyncAction.PurgeFile, "Freeform storage rejects unknown frontmatter PUCK assertions."),
 			VaultStorageMode.Enforced => (VaultSyncAction.PurgeFile, "Unknown file is disallowed by enforced storage policy."),
 			VaultStorageMode.Optional => (VaultSyncAction.Ignore, "Optional storage does not create new entities from standalone files by default."),
 			VaultStorageMode.Synced => (VaultSyncAction.CreateFromFile, "Synced storage allows file-originated creation."),

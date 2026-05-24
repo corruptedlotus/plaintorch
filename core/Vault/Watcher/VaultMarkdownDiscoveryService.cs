@@ -20,7 +20,8 @@ public sealed class VaultMarkdownDiscoveryService(
 	MarkdownFrontMatterSerializer markdownSerializer,
 	VaultAuditLogService auditLogService,
 	VaultSyncDecisionService decisionService,
-	PuckCreationService puckCreationService)
+	PuckCreationService puckCreationService,
+	PuckEntityResolutionService puckEntityResolutionService)
 {
 	/// <summary>
 	/// Scans all catalog-backed markdown paths and produces sync candidates.
@@ -160,6 +161,21 @@ public sealed class VaultMarkdownDiscoveryService(
 			{
 				pathTitle = resolvedNamedEntity.Title;
 			}
+		}
+
+		if (parsedModel is Directive freeformDirective
+			&& model.Mode == VaultStorageMode.Freeform)
+		{
+			if (!string.IsNullOrWhiteSpace(pathId) && !knownIds.Contains(pathId))
+			{
+				var resolved = await puckEntityResolutionService.ResolveAsync(pathId, cancellationToken);
+				if (resolved.Exists && !string.Equals(resolved.EntityType, nameof(Directive), StringComparison.Ordinal))
+				{
+					return null;
+				}
+			}
+
+			freeformDirective.ParentDirectiveId = await ResolveFreeformDirectiveParentIdAsync(fullPath, pathId, knownIds, cancellationToken);
 		}
 
 		await ApplyDomainValidationsAsync(parsedModel, issues, cancellationToken);
@@ -389,6 +405,44 @@ public sealed class VaultMarkdownDiscoveryService(
 				lorePage.RelativePath = Path.GetRelativePath(layout.VaultRoot, path);
 				break;
 		}
+	}
+
+	private async Task<string?> ResolveFreeformDirectiveParentIdAsync(
+		string path,
+		string? currentDirectiveId,
+		ISet<string> knownDirectiveIds,
+		CancellationToken cancellationToken)
+	{
+		var currentDirectory = Path.GetDirectoryName(path);
+		while (!string.IsNullOrWhiteSpace(currentDirectory)
+			&& !string.Equals(currentDirectory, layout.VaultRoot, StringComparison.OrdinalIgnoreCase))
+		{
+			if (MarkdownFileLocator.IsSelfNamedDirectory(currentDirectory))
+			{
+				var primaryFile = Path.Combine(currentDirectory, $"{Path.GetFileName(currentDirectory)}.md");
+				var parsed = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(primaryFile);
+				var ancestorId = parsed.Id;
+				if (string.IsNullOrWhiteSpace(ancestorId) && File.Exists(primaryFile))
+				{
+					var frontMatter = markdownSerializer.ParseFrontMatter(await File.ReadAllTextAsync(primaryFile, cancellationToken));
+					if (frontMatter.TryGetValue("puck", out var rawPuck) && !string.IsNullOrWhiteSpace(rawPuck))
+					{
+						ancestorId = rawPuck.Trim().Trim('"');
+					}
+				}
+
+				if (!string.IsNullOrWhiteSpace(ancestorId)
+					&& !string.Equals(ancestorId, currentDirectiveId, StringComparison.OrdinalIgnoreCase)
+					&& knownDirectiveIds.Contains(ancestorId))
+				{
+					return ancestorId;
+				}
+			}
+
+			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
+		}
+
+		return null;
 	}
 
 	/// <summary>

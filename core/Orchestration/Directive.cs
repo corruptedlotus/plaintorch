@@ -12,10 +12,10 @@ namespace Pleiades.Orchestration;
 [PuckFormat("{S:6}")]
 [VaultStorage(
 	LocationKey = VaultLocationKeys.Directives,
+	Mode = VaultStorageMode.Freeform,
 	Shape = VaultStorageShape.SelfNamedDirectory,
 	ParentIdProperty = nameof(ParentDirectiveId),
-	ParentEntityType = typeof(Directive),
-	ParentDirectoryProperty = nameof(AlternativeLoreDirectory))]
+	ParentEntityType = typeof(Directive))]
 [Index(nameof(Codename), IsUnique = true)]
 public sealed class Directive : PuckNamedEntity
 {
@@ -61,12 +61,6 @@ public sealed class Directive : PuckNamedEntity
 	/// </summary>
 	[MarkdownField("due")]
 	public DateOnly? Due { get; set; }
-
-	/// <summary>
-	/// Gets or sets an optional alternate lore directory.
-	/// </summary>
-	[MarkdownField("alternativeLoreDirectory")]
-	public string? AlternativeLoreDirectory { get; set; }
 
 	/// <summary>
 	/// Gets or sets the optional directive start date.

@@ -113,7 +113,6 @@ public sealed class PlaintorchRepository(PlainfraContext context)
 			existing.Status = directive.Status;
 			existing.Tags = directive.Tags.ToList();
 			existing.Due = directive.Due;
-			existing.AlternativeLoreDirectory = directive.AlternativeLoreDirectory;
 			existing.StartDate = directive.StartDate;
 			existing.EndDate = directive.EndDate;
 		}

@@ -10,6 +10,11 @@ public sealed record CreateDirectiveRequest(
 	string? ParentDirectiveId = null);
 
 /// <summary>
+/// Represents the transport payload used to initialize a directive from an existing vault file.
+/// </summary>
+public sealed record InitDirectiveRequest(string Path);
+
+/// <summary>
 /// Represents the transport payload used to create an objective.
 /// </summary>
 public sealed record CreateObjectiveRequest(

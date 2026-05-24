@@ -3,6 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using System.Reflection;
 using System.Text.Json;
 using Pleiades.Puck;
+using Pleiades.Vault;
 
 namespace Pleiades.Vault.Markdown;
 
@@ -12,6 +13,7 @@ namespace Pleiades.Vault.Markdown;
 public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 {
 	private static readonly NullabilityInfoContext NullabilityContext = new();
+	private const string FreeformPuckFieldName = "puck";
 
 	/// <summary>
 	/// Serializes a model into markdown with frontmatter and an optional body.
@@ -25,6 +27,11 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		ArgumentNullException.ThrowIfNull(model);
 
 		var lines = new List<string> { "---" };
+		if (TryGetFreeformPuckValue(model, out var freeformPuck))
+		{
+			lines.Add($"{FreeformPuckFieldName}: {FormatScalar(freeformPuck)}");
+		}
+
 		foreach (var property in GetAnnotatedProperties(model.GetType()))
 		{
 			var attribute = property.GetCustomAttribute<MarkdownFieldAttribute>()!;
@@ -145,9 +152,57 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 
 		var frontMatter = ParseFrontMatter(markdown);
 		var issues = new List<MarkdownValidationIssue>();
+		ApplyFreeformPuckIdentity(model, frontMatter, issues);
 		PopulateAnnotatedProperties(model, typeof(T), frontMatter, issues, null, validateMissingFields);
 		ValidateNestedAnnotatedProperties(model, typeof(T), issues, null);
 		return new MarkdownDeserializationResult<T>(model, issues);
+	}
+
+	private static bool TryGetFreeformPuckValue<T>(T model, out string puck)
+	{
+		puck = string.Empty;
+		if (model is not IPuckNamedEntity namedEntity)
+		{
+			return false;
+		}
+
+		if (!HasFreeformStoragePolicy(model.GetType()) || string.IsNullOrWhiteSpace(namedEntity.Id))
+		{
+			return false;
+		}
+
+		puck = namedEntity.Id.Trim();
+		return true;
+	}
+
+	private static bool HasFreeformStoragePolicy(Type modelType)
+	{
+		var storage = modelType.GetCustomAttribute<VaultStorageAttribute>();
+		return storage?.Mode == VaultStorageMode.Freeform;
+	}
+
+	private static void ApplyFreeformPuckIdentity(
+		object model,
+		IReadOnlyDictionary<string, string> frontMatter,
+		ICollection<MarkdownValidationIssue> issues)
+	{
+		if (model is not IPuckNamedEntity namedEntity || !HasFreeformStoragePolicy(model.GetType()))
+		{
+			return;
+		}
+
+		if (!frontMatter.TryGetValue(FreeformPuckFieldName, out var rawPuck))
+		{
+			return;
+		}
+
+		if (string.IsNullOrWhiteSpace(rawPuck))
+		{
+			issues.Add(new MarkdownValidationIssue(FreeformPuckFieldName, "Field cannot be empty.", rawPuck));
+			return;
+		}
+
+		namedEntity.Id = UnwrapString(rawPuck);
 	}
 
 	/// <summary>

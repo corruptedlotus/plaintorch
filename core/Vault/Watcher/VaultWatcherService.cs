@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Pleiades.Orchestration;
 using Pleiades.Vault.Markdown;
 
 namespace Pleiades.Vault.Watcher;
@@ -287,6 +288,13 @@ public sealed class VaultWatcherService(
 		}
 
 		var oldId = ResolvePathId(candidate.Model.EntityType, oldPath);
+		if (string.IsNullOrWhiteSpace(oldId)
+			&& candidate.Model.EntityType == typeof(Directive)
+			&& candidate.Model.Mode == VaultStorageMode.Freeform)
+		{
+			oldId = candidate.PathId;
+		}
+
 		if (string.IsNullOrWhiteSpace(oldId)
 			|| !string.Equals(oldId, candidate.PathId, StringComparison.OrdinalIgnoreCase))
 		{

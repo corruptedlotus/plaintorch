@@ -139,7 +139,6 @@ public sealed record DirectiveUpdate(
 	string? ParentDirectiveId = null,
 	IReadOnlyList<string>? Tags = null,
 	DateOnly? Due = null,
-	string? AlternativeLoreDirectory = null,
 	DateOnly? StartDate = null,
 	DateOnly? EndDate = null);
 

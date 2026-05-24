@@ -76,6 +76,31 @@ public sealed class VaultWatcherSyncService(
 	}
 
 	/// <summary>
+	/// Initializes an entity from a validated file candidate using the same creation logic as watcher create-from-file.
+	/// </summary>
+	public async Task InitializeFromFileAsync(VaultSyncCandidate candidate, string origin, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(candidate);
+		ArgumentException.ThrowIfNullOrWhiteSpace(origin);
+
+		if (!candidate.IsValid)
+		{
+			throw new InvalidOperationException($"Initialization rejected because candidate '{candidate.VaultRelativePath}' has validation issues.");
+		}
+
+		if (!string.IsNullOrWhiteSpace(candidate.PathId))
+		{
+			var existing = await LoadExistingAsync(candidate.Model.EntityType, candidate.PathId, cancellationToken);
+			if (existing is not null)
+			{
+				throw new InvalidOperationException($"Initialization rejected because entity '{candidate.PathId}' already exists.");
+			}
+		}
+
+		await CreateFromFileAsync(candidate, origin, cancellationToken);
+	}
+
+	/// <summary>
 	/// Creates a new entity from file-derived data and persists canonical markdown.
 	/// </summary>
 	/// <param name="candidate">The candidate used to create the entity.</param>
@@ -426,7 +451,6 @@ public sealed class VaultWatcherSyncService(
 				Status = directive.Status,
 				Tags = directive.Tags.ToList(),
 				Due = directive.Due,
-				AlternativeLoreDirectory = directive.AlternativeLoreDirectory,
 				StartDate = directive.StartDate,
 				EndDate = directive.EndDate,
 			},

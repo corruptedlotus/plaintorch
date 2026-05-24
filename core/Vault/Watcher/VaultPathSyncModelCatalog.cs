@@ -13,8 +13,9 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 {
 	private readonly IReadOnlyList<VaultPathSyncModel> _models =
 	[
-		CreateModel<Directive>(layout, [layout.DirectivesRoot], VaultStorageShape.SelfNamedDirectory, static path =>
-			MarkdownFileLocator.IsPrimarySelfNamedFile(path), static (context, cancellationToken) =>
+		CreateModel<Directive>(layout, [layout.VaultRoot], VaultStorageShape.SelfNamedDirectory, path =>
+			MarkdownFileLocator.IsPrimarySelfNamedFile(path)
+			&& !IsPathUnderRoot(path, layout.MetadataRoot), static (context, cancellationToken) =>
 			context.Directives
 				.AsNoTracking()
 				.Select(item => item.Id)

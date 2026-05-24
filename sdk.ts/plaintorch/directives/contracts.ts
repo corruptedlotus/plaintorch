@@ -1,5 +1,6 @@
 export type {
 	CreateDirectiveRequest,
+	InitDirectiveRequest,
 	Directive,
 	DirectiveStatus,
 	DirectiveUpdate,

@@ -5,6 +5,8 @@ using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Vault.Database;
+using Pleiades.Vault.Watcher;
+using Pleiades.Vault;
 
 namespace Pleiades.Plaintorch.Api.Services;
 
@@ -15,6 +17,9 @@ public sealed class DirectiveApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
 	PlaintorchMarkdownStorageService markdownFileService,
+	VaultLayout layout,
+	VaultMarkdownDiscoveryService watcherDiscoveryService,
+	VaultWatcherSyncService watcherSyncService,
 	VaultTemporalDataService temporalDataService,
 	VaultAuditLogService auditLogService) : IDirectiveApi
 {
@@ -113,11 +118,6 @@ public sealed class DirectiveApiService(
 			directive.Due = update.Due;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.AlternativeLoreDirectory))
-		{
-			directive.AlternativeLoreDirectory = update.AlternativeLoreDirectory;
-		}
-
 		if (update.StartDate is not null)
 		{
 			directive.StartDate = update.StartDate;
@@ -197,6 +197,40 @@ public sealed class DirectiveApiService(
 			cancellationToken: cancellationToken);
 	}
 
+	/// <inheritdoc />
+	public async Task<Directive> InitializeFromPathAsync(string vaultRelativePath, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(vaultRelativePath);
+		var normalizedRelativePath = vaultRelativePath
+			.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
+			.TrimStart(Path.DirectorySeparatorChar);
+		var absolutePath = Path.GetFullPath(Path.Combine(layout.VaultRoot, normalizedRelativePath));
+		var normalizedRoot = layout.VaultRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+
+		if (!absolutePath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+		{
+			throw new InvalidOperationException("Directive init path escapes the active vault root.");
+		}
+
+		var candidate = await watcherDiscoveryService.InspectPathAsync(absolutePath, "api-init", cancellationToken)
+			?? throw new InvalidOperationException($"Directive init path '{normalizedRelativePath}' is not a managed markdown candidate.");
+
+		if (candidate.Model.EntityType != typeof(Directive))
+		{
+			throw new InvalidOperationException($"Directive init path '{normalizedRelativePath}' resolved to '{candidate.Model.EntityName}', not Directive.");
+		}
+
+		await watcherSyncService.InitializeFromFileAsync(candidate, "api-init", cancellationToken);
+		var created = await context.Directives.FirstOrDefaultAsync(item => item.Id == ((PuckNamedEntity)candidate.ParsedModel).Id, cancellationToken);
+		if (created is null)
+		{
+			throw new InvalidOperationException("Directive initialization completed but the created entity could not be loaded.");
+		}
+
+		await auditLogService.WriteAsync("api", "directive.init", subject: created, details: new { path = normalizedRelativePath }, cancellationToken: cancellationToken);
+		return created;
+	}
+
 	private async Task<Directive> CreateInternalAsync(string title, string? codename, string? parentDirectiveId, string? requestedId, CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -227,7 +261,6 @@ public sealed class DirectiveApiService(
 			Status = directive.Status,
 			Tags = directive.Tags.ToList(),
 			Due = directive.Due,
-			AlternativeLoreDirectory = directive.AlternativeLoreDirectory,
 			StartDate = directive.StartDate,
 			EndDate = directive.EndDate,
 		};

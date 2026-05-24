@@ -105,6 +105,7 @@ public sealed class PlaintorchMarkdownStorageService(
 	{
 		var previousPath = previous is null ? null : await ResolveCanonicalPathAsync(previous, cancellationToken);
 		var newPath = await ResolveCanonicalPathAsync(entity, cancellationToken);
+		newPath = ResolveFreeformTargetPath(entity, newPath, sourcePath);
 		if (entity is LorePage lorePage && previous is LorePage previousLorePage
 			&& !string.Equals(lorePage.ParentId, previousLorePage.ParentId, StringComparison.OrdinalIgnoreCase))
 		{
@@ -124,6 +125,98 @@ public sealed class PlaintorchMarkdownStorageService(
 		await WriteMarkdownAsync(newPath, markdownSerializer.Serialize(entity, body), cancellationToken);
 		DeleteOldPath(previousPath, newPath, ResolveStorageRoot(entity.GetType()));
 		DeleteSourcePath(sourcePath, newPath);
+	}
+
+	private string ResolveFreeformTargetPath(object entity, string defaultPath, string? sourcePath)
+	{
+		var storage = GetStorageAttribute(entity.GetType());
+		if (storage.Mode != VaultStorageMode.Freeform || string.IsNullOrWhiteSpace(sourcePath))
+		{
+			return defaultPath;
+		}
+
+		var fullSourcePath = Path.GetFullPath(sourcePath);
+		if (!File.Exists(fullSourcePath))
+		{
+			return defaultPath;
+		}
+
+		if (IsAllowedFreeformAssertion(entity.GetType(), fullSourcePath))
+		{
+			return fullSourcePath;
+		}
+
+		return ResolveFreeformFallbackPath(defaultPath);
+	}
+
+	private bool IsAllowedFreeformAssertion(Type entityType, string fullSourcePath)
+	{
+		var sourceDirectory = Path.GetDirectoryName(fullSourcePath);
+		if (string.IsNullOrWhiteSpace(sourceDirectory))
+		{
+			return false;
+		}
+
+		if (IsKeyDirectory(sourceDirectory))
+		{
+			return false;
+		}
+
+		if (entityType == typeof(Directive))
+		{
+			var folder = Path.GetDirectoryName(fullSourcePath)!;
+			if (!string.Equals(Path.GetFileNameWithoutExtension(fullSourcePath), Path.GetFileName(folder), StringComparison.OrdinalIgnoreCase))
+			{
+				return false;
+			}
+
+			var parentDirectory = Directory.GetParent(folder)?.FullName;
+			if (!string.IsNullOrWhiteSpace(parentDirectory) && IsKeyDirectory(parentDirectory))
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	private bool IsKeyDirectory(string path)
+	{
+		var fullPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		var keyDirectories = new[]
+		{
+			layout.VaultRoot,
+			layout.MetadataRoot,
+			layout.DirectivesRoot,
+			layout.ObjectivesRoot,
+			layout.OnrushRoot,
+			layout.JournalRoot,
+			layout.SagaRoot,
+		};
+
+		return keyDirectories.Any(key => string.Equals(fullPath, key.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase));
+	}
+
+	private static string ResolveFreeformFallbackPath(string defaultPath)
+	{
+		var directory = Path.GetDirectoryName(defaultPath)
+			?? throw new InvalidOperationException("Freeform fallback path does not have a directory.");
+		var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(defaultPath);
+		var extension = Path.GetExtension(defaultPath);
+		var fallbackDirectory = directory;
+		var fallbackFileName = fileNameWithoutExtension;
+		var fallbackPath = defaultPath;
+		var suffix = 2;
+
+		while (File.Exists(fallbackPath) || Directory.Exists(fallbackDirectory))
+		{
+			fallbackDirectory = Path.Combine(Path.GetDirectoryName(directory) ?? directory, $"{Path.GetFileName(directory)} ({suffix})");
+			fallbackFileName = $"{fileNameWithoutExtension} ({suffix})";
+			fallbackPath = Path.Combine(fallbackDirectory, $"{fallbackFileName}{extension}");
+			suffix++;
+		}
+
+		return fallbackPath;
 	}
 
 	private void TryRelocateSelfNamedDirectory(string? previousPath, string newPath, Type entityType)

@@ -57,7 +57,11 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	{
 		ArgumentNullException.ThrowIfNull(directive);
 		EnsureFileBacking<Directive>();
-		var folderName = PuckNamedIdentity.FormatFileName(directive.Id, directive.Title);
+		var storage = typeof(Directive).GetCustomAttribute<VaultStorageAttribute>()
+			?? throw new InvalidOperationException($"Type '{typeof(Directive).Name}' is not configured for vault markdown storage.");
+		var folderName = storage.Mode == VaultStorageMode.Freeform
+			? PuckNamedIdentity.FormatTitleOnlyFileName(directive.Title)
+			: PuckNamedIdentity.FormatFileName(directive.Id, directive.Title);
 		var parentDirectory = ResolveDirectiveParentDirectory(directive, parentDirective);
 		return Path.Combine(parentDirectory, folderName);
 	}
@@ -78,7 +82,11 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	public string GetDirectiveFilePath(Directive directive, Directive? parentDirective)
 	{
 		ArgumentNullException.ThrowIfNull(directive);
-		var folderName = PuckNamedIdentity.FormatFileName(directive.Id, directive.Title);
+		var storage = typeof(Directive).GetCustomAttribute<VaultStorageAttribute>()
+			?? throw new InvalidOperationException($"Type '{typeof(Directive).Name}' is not configured for vault markdown storage.");
+		var folderName = storage.Mode == VaultStorageMode.Freeform
+			? PuckNamedIdentity.FormatTitleOnlyFileName(directive.Title)
+			: PuckNamedIdentity.FormatFileName(directive.Id, directive.Title);
 		var directory = GetDirectiveDirectoryPath(directive, parentDirective);
 		return Path.Combine(directory, $"{folderName}.md");
 	}
@@ -306,11 +314,6 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 
 	private string ResolveDirectiveParentDirectory(Directive directive, Directive? parentDirective)
 	{
-		if (!string.IsNullOrWhiteSpace(directive.AlternativeLoreDirectory))
-		{
-			return ResolveVaultRelativeDirectory(directive.AlternativeLoreDirectory);
-		}
-
 		if (parentDirective is not null)
 		{
 			return ResolvePartitionedParentDirectory(typeof(Directive), GetDirectiveDirectoryPath(parentDirective, parentDirective.ParentDirective));
@@ -341,15 +344,4 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 		return Path.Combine(parentDirectory, partition);
 	}
 
-	private string ResolveVaultRelativeDirectory(string relativeDirectory)
-	{
-		var combined = Path.GetFullPath(Path.Combine(layout.VaultRoot, relativeDirectory));
-		var normalizedRoot = layout.VaultRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-		if (!combined.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase) && !string.Equals(combined, layout.VaultRoot, StringComparison.OrdinalIgnoreCase))
-		{
-			throw new InvalidOperationException($"Vault-relative directory '{relativeDirectory}' escapes the active vault root.");
-		}
-
-		return combined;
-	}
 }

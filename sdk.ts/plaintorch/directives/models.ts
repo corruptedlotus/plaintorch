@@ -17,7 +17,6 @@ export interface Directive {
 	status: DirectiveStatus
 	tags: string[]
 	due: string | undefined
-	alternativeLoreDirectory: string | undefined
 	startDate: string | undefined
 	endDate: string | undefined
 	objectives: Objective[]
@@ -30,13 +29,16 @@ export interface CreateDirectiveRequest {
 	parentDirectiveId?: string | undefined
 }
 
+export interface InitDirectiveRequest {
+	path: string
+}
+
 export interface DirectiveUpdate {
 	title?: string | undefined
 	codename?: string | undefined
 	parentDirectiveId?: string | undefined
 	tags?: string[] | undefined
 	due?: string | undefined
-	alternativeLoreDirectory?: string | undefined
 	startDate?: string | undefined
 	endDate?: string | undefined
 }

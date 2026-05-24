@@ -47,4 +47,9 @@ public interface IDirectiveApi
 	/// Deletes a directive.
 	/// </summary>
 	Task DeleteAsync(string directiveId, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Initializes a directive from an existing vault markdown path using watcher creation policy.
+	/// </summary>
+	Task<Directive> InitializeFromPathAsync(string vaultRelativePath, CancellationToken cancellationToken = default);
 }

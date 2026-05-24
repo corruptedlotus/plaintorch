@@ -35,6 +35,12 @@ public enum VaultStorageMode
 	/// Files that are not in the database will be purged.
 	/// </summary>
 	Enforced,
+
+	/// <summary>
+	/// Entities can be stored anywhere in the vault while keeping canonical core-authored defaults.
+	/// PUCK identity is expected from frontmatter instead of filename composition.
+	/// </summary>
+	Freeform,
 }
 
 /// <summary>

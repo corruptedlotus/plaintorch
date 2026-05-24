@@ -47,6 +47,9 @@ public sealed class DirectiveModule : Module
 			return Results.Created($"/api/directives/{directive.Id}", directive);
 		});
 
+		group.MapPost("/init", async (InitDirectiveRequest request, IDirectiveApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.InitializeFromPathAsync(request.Path, cancellationToken)));
+
 		group.MapPut("/{directiveId}", async (string directiveId, DirectiveUpdate request, IDirectiveApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateAsync(directiveId, request, cancellationToken)));
 

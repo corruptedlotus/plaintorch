@@ -2,6 +2,7 @@ import type { PlaintorchCoreClient } from "../coreClient"
 import type {
 	CreateDirectiveRequest,
 	Directive,
+	InitDirectiveRequest,
 	DirectiveUpdate,
 	DirectiveWorkflowShift,
 	DirectiveSummary
@@ -25,6 +26,10 @@ export class PlaintorchDirectivesSdk {
 
 	public async create(request: CreateDirectiveRequest): Promise<Directive | undefined> {
 		return await this.client.postForJson<Directive>("/api/directives", request)
+	}
+
+	public async init(request: InitDirectiveRequest): Promise<Directive | undefined> {
+		return await this.client.postForJson<Directive>("/api/directives/init", request)
 	}
 
 	public async update(directiveId: string, request: DirectiveUpdate): Promise<Directive | undefined> {
