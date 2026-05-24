@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Pleiades.Vault.Markdown;
 
 namespace Pleiades.Vault.Watcher;
 
@@ -10,11 +11,13 @@ namespace Pleiades.Vault.Watcher;
 public sealed class VaultWatcherService(
 	IServiceScopeFactory scopeFactory,
 	VaultPathSyncModelCatalog pathSyncModelCatalog,
+	VaultLayout layout,
 	VaultWatcherWriteBarrier writeBarrier,
 	ILogger<VaultWatcherService> logger) : BackgroundService
 {
 	private static readonly TimeSpan DebounceWindow = TimeSpan.FromMilliseconds(500);
 	private readonly ConcurrentDictionary<string, DateTimeOffset> _pendingPaths = new(StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, (string NewPath, DateTimeOffset DueAt)> _pendingRelocations = new(StringComparer.OrdinalIgnoreCase);
 	private readonly List<FileSystemWatcher> _watchers = [];
 
 	/// <inheritdoc />
@@ -133,6 +136,7 @@ public sealed class VaultWatcherService(
 				watcher.Deleted += (_, eventArgs) => QueuePath(eventArgs.FullPath);
 				watcher.Renamed += (_, eventArgs) =>
 				{
+					QueueRelocation(eventArgs.OldFullPath, eventArgs.FullPath);
 					QueuePath(eventArgs.OldFullPath);
 					QueuePath(eventArgs.FullPath);
 				};
@@ -191,6 +195,26 @@ public sealed class VaultWatcherService(
 	private async Task DrainPendingAsync(CancellationToken cancellationToken)
 	{
 		var now = DateTimeOffset.UtcNow;
+		var dueRelocations = _pendingRelocations
+			.Where(pair => pair.Value.DueAt <= now)
+			.Select(pair => (OldPath: pair.Key, pair.Value.NewPath))
+			.ToList();
+
+		foreach (var relocation in dueRelocations)
+		{
+			if (!_pendingRelocations.TryRemove(relocation.OldPath, out _))
+			{
+				continue;
+			}
+
+			var handled = await TryProcessRelocationAsync(relocation.OldPath, relocation.NewPath, cancellationToken);
+			if (handled)
+			{
+				_pendingPaths.TryRemove(relocation.OldPath, out _);
+				_pendingPaths.TryRemove(relocation.NewPath, out _);
+			}
+		}
+
 		var duePaths = _pendingPaths
 			.Where(pair => pair.Value <= now)
 			.Select(pair => pair.Key)
@@ -212,6 +236,91 @@ public sealed class VaultWatcherService(
 				logger.LogError(exception, "Watcher failed to inspect path '{Path}'. Processing will continue.", path);
 			}
 		}
+	}
+
+	private void QueueRelocation(string oldPath, string newPath)
+	{
+		if (string.IsNullOrWhiteSpace(oldPath) || string.IsNullOrWhiteSpace(newPath))
+		{
+			return;
+		}
+
+		if (!TryResolveInspectablePath(oldPath, out var inspectOld)
+			|| !TryResolveInspectablePath(newPath, out var inspectNew)
+			|| string.IsNullOrWhiteSpace(inspectOld)
+			|| string.IsNullOrWhiteSpace(inspectNew))
+		{
+			return;
+		}
+
+		_pendingRelocations[inspectOld] = (inspectNew, DateTimeOffset.UtcNow.Add(DebounceWindow));
+	}
+
+	private bool TryResolveInspectablePath(string path, out string? inspectPath)
+	{
+		if (pathSyncModelCatalog.TryResolveWatchPath(path, out inspectPath, out _)
+			&& !string.IsNullOrWhiteSpace(inspectPath))
+		{
+			inspectPath = Path.GetFullPath(inspectPath);
+			return true;
+		}
+
+		inspectPath = null;
+		return false;
+	}
+
+	private async Task<bool> TryProcessRelocationAsync(string oldPath, string newPath, CancellationToken cancellationToken)
+	{
+		if (writeBarrier.IsSuppressed(oldPath) || writeBarrier.IsSuppressed(newPath))
+		{
+			return false;
+		}
+
+		using var scope = scopeFactory.CreateScope();
+		var discovery = scope.ServiceProvider.GetRequiredService<VaultMarkdownDiscoveryService>();
+		var syncService = scope.ServiceProvider.GetRequiredService<VaultWatcherSyncService>();
+
+		var candidate = await discovery.InspectPathAsync(newPath, "watcher-relocation", cancellationToken);
+		if (candidate is null || string.IsNullOrWhiteSpace(candidate.PathId))
+		{
+			return false;
+		}
+
+		var oldId = ResolvePathId(candidate.Model.EntityType, oldPath);
+		if (string.IsNullOrWhiteSpace(oldId)
+			|| !string.Equals(oldId, candidate.PathId, StringComparison.OrdinalIgnoreCase))
+		{
+			return false;
+		}
+
+		logger.LogInformation(
+			"Watcher detected relocation from '{OldPath}' to '{NewPath}' for {EntityType} '{EntityId}' and will prioritize relocation sync.",
+			oldPath,
+			newPath,
+			candidate.Model.EntityName,
+			candidate.PathId);
+
+		await syncService.ExecuteAsync(candidate, "watcher-relocation", cancellationToken);
+		return true;
+	}
+
+	private string? ResolvePathId(Type entityType, string path)
+	{
+		if (entityType == typeof(Saga.LorePage))
+		{
+			var lore = new Saga.LorePage
+			{
+				Id = string.Empty,
+				Title = string.Empty,
+			};
+
+			return MarkdownFileLocator.ApplyLorePageCompositionFromPath(lore, path, layout.VaultRoot, layout.SagaRoot)
+				? lore.Id
+				: null;
+		}
+
+		var parsed = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(path);
+		return parsed.Id;
 	}
 
 	/// <summary>

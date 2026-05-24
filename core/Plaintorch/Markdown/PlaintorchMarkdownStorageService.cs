@@ -105,6 +105,14 @@ public sealed class PlaintorchMarkdownStorageService(
 	{
 		var previousPath = previous is null ? null : await ResolveCanonicalPathAsync(previous, cancellationToken);
 		var newPath = await ResolveCanonicalPathAsync(entity, cancellationToken);
+		if (entity is LorePage lorePage && previous is LorePage previousLorePage
+			&& !string.Equals(lorePage.ParentId, previousLorePage.ParentId, StringComparison.OrdinalIgnoreCase))
+		{
+			newPath = await ResolveLoreParentReassignmentPathAsync(lorePage, cancellationToken);
+			lorePage.RelativePath = Path.GetRelativePath(layout.VaultRoot, newPath);
+		}
+
+		TryRelocateSelfNamedDirectory(previousPath, newPath, entity.GetType());
 		var body = await ResolveBodyAsync(previousPath, sourcePath, newPath, cancellationToken);
 		SuppressWatcherPaths(
 			newPath,
@@ -116,6 +124,95 @@ public sealed class PlaintorchMarkdownStorageService(
 		await WriteMarkdownAsync(newPath, markdownSerializer.Serialize(entity, body), cancellationToken);
 		DeleteOldPath(previousPath, newPath, ResolveStorageRoot(entity.GetType()));
 		DeleteSourcePath(sourcePath, newPath);
+	}
+
+	private void TryRelocateSelfNamedDirectory(string? previousPath, string newPath, Type entityType)
+	{
+		if (string.IsNullOrWhiteSpace(previousPath)
+			|| string.Equals(previousPath, newPath, StringComparison.OrdinalIgnoreCase))
+		{
+			return;
+		}
+
+		var storage = GetStorageAttribute(entityType);
+		if (storage.Shape != VaultStorageShape.SelfNamedDirectory)
+		{
+			return;
+		}
+
+		var previousDirectory = Path.GetDirectoryName(previousPath);
+		var newDirectory = Path.GetDirectoryName(newPath);
+		if (string.IsNullOrWhiteSpace(previousDirectory)
+			|| string.IsNullOrWhiteSpace(newDirectory)
+			|| string.Equals(previousDirectory, newDirectory, StringComparison.OrdinalIgnoreCase)
+			|| !Directory.Exists(previousDirectory)
+			|| Directory.Exists(newDirectory))
+		{
+			return;
+		}
+
+		Directory.CreateDirectory(Path.GetDirectoryName(newDirectory)!);
+		SuppressWatcherPaths(previousDirectory, newDirectory, previousPath, newPath);
+		Directory.Move(previousDirectory, newDirectory);
+	}
+
+	private async Task<string> ResolveLoreParentReassignmentPathAsync(LorePage lorePage, CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(lorePage);
+
+		var folderName = PuckNamedIdentity.FormatFileName(lorePage.EffectiveIdentifier, lorePage.Title);
+		if (string.IsNullOrWhiteSpace(lorePage.ParentId))
+		{
+			if (string.Equals(lorePage.Level, "Cha", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(lorePage.Level, "Act", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(lorePage.Level, "p", StringComparison.OrdinalIgnoreCase))
+			{
+				throw new InvalidOperationException($"Lore page '{lorePage.Id}' cannot be reassigned vertically without a valid parent for level '{lorePage.Level}'.");
+			}
+
+			return Path.Combine(layout.SagaRoot, folderName, $"{folderName}.md");
+		}
+
+		var parent = await context.LorePages
+			.AsNoTracking()
+			.FirstOrDefaultAsync(item => item.Id == lorePage.ParentId, cancellationToken)
+			?? throw new InvalidOperationException($"Lore parent '{lorePage.ParentId}' was not found during reassignment sync.");
+
+		ValidateLoreParentReassignment(lorePage, parent);
+
+		var parentPath = await ResolveCanonicalPathAsync(parent, cancellationToken);
+		var parentDirectory = Path.GetDirectoryName(parentPath)
+			?? throw new InvalidOperationException($"Lore parent '{parent.Id}' canonical path does not have a valid directory.");
+
+		return Path.Combine(parentDirectory, folderName, $"{folderName}.md");
+	}
+
+	private static void ValidateLoreParentReassignment(LorePage lorePage, LorePage parent)
+	{
+		var expectedParentLevel = lorePage.Level.Trim().ToLowerInvariant() switch
+		{
+			"era" => null,
+			"cha" => "Era",
+			"act" => "Cha",
+			"p" => "Act",
+			_ => null,
+		};
+
+		if (expectedParentLevel is null)
+		{
+			if (string.Equals(lorePage.Level, "era", StringComparison.OrdinalIgnoreCase))
+			{
+				throw new InvalidOperationException($"Lore page '{lorePage.Id}' is level '{lorePage.Level}' and cannot be reassigned under parent '{parent.Id}'.");
+			}
+
+			return;
+		}
+
+		if (!string.Equals(parent.Level, expectedParentLevel, StringComparison.OrdinalIgnoreCase))
+		{
+			throw new InvalidOperationException(
+				$"Lore reassignment from '{lorePage.Id}' to parent '{parent.Id}' is vertical and not supported by the static nesting pattern. Expected parent level '{expectedParentLevel}', but found '{parent.Level}'.");
+		}
 	}
 
 	private async Task<FileGraveyardEntry?> DeleteEntityPathAsync(object entity, CancellationToken cancellationToken)
