@@ -104,9 +104,22 @@ public sealed class PuckNotationParser
 			return new PuckNumeratorPattern(PuckNumeratorKind.Manual);
 		}
 
-		if (token == "D")
+		if (token.Equals("D", StringComparison.OrdinalIgnoreCase))
 		{
-			return new PuckNumeratorPattern(PuckNumeratorKind.DateStamp);
+			return new PuckNumeratorPattern(PuckNumeratorKind.DateStamp, DateStampKind: PuckDateStampKind.Gregorian);
+		}
+
+		if (token.StartsWith("D:", StringComparison.OrdinalIgnoreCase))
+		{
+			var variant = token[2..].Trim();
+			var kind = variant.ToLowerInvariant() switch
+			{
+				"g" => PuckDateStampKind.Gregorian,
+				"p" => PuckDateStampKind.Pleiadean,
+				_ => throw new FormatException($"Unsupported date-stamp variant '{{{token}}}'. Use '{{D}}', '{{D:g}}', or '{{D:p}}'."),
+			};
+
+			return new PuckNumeratorPattern(PuckNumeratorKind.DateStamp, DateStampKind: kind);
 		}
 
 		if (token.StartsWith("S:", StringComparison.Ordinal))

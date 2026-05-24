@@ -59,7 +59,7 @@ public sealed class PuckIdService(PlainfraContext context, PuckNotationParser no
 			var numerator = segmentPattern.Numerator.Kind switch
 			{
 				PuckNumeratorKind.Manual => input.Numerator ?? throw new InvalidOperationException("Manual numerator missing for PUCK generation."),
-				PuckNumeratorKind.DateStamp => (input.Date ?? DateOnly.FromDateTime(DateTime.UtcNow)).ToString("yyyyMMdd", CultureInfo.InvariantCulture),
+				PuckNumeratorKind.DateStamp => PuckDateStampCodec.Format(input.Date ?? DateOnly.FromDateTime(DateTime.UtcNow), segmentPattern.Numerator.DateStampKind),
 				PuckNumeratorKind.Spiritgem => GenerateSpiritgem(context, segmentPattern.Numerator.Width),
 				PuckNumeratorKind.Incremental => GenerateIncremental(context, declaration, segmentPattern.Numerator.Width, segmentPattern.Numerator.Seed),
 				_ => throw new InvalidOperationException("Unsupported PUCK numerator kind."),

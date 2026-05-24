@@ -18,9 +18,25 @@ public enum PuckNumeratorKind
 	/// </summary>
 	Incremental,
 	/// <summary>
-	/// Uses a date stamp in <c>yyyyMMdd</c> format.
+	/// Uses a date stamp (Gregorian <c>yyyyMMdd</c> by default, or variant-specific format when configured).
 	/// </summary>
 	DateStamp,
+}
+
+/// <summary>
+/// Describes supported calendar variants for PUCK date-stamp numerators.
+/// </summary>
+public enum PuckDateStampKind
+{
+	/// <summary>
+	/// Uses Gregorian calendar date formatting (<c>yyyyMMdd</c>).
+	/// </summary>
+	Gregorian,
+
+	/// <summary>
+	/// Uses Pleiadean calendar date formatting (<c>yyyMdd</c>).
+	/// </summary>
+	Pleiadean,
 }
 
 /// <summary>
@@ -64,7 +80,11 @@ public enum PuckRepetitionMode
 /// <summary>
 /// Describes the numerator portion of a PUCK segment.
 /// </summary>
-public sealed record PuckNumeratorPattern(PuckNumeratorKind Kind, int Width = 0, long Seed = 0);
+public sealed record PuckNumeratorPattern(
+	PuckNumeratorKind Kind,
+	int Width = 0,
+	long Seed = 0,
+	PuckDateStampKind DateStampKind = PuckDateStampKind.Gregorian);
 
 /// <summary>
 /// Describes a single PUCK segment pattern.

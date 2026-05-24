@@ -170,7 +170,7 @@ public sealed class PuckTokenizer(PuckNotationParser notationParser, PuckRuntime
 
 		if (pattern.Numerator.Kind == PuckNumeratorKind.DateStamp)
 		{
-			dateValue = DateOnly.ParseExact(numerator, "yyyyMMdd", CultureInfo.InvariantCulture);
+			dateValue = PuckDateStampCodec.Parse(numerator, pattern.Numerator.DateStampKind);
 		}
 
 		return new PuckSegmentToken(
@@ -240,12 +240,7 @@ public sealed class PuckTokenizer(PuckNotationParser notationParser, PuckRuntime
 				break;
 
 			case PuckNumeratorKind.DateStamp:
-				if (numerator.Length != 8 || !numerator.All(char.IsDigit))
-				{
-					throw new FormatException($"Date-stamp PUCK numerator '{numerator}' must be an 8-digit date.");
-				}
-
-				DateOnly.ParseExact(numerator, "yyyyMMdd", CultureInfo.InvariantCulture);
+				PuckDateStampCodec.Parse(numerator, pattern.DateStampKind);
 				break;
 		}
 	}
