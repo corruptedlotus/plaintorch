@@ -1,5 +1,5 @@
 import type { PlaintorchCoreClient } from "../coreClient"
-import type { HealthStatus, SystemBrief, SystemBriefing, VaultNoteAuthorityResolution } from "./contracts"
+import type { EntityExistence, HealthStatus, SystemBrief, SystemBriefing, VaultNoteAuthorityResolution } from "./contracts"
 interface CacheEntry {
 	expiresAt: number
 	value: VaultNoteAuthorityResolution | undefined
@@ -35,6 +35,15 @@ export class PlaintorchSystemSdk {
 
 	public async getBrief(): Promise<SystemBrief | undefined> {
 		return await this.client.getJson<SystemBrief>("/api/system/brief")
+	}
+
+	public async resolveEntity(puck: string): Promise<EntityExistence | undefined> {
+		const normalizedPuck = puck.trim()
+		if (!normalizedPuck) {
+			return undefined
+		}
+
+		return await this.client.getJson<EntityExistence>(`/api/system/resolve/${encodeURIComponent(normalizedPuck)}`)
 	}
 
 	public async getHealth(): Promise<HealthStatus | undefined> {

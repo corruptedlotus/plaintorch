@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Pleiades.Puck;
 
@@ -9,11 +11,12 @@ namespace Pleiades.Puck;
 public sealed class PuckRuntimeCompilationCatalog(PuckNotationParser notationParser)
 {
 	private readonly ConcurrentDictionary<Type, PuckCompiledModel> _compiledByType = new();
+	private readonly ConcurrentDictionary<string, Type> _typeByDeclaration = new(StringComparer.Ordinal);
 
 	/// <summary>
 	/// Compiles all PUCK-managed entity declarations found in the current application domain.
 	/// </summary>
-	public void CompileForActiveVault()
+	public void CompileForActiveVault(IReadOnlyModel? model = null)
 	{
 		var puckTypes = AppDomain.CurrentDomain.GetAssemblies()
 			.Where(assembly => !assembly.IsDynamic)
@@ -31,9 +34,19 @@ public sealed class PuckRuntimeCompilationCatalog(PuckNotationParser notationPar
 			.Where(type => type.GetCustomAttribute<PuckFormatAttribute>() is not null)
 			.Distinct();
 
-		foreach (var puckType in puckTypes)
+		var compiled = puckTypes
+			.Select(CompileType)
+			.ToArray();
+
+		ValidateDeclarationUniqueness(compiled);
+		ValidateSiblingDiscriminatorBoundaries(compiled, model);
+
+		_compiledByType.Clear();
+		_typeByDeclaration.Clear();
+		foreach (var entry in compiled)
 		{
-			_compiledByType[puckType] = CompileType(puckType);
+			_compiledByType[entry.EntityType] = entry;
+			_typeByDeclaration[entry.Declaration] = entry.EntityType;
 		}
 	}
 
@@ -43,6 +56,7 @@ public sealed class PuckRuntimeCompilationCatalog(PuckNotationParser notationPar
 	public void Purge()
 	{
 		_compiledByType.Clear();
+		_typeByDeclaration.Clear();
 	}
 
 	/// <summary>
@@ -53,7 +67,36 @@ public sealed class PuckRuntimeCompilationCatalog(PuckNotationParser notationPar
 	public PuckCompiledModel GetCompiled(Type entityType)
 	{
 		ArgumentNullException.ThrowIfNull(entityType);
-		return _compiledByType.GetOrAdd(entityType, CompileType);
+		var compiled = _compiledByType.GetOrAdd(entityType, CompileType);
+		_typeByDeclaration.TryAdd(compiled.Declaration, compiled.EntityType);
+		return compiled;
+	}
+
+	/// <summary>
+	/// Gets all currently compiled PUCK models.
+	/// </summary>
+	public IReadOnlyList<PuckCompiledModel> GetAllCompiled()
+	{
+		return _compiledByType.Values
+			.OrderBy(item => item.EntityType.FullName, StringComparer.Ordinal)
+			.ToArray();
+	}
+
+	/// <summary>
+	/// Tries to resolve a compiled PUCK model by its declaration string.
+	/// </summary>
+	public bool TryGetByDeclaration(string declaration, out PuckCompiledModel? compiled)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(declaration);
+
+		compiled = null;
+		if (!_typeByDeclaration.TryGetValue(declaration, out var entityType))
+		{
+			return false;
+		}
+
+		compiled = GetCompiled(entityType);
+		return true;
 	}
 
 	private PuckCompiledModel CompileType(Type entityType)
@@ -73,5 +116,74 @@ public sealed class PuckRuntimeCompilationCatalog(PuckNotationParser notationPar
 			format.Notation,
 			notation,
 			requiresCallerInput);
+	}
+
+	private static void ValidateDeclarationUniqueness(IEnumerable<PuckCompiledModel> compiledModels)
+	{
+		var duplicates = compiledModels
+			.GroupBy(item => BuildDeclarationSignature(item.Notation), StringComparer.Ordinal)
+			.Where(group => group.Count() > 1)
+			.ToArray();
+
+		if (duplicates.Length == 0)
+		{
+			return;
+		}
+
+		var collisions = string.Join(", ", duplicates.Select(group => string.Join("|", group.Select(item => item.EntityType.Name).OrderBy(name => name, StringComparer.Ordinal))));
+		throw new InvalidOperationException($"PUCK declaration uniqueness validation failed. Ambiguous signatures detected for: {collisions}.");
+	}
+
+	private static void ValidateSiblingDiscriminatorBoundaries(IEnumerable<PuckCompiledModel> compiledModels, IReadOnlyModel? model)
+	{
+		if (model is null)
+		{
+			return;
+		}
+
+		var compiledByType = compiledModels.ToDictionary(item => item.EntityType);
+		var siblingGroups = model.GetEntityTypes()
+			.Where(entityType => entityType.ClrType is not null && compiledByType.ContainsKey(entityType.ClrType))
+			.GroupBy(entityType => $"{entityType.GetSchema() ?? string.Empty}:{entityType.GetTableName() ?? string.Empty}", StringComparer.Ordinal)
+			.Where(group => group.Count() > 1)
+			.ToArray();
+
+		foreach (var siblingGroup in siblingGroups)
+		{
+			foreach (var entityType in siblingGroup)
+			{
+				var compiled = compiledByType[entityType.ClrType];
+				var missingBoundary = compiled.Notation.Segments.Any(segment =>
+					!string.IsNullOrWhiteSpace(segment.StaticDiscriminator)
+					&& !segment.HasDiscriminatorBoundary);
+
+				if (missingBoundary)
+				{
+					throw new InvalidOperationException($"PUCK declaration '{compiled.Declaration}' for '{compiled.EntityType.Name}' must use explicit discriminator boundaries like '(x)' when discriminating sibling entities sharing table '{entityType.GetTableName()}'.");
+				}
+			}
+		}
+	}
+
+	private static string BuildDeclarationSignature(PuckNotation notation)
+	{
+		return string.Join(";", notation.Segments.Select(segment => string.Join(",",
+			Normalize(segment.StaticDiscriminator),
+			segment.HasDiscriminatorBoundary ? "b1" : "b0",
+			segment.UsesDynamicDiscriminator ? "d1" : "d0",
+			$"n{(int)segment.Numerator.Kind}",
+			$"w{segment.Numerator.Width}",
+			$"s{segment.Numerator.Seed}",
+			$"k{(int)segment.Numerator.DateStampKind}",
+			$"j{(int)segment.Nesting}",
+			segment.ForceNesting ? "f1" : "f0",
+			$"r{(int)segment.Repetition}")));
+	}
+
+	private static string Normalize(string? value)
+	{
+		return string.IsNullOrWhiteSpace(value)
+			? string.Empty
+			: value.Trim().ToLowerInvariant();
 	}
 }

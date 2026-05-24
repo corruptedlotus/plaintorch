@@ -8,7 +8,7 @@ namespace Pleiades.Orchestration;
 /// <summary>
 /// Represents an actionable objective attached to directives and optional onrush sprints.
 /// </summary>
-[PuckFormat("J{S:8}")]
+[PuckFormat("j{S:8}")]
 [VaultStorage(
 	LocationKey = VaultLocationKeys.Objectives,
 	Mode = VaultStorageMode.Synced,

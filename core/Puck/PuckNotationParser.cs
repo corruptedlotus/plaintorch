@@ -19,11 +19,29 @@ public sealed class PuckNotationParser
 		while (cursor < declaration.Length)
 		{
 			var usesDynamicDiscriminator = false;
+			var hasDiscriminatorBoundary = false;
 			string? staticDiscriminator = null;
 			if (declaration[cursor] == '*')
 			{
 				usesDynamicDiscriminator = true;
 				cursor++;
+			}
+			else if (declaration[cursor] == '(')
+			{
+				var boundaryEnd = declaration.IndexOf(')', cursor + 1);
+				if (boundaryEnd < 0)
+				{
+					throw new FormatException("PUCK declaration contains an unterminated discriminator boundary.");
+				}
+
+				if (boundaryEnd == cursor + 1)
+				{
+					throw new FormatException("PUCK discriminator boundary cannot be empty.");
+				}
+
+				staticDiscriminator = declaration[(cursor + 1)..boundaryEnd];
+				hasDiscriminatorBoundary = true;
+				cursor = boundaryEnd + 1;
 			}
 			else
 			{
@@ -77,7 +95,7 @@ public sealed class PuckNotationParser
 				}
 			}
 
-			segments.Add(new PuckSegmentPattern(staticDiscriminator, usesDynamicDiscriminator, numerator, nesting, forceNesting, repetition));
+			segments.Add(new PuckSegmentPattern(staticDiscriminator, hasDiscriminatorBoundary, usesDynamicDiscriminator, numerator, nesting, forceNesting, repetition));
 		}
 
 		return new PuckNotation(segments);

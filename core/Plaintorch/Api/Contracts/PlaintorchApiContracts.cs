@@ -92,6 +92,21 @@ public sealed record VaultNoteAuthorityResolution(
 	string? Title = null);
 
 /// <summary>
+/// Represents a PUCK resolution payload for system-level entity lookup.
+/// </summary>
+/// <param name="Puck">The PUCK identifier being resolved.</param>
+/// <param name="Exists">Indicates whether an entity exists for the provided PUCK.</param>
+/// <param name="EntityType">The resolved entity type name when found.</param>
+/// <param name="Entity">The resolved entity payload when found.</param>
+/// <param name="AssociatedNote">The associated vault-relative markdown path when found and file-backed.</param>
+public sealed record EntityExistence(
+	string Puck,
+	bool Exists,
+	string? EntityType = null,
+	object? Entity = null,
+	string? AssociatedNote = null);
+
+/// <summary>
 /// Represents a saga lore page payload exposed by the API.
 /// </summary>
 public sealed record LorePageRecord(

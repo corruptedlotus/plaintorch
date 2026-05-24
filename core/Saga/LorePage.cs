@@ -8,7 +8,7 @@ namespace Pleiades.Saga;
 /// <summary>
 /// Represents a saga lore page tracked as a file-first vault entity.
 /// </summary>
-[PuckFormat("Era{?}/Chapter{?}/Act{?}/Phase{?}")]
+[PuckFormat("Era{?}/Cha{?}/Act{?}/p{?}")]
 [VaultStorage(
 	LocationKey = VaultLocationKeys.Saga,
 	Mode = VaultStorageMode.FileFirst,

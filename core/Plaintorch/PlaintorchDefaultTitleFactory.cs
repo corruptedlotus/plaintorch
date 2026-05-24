@@ -1,5 +1,5 @@
-using System.Globalization;
 using Pleiades.Calendar;
+using Pleiades.Puck;
 
 namespace Pleiades.Plaintorch;
 
@@ -34,10 +34,28 @@ public static class PlaintorchDefaultTitleFactory
 	}
 
 	/// <summary>
-	/// Attempts to resolve an existing Gregorian date-stamp PUCK identifier into a date.
+	/// Attempts to resolve an existing Polaris PUCK date-stamp identifier into a date.
 	/// </summary>
-	public static bool TryResolveGregorianDate(string? id, out DateOnly date)
+	public static bool TryResolvePolarisDate(string? id, out DateOnly date)
 	{
-		return DateOnly.TryParseExact(id, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+		date = default;
+		if (string.IsNullOrWhiteSpace(id))
+		{
+			return false;
+		}
+
+		try
+		{
+			date = PuckDateStampCodec.Parse(id.Trim(), PuckDateStampKind.Pleiadean);
+			return true;
+		}
+		catch (FormatException)
+		{
+			return false;
+		}
+		catch (InvalidOperationException)
+		{
+			return false;
+		}
 	}
 }

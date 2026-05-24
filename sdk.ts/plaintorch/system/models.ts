@@ -16,6 +16,14 @@ export interface VaultNoteAuthorityResolution {
 	title: string | undefined
 }
 
+export interface EntityExistence {
+	puck: string
+	exists: boolean
+	entityType: string | undefined
+	entity: unknown
+	associatedNote: string | undefined
+}
+
 export interface SystemBriefingObjective {
 	id: string
 	title: string

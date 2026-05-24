@@ -118,7 +118,7 @@ public sealed class PlaintorchEngine(
 
 		if (string.IsNullOrWhiteSpace(cycle.Title))
 		{
-			cycle.Title = PlaintorchDefaultTitleFactory.TryResolveGregorianDate(cycle.Id, out var cycleDate)
+			cycle.Title = PlaintorchDefaultTitleFactory.TryResolvePolarisDate(cycle.Id, out var cycleDate)
 				? PlaintorchDefaultTitleFactory.CreatePolarisTitle(cycleDate)
 				: $"Polaris Cycle {cycle.Id}";
 		}

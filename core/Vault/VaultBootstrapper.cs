@@ -8,6 +8,7 @@ namespace Pleiades.Vault;
 /// </summary>
 public sealed class VaultBootstrapper(
 	VaultLayout layout,
+	PlainfraContext context,
 	PlainfraContextInitializer contextInitializer,
 	VaultStorageTopologyValidator topologyValidator,
 	PuckRuntimeCompilationCatalog puckRuntimeCompilationCatalog)
@@ -47,6 +48,6 @@ public sealed class VaultBootstrapper(
 
 	private void CompilePuckModels()
 	{
-		puckRuntimeCompilationCatalog.CompileForActiveVault();
+		puckRuntimeCompilationCatalog.CompileForActiveVault(context.Model);
 	}
 }

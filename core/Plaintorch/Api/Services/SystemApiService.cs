@@ -4,6 +4,7 @@ using Pleiades.Plaintorch.State;
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Calendar;
 using Pleiades.Orchestration;
+using Pleiades.Puck;
 using Pleiades.Saga;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
@@ -19,7 +20,8 @@ public sealed class SystemApiService(
 	PlaintorchStateService stateService,
 	PlainfraContext context,
 	VaultLayout layout,
-	VaultPathSyncModelCatalog pathSyncModelCatalog) : ISystemApi
+	VaultPathSyncModelCatalog pathSyncModelCatalog,
+	PuckEntityResolutionService puckEntityResolutionService) : ISystemApi
 {
 	/// <inheritdoc />
 	public async Task<SystemBrief> BriefAsync(CancellationToken cancellationToken = default)
@@ -105,6 +107,18 @@ public sealed class SystemApiService(
 			$"plaintorch-{entityKind}",
 			resolvedPuck,
 			resolvedTitle);
+	}
+
+	/// <inheritdoc />
+	public async Task<EntityExistence> ResolveEntityByPuckAsync(string id, CancellationToken cancellationToken = default)
+	{
+		var resolved = await puckEntityResolutionService.ResolveAsync(id, cancellationToken);
+		return new EntityExistence(
+			resolved.Id,
+			resolved.Exists,
+			resolved.EntityType,
+			resolved.Entity,
+			resolved.AssociatedNote);
 	}
 
 	private async Task<(string? Puck, string Title)> ResolveEntityIdentityAsync(

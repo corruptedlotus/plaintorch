@@ -6,5 +6,6 @@ export type {
 	SystemBriefingObjective,
 	SystemBriefingOnrushSprint,
 	SystemBriefingPolarisCycle,
+	EntityExistence,
 	VaultNoteAuthorityResolution
 } from "./models"

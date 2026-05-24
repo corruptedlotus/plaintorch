@@ -42,6 +42,7 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<PuckTokenizer>();
 		services.AddSingleton<PuckPathDiscriminabilityService>();
 		services.AddSingleton<PuckSemanticProjector>();
+		services.AddScoped<PuckEntityResolutionService>();
 		services.AddScoped<PuckCreationService>();
 		services.AddScoped<LoreIndexer>();
 		services.AddScoped<PuckIdService>();
