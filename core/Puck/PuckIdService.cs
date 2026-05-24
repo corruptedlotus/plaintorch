@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Vault.Database;
 
@@ -8,7 +7,7 @@ namespace Pleiades.Puck;
 /// <summary>
 /// Issues concrete PUCK identifiers and records their registry and sequence state.
 /// </summary>
-public sealed class PuckIdService(PlainfraContext context, PuckNotationParser notationParser)
+public sealed class PuckIdService(PlainfraContext context, PuckNotationParser notationParser, PuckRuntimeCompilationCatalog compilationCatalog)
 {
 	private readonly Random _random = Random.Shared;
 
@@ -32,13 +31,8 @@ public sealed class PuckIdService(PlainfraContext context, PuckNotationParser no
 	public string GenerateIdFor(Type entityType, IReadOnlyList<PuckSegmentInput>? segments = null)
 	{
 		ArgumentNullException.ThrowIfNull(entityType);
-		var format = entityType.GetCustomAttribute<PuckFormatAttribute>();
-		if (format is null)
-		{
-			throw new InvalidOperationException($"Type '{entityType.Name}' is not decorated with {nameof(PuckFormatAttribute)} and cannot receive a centrally managed PUCK identifier.");
-		}
-
-		return GenerateId(format.Notation, segments);
+		var compiled = compilationCatalog.GetCompiled(entityType);
+		return GenerateId(compiled.Declaration, segments);
 	}
 
 	/// <summary>

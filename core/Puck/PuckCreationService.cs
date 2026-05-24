@@ -1,5 +1,3 @@
-using System.Reflection;
-
 namespace Pleiades.Puck;
 
 /// <summary>
@@ -7,7 +5,7 @@ namespace Pleiades.Puck;
 /// </summary>
 public sealed class PuckCreationService(
 	PuckIdService puckIdService,
-	PuckNotationParser notationParser,
+	PuckRuntimeCompilationCatalog compilationCatalog,
 	PuckTokenizer puckTokenizer)
 {
 	/// <summary>
@@ -24,8 +22,7 @@ public sealed class PuckCreationService(
 	public bool RequiresCallerInputFor(Type entityType)
 	{
 		ArgumentNullException.ThrowIfNull(entityType);
-		var notation = GetNotation(entityType);
-		return notation.Segments.Any(RequiresCallerInput);
+		return compilationCatalog.GetCompiled(entityType).RequiresCallerInput;
 	}
 
 	/// <summary>
@@ -42,8 +39,8 @@ public sealed class PuckCreationService(
 	public string CreateIdFor(Type entityType, string? requestedId = null, IReadOnlyList<PuckSegmentInput>? systemSegments = null)
 	{
 		ArgumentNullException.ThrowIfNull(entityType);
-		var notation = GetNotation(entityType);
-		if (!notation.Segments.Any(RequiresCallerInput))
+		var compiled = compilationCatalog.GetCompiled(entityType);
+		if (!compiled.RequiresCallerInput)
 		{
 			return puckIdService.GenerateIdFor(entityType, systemSegments);
 		}
@@ -53,13 +50,13 @@ public sealed class PuckCreationService(
 			throw new InvalidOperationException($"Type '{entityType.Name}' requires caller-provided PUCK input because its declaration contains manual or dynamic segments.");
 		}
 
-		var requestedTokens = puckTokenizer.TokenizeFor(entityType, requestedId);
-		if (requestedTokens.Segments.Count < notation.Segments.Count)
+		var requestedTokens = puckTokenizer.Tokenize(compiled.Notation, requestedId);
+		if (requestedTokens.Segments.Count < compiled.Notation.Segments.Count)
 		{
 			throw new InvalidOperationException($"Requested PUCK '{requestedId}' does not provide enough segments for type '{entityType.Name}'.");
 		}
 
-		var mergedInputs = MergeInputs(notation, requestedTokens, systemSegments);
+		var mergedInputs = MergeInputs(compiled.Notation, requestedTokens, systemSegments);
 		return puckIdService.GenerateIdFor(entityType, mergedInputs);
 	}
 
@@ -89,16 +86,5 @@ public sealed class PuckCreationService(
 	private static bool RequiresCallerInput(PuckSegmentPattern pattern)
 	{
 		return pattern.UsesDynamicDiscriminator || pattern.Numerator.Kind == PuckNumeratorKind.Manual;
-	}
-
-	private PuckNotation GetNotation(Type entityType)
-	{
-		var format = entityType.GetCustomAttribute<PuckFormatAttribute>();
-		if (format is null)
-		{
-			throw new InvalidOperationException($"Type '{entityType.Name}' is not decorated with {nameof(PuckFormatAttribute)} and cannot receive a centrally managed PUCK identifier.");
-		}
-
-		return notationParser.Parse(format.Notation);
 	}
 }

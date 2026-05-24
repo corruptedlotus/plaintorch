@@ -1,4 +1,5 @@
 using Pleiades.Vault;
+using Pleiades.Puck;
 
 namespace Pleiades.Plaintorch;
 
@@ -10,7 +11,8 @@ public sealed class PlaintorchCoreService(
 	ILogger<PlaintorchCoreService> logger,
 	PlaintorchVaultActivationService activationService,
 	VaultLayout layout,
-	PlaintorchCoreSplashService splashService) : BackgroundService
+	PlaintorchCoreSplashService splashService,
+	PuckRuntimeCompilationCatalog puckRuntimeCompilationCatalog) : BackgroundService
 {
 	/// <inheritdoc />
 	protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -38,11 +40,13 @@ public sealed class PlaintorchCoreService(
 		catch (OperationCanceledException)
 		{
 			await splashService.CloseAsync();
+			puckRuntimeCompilationCatalog.Purge();
 			logger.LogInformation("PLAINTORCH core stopping for vault '{VaultPath}'.", activeVault);
 		}
 		catch (Exception exception)
 		{
 			await splashService.ShowErrorAsync("PLAINTORCH core initialization failed.", exception, stoppingToken);
+			puckRuntimeCompilationCatalog.Purge();
 			logger.LogError(exception, "PLAINTORCH core failed to initialize for vault '{VaultPath}'.", activeVault);
 			throw;
 		}

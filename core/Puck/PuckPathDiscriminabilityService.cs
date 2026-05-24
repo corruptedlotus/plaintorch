@@ -1,11 +1,9 @@
-using System.Reflection;
-
 namespace Pleiades.Puck;
 
 /// <summary>
 /// Determines whether two PUCK-managed types are distinguishable from path identity alone.
 /// </summary>
-public sealed class PuckPathDiscriminabilityService(PuckNotationParser notationParser)
+public sealed class PuckPathDiscriminabilityService(PuckRuntimeCompilationCatalog compilationCatalog)
 {
 	/// <summary>
 	/// Determines whether two PUCK-managed types are distinguishable from their identifier prefixes.
@@ -15,10 +13,8 @@ public sealed class PuckPathDiscriminabilityService(PuckNotationParser notationP
 		ArgumentNullException.ThrowIfNull(leftType);
 		ArgumentNullException.ThrowIfNull(rightType);
 
-		var leftNotation = notationParser.Parse(GetNotation(leftType));
-		var rightNotation = notationParser.Parse(GetNotation(rightType));
-		var leftFirst = leftNotation.Segments.FirstOrDefault();
-		var rightFirst = rightNotation.Segments.FirstOrDefault();
+		var leftFirst = compilationCatalog.GetCompiled(leftType).FirstSegment;
+		var rightFirst = compilationCatalog.GetCompiled(rightType).FirstSegment;
 		if (leftFirst is null || rightFirst is null)
 		{
 			return false;
@@ -37,11 +33,4 @@ public sealed class PuckPathDiscriminabilityService(PuckNotationParser notationP
 		return false;
 	}
 
-	private static string GetNotation(Type entityType)
-	{
-		var attribute = entityType.GetCustomAttribute<PuckFormatAttribute>()
-			?? throw new InvalidOperationException($"Type '{entityType.Name}' is not decorated with {nameof(PuckFormatAttribute)}.");
-
-		return attribute.Notation;
-	}
 }

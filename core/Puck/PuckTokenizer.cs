@@ -1,12 +1,11 @@
 using System.Globalization;
-using System.Reflection;
 
 namespace Pleiades.Puck;
 
 /// <summary>
 /// Tokenizes concrete PUCK values using the original PUCK declaration as the single source of truth.
 /// </summary>
-public sealed class PuckTokenizer(PuckNotationParser notationParser)
+public sealed class PuckTokenizer(PuckNotationParser notationParser, PuckRuntimeCompilationCatalog compilationCatalog)
 {
 	/// <summary>
 	/// Tokenizes a PUCK value for a type decorated with <see cref="PuckFormatAttribute"/>.
@@ -28,13 +27,30 @@ public sealed class PuckTokenizer(PuckNotationParser notationParser)
 	public PuckTokenization TokenizeFor(Type entityType, string puck)
 	{
 		ArgumentNullException.ThrowIfNull(entityType);
-		var format = entityType.GetCustomAttribute<PuckFormatAttribute>();
-		if (format is null)
+		return Tokenize(compilationCatalog.GetCompiled(entityType).Notation, puck);
+	}
+
+	/// <summary>
+	/// Tokenizes a concrete PUCK value using a precompiled notation model.
+	/// </summary>
+	/// <param name="notation">The precompiled notation.</param>
+	/// <param name="puck">The concrete PUCK value.</param>
+	/// <returns>The baseline tokenization.</returns>
+	public PuckTokenization Tokenize(PuckNotation notation, string puck)
+	{
+		ArgumentNullException.ThrowIfNull(notation);
+		ArgumentException.ThrowIfNullOrWhiteSpace(puck);
+
+		var segments = SplitSegments(puck);
+		var patterns = ExpandPatterns(notation, segments.Count);
+		var tokens = new List<PuckSegmentToken>(segments.Count);
+
+		for (var index = 0; index < segments.Count; index++)
 		{
-			throw new InvalidOperationException($"Type '{entityType.Name}' is not decorated with {nameof(PuckFormatAttribute)} and cannot be tokenized from a PUCK declaration.");
+			tokens.Add(ParseSegment(index, segments[index], patterns[index]));
 		}
 
-		return Tokenize(format.Notation, puck);
+		return new PuckTokenization(puck, notation, tokens);
 	}
 
 	/// <summary>
@@ -46,19 +62,7 @@ public sealed class PuckTokenizer(PuckNotationParser notationParser)
 	public PuckTokenization Tokenize(string declaration, string puck)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(declaration);
-		ArgumentException.ThrowIfNullOrWhiteSpace(puck);
-
-		var notation = notationParser.Parse(declaration);
-		var segments = SplitSegments(puck);
-		var patterns = ExpandPatterns(notation, segments.Count);
-		var tokens = new List<PuckSegmentToken>(segments.Count);
-
-		for (var index = 0; index < segments.Count; index++)
-		{
-			tokens.Add(ParseSegment(index, segments[index], patterns[index]));
-		}
-
-		return new PuckTokenization(puck, notation, tokens);
+		return Tokenize(notationParser.Parse(declaration), puck);
 	}
 
 	private static IReadOnlyList<string> SplitSegments(string puck)

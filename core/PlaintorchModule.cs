@@ -38,6 +38,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<VaultTemporalDataService>();
 		services.AddScoped<VaultAuditLogService>();
 		services.AddSingleton<PuckNotationParser>();
+		services.AddSingleton<PuckRuntimeCompilationCatalog>();
 		services.AddSingleton<PuckTokenizer>();
 		services.AddSingleton<PuckPathDiscriminabilityService>();
 		services.AddSingleton<PuckSemanticProjector>();
