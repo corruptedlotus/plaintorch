@@ -1,21 +1,7 @@
 using Pleiades.Orchestration;
+using Pleiades.Saga;
 
 namespace Pleiades.Plaintorch.Api.Contracts;
-
-/// <summary>
-/// Represents a compact system brief describing the currently active PLAINTORCH state.
-/// </summary>
-/// <param name="Timestamp">The service timestamp when the brief was produced.</param>
-/// <param name="ActiveVaultPath">The currently active vault path.</param>
-/// <param name="ActiveOnrushSprintId">The active onrush sprint identifier, when one exists.</param>
-/// <param name="ActivePolarisCycleId">The active Polaris cycle identifier, when one exists.</param>
-/// <param name="CelestronBanked">The currently banked Celestron total.</param>
-public sealed record SystemBrief(
-	DateTimeOffset Timestamp,
-	string ActiveVaultPath,
-	string? ActiveOnrushSprintId,
-	string? ActivePolarisCycleId,
-	int CelestronBanked);
 
 /// <summary>
 /// Represents the system-facing briefing payload used by the Obsidian briefing surface.
@@ -26,51 +12,10 @@ public sealed record SystemBriefing(
 	string ActiveVaultPath,
 	string PleiadeanToday,
 	int CelestronBanked,
-	SystemBriefingOnrushSprint? CurrentOnrush,
-	SystemBriefingPolarisCycle? CurrentPolaris);
-
-/// <summary>
-/// Represents an onrush sprint payload for the briefing surface.
-/// </summary>
-public sealed record SystemBriefingOnrushSprint(
-	string SelectionMode,
-	string Id,
-	string Title,
-	DateOnly? StartDate,
-	DateOnly? EndDate,
-	IReadOnlyList<SystemBriefingObjective> Objectives);
-
-/// <summary>
-/// Represents an objective summary for the briefing surface.
-/// </summary>
-public sealed record SystemBriefingObjective(
-	string Id,
-	string Title,
-	string Status,
-	string College,
-	int CelestronValue,
-	bool IsEnduring);
-
-/// <summary>
-/// Represents a Polaris cycle payload for the briefing surface.
-/// </summary>
-public sealed record SystemBriefingPolarisCycle(
-	string Id,
-	string Title,
-	DateTimeOffset? StartTime,
-	DateTimeOffset? EndTime,
-	bool IsForecast,
-	IReadOnlyList<SystemBriefingExecutive> Executives);
-
-/// <summary>
-/// Represents an executive summary for the briefing surface.
-/// </summary>
-public sealed record SystemBriefingExecutive(
-	long Id,
-	string? Title,
-	bool Executed,
-	string? ObjectiveId,
-	string? ObjectiveTitle);
+	string? OnrushSelectionMode,
+	OnrushSprint? CurrentOnrush,
+	PolarisCycle? CurrentPolaris,
+	IReadOnlyList<LorePage> ActiveLorePages);
 
 /// <summary>
 /// Represents the authoritative PLAINTORCH interpretation of a vault markdown path.

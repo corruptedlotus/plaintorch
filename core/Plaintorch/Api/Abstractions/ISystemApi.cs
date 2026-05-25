@@ -8,11 +8,6 @@ namespace Pleiades.Plaintorch.Api.Abstractions;
 public interface ISystemApi
 {
 	/// <summary>
-	/// Gets a compact system brief.
-	/// </summary>
-	Task<SystemBrief> BriefAsync(CancellationToken cancellationToken = default);
-
-	/// <summary>
 	/// Gets the richer system briefing payload for dashboard-like surfaces.
 	/// </summary>
 	Task<SystemBriefing> GetBriefingAsync(CancellationToken cancellationToken = default);

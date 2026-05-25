@@ -23,11 +23,6 @@ public sealed class SystemModule : Module
 	public override void ConfigureEndpoints(IEndpointRouteBuilder endpoints)
 	{
 		var group = endpoints.MapGroup("/api/system");
-		group.MapGet("/brief", async (ISystemApi api, CancellationToken cancellationToken) =>
-		{
-			return Results.Ok(await api.BriefAsync(cancellationToken));
-		});
-
 		group.MapGet("/briefing", async (ISystemApi api, CancellationToken cancellationToken) =>
 		{
 			return Results.Ok(await api.GetBriefingAsync(cancellationToken));

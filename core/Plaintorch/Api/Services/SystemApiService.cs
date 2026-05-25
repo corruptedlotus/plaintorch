@@ -24,32 +24,24 @@ public sealed class SystemApiService(
 	PuckEntityResolutionService puckEntityResolutionService) : ISystemApi
 {
 	/// <inheritdoc />
-	public async Task<SystemBrief> BriefAsync(CancellationToken cancellationToken = default)
-	{
-		var activeOnrush = await stateService.GetActiveOnrushSprintAsync(cancellationToken);
-		var activePolaris = await stateService.GetActivePolarisCycleAsync(cancellationToken);
-		var banked = await stateService.GetCelestronBankedAsync(cancellationToken);
-
-		return new SystemBrief(
-			DateTimeOffset.UtcNow,
-			stateService.GetActiveVaultPath(),
-			activeOnrush?.Id,
-			activePolaris?.Id,
-			banked);
-	}
-
-	/// <inheritdoc />
 	public async Task<SystemBriefing> GetBriefingAsync(CancellationToken cancellationToken = default)
 	{
 		var activeOnrush = await stateService.GetActiveOnrushSprintAsync(cancellationToken);
+		var onrushSelectionMode = activeOnrush is not null ? "active" : "planning";
 		var briefingOnrush = activeOnrush is not null
-			? await LoadBriefingOnrushSprintAsync(activeOnrush.Id, "active", cancellationToken)
+			? await LoadOnrushSprintAsync(activeOnrush.Id, cancellationToken)
 			: await LoadPlanningOnrushSprintAsync(cancellationToken);
+		if (briefingOnrush is null)
+		{
+			onrushSelectionMode = null;
+		}
 
 		var activePolaris = await stateService.GetActivePolarisCycleAsync(cancellationToken);
 		var briefingPolaris = activePolaris is null
 			? null
-			: await LoadBriefingPolarisCycleAsync(activePolaris.Id, cancellationToken);
+			: await LoadPolarisCycleAsync(activePolaris.Id, cancellationToken);
+
+		var activeLorePages = await LoadActiveLorePagesAsync(cancellationToken);
 
 		return new SystemBriefing(
 			"ok",
@@ -57,8 +49,10 @@ public sealed class SystemApiService(
 			stateService.GetActiveVaultPath(),
 			PleiadeanCalendar.FromDateTime(DateTime.Today).ToString(),
 			await stateService.GetCelestronBankedAsync(cancellationToken),
+			onrushSelectionMode,
 			briefingOnrush,
-			briefingPolaris);
+			briefingPolaris,
+			activeLorePages);
 	}
 
 	/// <inheritdoc />
@@ -303,43 +297,23 @@ public sealed class SystemApiService(
 			|| fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 	}
 
-	private async Task<SystemBriefingOnrushSprint?> LoadPlanningOnrushSprintAsync(CancellationToken cancellationToken)
+	private async Task<OnrushSprint?> LoadPlanningOnrushSprintAsync(CancellationToken cancellationToken)
 	{
 		var planned = await stateService.GetPlanningOnrushSprintAsync(cancellationToken);
-		return planned is null ? null : await LoadBriefingOnrushSprintAsync(planned.Id, "planning", cancellationToken);
+		return planned is null ? null : await LoadOnrushSprintAsync(planned.Id, cancellationToken);
 	}
 
-	private async Task<SystemBriefingOnrushSprint?> LoadBriefingOnrushSprintAsync(string sprintId, string selectionMode, CancellationToken cancellationToken)
+	private async Task<OnrushSprint?> LoadOnrushSprintAsync(string sprintId, CancellationToken cancellationToken)
 	{
 		var sprint = await context.OnrushSprints
 			.AsNoTracking()
 			.Include(item => item.Objectives)
 			.FirstOrDefaultAsync(item => item.Id == sprintId, cancellationToken);
 
-		if (sprint is null)
-		{
-			return null;
-		}
-
-		return new SystemBriefingOnrushSprint(
-			selectionMode,
-			sprint.Id,
-			sprint.Title,
-			sprint.StartDate,
-			sprint.EndDate,
-			sprint.Objectives
-				.OrderBy(objective => objective.Title)
-				.Select(objective => new SystemBriefingObjective(
-					objective.Id,
-					objective.Title,
-					objective.Status.ToString(),
-					objective.College.ToString(),
-					objective.CelestronValue,
-					objective.IsEnduring))
-				.ToArray());
+		return sprint;
 	}
 
-	private async Task<SystemBriefingPolarisCycle?> LoadBriefingPolarisCycleAsync(string cycleId, CancellationToken cancellationToken)
+	private async Task<PolarisCycle?> LoadPolarisCycleAsync(string cycleId, CancellationToken cancellationToken)
 	{
 		var cycle = await context.PolarisCycles
 			.AsNoTracking()
@@ -347,25 +321,54 @@ public sealed class SystemApiService(
 				.ThenInclude(item => item.Objective)
 			.FirstOrDefaultAsync(item => item.Id == cycleId, cancellationToken);
 
-		if (cycle is null)
+		return cycle;
+	}
+
+	private async Task<IReadOnlyList<LorePage>> LoadActiveLorePagesAsync(CancellationToken cancellationToken)
+	{
+		var today = DateOnly.FromDateTime(DateTime.UtcNow);
+		var lorePages = await context.LorePages
+			.AsNoTracking()
+			.ToListAsync(cancellationToken);
+
+		if (lorePages.Count == 0)
 		{
-			return null;
+			return [];
 		}
 
-		return new SystemBriefingPolarisCycle(
-			cycle.Id,
-			cycle.Title,
-			cycle.StartTime,
-			cycle.EndTime,
-			cycle.IsForecast,
-			cycle.Executives
-				.OrderBy(item => item.Id)
-				.Select(item => new SystemBriefingExecutive(
-					item.Id,
-					item.Title,
-					item.Executed,
-					item.ObjectiveId,
-					item.Objective?.Title))
-				.ToArray());
+		var siblingsByParent = lorePages
+			.GroupBy(item => item.ParentId ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+			.ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.OrdinalIgnoreCase);
+
+		var active = lorePages
+			.Where(item =>
+			{
+				var siblings = siblingsByParent[item.ParentId ?? string.Empty];
+				var endingExclusive = LorePage.ResolveEndingExclusive(item, siblings);
+				return item.WasOngoingIn(today, endingExclusive);
+			})
+			.Where(item =>
+				string.Equals(item.Level, "Era", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(item.Level, "Cha", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(item.Level, "Act", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(item.Level, "p", StringComparison.OrdinalIgnoreCase))
+			.OrderBy(item => GetLoreLevelOrder(item.Level))
+			.ThenBy(item => item.Beginning)
+			.ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+
+		return active;
+	}
+
+	private static int GetLoreLevelOrder(string level)
+	{
+		return level.Trim().ToLowerInvariant() switch
+		{
+			"era" => 0,
+			"cha" => 1,
+			"act" => 2,
+			"p" => 3,
+			_ => 99,
+		};
 	}
 }
