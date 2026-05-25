@@ -9,7 +9,7 @@ namespace Pleiades.Orchestration;
 /// <summary>
 /// Represents a long-running directive that can own objectives and nested directives.
 /// </summary>
-[PuckFormat("{S:6}")]
+[PuckFormat("A{S:6}")]
 [VaultStorage(
 	LocationKey = VaultLocationKeys.Directives,
 	Mode = VaultStorageMode.Freeform,
