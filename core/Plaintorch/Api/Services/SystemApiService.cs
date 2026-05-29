@@ -22,7 +22,8 @@ public sealed class SystemApiService(
 	VaultLayout layout,
 	VaultPathSyncModelCatalog pathSyncModelCatalog,
 	VaultWatcherIssueRegistry watcherIssueRegistry,
-	PuckEntityResolutionService puckEntityResolutionService) : ISystemApi
+	PuckEntityResolutionService puckEntityResolutionService,
+	MarkdownFrontMatterSerializer markdownSerializer) : ISystemApi
 {
 	/// <inheritdoc />
 	public async Task<SystemBriefing> GetBriefingAsync(CancellationToken cancellationToken = default)
@@ -81,7 +82,8 @@ public sealed class SystemApiService(
 
 		if (!pathSyncModelCatalog.TryResolve(absolutePath, out var model) || model is null)
 		{
-			return new VaultNoteAuthorityResolution(normalizedRelativePath, false);
+			var freeformResolution = await ResolveByFrontMatterPuckAsync(absolutePath, normalizedRelativePath, cancellationToken);
+			return freeformResolution ?? new VaultNoteAuthorityResolution(normalizedRelativePath, false);
 		}
 
 		var entityKind = model.EntityType.Name switch
@@ -110,6 +112,71 @@ public sealed class SystemApiService(
 			$"plaintorch-{entityKind}",
 			resolvedPuck,
 			resolvedTitle);
+	}
+
+	private async Task<VaultNoteAuthorityResolution?> ResolveByFrontMatterPuckAsync(
+		string absolutePath,
+		string normalizedRelativePath,
+		CancellationToken cancellationToken)
+	{
+		if (!File.Exists(absolutePath)
+			|| !string.Equals(Path.GetExtension(absolutePath), ".md", StringComparison.OrdinalIgnoreCase))
+		{
+			return null;
+		}
+
+		var markdown = await File.ReadAllTextAsync(absolutePath, cancellationToken);
+		var frontMatter = markdownSerializer.ParseFrontMatter(markdown);
+		if (!frontMatter.TryGetValue("puck", out var rawPuck)
+			|| string.IsNullOrWhiteSpace(rawPuck))
+		{
+			return null;
+		}
+
+		var puck = NormalizeFrontMatterPuck(rawPuck);
+		if (string.IsNullOrWhiteSpace(puck))
+		{
+			return null;
+		}
+
+		var resolved = await puckEntityResolutionService.ResolveAsync(puck, cancellationToken);
+		if (!resolved.Exists || string.IsNullOrWhiteSpace(resolved.EntityType))
+		{
+			return null;
+		}
+
+		var entityKind = resolved.EntityType switch
+		{
+			nameof(Directive) => "directive",
+			nameof(Objective) => "objective",
+			nameof(OnrushSprint) => "onrush-sprint",
+			nameof(PolarisCycle) => "polaris-cycle",
+			nameof(LorePage) => "lore-page",
+			_ => null,
+		};
+
+		if (entityKind is null)
+		{
+			return null;
+		}
+
+		var resolvedTitle = resolved.Entity is IPuckNamedEntity named
+			? named.Title
+			: MarkdownFileLocator.ParseLoosePuckIdentityFromPath(absolutePath).Title;
+
+		return new VaultNoteAuthorityResolution(
+			normalizedRelativePath,
+			true,
+			entityKind,
+			resolved.EntityType,
+			$"plaintorch-{entityKind}",
+			resolved.Id,
+			resolvedTitle);
+	}
+
+	private static string NormalizeFrontMatterPuck(string rawPuck)
+	{
+		return rawPuck.Trim().Trim('"');
 	}
 
 	/// <inheritdoc />

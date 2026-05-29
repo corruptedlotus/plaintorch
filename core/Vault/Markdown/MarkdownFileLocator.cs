@@ -268,15 +268,101 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 
 		while (!string.IsNullOrWhiteSpace(currentDirectory))
 		{
-			if (IsSelfNamedDirectory(currentDirectory))
+			var resolved = TryResolveDirectivePuckFromDirectory(currentDirectory);
+			if (!string.IsNullOrWhiteSpace(resolved))
 			{
-				var primaryFile = Path.Combine(currentDirectory, $"{Path.GetFileName(currentDirectory)}.md");
-				return File.Exists(primaryFile)
-					? ParseLoosePuckIdentityFromPath(primaryFile).Id
-					: null;
+				return resolved;
 			}
 
 			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
+		}
+
+		return null;
+	}
+
+	public static string? TryResolveDirectivePuckFromDirectory(string? directoryPath)
+	{
+		if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+		{
+			return null;
+		}
+
+		if (IsSelfNamedDirectory(directoryPath))
+		{
+			var selfNamedPrimary = Path.Combine(directoryPath, $"{Path.GetFileName(directoryPath)}.md");
+			var fromSelfNamed = TryResolveDirectivePuckFromMarkdownFile(selfNamedPrimary);
+			if (!string.IsNullOrWhiteSpace(fromSelfNamed))
+			{
+				return fromSelfNamed;
+			}
+		}
+
+		foreach (var markdownFile in Directory.EnumerateFiles(directoryPath, "*.md", SearchOption.TopDirectoryOnly)
+			.OrderBy(file => file, StringComparer.OrdinalIgnoreCase))
+		{
+			var resolved = TryResolveDirectivePuckFromMarkdownFile(markdownFile);
+			if (!string.IsNullOrWhiteSpace(resolved))
+			{
+				return resolved;
+			}
+		}
+
+		return null;
+	}
+
+	private static string? TryResolveDirectivePuckFromMarkdownFile(string markdownPath)
+	{
+		if (!File.Exists(markdownPath))
+		{
+			return null;
+		}
+
+		var parsed = ParseLoosePuckIdentityFromPath(markdownPath).Id;
+		if (!string.IsNullOrWhiteSpace(parsed))
+		{
+			return parsed;
+		}
+
+		return TryReadFrontMatterPuck(markdownPath);
+	}
+
+	private static string? TryReadFrontMatterPuck(string markdownPath)
+	{
+		if (!File.Exists(markdownPath))
+		{
+			return null;
+		}
+
+		using var reader = new StreamReader(markdownPath);
+		var firstLine = reader.ReadLine();
+		if (!string.Equals(firstLine?.TrimStart('\uFEFF').Trim(), "---", StringComparison.Ordinal))
+		{
+			return null;
+		}
+
+		while (reader.ReadLine() is { } line)
+		{
+			if (string.Equals(line.Trim(), "---", StringComparison.Ordinal))
+			{
+				break;
+			}
+
+			var separatorIndex = line.IndexOf(':');
+			if (separatorIndex <= 0)
+			{
+				continue;
+			}
+
+			var key = line[..separatorIndex].Trim();
+			if (!string.Equals(key, "puck", StringComparison.OrdinalIgnoreCase))
+			{
+				continue;
+			}
+
+			var rawValue = line[(separatorIndex + 1)..].Trim().Trim('"');
+			return string.IsNullOrWhiteSpace(rawValue)
+				? null
+				: rawValue;
 		}
 
 		return null;

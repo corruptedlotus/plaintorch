@@ -17,10 +17,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 
 	private readonly IReadOnlyList<VaultPathSyncModel> _models =
 	[
-		CreateModel<Directive>(layout, [layout.VaultRoot], VaultStorageShape.SelfNamedDirectory, path =>
-			MarkdownFileLocator.IsPrimarySelfNamedFile(path)
-			&& !IsPartitionContainerPrimaryFile(path)
-			&& !IsPathUnderRoot(path, layout.MetadataRoot), static (context, cancellationToken) =>
+		CreateModel<Directive>(layout, [layout.VaultRoot], VaultStorageShape.SelfNamedDirectory, static _ => false, static (context, cancellationToken) =>
 			context.Directives
 				.AsNoTracking()
 				.Select(item => item.Id)
@@ -33,8 +30,8 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 				.Select(item => item.Id)
 				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
 
-		CreateModel<OnrushSprint>(layout, [layout.OnrushRoot], VaultStorageShape.SelfNamedDirectory, static path =>
-			MarkdownFileLocator.IsPrimarySelfNamedFile(path), static (context, cancellationToken) =>
+		CreateModel<OnrushSprint>(layout, [layout.OnrushRoot], VaultStorageShape.SelfNamedDirectory, path =>
+			IsPrimarySelfNamedEntityFile(path, layout.OnrushRoot), static (context, cancellationToken) =>
 			context.OnrushSprints
 				.AsNoTracking()
 				.Select(item => item.Id)
@@ -47,8 +44,8 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 				.Select(item => item.Id)
 				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
 
-		CreateModel<LorePage>(layout, [layout.SagaRoot], VaultStorageShape.SelfNamedDirectory, static path =>
-			MarkdownFileLocator.IsPrimarySelfNamedFile(path), static (context, cancellationToken) =>
+		CreateModel<LorePage>(layout, [layout.SagaRoot], VaultStorageShape.SelfNamedDirectory, path =>
+			IsPrimarySelfNamedEntityFile(path, layout.SagaRoot), static (context, cancellationToken) =>
 			context.LorePages
 				.AsNoTracking()
 				.Select(item => item.Id)
@@ -252,7 +249,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 		}
 
 		if (!IsPathUnderRoot(path, layout.DirectivesRoot)
-			|| string.IsNullOrWhiteSpace(MarkdownFileLocator.TryGetContainingDirectiveId(path, skipCurrentIfSelfNamed: false)))
+			|| string.IsNullOrWhiteSpace(TryResolveContainingDirectiveIdWithOwnershipBoundaries(path, layout, skipCurrentIfSelfNamed: false)))
 		{
 			return false;
 		}
@@ -269,6 +266,89 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 		}
 
 		return false;
+	}
+
+	private static string? TryResolveContainingDirectiveIdWithOwnershipBoundaries(string? path, VaultLayout layout, bool skipCurrentIfSelfNamed)
+	{
+		if (string.IsNullOrWhiteSpace(path))
+		{
+			return null;
+		}
+
+		var currentDirectory = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
+		if (skipCurrentIfSelfNamed
+			&& !string.IsNullOrWhiteSpace(currentDirectory)
+			&& MarkdownFileLocator.IsSelfNamedDirectory(currentDirectory))
+		{
+			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
+		}
+
+		while (!string.IsNullOrWhiteSpace(currentDirectory))
+		{
+			if (IsDirectiveOwnershipBoundaryDirectory(currentDirectory, layout))
+			{
+				currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
+				continue;
+			}
+
+			var resolved = MarkdownFileLocator.TryResolveDirectivePuckFromDirectory(currentDirectory);
+			if (!string.IsNullOrWhiteSpace(resolved))
+			{
+				return resolved;
+			}
+
+			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
+		}
+
+		return null;
+	}
+
+	private static bool IsDirectiveOwnershipBoundaryDirectory(string directoryPath, VaultLayout layout)
+	{
+		if (string.IsNullOrWhiteSpace(directoryPath))
+		{
+			return true;
+		}
+
+		if (!IsPathUnderRoot(directoryPath, layout.VaultRoot))
+		{
+			return true;
+		}
+
+		if (IsDirectoryEqual(directoryPath, layout.VaultRoot)
+			|| IsDirectoryEqual(directoryPath, layout.DirectivesRoot)
+			|| IsDirectoryEqual(directoryPath, layout.ObjectivesRoot)
+			|| IsDirectoryEqual(directoryPath, layout.OnrushRoot)
+			|| IsDirectoryEqual(directoryPath, layout.JournalRoot)
+			|| IsDirectoryEqual(directoryPath, layout.SagaRoot)
+			|| IsDirectoryEqual(directoryPath, layout.MetadataRoot))
+		{
+			return true;
+		}
+
+		var directoryName = Path.GetFileName(directoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+		if (!string.IsNullOrWhiteSpace(directoryName) && PartitionFolderNames.Contains(directoryName))
+		{
+			return true;
+		}
+
+		if (IsPathUnderRoot(directoryPath, layout.ObjectivesRoot)
+			|| IsPathUnderRoot(directoryPath, layout.OnrushRoot)
+			|| IsPathUnderRoot(directoryPath, layout.JournalRoot)
+			|| IsPathUnderRoot(directoryPath, layout.SagaRoot)
+			|| IsPathUnderRoot(directoryPath, layout.MetadataRoot))
+		{
+			return true;
+		}
+
+		return false;
+	}
+
+	private static bool IsDirectoryEqual(string path, string other)
+	{
+		var normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		var normalizedOther = Path.GetFullPath(other).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		return string.Equals(normalizedPath, normalizedOther, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static bool IsPartitionContainerPrimaryFile(string path)
@@ -294,6 +374,27 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 		var parentDirectory = Directory.GetParent(containerDirectory)?.FullName;
 		return !string.IsNullOrWhiteSpace(parentDirectory)
 			&& MarkdownFileLocator.IsSelfNamedDirectory(parentDirectory);
+	}
+
+	private static bool IsPrimarySelfNamedEntityFile(string path, string scanRoot)
+	{
+		if (!MarkdownFileLocator.IsPrimarySelfNamedFile(path))
+		{
+			return false;
+		}
+
+		var parentDirectory = Path.GetDirectoryName(path);
+		if (string.IsNullOrWhiteSpace(parentDirectory))
+		{
+			return false;
+		}
+
+		var normalizedParent = Path.GetFullPath(parentDirectory)
+			.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		var normalizedScanRoot = Path.GetFullPath(scanRoot)
+			.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+		return !string.Equals(normalizedParent, normalizedScanRoot, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static string? ResolvePartitionUnder(Type entityType)

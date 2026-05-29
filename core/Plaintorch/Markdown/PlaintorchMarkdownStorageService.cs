@@ -165,11 +165,6 @@ public sealed class PlaintorchMarkdownStorageService(
 		if (entityType == typeof(Directive))
 		{
 			var folder = Path.GetDirectoryName(fullSourcePath)!;
-			if (!string.Equals(Path.GetFileNameWithoutExtension(fullSourcePath), Path.GetFileName(folder), StringComparison.OrdinalIgnoreCase))
-			{
-				return false;
-			}
-
 			var parentDirectory = Directory.GetParent(folder)?.FullName;
 			if (!string.IsNullOrWhiteSpace(parentDirectory) && IsUnderNonDirectiveManagedRoot(parentDirectory))
 			{

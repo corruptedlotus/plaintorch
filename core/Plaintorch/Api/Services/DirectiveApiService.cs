@@ -5,6 +5,7 @@ using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Vault.Database;
+using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Watcher;
 using Pleiades.Vault;
 
@@ -213,11 +214,29 @@ public sealed class DirectiveApiService(
 		}
 
 		var candidate = await watcherDiscoveryService.InspectPathAsync(absolutePath, "api-init", cancellationToken)
-			?? throw new InvalidOperationException($"Directive init path '{normalizedRelativePath}' is not a managed markdown candidate.");
+			?? await watcherDiscoveryService.InspectDirectiveInitPathAsync(absolutePath, "api-init-fallback", cancellationToken)
+			?? throw new InvalidOperationException($"Directive init path '{normalizedRelativePath}' is not a directive markdown candidate eligible for freeform initialization.");
 
 		if (candidate.Model.EntityType != typeof(Directive))
 		{
 			throw new InvalidOperationException($"Directive init path '{normalizedRelativePath}' resolved to '{candidate.Model.EntityName}', not Directive.");
+		}
+
+		if (ShouldTreatAsManualFreeformInit(candidate))
+		{
+			candidate = NormalizeManualFreeformInitCandidate(candidate);
+		}
+
+		if (!candidate.IsValid)
+		{
+			var reasons = string.Join("; ", candidate.Issues.Select(issue => $"{issue.FieldPath}: {issue.Message}"));
+			throw new InvalidOperationException($"Directive init path '{normalizedRelativePath}' violates freeform init policy: {reasons}");
+		}
+
+		if (candidate.SuggestedAction != VaultSyncAction.CreateFromFile)
+		{
+			throw new InvalidOperationException(
+				$"Directive init path '{normalizedRelativePath}' is not eligible for initialization. Suggested action '{candidate.SuggestedAction}' indicates this path must be handled by watcher reconciliation policy instead. Reason: {candidate.SuggestedReason ?? "n/a"}");
 		}
 
 		await watcherSyncService.InitializeFromFileAsync(candidate, "api-init", cancellationToken);
@@ -229,6 +248,44 @@ public sealed class DirectiveApiService(
 
 		await auditLogService.WriteAsync("api", "directive.init", subject: created, details: new { path = normalizedRelativePath }, cancellationToken: cancellationToken);
 		return created;
+	}
+
+	private static bool ShouldTreatAsManualFreeformInit(VaultSyncCandidate candidate)
+	{
+		if (candidate.Model.EntityType != typeof(Directive)
+			|| candidate.Model.Mode != VaultStorageMode.Freeform
+			|| candidate.SuggestedAction != VaultSyncAction.Ignore)
+		{
+			return false;
+		}
+
+		if (string.IsNullOrWhiteSpace(candidate.SuggestedReason)
+			|| !candidate.SuggestedReason.Contains("does not auto-create entities from files without frontmatter PUCK identity", StringComparison.OrdinalIgnoreCase))
+		{
+			return false;
+		}
+
+		return candidate.Issues.All(IsMissingRequiredPuckInputIssue);
+	}
+
+	private static VaultSyncCandidate NormalizeManualFreeformInitCandidate(VaultSyncCandidate candidate)
+	{
+		var filteredIssues = candidate.Issues
+			.Where(issue => !IsMissingRequiredPuckInputIssue(issue))
+			.ToList();
+
+		return candidate with
+		{
+			Issues = filteredIssues,
+			SuggestedAction = VaultSyncAction.CreateFromFile,
+			SuggestedReason = "Manual freeform directive initialization requested from API.",
+		};
+	}
+
+	private static bool IsMissingRequiredPuckInputIssue(MarkdownValidationIssue issue)
+	{
+		return string.Equals(issue.FieldPath, "id", StringComparison.OrdinalIgnoreCase)
+			&& issue.Message.Contains("missing required caller-provided PUCK input", StringComparison.OrdinalIgnoreCase);
 	}
 
 	private async Task<Directive> CreateInternalAsync(string title, string? codename, string? parentDirectiveId, string? requestedId, CancellationToken cancellationToken)

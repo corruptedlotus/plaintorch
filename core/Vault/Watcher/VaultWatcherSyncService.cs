@@ -118,6 +118,11 @@ public sealed class VaultWatcherSyncService(
 			}
 		}
 
+		if (model is Objective objective)
+		{
+			await NormalizeObjectiveForeignKeysAsync(objective, candidate.VaultRelativePath, cancellationToken);
+		}
+
 		if (model is not IPuckNamedEntity namedEntity)
 		{
 			throw new InvalidOperationException($"Watcher create-from-file requires a PUCK-named model, but '{candidate.Model.EntityName}' is not PUCK-backed.");
@@ -220,6 +225,11 @@ public sealed class VaultWatcherSyncService(
 			}
 		}
 
+		if (existing is Objective objective)
+		{
+			await NormalizeObjectiveForeignKeysAsync(objective, candidate.VaultRelativePath, cancellationToken);
+		}
+
 		if (existing is IPuckNamedEntity namedEntity && !string.IsNullOrWhiteSpace(candidate.PathTitle))
 		{
 			namedEntity.Title = candidate.PathTitle;
@@ -313,6 +323,41 @@ public sealed class VaultWatcherSyncService(
 		}
 
 		return !HasFrontMatter(candidate.AbsolutePath);
+	}
+
+	private async Task NormalizeObjectiveForeignKeysAsync(Objective objective, string vaultRelativePath, CancellationToken cancellationToken)
+	{
+		if (!string.IsNullOrWhiteSpace(objective.DirectiveId))
+		{
+			var directiveExists = await context.Directives
+				.AsNoTracking()
+				.AnyAsync(item => item.Id == objective.DirectiveId, cancellationToken);
+			if (!directiveExists)
+			{
+				logger.LogWarning(
+					"Watcher normalized missing directive relation '{DirectiveId}' on objective '{ObjectiveId}' from '{Path}'.",
+					objective.DirectiveId,
+					objective.Id,
+					vaultRelativePath);
+				objective.DirectiveId = null;
+			}
+		}
+
+		if (!string.IsNullOrWhiteSpace(objective.OnrushSprintId))
+		{
+			var onrushExists = await context.OnrushSprints
+				.AsNoTracking()
+				.AnyAsync(item => item.Id == objective.OnrushSprintId, cancellationToken);
+			if (!onrushExists)
+			{
+				logger.LogWarning(
+					"Watcher normalized missing onrush sprint relation '{OnrushSprintId}' on objective '{ObjectiveId}' from '{Path}'.",
+					objective.OnrushSprintId,
+					objective.Id,
+					vaultRelativePath);
+				objective.OnrushSprintId = null;
+			}
+		}
 	}
 
 	private static bool HasFrontMatter(string path)

@@ -17,6 +17,7 @@ public sealed class VaultMarkdownDiscoveryService(
 	VaultLayout layout,
 	PlainfraContext context,
 	VaultPathSyncModelCatalog pathSyncModelCatalog,
+	VaultStoragePolicyEngine policyEngine,
 	VaultWatcherPathPolicy pathPolicy,
 	MarkdownFrontMatterSerializer markdownSerializer,
 	VaultAuditLogService auditLogService,
@@ -38,7 +39,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		var missing = 0;
 		var knownIdsByType = await LoadKnownIdsAsync(cancellationToken);
 
-		var allPaths = pathSyncModelCatalog.EnumerateCandidateMarkdownPaths();
+		var allPaths = policyEngine.EnumerateCandidateMarkdownPaths();
 
 		foreach (var path in allPaths)
 		{
@@ -112,6 +113,67 @@ public sealed class VaultMarkdownDiscoveryService(
 	}
 
 	/// <summary>
+	/// Inspects an arbitrary markdown path as a directive-init candidate, even when generic path-catalog classification does not apply.
+	/// </summary>
+	/// <param name="path">The filesystem path to inspect.</param>
+	/// <param name="origin">The logical source performing inspection.</param>
+	/// <param name="cancellationToken">A token used to cancel inspection.</param>
+	/// <returns>A resolved directive sync candidate, or <see langword="null"/> when the path cannot be treated as a directive markdown candidate.</returns>
+	public async Task<VaultSyncCandidate?> InspectDirectiveInitPathAsync(string path, string origin, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(path);
+		ArgumentException.ThrowIfNullOrWhiteSpace(origin);
+
+		var fullPath = Path.GetFullPath(path);
+		if (!File.Exists(fullPath)
+			|| !string.Equals(Path.GetExtension(fullPath), ".md", StringComparison.OrdinalIgnoreCase))
+		{
+			return null;
+		}
+
+		var directiveModel = pathSyncModelCatalog
+			.GetModels()
+			.FirstOrDefault(model => model.EntityType == typeof(Directive));
+		if (directiveModel is null)
+		{
+			return null;
+		}
+
+		var knownIdsByType = await LoadKnownIdsAsync(cancellationToken);
+		var candidate = await InspectPathCoreAsync(
+			fullPath,
+			knownIdsByType,
+			cancellationToken,
+			forcedModel: directiveModel,
+			enforceWatcherIgnorePolicy: false,
+			enforceModelBelongingPolicy: false);
+
+		if (candidate is null)
+		{
+			return null;
+		}
+
+		await auditLogService.WriteAsync(
+			"watcher",
+			candidate.IsValid ? "candidate-discovered" : "candidate-invalid",
+			subjectType: candidate.Model.EntityName,
+			subjectId: candidate.PathId,
+			subjectTitle: candidate.PathTitle,
+			details: new
+			{
+				origin,
+				candidate.VaultRelativePath,
+				candidate.SuggestedAction,
+				candidate.SuggestedReason,
+				issueCount = candidate.Issues.Count,
+				issues = candidate.Issues.Select(issue => new { issue.FieldPath, issue.Message, issue.RawValue }).ToArray(),
+			},
+			cancellationToken: cancellationToken);
+
+		return candidate;
+	}
+
+	/// <summary>
 	/// Performs core inspection flow for a path by classifying, hydrating, validating, and deciding an action.
 	/// </summary>
 	/// <param name="path">The path to inspect.</param>
@@ -121,15 +183,34 @@ public sealed class VaultMarkdownDiscoveryService(
 	private async Task<VaultSyncCandidate?> InspectPathCoreAsync(
 		string path,
 		IReadOnlyDictionary<Type, HashSet<string>> knownIdsByType,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		VaultPathSyncModel? forcedModel = null,
+		bool enforceWatcherIgnorePolicy = true,
+		bool enforceModelBelongingPolicy = true)
 	{
-		if (pathPolicy.ShouldIgnorePath(path))
+		if (enforceWatcherIgnorePolicy && pathPolicy.ShouldIgnorePath(path))
 		{
 			return null;
 		}
 
-		if (!pathSyncModelCatalog.TryResolveWatchPath(path, out var resolvedPath, out var model)
-			|| string.IsNullOrWhiteSpace(resolvedPath)
+		string? resolvedPath;
+		VaultPathSyncModel? model;
+		if (forcedModel is null)
+		{
+			if (!policyEngine.TryResolveWatchPath(path, out resolvedPath, out model)
+				|| string.IsNullOrWhiteSpace(resolvedPath)
+				|| model is null)
+			{
+				return null;
+			}
+		}
+		else
+		{
+			resolvedPath = Path.GetFullPath(path);
+			model = forcedModel;
+		}
+
+		if (string.IsNullOrWhiteSpace(resolvedPath)
 			|| model is null)
 		{
 			return null;
@@ -139,6 +220,12 @@ public sealed class VaultMarkdownDiscoveryService(
 		var markdown = File.Exists(fullPath)
 			? await File.ReadAllTextAsync(fullPath, cancellationToken)
 			: string.Empty;
+		if (enforceModelBelongingPolicy
+			&& !await policyEngine.BelongsToModelAsync(model, fullPath, markdown, cancellationToken))
+		{
+			return null;
+		}
+
 		var (pathId, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(fullPath);
 		var parsedModel = CreatePathComposedModel(model.EntityType, fullPath);
 		if (parsedModel is IPuckNamedEntity namedEntity)
@@ -178,11 +265,12 @@ public sealed class VaultMarkdownDiscoveryService(
 		if (parsedModel is Directive freeformDirective
 			&& model.Mode == VaultStorageMode.Freeform)
 		{
-			if (!pathPolicy.IsAllowedFreeformDirectiveAssertionPath(fullPath))
+			var assertionViolation = pathPolicy.TryGetFreeformDirectiveAssertionViolation(fullPath);
+			if (assertionViolation is not null)
 			{
 				issues.Add(new MarkdownValidationIssue(
 					"path",
-					"Freeform directive path is under a managed root reserved for non-directive entities and cannot assert freeform ownership.",
+					assertionViolation,
 					Path.GetRelativePath(layout.VaultRoot, fullPath)));
 			}
 
@@ -393,7 +481,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		{
 			case Directive directive:
 			{
-				var pathParentId = MarkdownFileLocator.TryGetContainingDirectiveId(path);
+				var pathParentId = pathPolicy.TryResolveContainingDirectiveId(path, skipCurrentIfSelfNamed: true);
 				if (!string.Equals(directive.ParentDirectiveId, pathParentId, StringComparison.OrdinalIgnoreCase))
 				{
 					if (!string.IsNullOrWhiteSpace(directive.ParentDirectiveId))
@@ -408,7 +496,7 @@ public sealed class VaultMarkdownDiscoveryService(
 			}
 			case Objective objective:
 			{
-				var pathDirectiveId = MarkdownFileLocator.TryGetContainingDirectiveId(path);
+				var pathDirectiveId = pathPolicy.TryResolveContainingDirectiveId(path);
 				if (!string.Equals(objective.DirectiveId, pathDirectiveId, StringComparison.OrdinalIgnoreCase))
 				{
 					if (!string.IsNullOrWhiteSpace(objective.DirectiveId))

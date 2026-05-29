@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Reflection;
 using Pleiades.Vault.Markdown;
 
 namespace Pleiades.Vault.Watcher;
@@ -10,6 +11,7 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout)
 {
 	private const string ObsidianConfigRelativePath = ".obsidian/app.json";
 	private static readonly StringComparer PathComparer = StringComparer.OrdinalIgnoreCase;
+	private static readonly HashSet<string> PartitionFolderNames = ResolvePartitionFolderNames();
 
 	/// <summary>
 	/// Returns distinct watcher roots, optionally including full-vault observation when any model is freeform.
@@ -71,32 +73,101 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout)
 	/// </summary>
 	public bool IsAllowedFreeformDirectiveAssertionPath(string path)
 	{
+		return TryGetFreeformDirectiveAssertionViolation(path) is null;
+	}
+
+	/// <summary>
+	/// Gets a human-readable violation reason when a freeform directive assertion path is not allowed.
+	/// </summary>
+	public string? TryGetFreeformDirectiveAssertionViolation(string path)
+	{
 		if (string.IsNullOrWhiteSpace(path))
 		{
-			return false;
+			return "Path is empty.";
 		}
 
 		var fullPath = Path.GetFullPath(path);
-		if (!IsUnderVaultRoot(fullPath)
-			|| !string.Equals(Path.GetExtension(fullPath), ".md", StringComparison.OrdinalIgnoreCase)
-			|| !MarkdownFileLocator.IsPrimarySelfNamedFile(fullPath))
+		if (!IsUnderVaultRoot(fullPath))
 		{
-			return false;
+			return "Path is outside the active vault root.";
+		}
+
+		if (!string.Equals(Path.GetExtension(fullPath), ".md", StringComparison.OrdinalIgnoreCase))
+		{
+			return "Path is not a markdown file.";
 		}
 
 		var directory = Path.GetDirectoryName(fullPath);
 		if (string.IsNullOrWhiteSpace(directory))
 		{
-			return false;
+			return "Path does not resolve to a directory.";
+		}
+
+		if (IsVaultRootDirectory(directory))
+		{
+			return "Freeform directive cannot assert ownership of the vault root directory.";
+		}
+
+		if (IsEntityRootDirectory(directory))
+		{
+			return "Freeform directive cannot assert ownership of an entity root directory.";
+		}
+
+		if (IsPartitionDirectory(directory))
+		{
+			return "Freeform directive cannot assert ownership of a partition directory.";
 		}
 
 		if (IsUnderNonDirectiveManagedRoot(directory))
 		{
-			return false;
+			return "Freeform directive path is under a managed root reserved for non-directive entities.";
 		}
 
 		var parent = Directory.GetParent(directory)?.FullName;
-		return string.IsNullOrWhiteSpace(parent) || !IsUnderNonDirectiveManagedRoot(parent);
+		if (!string.IsNullOrWhiteSpace(parent) && IsUnderNonDirectiveManagedRoot(parent))
+		{
+			return "Freeform directive parent directory is under a managed root reserved for non-directive entities.";
+		}
+
+		return null;
+	}
+
+	/// <summary>
+	/// Resolves the nearest containing directive identifier while enforcing directive ownership boundaries.
+	/// </summary>
+	public string? TryResolveContainingDirectiveId(string? path, bool skipCurrentIfSelfNamed = false)
+	{
+		if (string.IsNullOrWhiteSpace(path))
+		{
+			return null;
+		}
+
+		var currentDirectory = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
+		if (skipCurrentIfSelfNamed
+			&& !string.IsNullOrWhiteSpace(currentDirectory)
+			&& MarkdownFileLocator.IsSelfNamedDirectory(currentDirectory))
+		{
+			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
+		}
+
+		while (!string.IsNullOrWhiteSpace(currentDirectory))
+		{
+			if (IsDirectiveOwnershipBoundaryDirectory(currentDirectory))
+			{
+				currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
+				continue;
+			}
+
+			var resolved = MarkdownFileLocator.TryResolveDirectivePuckFromDirectory(currentDirectory);
+			if (!string.IsNullOrWhiteSpace(resolved))
+			{
+				return resolved;
+			}
+
+			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
+		}
+
+		return null;
 	}
 
 	private bool IsUnderVaultRoot(string fullPath)
@@ -126,6 +197,49 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout)
 			|| IsUnderRoot(fullPath, layout.OnrushRoot)
 			|| IsUnderRoot(fullPath, layout.JournalRoot)
 			|| IsUnderRoot(fullPath, layout.SagaRoot);
+	}
+
+	private bool IsDirectiveOwnershipBoundaryDirectory(string fullPath)
+	{
+		if (!IsUnderVaultRoot(fullPath))
+		{
+			return true;
+		}
+
+		return IsVaultRootDirectory(fullPath)
+			|| IsEntityRootDirectory(fullPath)
+			|| IsPartitionDirectory(fullPath)
+			|| IsUnderNonDirectiveManagedRoot(fullPath);
+	}
+
+	private bool IsVaultRootDirectory(string fullPath)
+	{
+		var normalizedPath = Path.GetFullPath(fullPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		var normalizedVaultRoot = Path.GetFullPath(layout.VaultRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		return string.Equals(normalizedPath, normalizedVaultRoot, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private bool IsEntityRootDirectory(string fullPath)
+	{
+		return IsDirectoryEqual(fullPath, layout.DirectivesRoot)
+			|| IsDirectoryEqual(fullPath, layout.ObjectivesRoot)
+			|| IsDirectoryEqual(fullPath, layout.OnrushRoot)
+			|| IsDirectoryEqual(fullPath, layout.JournalRoot)
+			|| IsDirectoryEqual(fullPath, layout.SagaRoot)
+			|| IsDirectoryEqual(fullPath, layout.MetadataRoot);
+	}
+
+	private static bool IsDirectoryEqual(string path, string other)
+	{
+		var normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		var normalizedOther = Path.GetFullPath(other).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		return string.Equals(normalizedPath, normalizedOther, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool IsPartitionDirectory(string fullPath)
+	{
+		var name = Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+		return !string.IsNullOrWhiteSpace(name) && PartitionFolderNames.Contains(name);
 	}
 
 	private static bool IsUnderRoot(string fullPath, string rootPath)
@@ -177,5 +291,15 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout)
 		{
 			return null;
 		}
+	}
+
+	private static HashSet<string> ResolvePartitionFolderNames()
+	{
+		return typeof(VaultWatcherPathPolicy).Assembly
+			.GetTypes()
+			.Select(type => type.GetCustomAttribute<VaultStorageAttribute>())
+			.Where(attribute => attribute is not null && !string.IsNullOrWhiteSpace(attribute.PartitionUnder))
+			.Select(attribute => attribute!.PartitionUnder!.Trim())
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 	}
 }

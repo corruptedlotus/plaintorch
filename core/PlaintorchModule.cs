@@ -57,6 +57,13 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<PlaintorchVaultLockService>();
 		services.AddSingleton<PlaintorchCoreSplashService>();
 		services.AddSingleton<PlaintorchServiceBootstrapper>();
+		services.AddScoped<IVaultStorageModePolicyService, FreeformVaultStorageModePolicyService>();
+		services.AddScoped<IVaultStorageModePolicyService, EnforcedVaultStorageModePolicyService>();
+		services.AddScoped<IVaultStorageModePolicyService, OptionalVaultStorageModePolicyService>();
+		services.AddScoped<IVaultStorageModePolicyService, SyncedVaultStorageModePolicyService>();
+		services.AddScoped<IVaultStorageModePolicyService, FileFirstVaultStorageModePolicyService>();
+		services.AddScoped<VaultStorageModePolicyRouter>();
+		services.AddScoped<VaultStoragePolicyEngine>();
 		services.AddScoped<VaultSyncDecisionService>();
 		services.AddScoped<VaultMarkdownDiscoveryService>();
 		services.AddScoped<VaultWatcherSyncService>();
