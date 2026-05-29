@@ -21,6 +21,7 @@ public sealed class SystemApiService(
 	PlainfraContext context,
 	VaultLayout layout,
 	VaultPathSyncModelCatalog pathSyncModelCatalog,
+	VaultWatcherIssueRegistry watcherIssueRegistry,
 	PuckEntityResolutionService puckEntityResolutionService) : ISystemApi
 {
 	/// <inheritdoc />
@@ -42,6 +43,9 @@ public sealed class SystemApiService(
 			: await LoadPolarisCycleAsync(activePolaris.Id, cancellationToken);
 
 		var activeLorePages = await LoadActiveLorePagesAsync(cancellationToken);
+		var watcherStatus = watcherIssueRegistry.GetStatus().ToString().ToLowerInvariant();
+		var watcherIssues = watcherIssueRegistry.GetIssues();
+		var watcherCriteria = watcherIssueRegistry.GetCriterionSummary();
 
 		return new SystemBriefing(
 			"ok",
@@ -49,6 +53,11 @@ public sealed class SystemApiService(
 			stateService.GetActiveVaultPath(),
 			PleiadeanCalendar.FromDateTime(DateTime.Today).ToString(),
 			await stateService.GetCelestronBankedAsync(cancellationToken),
+			watcherStatus,
+			watcherIssues.Count,
+			watcherIssues.Count(static issue => issue.IsCritical),
+			watcherCriteria.Total,
+			watcherCriteria.Failed,
 			onrushSelectionMode,
 			briefingOnrush,
 			briefingPolaris,
@@ -113,6 +122,146 @@ public sealed class SystemApiService(
 			resolved.EntityType,
 			resolved.Entity,
 			resolved.AssociatedNote);
+	}
+
+	/// <inheritdoc />
+	public Task<WatcherIssueReport> GetWatcherIssuesAsync(CancellationToken cancellationToken = default)
+	{
+		return Task.FromResult(BuildWatcherIssueReport(scopedAbsolutePath: null, scopedPathIsDirectory: false));
+	}
+
+	/// <inheritdoc />
+	public Task<WatcherIssueReport> GetWatcherIssuesForPathAsync(string scopedPath, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(scopedPath);
+		var normalized = scopedPath
+			.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
+			.Trim();
+
+		var scopedAbsolutePath = ResolveScopedAbsolutePath(normalized);
+		var scopedPathIsDirectory = IsDirectoryScope(normalized, scopedAbsolutePath);
+		return Task.FromResult(BuildWatcherIssueReport(scopedAbsolutePath, scopedPathIsDirectory));
+	}
+
+	private WatcherIssueReport BuildWatcherIssueReport(string? scopedAbsolutePath, bool scopedPathIsDirectory)
+	{
+		var allIssues = watcherIssueRegistry.GetIssues();
+		var allCriteria = watcherIssueRegistry.GetCriteriaStates();
+
+		var filteredIssues = scopedAbsolutePath is null
+			? allIssues
+			: allIssues.Where(issue => MatchesScope(issue.Path, scopedAbsolutePath, scopedPathIsDirectory)).ToList();
+
+		var filteredCriteria = scopedAbsolutePath is null
+			? allCriteria
+			: allCriteria.Where(criterion => MatchesScope(criterion.Path, scopedAbsolutePath, scopedPathIsDirectory)).ToList();
+
+		var issueRecords = filteredIssues
+			.Select(issue => new WatcherIssueRecord(
+				issue.Key,
+				issue.Type.ToString(),
+				issue.Category,
+				issue.Message,
+				issue.IsCritical,
+				issue.Criterion,
+				issue.ResolutionCriterion,
+				issue.OccurrenceCount,
+				issue.Path,
+				ToVaultRelativePathOrNull(issue.Path),
+				issue.FirstObservedUtc,
+				issue.LastObservedUtc))
+			.ToList();
+
+		var criterionRecords = filteredCriteria
+			.Select(criterion => new WatcherCriterionRecord(
+				criterion.Criterion,
+				criterion.Satisfied,
+				criterion.EvaluatedUtc,
+				criterion.ScopeKey,
+				criterion.Path,
+				ToVaultRelativePathOrNull(criterion.Path),
+				criterion.Detail))
+			.ToList();
+
+		return new WatcherIssueReport(
+			watcherIssueRegistry.GetStatus().ToString().ToLowerInvariant(),
+			issueRecords.Count,
+			issueRecords.Count(static issue => issue.IsCritical),
+			criterionRecords.Count,
+			criterionRecords.Count(static criterion => !criterion.Satisfied),
+			scopedAbsolutePath is null ? null : ToVaultRelativePathOrAbsolute(scopedAbsolutePath),
+			scopedPathIsDirectory,
+			issueRecords,
+			criterionRecords);
+	}
+
+	private string ResolveScopedAbsolutePath(string scopedPath)
+	{
+		var absolute = Path.IsPathRooted(scopedPath)
+			? Path.GetFullPath(scopedPath)
+			: Path.GetFullPath(Path.Combine(layout.VaultRoot, scopedPath.TrimStart(Path.DirectorySeparatorChar)));
+
+		if (!IsPathUnderRoot(absolute, layout.VaultRoot))
+		{
+			throw new InvalidOperationException("Scoped path must remain under the active vault root.");
+		}
+
+		return absolute.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+	}
+
+	private static bool IsDirectoryScope(string rawPath, string scopedAbsolutePath)
+	{
+		if (Directory.Exists(scopedAbsolutePath))
+		{
+			return true;
+		}
+
+		if (File.Exists(scopedAbsolutePath))
+		{
+			return false;
+		}
+
+		return rawPath.EndsWith(Path.DirectorySeparatorChar)
+			|| rawPath.EndsWith(Path.AltDirectorySeparatorChar)
+			|| !Path.HasExtension(rawPath);
+	}
+
+	private static bool MatchesScope(string? candidatePath, string scopedAbsolutePath, bool scopedPathIsDirectory)
+	{
+		if (string.IsNullOrWhiteSpace(candidatePath))
+		{
+			return false;
+		}
+
+		var normalizedCandidatePath = Path.GetFullPath(candidatePath)
+			.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+		if (!scopedPathIsDirectory)
+		{
+			return string.Equals(normalizedCandidatePath, scopedAbsolutePath, StringComparison.OrdinalIgnoreCase);
+		}
+
+		return string.Equals(normalizedCandidatePath, scopedAbsolutePath, StringComparison.OrdinalIgnoreCase)
+			|| normalizedCandidatePath.StartsWith(scopedAbsolutePath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private string? ToVaultRelativePathOrNull(string? absolutePath)
+	{
+		if (string.IsNullOrWhiteSpace(absolutePath))
+		{
+			return null;
+		}
+
+		return IsPathUnderRoot(absolutePath, layout.VaultRoot)
+			? Path.GetRelativePath(layout.VaultRoot, absolutePath)
+			: null;
+	}
+
+	private string ToVaultRelativePathOrAbsolute(string absolutePath)
+	{
+		return IsPathUnderRoot(absolutePath, layout.VaultRoot)
+			? Path.GetRelativePath(layout.VaultRoot, absolutePath)
+			: absolutePath;
 	}
 
 	private async Task<(string? Puck, string Title)> ResolveEntityIdentityAsync(

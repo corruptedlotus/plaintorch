@@ -21,4 +21,14 @@ public interface ISystemApi
 	/// Resolves a PUCK identifier into its authoritative entity representation.
 	/// </summary>
 	Task<EntityExistence> ResolveEntityByPuckAsync(string id, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Gets full watcher diagnostics including active issues and evaluated criteria.
+	/// </summary>
+	Task<WatcherIssueReport> GetWatcherIssuesAsync(CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Gets watcher diagnostics scoped to a specific vault file or folder path.
+	/// </summary>
+	Task<WatcherIssueReport> GetWatcherIssuesForPathAsync(string scopedPath, CancellationToken cancellationToken = default);
 }

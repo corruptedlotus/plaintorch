@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orchestration;
 using Pleiades.Saga;
+using System.Reflection;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Database;
 
@@ -11,10 +12,14 @@ namespace Pleiades.Vault.Watcher;
 /// </summary>
 public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 {
+	private static readonly string? ObjectivePartitionName = ResolvePartitionUnder(typeof(Objective));
+	private static readonly HashSet<string> PartitionFolderNames = ResolvePartitionFolderNames();
+
 	private readonly IReadOnlyList<VaultPathSyncModel> _models =
 	[
 		CreateModel<Directive>(layout, [layout.VaultRoot], VaultStorageShape.SelfNamedDirectory, path =>
 			MarkdownFileLocator.IsPrimarySelfNamedFile(path)
+			&& !IsPartitionContainerPrimaryFile(path)
 			&& !IsPathUnderRoot(path, layout.MetadataRoot), static (context, cancellationToken) =>
 			context.Directives
 				.AsNoTracking()
@@ -236,9 +241,76 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 			return false;
 		}
 
-		return string.Equals(parentDirectory, layout.ObjectivesRoot, StringComparison.OrdinalIgnoreCase)
-			|| MarkdownFileLocator.IsSelfNamedDirectory(parentDirectory)
-			|| (IsPathUnderRoot(path, layout.DirectivesRoot)
-				&& !string.IsNullOrWhiteSpace(MarkdownFileLocator.TryGetContainingDirectiveId(path, skipCurrentIfSelfNamed: false)));
+		if (string.Equals(parentDirectory, layout.ObjectivesRoot, StringComparison.OrdinalIgnoreCase))
+		{
+			return true;
+		}
+
+		if (MarkdownFileLocator.IsSelfNamedDirectory(parentDirectory))
+		{
+			return true;
+		}
+
+		if (!IsPathUnderRoot(path, layout.DirectivesRoot)
+			|| string.IsNullOrWhiteSpace(MarkdownFileLocator.TryGetContainingDirectiveId(path, skipCurrentIfSelfNamed: false)))
+		{
+			return false;
+		}
+
+		if (string.IsNullOrWhiteSpace(ObjectivePartitionName))
+		{
+			return true;
+		}
+
+		var containingDirectoryName = Path.GetFileName(parentDirectory);
+		if (string.Equals(containingDirectoryName, ObjectivePartitionName, StringComparison.OrdinalIgnoreCase))
+		{
+			return true;
+		}
+
+		return false;
+	}
+
+	private static bool IsPartitionContainerPrimaryFile(string path)
+	{
+		if (!MarkdownFileLocator.IsPrimarySelfNamedFile(path))
+		{
+			return false;
+		}
+
+		var containerDirectory = Path.GetDirectoryName(path);
+		if (string.IsNullOrWhiteSpace(containerDirectory))
+		{
+			return false;
+		}
+
+		var directoryName = Path.GetFileName(containerDirectory);
+		if (string.IsNullOrWhiteSpace(directoryName)
+			|| !PartitionFolderNames.Contains(directoryName))
+		{
+			return false;
+		}
+
+		var parentDirectory = Directory.GetParent(containerDirectory)?.FullName;
+		return !string.IsNullOrWhiteSpace(parentDirectory)
+			&& MarkdownFileLocator.IsSelfNamedDirectory(parentDirectory);
+	}
+
+	private static string? ResolvePartitionUnder(Type entityType)
+	{
+		return entityType
+			.GetCustomAttribute<VaultStorageAttribute>()
+			?.PartitionUnder
+			?.Trim();
+	}
+
+	private static HashSet<string> ResolvePartitionFolderNames()
+	{
+		return typeof(VaultPathSyncModelCatalog).Assembly
+			.GetTypes()
+			.Select(type => type.GetCustomAttribute<VaultStorageAttribute>())
+			.Where(attribute => attribute is not null && !string.IsNullOrWhiteSpace(attribute.PartitionUnder))
+			.Select(attribute => attribute!.PartitionUnder!.Trim())
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 	}
 }

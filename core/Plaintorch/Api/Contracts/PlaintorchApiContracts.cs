@@ -12,6 +12,11 @@ public sealed record SystemBriefing(
 	string ActiveVaultPath,
 	string PleiadeanToday,
 	int CelestronBanked,
+	string WatcherStatus,
+	int WatcherIssueCount,
+	int WatcherCriticalIssueCount,
+	int WatcherCriteriaCount,
+	int WatcherFailedCriteriaCount,
 	string? OnrushSelectionMode,
 	OnrushSprint? CurrentOnrush,
 	PolarisCycle? CurrentPolaris,
@@ -50,6 +55,49 @@ public sealed record EntityExistence(
 	string? EntityType = null,
 	object? Entity = null,
 	string? AssociatedNote = null);
+
+/// <summary>
+/// Represents a watcher issue record exposed through system diagnostics APIs.
+/// </summary>
+public sealed record WatcherIssueRecord(
+	string Key,
+	string Type,
+	string Category,
+	string Message,
+	bool IsCritical,
+	string Criterion,
+	string ResolutionCriterion,
+	int OccurrenceCount,
+	string? OriginPath,
+	string? OriginVaultRelativePath,
+	DateTimeOffset? FirstObservedUtc,
+	DateTimeOffset? LastObservedUtc);
+
+/// <summary>
+/// Represents a watcher criterion evaluation exposed through system diagnostics APIs.
+/// </summary>
+public sealed record WatcherCriterionRecord(
+	string Criterion,
+	bool Satisfied,
+	DateTimeOffset EvaluatedUtc,
+	string? ScopeKey,
+	string? OriginPath,
+	string? OriginVaultRelativePath,
+	string? Detail);
+
+/// <summary>
+/// Represents a full watcher diagnostics report including active issues and evaluated criteria.
+/// </summary>
+public sealed record WatcherIssueReport(
+	string Status,
+	int IssueCount,
+	int CriticalIssueCount,
+	int CriteriaCount,
+	int FailedCriteriaCount,
+	string? ScopedPath,
+	bool ScopedPathIsDirectory,
+	IReadOnlyList<WatcherIssueRecord> Issues,
+	IReadOnlyList<WatcherCriterionRecord> Criteria);
 
 /// <summary>
 /// Represents a saga lore page payload exposed by the API.

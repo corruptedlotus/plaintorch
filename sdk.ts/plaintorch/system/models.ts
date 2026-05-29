@@ -26,6 +26,11 @@ export interface SystemBriefing {
 	activeVaultPath: string
 	pleiadeanToday: string
 	celestronBanked: number
+	watcherStatus: string
+	watcherIssueCount: number
+	watcherCriticalIssueCount: number
+	watcherCriteriaCount: number
+	watcherFailedCriteriaCount: number
 	onrushSelectionMode: string | undefined
 	currentOnrush: OnrushSprint | undefined
 	currentPolaris: PolarisCycle | undefined
@@ -34,4 +39,41 @@ export interface SystemBriefing {
 
 export interface HealthStatus {
 	status: string
+}
+
+export interface WatcherIssueRecord {
+	key: string
+	type: string
+	category: string
+	message: string
+	isCritical: boolean
+	criterion: string
+	resolutionCriterion: string
+	occurrenceCount: number
+	originPath: string | undefined
+	originVaultRelativePath: string | undefined
+	firstObservedUtc: string | undefined
+	lastObservedUtc: string | undefined
+}
+
+export interface WatcherCriterionRecord {
+	criterion: string
+	satisfied: boolean
+	evaluatedUtc: string
+	scopeKey: string | undefined
+	originPath: string | undefined
+	originVaultRelativePath: string | undefined
+	detail: string | undefined
+}
+
+export interface WatcherIssueReport {
+	status: string
+	issueCount: number
+	criticalIssueCount: number
+	criteriaCount: number
+	failedCriteriaCount: number
+	scopedPath: string | undefined
+	scopedPathIsDirectory: boolean
+	issues: WatcherIssueRecord[]
+	criteria: WatcherCriterionRecord[]
 }

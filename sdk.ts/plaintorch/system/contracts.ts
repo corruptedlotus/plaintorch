@@ -2,5 +2,8 @@ export type {
 	HealthStatus,
 	SystemBriefing,
 	EntityExistence,
-	VaultNoteAuthorityResolution
+	VaultNoteAuthorityResolution,
+	WatcherIssueReport,
+	WatcherIssueRecord,
+	WatcherCriterionRecord
 } from "./models"

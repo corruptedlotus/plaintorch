@@ -38,6 +38,16 @@ public sealed class SystemModule : Module
 			return Results.Ok(await api.ResolveEntityByPuckAsync(id, cancellationToken));
 		});
 
+		group.MapGet("/watcher/issues", async (ISystemApi api, CancellationToken cancellationToken) =>
+		{
+			return Results.Ok(await api.GetWatcherIssuesAsync(cancellationToken));
+		});
+
+		group.MapGet("/watcher/issues-for", async (string path, ISystemApi api, CancellationToken cancellationToken) =>
+		{
+			return Results.Ok(await api.GetWatcherIssuesForPathAsync(path, cancellationToken));
+		});
+
 		endpoints.MapGet("/system/resolve/{id}", async (string id, ISystemApi api, CancellationToken cancellationToken) =>
 		{
 			return Results.Ok(await api.ResolveEntityByPuckAsync(id, cancellationToken));

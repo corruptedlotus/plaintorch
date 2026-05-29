@@ -157,7 +157,7 @@ public sealed class PlaintorchMarkdownStorageService(
 			return false;
 		}
 
-		if (IsKeyDirectory(sourceDirectory))
+		if (IsUnderNonDirectiveManagedRoot(sourceDirectory))
 		{
 			return false;
 		}
@@ -171,7 +171,7 @@ public sealed class PlaintorchMarkdownStorageService(
 			}
 
 			var parentDirectory = Directory.GetParent(folder)?.FullName;
-			if (!string.IsNullOrWhiteSpace(parentDirectory) && IsKeyDirectory(parentDirectory))
+			if (!string.IsNullOrWhiteSpace(parentDirectory) && IsUnderNonDirectiveManagedRoot(parentDirectory))
 			{
 				return false;
 			}
@@ -180,21 +180,22 @@ public sealed class PlaintorchMarkdownStorageService(
 		return true;
 	}
 
-	private bool IsKeyDirectory(string path)
+	private bool IsUnderNonDirectiveManagedRoot(string path)
 	{
-		var fullPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-		var keyDirectories = new[]
-		{
-			layout.VaultRoot,
-			layout.MetadataRoot,
-			layout.DirectivesRoot,
-			layout.ObjectivesRoot,
-			layout.OnrushRoot,
-			layout.JournalRoot,
-			layout.SagaRoot,
-		};
+		var fullPath = Path.GetFullPath(path);
+		return IsUnderRoot(fullPath, layout.MetadataRoot)
+			|| IsUnderRoot(fullPath, layout.ObjectivesRoot)
+			|| IsUnderRoot(fullPath, layout.OnrushRoot)
+			|| IsUnderRoot(fullPath, layout.JournalRoot)
+			|| IsUnderRoot(fullPath, layout.SagaRoot);
+	}
 
-		return keyDirectories.Any(key => string.Equals(fullPath, key.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase));
+	private static bool IsUnderRoot(string fullPath, string root)
+	{
+		var normalizedPath = fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		var normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		return string.Equals(normalizedPath, normalizedRoot, StringComparison.OrdinalIgnoreCase)
+			|| normalizedPath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static string ResolveFreeformFallbackPath(string defaultPath)

@@ -12,8 +12,10 @@ namespace Pleiades.Vault.Watcher;
 public sealed class VaultWatcherService(
 	IServiceScopeFactory scopeFactory,
 	VaultPathSyncModelCatalog pathSyncModelCatalog,
+	VaultWatcherPathPolicy pathPolicy,
 	VaultLayout layout,
 	VaultWatcherWriteBarrier writeBarrier,
+	VaultWatcherIssueRegistry issueRegistry,
 	ILogger<VaultWatcherService> logger) : BackgroundService
 {
 	private static readonly TimeSpan DebounceWindow = TimeSpan.FromMilliseconds(500);
@@ -24,12 +26,20 @@ public sealed class VaultWatcherService(
 	/// <inheritdoc />
 	protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 	{
+		issueRegistry.ClearOverrideStatus();
+
 		try
 		{
 			await RunStartupScanAsync(stoppingToken);
+			ObserveSuccess(VaultWatcherIssueType.StartupScan, "startup-scan-success");
 		}
 		catch (Exception exception)
 		{
+			ObserveFailure(
+				VaultWatcherIssueType.StartupScan,
+				criterion: "startup-scan-success",
+				resolutionCriterion: "startup-scan-success-on-next-run",
+				detail: exception.Message);
 			logger.LogError(exception, "Vault startup discovery scan failed. Watcher will continue with live filesystem observation.");
 		}
 
@@ -43,9 +53,15 @@ public sealed class VaultWatcherService(
 				try
 				{
 					await DrainPendingAsync(stoppingToken);
+					ObserveSuccess(VaultWatcherIssueType.DrainTick, "drain-tick-success");
 				}
 				catch (Exception exception)
 				{
+					ObserveFailure(
+						VaultWatcherIssueType.DrainTick,
+						criterion: "drain-tick-success",
+						resolutionCriterion: "drain-tick-success-on-next-loop",
+						detail: exception.Message);
 					logger.LogError(exception, "Vault watcher tick failed while draining pending paths. Processing will continue.");
 				}
 
@@ -54,7 +70,19 @@ public sealed class VaultWatcherService(
 		}
 		catch (OperationCanceledException)
 		{
+			issueRegistry.SetOverrideStatus(VaultWatcherHealthStatus.Standby);
 			logger.LogInformation("Vault watcher stopping.");
+		}
+		catch (Exception exception)
+		{
+			issueRegistry.SetOverrideStatus(VaultWatcherHealthStatus.Offline);
+			ObserveFailure(
+				VaultWatcherIssueType.Fatal,
+				criterion: "watcher-process-alive",
+				resolutionCriterion: "process-restart-success",
+				detail: exception.Message);
+			logger.LogError(exception, "Vault watcher crashed due to a fatal unhandled exception.");
+			throw;
 		}
 		finally
 		{
@@ -77,7 +105,12 @@ public sealed class VaultWatcherService(
 			result.Candidates.Count,
 			result.InvalidCount,
 			result.IgnoredPaths);
-		foreach (var candidate in result.Candidates)
+		var orderedCandidates = result.Candidates
+			.OrderBy(candidate => StartupActionPriority(candidate.SuggestedAction))
+			.ThenBy(candidate => candidate.VaultRelativePath, StringComparer.OrdinalIgnoreCase)
+			.ToList();
+
+		foreach (var candidate in orderedCandidates)
 		{
 			logger.LogInformation(
 				"Startup discovery candidate {Path} for {EntityType} suggested action {Action}.",
@@ -115,7 +148,7 @@ public sealed class VaultWatcherService(
 	/// </summary>
 	private void InitializeWatchers()
 	{
-		foreach (var root in pathSyncModelCatalog.GetScanRoots())
+		foreach (var root in pathPolicy.GetWatchRoots(pathSyncModelCatalog))
 		{
 			if (!Directory.Exists(root))
 			{
@@ -141,12 +174,36 @@ public sealed class VaultWatcherService(
 					QueuePath(eventArgs.OldFullPath);
 					QueuePath(eventArgs.FullPath);
 				};
-				watcher.Error += (_, eventArgs) => logger.LogWarning(eventArgs.GetException(), "Vault watcher encountered a filesystem watcher error for '{Root}'.", root);
+				watcher.Error += (_, eventArgs) =>
+				{
+					ObserveFailure(
+						VaultWatcherIssueType.FilesystemRootError,
+						criterion: $"filesystem-root-error-absent:{root}",
+						resolutionCriterion: $"filesystem-root-stable:{root}",
+						scopeKey: root,
+						path: root,
+						detail: eventArgs.GetException()?.Message);
+					logger.LogWarning(eventArgs.GetException(), "Vault watcher encountered a filesystem watcher error for '{Root}'.", root);
+				};
+
+				ObserveSuccess(
+					VaultWatcherIssueType.RootInitialization,
+					criterion: $"root-initialized:{root}",
+					resolutionCriterion: $"root-initialized:{root}",
+					scopeKey: root,
+					path: root);
 
 				_watchers.Add(watcher);
 			}
 			catch (Exception exception)
 			{
+				ObserveFailure(
+					VaultWatcherIssueType.RootInitialization,
+					criterion: $"root-initialized:{root}",
+					resolutionCriterion: $"root-initialized:{root}",
+					scopeKey: root,
+					path: root,
+					detail: exception.Message);
 				logger.LogError(exception, "Vault watcher failed to initialize filesystem watcher for '{Root}'. Processing will continue for remaining roots.", root);
 			}
 		}
@@ -161,6 +218,11 @@ public sealed class VaultWatcherService(
 	private void QueuePath(string path)
 	{
 		if (string.IsNullOrWhiteSpace(path))
+		{
+			return;
+		}
+
+		if (pathPolicy.ShouldIgnorePath(path))
 		{
 			return;
 		}
@@ -246,6 +308,11 @@ public sealed class VaultWatcherService(
 			return;
 		}
 
+		if (pathPolicy.ShouldIgnorePath(oldPath) || pathPolicy.ShouldIgnorePath(newPath))
+		{
+			return;
+		}
+
 		if (!TryResolveInspectablePath(oldPath, out var inspectOld)
 			|| !TryResolveInspectablePath(newPath, out var inspectNew)
 			|| string.IsNullOrWhiteSpace(inspectOld)
@@ -259,6 +326,12 @@ public sealed class VaultWatcherService(
 
 	private bool TryResolveInspectablePath(string path, out string? inspectPath)
 	{
+		if (pathPolicy.ShouldIgnorePath(path))
+		{
+			inspectPath = null;
+			return false;
+		}
+
 		if (pathSyncModelCatalog.TryResolveWatchPath(path, out inspectPath, out _)
 			&& !string.IsNullOrWhiteSpace(inspectPath))
 		{
@@ -272,6 +345,11 @@ public sealed class VaultWatcherService(
 
 	private async Task<bool> TryProcessRelocationAsync(string oldPath, string newPath, CancellationToken cancellationToken)
 	{
+		if (pathPolicy.ShouldIgnorePath(oldPath) || pathPolicy.ShouldIgnorePath(newPath))
+		{
+			return false;
+		}
+
 		if (writeBarrier.IsSuppressed(oldPath) || writeBarrier.IsSuppressed(newPath))
 		{
 			return false;
@@ -309,6 +387,7 @@ public sealed class VaultWatcherService(
 			candidate.PathId);
 
 		await syncService.ExecuteAsync(candidate, "watcher-relocation", cancellationToken);
+		ObserveSuccess(VaultWatcherIssueType.Relocation, "relocation-sync-success", "relocation-sync-success", path: newPath);
 		return true;
 	}
 
@@ -338,6 +417,11 @@ public sealed class VaultWatcherService(
 	/// <param name="cancellationToken">A token used to cancel inspection.</param>
 	private async Task InspectPathAsync(string path, CancellationToken cancellationToken)
 	{
+		if (pathPolicy.ShouldIgnorePath(path))
+		{
+			return;
+		}
+
 		using var scope = scopeFactory.CreateScope();
 		var discovery = scope.ServiceProvider.GetRequiredService<VaultMarkdownDiscoveryService>();
 		var syncService = scope.ServiceProvider.GetRequiredService<VaultWatcherSyncService>();
@@ -348,12 +432,57 @@ public sealed class VaultWatcherService(
 		}
 		catch (Exception exception)
 		{
+			var issueType = ClassifyOperationalFailure(exception, VaultWatcherIssueType.Discovery);
+			ObserveClassifiedFailure(issueType, path, exception.Message, fallbackCriterion: "candidate-discovery-success", fallbackResolutionCriterion: "candidate-discovery-success-on-next-inspection");
 			logger.LogError(exception, "Watcher discovery failed for path '{Path}'. Processing will continue.", path);
 			return;
 		}
 
+		ObserveSuccess(
+			VaultWatcherIssueType.Discovery,
+			criterion: "candidate-discovery-success",
+			resolutionCriterion: "candidate-discovery-success-on-next-inspection",
+			scopeKey: path,
+			path: path);
+		ObserveSuccess(
+			VaultWatcherIssueType.FilePermissionDenied,
+			criterion: "file-permission-access",
+			resolutionCriterion: "file-permission-access-restored",
+			scopeKey: path,
+			path: path);
+		ObserveSuccess(
+			VaultWatcherIssueType.FileInUse,
+			criterion: "file-not-locked",
+			resolutionCriterion: "file-not-locked",
+			scopeKey: path,
+			path: path);
+
 		if (candidate is null)
 		{
+			ObserveSuccess(
+				VaultWatcherIssueType.MarkdownValidationError,
+				criterion: "markdown-candidate-valid",
+				resolutionCriterion: "markdown-candidate-valid-on-next-inspection",
+				scopeKey: path,
+				path: path);
+			ObserveSuccess(
+				VaultWatcherIssueType.PuckViolation,
+				criterion: "puck-identity-valid",
+				resolutionCriterion: "puck-identity-valid-on-next-inspection",
+				scopeKey: path,
+				path: path);
+			ObserveSuccess(
+				VaultWatcherIssueType.PolicyViolation,
+				criterion: "storage-policy-compliant",
+				resolutionCriterion: "storage-policy-compliant-on-next-inspection",
+				scopeKey: path,
+				path: path);
+			ObserveSuccess(
+				VaultWatcherIssueType.Sync,
+				criterion: "candidate-sync-success",
+				resolutionCriterion: "candidate-sync-success-on-next-execution",
+				scopeKey: path,
+				path: path);
 			logger.LogDebug("Watcher ignored path '{Path}'.", path);
 			return;
 		}
@@ -371,18 +500,216 @@ public sealed class VaultWatcherService(
 				candidate.Issues.Count);
 		}
 
+		ObserveCandidateQuality(candidate);
+
 		try
 		{
 			await syncService.ExecuteAsync(candidate, "watcher", cancellationToken);
+			ObserveSuccess(
+				VaultWatcherIssueType.Sync,
+				criterion: "candidate-sync-success",
+				resolutionCriterion: "candidate-sync-success-on-next-execution",
+				scopeKey: candidate.AbsolutePath,
+				path: candidate.AbsolutePath);
 		}
 		catch (Exception exception)
 		{
+			var issueType = ClassifyOperationalFailure(exception, VaultWatcherIssueType.Sync);
+			ObserveClassifiedFailure(issueType, candidate.AbsolutePath, exception.Message, fallbackCriterion: "candidate-sync-success", fallbackResolutionCriterion: "candidate-sync-success-on-next-execution");
 			logger.LogError(
 				exception,
 				"Watcher failed to process candidate '{Path}' for {EntityType}. Processing will continue.",
 				candidate.VaultRelativePath,
 				candidate.Model.EntityName);
 		}
+	}
+
+	private void ObserveCandidateQuality(VaultSyncCandidate candidate)
+	{
+		var firstIssue = candidate.Issues.FirstOrDefault();
+		var validationDetail = candidate.Issues.Count > 0
+			? $"{candidate.Issues.Count} validation issue(s). {firstIssue?.FieldPath}: {firstIssue?.Message}"
+			: null;
+
+		ObserveIssueState(
+			VaultWatcherIssueType.MarkdownValidationError,
+			criterion: "markdown-candidate-valid",
+			resolutionCriterion: "markdown-candidate-valid-on-next-inspection",
+			isFailing: candidate.Issues.Count > 0,
+			scopeKey: candidate.AbsolutePath,
+			path: candidate.AbsolutePath,
+			detail: validationDetail);
+
+		var puckViolation = HasPuckViolation(candidate);
+		ObserveIssueState(
+			VaultWatcherIssueType.PuckViolation,
+			criterion: "puck-identity-valid",
+			resolutionCriterion: "puck-identity-valid-on-next-inspection",
+			isFailing: puckViolation,
+			scopeKey: candidate.AbsolutePath,
+			path: candidate.AbsolutePath,
+			detail: puckViolation ? candidate.SuggestedReason ?? firstIssue?.Message : null);
+
+		var policyViolation = HasPolicyViolation(candidate);
+		ObserveIssueState(
+			VaultWatcherIssueType.PolicyViolation,
+			criterion: "storage-policy-compliant",
+			resolutionCriterion: "storage-policy-compliant-on-next-inspection",
+			isFailing: policyViolation,
+			scopeKey: candidate.AbsolutePath,
+			path: candidate.AbsolutePath,
+			detail: policyViolation ? candidate.SuggestedReason : null);
+	}
+
+	private static bool HasPuckViolation(VaultSyncCandidate candidate)
+	{
+		if (!string.IsNullOrWhiteSpace(candidate.SuggestedReason)
+			&& candidate.SuggestedReason.Contains("puck", StringComparison.OrdinalIgnoreCase))
+		{
+			return true;
+		}
+
+		return candidate.Issues.Any(issue =>
+			issue.FieldPath.Contains("id", StringComparison.OrdinalIgnoreCase)
+			|| issue.Message.Contains("puck", StringComparison.OrdinalIgnoreCase));
+	}
+
+	private static bool HasPolicyViolation(VaultSyncCandidate candidate)
+	{
+		if (candidate.SuggestedAction is not (VaultSyncAction.Conflict or VaultSyncAction.PurgeFile))
+		{
+			return false;
+		}
+
+		if (string.IsNullOrWhiteSpace(candidate.SuggestedReason))
+		{
+			return false;
+		}
+
+		var reason = candidate.SuggestedReason;
+		return reason.Contains("policy", StringComparison.OrdinalIgnoreCase)
+			|| reason.Contains("disallow", StringComparison.OrdinalIgnoreCase)
+			|| reason.Contains("reject", StringComparison.OrdinalIgnoreCase)
+			|| reason.Contains("freeform", StringComparison.OrdinalIgnoreCase)
+			|| reason.Contains("unknown file", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private void ObserveIssueState(
+		VaultWatcherIssueType issueType,
+		string criterion,
+		string resolutionCriterion,
+		bool isFailing,
+		string scopeKey,
+		string path,
+		string? detail = null)
+	{
+		if (isFailing)
+		{
+			ObserveFailure(issueType, criterion, resolutionCriterion, scopeKey: scopeKey, path: path, detail: detail);
+			return;
+		}
+
+		ObserveSuccess(issueType, criterion, resolutionCriterion, scopeKey: scopeKey, path: path);
+	}
+
+	private void ObserveClassifiedFailure(
+		VaultWatcherIssueType issueType,
+		string path,
+		string detail,
+		string fallbackCriterion,
+		string fallbackResolutionCriterion)
+	{
+		var (criterion, resolutionCriterion) = issueType switch
+		{
+			VaultWatcherIssueType.FilePermissionDenied => ("file-permission-access", "file-permission-access-restored"),
+			VaultWatcherIssueType.FileInUse => ("file-not-locked", "file-not-locked"),
+			VaultWatcherIssueType.MarkdownValidationError => ("markdown-candidate-valid", "markdown-candidate-valid-on-next-inspection"),
+			_ => (fallbackCriterion, fallbackResolutionCriterion),
+		};
+
+		ObserveFailure(
+			issueType,
+			criterion,
+			resolutionCriterion,
+			scopeKey: path,
+			path: path,
+			detail: detail);
+	}
+
+	private static VaultWatcherIssueType ClassifyOperationalFailure(Exception exception, VaultWatcherIssueType fallback)
+	{
+		if (exception is UnauthorizedAccessException)
+		{
+			return VaultWatcherIssueType.FilePermissionDenied;
+		}
+
+		if (IsFileInUse(exception))
+		{
+			return VaultWatcherIssueType.FileInUse;
+		}
+
+		if (IsMarkdownValidationFailure(exception))
+		{
+			return VaultWatcherIssueType.MarkdownValidationError;
+		}
+
+		return fallback;
+	}
+
+	private static bool IsFileInUse(Exception exception)
+	{
+		if (exception is not IOException ioException)
+		{
+			return false;
+		}
+
+		return ioException.Message.Contains("being used by another process", StringComparison.OrdinalIgnoreCase)
+			|| ioException.Message.Contains("process cannot access the file", StringComparison.OrdinalIgnoreCase)
+			|| ioException.Message.Contains("file is being used", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool IsMarkdownValidationFailure(Exception exception)
+	{
+		return exception is InvalidOperationException
+			&& (exception.Message.Contains("deserialize markdown", StringComparison.OrdinalIgnoreCase)
+				|| exception.Message.Contains("frontmatter", StringComparison.OrdinalIgnoreCase)
+				|| exception.Message.Contains("issues", StringComparison.OrdinalIgnoreCase));
+	}
+
+	private void ObserveSuccess(
+		VaultWatcherIssueType issueType,
+		string criterion,
+		string? resolutionCriterion = null,
+		string? scopeKey = null,
+		string? path = null)
+	{
+		issueRegistry.Observe(
+			new VaultWatcherIssueSignal(
+				issueType,
+				criterion,
+				resolutionCriterion ?? criterion,
+				scopeKey,
+				path),
+			criterionSatisfied: true);
+	}
+
+	private void ObserveFailure(
+		VaultWatcherIssueType issueType,
+		string criterion,
+		string resolutionCriterion,
+		string? scopeKey = null,
+		string? path = null,
+		string? detail = null)
+	{
+		issueRegistry.Observe(
+			new VaultWatcherIssueSignal(
+				issueType,
+				criterion,
+				resolutionCriterion,
+				scopeKey,
+				path,
+				detail),
+			criterionSatisfied: false);
 	}
 
 	/// <summary>
@@ -396,5 +723,19 @@ public sealed class VaultWatcherService(
 		}
 
 		_watchers.Clear();
+	}
+
+	private static int StartupActionPriority(VaultSyncAction action)
+	{
+		return action switch
+		{
+			VaultSyncAction.UpdateFromFile => 0,
+			VaultSyncAction.RewriteFromDatabase => 0,
+			VaultSyncAction.CreateFromFile => 1,
+			VaultSyncAction.PurgeFile => 2,
+			VaultSyncAction.Conflict => 3,
+			VaultSyncAction.Ignore => 4,
+			_ => 5,
+		};
 	}
 }

@@ -50,6 +50,8 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<MarkdownFrontMatterSerializer>();
 		services.AddSingleton<MarkdownFileLocator>();
 		services.AddSingleton<VaultPathSyncModelCatalog>();
+		services.AddSingleton<VaultWatcherPathPolicy>();
+		services.AddSingleton<VaultWatcherIssueRegistry>();
 		services.AddSingleton<VaultWatcherWriteBarrier>();
 		services.AddSingleton<VaultStorageTopologyValidator>();
 		services.AddSingleton<PlaintorchVaultLockService>();

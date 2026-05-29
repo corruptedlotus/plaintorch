@@ -17,6 +17,7 @@ public sealed class VaultMarkdownDiscoveryService(
 	VaultLayout layout,
 	PlainfraContext context,
 	VaultPathSyncModelCatalog pathSyncModelCatalog,
+	VaultWatcherPathPolicy pathPolicy,
 	MarkdownFrontMatterSerializer markdownSerializer,
 	VaultAuditLogService auditLogService,
 	VaultSyncDecisionService decisionService,
@@ -42,6 +43,12 @@ public sealed class VaultMarkdownDiscoveryService(
 		foreach (var path in allPaths)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
+			if (pathPolicy.ShouldIgnorePath(path))
+			{
+				ignored++;
+				continue;
+			}
+
 			var candidate = await InspectPathCoreAsync(path, knownIdsByType, cancellationToken);
 			if (candidate is null)
 			{
@@ -116,6 +123,11 @@ public sealed class VaultMarkdownDiscoveryService(
 		IReadOnlyDictionary<Type, HashSet<string>> knownIdsByType,
 		CancellationToken cancellationToken)
 	{
+		if (pathPolicy.ShouldIgnorePath(path))
+		{
+			return null;
+		}
+
 		if (!pathSyncModelCatalog.TryResolveWatchPath(path, out var resolvedPath, out var model)
 			|| string.IsNullOrWhiteSpace(resolvedPath)
 			|| model is null)
@@ -166,6 +178,14 @@ public sealed class VaultMarkdownDiscoveryService(
 		if (parsedModel is Directive freeformDirective
 			&& model.Mode == VaultStorageMode.Freeform)
 		{
+			if (!pathPolicy.IsAllowedFreeformDirectiveAssertionPath(fullPath))
+			{
+				issues.Add(new MarkdownValidationIssue(
+					"path",
+					"Freeform directive path is under a managed root reserved for non-directive entities and cannot assert freeform ownership.",
+					Path.GetRelativePath(layout.VaultRoot, fullPath)));
+			}
+
 			if (!string.IsNullOrWhiteSpace(pathId) && !knownIds.Contains(pathId))
 			{
 				var resolved = await puckEntityResolutionService.ResolveAsync(pathId, cancellationToken);

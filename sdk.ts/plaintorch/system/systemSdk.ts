@@ -1,5 +1,5 @@
 import type { PlaintorchCoreClient } from "../coreClient"
-import type { EntityExistence, HealthStatus, SystemBriefing, VaultNoteAuthorityResolution } from "./contracts"
+import type { EntityExistence, HealthStatus, SystemBriefing, VaultNoteAuthorityResolution, WatcherIssueReport } from "./contracts"
 interface CacheEntry {
 	expiresAt: number
 	value: VaultNoteAuthorityResolution | undefined
@@ -44,6 +44,21 @@ export class PlaintorchSystemSdk {
 
 	public async getHealth(): Promise<HealthStatus | undefined> {
 		return await this.client.getJson<HealthStatus>("/healthz")
+	}
+
+	public async getWatcherIssues(): Promise<WatcherIssueReport | undefined> {
+		return await this.client.getJson<WatcherIssueReport>("/api/system/watcher/issues")
+	}
+
+	public async getWatcherIssuesForPath(vaultRelativePath: string): Promise<WatcherIssueReport | undefined> {
+		const normalizedPath = normalizeVaultRelativePath(vaultRelativePath)
+		if (!normalizedPath) {
+			return undefined
+		}
+
+		return await this.client.getJson<WatcherIssueReport>(
+			`/api/system/watcher/issues-for?path=${encodeURIComponent(normalizedPath)}`
+		)
 	}
 }
 
