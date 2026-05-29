@@ -9,15 +9,15 @@ public enum VaultStorageMode
 	/// Entities can be created by both files and the core,
 	/// property changes between them will be synced, removals will also be synced from both sides.
 	/// <br/>
-	/// If any errors occur in parsing the properties from files, those values will be overriden by the core.
+	/// If any errors occur in parsing the properties from files, those values will be overridden by the core.
 	/// </summary>
 	Synced,
 
 	/// <summary>
-	/// Entities wil be created by the core with a default file for them,
+	/// Entities will be created by the core with a default file for them,
 	/// property changes between them will be synced, but removals will not be synced by either side.
 	/// <br/>
-	/// If any errors occur in parsing the properties from files, those values will be overriden by the core.
+	/// If any errors occur in parsing the properties from files, those values will be overridden by the core.
 	/// </summary>
 	Optional,
 
@@ -25,7 +25,7 @@ public enum VaultStorageMode
 	/// Entities will be created by files,
 	/// the core will only keep track of them and their properties, including removals.
 	/// <br/>
-	/// If any errors occur in parsing the properties from files, those values will be overriden by the core.
+	/// If any errors occur in parsing the properties from files, those values will be overridden by the core.
 	/// </summary>
 	FileFirst,
 

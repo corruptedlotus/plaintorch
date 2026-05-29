@@ -136,7 +136,9 @@ public sealed class VaultWatcherSyncService(
 
 		context.Add(model);
 		await context.SaveChangesAsync(cancellationToken);
-		var shouldRewriteCanonical = string.IsNullOrWhiteSpace(candidate.PathId) || !candidate.IsValid;
+		var shouldRewriteCanonical = string.IsNullOrWhiteSpace(candidate.PathId)
+			|| !candidate.IsValid
+			|| RequiresCanonicalScaffold(candidate);
 		if (shouldRewriteCanonical)
 		{
 			await SaveCanonicalMarkdownAsync(model, sourcePath: candidate.AbsolutePath, cancellationToken: cancellationToken);
@@ -223,8 +225,35 @@ public sealed class VaultWatcherSyncService(
 			namedEntity.Title = candidate.PathTitle;
 		}
 
+		var requiresScaffold = RequiresCanonicalScaffold(candidate);
 		if (!existingEntry.Properties.Any(property => property.IsModified))
 		{
+			if (requiresScaffold)
+			{
+				await SaveCanonicalMarkdownAsync(existing, previous, candidate.AbsolutePath, cancellationToken);
+
+				logger.LogInformation(
+					"Watcher normalized canonical frontmatter for {EntityType} '{EntityId}' at '{Path}' despite no metadata changes.",
+					candidate.Model.EntityName,
+					candidate.PathId,
+					candidate.VaultRelativePath);
+
+				await auditLogService.WriteAsync(
+					"sync",
+					"update-rewrite-scaffold",
+					subjectType: candidate.Model.EntityName,
+					subjectId: candidate.PathId,
+					subjectTitle: candidate.PathTitle,
+					details: new
+					{
+						origin,
+						candidate.VaultRelativePath,
+						reason = "No metadata changes detected, but canonical file/frontmatter scaffold was missing.",
+					},
+					cancellationToken: cancellationToken);
+				return;
+			}
+
 			logger.LogDebug(
 				"Watcher detected no metadata sync changes for {EntityType} '{EntityId}' from '{Path}'. Skipping rewrite.",
 				candidate.Model.EntityName,
@@ -245,7 +274,7 @@ public sealed class VaultWatcherSyncService(
 
 		await context.SaveChangesAsync(cancellationToken);
 
-		var shouldRewriteCanonical = !candidate.IsValid;
+		var shouldRewriteCanonical = !candidate.IsValid || requiresScaffold;
 		if (shouldRewriteCanonical)
 		{
 			await SaveCanonicalMarkdownAsync(existing, previous, candidate.AbsolutePath, cancellationToken);
@@ -274,6 +303,33 @@ public sealed class VaultWatcherSyncService(
 			subject: existing,
 			details: new { origin, candidate.VaultRelativePath, candidate.SuggestedReason, canonicalRewriteApplied = shouldRewriteCanonical },
 			cancellationToken: cancellationToken);
+	}
+
+	private static bool RequiresCanonicalScaffold(VaultSyncCandidate candidate)
+	{
+		if (!File.Exists(candidate.AbsolutePath))
+		{
+			return true;
+		}
+
+		return !HasFrontMatter(candidate.AbsolutePath);
+	}
+
+	private static bool HasFrontMatter(string path)
+	{
+		using var reader = new StreamReader(path);
+		var firstLine = reader.ReadLine();
+		if (string.IsNullOrWhiteSpace(firstLine))
+		{
+			return false;
+		}
+
+		if (firstLine.Length > 0 && firstLine[0] == '\uFEFF')
+		{
+			firstLine = firstLine[1..];
+		}
+
+		return string.Equals(firstLine.Trim(), "---", StringComparison.Ordinal);
 	}
 
 	/// <summary>
