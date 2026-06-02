@@ -1,4 +1,6 @@
-namespace Pleiades.Vault.Watcher;
+using Pleiades.Vault.Watcher;
+
+namespace Pleiades.Vault.Policy;
 
 /// <summary>
 /// Implements file-first storage mode policy.
@@ -27,6 +29,16 @@ public sealed class FileFirstVaultStorageModePolicyService : PathBoundVaultStora
 		}
 
 		var exists = context.KnownIds.Contains(context.PathId);
+		if (!context.FileExists)
+		{
+			if (exists)
+			{
+				return (VaultSyncAction.DeleteFromDatabase, "File-first storage removes known entities when their file is deleted.");
+			}
+
+			return (VaultSyncAction.Ignore, "Missing file does not map to a known entity in file-first storage.");
+		}
+
 		if (context.IssueMessages.Count > 0)
 		{
 			return (VaultSyncAction.Conflict, "Candidate has validation issues that require reconciliation.");

@@ -2,7 +2,9 @@ using System.Text.Json;
 using System.Reflection;
 using Pleiades.Vault.Markdown;
 
-namespace Pleiades.Vault.Watcher;
+using Pleiades.Vault.Watcher;
+
+namespace Pleiades.Vault.Policy;
 
 /// <summary>
 /// Centralizes watcher path filtering and scan-root selection rules defined by the watcher blueprint.

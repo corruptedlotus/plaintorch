@@ -18,7 +18,6 @@ public sealed class Executive
 	/// <summary>
 	/// Gets or sets the owning Polaris cycle identifier.
 	/// </summary>
-	[MarkdownField("polarisCycle")]
 	public required string PolarisCycleId { get; set; }
 
 	[ForeignKey(nameof(PolarisCycleId))]
@@ -31,7 +30,6 @@ public sealed class Executive
 	/// <summary>
 	/// Gets or sets the related objective identifier.
 	/// </summary>
-	[MarkdownField("objective")]
 	public string? ObjectiveId { get; set; }
 
 	[ForeignKey(nameof(ObjectiveId))]
@@ -42,14 +40,7 @@ public sealed class Executive
 	public Objective? Objective { get; set; }
 
 	/// <summary>
-	/// Gets or sets the optional title used for one-shot or more specifically named executive work.
-	/// </summary>
-	[MarkdownField("title")]
-	public string? Title { get; set; }
-
-	/// <summary>
 	/// Gets or sets a value indicating whether the action was executed.
 	/// </summary>
-	[MarkdownField("executed")]
 	public bool Executed { get; set; }
 }

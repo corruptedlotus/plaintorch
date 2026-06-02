@@ -1,9 +1,15 @@
 import { Component, component, css, html, property } from "@a11d/lit"
-import icons, { IconName } from '../assets/icons'
+import * as icons from 'assets/icons'
+import { getIcon, IconName as LucideIconName } from "obsidian"
 
+export type IconName = keyof typeof icons
+
+/**
+ * @csspart icon-frame - The element containing the icon's mask image.
+ */
 @component('p7t-icon')
 export class PleiadesIcon extends Component {
-	@property() icon: IconName = 'plaintorch'
+	@property() icon: IconName | `lucide:${LucideIconName}` = 'plaintorch'
 
 	static override get styles() {
 		return css`
@@ -29,11 +35,19 @@ export class PleiadesIcon extends Component {
 	}
 
 	protected override get template() {
-		const iconSource = icons[this.icon] ?? icons.plaintorch
-
-		return html`
-			<div style="mask-image: url('${iconSource}')"></div>
-		`
+		
+		if (this.icon in icons) {
+			const iconSource = icons[this.icon as IconName] ?? icons.plaintorch
+			return html`
+				<div part='icon-frame' style="mask-image: url('${iconSource}')"></div>
+			`
+		}
+		else {
+			const svg = getIcon(this.icon.replace('lucide:', ''))
+			svg?.setAttribute('width', '100%')
+			svg?.setAttribute('height', '100%')
+			return html`${svg}`
+		}
 	}
 }
 

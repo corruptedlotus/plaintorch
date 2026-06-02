@@ -22,14 +22,16 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 	/// <param name="model">The model instance to serialize.</param>
 	/// <param name="body">Optional markdown body content.</param>
 	/// <returns>The generated markdown document.</returns>
-	public string Serialize<T>(T model, string body = "")
+	public string Serialize<T>(T model, string body = "", IReadOnlyDictionary<string, string>? preservedFrontMatter = null)
 	{
 		ArgumentNullException.ThrowIfNull(model);
 
 		var lines = new List<string> { "---" };
+		var emittedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		if (TryGetFreeformPuckValue(model, out var freeformPuck))
 		{
 			lines.Add($"{FreeformPuckFieldName}: {FormatScalar(freeformPuck)}");
+			emittedKeys.Add(FreeformPuckFieldName);
 		}
 
 		foreach (var property in GetAnnotatedProperties(model.GetType()))
@@ -42,6 +44,22 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 			}
 
 			lines.Add($"{attribute.Name}: {FormatScalar(value)}");
+			emittedKeys.Add(attribute.Name);
+		}
+
+		if (preservedFrontMatter is not null)
+		{
+			foreach (var (key, value) in preservedFrontMatter)
+			{
+				if (string.IsNullOrWhiteSpace(key) || emittedKeys.Contains(key))
+				{
+					continue;
+				}
+
+				lines.Add(string.IsNullOrWhiteSpace(value)
+					? $"{key}:"
+					: $"{key}: {value}");
+			}
 		}
 
 		lines.Add("---");
@@ -444,7 +462,7 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 			return true;
 		}
 
-		if (propertyType == typeof(DateOnly) && DateOnly.TryParseExact(normalizedValue, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dateOnlyValue))
+		if (propertyType == typeof(DateOnly) && TryConvertDateOnlyValue(normalizedValue, out var dateOnlyValue))
 		{
 			convertedValue = dateOnlyValue;
 			return true;
@@ -463,6 +481,34 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		}
 
 		convertedValue = null;
+		return false;
+	}
+
+	private static bool TryConvertDateOnlyValue(string normalizedValue, out DateOnly dateOnlyValue)
+	{
+		if (DateOnly.TryParseExact(normalizedValue, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out dateOnlyValue))
+		{
+			return true;
+		}
+
+		if (DateOnly.TryParse(normalizedValue, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out dateOnlyValue))
+		{
+			return true;
+		}
+
+		if (DateTimeOffset.TryParse(normalizedValue, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dateTimeOffsetValue))
+		{
+			dateOnlyValue = DateOnly.FromDateTime(dateTimeOffsetValue.DateTime);
+			return true;
+		}
+
+		if (DateTime.TryParse(normalizedValue, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dateTimeValue))
+		{
+			dateOnlyValue = DateOnly.FromDateTime(dateTimeValue);
+			return true;
+		}
+
+		dateOnlyValue = default;
 		return false;
 	}
 

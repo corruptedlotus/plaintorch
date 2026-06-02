@@ -1,6 +1,7 @@
 using Pleiades.Puck;
+using Pleiades.Vault.Watcher;
 
-namespace Pleiades.Vault.Watcher;
+namespace Pleiades.Vault.Policy;
 
 /// <summary>
 /// Produces provisional watcher reconciliation decisions from path-resolved markdown candidates.
@@ -18,7 +19,7 @@ public sealed class VaultSyncDecisionService(
 	/// <param name="issueMessages">Validation issue messages produced while hydrating the candidate.</param>
 	/// <param name="knownIds">The known identifiers currently present in storage for the model type.</param>
 	/// <returns>A provisional action and explanatory reason for watcher reconciliation.</returns>
-	public (VaultSyncAction Action, string Reason) Decide(VaultPathSyncModel model, string? pathId, string pathTitle, IReadOnlyList<string> issueMessages, ISet<string> knownIds)
+	public (VaultSyncAction Action, string Reason) Decide(VaultPathSyncModel model, string? pathId, string pathTitle, IReadOnlyList<string> issueMessages, ISet<string> knownIds, bool fileExists)
 	{
 		ArgumentNullException.ThrowIfNull(model);
 		ArgumentException.ThrowIfNullOrWhiteSpace(pathTitle);
@@ -32,6 +33,7 @@ public sealed class VaultSyncDecisionService(
 			pathTitle,
 			issueMessages,
 			knownIds,
+			fileExists,
 			puckCreationService.RequiresCallerInputFor(model.EntityType)));
 	}
 }

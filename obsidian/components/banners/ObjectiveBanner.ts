@@ -1,9 +1,10 @@
 import { component, html } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { Objective } from '@pleiades/sdk'
-import { plaintorchNodeCoreClient as core } from "@pleiades/sdk/plaintorch/node"
+import { ObjectiveStatus } from "@pleiades/sdk/plaintorch/node"
 import { OnrushSprint } from "@pleiades/sdk"
 import { App, Notice, SuggestModal } from "obsidian"
+import { core } from ".."
 
 @component('p7t-objective-banner')
 export class ObjectiveBanner extends EntityBanner<Objective> {
@@ -25,18 +26,26 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 		`
 	}
 
-	protected override get heading() {
-		return html`${this.entity?.title ?? '???'}`
+	protected override get headingTemplate() {
+		return html`<span>${this.entity?.title ?? '???'}</span>`
 	}
 	
-	protected override get subheading() {
-		return html`Pleiades Objective`
+	protected override get preHeadingTemplate() {
+		return html`<span>Pleiades Objective</span>`
+	}
+
+	protected override get subHeadingTemplate() {
+		return html`
+			<p7t-status-item
+				.status=${ObjectiveStatus[this.entity!.status] as keyof typeof ObjectiveStatus}>
+			</p7t-status-item>
+		`
 	}
 
 	protected override get actions() {
 		return html`
-			<button @click=${() => this.pickOnrush()}><p7t-icon icon='onrush'></p7t-icon> Add to Onrush</button>
-			<button><p7t-icon icon='polaris'></p7t-icon> Add to Polaris</button>
+			<p7t-button icon='onrush' @click=${() => this.pickOnrush()}>Add to Onrush</p7t-button>
+			<p7t-button icon='polaris'>Add to Polaris</p7t-button>
 		`
 	}
 }

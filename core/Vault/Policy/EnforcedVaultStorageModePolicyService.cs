@@ -1,4 +1,6 @@
-namespace Pleiades.Vault.Watcher;
+using Pleiades.Vault.Watcher;
+
+namespace Pleiades.Vault.Policy;
 
 /// <summary>
 /// Implements enforced storage mode policy.
@@ -27,6 +29,16 @@ public sealed class EnforcedVaultStorageModePolicyService : PathBoundVaultStorag
 		}
 
 		var exists = context.KnownIds.Contains(context.PathId);
+		if (!context.FileExists)
+		{
+			if (exists)
+			{
+				return (VaultSyncAction.RewriteFromDatabase, "Enforced storage keeps canonical entities when files are removed and rewrites canonical markdown.");
+			}
+
+			return (VaultSyncAction.Ignore, "Missing file does not map to a known entity in enforced storage.");
+		}
+
 		if (context.IssueMessages.Count > 0)
 		{
 			if (!exists)

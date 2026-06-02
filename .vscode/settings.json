@@ -3,6 +3,7 @@
 		"dotnet build": true,
 		"npm run build": true,
 		"npm run typecheck": true,
-		"dotnet run": true
+		"dotnet run": true,
+		"dotnet .\\bin\\verify-temp\\plaintorch.dll": true
 	}
 }

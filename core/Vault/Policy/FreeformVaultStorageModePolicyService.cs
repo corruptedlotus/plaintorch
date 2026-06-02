@@ -1,7 +1,9 @@
+using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Vault.Markdown;
+using Pleiades.Vault.Watcher;
 
-namespace Pleiades.Vault.Watcher;
+namespace Pleiades.Vault.Policy;
 
 /// <summary>
 /// Implements freeform storage policy where ownership is identity-driven (frontmatter PUCK) rather than path-shape matching.
@@ -42,6 +44,11 @@ public sealed class FreeformVaultStorageModePolicyService(
 			return false;
 		}
 
+		if (!File.Exists(fullPath))
+		{
+			return true;
+		}
+
 		var frontMatter = markdownSerializer.ParseFrontMatter(markdown);
 		if (!frontMatter.TryGetValue("puck", out var rawPuck) || string.IsNullOrWhiteSpace(rawPuck))
 		{
@@ -72,6 +79,16 @@ public sealed class FreeformVaultStorageModePolicyService(
 		}
 
 		var exists = context.KnownIds.Contains(context.PathId);
+		if (!context.FileExists)
+		{
+			if (exists)
+			{
+				return (VaultSyncAction.DeleteFromDatabase, "Freeform storage removes known entities when their asserted file is deleted.");
+			}
+
+			return (VaultSyncAction.Ignore, "Missing freeform file does not map to a known PUCK identity.");
+		}
+
 		if (context.IssueMessages.Count > 0)
 		{
 			if (!exists)
@@ -88,5 +105,18 @@ public sealed class FreeformVaultStorageModePolicyService(
 		}
 
 		return (VaultSyncAction.PurgeFile, "Freeform storage rejects unknown frontmatter PUCK assertions.");
+	}
+
+	/// <inheritdoc />
+	public string? ResolveRelocationOldIdFallback(VaultPathSyncModel model, string? oldPathId, string? newPathId)
+	{
+		if (!string.IsNullOrWhiteSpace(oldPathId))
+		{
+			return oldPathId;
+		}
+
+		return model.EntityType == typeof(Directive)
+			? newPathId
+			: oldPathId;
 	}
 }

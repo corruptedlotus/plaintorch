@@ -1,4 +1,6 @@
-namespace Pleiades.Vault.Watcher;
+using Pleiades.Vault.Watcher;
+
+namespace Pleiades.Vault.Policy;
 
 /// <summary>
 /// Defines storage-mode-specific watcher policy behavior for path ownership and reconciliation decisions.
@@ -24,4 +26,9 @@ public interface IVaultStorageModePolicyService
 	/// Decides watcher reconciliation action for the specified mode.
 	/// </summary>
 	(VaultSyncAction Action, string Reason) Decide(VaultStorageModeDecisionContext context);
+
+	/// <summary>
+	/// Resolves fallback identity used during relocation reconciliation when the old path lacks direct PUCK identity.
+	/// </summary>
+	string? ResolveRelocationOldIdFallback(VaultPathSyncModel model, string? oldPathId, string? newPathId);
 }

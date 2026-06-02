@@ -1,4 +1,6 @@
-namespace Pleiades.Vault.Watcher;
+using Pleiades.Vault.Watcher;
+
+namespace Pleiades.Vault.Policy;
 
 /// <summary>
 /// Implements optional storage mode policy.
@@ -27,6 +29,16 @@ public sealed class OptionalVaultStorageModePolicyService : PathBoundVaultStorag
 		}
 
 		var exists = context.KnownIds.Contains(context.PathId);
+		if (!context.FileExists)
+		{
+			if (exists)
+			{
+				return (VaultSyncAction.DeleteFromDatabase, "Optional storage removes known entities when their file is deleted.");
+			}
+
+			return (VaultSyncAction.Ignore, "Missing file does not map to a known entity in optional storage.");
+		}
+
 		if (context.IssueMessages.Count > 0)
 		{
 			if (!exists)

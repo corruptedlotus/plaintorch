@@ -21,7 +21,7 @@ public static class PlaintorchDefaultTitleFactory
 	/// </summary>
 	public static string CreatePolarisTitle(DateOnly date)
 	{
-		return $"Polaris Cycle {FormatPleiadeanDate(date)}";
+		return $"Polaris {FormatPleiadeanDate(date)}";
 	}
 
 	/// <summary>
@@ -30,7 +30,7 @@ public static class PlaintorchDefaultTitleFactory
 	public static string FormatPleiadeanDate(DateOnly date)
 	{
 		var pleiadeanDate = PleiadeanCalendar.FromDateTime(date.ToDateTime(TimeOnly.MinValue));
-		return $"{pleiadeanDate.Year}, {pleiadeanDate.MonthName} {pleiadeanDate.Day}";
+		return $"{pleiadeanDate.Day} of {pleiadeanDate.MonthName} {pleiadeanDate.Year}";
 	}
 
 	/// <summary>

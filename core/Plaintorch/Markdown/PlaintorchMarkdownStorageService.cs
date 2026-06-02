@@ -5,6 +5,7 @@ using Pleiades.Saga;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
+using Pleiades.Vault.Policy;
 using Pleiades.Vault.Watcher;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,6 +20,7 @@ public sealed class PlaintorchMarkdownStorageService(
 	VaultLayout layout,
 	MarkdownFrontMatterSerializer markdownSerializer,
 	MarkdownFileLocator markdownFileLocator,
+	VaultWatcherPathPolicy pathPolicy,
 	VaultTemporalDataService temporalDataService,
 	VaultWatcherWriteBarrier writeBarrier)
 {
@@ -105,6 +107,7 @@ public sealed class PlaintorchMarkdownStorageService(
 	{
 		var previousPath = previous is null ? null : await ResolveCanonicalPathAsync(previous, cancellationToken);
 		var newPath = await ResolveCanonicalPathAsync(entity, cancellationToken);
+		newPath = ResolveInactionPreferredPath(entity, newPath, sourcePath);
 		newPath = ResolveFreeformTargetPath(entity, newPath, sourcePath);
 		if (entity is LorePage lorePage && previous is LorePage previousLorePage
 			&& !string.Equals(lorePage.ParentId, previousLorePage.ParentId, StringComparison.OrdinalIgnoreCase))
@@ -115,6 +118,7 @@ public sealed class PlaintorchMarkdownStorageService(
 
 		TryRelocateSelfNamedDirectory(previousPath, newPath, entity.GetType());
 		var body = await ResolveBodyAsync(previousPath, sourcePath, newPath, cancellationToken);
+		var preservedFrontMatter = await ResolveFrontMatterAsync(previousPath, sourcePath, newPath, cancellationToken);
 		SuppressWatcherPaths(
 			newPath,
 			previousPath,
@@ -122,9 +126,67 @@ public sealed class PlaintorchMarkdownStorageService(
 			Path.GetDirectoryName(newPath),
 			Path.GetDirectoryName(previousPath),
 			Path.GetDirectoryName(sourcePath));
-		await WriteMarkdownAsync(newPath, markdownSerializer.Serialize(entity, body), cancellationToken);
+		await WriteMarkdownAsync(newPath, markdownSerializer.Serialize(entity, body, preservedFrontMatter), cancellationToken);
 		DeleteOldPath(previousPath, newPath, ResolveStorageRoot(entity.GetType()));
 		DeleteSourcePath(sourcePath, newPath);
+	}
+
+	private string ResolveInactionPreferredPath(object entity, string canonicalPath, string? sourcePath)
+	{
+		if (string.IsNullOrWhiteSpace(sourcePath))
+		{
+			return canonicalPath;
+		}
+
+		var fullSourcePath = Path.GetFullPath(sourcePath);
+		if (!File.Exists(fullSourcePath)
+			|| !string.Equals(Path.GetExtension(fullSourcePath), ".md", StringComparison.OrdinalIgnoreCase))
+		{
+			return canonicalPath;
+		}
+
+		if (entity is not Objective objective)
+		{
+			return canonicalPath;
+		}
+
+		if (!IsObjectiveSourcePlacementValid(objective, fullSourcePath))
+		{
+			return canonicalPath;
+		}
+
+		var sourceDirectory = Path.GetDirectoryName(fullSourcePath);
+		if (string.IsNullOrWhiteSpace(sourceDirectory))
+		{
+			return canonicalPath;
+		}
+
+		return Path.Combine(sourceDirectory, Path.GetFileName(canonicalPath));
+	}
+
+	private bool IsObjectiveSourcePlacementValid(Objective objective, string fullSourcePath)
+	{
+		if (string.IsNullOrWhiteSpace(objective.DirectiveId))
+		{
+			return IsUnderRoot(fullSourcePath, layout.ObjectivesRoot);
+		}
+
+		var containingDirectiveId = pathPolicy.TryResolveContainingDirectiveId(fullSourcePath);
+		if (!string.Equals(containingDirectiveId, objective.DirectiveId, StringComparison.OrdinalIgnoreCase))
+		{
+			return false;
+		}
+
+		var storage = GetStorageAttribute(typeof(Objective));
+		if (string.IsNullOrWhiteSpace(storage.PartitionUnder))
+		{
+			return true;
+		}
+
+		var expectedPartition = storage.PartitionUnder.Trim();
+		var containingDirectory = Path.GetDirectoryName(fullSourcePath);
+		var containingDirectoryName = Path.GetFileName(containingDirectory?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+		return string.Equals(containingDirectoryName, expectedPartition, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private string ResolveFreeformTargetPath(object entity, string defaultPath, string? sourcePath)
@@ -442,6 +504,25 @@ public sealed class PlaintorchMarkdownStorageService(
 
 		var markdown = await File.ReadAllTextAsync(candidatePath, cancellationToken);
 		return ExtractBody(markdown);
+	}
+
+	private async Task<IReadOnlyDictionary<string, string>?> ResolveFrontMatterAsync(string? previousPath, string? sourcePath, string currentPath, CancellationToken cancellationToken)
+	{
+		var candidatePath = previousPath is not null && File.Exists(previousPath)
+			? previousPath
+			: sourcePath is not null && File.Exists(sourcePath)
+				? sourcePath
+				: File.Exists(currentPath)
+					? currentPath
+					: null;
+
+		if (candidatePath is null)
+		{
+			return null;
+		}
+
+		var markdown = await File.ReadAllTextAsync(candidatePath, cancellationToken);
+		return markdownSerializer.ParseFrontMatter(markdown);
 	}
 
 	private static string ExtractBody(string markdown)

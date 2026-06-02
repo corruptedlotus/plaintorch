@@ -1,8 +1,9 @@
-import { Component, component, css, html, property, state } from '@a11d/lit'
+import { component, css, html, property, state } from '@a11d/lit'
+import { CardComponent } from 'components/design'
 import { App } from 'obsidian'
 
 @component('p7t-entity-banner')
-export class EntityBanner<T extends { id: string, title: string }> extends Component {
+export class EntityBanner<T extends { id: string, title: string }> extends CardComponent {
 	@property() xtype?: string
 	@property() puck = ''
 
@@ -22,38 +23,36 @@ export class EntityBanner<T extends { id: string, title: string }> extends Compo
 
 	static override get styles() {
 		return css`
+			${super.styles}
+
 			:host {
 				display: flex;
 				flex-direction: column;
 				align-items: stretch;
 			}
 
+			:host::part(header) {
+				grid-area: header;
+			}
+
+			:host::part(pre-heading) {
+				color: color-mix(in srgb, currentColor 60%, transparent);
+				font-size: .8em;
+				line-height: .8;
+			}
+
 			.render-grid {
 				margin: 5px;
 				display: grid;
 				grid-template-columns: 48px 1fr;
+				grid-template-rows: auto auto 1fr auto;
+				grid-template-areas:
+					'icon		header'
+					'horizon	secondary'
+					'stamp		info'
+					'puck		actions';
 				gap: 10px;
 				align-items: center;
-				
-				& .heading {
-					display: flex;
-					flex-direction: column;
-				}
-
-				& .subheading {
-					font-size: .7em;
-					font-weight: 400;
-					opacity: .5;
-					display: block;
-					grid-area: 1 / 2;
-				}
-
-				& h1 {
-					grid-area: 1 / 2;
-					margin-block: -5px 5px;
-					font-family: var(--font-interface);
-					font-weight: 600;
-				}
 
 				& .indicator {
 					grid-area: 2 / 1;
@@ -64,7 +63,7 @@ export class EntityBanner<T extends { id: string, title: string }> extends Compo
 				}
 
 				& .info {
-					grid-area: 2 / 2;
+					grid-area: info;
 					display: flex;
 					flex-direction: column;
 					font-weight: 400;
@@ -73,38 +72,15 @@ export class EntityBanner<T extends { id: string, title: string }> extends Compo
 				}
 
 				& .actions {
-					grid-area: 3 / 2;
+					grid-area: actions;
 					display: flex;
 					gap: 10px;
 					justify-content: flex-end;
 				}
 			}
 
-			button {
-				background-color: rgba(0, 0, 0, .3);
-				outline: none;
-				border: 1px solid rgba(255, 255, 255, 0.05);
-				display: flex;
-				align-items: center;
-				gap: 5px;
-				vertical-align: middle;
-				padding: 4px 14px 4px 10px;
-				font-family: var(--font-interface);
-				border-radius: 6px;
-
-				& p7t-icon {
-					width: 32px;
-					height: 32px;
-				}
-
-				&:hover {
-					background-color: rgba(0, 0, 0, .6);
-					border-color: rgba(255, 255, 255, 0.2);
-				}
-			}
-
 			.puck {
-				grid-area: 3 / 1;
+				grid-area: puck;
 				opacity: .6;
 				display: flex;
 				font-weight: 200;
@@ -129,14 +105,11 @@ export class EntityBanner<T extends { id: string, title: string }> extends Compo
 		`
 	}
 
-	protected override render() {
+	protected override get template() {
 		return html`
 			<div class='render-grid'>
 				<p7t-icon class='icon' icon='${this.icon}'></p7t-icon>
-				<div class='heading'>
-					<span class='subheading'>${this.subheading}</span>
-					<h1>${this.heading}</h1>
-				</div>
+				${this.headerTemplate}
 				<span class='indicator'></span>
 				<div class='info'>
 					${this.info}
@@ -152,12 +125,12 @@ export class EntityBanner<T extends { id: string, title: string }> extends Compo
 		`
 	}
 
-	protected get heading() {
-		return html`${this.entity?.title}`
+	protected override get headingTemplate() {
+		return html`<span>${this.entity?.title}</span>`
 	}
 
-	protected get subheading() {
-		return html`Pleiades Entity`
+	protected override get preHeadingTemplate() {
+		return html`<span>Pleiades Entity</span>`
 	}
 
 	protected get info() {

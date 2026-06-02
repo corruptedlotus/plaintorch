@@ -1,0 +1,17 @@
+root = true
+
+[*]
+indent_style = tab
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[sdk.ts/**/*.ts]
+ij_typescript_use_double_quotes = false
+ij_typescript_use_semicolon_after_statement = false
+
+[obsidian/**/*.ts]
+ij_typescript_use_double_quotes = false
+ij_typescript_use_semicolon_after_statement = false

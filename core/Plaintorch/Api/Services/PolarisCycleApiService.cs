@@ -186,7 +186,6 @@ public sealed class PolarisCycleApiService(
 		{
 			PolarisCycleId = cycle.Id,
 			ObjectiveId = objective?.Id,
-			Title = executiveTitle,
 			Executed = false,
 		};
 
@@ -197,7 +196,6 @@ public sealed class PolarisCycleApiService(
 			"polaris.plan-executive",
 			subjectType: nameof(Executive),
 			subjectId: executive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-			subjectTitle: executive.Title,
 			details: new { cycleId = cycle.Id, objectiveId = objective?.Id, mode = plan.Mode.ToString() },
 			cancellationToken: cancellationToken);
 		return new PolarisExecutivePlanResult(objective, executive);
@@ -225,18 +223,12 @@ public sealed class PolarisCycleApiService(
 			executive.ObjectiveId = null;
 		}
 
-		if (update.Title is not null)
-		{
-			executive.Title = string.IsNullOrWhiteSpace(update.Title) ? null : update.Title;
-		}
-
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"polaris.update-executive",
 			subjectType: nameof(Executive),
 			subjectId: executive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-			subjectTitle: executive.Title,
 			details: new { objectiveId = executive.ObjectiveId, executed = executive.Executed },
 			cancellationToken: cancellationToken);
 		return executive;

@@ -1,17 +1,22 @@
 import { component, html } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { Directive } from '@pleiades/sdk'
+import { core } from ".."
 
 @component('p7t-directive-banner')
 export class DirectiveBanner extends EntityBanner<Directive> {
 	protected override get info() {
 		return html`
-			<span>Status</span>
+			<span></span>
 		`
 	}
 
-	protected override get heading() {
-		return html`Pleiades Directive`
+	override fetchEntity(puck: string): Promise<Directive | undefined> {
+		return core.directives.get(puck)
+	}
+
+	protected override get headingTemplate() {
+		return html`<span>${this.entity?.title}</span>`
 	}
 
 	protected override get actions() {

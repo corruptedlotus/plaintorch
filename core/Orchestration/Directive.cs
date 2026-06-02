@@ -28,7 +28,6 @@ public sealed class Directive : PuckNamedEntity
 	/// <summary>
 	/// Gets or sets the parent directive identifier when this directive is nested.
 	/// </summary>
-	[MarkdownField("parent")]
 	public string? ParentDirectiveId { get; set; }
 
 	[ForeignKey(nameof(ParentDirectiveId))]

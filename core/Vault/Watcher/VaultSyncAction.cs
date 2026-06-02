@@ -21,6 +21,11 @@ public enum VaultSyncAction
 	UpdateFromFile,
 
 	/// <summary>
+	/// Delete the corresponding database entity because the authoritative file was removed.
+	/// </summary>
+	DeleteFromDatabase,
+
+	/// <summary>
 	/// Rewrite the file from canonical database state.
 	/// </summary>
 	RewriteFromDatabase,

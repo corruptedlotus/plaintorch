@@ -23,7 +23,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 				.Select(item => item.Id)
 				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
 
-		CreateModel<Objective>(layout, [layout.ObjectivesRoot, layout.DirectivesRoot], VaultStorageShape.SingleFile, path =>
+		CreateModel<Objective>(layout, [layout.ObjectivesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
 			IsObjectiveMarkdownFile(path, layout), static (context, cancellationToken) =>
 			context.Objectives
 				.AsNoTracking()
@@ -248,8 +248,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 			return true;
 		}
 
-		if (!IsPathUnderRoot(path, layout.DirectivesRoot)
-			|| string.IsNullOrWhiteSpace(TryResolveContainingDirectiveIdWithOwnershipBoundaries(path, layout, skipCurrentIfSelfNamed: false)))
+		if (string.IsNullOrWhiteSpace(TryResolveContainingDirectiveIdWithOwnershipBoundaries(path, layout, skipCurrentIfSelfNamed: false)))
 		{
 			return false;
 		}

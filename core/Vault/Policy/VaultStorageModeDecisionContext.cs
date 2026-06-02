@@ -1,4 +1,6 @@
-namespace Pleiades.Vault.Watcher;
+using Pleiades.Vault.Watcher;
+
+namespace Pleiades.Vault.Policy;
 
 /// <summary>
 /// Captures decision inputs forwarded to a storage-mode policy service.
@@ -9,4 +11,5 @@ public sealed record VaultStorageModeDecisionContext(
 	string PathTitle,
 	IReadOnlyList<string> IssueMessages,
 	ISet<string> KnownIds,
+	bool FileExists,
 	bool RequiresCallerInput);

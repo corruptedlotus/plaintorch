@@ -1,0 +1,32 @@
+filters:
+  and:
+    - file.folder == "Project Everglow/Moonlight Impact 3rd/PLAINTORCH/PLAINTORCH Engineering Proposals"
+    - /PEP[0-9]{3} - .+/.matches(file.name)
+properties:
+  note.status:
+    displayName: Status
+  file.name:
+    displayName: Title
+views:
+  - type: table
+    name: Table
+    order:
+      - file.name
+      - status
+    sort:
+      - property: patches
+        direction: ASC
+    imageAspectRatio: 0.95
+    cardSize: 400
+    separator: --
+    indentProperties: true
+    markers: none
+    columnSize:
+      file.name: 500
+  - type: list
+    name: Patches
+    order:
+      - file.name
+      - patches
+    indentProperties: true
+    markers: none

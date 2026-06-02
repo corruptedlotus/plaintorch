@@ -7,6 +7,7 @@ using Pleiades.Puck;
 using Pleiades.Saga;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
+using Pleiades.Vault.Policy;
 
 namespace Pleiades.Vault.Watcher;
 
@@ -217,7 +218,8 @@ public sealed class VaultMarkdownDiscoveryService(
 		}
 
 		var fullPath = Path.GetFullPath(resolvedPath);
-		var markdown = File.Exists(fullPath)
+		var fileExists = File.Exists(fullPath);
+		var markdown = fileExists
 			? await File.ReadAllTextAsync(fullPath, cancellationToken)
 			: string.Empty;
 		if (enforceModelBelongingPolicy
@@ -227,6 +229,8 @@ public sealed class VaultMarkdownDiscoveryService(
 		}
 
 		var (pathId, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(fullPath);
+		var pathDerivedId = pathId;
+		var pathDerivedTitle = pathTitle;
 		var parsedModel = CreatePathComposedModel(model.EntityType, fullPath);
 		if (parsedModel is IPuckNamedEntity namedEntity)
 		{
@@ -245,12 +249,21 @@ public sealed class VaultMarkdownDiscoveryService(
 			? ids
 			: new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var isNewEntity = string.IsNullOrWhiteSpace(pathId) || !knownIds.Contains(pathId);
-		var issues = DeserializeInto(parsedModel, model.EntityType, markdown, preserveDefaultsForMissingFields: isNewEntity)
+		var preserveDefaultsForMissingFields = isNewEntity
+			|| (model.Mode != VaultStorageMode.Freeform && typeof(IPuckNamedEntity).IsAssignableFrom(model.EntityType));
+		var issues = DeserializeInto(parsedModel, model.EntityType, markdown, preserveDefaultsForMissingFields: preserveDefaultsForMissingFields)
 			.Select(issue => issue)
 			.ToList();
 		ApplyPathAuthorities(parsedModel, fullPath, issues);
 		if (parsedModel is IPuckNamedEntity resolvedNamedEntity)
 		{
+			if (model.Mode != VaultStorageMode.Freeform
+				&& !string.IsNullOrWhiteSpace(pathDerivedId)
+				&& string.Equals(resolvedNamedEntity.Id, pathDerivedId, StringComparison.OrdinalIgnoreCase))
+			{
+				resolvedNamedEntity.Title = pathDerivedTitle;
+			}
+
 			if (!string.IsNullOrWhiteSpace(resolvedNamedEntity.Id))
 			{
 				pathId = resolvedNamedEntity.Id;
@@ -294,7 +307,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		}
 
 		var issueMessages = issues.Select(issue => $"{issue.FieldPath}: {issue.Message}").ToArray();
-		var (action, reason) = decisionService.Decide(model, pathId, pathTitle, issueMessages, knownIds);
+		var (action, reason) = decisionService.Decide(model, pathId, pathTitle, issueMessages, knownIds, fileExists);
 
 		return new VaultSyncCandidate(
 			fullPath,
@@ -305,7 +318,8 @@ public sealed class VaultMarkdownDiscoveryService(
 			parsedModel,
 			issues,
 			ComputeHash(ExtractBody(markdown)),
-			File.Exists(fullPath) ? File.GetLastWriteTimeUtc(fullPath) : DateTime.UtcNow,
+			fileExists ? File.GetLastWriteTimeUtc(fullPath) : DateTime.UtcNow,
+			fileExists,
 			action,
 			reason);
 	}
@@ -496,7 +510,20 @@ public sealed class VaultMarkdownDiscoveryService(
 			}
 			case Objective objective:
 			{
+				var normalizedObjectivesRoot = Path.GetFullPath(layout.ObjectivesRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+				var normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+				if (string.Equals(normalizedPath, normalizedObjectivesRoot, StringComparison.OrdinalIgnoreCase)
+					|| normalizedPath.StartsWith(normalizedObjectivesRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+				{
+					break;
+				}
+
 				var pathDirectiveId = pathPolicy.TryResolveContainingDirectiveId(path);
+				if (string.IsNullOrWhiteSpace(pathDirectiveId))
+				{
+					break;
+				}
+
 				if (!string.Equals(objective.DirectiveId, pathDirectiveId, StringComparison.OrdinalIgnoreCase))
 				{
 					if (!string.IsNullOrWhiteSpace(objective.DirectiveId))

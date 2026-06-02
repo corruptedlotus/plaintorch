@@ -98,9 +98,6 @@ namespace plaintorch.Vault.Database.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Title")
-                        .HasColumnType("TEXT");
-
                     b.HasKey("Id");
 
                     b.HasIndex("ObjectiveId");
@@ -123,6 +120,9 @@ namespace plaintorch.Vault.Database.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("DirectiveId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("Due")
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("IsEnduring")

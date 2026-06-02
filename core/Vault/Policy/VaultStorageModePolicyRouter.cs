@@ -1,4 +1,4 @@
-namespace Pleiades.Vault.Watcher;
+namespace Pleiades.Vault.Policy;
 
 /// <summary>
 /// Resolves storage-mode policy services.

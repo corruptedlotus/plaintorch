@@ -13,17 +13,7 @@ export class NoteBanner extends Component {
 	static override get styles() {
 		return css`
 			:host {
-				display: flex;
-				flex-direction: column;
-				align-items: stretch;
-				margin: 0 0 1rem;
-				padding: 0.75rem 0.9rem;
-				border: 1px solid var(--background-modifier-border);
-				border-radius: 12px;
-				background: color-mix(in srgb, var(--interactive-accent, #7c6cff) 12%, var(--background-secondary));
-				color: var(--text-normal);
-				font-weight: 700;
-				margin-bottom: .5rem;
+				display: grid;
 			}
 
 			:host([invalid]) {
@@ -32,7 +22,7 @@ export class NoteBanner extends Component {
 		`
 	}
 
-	protected override render() {
+	protected override get template() {
 		return !this.note ? html`
 			Loading...
 		` : this.renderBannerElement()

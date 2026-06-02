@@ -40,6 +40,9 @@ public sealed class VaultWatcherSyncService(
 			case VaultSyncAction.UpdateFromFile:
 				await UpdateFromFileAsync(candidate, origin, cancellationToken);
 				break;
+				case VaultSyncAction.DeleteFromDatabase:
+					await DeleteFromDatabaseAsync(candidate, origin, cancellationToken);
+					break;
 			case VaultSyncAction.RewriteFromDatabase:
 				await RewriteFromDatabaseAsync(candidate, origin, cancellationToken);
 				break;
@@ -462,6 +465,65 @@ public sealed class VaultWatcherSyncService(
 			temporalEntityId: archived?.EntityId,
 			temporalEntityTitle: archived?.EntityTitle,
 			temporalLocation: archived?.ArchivedRelativePath,
+			details: new { origin, candidate.VaultRelativePath, candidate.SuggestedReason },
+			cancellationToken: cancellationToken);
+	}
+
+	/// <summary>
+	/// Deletes an existing database entity when policy marks file deletion as authoritative.
+	/// </summary>
+	/// <param name="candidate">The candidate requesting database deletion.</param>
+	/// <param name="origin">The reconciliation source.</param>
+	/// <param name="cancellationToken">A token used to cancel processing.</param>
+	private async Task DeleteFromDatabaseAsync(VaultSyncCandidate candidate, string origin, CancellationToken cancellationToken)
+	{
+		if (string.IsNullOrWhiteSpace(candidate.PathId))
+		{
+			await auditLogService.WriteAsync(
+				"sync",
+				"delete-skipped",
+				subjectType: candidate.Model.EntityName,
+				subjectTitle: candidate.PathTitle,
+				details: new { origin, candidate.VaultRelativePath, reason = "No database identifier was available for deletion." },
+				cancellationToken: cancellationToken);
+			return;
+		}
+
+		var existing = await LoadExistingAsync(candidate.Model.EntityType, candidate.PathId, cancellationToken);
+		if (existing is null)
+		{
+			await auditLogService.WriteAsync(
+				"sync",
+				"delete-skipped",
+				subjectType: candidate.Model.EntityName,
+				subjectId: candidate.PathId,
+				subjectTitle: candidate.PathTitle,
+				details: new { origin, candidate.VaultRelativePath, reason = "Database entity no longer exists." },
+				cancellationToken: cancellationToken);
+			return;
+		}
+
+		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(existing, "watcher-file-delete", Environment.UserName, cancellationToken);
+		context.Remove(existing);
+		await context.SaveChangesAsync(cancellationToken);
+
+		logger.LogInformation(
+			"Watcher deleted {EntityType} '{EntityId}' because file '{Path}' was removed.",
+			candidate.Model.EntityName,
+			candidate.PathId,
+			candidate.VaultRelativePath);
+
+		await auditLogService.WriteAsync(
+			"sync",
+			"delete-from-database",
+			subjectType: candidate.Model.EntityName,
+			subjectId: candidate.PathId,
+			subjectTitle: candidate.PathTitle,
+			temporalKind: "database",
+			temporalEntryKey: graveyardEntry.EntryKey,
+			temporalEntityType: graveyardEntry.EntityType,
+			temporalEntityId: graveyardEntry.EntityId,
+			temporalEntityTitle: graveyardEntry.EntityTitle,
 			details: new { origin, candidate.VaultRelativePath, candidate.SuggestedReason },
 			cancellationToken: cancellationToken);
 	}

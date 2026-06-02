@@ -21,6 +21,10 @@ const copyManifestPlugin = {
 const context = await esbuild.context({
   entryPoints: ["src/main.ts"],
   bundle: true,
+  loader: {
+	".svg": "dataurl",
+	".png": "dataurl",
+  },
   format: "cjs",
   target: "es2020",
   logLevel: "info",

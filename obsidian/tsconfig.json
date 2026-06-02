@@ -46,6 +46,9 @@
 			"components/*": [
 				"components/*"
 			],
+			"assets/*": [
+				"assets/*"
+			],
 		}
 	},
 	"include": [

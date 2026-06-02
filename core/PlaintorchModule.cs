@@ -5,6 +5,7 @@ using Pleiades.Plaintorch.State;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
+using Pleiades.Vault.Policy;
 using Pleiades.Vault.Watcher;
 
 namespace Pleiades.Plaintorch;

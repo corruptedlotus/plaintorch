@@ -14,6 +14,7 @@ namespace Pleiades.Vault.Watcher;
 /// <param name="Issues">Validation issues discovered during candidate hydration.</param>
 /// <param name="BodyHash">A deterministic hash of markdown body content (excluding frontmatter).</param>
 /// <param name="LastWriteUtc">The file last-write timestamp observed for the candidate.</param>
+/// <param name="FileExists">A value indicating whether the candidate path currently exists on disk.</param>
 /// <param name="SuggestedAction">The provisional reconciliation action suggested for this candidate.</param>
 /// <param name="SuggestedReason">The human-readable reason explaining the suggested action.</param>
 public sealed record VaultSyncCandidate(
@@ -26,6 +27,7 @@ public sealed record VaultSyncCandidate(
 	IReadOnlyList<MarkdownValidationIssue> Issues,
 	string BodyHash,
 	DateTimeOffset LastWriteUtc,
+	bool FileExists,
 	VaultSyncAction SuggestedAction,
 	string? SuggestedReason = null)
 {

@@ -13,12 +13,12 @@ public sealed class PolarisForecast
 	/// <summary>
 	/// Gets or sets the reference date the forecast was planned from.
 	/// </summary>
-	[MarkdownField("forecastReference")]
+	[MarkdownField("reference")]
 	public required DateOnly ForecastReference { get; set; }
 
 	/// <summary>
 	/// Gets or sets the forecast target marker.
 	/// </summary>
-	[MarkdownField("forecastTarget")]
+	[MarkdownField("target")]
 	public required string ForecastTarget { get; set; }
 }

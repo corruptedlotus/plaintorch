@@ -1,10 +1,15 @@
+@property --flare-intensity {
+	syntax: '<percentage>';
+	initial-value: 0%;
+}
+
 .view-content:has(p7t-note-banner:not([invalid])) .metadata-container,
 .view-content:has(p7t-note-banner:not([invalid])) .inline-title {
 	display: none !important;
 }
 
 .plaintorch-briefing-view {
-	padding: 1rem;
+	padding: 0.2em 1em 1.4em !important;
 }
 
 .plaintorch-briefing-hero {

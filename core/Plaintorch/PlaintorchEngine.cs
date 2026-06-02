@@ -120,7 +120,7 @@ public sealed class PlaintorchEngine(
 		{
 			cycle.Title = PlaintorchDefaultTitleFactory.TryResolvePolarisDate(cycle.Id, out var cycleDate)
 				? PlaintorchDefaultTitleFactory.CreatePolarisTitle(cycleDate)
-				: $"Polaris Cycle {cycle.Id}";
+				: $"Polaris {cycle.Id}";
 		}
 
 		repository.UpsertPolarisCycle(cycle);

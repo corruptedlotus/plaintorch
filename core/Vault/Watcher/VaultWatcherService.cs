@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Pleiades.Orchestration;
 using Pleiades.Vault.Markdown;
+using Pleiades.Vault.Policy;
 
 namespace Pleiades.Vault.Watcher;
 
@@ -358,6 +359,7 @@ public sealed class VaultWatcherService(
 		using var scope = scopeFactory.CreateScope();
 		var discovery = scope.ServiceProvider.GetRequiredService<VaultMarkdownDiscoveryService>();
 		var syncService = scope.ServiceProvider.GetRequiredService<VaultWatcherSyncService>();
+		var policyRouter = scope.ServiceProvider.GetRequiredService<VaultStorageModePolicyRouter>();
 
 		var candidate = await discovery.InspectPathAsync(newPath, "watcher-relocation", cancellationToken);
 		if (candidate is null || string.IsNullOrWhiteSpace(candidate.PathId))
@@ -366,12 +368,8 @@ public sealed class VaultWatcherService(
 		}
 
 		var oldId = ResolvePathId(candidate.Model.EntityType, oldPath);
-		if (string.IsNullOrWhiteSpace(oldId)
-			&& candidate.Model.EntityType == typeof(Directive)
-			&& candidate.Model.Mode == VaultStorageMode.Freeform)
-		{
-			oldId = candidate.PathId;
-		}
+		var policy = policyRouter.Resolve(candidate.Model.Mode);
+		oldId = policy.ResolveRelocationOldIdFallback(candidate.Model, oldId, candidate.PathId);
 
 		if (string.IsNullOrWhiteSpace(oldId)
 			|| !string.Equals(oldId, candidate.PathId, StringComparison.OrdinalIgnoreCase))

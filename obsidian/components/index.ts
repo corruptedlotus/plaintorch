@@ -1,4 +1,9 @@
+export { plaintorchNodeCoreClient as core } from '@pleiades/sdk/plaintorch/node'
+
 export * from './PleiadesIcon'
-export * from './banners/EntityBanner'
+export * from './design'
+export * from './system'
 export * from './banners'
+export * from './entities'
+export * from './briefing'
 export * from './NoteBanner'

@@ -5,11 +5,14 @@
 	"description": "Obsidian plugin scaffold for PLAINTORCH entity rendering and briefing surfaces.",
 	"type": "module",
 	"scripts": {
+		"index-assets": "node ./assets/indexer.mjs",
 		"build": "node esbuild.config.mjs production",
 		"dev": "node esbuild.config.mjs"
 	},
 	"devDependencies": {
+		"@typescript-eslint/parser": "^8.46.3",
 		"@types/node": "^22.15.17",
+		"eslint": "^9.38.0",
 		"esbuild": "^0.25.4",
 		"obsidian": "^1.8.10",
 		"tslib": "^2.8.1",

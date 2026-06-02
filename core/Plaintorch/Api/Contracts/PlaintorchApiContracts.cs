@@ -217,7 +217,6 @@ public sealed record PolarisExecutivePlanResult(Objective? Objective, Executive 
 public sealed record ExecutiveUpdate(
 	bool? Executed = null,
 	string? ObjectiveId = null,
-	string? Title = null,
 	bool ClearObjective = false);
 
 /// <summary>

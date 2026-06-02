@@ -1,0 +1,65 @@
+import { Component, component, css, html, property } from "@a11d/lit"
+import { PleiadeanDate } from "@pleiades/sdk"
+import { getOrdinalSuffix } from "@pleiades/sdk/helpers"
+
+@component('p7t-date-view')
+export class PleiadeanDateView extends Component {
+
+	@property() date = PleiadeanDate.fromDate(new Date())
+
+	static override get styles() {
+		return css`
+			:host {
+				display: inline;
+				font-weight: 250;
+			}
+
+			.day-suffix {
+				font-size: .6em;
+			}
+
+			.year-specs {
+				display: inline-flex;
+				flex-direction: column;
+				font-size: .45em;
+				vertical-align: text-bottom;
+			}
+
+			.year-suffix {
+				text-transform: uppercase;
+				font-weight: 700;
+				margin-bottom: -.1em;
+			}
+
+			.year-type {
+				text-transform: uppercase;
+				font-weight: 100;
+			}
+		`
+	}
+
+	override get template() {
+		return html`
+			<span>${this.date.day}</span><span class='day-suffix'>${getOrdinalSuffix(this.date.day)}</span>
+			<span> of </span>
+			<span class='month'>${this.date.monthName},</span>
+			${this.date.year === 0 ? html`
+				<span>Year ZERO</span>
+			` : html`
+				<span>${Math.abs(this.date.year)}</span>
+				<div class='year-specs'>
+					<span class='year-suffix'>
+						${this.date.year > 0 ? 'A.U.' : 'B.U.'}
+					</span>
+					<span class='year-type'>${this.date.yearType}</span>
+				</div>
+			`}
+		`
+	}
+}
+
+declare global {
+	interface HTMLElementTagNameMap {
+		'p7t-date-view': PleiadeanDateView
+	}
+}

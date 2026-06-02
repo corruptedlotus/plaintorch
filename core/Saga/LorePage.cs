@@ -202,9 +202,9 @@ public sealed class LorePage : PuckNamedEntity
 		lorePage.Level = ExtractLevel(ids[^1]);
 		lorePage.RelativePath = Path.GetRelativePath(Path.GetFullPath(vaultRoot), normalizedFullPath);
 		lorePage.Era = TryReadNumber(ids, "era");
-		lorePage.Chapter = TryReadNumber(ids, "chapter");
+		lorePage.Chapter = TryReadNumber(ids, "chapter", "cha");
 		lorePage.Act = TryReadNumber(ids, "act");
-		lorePage.Phase = TryReadNumber(ids, "phase");
+		lorePage.Phase = TryReadNumber(ids, "phase", "p");
 		lorePage.IndexedUtc = DateTimeOffset.UtcNow;
 		return true;
 	}
@@ -237,11 +237,16 @@ public sealed class LorePage : PuckNamedEntity
 		return string.IsNullOrWhiteSpace(letters) ? "Lore" : letters;
 	}
 
-	private static int? TryReadNumber(IEnumerable<string> ids, string discriminator)
+	private static int? TryReadNumber(IEnumerable<string> ids, params string[] discriminators)
 	{
+		if (discriminators.Length == 0)
+		{
+			return null;
+		}
+
 		var match = ids
 			.Select(id => id.Trim())
-			.FirstOrDefault(id => id.StartsWith(discriminator, StringComparison.OrdinalIgnoreCase));
+			.FirstOrDefault(id => discriminators.Any(discriminator => id.StartsWith(discriminator, StringComparison.OrdinalIgnoreCase)));
 
 		if (match is null)
 		{

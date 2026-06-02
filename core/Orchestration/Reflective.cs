@@ -18,13 +18,11 @@ public sealed class Reflective
 	/// <summary>
 	/// Gets or sets the reflection description.
 	/// </summary>
-	[MarkdownField("description")]
 	public required string Description { get; set; }
 
 	/// <summary>
 	/// Gets or sets the owning Polaris cycle identifier.
 	/// </summary>
-	[MarkdownField("polarisCycle")]
 	public required string PolarisCycleId { get; set; }
 
 	[ForeignKey(nameof(PolarisCycleId))]
@@ -37,6 +35,5 @@ public sealed class Reflective
 	/// <summary>
 	/// Gets or sets a value indicating whether the reflection was completed.
 	/// </summary>
-	[MarkdownField("executed")]
 	public bool Executed { get; set; }
 }

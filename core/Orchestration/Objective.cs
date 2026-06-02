@@ -21,7 +21,6 @@ public sealed class Objective : PuckNamedEntity
 	/// <summary>
 	/// Gets or sets the related directive identifier.
 	/// </summary>
-	[MarkdownField("directive")]
 	public string? DirectiveId { get; set; }
 
 	[ForeignKey(nameof(DirectiveId))]
@@ -34,7 +33,7 @@ public sealed class Objective : PuckNamedEntity
 	/// <summary>
 	/// Gets or sets the related onrush sprint identifier.
 	/// </summary>
-	[MarkdownField("onrushSprint")]
+	[MarkdownField("onrush")]
 	public string? OnrushSprintId { get; set; }
 
 	[ForeignKey(nameof(OnrushSprintId))]
@@ -43,6 +42,12 @@ public sealed class Objective : PuckNamedEntity
 	/// Gets or sets the related onrush sprint.
 	/// </summary>
 	public OnrushSprint? OnrushSprint { get; set; }
+
+	/// <summary>
+	/// Gets or sets the optional due date.
+	/// </summary>
+	[MarkdownField("due")]
+	public DateOnly? Due { get; set; }
 
 	/// <summary>
 	/// Gets or sets the objective college.
@@ -59,7 +64,7 @@ public sealed class Objective : PuckNamedEntity
 	/// <summary>
 	/// Gets or sets the objective's ledger value.
 	/// </summary>
-	[MarkdownField("celestronValue")]
+	[MarkdownField("starfire")]
 	public int CelestronValue { get; set; }
 
 	/// <summary>
@@ -68,9 +73,9 @@ public sealed class Objective : PuckNamedEntity
 	[MarkdownField("enduring")]
 	public bool IsEnduring { get; set; }
 
-	[InverseProperty(nameof(Executive.Objective))]
 	/// <summary>
 	/// Gets the execution records linked to this objective.
 	/// </summary>
+	[InverseProperty(nameof(Executive.Objective))]
 	public List<Executive> Executives { get; set; } = [];
 }

@@ -65,7 +65,7 @@ export class PlaintorchBriefingView extends ItemView {
 	}
 
 	private async render(): Promise<void> {
-		const coreClient = await getPlaintorchNodeCoreClient()
+		/*const coreClient = await getPlaintorchNodeCoreClient()
 		const activeFile = this.app.workspace.getActiveFile()
 		const briefing = await coreClient.system.getBriefing()
 		const activeEntity = activeFile ? await detectPlaintorchEntity(coreClient, activeFile.path, activeFile.basename) : null
@@ -115,7 +115,11 @@ export class PlaintorchBriefingView extends ItemView {
 				objectiveTitle: executive.objectiveTitle,
 				executed: executive.executed
 			})))
-		}
+		}*/
+
+		this.contentEl.empty()
+		this.contentEl.addClass("plaintorch-briefing-view")
+		const elem = this.contentEl.createEl("p7t-briefing")
 	}
 
 	private createCard(parent: HTMLElement, title: string, lines: string[]): void {
@@ -135,7 +139,7 @@ export class PlaintorchBriefingView extends ItemView {
 		const list = card.createEl("ul")
 		;(briefing?.currentOnrush
 			? [
-				`Selection: ${briefing.currentOnrush.selectionMode}`,
+				`Selection: ${briefing.onrushSelectionMode ?? "unknown"}`,
 				`Sprint: ${briefing.currentOnrush.id} — ${briefing.currentOnrush.title}`,
 				`Dates: ${this.formatDateRange(briefing.currentOnrush.startDate, briefing.currentOnrush.endDate)}`,
 				`Objectives: ${briefing.currentOnrush.objectives.length}`
@@ -147,13 +151,13 @@ export class PlaintorchBriefingView extends ItemView {
 		const button = actions.createEl("button", {
 			text: !briefing?.currentOnrush
 				? "Start new"
-				: briefing.currentOnrush.selectionMode === "planning"
+				: briefing.onrushSelectionMode === "planning"
 					? "Start new"
 					: "Conclude"
 		})
 
 		button.addEventListener("click", () => {
-			void this.handleOnrushAction(briefing?.currentOnrush?.selectionMode, briefing?.currentOnrush?.id)
+			void this.handleOnrushAction(briefing?.onrushSelectionMode, briefing?.currentOnrush?.id)
 		})
 	}
 

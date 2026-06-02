@@ -1,4 +1,6 @@
-namespace Pleiades.Vault.Watcher;
+using Pleiades.Vault.Watcher;
+
+namespace Pleiades.Vault.Policy;
 
 /// <summary>
 /// Provides common path-bound behavior for non-freeform storage modes.
@@ -52,6 +54,12 @@ public abstract class PathBoundVaultStorageModePolicyService : IVaultStorageMode
 
 	/// <inheritdoc />
 	public abstract (VaultSyncAction Action, string Reason) Decide(VaultStorageModeDecisionContext context);
+
+	/// <inheritdoc />
+	public virtual string? ResolveRelocationOldIdFallback(VaultPathSyncModel model, string? oldPathId, string? newPathId)
+	{
+		return oldPathId;
+	}
 
 	protected static bool IsUntitledPlaceholder(string pathTitle)
 	{

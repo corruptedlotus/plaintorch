@@ -113,6 +113,10 @@ public class PlainfraContext : DbContext
 			.Property(x => x.Status)
 			.HasConversion<string>();
 
+		modelBuilder.Entity<Objective>()
+			.Navigation(x => x.Directive)
+			.AutoInclude();
+
 		modelBuilder.Entity<TagDefinition>()
 			.Property(x => x.Color)
 			.HasConversion<string>();
