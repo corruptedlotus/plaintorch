@@ -1,11 +1,11 @@
 import { component, css, html, nothing, property, unsafeCSS } from '@a11d/lit'
-import { IconName } from 'components'
+import { IconName, navigateToEntity } from 'components'
 import { CardComponent } from 'components/design'
 import { 'everglow-banner' as EverglowBanner } from 'assets/design'
 import { 'grunge-1-png' as GrungeNoise } from 'assets/design'
 
 @component('p7t-briefing-card')
-export class BriefingCard<T> extends CardComponent {
+export class BriefingCard<T extends { id: string }> extends CardComponent {
 	@property({ type: Object }) data?: T
 	protected readonly icon?: IconName
 
@@ -88,6 +88,27 @@ export class BriefingCard<T> extends CardComponent {
 				opacity: .75;
 				font-size: 1.4em;
 			}
+
+			.pre-heading-link {
+				display: inline-flex;
+				align-items: center;
+				gap: .8ch;
+
+				& p7t-icon {
+					cursor: pointer;
+					transition: .3s ease;
+					color: var(--p7t-flare-accent, var(--interactive-accent));
+
+					&:not(:hover) {
+						opacity: .7;
+					}
+
+					:host(:not(:hover)) & {
+						opacity: 0;
+						transform: translateX(-1ch);
+					}
+				}
+			}
 		`
 	}
 
@@ -119,6 +140,13 @@ export class BriefingCard<T> extends CardComponent {
 		`
 	}
 
+	protected override get preHeadingTemplate() {
+		return html`<span class='pre-heading-link'>
+			${this.preHeading}
+			<p7t-icon @click=${() => navigateToEntity(this.data!.id)} icon='lucide:file-symlink'></p7t-icon>
+		</span>`
+	}
+
 	protected override get content() {
 		return html`
 			<div class='list'>
@@ -133,4 +161,8 @@ export class BriefingCard<T> extends CardComponent {
 	}
 
 	protected get listContent() { return html`` }
+
+	protected navigateToEntityFile() {
+
+	}
 }

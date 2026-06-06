@@ -19,6 +19,7 @@ export class NavigationItem extends Component {
 				border-radius: 8px;
 				padding-inline: 8px;
 				padding-top: 5px;
+				transition: .3s ease;
 			}
 
 			:host(:hover) {

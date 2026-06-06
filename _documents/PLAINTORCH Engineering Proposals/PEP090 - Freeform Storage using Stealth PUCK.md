@@ -2,6 +2,7 @@
 status: implemented
 patches:
   - Patch090.1 - Add Obsidian Command
+assignee: Copilot 🤖
 ---
 # Abstract: Operational Goals
 - Allow directives to be created anywhere in the vault,

@@ -10,16 +10,17 @@
 		"dev": "node esbuild.config.mjs"
 	},
 	"devDependencies": {
-		"@typescript-eslint/parser": "^8.46.3",
 		"@types/node": "^22.15.17",
-		"eslint": "^9.38.0",
+		"@typescript-eslint/parser": "^8.46.3",
 		"esbuild": "^0.25.4",
+		"eslint": "^9.38.0",
 		"obsidian": "^1.8.10",
 		"tslib": "^2.8.1",
 		"typescript": "^5.9.3"
 	},
 	"dependencies": {
 		"@a11d/lit": "^0.11.1",
+		"@open-draft/deferred-promise": "^3.0.0",
 		"@pleiades/sdk": "file:../sdk.ts"
 	}
 }

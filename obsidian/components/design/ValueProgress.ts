@@ -14,7 +14,7 @@ export class ValueProgress extends Component {
 				grid-template-columns: auto 1fr;
 				grid-template-rows: auto auto;
 				grid-template-areas:
-					'label -'
+					'label extra'
 					'bar bar';
 				gap: .4em;
 			}
@@ -39,6 +39,18 @@ export class ValueProgress extends Component {
 					& span:last-child {
 						color: color-mix(in srgb, currentColor 50%, transparent);
 					}
+				}
+
+				& .extra::slotted(span) {
+					display: inline-block;
+					font-family: var(--font-text);
+					font-weight: 400;
+					font-size: 1.1em;
+					opacity: .8;
+					margin-bottom: -.2em;
+					margin-inline-start: .8ch;
+					padding-inline-start: 1ch;
+					border-inline-start: 1px solid color-mix(in srgb, currentColor 40%, transparent);
 				}
 			}
 			
@@ -68,6 +80,7 @@ export class ValueProgress extends Component {
 					<span>
 						<span>${this.value}</span><span> / ${this.max}</span>
 					</span>
+					<slot class='extra'></slot>
 				</div>
 			</slot>
 			<div class='progress-base'>

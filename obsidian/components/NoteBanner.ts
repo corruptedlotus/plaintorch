@@ -14,6 +14,7 @@ export class NoteBanner extends Component {
 		return css`
 			:host {
 				display: grid;
+				overflow-anchor: auto;
 			}
 
 			:host([invalid]) {

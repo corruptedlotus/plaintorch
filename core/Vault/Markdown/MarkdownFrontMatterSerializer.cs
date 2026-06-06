@@ -65,7 +65,7 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		lines.Add("---");
 		if (!string.IsNullOrWhiteSpace(body))
 		{
-			lines.Add(body.TrimEnd());
+			lines.Add(body);
 		}
 
 		return string.Join(Environment.NewLine, lines) + Environment.NewLine;

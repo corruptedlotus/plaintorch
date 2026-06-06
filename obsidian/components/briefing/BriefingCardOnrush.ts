@@ -1,4 +1,4 @@
-import { component, css, html, property } from "@a11d/lit"
+import { component, css, event, html } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
 import { Objective, ObjectiveStatus, OnrushSprint } from "@pleiades/sdk"
 import { core } from ".."
@@ -19,6 +19,11 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 
 			.add-button {
 				margin: .4em 1.2em;
+
+				&::part(icon) {
+					height: 1.4em;
+					width: 1.4em;
+				}
 			}
 		`
 	}
@@ -39,13 +44,17 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 			${this.data!.objectives.map(objective => html`
 				<p7t-objective-item interactive .entity=${objective}></p7t-objective-item>
 			`)}
-			<p7t-button @click=${() => this.addObjective()} class='add-button'>Add Objective</p7t-button>
+			<p7t-button @click=${() => this.addObjective()} icon='lucide:plus' class='add-button'>Add Objective</p7t-button>
 		`
 	}
 
 	protected override get footer() {
+		const timespan = Date.now() - new Date(Date.parse(this.data!.startDate!)).getTime()
+		const currentDay = Math.floor(timespan / (1000 * 60 * 60 * 24)) + 1
 		return html`
-			<p7t-value-progress icon='starfire' value=${this.currentStarfire} max=${this.maxStarfire}></p7t-value-progress>
+			<p7t-value-progress icon='starfire' value=${this.currentStarfire} max=${this.maxStarfire}>
+				<span>Day ${currentDay}</span>
+			</p7t-value-progress>
 			<p7t-button @click=${() => this.conclude()}>Conclude</p7t-button>
 		`
 	}

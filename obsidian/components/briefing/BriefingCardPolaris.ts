@@ -1,9 +1,11 @@
 import { component, css, html } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
 import { PolarisCycle } from "@pleiades/sdk"
+import { core } from ".."
 
 @component('p7t-briefing-polaris')
 export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
+	override readonly icon = 'polaris'
 	override readonly preHeading = 'Active Polaris Cycle'
 
 	static override get styles() {
@@ -11,48 +13,47 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 			${super.styles}
 
 			:host {
-				--p7t-flare-accent: #189d81;
+				--p7t-flare-accent: #038899;
 			}
-
-			.add-button {
-				margin: .4em 1.2em;
-			}
-		`
-	}
-
-	override get headingTemplate() {
-		return html`<span>04:22</span>`
-	}
-
-	protected override get listContent() {
-		return html`
-			<p7t-entity-item .entity=${{ title: 'Sample Objective', id: 'LOL' }}></p7t-entity-item>
-			<p7t-entity-item .entity=${{ title: 'Sample Objective', id: 'LOL' }}></p7t-entity-item>
-			<p7t-entity-item .entity=${{ title: 'Sample Objective', id: 'LOL' }}></p7t-entity-item>
-			<p7t-entity-item .entity=${{ title: 'Sample Objective', id: 'LOL' }}></p7t-entity-item>
-			<p7t-entity-item .entity=${{ title: 'Sample Objective', id: 'LOL' }}></p7t-entity-item>
-			<p7t-entity-item .entity=${{ title: 'Sample Objective', id: 'LOL' }}></p7t-entity-item>
-			<p7t-entity-item .entity=${{ title: 'Sample Objective', id: 'LOL' }}></p7t-entity-item>
-			<p7t-entity-item .entity=${{ title: 'Sample Objective', id: 'LOL' }}></p7t-entity-item>
-			<p7t-entity-item .entity=${{ title: 'Sample Objective', id: 'LOL' }}></p7t-entity-item>
-			<p7t-entity-item .entity=${{ title: 'Sample Objective', id: 'LOL' }}></p7t-entity-item>
-			<p7t-entity-item .entity=${{ title: 'Sample Objective', id: 'LOL' }}></p7t-entity-item>
-			<p7t-button class='add-button'>Add Objective</p7t-button>
 		`
 	}
 
 	protected override get offlineTemplate() {
 		return html`
-			<span class='no-data'>The Polaris rises anew...</span>
-			<p7t-button class='start-button' icon='polaris'>Begin Cycle</p7t-button>
+			<span class='no-data'>Polaris Rests in the Void</span>
+			<p7t-button @click=${() => this.begin()} class='start-button' icon='polaris'>Begin Cycle</p7t-button>
+		`
+	}
+
+	override get headingTemplate() {
+		return html`<p7t-elapsed-view .epoch=${this.data!.startTime}></p7t-elapsed-view>`
+	}
+
+	protected override get listContent() {
+		return html`
+			${this.data!.executives.map(executive => html`
+				<p7t-objective-item-exec interactive .entity=${executive.objective}></p7t-objective-item-exec>
+			`)}
 		`
 	}
 
 	protected override get footer() {
 		return html`
-			<p7t-value-progress icon='starfire' value=30 max=47></p7t-value-progress>
-			<p7t-button>Conclude</p7t-button>
+			<div></div>
+			<p7t-button @click=${() => this.conclude()}>Conclude</p7t-button>
 		`
+	}
+
+	private begin() {
+		if (this.data) return
+		core.polaris.startNew().then(polaris => this.data = polaris)
+	}
+
+	private conclude() {
+		if (!this.data) return
+		core.polaris.end(new Date().toISOString()).then(polaris => {
+			if (!!polaris) this.data = undefined
+		})
 	}
 }
 

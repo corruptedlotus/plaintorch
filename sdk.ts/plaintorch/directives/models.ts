@@ -1,3 +1,4 @@
+import { model } from "@a11d/api-dotnet"
 import type { Objective } from "../objectives/models"
 export enum DirectiveStatus {
 	Planned = 0,
@@ -7,19 +8,20 @@ export enum DirectiveStatus {
 	Over = 4
 }
 
-export interface Directive {
-	id: string
-	title: string
+@model('Directive')
+export class Directive {
+	id!: string
+	title!: string
 	codename: string | undefined
 	parentDirectiveId: string | undefined
 	parentDirective?: Directive | undefined
-	subdirectives: Directive[]
-	status: DirectiveStatus
-	tags: string[]
+	subdirectives: Directive[] = []
+	status: DirectiveStatus = DirectiveStatus.Planned
+	tags: string[] = []
 	due: string | undefined
 	startDate: string | undefined
 	endDate: string | undefined
-	objectives: Objective[]
+	objectives: Objective[] = []
 }
 
 export interface CreateDirectiveRequest {

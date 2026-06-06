@@ -1,5 +1,6 @@
 ---
 status: draft
+assignee: Copilot 🤖
 ---
 # Definition
 ## Moonlight Directive
@@ -13,6 +14,9 @@ Moonlight directives are the same as regular directives, they even share the sam
 - Has no state and no start or end and no due.
 - Stored separate from directives in the vault, in `./Moonlight` by default.
 ## Decrees
+> [!Discussion]
+> Can Decrees act as Events?
+
 Decrees are also basically objectives and share the table with them. These are what distinguishes decrees from objectives:
 - PUCK format is `r{S:8}`.
 - Only has Standby, Active and Archived states.

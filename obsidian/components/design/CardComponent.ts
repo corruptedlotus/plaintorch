@@ -12,20 +12,11 @@ export class CardComponent extends Component {
 				padding: 0.9rem 0.9rem;
 				border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
 				border-radius: 20px;
-				/*background: linear-gradient(
+				background: linear-gradient(
 					40deg,
-					color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 50%, transparent) -35%,
-					color-mix(in srgb, black 80%, transparent) 100%
-				);*/
-				background:
-					/*url(''),*/
-					radial-gradient(
-						color-mix(in srgb, black 90%, transparent) 38%,
-						color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 40%, black) 70%,
-						transparent 94%);
-				background-size: /*contain,*/ 95vw 95vw;
-				background-blend-mode: soft-light;
-				background-position: /*bottom,*/ 40% 84%;
+					color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 50%, transparent) -30%,
+					color-mix(in srgb, black 80%, transparent) 80%
+				);
 				
 				color: var(--text-normal);
 				font-weight: 700;
@@ -39,6 +30,7 @@ export class CardComponent extends Component {
 				display: flex;
 				padding-inline: .5em;
 				flex-direction: column;
+				align-items: flex-start;
 			}
 	
 			:host::part(pre-heading) {
@@ -52,9 +44,13 @@ export class CardComponent extends Component {
 			}
 
 			:host::part(sub-heading) {
-				font-size: 1em;
+				font-size: .8em;
 				font-weight: 500;
-				opacity: .6;
+				margin-top: -.4em;
+				display: flex;
+				align-items: center;
+				gap: .2ch;
+				color: color-mix(in srgb, currentColor 85%, transparent);
 			}
 
 			:host::part(content) {

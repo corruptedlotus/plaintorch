@@ -1,5 +1,6 @@
 ---
 status: implemented
+assignee: Copilot 🤖
 ---
 # Abstract
 This proposal simply requires PUCKs to be fully "compiled" when a vault starts, preloading its processed properties to be used during the rest of the operation.

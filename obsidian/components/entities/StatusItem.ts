@@ -38,6 +38,8 @@ export class StatusItem extends Component {
 				grid-template-columns: 2em auto;
 				align-items: center;
 				gap: .6ch;
+				user-select: none;
+				margin-inline-end: .4ch;
 			}
 
 			p7t-icon {
@@ -49,7 +51,7 @@ export class StatusItem extends Component {
 
 	protected override get template() {
 		return html`
-			<p7t-icon icon="${statusDescriptors[this.status]?.icon ?? 'exec-order'}"></p7t-icon>
+			<p7t-icon part='icon' icon="${statusDescriptors[this.status]?.icon ?? 'exec-order'}"></p7t-icon>
 			<span>${statusDescriptors[this.status]?.label ?? this.status}</span>
 		`
 	}

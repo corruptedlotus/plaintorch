@@ -1,6 +1,9 @@
 import { Component, component, css, html, property } from "@a11d/lit"
 import { IconName } from 'components'
 
+/**
+ * @attr large
+ */
 @component('p7t-button')
 export class Button extends Component {
 	@property({ type: Boolean, reflect: true }) disabled = false
@@ -30,20 +33,42 @@ export class Button extends Component {
 				transition: .3s ease;
 				cursor: pointer;
 
+				:host([disabled]) & {
+					background-color: color-mix(in srgb, var(--text-normal) 5%, transparent);
+					opacity: 0.6;
+					pointer-events: none;
+				}
+
+				:host([large]) & {
+					padding-inline: 6px 12px;
+				}
+
 				& p7t-icon {
 					width: 2em;
 					height: 2em;
+
+					:host([large]) & {
+						width: 2.4em;
+						height: 2.4em;
+					}
 				}
 
 				&:hover {
 					background-color: color-mix(in srgb, var(--text-normal) 20%, transparent);
 					border-color: color-mix(in srgb, var(--text-normal) 30%, transparent);
 				}
-
 			}
 			
 			:host::part(text) {
-				display: block;
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+				align-items: flex-start;
+			}
+
+			:host([large])::part(text) {
+				font-size: 0.95em;
+				font-weight: 350;
 			}
 		`
 	}

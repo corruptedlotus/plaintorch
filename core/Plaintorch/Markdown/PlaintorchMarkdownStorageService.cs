@@ -20,6 +20,7 @@ public sealed class PlaintorchMarkdownStorageService(
 	VaultLayout layout,
 	MarkdownFrontMatterSerializer markdownSerializer,
 	MarkdownFileLocator markdownFileLocator,
+	VaultPathSyncModelCatalog pathSyncModelCatalog,
 	VaultWatcherPathPolicy pathPolicy,
 	VaultTemporalDataService temporalDataService,
 	VaultWatcherWriteBarrier writeBarrier)
@@ -105,8 +106,27 @@ public sealed class PlaintorchMarkdownStorageService(
 
 	private async Task SaveCanonicalMarkdownAsync(object entity, object? previous, string? sourcePath, CancellationToken cancellationToken)
 	{
-		var previousPath = previous is null ? null : await ResolveCanonicalPathAsync(previous, cancellationToken);
+		var previousPath = previous is null
+			? await TryResolveExistingPathByIdentityAsync(entity, sourcePath, cancellationToken)
+			: await ResolveCanonicalPathAsync(previous, cancellationToken);
 		var newPath = await ResolveCanonicalPathAsync(entity, cancellationToken);
+		if (previous is null
+			&& string.IsNullOrWhiteSpace(sourcePath)
+			&& !string.IsNullOrWhiteSpace(previousPath)
+			&& File.Exists(previousPath))
+		{
+			newPath = previousPath;
+		}
+
+		if (string.IsNullOrWhiteSpace(previousPath))
+		{
+			var existingPath = await TryResolveExistingPathByIdentityAsync(entity, sourcePath, cancellationToken);
+			if (!string.IsNullOrWhiteSpace(existingPath))
+			{
+				previousPath = existingPath;
+			}
+		}
+
 		newPath = ResolveInactionPreferredPath(entity, newPath, sourcePath);
 		newPath = ResolveFreeformTargetPath(entity, newPath, sourcePath);
 		if (entity is LorePage lorePage && previous is LorePage previousLorePage
@@ -368,9 +388,98 @@ public sealed class PlaintorchMarkdownStorageService(
 
 	private async Task<FileGraveyardEntry?> DeleteEntityPathAsync(object entity, CancellationToken cancellationToken)
 	{
-		var path = await ResolveCanonicalPathAsync(entity, cancellationToken);
+		var canonicalPath = await ResolveCanonicalPathAsync(entity, cancellationToken);
+		var path = await TryResolveExistingPathByIdentityAsync(entity, canonicalPath, cancellationToken)
+			?? canonicalPath;
 		var namedEntity = entity as IPuckNamedEntity;
 		return await DeletePathAsync(path, ResolveStorageRoot(entity.GetType()), entity.GetType().Name, namedEntity?.Id, namedEntity?.Title, "api-delete", cancellationToken);
+	}
+
+	private async Task<string?> TryResolveExistingPathByIdentityAsync(object entity, string? preferredPath, CancellationToken cancellationToken)
+	{
+		if (entity is not IPuckNamedEntity namedEntity
+			|| string.IsNullOrWhiteSpace(namedEntity.Id))
+		{
+			return null;
+		}
+
+		var candidatePaths = EnumerateIdentityCandidatePaths(entity.GetType());
+		var matches = new List<string>();
+		foreach (var candidatePath in candidatePaths)
+		{
+			if (!File.Exists(candidatePath))
+			{
+				continue;
+			}
+
+			if (!await IsIdentityMatchAsync(candidatePath, namedEntity.Id, cancellationToken))
+			{
+				continue;
+			}
+
+			matches.Add(Path.GetFullPath(candidatePath));
+		}
+
+		if (matches.Count == 0)
+		{
+			return null;
+		}
+
+		if (!string.IsNullOrWhiteSpace(preferredPath))
+		{
+			var normalizedPreferredPath = Path.GetFullPath(preferredPath);
+			var preferredMatch = matches.FirstOrDefault(path => string.Equals(path, normalizedPreferredPath, StringComparison.OrdinalIgnoreCase));
+			if (!string.IsNullOrWhiteSpace(preferredMatch))
+			{
+				return preferredMatch;
+			}
+		}
+
+		return matches
+			.OrderByDescending(File.GetLastWriteTimeUtc)
+			.ThenBy(path => path.Length)
+			.First();
+	}
+
+	private IEnumerable<string> EnumerateIdentityCandidatePaths(Type entityType)
+	{
+		var model = pathSyncModelCatalog
+			.GetModels()
+			.FirstOrDefault(candidate => candidate.EntityType == entityType);
+
+		if (model is not null)
+		{
+			return pathSyncModelCatalog.EnumerateCandidateMarkdownPaths(model);
+		}
+
+		var root = ResolveStorageRoot(entityType);
+		if (!Directory.Exists(root))
+		{
+			return [];
+		}
+
+		return Directory.EnumerateFiles(root, "*.md", SearchOption.AllDirectories);
+	}
+
+	private async Task<bool> IsIdentityMatchAsync(string markdownPath, string id, CancellationToken cancellationToken)
+	{
+		var parsedId = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(markdownPath).Id;
+		if (!string.IsNullOrWhiteSpace(parsedId)
+			&& string.Equals(parsedId, id, StringComparison.OrdinalIgnoreCase))
+		{
+			return true;
+		}
+
+		var markdown = await File.ReadAllTextAsync(markdownPath, cancellationToken);
+		var frontMatter = markdownSerializer.ParseFrontMatter(markdown);
+		if (!frontMatter.TryGetValue("puck", out var rawPuck)
+			|| string.IsNullOrWhiteSpace(rawPuck))
+		{
+			return false;
+		}
+
+		var normalizedPuck = rawPuck.Trim().Trim('"');
+		return string.Equals(normalizedPuck, id, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private async Task<string> ResolveCanonicalPathAsync(object entity, CancellationToken cancellationToken)
@@ -542,7 +651,7 @@ public sealed class PlaintorchMarkdownStorageService(
 			}
 		}
 
-		return reader.ReadToEnd().TrimStart('\r', '\n');
+		return reader.ReadToEnd();
 	}
 
 	private static string? NormalizeFrontMatterDelimiterLine(string? line)

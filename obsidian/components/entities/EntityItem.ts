@@ -1,6 +1,5 @@
 import { component, Component, css, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
-import { core } from '..'
-import { App } from 'obsidian'
+import { navigateToEntity } from '..'
 
 @component('p7t-entity-item')
 export class EntityItem<T extends { id: string, title: string }> extends Component {
@@ -9,14 +8,18 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 
 	protected async navigateToEntity() {
 		if (!this.interactive) return
-		const existence = await core.system.resolveEntity(this.entity!.id)
-		if (!existence || !existence.associatedNote) return
-		((window as any).app! as App).workspace
-			.openLinkText(existence.associatedNote!, '', true)
+		navigateToEntity(this.entity!.id)
 	}
 
 	static override get styles() {
 		return css`
+			@keyframes fade-in {
+				from {
+					opacity: 0;
+					transform: translateY(-1em);
+				}
+			}
+
 			:host {
 				--flare-intensity: 0%;
 				display: flex;
@@ -31,16 +34,17 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 				position: relative;
 				anchor-name: --entity-item;
 				gap: .5em;
+				animation: fade-in .3s ease;
 			}
 			
-			:host(:not([interactive])) {
-				padding: 0;
-				pointer-events: none;
-			}
+				:host(:not([interactive])) {
+					padding: 0;
+					pointer-events: none;
+				}
 
-			:host([interactive]:hover) {
-				background-color: color-mix(in srgb, var(--text-normal) 10%, transparent);
-			}
+				:host([interactive]:hover) {
+					background-color: color-mix(in srgb, var(--text-normal) 10%, transparent);
+				}
 			
 			.grid {
 				flex: 1;
@@ -90,6 +94,9 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 				line-height: 1;
 				margin-block: -.1em .1em;
 				grid-area: title;
+				display: flex;
+				align-items: center;
+				justify-content: flex-start;
 				cursor: pointer;
 			}
 
@@ -151,13 +158,13 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 					<div class='filler'></div>
 					${this.info}
 				</div>
-				<span @click=${() => this.navigateToEntity()} class='title'>
-					${this.entity?.title}
-				</span>
+				<div class='title'>
+					<span @click=${() => this.navigateToEntity()}>${this.entity?.title}</span>
+				</div>
 			</div>
 			${this.highlightInfo}
-			${!this.extraAction ? nothing : html`
-				<div class='extra-action part'>${this.extraAction}</div>
+			${!this.extraActionTemplate ? nothing : html`
+				<div @click=${async () => await this.extraAction()} class='extra-action part'>${this.extraActionTemplate}</div>
 			`}
 		`
 	}
@@ -182,9 +189,11 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 		`
 	}
 
-	protected get extraAction() : HTMLTemplateResult | undefined {
+	protected get extraActionTemplate() : HTMLTemplateResult | undefined {
 		return undefined
 	}
+
+	protected async extraAction() { }
 
 	protected async notchAction() { }
 }

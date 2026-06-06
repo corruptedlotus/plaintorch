@@ -7,8 +7,15 @@ export class Briefing extends Component {
 	@state() page = 'throne'
 	@state() data?: SystemBriefing
 
-	@eventListener('requestKeyNavigation')
-		protected onRequestKeyNavigation(e: CustomEvent<string>) {
+	@eventListener('keyNavigationRequest')
+	protected onKeyNavigationRequest(e: CustomEvent<string>) {
+		e.stopPropagation()
+	}
+
+	@eventListener('updateRequest')
+	protected onUpdateRequest(e: CustomEvent<void>) {
+		core.system.getBriefing().then(briefing => this.data = briefing)
+		e.stopPropagation()
 	}
 
 	static override get styles() {

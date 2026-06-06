@@ -8,25 +8,25 @@ public enum ObjectiveStatus
 	/// <summary>
 	/// The objective exists but is waiting to be acted on.
 	/// </summary>
-	Standby,
+	Standby = 0,
 	/// <summary>
 	/// The objective is temporarily blocked.
 	/// </summary>
-	Blocked,
+	Blocked = 1,
 	/// <summary>
 	/// The objective is being pursued during onrush.
 	/// </summary>
-	Onrush,
+	Onrush = 2,
 	/// <summary>
 	/// The objective is currently part of Polaris execution.
 	/// </summary>
-	Polaris,
+	Polaris = 3,
 	/// <summary>
 	/// The objective has been completed.
 	/// </summary>
-	Done,
+	Done = 4,
 	/// <summary>
 	/// The objective has been archived.
 	/// </summary>
-	Archived,
+	Archived = 5,
 }

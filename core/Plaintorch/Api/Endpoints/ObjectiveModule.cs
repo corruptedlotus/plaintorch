@@ -56,6 +56,9 @@ public sealed class ObjectiveModule : Module
 		group.MapPost("/{objectiveId}/onrush", async (string objectiveId, AddObjectiveToOnrushRequest request, IObjectiveApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.AddToOnrushAsync(objectiveId, request.OnrushSprintId, cancellationToken)));
 
+		group.MapDelete("/{objectiveId}/onrush", async (string objectiveId, IObjectiveApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.RemoveFromOnrushAsync(objectiveId, cancellationToken)));
+
 		group.MapDelete("/{objectiveId}", async (string objectiveId, IObjectiveApi api, CancellationToken cancellationToken) =>
 		{
 			await api.DeleteAsync(objectiveId, cancellationToken);

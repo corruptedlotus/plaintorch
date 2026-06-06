@@ -124,5 +124,9 @@ public class PlainfraContext : DbContext
 		modelBuilder.Entity<LorePage>()
 			.Property(x => x.Id)
 			.HasColumnName("Puck");
+
+		modelBuilder.Entity<Executive>()
+			.Navigation(x => x.Objective)
+			.AutoInclude();
 	}
 }

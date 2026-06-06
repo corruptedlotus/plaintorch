@@ -49,6 +49,11 @@ public interface IObjectiveApi
 	Task<Objective> AddToOnrushAsync(string objectiveId, string onrushSprintId, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Removes an objective from the onrush sprint it belongs to.
+	/// </summary>
+	Task<Objective> RemoveFromOnrushAsync(string objectiveId, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Deletes an objective.
 	/// </summary>
 	Task DeleteAsync(string objectiveId, CancellationToken cancellationToken = default);

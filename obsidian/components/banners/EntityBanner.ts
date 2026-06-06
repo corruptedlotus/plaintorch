@@ -1,5 +1,6 @@
-import { component, css, html, property, state } from '@a11d/lit'
+import { component, css, html, nothing, property, state } from '@a11d/lit'
 import { CardComponent } from 'components/design'
+import { IconName } from 'components/PleiadesIcon'
 import { App } from 'obsidian'
 
 @component('p7t-entity-banner')
@@ -51,15 +52,32 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 					'horizon	secondary'
 					'stamp		info'
 					'puck		actions';
-				gap: 10px;
+				gap: 1.2em .6em;
 				align-items: center;
 
+				& .icon {
+					grid-area: icon;
+					align-self: center;
+					width: 48px;
+					height: 48px;
+				}
+
 				& .indicator {
-					grid-area: 2 / 1;
+					grid-area: horizon;
 					display: block;
 					border-top: 2px solid var(--text-normal);
 					align-self: start;
-					margin: .8em 10px;
+					margin: .8em .6em;
+				}
+
+				& .secondary {
+					grid-area: secondary;
+					display: flex;
+					flex-direction: column;
+					font-weight: 400;
+					font-size: 1.1em;
+					font-family: var(--font-interface);
+					align-items: flex-start;
 				}
 
 				& .info {
@@ -69,14 +87,20 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 					font-weight: 400;
 					font-size: 1.06em;
 					font-family: var(--font-text);
+					align-items: flex-start;
 				}
 
 				& .actions {
 					grid-area: actions;
 					display: flex;
-					gap: 10px;
+					gap: .8em;
 					justify-content: flex-end;
 				}
+			}
+
+			.stamp {
+				grid-area: stamp;
+				height: 40px;
 			}
 
 			.puck {
@@ -106,11 +130,17 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 	}
 
 	protected override get template() {
-		return html`
+		return !this.entity ? html`` : html`
 			<div class='render-grid'>
 				<p7t-icon class='icon' icon='${this.icon}'></p7t-icon>
 				${this.headerTemplate}
+
 				<span class='indicator'></span>
+				<div class='secondary'>
+					${this.secondary}
+				</div>
+
+				${!this.stamp ? nothing : html`<p7t-icon class='stamp' icon=${this.stamp}></p7t-icon>`}
 				<div class='info'>
 					${this.info}
 				</div>
@@ -135,6 +165,11 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 
 	protected get info() {
 		return html`
+		`
+	}
+	
+	protected get secondary() {
+		return html`
 			<span>Type: ${this.xtype}</span>
 		`
 	}
@@ -143,6 +178,10 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 		return html`
 			
 		`
+	}
+
+	protected get stamp() : IconName | undefined {
+		return undefined
 	}
 }
 

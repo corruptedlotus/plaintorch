@@ -1,4 +1,4 @@
-import { Notice, Plugin, type WorkspaceLeaf } from "obsidian"
+import { addIcon, Notice, Plugin, type WorkspaceLeaf } from "obsidian"
 import { PlaintorchBriefingView, PLAINTORCH_BRIEFING_VIEW_TYPE } from "./briefing/PlaintorchBriefingView"
 import { PageBannerRenderer } from "./banner/PageBannerRenderer"
 
@@ -11,6 +11,35 @@ let cachedCoreClient: PlaintorchNodeCoreClient | undefined
 export default class PlaintorchObsidianPlugin extends Plugin {
 	public override async onload(): Promise<void> {
 
+		addIcon("plaintorch", `
+			<g id="PLAINTORCH-Dark-2" data-name="PLAINTORCH-Dark">
+				<defs>
+					<style>
+						.xtroke {
+							fill: none;
+							stroke: currentColor;
+							stroke-linecap: round;
+							stroke-linejoin: round;
+							stroke-width: calc(100 * var(--icon-stroke) / 24);
+						}
+					</style>
+				</defs>
+				<g id="plaintorch-mono">
+					<path d="M45.71,94.42c1-5.63,4.78-10.35,8.81-14.4S63,72.22,66,67.33,70.18,56,67.27,51.06" class='xtroke' />
+					<path d="M56.77,78c4.86-3.24,9.75-6.56,13.72-10.85s7-9.7,7.36-15.53-2.29-12-7.39-14.89S58,35.33,55.12,40.43" class='xtroke' />
+					<line x1="27.97" y1="72.03" x2="20.02" y2="79.98" class='xtroke' />
+					<line x1="27.97" y1="27.97" x2="20.02" y2="20.02" class='xtroke' />
+					<line x1="77.53" y1="77.53" x2="79.98" y2="79.98" class="xtroke" />
+					<line x1="72.03" y1="27.97" x2="79.98" y2="20.02" class="xtroke" />
+					<path d="M75.76,24.24A36.43,36.43,0,1,0,34.49,83" class="xtroke"
+						style="stroke-dasharray:28.269662857055664,8.404494285583496,0,8.404494285583496" />
+					<path
+						d="M72.54,49.17,60,43.52A7.1,7.1,0,0,1,56.48,40l-5.65-12.5a.91.91,0,0,0-1.66,0L43.52,40A7.1,7.1,0,0,1,40,43.52l-12.5,5.65a.91.91,0,0,0,0,1.66L40,56.48A7.1,7.1,0,0,1,43.52,60l5.65,12.5a.91.91,0,0,0,1.66,0L56.48,60A7.1,7.1,0,0,1,60,56.48l12.5-5.65A.91.91,0,0,0,72.54,49.17ZM57.08,50.29l-3.9,1.76a2.3,2.3,0,0,0-1.13,1.13l-1.76,3.9a.32.32,0,0,1-.58,0L48,53.18a2.3,2.3,0,0,0-1.13-1.13l-3.9-1.76a.32.32,0,0,1,0-.58L46.82,48A2.3,2.3,0,0,0,48,46.82l1.76-3.9a.32.32,0,0,1,.58,0l1.76,3.9A2.3,2.3,0,0,0,53.18,48l3.9,1.76A.32.32,0,0,1,57.08,50.29Z"
+						style="fill: currentColor" />
+				</g>
+			</g>
+		`)
+
 		const renderer = new PageBannerRenderer(this.app)
 		this.registerEditorExtension(renderer.createEditorExtension())
 		this.registerMarkdownPostProcessor(renderer.readingModeRenderer)
@@ -20,7 +49,7 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 			(leaf: WorkspaceLeaf) => new PlaintorchBriefingView(leaf)
 		)
 
-		this.addRibbonIcon("sparkles", "PLAINTORCH briefing", () => {
+		this.addRibbonIcon("plaintorch", "PLAINTORCH briefing", () => {
 			void this.activateBriefingView()
 		})
 

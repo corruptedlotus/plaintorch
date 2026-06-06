@@ -23,6 +23,7 @@ public sealed class ObjectiveApiService(
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(objectiveId);
 		return context.Objectives
+			.Include(o => o.OnrushSprint)
 			.AsNoTracking()
 			.FirstOrDefaultAsync(objective => objective.Id == objectiveId, cancellationToken);
 	}
@@ -163,10 +164,24 @@ public sealed class ObjectiveApiService(
 		}
 
 		objective.OnrushSprintId = onrushSprintId;
-		objective.Status = ObjectiveStatus.Onrush;
+		objective.Status = objective.Status < ObjectiveStatus.Onrush ? ObjectiveStatus.Onrush : objective.Status;
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.add-to-onrush", subject: objective, cancellationToken: cancellationToken);
+		return objective;
+	}
+
+	public async Task<Objective> RemoveFromOnrushAsync(string objectiveId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(objectiveId);
+
+		var objective = await context.Objectives.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
+			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
+
+		objective.OnrushSprintId = null;
+		await context.SaveChangesAsync(cancellationToken);
+		await markdownStorageService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync("api", "objective.remove-from-onrush", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}
 

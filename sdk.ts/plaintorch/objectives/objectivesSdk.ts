@@ -47,6 +47,10 @@ export class PlaintorchObjectivesSdk {
 		)) !== null
 	}
 
+	public async removeFromOnrush(objectiveId: string): Promise<boolean> {
+		return await this.client.delete(`/api/objectives/${encodeURIComponent(objectiveId)}/onrush`)
+	}
+
 	public async addToOnrushAndFetch(objectiveId: string, onrushSprintId: string): Promise<Objective | undefined> {
 		const request: AddObjectiveToOnrushRequest = { onrushSprintId }
 		return await this.client.postForJson<Objective>(

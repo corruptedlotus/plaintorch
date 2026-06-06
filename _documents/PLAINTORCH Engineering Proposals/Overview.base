@@ -1,3 +1,6 @@
+summaries:
+  Unique: values.unique().length
+  Open: values.filter(value == 'available').length + ' [+' + values.filter( value == 'draft').length + ']'
 filters:
   and:
     - file.folder == "Project Everglow/Moonlight Impact 3rd/PLAINTORCH/PLAINTORCH Engineering Proposals"
@@ -13,16 +16,23 @@ views:
     order:
       - file.name
       - status
+      - assignee
     sort:
+      - property: file.name
+        direction: ASC
       - property: patches
         direction: ASC
+    summaries:
+      status: Open
+      file.name: new summary
     imageAspectRatio: 0.95
     cardSize: 400
     separator: --
     indentProperties: true
     markers: none
     columnSize:
-      file.name: 500
+      file.name: 439
+      note.status: 117
   - type: list
     name: Patches
     order:
