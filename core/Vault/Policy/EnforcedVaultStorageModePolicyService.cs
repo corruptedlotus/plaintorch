@@ -25,7 +25,7 @@ public sealed class EnforcedVaultStorageModePolicyService : PathBoundVaultStorag
 				return (VaultSyncAction.PurgeFile, "Path identity is missing required caller-provided PUCK input and enforced storage disallows unresolved files.");
 			}
 
-			return (VaultSyncAction.CreateFromFile, "Title-only file discovered for an auto-generated PUCK entity; enforced storage allows canonical create-from-file.");
+			return (VaultSyncAction.PurgeFile, "Title-only file discovered for an auto-generated PUCK entity; enforced storage disallows unresolved files.");
 		}
 
 		var exists = context.KnownIds.Contains(context.PathId);

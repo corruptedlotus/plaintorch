@@ -189,6 +189,37 @@ public sealed class OnrushSprintApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task<OnrushSprint> UpdateAsync(string onrushSprintId, OnrushSprintUpdate update, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
+		ArgumentNullException.ThrowIfNull(update);
+
+		var sprint = await context.OnrushSprints.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
+			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
+		var previous = Clone(sprint);
+
+		if (!string.IsNullOrWhiteSpace(update.Title))
+		{
+			sprint.Title = update.Title;
+		}
+
+		if (update.StartDate is not null)
+		{
+			sprint.StartDate = update.StartDate;
+		}
+
+		if (update.EndDate is not null)
+		{
+			sprint.EndDate = update.EndDate;
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync("api", "onrush.update", subject: sprint, cancellationToken: cancellationToken);
+		return sprint;
+	}
+
+	/// <inheritdoc />
 	public async Task<IReadOnlyList<Objective>> AssignAllOnrushStateObjectivesToSelfAsync(string onrushSprintId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);

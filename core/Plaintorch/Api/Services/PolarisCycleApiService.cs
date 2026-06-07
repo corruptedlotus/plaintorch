@@ -75,6 +75,27 @@ public sealed class PolarisCycleApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task<PolarisCycle> UpdateAsync(string polarisCycleId, PolarisCycleUpdate update, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(polarisCycleId);
+		ArgumentNullException.ThrowIfNull(update);
+
+		var cycle = await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == polarisCycleId, cancellationToken)
+			?? throw new InvalidOperationException($"Polaris cycle '{polarisCycleId}' was not found.");
+		var previous = Clone(cycle);
+
+		if (!string.IsNullOrWhiteSpace(update.Title))
+		{
+			cycle.Title = update.Title;
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		await markdownFileService.SavePolarisCycleAsync(cycle, previous, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync("api", "polaris.update", subject: cycle, cancellationToken: cancellationToken);
+		return cycle;
+	}
+
+	/// <inheritdoc />
 	public async Task<PolarisCycle> EndAsync(string? polarisCycleId = null, DateTimeOffset? endTime = null, CancellationToken cancellationToken = default)
 	{
 		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, requireTodayFallback: false, cancellationToken)

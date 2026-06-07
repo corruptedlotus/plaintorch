@@ -49,6 +49,11 @@ public interface IOnrushSprintApi
 	Task<IReadOnlyList<OnrushSprint>> ListAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Updates the mutable fields of an onrush sprint.
+	/// </summary>
+	Task<OnrushSprint> UpdateAsync(string onrushSprintId, OnrushSprintUpdate update, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Assigns all onrush-state objectives to the target sprint.
 	/// </summary>
 	Task<IReadOnlyList<Objective>> AssignAllOnrushStateObjectivesToSelfAsync(string onrushSprintId, CancellationToken cancellationToken = default);

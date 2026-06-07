@@ -39,6 +39,11 @@ public interface IPolarisCycleApi
 	Task<IReadOnlyList<PolarisCycle>> ListForecastsAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Updates the mutable fields of a Polaris cycle.
+	/// </summary>
+	Task<PolarisCycle> UpdateAsync(string polarisCycleId, PolarisCycleUpdate update, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Plans an executive against a Polaris cycle.
 	/// </summary>
 	Task<PolarisExecutivePlanResult> PlanExecutiveAsync(PolarisExecutivePlan plan, string? polarisCycleId = null, CancellationToken cancellationToken = default);

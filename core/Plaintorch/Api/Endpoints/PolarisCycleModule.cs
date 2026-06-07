@@ -41,6 +41,9 @@ public sealed class PolarisCycleModule : Module
 			return cycle is null ? Results.NotFound() : Results.Ok(cycle);
 		});
 
+		cycles.MapPut("/{polarisCycleId}", async (string polarisCycleId, PolarisCycleUpdate request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.UpdateAsync(polarisCycleId, request, cancellationToken)));
+
 		cycles.MapPost("/plan", async (PolarisCyclePlanRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 		{
 			var cycle = await api.PlanAsync(request.ForecastReference, request.DaysAhead, request.Body, cancellationToken);

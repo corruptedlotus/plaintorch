@@ -159,6 +159,20 @@ public sealed record ObjectiveUpdate(
 public sealed record ObjectiveWorkflowShift(ObjectiveStatus Status);
 
 /// <summary>
+/// Represents the mutable fields of a Polaris cycle for generic update actions.
+/// </summary>
+public sealed record PolarisCycleUpdate(
+	string? Title = null);
+
+/// <summary>
+/// Represents the mutable fields of an onrush sprint for generic update actions.
+/// </summary>
+public sealed record OnrushSprintUpdate(
+	string? Title = null,
+	DateOnly? StartDate = null,
+	DateOnly? EndDate = null);
+
+/// <summary>
 /// Represents the data required to plan an onrush sprint.
 /// </summary>
 public sealed record OnrushSprintPlan(
