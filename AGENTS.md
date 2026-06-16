@@ -1,3 +1,6 @@
+> [!Note]
+> This document is relevant for human contributors too.
+
 # TS/JS Files
 - Do not end lines with ; inside TS/JS files (unless necessary).
 - Use TABs for TS/JS files.
