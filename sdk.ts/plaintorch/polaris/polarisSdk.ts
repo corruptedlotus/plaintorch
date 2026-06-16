@@ -5,6 +5,7 @@ import type {
 	PolarisCycle,
 	PolarisCyclePlanRequest,
 	PolarisCycleTimeRequest,
+	PolarisCycleUpdate,
 	PolarisExecutivePlan,
 	PolarisExecutivePlanResult,
 	Reflective,
@@ -24,6 +25,10 @@ export class PlaintorchPolarisSdk {
 
 	public async listForecasts(): Promise<PolarisCycle[]> {
 		return (await this.client.getJson<PolarisCycle[]>("/api/polaris/forecasts")) ?? []
+	}
+
+	public async update(polarisCycleId: string, update: PolarisCycleUpdate): Promise<PolarisCycle | undefined> {
+		return await this.client.putForJson<PolarisCycle>(`/api/polaris/${encodeURIComponent(polarisCycleId)}`, update)
 	}
 
 	public async plan(request: PolarisCyclePlanRequest): Promise<PolarisCycle | undefined> {

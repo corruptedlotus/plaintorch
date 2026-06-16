@@ -1,6 +1,6 @@
 import type { PlaintorchCoreClient } from "../coreClient"
 import type { Objective } from "../objectives/models"
-import type { OnrushSprint, OnrushSprintDateRequest, OnrushSprintPlan } from "./contracts"
+import type { OnrushSprint, OnrushSprintDateRequest, OnrushSprintPlan, OnrushSprintUpdate } from "./contracts"
 export class PlaintorchOnrushSdk {
 	public constructor(private readonly client: PlaintorchCoreClient) { }
 
@@ -41,6 +41,10 @@ export class PlaintorchOnrushSdk {
 	public async end(onrushId: string, date: string | undefined = undefined): Promise<OnrushSprint | undefined> {
 		const request: OnrushSprintDateRequest = { date }
 		return await this.client.postForJson<OnrushSprint>(`/api/onrush/${encodeURIComponent(onrushId)}/end`, request)
+	}
+
+	public async update(onrushId: string, update: OnrushSprintUpdate): Promise<OnrushSprint | undefined> {
+		return await this.client.putForJson<OnrushSprint>(`/api/onrush/${encodeURIComponent(onrushId)}`, update)
 	}
 
 	public async assignOnrushStateObjectives(onrushId: string): Promise<Objective[]> {

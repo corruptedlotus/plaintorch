@@ -9,6 +9,6 @@ export class PlaintorchLoreSdk {
 	}
 
 	public async get(puck: string): Promise<LorePage | undefined> {
-		return await this.client.getJson<LorePage>(`/api/lorepages/${encodeURIComponent(puck)}`)
+		return await this.client.getJson<LorePage>(`/api/lorepages/${puck}`)
 	}
 }

@@ -1,7 +1,8 @@
-import { component, css, html, nothing, property } from "@a11d/lit"
+import { component, css, html, nothing, property, unsafeCSS } from "@a11d/lit"
 import { SystemBriefing } from "@pleiades/sdk";
 import { toRomanNumeral } from "@pleiades/sdk/helpers";
 import { CardComponent } from "components/design"
+import { 'plaintorch-bgx-png' as bannerBg } from 'assets/design'
 
 @component('p7t-briefing-hero')
 export class BriefingHero extends CardComponent {
@@ -12,6 +13,15 @@ export class BriefingHero extends CardComponent {
 	static override get styles() {
 		return css`
 			${super.styles}
+
+			:host {
+				background: linear-gradient(
+					40deg,
+					color-mix(in srgb, var(--interactive-accent) 75%, black) -20%,
+					color-mix(in srgb, black 80%, transparent) 80%
+				), url('${unsafeCSS(bannerBg)}') no-repeat center/cover, var(--background-primary);
+				background-blend-mode: color, luminosity;
+			}
 
 			.grid {
 				display: grid;

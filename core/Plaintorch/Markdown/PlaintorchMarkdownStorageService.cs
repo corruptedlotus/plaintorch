@@ -136,7 +136,7 @@ public sealed class PlaintorchMarkdownStorageService(
 			lorePage.RelativePath = Path.GetRelativePath(layout.VaultRoot, newPath);
 		}
 
-		TryRelocateSelfNamedDirectory(previousPath, newPath, entity.GetType());
+		previousPath = TryRelocateSelfNamedDirectory(previousPath, newPath, entity.GetType());
 		var body = await ResolveBodyAsync(previousPath, sourcePath, newPath, cancellationToken);
 		var preservedFrontMatter = await ResolveFrontMatterAsync(previousPath, sourcePath, newPath, cancellationToken);
 		SuppressWatcherPaths(
@@ -297,18 +297,18 @@ public sealed class PlaintorchMarkdownStorageService(
 		return fallbackPath;
 	}
 
-	private void TryRelocateSelfNamedDirectory(string? previousPath, string newPath, Type entityType)
+	private string? TryRelocateSelfNamedDirectory(string? previousPath, string newPath, Type entityType)
 	{
 		if (string.IsNullOrWhiteSpace(previousPath)
 			|| string.Equals(previousPath, newPath, StringComparison.OrdinalIgnoreCase))
 		{
-			return;
+			return previousPath;
 		}
 
 		var storage = GetStorageAttribute(entityType);
 		if (storage.Shape != VaultStorageShape.SelfNamedDirectory)
 		{
-			return;
+			return previousPath;
 		}
 
 		var previousDirectory = Path.GetDirectoryName(previousPath);
@@ -319,12 +319,20 @@ public sealed class PlaintorchMarkdownStorageService(
 			|| !Directory.Exists(previousDirectory)
 			|| Directory.Exists(newDirectory))
 		{
-			return;
+			return previousPath;
 		}
 
 		Directory.CreateDirectory(Path.GetDirectoryName(newDirectory)!);
 		SuppressWatcherPaths(previousDirectory, newDirectory, previousPath, newPath);
 		Directory.Move(previousDirectory, newDirectory);
+
+		var relocatedPreviousPath = Path.Combine(newDirectory, Path.GetFileName(previousPath));
+		if (File.Exists(relocatedPreviousPath))
+		{
+			return relocatedPreviousPath;
+		}
+
+		return previousPath;
 	}
 
 	private async Task<string> ResolveLoreParentReassignmentPathAsync(LorePage lorePage, CancellationToken cancellationToken)

@@ -31,6 +31,8 @@ export class CardComponent extends Component {
 				padding-inline: .5em;
 				flex-direction: column;
 				align-items: flex-start;
+				gap: .4em;
+				margin-block: .1em .2em;
 			}
 	
 			:host::part(pre-heading) {
@@ -40,6 +42,7 @@ export class CardComponent extends Component {
 
 			:host::part(heading) {
 				font-size: 1.65em;
+				line-height: .9;
 				font-weight: 250;
 			}
 

@@ -1,4 +1,5 @@
 using Pleiades.Plaintorch.Api.Contracts;
+using Pleiades.Saga;
 
 namespace Pleiades.Plaintorch.Api.Abstractions;
 
@@ -10,7 +11,7 @@ public interface ILorePageApi
 	/// <summary>
 	/// Gets a lore page by PUCK.
 	/// </summary>
-	Task<LorePageRecord?> GetAsync(string puck, CancellationToken cancellationToken = default);
+	Task<LorePage?> GetAsync(string puck, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Lists all lore pages in hierarchy order.

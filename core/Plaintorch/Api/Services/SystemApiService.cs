@@ -23,7 +23,8 @@ public sealed class SystemApiService(
 	VaultPathSyncModelCatalog pathSyncModelCatalog,
 	VaultWatcherIssueRegistry watcherIssueRegistry,
 	PuckEntityResolutionService puckEntityResolutionService,
-	MarkdownFrontMatterSerializer markdownSerializer) : ISystemApi
+	MarkdownFrontMatterSerializer markdownSerializer,
+	ILogger<SystemApiService> logger) : ISystemApi
 {
 	/// <inheritdoc />
 	public async Task<SystemBriefing> GetBriefingAsync(CancellationToken cancellationToken = default)
@@ -102,7 +103,7 @@ public sealed class SystemApiService(
 		}
 
 		var (pathPuck, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(absolutePath);
-		var (resolvedPuck, resolvedTitle) = await ResolveEntityIdentityAsync(model.EntityType, absolutePath, pathPuck, pathTitle, cancellationToken);
+		var (resolvedPuck, resolvedTitle) = await ResolveEntityIdentityAsync(model.EntityType, absolutePath, pathPuck, pathTitle, cancellationToken, logger);
 
 		return new VaultNoteAuthorityResolution(
 			normalizedRelativePath,
@@ -336,12 +337,13 @@ public sealed class SystemApiService(
 		string absolutePath,
 		string? pathPuck,
 		string pathTitle,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		ILogger? logger = null)
 	{
-		if (!string.IsNullOrWhiteSpace(pathPuck))
+		/*if (!string.IsNullOrWhiteSpace(pathPuck))
 		{
 			return (pathPuck, pathTitle);
-		}
+		}*/
 
 		if (entityType == typeof(Objective))
 		{
@@ -373,7 +375,9 @@ public sealed class SystemApiService(
 				Id = string.Empty,
 				Title = string.Empty,
 			};
-			if (MarkdownFileLocator.ApplyLorePageCompositionFromPath(lorePage, absolutePath, layout.VaultRoot, layout.SagaRoot))
+
+
+			if (MarkdownFileLocator.ApplyLorePageCompositionFromPath(lorePage, absolutePath, layout.VaultRoot, layout.SagaRoot, logger))
 			{
 				return (lorePage.Id, lorePage.Title);
 			}

@@ -4,6 +4,7 @@ export type {
 	PolarisCycle,
 	PolarisCyclePlanRequest,
 	PolarisCycleTimeRequest,
+	PolarisCycleUpdate,
 	PolarisExecutivePlan,
 	PolarisExecutivePlanningMode,
 	PolarisExecutivePlanResult,

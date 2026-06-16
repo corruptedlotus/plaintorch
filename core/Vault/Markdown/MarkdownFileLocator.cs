@@ -245,9 +245,9 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	/// <summary>
 	/// Derives lore page composition from a canonical saga markdown path.
 	/// </summary>
-	public static bool ApplyLorePageCompositionFromPath(LorePage lorePage, string path, string vaultRoot, string sagaRoot)
+	public static bool ApplyLorePageCompositionFromPath(LorePage lorePage, string path, string vaultRoot, string sagaRoot, ILogger? logger = null)
 	{
-		return LorePage.TryApplyCompositionFromPath(lorePage, path, vaultRoot, sagaRoot);
+		return LorePage.TryApplyCompositionFromPath(lorePage, path, vaultRoot, sagaRoot, logger);
 	}
 
 	/// <summary>

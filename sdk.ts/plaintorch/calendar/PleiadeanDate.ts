@@ -1,4 +1,5 @@
 const monthNames = ["Niloumehr", "Solaria", "Xuntaš", "Tarāxriz", "Lunaria", "Tārvan"] as const
+const shortMonthNames = ["Nil", "Sol", "Xun", "Tar", "Lua", "Tva"] as const
 const dayMilliseconds = 24 * 60 * 60 * 1000
 const epochUtcMs = Date.UTC(2023, 2, 21)
 
@@ -45,6 +46,10 @@ export class PleiadeanDate {
 
 	public get monthName(): string {
 		return monthNames[this.month - 1]!
+	}
+
+	public get shortMonthName(): string {
+		return shortMonthNames[this.month - 1]!
 	}
 
 	public get yearType(): PleiadeanYearType {
@@ -144,6 +149,10 @@ export class PleiadeanDate {
 		const nextStart = resolvePersianYearStartUtc(persianYear + 1)
 		const daySpan = Math.floor((nextStart.getTime() - thisStart.getTime()) / dayMilliseconds)
 		return daySpan === 366
+	}
+
+	public toString() {
+		return `${this.day}/${this.shortMonthName} ${this.year}`
 	}
 }
 

@@ -23,6 +23,7 @@ export class PleiadeanDateView extends Component {
 				flex-direction: column;
 				font-size: .45em;
 				vertical-align: text-bottom;
+				line-height: 1.2em;
 			}
 
 			.year-suffix {

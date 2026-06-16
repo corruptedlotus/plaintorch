@@ -16,3 +16,9 @@ export interface OnrushSprintPlan {
 export interface OnrushSprintDateRequest {
 	date?: string | undefined
 }
+
+export interface OnrushSprintUpdate {
+	title?: string | undefined
+	startDate?: string | undefined
+	endDate?: string | undefined
+}

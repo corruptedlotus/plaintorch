@@ -76,8 +76,13 @@ export interface ReflectiveUpdate {
 	executed?: boolean | undefined
 }
 
+export interface PolarisCycleUpdate {
+	title?: string | undefined
+}
+
 export interface PolarisCycleTimeRequest {
-	time?: string | undefined}
+	time?: string | undefined
+}
 
 export interface PolarisCyclePlanRequest {
 	forecastReference: string

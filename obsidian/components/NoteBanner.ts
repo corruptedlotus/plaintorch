@@ -15,6 +15,8 @@ export class NoteBanner extends Component {
 			:host {
 				display: grid;
 				overflow-anchor: auto;
+				white-space: initial;
+				margin-block: -2em 1em !important;
 			}
 
 			:host([invalid]) {
@@ -35,6 +37,12 @@ export class NoteBanner extends Component {
 				return html`<p7t-directive-banner .puck=${this.note.puck} .app=${this.app}></p7t-directive-banner>`
 			case 'objective':
 				return html`<p7t-objective-banner .puck=${this.note.puck} .app=${this.app}></p7t-objective-banner>`
+			case 'onrush-sprint':
+				return html`<p7t-onrush-banner .puck=${this.note.puck} .app=${this.app}></p7t-onrush-banner>`
+			case 'polaris-cycle':
+				return html`<p7t-polaris-banner .puck=${this.note.puck} .app=${this.app}></p7t-polaris-banner>`
+			case 'lore-page':
+				return html`<p7t-lore-banner .puck=${this.note.puck} .app=${this.app}></p7t-lore-banner>`
 			default:
 				return html`<p7t-entity-banner .puck=${this.note?.puck ?? ''} .xtype=${this.note?.entityKind} .entity=${{ id: this.note?.puck ?? '', title: this.note?.title ?? '' }} .app=${this.app}></p7t-entity-banner>`
 		}

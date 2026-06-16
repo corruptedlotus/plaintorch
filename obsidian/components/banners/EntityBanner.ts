@@ -101,6 +101,7 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 			.stamp {
 				grid-area: stamp;
 				height: 40px;
+				width: auto;
 			}
 
 			.puck {
@@ -124,7 +125,6 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 					margin: 0;
 					font-size: .6em;
 				}
-
 			}
 		`
 	}

@@ -1,6 +1,6 @@
-import { component, css, html } from "@a11d/lit"
+import { component, css, html, nothing } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { OnrushSprint } from '@pleiades/sdk'
+import { OnrushSprint, PleiadeanDate } from '@pleiades/sdk'
 import { core, ReactiveBinder, SelectDirectiveStatusModal } from ".."
 import { App } from "obsidian"
 
@@ -48,31 +48,13 @@ export class OnrushBanner extends EntityBanner<OnrushSprint> {
 
 			:host {
 				padding-inline: 1.2em;
-			}
-
-			.college {
-				display: flex;
-				align-items: center;
-				user-select: none;
-
-				& span {
-					padding: 0.08em 0.8ch;
-					border-radius: 4px;
-					background: color-mix(in srgb, var(--text-normal) 15%, transparent);
-					color: color-mix(in srgb, var(--text-normal) 60%, transparent);
-					font-family: var(--font-interface);
-				}
+				--p7t-flare-accent: #9d2818;
 			}
 
 			.switcher {
 				font-size: .7em;
 				opacity: .6;
 				line-height: .9;
-			}
-
-			.marker-icon {
-				width: 1.4em;
-				height: 1.4em;
 			}
 
 			:host::part(sub-heading) {
@@ -82,20 +64,25 @@ export class OnrushBanner extends EntityBanner<OnrushSprint> {
 				opacity: 1;
 			}
 
-			p7t-status-item::part(icon) {
+			.status::part(icon) {
+				width: 1.4em;
 				height: 1.4em;
+			}
+
+			.date-span {
+				display: flex;
+				align-items: center;
+				font-weight: 400;
+				gap: .5em;
+				opacity: .7;
+				font-size: .9em;
 			}
 		`
 	}
 
 	
 	protected override get secondary() {
-		const directiveTitle = this.entity!.parentDirective?.title
-		return !directiveTitle ? html`
-			<span style='opacity: .5'>Constellation Directive</span>
-		` : html`
-			<span>${directiveTitle}</span>
-		`
+		return html``
 	}
 
 	protected override get headingTemplate() {
@@ -105,12 +92,29 @@ export class OnrushBanner extends EntityBanner<OnrushSprint> {
 	}
 
 	protected override get subHeadingTemplate() {
+		if (!this.entity) return html``
+		if (!this.entity.startDate) return html`
+			<p7t-icon-item class='status' icon='state-zero' text="Planned"></p7t-icon-item>
+		`
+		if (!this.entity.endDate) return html`
+			<p7t-icon-item class='status' icon='state-active' text="Active"></p7t-icon-item>
+		`
+		else return html`
+			<p7t-icon-item class='status' icon='state-archived' text="Concluded"></p7t-icon-item>
+		`
+	}
+
+	protected override get actions() {
 		return html`
-			<p7t-editable .doEdit=${SelectDirectiveStatusModal.prompt} ${this.binder.bind('status')}>
-				<p7t-status-item
-					.status=${DirectiveStatus[this.entity!.status] as keyof typeof DirectiveStatus}>
-				</p7t-status-item>
-			</p7t-editable>
+			<div class='date-span'>
+				${!this.entity!.startDate ? html`<span>Not Started</span>` : html`
+					<span>${PleiadeanDate.fromDate(new Date(this.entity!.startDate)).toString()}</span>
+					${!this.entity!.endDate ? html`<p7t-icon icon='lucide:step-forward'></p7t-icon>` : html`
+						<p7t-icon icon='lucide:arrow-right'></p7t-icon>
+						<span>${PleiadeanDate.fromDate(new Date(this.entity!.endDate)).toString()}</span>
+					`}
+				`}
+			</div>
 		`
 	}
 }

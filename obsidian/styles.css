@@ -3,6 +3,11 @@
 	initial-value: 0%;
 }
 
+.plaintorch-root {
+	--p7t-accent-polaris: #038899;
+	--p7t-accent-onrush: #9d2818;
+}
+
 .view-content:has(p7t-note-banner:not([invalid])) .metadata-container,
 .view-content:has(p7t-note-banner:not([invalid])) .inline-title {
 	display: none !important;

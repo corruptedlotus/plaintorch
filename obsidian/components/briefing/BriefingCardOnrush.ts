@@ -14,7 +14,7 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 			${super.styles}
 
 			:host {
-				--p7t-flare-accent: #9d2818;
+				--p7t-flare-accent: var(--p7t-accent-onrush);
 			}
 
 			.add-button {

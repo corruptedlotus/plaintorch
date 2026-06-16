@@ -13,14 +13,14 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 			${super.styles}
 
 			:host {
-				--p7t-flare-accent: #038899;
+				--p7t-flare-accent: var(--p7t-accent-polaris);
 			}
 		`
 	}
 
 	protected override get offlineTemplate() {
 		return html`
-			<span class='no-data'>Polaris Rests in the Void</span>
+			<span class='no-data'>The Polaris Rests in the Void</span>
 			<p7t-button @click=${() => this.begin()} class='start-button' icon='polaris'>Begin Cycle</p7t-button>
 		`
 	}

@@ -24,7 +24,6 @@ views:
         direction: ASC
     summaries:
       status: Open
-      file.name: new summary
     imageAspectRatio: 0.95
     cardSize: 400
     separator: --
@@ -40,3 +39,27 @@ views:
       - patches
     indentProperties: true
     markers: none
+  - type: table
+    name: Open
+    filters:
+      and:
+        - status != "implemented"
+    order:
+      - file.name
+      - status
+      - assignee
+    sort:
+      - property: file.name
+        direction: ASC
+      - property: patches
+        direction: ASC
+    summaries:
+      status: Open
+    imageAspectRatio: 0.95
+    cardSize: 400
+    separator: --
+    indentProperties: true
+    markers: none
+    columnSize:
+      file.name: 439
+      note.status: 117

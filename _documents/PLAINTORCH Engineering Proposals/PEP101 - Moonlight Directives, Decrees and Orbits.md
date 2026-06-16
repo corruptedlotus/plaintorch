@@ -24,4 +24,10 @@ Decrees are also basically objectives and share the table with them. These are w
 - Can be added to Polaris cycles as executive.
 - Celestron is rewarded every time it's executed.
 - Can have "orbit" configuration, allowing for reflective selection.
-# Orbit Configuration
+# PODS Configuration
+> Pleiades Orbits Declarative Schedule
+
+PODS syntax example:
+- `M[w{0}[d{3,6}]]+2`: Every 2 months, on the 4th and 7th day of the first week.
+- `w[#^3]*60`: 3 random days of every week for a total of 20 times.
+- `M{0~5}[d+6],M{6~11}[d+2]`: Every 6 days during the first half and every other day during the second half of the year.

@@ -13,7 +13,7 @@ export class CustomBanner implements PageBannerComponent {
 
 	render(document: HTMLDocument): HTMLElement {
 		const host = document.createElement("p7t-note-banner") as NoteBanner
-		host.className = "plaintorch-note-banner"
+		host.className = "plaintorch-note-banner plaintorch-root"
 		host.file = this.file
 		host.app = this.app
 		return host

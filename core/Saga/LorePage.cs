@@ -24,7 +24,7 @@ public sealed class LorePage : PuckNamedEntity
 	/// Gets the comparer used to order lore pages by hierarchical narrative index.
 	/// </summary>
 	public static IComparer<LorePage> NarrativeOrderComparer => _narrativeOrderComparer;
-
+	
 	/// <summary>
 	/// Gets or sets the canonical lore PUCK persisted in frontmatter for path-override reconciliation.
 	/// </summary>
@@ -164,7 +164,7 @@ public sealed class LorePage : PuckNamedEntity
 	/// <summary>
 	/// Applies saga lore composition from a canonical markdown path.
 	/// </summary>
-	public static bool TryApplyCompositionFromPath(LorePage lorePage, string fullPath, string vaultRoot, string sagaRoot)
+	public static bool TryApplyCompositionFromPath(LorePage lorePage, string fullPath, string vaultRoot, string sagaRoot, ILogger? logger = null)
 	{
 		ArgumentNullException.ThrowIfNull(lorePage);
 		ArgumentException.ThrowIfNullOrWhiteSpace(fullPath);
@@ -186,7 +186,7 @@ public sealed class LorePage : PuckNamedEntity
 		{
 			return false;
 		}
-
+		
 		var segments = CollectSelfNamedSegments(normalizedFullPath, normalizedSagaRoot);
 		if (segments.Count == 0 || segments.Any(segment => string.IsNullOrWhiteSpace(segment.Id)))
 		{

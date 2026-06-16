@@ -12,14 +12,15 @@ namespace Pleiades.Plaintorch.Api.Services;
 public sealed class LorePageApiService(PlainfraContext context) : ILorePageApi
 {
 	/// <inheritdoc />
-	public async Task<LorePageRecord?> GetAsync(string puck, CancellationToken cancellationToken = default)
+	public async Task<LorePage?> GetAsync(string puck, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(puck);
 		var lorePage = await context.LorePages
+			.Include(x => x.Parent)
 			.AsNoTracking()
 			.FirstOrDefaultAsync(item => item.Id == puck, cancellationToken);
 
-		return lorePage is null ? null : Map(lorePage);
+		return lorePage is null ? null : lorePage;
 	}
 
 	/// <inheritdoc />

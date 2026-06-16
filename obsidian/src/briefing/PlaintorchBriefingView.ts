@@ -119,6 +119,7 @@ export class PlaintorchBriefingView extends ItemView {
 
 		this.contentEl.empty()
 		this.contentEl.addClass("plaintorch-briefing-view")
+		this.contentEl.addClass("plaintorch-root")
 		const elem = this.contentEl.createEl("p7t-briefing")
 	}
 
