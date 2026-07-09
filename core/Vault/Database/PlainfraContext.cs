@@ -82,6 +82,11 @@ public class PlainfraContext : DbContext
 	/// </summary>
 	public DbSet<AuditLogEntry> AuditLogEntries => Set<AuditLogEntry>();
 
+	/// <summary>
+	/// Gets the applied vault migration history tracked in the database.
+	/// </summary>
+	public DbSet<VaultMigrationHistory> VaultMigrationHistory => Set<VaultMigrationHistory>();
+
 	/// <inheritdoc />
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{

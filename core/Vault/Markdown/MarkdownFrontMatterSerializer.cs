@@ -13,7 +13,11 @@ namespace Pleiades.Vault.Markdown;
 public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 {
 	private static readonly NullabilityInfoContext NullabilityContext = new();
-	private const string QuietPuckFieldName = "puck";
+
+	/// <summary>
+	/// The frontmatter field name used to persist quiet PUCK identity.
+	/// </summary>
+	public const string QuietPuckFieldName = "puck";
 
 	/// <summary>
 	/// Serializes a model into markdown with frontmatter and an optional body.

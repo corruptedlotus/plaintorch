@@ -42,6 +42,25 @@ public sealed class PlaintorchMarkdownStorageService(
 	}
 
 	/// <summary>
+	/// Re-emits an entity's canonical markdown from its current conventions, converting a legacy file in place.
+	/// </summary>
+	/// <remarks>
+	/// This is the re-canonicalisation primitive used by vault migrations. The legacy file at <paramref name="legacyPath"/>
+	/// is used as the body/frontmatter source and is renamed/relocated/rewritten to the current canonical form, preserving
+	/// its markdown body verbatim. Passing <paramref name="beginBoundary"/> is required for implicit entities so their file
+	/// materializes and their synchronization boundary begins.
+	/// </remarks>
+	/// <param name="entity">The entity to re-canonicalise.</param>
+	/// <param name="legacyPath">The legacy markdown file to convert, when known.</param>
+	/// <param name="beginBoundary">Whether to begin an implicit entity's synchronization boundary.</param>
+	/// <param name="cancellationToken">A token used to cancel the operation.</param>
+	public async Task RecanonicalizeAsync(object entity, string? legacyPath = null, bool beginBoundary = false, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		await SaveCanonicalMarkdownAsync(entity, previous: null, sourcePath: legacyPath, cancellationToken, beginBoundary);
+	}
+
+	/// <summary>
 	/// Deletes a directive markdown file.
 	/// </summary>
 	public Task<FileGraveyardEntry?> DeleteDirectiveAsync(Directive directive, CancellationToken cancellationToken = default)

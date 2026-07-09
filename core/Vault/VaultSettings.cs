@@ -8,6 +8,13 @@ namespace Pleiades.Vault;
 public sealed class VaultSettings
 {
     /// <summary>
+    /// Gets or sets the vault schema version the on-disk conventions are stored at.
+    /// A vault settings document written before vault migrations existed omits this field and therefore
+    /// loads as <see cref="VaultSchema.BaselineVersion"/>.
+    /// </summary>
+    public int SchemaVersion { get; set; } = VaultSchema.BaselineVersion;
+
+    /// <summary>
     /// Gets or sets the logical location key mapping.
     /// </summary>
     public Dictionary<string, string> LocationKeys { get; init; } = CreateDefaultLocationKeys();
