@@ -54,6 +54,11 @@ public interface IObjectiveApi
 	Task<Objective> RemoveFromOnrushAsync(string objectiveId, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Prompts an implicit objective to materialize its markdown file and begin its synchronization boundary.
+	/// </summary>
+	Task<Objective> BeginBoundaryAsync(string objectiveId, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Deletes an objective.
 	/// </summary>
 	Task DeleteAsync(string objectiveId, CancellationToken cancellationToken = default);

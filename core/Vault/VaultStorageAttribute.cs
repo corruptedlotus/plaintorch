@@ -41,6 +41,48 @@ public enum VaultStorageMode
 	/// PUCK identity is expected from frontmatter instead of filename composition.
 	/// </summary>
 	Freeform,
+
+	/// <summary>
+	/// Entities behave identically to <see cref="Freeform"/> but do not initially materialize a file.
+	/// An implicit entity begins syncing only after its file starts existing (through any means), at which point a
+	/// synchronization boundary is recorded and subsequent deletions of that file become authoritative upstream.
+	/// This is the conceptual opposite of freeform upstream initialization.
+	/// </summary>
+	Implicit,
+}
+
+/// <summary>
+/// Indicates how the PUCK identity of a vault-backed entity is persisted alongside its file.
+/// </summary>
+public enum VaultPuckStorage
+{
+	/// <summary>
+	/// Stores the entity identity as a <c>puck</c> frontmatter field while keeping a title-only filename.
+	/// This is the default PUCK storage form.
+	/// </summary>
+	Quiet,
+
+	/// <summary>
+	/// Stores the entity identity as part of the filename using the canonical <c>{PUCK token} - {Title}</c> convention.
+	/// </summary>
+	Index,
+}
+
+/// <summary>
+/// Provides shared classification helpers over <see cref="VaultStorageMode"/> values.
+/// </summary>
+public static class VaultStorageModeExtensions
+{
+	/// <summary>
+	/// Determines whether a storage mode resolves ownership from frontmatter PUCK identity rather than path shape.
+	/// Both <see cref="VaultStorageMode.Freeform"/> and <see cref="VaultStorageMode.Implicit"/> are identity-driven.
+	/// </summary>
+	/// <param name="mode">The storage mode to classify.</param>
+	/// <returns><see langword="true"/> when the mode is identity-driven; otherwise, <see langword="false"/>.</returns>
+	public static bool IsIdentityDriven(this VaultStorageMode mode)
+	{
+		return mode is VaultStorageMode.Freeform or VaultStorageMode.Implicit;
+	}
 }
 
 /// <summary>
@@ -80,6 +122,13 @@ public sealed class VaultStorageAttribute : Attribute
 	/// Gets the physical filesystem shape used by the entity.
 	/// </summary>
 	public VaultStorageShape Shape { get; init; } = VaultStorageShape.SingleFile;
+
+	/// <summary>
+	/// Gets the PUCK storage form used to persist the entity identity.
+	/// Defaults to <see cref="VaultPuckStorage.Quiet"/>; models requiring filename-embedded identity must opt into
+	/// <see cref="VaultPuckStorage.Index"/> explicitly.
+	/// </summary>
+	public VaultPuckStorage PuckStorage { get; init; } = VaultPuckStorage.Quiet;
 
 	/// <summary>
 	/// Gets the optional property name containing the parent entity identifier used for composed storage paths.

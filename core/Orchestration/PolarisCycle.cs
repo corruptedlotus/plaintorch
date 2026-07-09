@@ -12,7 +12,8 @@ namespace Pleiades.Orchestration;
 [VaultStorage(
 	LocationKey = VaultLocationKeys.Journal,
 	Shape = VaultStorageShape.SingleFile,
-	Mode = VaultStorageMode.Enforced)]
+	Mode = VaultStorageMode.Enforced,
+	PuckStorage = VaultPuckStorage.Index)]
 public sealed class PolarisCycle : PuckNamedEntity
 {
 	/// <summary>

@@ -38,6 +38,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<PlaintorchRepository>();
 		services.AddScoped<VaultTemporalDataService>();
 		services.AddScoped<VaultAuditLogService>();
+		services.AddScoped<VaultImplicitBoundaryService>();
 		services.AddSingleton<PuckNotationParser>();
 		services.AddSingleton<PuckRuntimeCompilationCatalog>();
 		services.AddSingleton<PuckTokenizer>();
@@ -59,6 +60,7 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<PlaintorchCoreSplashService>();
 		services.AddSingleton<PlaintorchServiceBootstrapper>();
 		services.AddScoped<IVaultStorageModePolicyService, FreeformVaultStorageModePolicyService>();
+		services.AddScoped<IVaultStorageModePolicyService, ImplicitVaultStorageModePolicyService>();
 		services.AddScoped<IVaultStorageModePolicyService, EnforcedVaultStorageModePolicyService>();
 		services.AddScoped<IVaultStorageModePolicyService, OptionalVaultStorageModePolicyService>();
 		services.AddScoped<IVaultStorageModePolicyService, SyncedVaultStorageModePolicyService>();

@@ -11,7 +11,7 @@ namespace Pleiades.Orchestration;
 [PuckFormat("j{S:8}")]
 [VaultStorage(
 	LocationKey = VaultLocationKeys.Objectives,
-	Mode = VaultStorageMode.Synced,
+	Mode = VaultStorageMode.Implicit,
 	Shape = VaultStorageShape.SingleFile,
 	ParentIdProperty = nameof(DirectiveId),
 	ParentEntityType = typeof(Directive),
