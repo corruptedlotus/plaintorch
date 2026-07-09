@@ -22,6 +22,7 @@ public sealed class VaultMarkdownDiscoveryService(
 	VaultWatcherPathPolicy pathPolicy,
 	MarkdownFrontMatterSerializer markdownSerializer,
 	VaultAuditLogService auditLogService,
+	VaultImplicitBoundaryService implicitBoundaryService,
 	VaultSyncDecisionService decisionService,
 	PuckCreationService puckCreationService,
 	PuckEntityResolutionService puckEntityResolutionService)
@@ -250,14 +251,14 @@ public sealed class VaultMarkdownDiscoveryService(
 			: new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var isNewEntity = string.IsNullOrWhiteSpace(pathId) || !knownIds.Contains(pathId);
 		var preserveDefaultsForMissingFields = isNewEntity
-			|| (model.Mode != VaultStorageMode.Freeform && typeof(IPuckNamedEntity).IsAssignableFrom(model.EntityType));
+			|| (!model.Mode.IsIdentityDriven() && typeof(IPuckNamedEntity).IsAssignableFrom(model.EntityType));
 		var issues = DeserializeInto(parsedModel, model.EntityType, markdown, preserveDefaultsForMissingFields: preserveDefaultsForMissingFields)
 			.Select(issue => issue)
 			.ToList();
 		ApplyPathAuthorities(parsedModel, fullPath, issues);
 		if (parsedModel is IPuckNamedEntity resolvedNamedEntity)
 		{
-			if (model.Mode != VaultStorageMode.Freeform
+			if (!model.Mode.IsIdentityDriven()
 				&& !string.IsNullOrWhiteSpace(pathDerivedId)
 				&& string.Equals(resolvedNamedEntity.Id, pathDerivedId, StringComparison.OrdinalIgnoreCase))
 			{
@@ -306,8 +307,31 @@ public sealed class VaultMarkdownDiscoveryService(
 			issues.Add(new MarkdownValidationIssue("id", "Path identity is missing required caller-provided PUCK input."));
 		}
 
+		var boundaryBegun = true;
+		if (model.Mode == VaultStorageMode.Implicit)
+		{
+			if (!string.IsNullOrWhiteSpace(pathId))
+			{
+				boundaryBegun = await implicitBoundaryService.HasBoundaryBegunAsync(model.EntityName, pathId, cancellationToken);
+			}
+			else if (!fileExists)
+			{
+				// A quiet (title-only) file carries no filename identity, so a deletion recovers its identity
+				// from the boundary entry recorded for that path when the file first began existing.
+				var recoveredId = await implicitBoundaryService.TryRecoverEntityIdByLocationAsync(
+					model.EntityName,
+					Path.GetRelativePath(layout.VaultRoot, fullPath),
+					cancellationToken);
+				if (!string.IsNullOrWhiteSpace(recoveredId))
+				{
+					pathId = recoveredId;
+					boundaryBegun = true;
+				}
+			}
+		}
+
 		var issueMessages = issues.Select(issue => $"{issue.FieldPath}: {issue.Message}").ToArray();
-		var (action, reason) = decisionService.Decide(model, pathId, pathTitle, issueMessages, knownIds, fileExists);
+		var (action, reason) = decisionService.Decide(model, pathId, pathTitle, issueMessages, knownIds, fileExists, boundaryBegun);
 
 		return new VaultSyncCandidate(
 			fullPath,

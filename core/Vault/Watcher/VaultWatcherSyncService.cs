@@ -18,6 +18,7 @@ public sealed class VaultWatcherSyncService(
 	PlaintorchMarkdownStorageService markdownStorageService,
 	VaultTemporalDataService temporalDataService,
 	VaultAuditLogService auditLogService,
+	VaultImplicitBoundaryService implicitBoundaryService,
 	VaultWatcherWriteBarrier writeBarrier,
 	ILogger<VaultWatcherSyncService> logger)
 {
@@ -144,6 +145,7 @@ public sealed class VaultWatcherSyncService(
 
 		context.Add(model);
 		await context.SaveChangesAsync(cancellationToken);
+		await TryBeginImplicitBoundaryAsync(candidate, model, cancellationToken);
 		var shouldRewriteCanonical = string.IsNullOrWhiteSpace(candidate.PathId)
 			|| !candidate.IsValid
 			|| RequiresCanonicalScaffold(candidate);
@@ -216,6 +218,7 @@ public sealed class VaultWatcherSyncService(
 			return;
 		}
 
+		await TryBeginImplicitBoundaryAsync(candidate, existing, cancellationToken);
 		var previous = CloneEntity(existing);
 		var existingEntry = context.Entry(existing);
 		existingEntry.CurrentValues.SetValues(candidate.ParsedModel);
@@ -361,6 +364,27 @@ public sealed class VaultWatcherSyncService(
 				objective.OnrushSprintId = null;
 			}
 		}
+	}
+
+	/// <summary>
+	/// Records the synchronization boundary for an implicit entity when the watcher confirms its file exists.
+	/// </summary>
+	private async Task TryBeginImplicitBoundaryAsync(VaultSyncCandidate candidate, object entity, CancellationToken cancellationToken)
+	{
+		if (candidate.Model.Mode != VaultStorageMode.Implicit
+			|| !candidate.FileExists
+			|| entity is not IPuckNamedEntity namedEntity
+			|| string.IsNullOrWhiteSpace(namedEntity.Id))
+		{
+			return;
+		}
+
+		await implicitBoundaryService.EnsureBoundaryBegunAsync(
+			candidate.Model.EntityName,
+			namedEntity.Id,
+			namedEntity.Title,
+			candidate.VaultRelativePath,
+			cancellationToken);
 	}
 
 	private static bool HasFrontMatter(string path)
@@ -580,7 +604,7 @@ public sealed class VaultWatcherSyncService(
 				await markdownStorageService.SaveDirectiveAsync(directive, previous as Directive, sourcePath, cancellationToken);
 				break;
 			case Objective objective:
-				await markdownStorageService.SaveObjectiveAsync(objective, previous as Objective, sourcePath, cancellationToken);
+				await markdownStorageService.SaveObjectiveAsync(objective, previous as Objective, sourcePath, cancellationToken: cancellationToken);
 				break;
 			case OnrushSprint sprint:
 				await markdownStorageService.SaveOnrushSprintAsync(sprint, previous as OnrushSprint, sourcePath, cancellationToken);

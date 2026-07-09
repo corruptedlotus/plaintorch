@@ -27,7 +27,7 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout)
 			.Select(Path.GetFullPath)
 			.ToHashSet(PathComparer);
 
-		if (modelCatalog.GetModels().Any(static model => model.Mode == VaultStorageMode.Freeform))
+		if (modelCatalog.GetModels().Any(static model => model.Mode.IsIdentityDriven()))
 		{
 			roots.Add(Path.GetFullPath(layout.VaultRoot));
 		}

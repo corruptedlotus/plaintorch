@@ -8,6 +8,7 @@ namespace Pleiades.Vault.Database;
 /// </summary>
 [Index(nameof(OccurredUtc))]
 [Index(nameof(SubjectType), nameof(SubjectId))]
+[Index(nameof(Action))]
 public sealed class AuditLogEntry
 {
 	/// <summary>

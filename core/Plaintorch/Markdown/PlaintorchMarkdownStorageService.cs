@@ -23,6 +23,7 @@ public sealed class PlaintorchMarkdownStorageService(
 	VaultPathSyncModelCatalog pathSyncModelCatalog,
 	VaultWatcherPathPolicy pathPolicy,
 	VaultTemporalDataService temporalDataService,
+	VaultImplicitBoundaryService implicitBoundaryService,
 	VaultWatcherWriteBarrier writeBarrier)
 {
 	private static readonly MethodInfo FindAsyncMethod = typeof(DbContext)
@@ -51,9 +52,13 @@ public sealed class PlaintorchMarkdownStorageService(
 	/// <summary>
 	/// Writes the canonical markdown file for an objective.
 	/// </summary>
-	public async Task SaveObjectiveAsync(Objective objective, Objective? previous = null, string? sourcePath = null, CancellationToken cancellationToken = default)
+	/// <param name="beginBoundary">
+	/// When <see langword="true"/>, materializes the file for an implicit entity even if its synchronization boundary has
+	/// not begun yet, thereby beginning that boundary. Ordinary saves leave implicit entities unmaterialized until prompted.
+	/// </param>
+	public async Task SaveObjectiveAsync(Objective objective, Objective? previous = null, string? sourcePath = null, bool beginBoundary = false, CancellationToken cancellationToken = default)
 	{
-		await SaveCanonicalMarkdownAsync(objective, previous, sourcePath, cancellationToken);
+		await SaveCanonicalMarkdownAsync(objective, previous, sourcePath, cancellationToken, beginBoundary);
 	}
 
 	/// <summary>
@@ -104,8 +109,9 @@ public sealed class PlaintorchMarkdownStorageService(
 		return DeleteEntityPathAsync(cycle, cancellationToken);
 	}
 
-	private async Task SaveCanonicalMarkdownAsync(object entity, object? previous, string? sourcePath, CancellationToken cancellationToken)
+	private async Task SaveCanonicalMarkdownAsync(object entity, object? previous, string? sourcePath, CancellationToken cancellationToken, bool beginBoundary = false)
 	{
+		var storage = GetStorageAttribute(entity.GetType());
 		var previousPath = previous is null
 			? await TryResolveExistingPathByIdentityAsync(entity, sourcePath, cancellationToken)
 			: await ResolveCanonicalPathAsync(previous, cancellationToken);
@@ -125,6 +131,14 @@ public sealed class PlaintorchMarkdownStorageService(
 			{
 				previousPath = existingPath;
 			}
+		}
+
+		if (storage.Mode == VaultStorageMode.Implicit
+			&& !beginBoundary
+			&& !await IsImplicitBoundaryMaterializedAsync(entity, previousPath, sourcePath, cancellationToken))
+		{
+			// Implicit entities do not initially sync to a file; withhold materialization until the boundary is begun.
+			return;
 		}
 
 		newPath = ResolveInactionPreferredPath(entity, newPath, sourcePath);
@@ -149,6 +163,40 @@ public sealed class PlaintorchMarkdownStorageService(
 		await WriteMarkdownAsync(newPath, markdownSerializer.Serialize(entity, body, preservedFrontMatter), cancellationToken);
 		DeleteOldPath(previousPath, newPath, ResolveStorageRoot(entity.GetType()));
 		DeleteSourcePath(sourcePath, newPath);
+
+		if (storage.Mode == VaultStorageMode.Implicit
+			&& entity is IPuckNamedEntity boundaryEntity
+			&& !string.IsNullOrWhiteSpace(boundaryEntity.Id)
+			&& File.Exists(newPath))
+		{
+			await implicitBoundaryService.EnsureBoundaryBegunAsync(
+				entity.GetType().Name,
+				boundaryEntity.Id,
+				boundaryEntity.Title,
+				Path.GetRelativePath(layout.VaultRoot, newPath),
+				cancellationToken);
+		}
+	}
+
+	/// <summary>
+	/// Determines whether an implicit entity's synchronization boundary has already begun, meaning a file for it exists
+	/// or a boundary entry was previously recorded.
+	/// </summary>
+	private async Task<bool> IsImplicitBoundaryMaterializedAsync(object entity, string? previousPath, string? sourcePath, CancellationToken cancellationToken)
+	{
+		if (!string.IsNullOrWhiteSpace(previousPath) && File.Exists(previousPath))
+		{
+			return true;
+		}
+
+		if (!string.IsNullOrWhiteSpace(sourcePath) && File.Exists(Path.GetFullPath(sourcePath)))
+		{
+			return true;
+		}
+
+		return entity is IPuckNamedEntity namedEntity
+			&& !string.IsNullOrWhiteSpace(namedEntity.Id)
+			&& await implicitBoundaryService.HasBoundaryBegunAsync(entity.GetType().Name, namedEntity.Id, cancellationToken);
 	}
 
 	private string ResolveInactionPreferredPath(object entity, string canonicalPath, string? sourcePath)

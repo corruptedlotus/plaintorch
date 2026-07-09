@@ -14,7 +14,8 @@ namespace Pleiades.Saga;
 	Mode = VaultStorageMode.FileFirst,
 	Shape = VaultStorageShape.SelfNamedDirectory,
 	ParentIdProperty = nameof(ParentId),
-	ParentEntityType = typeof(LorePage))]
+	ParentEntityType = typeof(LorePage),
+	PuckStorage = VaultPuckStorage.Index)]
 [Table("LoreIndexEntries")]
 public sealed class LorePage : PuckNamedEntity
 {

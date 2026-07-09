@@ -59,9 +59,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 		EnsureFileBacking<Directive>();
 		var storage = typeof(Directive).GetCustomAttribute<VaultStorageAttribute>()
 			?? throw new InvalidOperationException($"Type '{typeof(Directive).Name}' is not configured for vault markdown storage.");
-		var folderName = storage.Mode == VaultStorageMode.Freeform
-			? PuckNamedIdentity.FormatTitleOnlyFileName(directive.Title)
-			: PuckNamedIdentity.FormatFileName(directive.Id, directive.Title);
+		var folderName = ResolvePuckFileBaseName(storage, directive.Id, directive.Title);
 		var parentDirectory = ResolveDirectiveParentDirectory(directive, parentDirective);
 		return Path.Combine(parentDirectory, folderName);
 	}
@@ -84,9 +82,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 		ArgumentNullException.ThrowIfNull(directive);
 		var storage = typeof(Directive).GetCustomAttribute<VaultStorageAttribute>()
 			?? throw new InvalidOperationException($"Type '{typeof(Directive).Name}' is not configured for vault markdown storage.");
-		var folderName = storage.Mode == VaultStorageMode.Freeform
-			? PuckNamedIdentity.FormatTitleOnlyFileName(directive.Title)
-			: PuckNamedIdentity.FormatFileName(directive.Id, directive.Title);
+		var folderName = ResolvePuckFileBaseName(storage, directive.Id, directive.Title);
 		var directory = GetDirectiveDirectoryPath(directive, parentDirective);
 		return Path.Combine(directory, $"{folderName}.md");
 	}
@@ -106,7 +102,9 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	{
 		ArgumentNullException.ThrowIfNull(objective);
 		EnsureFileBacking<Objective>();
-		var fileName = PuckNamedIdentity.FormatFileName(objective.Id, objective.Title);
+		var storage = typeof(Objective).GetCustomAttribute<VaultStorageAttribute>()
+			?? throw new InvalidOperationException($"Type '{typeof(Objective).Name}' is not configured for vault markdown storage.");
+		var fileName = ResolvePuckFileBaseName(storage, objective.Id, objective.Title);
 		var container = owningDirective is null
 			? layout.ObjectivesRoot
 			: ResolvePartitionedParentDirectory(typeof(Objective), GetDirectiveDirectoryPath(owningDirective, owningDirective.ParentDirective));
@@ -388,6 +386,17 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 
 		var directoryName = Path.GetFileName(directoryPath);
 		return File.Exists(Path.Combine(directoryPath, $"{directoryName}.md"));
+	}
+
+	/// <summary>
+	/// Resolves the primary file base name for a PUCK-backed entity according to its declared PUCK storage form.
+	/// Quiet storage yields a title-only name, while Index storage embeds the PUCK token in the filename.
+	/// </summary>
+	private static string ResolvePuckFileBaseName(VaultStorageAttribute storage, string id, string title)
+	{
+		return storage.PuckStorage == VaultPuckStorage.Quiet
+			? PuckNamedIdentity.FormatTitleOnlyFileName(title)
+			: PuckNamedIdentity.FormatFileName(id, title);
 	}
 
 	private static void EnsureFileBacking<T>()

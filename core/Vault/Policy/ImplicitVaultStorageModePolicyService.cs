@@ -1,0 +1,101 @@
+using Pleiades.Puck;
+using Pleiades.Vault.Markdown;
+using Pleiades.Vault.Watcher;
+
+namespace Pleiades.Vault.Policy;
+
+/// <summary>
+/// Implements the implicit storage policy. Ownership is identity-driven (frontmatter PUCK) like freeform storage, but an
+/// implicit entity only becomes deletion-authoritative once its synchronization boundary has begun.
+/// </summary>
+/// <remarks>
+/// Path resolution stays path-bound (inherited from <see cref="PathBoundVaultStorageModePolicyService"/>) so implicit
+/// entities are still classified by their configured scan roots and candidate shape rather than claiming every markdown
+/// file in the vault. Identity is layered on top of the path-bound belonging check.
+/// </remarks>
+public sealed class ImplicitVaultStorageModePolicyService(
+	MarkdownFrontMatterSerializer markdownSerializer,
+	PuckEntityResolutionService puckEntityResolutionService) : PathBoundVaultStorageModePolicyService
+{
+	/// <inheritdoc />
+	public override VaultStorageMode Mode => VaultStorageMode.Implicit;
+
+	/// <inheritdoc />
+	public override async Task<bool> BelongsToModelAsync(VaultPathSyncModel model, string fullPath, string markdown, CancellationToken cancellationToken)
+	{
+		if (!await base.BelongsToModelAsync(model, fullPath, markdown, cancellationToken))
+		{
+			return false;
+		}
+
+		// A missing file (deletion or not-yet-materialized boundary) still flows through so deletion authority can apply.
+		if (!File.Exists(fullPath))
+		{
+			return true;
+		}
+
+		var frontMatter = markdownSerializer.ParseFrontMatter(markdown);
+		if (!frontMatter.TryGetValue("puck", out var rawPuck) || string.IsNullOrWhiteSpace(rawPuck))
+		{
+			return false;
+		}
+
+		var puck = rawPuck.Trim().Trim('"');
+		if (string.IsNullOrWhiteSpace(puck))
+		{
+			return false;
+		}
+
+		var resolved = await puckEntityResolutionService.ResolveAsync(puck, cancellationToken);
+		if (resolved.Exists)
+		{
+			return string.Equals(resolved.EntityType, model.EntityName, StringComparison.Ordinal);
+		}
+
+		return true;
+	}
+
+	/// <inheritdoc />
+	public override (VaultSyncAction Action, string Reason) Decide(VaultStorageModeDecisionContext context)
+	{
+		ArgumentNullException.ThrowIfNull(context);
+
+		if (string.IsNullOrWhiteSpace(context.PathId))
+		{
+			return (VaultSyncAction.Ignore, "Implicit storage does not auto-create entities from files without frontmatter PUCK identity.");
+		}
+
+		var exists = context.KnownIds.Contains(context.PathId);
+		if (!context.FileExists)
+		{
+			if (exists && context.BoundaryBegun)
+			{
+				return (VaultSyncAction.DeleteFromDatabase, "Implicit storage removes known entities when their boundary-begun file is deleted.");
+			}
+
+			if (exists)
+			{
+				return (VaultSyncAction.Ignore, "Implicit entity has no begun synchronization boundary, so a missing file is not authoritative.");
+			}
+
+			return (VaultSyncAction.Ignore, "Missing implicit file does not map to a known PUCK identity.");
+		}
+
+		if (context.IssueMessages.Count > 0)
+		{
+			if (!exists)
+			{
+				return (VaultSyncAction.PurgeFile, "Unknown implicit PUCK assertion with validation issues is disallowed by implicit policy.");
+			}
+
+			return (VaultSyncAction.RewriteFromDatabase, "Implicit candidate has validation issues and must be rewritten from canonical state.");
+		}
+
+		if (exists)
+		{
+			return (VaultSyncAction.UpdateFromFile, "Frontmatter PUCK identity exists in storage and can be synced from file.");
+		}
+
+		return (VaultSyncAction.PurgeFile, "Implicit storage rejects unknown frontmatter PUCK assertions.");
+	}
+}

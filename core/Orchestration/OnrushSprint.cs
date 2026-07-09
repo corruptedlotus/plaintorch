@@ -11,7 +11,8 @@ namespace Pleiades.Orchestration;
 [PuckFormat("x{I:4:100}")]
 [VaultStorage(LocationKey = VaultLocationKeys.Onrush,
 		Mode = VaultStorageMode.Enforced,
-		Shape = VaultStorageShape.SelfNamedDirectory
+		Shape = VaultStorageShape.SelfNamedDirectory,
+		PuckStorage = VaultPuckStorage.Index
 	)]
 public sealed class OnrushSprint : PuckNamedEntity
 {

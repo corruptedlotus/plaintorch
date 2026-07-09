@@ -13,7 +13,7 @@ namespace Pleiades.Vault.Markdown;
 public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 {
 	private static readonly NullabilityInfoContext NullabilityContext = new();
-	private const string FreeformPuckFieldName = "puck";
+	private const string QuietPuckFieldName = "puck";
 
 	/// <summary>
 	/// Serializes a model into markdown with frontmatter and an optional body.
@@ -28,10 +28,10 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 
 		var lines = new List<string> { "---" };
 		var emittedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		if (TryGetFreeformPuckValue(model, out var freeformPuck))
+		if (TryGetQuietPuckValue(model, out var quietPuck))
 		{
-			lines.Add($"{FreeformPuckFieldName}: {FormatScalar(freeformPuck)}");
-			emittedKeys.Add(FreeformPuckFieldName);
+			lines.Add($"{QuietPuckFieldName}: {FormatScalar(quietPuck)}");
+			emittedKeys.Add(QuietPuckFieldName);
 		}
 
 		foreach (var property in GetAnnotatedProperties(model.GetType()))
@@ -170,13 +170,13 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 
 		var frontMatter = ParseFrontMatter(markdown);
 		var issues = new List<MarkdownValidationIssue>();
-		ApplyFreeformPuckIdentity(model, frontMatter, issues);
+		ApplyQuietPuckIdentity(model, frontMatter, issues);
 		PopulateAnnotatedProperties(model, typeof(T), frontMatter, issues, null, validateMissingFields);
 		ValidateNestedAnnotatedProperties(model, typeof(T), issues, null);
 		return new MarkdownDeserializationResult<T>(model, issues);
 	}
 
-	private static bool TryGetFreeformPuckValue<T>(T model, out string puck)
+	private static bool TryGetQuietPuckValue<T>(T model, out string puck)
 	{
 		puck = string.Empty;
 		if (model is not IPuckNamedEntity namedEntity)
@@ -184,7 +184,7 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 			return false;
 		}
 
-		if (!HasFreeformStoragePolicy(model.GetType()) || string.IsNullOrWhiteSpace(namedEntity.Id))
+		if (!HasQuietPuckStorage(model.GetType()) || string.IsNullOrWhiteSpace(namedEntity.Id))
 		{
 			return false;
 		}
@@ -193,30 +193,30 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		return true;
 	}
 
-	private static bool HasFreeformStoragePolicy(Type modelType)
+	private static bool HasQuietPuckStorage(Type modelType)
 	{
 		var storage = modelType.GetCustomAttribute<VaultStorageAttribute>();
-		return storage?.Mode == VaultStorageMode.Freeform;
+		return storage is not null && storage.PuckStorage == VaultPuckStorage.Quiet;
 	}
 
-	private static void ApplyFreeformPuckIdentity(
+	private static void ApplyQuietPuckIdentity(
 		object model,
 		IReadOnlyDictionary<string, string> frontMatter,
 		ICollection<MarkdownValidationIssue> issues)
 	{
-		if (model is not IPuckNamedEntity namedEntity || !HasFreeformStoragePolicy(model.GetType()))
+		if (model is not IPuckNamedEntity namedEntity || !HasQuietPuckStorage(model.GetType()))
 		{
 			return;
 		}
 
-		if (!frontMatter.TryGetValue(FreeformPuckFieldName, out var rawPuck))
+		if (!frontMatter.TryGetValue(QuietPuckFieldName, out var rawPuck))
 		{
 			return;
 		}
 
 		if (string.IsNullOrWhiteSpace(rawPuck))
 		{
-			issues.Add(new MarkdownValidationIssue(FreeformPuckFieldName, "Field cannot be empty.", rawPuck));
+			issues.Add(new MarkdownValidationIssue(QuietPuckFieldName, "Field cannot be empty.", rawPuck));
 			return;
 		}
 
