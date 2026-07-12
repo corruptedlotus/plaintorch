@@ -25,4 +25,8 @@ public enum DirectiveStatus
 	/// The directive has concluded and is over.
 	/// </summary>
 	Over,
+	/// <summary>
+	/// The directive has concluded unsuccessfully.
+	/// </summary>
+	Failed,
 }

@@ -24,6 +24,8 @@ export const statusDescriptors: Record<Status, StatusDescriptor> = {
 
 	Archived: { icon: 'state-archived', label: 'Archived' },
 	Over: { icon: 'state-archived', label: 'Over' },
+
+	Failed: { icon: 'state-failed', label: 'Failed' },
 }
 
 @component('p7t-status-item')

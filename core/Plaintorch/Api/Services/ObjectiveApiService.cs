@@ -164,7 +164,7 @@ public sealed class ObjectiveApiService(
 		}
 
 		objective.OnrushSprintId = onrushSprintId;
-		objective.Status = objective.Status < ObjectiveStatus.Onrush ? ObjectiveStatus.Onrush : objective.Status;
+		objective.Status = IsAutoPromotableToOnrush(objective.Status) ? ObjectiveStatus.Onrush : objective.Status;
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.add-to-onrush", subject: objective, cancellationToken: cancellationToken);
@@ -183,6 +183,11 @@ public sealed class ObjectiveApiService(
 		await markdownStorageService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.remove-from-onrush", subject: objective, cancellationToken: cancellationToken);
 		return objective;
+	}
+
+	private static bool IsAutoPromotableToOnrush(ObjectiveStatus status)
+	{
+		return status is ObjectiveStatus.Standby or ObjectiveStatus.Blocked;
 	}
 
 	/// <inheritdoc />

@@ -1,6 +1,6 @@
 ---
-status: idea
-assignee: Soraya 🧙‍♀️
+status: implemented
+assignee: Copilot 🤖
 ---
 # New Objective State: Failed
 Add a new objective state "Failed".

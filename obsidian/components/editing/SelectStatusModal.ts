@@ -18,6 +18,7 @@ export const objectiveStatusDescriptors: Record<keyof typeof ObjectiveStatus, St
 	Polaris: { value: ObjectiveStatus.Polaris, icon: 'state-polaris', label: 'Polaris' },
 	Done: { value: ObjectiveStatus.Done, icon: 'state-done', label: 'Done' },
 	Archived: { value: ObjectiveStatus.Archived, icon: 'state-archived', label: 'Archived' },
+	Failed: { value: ObjectiveStatus.Failed, icon: 'state-failed', label: 'Failed' },
 }
 
 export const directiveStatusDescriptors: Record<keyof typeof DirectiveStatus, StatusDescriptor<DirectiveStatus>> = {
@@ -26,6 +27,7 @@ export const directiveStatusDescriptors: Record<keyof typeof DirectiveStatus, St
 	Active: { value: DirectiveStatus.Active, icon: 'state-active', label: 'Active' },
 	Fulfilled: { value: DirectiveStatus.Fulfilled, icon: 'state-done', label: 'Fulfilled' },
 	Over: { value: DirectiveStatus.Over, icon: 'state-archived', label: 'Over' },
+	Failed: { value: DirectiveStatus.Failed, icon: 'state-failed', label: 'Failed' },
 }
 
 abstract class SelectStatusModal<T extends ObjectiveStatus | DirectiveStatus> extends SuggestModal<T> {

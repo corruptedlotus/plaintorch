@@ -29,4 +29,8 @@ public enum ObjectiveStatus
 	/// The objective has been archived.
 	/// </summary>
 	Archived = 5,
+	/// <summary>
+	/// The objective can no longer be completed successfully.
+	/// </summary>
+	Failed = 6,
 }

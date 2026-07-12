@@ -230,7 +230,7 @@ public sealed class PlaintorchStatePolicyProcessor
 
 	private static bool IsSettlementStatus(ObjectiveStatus status)
 	{
-		return status is ObjectiveStatus.Done or ObjectiveStatus.Archived;
+		return status is ObjectiveStatus.Done or ObjectiveStatus.Archived or ObjectiveStatus.Failed;
 	}
 
 	private static bool TryParseCycleDate(string cycleId, out DateOnly date)

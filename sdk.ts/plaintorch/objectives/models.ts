@@ -8,7 +8,8 @@ export enum ObjectiveStatus {
 	'Onrush' = 2,
 	'Polaris' = 3,
 	'Done' = 4,
-	'Archived' = 5
+	'Archived' = 5,
+	'Failed' = 6
 }
 
 export enum ObjectiveCollege {

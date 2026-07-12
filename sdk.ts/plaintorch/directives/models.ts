@@ -5,7 +5,8 @@ export enum DirectiveStatus {
 	Committed = 1,
 	Active = 2,
 	Fulfilled = 3,
-	Over = 4
+	Over = 4,
+	Failed = 5
 }
 
 @model('Directive')
