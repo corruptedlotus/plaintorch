@@ -15,6 +15,10 @@
 		{
 			"path": "sipa",
 			"name": "Sunnyside Interface"
+		},
+		{
+			"path": "_documents",
+			"name": "Documents"
 		}
 	],
 	"settings": {

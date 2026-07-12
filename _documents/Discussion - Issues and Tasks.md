@@ -9,7 +9,7 @@
 # Tasks: Watcher
 - [ ] Revamp the watcher issue system and its API.
 # Issues: UI
-- [x] `EnityItem` has bloated layouting in modals. 
+- [x] `EnityItem` has bloated layouting in modals.
 # Tasks: UI
 - [x] Polaris Briefing Card & Executive Item
 - [x] Add to Polaris
@@ -21,8 +21,8 @@
 - [x] Polaris Banner
 - [ ] Entity Item context menu
 - [ ] Status bar
+- [ ] Add constraints to editable plaintext
 ## Extras
 - [ ] Use SignalR to update briefing
-- [ ] Add constraints to editable plaintext
 - [ ] Make the quantum time/starfire editor
 - [ ] Add a global loading mechanism and unify entity components.
