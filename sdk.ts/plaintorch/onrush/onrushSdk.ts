@@ -1,6 +1,14 @@
 import type { PlaintorchCoreClient } from "../coreClient"
 import type { Objective } from "../objectives/models"
-import type { OnrushSprint, OnrushSprintDateRequest, OnrushSprintPlan, OnrushSprintUpdate } from "./contracts"
+import type {
+	ExecutiveOrder,
+	ExecutiveOrderPlan,
+	ExecutiveOrderUpdate,
+	OnrushSprint,
+	OnrushSprintDateRequest,
+	OnrushSprintPlan,
+	OnrushSprintUpdate
+} from "./contracts"
 export class PlaintorchOnrushSdk {
 	public constructor(private readonly client: PlaintorchCoreClient) { }
 
@@ -54,5 +62,29 @@ export class PlaintorchOnrushSdk {
 				{}
 			)) ?? []
 		)
+	}
+
+	public async listExecutiveOrders(onrushId: string): Promise<ExecutiveOrder[]> {
+		return (
+			(await this.client.getJson<ExecutiveOrder[]>(`/api/onrush/${encodeURIComponent(onrushId)}/orders`)) ?? []
+		)
+	}
+
+	public async issueExecutiveOrder(onrushId: string, plan: ExecutiveOrderPlan): Promise<ExecutiveOrder | undefined> {
+		return await this.client.postForJson<ExecutiveOrder>(`/api/onrush/${encodeURIComponent(onrushId)}/orders`, plan)
+	}
+
+	public async updateExecutiveOrder(
+		executiveOrderId: string,
+		update: ExecutiveOrderUpdate
+	): Promise<ExecutiveOrder | undefined> {
+		return await this.client.putForJson<ExecutiveOrder>(
+			`/api/executive-orders/${encodeURIComponent(executiveOrderId)}`,
+			update
+		)
+	}
+
+	public async deleteExecutiveOrder(executiveOrderId: string): Promise<boolean> {
+		return await this.client.delete(`/api/executive-orders/${encodeURIComponent(executiveOrderId)}`)
 	}
 }

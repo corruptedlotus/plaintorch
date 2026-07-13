@@ -44,6 +44,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 			Directive directive => GetDirectiveFilePath(directive, parentEntity as Directive),
 			Objective objective => GetObjectiveFilePath(objective, parentEntity as Directive),
 			OnrushSprint sprint => GetOnrushSprintFilePath(sprint),
+			ExecutiveOrder order => GetExecutiveOrderFilePath(order, parentEntity as OnrushSprint),
 			PolarisCycle cycle => GetPolarisCycleFilePath(cycle),
 			LorePage lorePage => GetLorePageFilePath(lorePage),
 			_ => throw new InvalidOperationException($"Type '{entity.GetType().Name}' is not configured for vault markdown storage."),
@@ -123,6 +124,28 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 		EnsureFileBacking<OnrushSprint>();
 		var folderName = PuckNamedIdentity.FormatFileName(sprint.Id, sprint.Title);
 		return Path.Combine(layout.GetLocationRoot(VaultLocationKeys.Onrush), folderName, $"{folderName}.md");
+	}
+
+	/// <summary>
+	/// Resolves the markdown file path for an executive order inside its owning onrush sprint's partition folder.
+	/// </summary>
+	/// <param name="order">The executive order whose markdown path should be resolved.</param>
+	/// <param name="owningSprint">The resolved owning onrush sprint.</param>
+	/// <returns>The absolute markdown file path.</returns>
+	public string GetExecutiveOrderFilePath(ExecutiveOrder order, OnrushSprint? owningSprint)
+	{
+		ArgumentNullException.ThrowIfNull(order);
+		EnsureFileBacking<ExecutiveOrder>();
+		if (owningSprint is null)
+		{
+			throw new InvalidOperationException($"Executive order '{order.Id}' cannot compose a storage path without its owning onrush sprint '{order.OnrushSprintId}'.");
+		}
+
+		var fileName = PuckNamedIdentity.FormatFileName(order.Id, order.Title);
+		var sprintDirectory = Path.GetDirectoryName(GetOnrushSprintFilePath(owningSprint))
+			?? throw new InvalidOperationException($"Onrush sprint '{owningSprint.Id}' markdown path does not have a valid directory.");
+		var container = ResolvePartitionedParentDirectory(typeof(ExecutiveOrder), sprintDirectory);
+		return Path.Combine(container, $"{fileName}.md");
 	}
 
 	/// <summary>
@@ -238,6 +261,49 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 		ArgumentNullException.ThrowIfNull(objective);
 		ApplyLoosePuckIdentityFromPath(objective, path);
 		objective.DirectiveId = TryGetContainingDirectiveId(path, skipCurrentIfSelfNamed: false);
+	}
+
+	/// <summary>
+	/// Derives executive order identity and owning onrush sprint relation from a canonical markdown path.
+	/// </summary>
+	public static void ApplyExecutiveOrderCompositionFromPath(ExecutiveOrder order, string path)
+	{
+		ArgumentNullException.ThrowIfNull(order);
+		ApplyLoosePuckIdentityFromPath(order, path);
+		var containingSprintId = TryGetContainingOnrushSprintId(path);
+		if (!string.IsNullOrWhiteSpace(containingSprintId))
+		{
+			order.OnrushSprintId = containingSprintId;
+		}
+	}
+
+	/// <summary>
+	/// Tries to resolve the owning onrush sprint identifier for an executive order markdown path.
+	/// The path must sit inside the order partition folder of a self-named onrush sprint directory.
+	/// </summary>
+	public static string? TryGetContainingOnrushSprintId(string? path)
+	{
+		if (string.IsNullOrWhiteSpace(path))
+		{
+			return null;
+		}
+
+		var partition = typeof(ExecutiveOrder).GetCustomAttribute<VaultStorageAttribute>()?.PartitionUnder?.Trim();
+		var partitionDirectory = Path.GetDirectoryName(path);
+		if (string.IsNullOrWhiteSpace(partition)
+			|| string.IsNullOrWhiteSpace(partitionDirectory)
+			|| !string.Equals(Path.GetFileName(partitionDirectory), partition, StringComparison.OrdinalIgnoreCase))
+		{
+			return null;
+		}
+
+		var sprintDirectory = Directory.GetParent(partitionDirectory)?.FullName;
+		if (string.IsNullOrWhiteSpace(sprintDirectory) || !IsSelfNamedDirectory(sprintDirectory))
+		{
+			return null;
+		}
+
+		return PuckNamedIdentity.ParseLoose(Path.GetFileName(sprintDirectory)).Id;
 	}
 
 	/// <summary>

@@ -110,6 +110,11 @@ public sealed class PuckEntityResolutionService(
 			return await context.OnrushSprints.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
 		}
 
+		if (entityType == typeof(ExecutiveOrder))
+		{
+			return await context.ExecutiveOrders.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+		}
+
 		if (entityType == typeof(PolarisCycle))
 		{
 			return await context.PolarisCycles.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);

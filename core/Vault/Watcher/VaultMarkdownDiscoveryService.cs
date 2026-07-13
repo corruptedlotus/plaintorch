@@ -356,6 +356,24 @@ public sealed class VaultMarkdownDiscoveryService(
 	/// <param name="cancellationToken">A token used to cancel validation.</param>
 	private async Task ApplyDomainValidationsAsync(object model, ICollection<MarkdownValidationIssue> issues, CancellationToken cancellationToken)
 	{
+		if (model is ExecutiveOrder order)
+		{
+			// The owning sprint relation is required and path-derived, so an unresolvable parent must block reconciliation.
+			var sprintExists = !string.IsNullOrWhiteSpace(order.OnrushSprintId)
+				&& await context.OnrushSprints
+					.AsNoTracking()
+					.AnyAsync(item => item.Id == order.OnrushSprintId, cancellationToken);
+			if (!sprintExists)
+			{
+				issues.Add(new MarkdownValidationIssue(
+					"onrush",
+					"Executive order path does not resolve to a known owning onrush sprint.",
+					order.OnrushSprintId));
+			}
+
+			return;
+		}
+
 		if (model is not LorePage lorePage)
 		{
 			return;
@@ -495,6 +513,9 @@ public sealed class VaultMarkdownDiscoveryService(
 				break;
 			case Objective objective:
 				MarkdownFileLocator.ApplyObjectiveCompositionFromPath(objective, path);
+				break;
+			case ExecutiveOrder order:
+				MarkdownFileLocator.ApplyExecutiveOrderCompositionFromPath(order, path);
 				break;
 			case LorePage lorePage:
 				MarkdownFileLocator.ApplyLorePageCompositionFromPath(lorePage, path, layout.VaultRoot, layout.SagaRoot);

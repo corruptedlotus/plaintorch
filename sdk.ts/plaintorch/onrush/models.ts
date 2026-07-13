@@ -5,6 +5,31 @@ export interface OnrushSprint {
 	startDate: string | undefined
 	endDate: string | undefined
 	objectives: Objective[]
+	executiveOrders: ExecutiveOrder[]
+}
+
+export interface ExecutiveOrder {
+	id: string
+	title: string
+	onrushSprintId: string
+	onrushSprint?: OnrushSprint | undefined
+	summary: string | undefined
+	effectiveFrom: string | undefined
+	effectiveUntil: string | undefined
+}
+
+export interface ExecutiveOrderPlan {
+	title: string
+	summary?: string | undefined
+	effectiveFrom?: string | undefined
+	effectiveUntil?: string | undefined
+}
+
+export interface ExecutiveOrderUpdate {
+	title?: string | undefined
+	summary?: string | undefined
+	effectiveFrom?: string | undefined
+	effectiveUntil?: string | undefined
 }
 
 export interface OnrushSprintPlan {

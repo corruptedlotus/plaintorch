@@ -576,6 +576,11 @@ public sealed class VaultWatcherSyncService(
 			return await context.OnrushSprints.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
 		}
 
+		if (entityType == typeof(ExecutiveOrder))
+		{
+			return await context.ExecutiveOrders.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+		}
+
 		if (entityType == typeof(PolarisCycle))
 		{
 			return await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
@@ -608,6 +613,9 @@ public sealed class VaultWatcherSyncService(
 				break;
 			case OnrushSprint sprint:
 				await markdownStorageService.SaveOnrushSprintAsync(sprint, previous as OnrushSprint, sourcePath, cancellationToken);
+				break;
+			case ExecutiveOrder order:
+				await markdownStorageService.SaveExecutiveOrderAsync(order, previous as ExecutiveOrder, sourcePath, cancellationToken);
 				break;
 			case PolarisCycle cycle:
 				await markdownStorageService.SavePolarisCycleAsync(cycle, previous as PolarisCycle, sourcePath: sourcePath, cancellationToken: cancellationToken);
@@ -658,6 +666,15 @@ public sealed class VaultWatcherSyncService(
 				Title = sprint.Title,
 				StartDate = sprint.StartDate,
 				EndDate = sprint.EndDate,
+			},
+			ExecutiveOrder order => new ExecutiveOrder
+			{
+				Id = order.Id,
+				Title = order.Title,
+				OnrushSprintId = order.OnrushSprintId,
+				Summary = order.Summary,
+				EffectiveFrom = order.EffectiveFrom,
+				EffectiveUntil = order.EffectiveUntil,
 			},
 			PolarisCycle cycle => new PolarisCycle
 			{

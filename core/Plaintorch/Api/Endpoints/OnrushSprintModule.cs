@@ -70,5 +70,24 @@ public sealed class OnrushSprintModule : Module
 
 		group.MapPost("/{onrushSprintId}/assign-onrush", async (string onrushSprintId, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.AssignAllOnrushStateObjectivesToSelfAsync(onrushSprintId, cancellationToken)));
+
+		group.MapGet("/{onrushSprintId}/orders", async (string onrushSprintId, IOnrushSprintApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.ListExecutiveOrdersAsync(onrushSprintId, cancellationToken)));
+
+		group.MapPost("/{onrushSprintId}/orders", async (string onrushSprintId, ExecutiveOrderPlan request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
+		{
+			var order = await api.IssueExecutiveOrderAsync(onrushSprintId, request, cancellationToken);
+			return Results.Created($"/api/executive-orders/{order.Id}", order);
+		});
+
+		var orders = endpoints.MapGroup("/api/executive-orders");
+		orders.MapPut("/{executiveOrderId}", async (string executiveOrderId, ExecutiveOrderUpdate request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.UpdateExecutiveOrderAsync(executiveOrderId, request, cancellationToken)));
+
+		orders.MapDelete("/{executiveOrderId}", async (string executiveOrderId, IOnrushSprintApi api, CancellationToken cancellationToken) =>
+		{
+			await api.DeleteExecutiveOrderAsync(executiveOrderId, cancellationToken);
+			return Results.NoContent();
+		});
 	}
 }

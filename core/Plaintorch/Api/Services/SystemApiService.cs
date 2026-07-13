@@ -151,6 +151,7 @@ public sealed class SystemApiService(
 			nameof(Directive) => "directive",
 			nameof(Objective) => "objective",
 			nameof(OnrushSprint) => "onrush-sprint",
+			nameof(ExecutiveOrder) => "executive-order",
 			nameof(PolarisCycle) => "polaris-cycle",
 			nameof(LorePage) => "lore-page",
 			_ => null,

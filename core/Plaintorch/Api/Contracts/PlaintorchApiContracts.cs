@@ -181,6 +181,24 @@ public sealed record OnrushSprintPlan(
 	DateOnly? EndDate = null);
 
 /// <summary>
+/// Represents the data required to issue an executive order against an onrush sprint.
+/// </summary>
+public sealed record ExecutiveOrderPlan(
+	string Title,
+	string? Summary = null,
+	DateOnly? EffectiveFrom = null,
+	DateOnly? EffectiveUntil = null);
+
+/// <summary>
+/// Represents the mutable fields of an executive order for generic update actions.
+/// </summary>
+public sealed record ExecutiveOrderUpdate(
+	string? Title = null,
+	string? Summary = null,
+	DateOnly? EffectiveFrom = null,
+	DateOnly? EffectiveUntil = null);
+
+/// <summary>
 /// Represents the supported sources for planning a Polaris executive.
 /// </summary>
 public enum PolarisExecutivePlanningMode

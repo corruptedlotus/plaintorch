@@ -15,8 +15,11 @@ namespace Pleiades.Plaintorch.Api.Services;
 public sealed class OnrushSprintApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
+	PuckIdService puckIdService,
+	PuckTokenizer puckTokenizer,
 	PlaintorchStateService stateService,
 	PlaintorchMarkdownStorageService markdownFileService,
+	VaultTemporalDataService temporalDataService,
 	VaultAuditLogService auditLogService) : IOnrushSprintApi
 {
 	/// <inheritdoc />
@@ -128,6 +131,7 @@ public sealed class OnrushSprintApiService(
 			return await context.OnrushSprints
 				.AsNoTracking()
 				.Include(sprint => sprint.Objectives)
+				.Include(sprint => sprint.ExecutiveOrders)
 				.FirstOrDefaultAsync(sprint => sprint.Id == onrushSprintId, cancellationToken);
 		}
 
@@ -140,6 +144,7 @@ public sealed class OnrushSprintApiService(
 		return await context.OnrushSprints
 			.AsNoTracking()
 			.Include(sprint => sprint.Objectives)
+			.Include(sprint => sprint.ExecutiveOrders)
 			.FirstOrDefaultAsync(sprint => sprint.Id == activeSprint.Id, cancellationToken);
 	}
 
@@ -155,6 +160,7 @@ public sealed class OnrushSprintApiService(
 		return await context.OnrushSprints
 			.AsNoTracking()
 			.Include(sprint => sprint.Objectives)
+			.Include(sprint => sprint.ExecutiveOrders)
 			.FirstOrDefaultAsync(sprint => sprint.Id == planningSprint.Id, cancellationToken);
 	}
 
@@ -249,6 +255,131 @@ public sealed class OnrushSprintApiService(
 		return objectives;
 	}
 
+	/// <inheritdoc />
+	public async Task<ExecutiveOrder> IssueExecutiveOrderAsync(string onrushSprintId, ExecutiveOrderPlan plan, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
+		ArgumentNullException.ThrowIfNull(plan);
+		ArgumentException.ThrowIfNullOrWhiteSpace(plan.Title);
+		ValidateEffectiveWindow(plan.EffectiveFrom, plan.EffectiveUntil);
+
+		var sprint = await context.OnrushSprints.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
+			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
+		if (sprint.Id == "0")
+		{
+			throw new InvalidOperationException("Executive orders cannot be issued against the in-planning placeholder sprint because its final PUCK identity is not assigned yet; begin the sprint first.");
+		}
+
+		var order = new ExecutiveOrder
+		{
+			Id = puckIdService.GenerateIdFor<ExecutiveOrder>([new PuckSegmentInput(Numerator: ResolveOnrushNumericPart(sprint.Id)), new PuckSegmentInput()]),
+			Title = plan.Title,
+			OnrushSprintId = sprint.Id,
+			Summary = plan.Summary,
+			EffectiveFrom = plan.EffectiveFrom,
+			EffectiveUntil = plan.EffectiveUntil,
+		};
+
+		context.ExecutiveOrders.Add(order);
+		await context.SaveChangesAsync(cancellationToken);
+		await markdownFileService.SaveExecutiveOrderAsync(order, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync("api", "onrush.issue-order", subject: order, details: new { onrushSprintId = sprint.Id }, cancellationToken: cancellationToken);
+		return order;
+	}
+
+	/// <inheritdoc />
+	public async Task<IReadOnlyList<ExecutiveOrder>> ListExecutiveOrdersAsync(string onrushSprintId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
+		return await context.ExecutiveOrders
+			.AsNoTracking()
+			.Where(order => order.OnrushSprintId == onrushSprintId)
+			.OrderBy(order => order.Id)
+			.ToListAsync(cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public async Task<ExecutiveOrder> UpdateExecutiveOrderAsync(string executiveOrderId, ExecutiveOrderUpdate update, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(executiveOrderId);
+		ArgumentNullException.ThrowIfNull(update);
+
+		var order = await context.ExecutiveOrders.FirstOrDefaultAsync(item => item.Id == executiveOrderId, cancellationToken)
+			?? throw new InvalidOperationException($"Executive order '{executiveOrderId}' was not found.");
+		var previous = Clone(order);
+
+		if (!string.IsNullOrWhiteSpace(update.Title))
+		{
+			order.Title = update.Title;
+		}
+
+		if (update.Summary is not null)
+		{
+			order.Summary = update.Summary;
+		}
+
+		if (update.EffectiveFrom is not null)
+		{
+			order.EffectiveFrom = update.EffectiveFrom;
+		}
+
+		if (update.EffectiveUntil is not null)
+		{
+			order.EffectiveUntil = update.EffectiveUntil;
+		}
+
+		ValidateEffectiveWindow(order.EffectiveFrom, order.EffectiveUntil);
+		await context.SaveChangesAsync(cancellationToken);
+		await markdownFileService.SaveExecutiveOrderAsync(order, previous, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync("api", "onrush.update-order", subject: order, cancellationToken: cancellationToken);
+		return order;
+	}
+
+	/// <inheritdoc />
+	public async Task DeleteExecutiveOrderAsync(string executiveOrderId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(executiveOrderId);
+		var order = await context.ExecutiveOrders.FirstOrDefaultAsync(item => item.Id == executiveOrderId, cancellationToken)
+			?? throw new InvalidOperationException($"Executive order '{executiveOrderId}' was not found.");
+
+		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(order, "api-delete", Environment.UserName, cancellationToken);
+		context.ExecutiveOrders.Remove(order);
+		await context.SaveChangesAsync(cancellationToken);
+		await markdownFileService.DeleteExecutiveOrderAsync(order, cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"onrush.delete-order",
+			subjectType: nameof(ExecutiveOrder),
+			subjectId: order.Id,
+			subjectTitle: order.Title,
+			temporalKind: "database",
+			temporalEntryKey: graveyardEntry.EntryKey,
+			temporalEntityType: graveyardEntry.EntityType,
+			temporalEntityId: graveyardEntry.EntityId,
+			temporalEntityTitle: graveyardEntry.EntityTitle,
+			cancellationToken: cancellationToken);
+	}
+
+	/// <summary>
+	/// Resolves the manual PUCK input for an executive order from its owning onrush identifier.
+	/// The numeric part is trimmed of padding per PEP099 (<c>x0180</c> composes orders as <c>x180-o01</c>).
+	/// </summary>
+	private string ResolveOnrushNumericPart(string onrushSprintId)
+	{
+		var tokenization = puckTokenizer.TokenizeFor<OnrushSprint>(onrushSprintId);
+		var numericValue = tokenization.Segments[0].NumericValue
+			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' does not carry a numeric PUCK part for executive order composition.");
+		return numericValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
+	}
+
+	private static void ValidateEffectiveWindow(DateOnly? effectiveFrom, DateOnly? effectiveUntil)
+	{
+		if (effectiveFrom is not null && effectiveUntil is not null && effectiveFrom > effectiveUntil)
+		{
+			throw new ArgumentException("Executive order effective-from date cannot be later than its effective-until date.");
+		}
+	}
+
 	private static OnrushSprint Clone(OnrushSprint sprint)
 	{
 		return new OnrushSprint
@@ -257,6 +388,19 @@ public sealed class OnrushSprintApiService(
 			Title = sprint.Title,
 			StartDate = sprint.StartDate,
 			EndDate = sprint.EndDate,
+		};
+	}
+
+	private static ExecutiveOrder Clone(ExecutiveOrder order)
+	{
+		return new ExecutiveOrder
+		{
+			Id = order.Id,
+			Title = order.Title,
+			OnrushSprintId = order.OnrushSprintId,
+			Summary = order.Summary,
+			EffectiveFrom = order.EffectiveFrom,
+			EffectiveUntil = order.EffectiveUntil,
 		};
 	}
 }

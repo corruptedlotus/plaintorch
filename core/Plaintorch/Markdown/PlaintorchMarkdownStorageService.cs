@@ -105,6 +105,22 @@ public sealed class PlaintorchMarkdownStorageService(
 	}
 
 	/// <summary>
+	/// Writes the canonical markdown file for an executive order.
+	/// </summary>
+	public async Task SaveExecutiveOrderAsync(ExecutiveOrder order, ExecutiveOrder? previous = null, string? sourcePath = null, CancellationToken cancellationToken = default)
+	{
+		await SaveCanonicalMarkdownAsync(order, previous, sourcePath, cancellationToken);
+	}
+
+	/// <summary>
+	/// Deletes an executive order markdown file.
+	/// </summary>
+	public Task<FileGraveyardEntry?> DeleteExecutiveOrderAsync(ExecutiveOrder order, CancellationToken cancellationToken = default)
+	{
+		return DeleteEntityPathAsync(order, cancellationToken);
+	}
+
+	/// <summary>
 	/// Writes the canonical markdown file for a Polaris cycle.
 	/// </summary>
 	public async Task SavePolarisCycleAsync(PolarisCycle cycle, PolarisCycle? previous = null, string? sourcePath = null, CancellationToken cancellationToken = default)

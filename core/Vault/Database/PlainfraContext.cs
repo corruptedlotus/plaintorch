@@ -38,6 +38,11 @@ public class PlainfraContext : DbContext
 	public DbSet<OnrushSprint> OnrushSprints => Set<OnrushSprint>();
 
 	/// <summary>
+	/// Gets the executive orders tracked in the database.
+	/// </summary>
+	public DbSet<ExecutiveOrder> ExecutiveOrders => Set<ExecutiveOrder>();
+
+	/// <summary>
 	/// Gets the Polaris cycles tracked in the database.
 	/// </summary>
 	public DbSet<PolarisCycle> PolarisCycles => Set<PolarisCycle>();

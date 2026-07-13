@@ -61,7 +61,7 @@ public sealed class PuckIdService(PlainfraContext context, PuckNotationParser no
 				PuckNumeratorKind.Manual => input.Numerator ?? throw new InvalidOperationException("Manual numerator missing for PUCK generation."),
 				PuckNumeratorKind.DateStamp => PuckDateStampCodec.Format(input.Date ?? DateOnly.FromDateTime(DateTime.UtcNow), segmentPattern.Numerator.DateStampKind),
 				PuckNumeratorKind.Spiritgem => GenerateSpiritgem(context, segmentPattern.Numerator.Width),
-				PuckNumeratorKind.Incremental => GenerateIncremental(context, declaration, segmentPattern.Numerator.Width, segmentPattern.Numerator.Seed),
+				PuckNumeratorKind.Incremental => GenerateIncremental(context, BuildIncrementalSequenceKey(declaration, renderedSegments), segmentPattern.Numerator.Width, segmentPattern.Numerator.Seed),
 				_ => throw new InvalidOperationException("Unsupported PUCK numerator kind."),
 			};
 
@@ -87,14 +87,27 @@ public sealed class PuckIdService(PlainfraContext context, PuckNotationParser no
 		}
 	}
 
-	private static string GenerateIncremental(PlainfraContext context, string declaration, int width, long seed)
+	/// <summary>
+	/// Builds the persisted sequence key for an incremental segment. First-segment counters stay keyed by the
+	/// declaration alone (preserving pre-existing sequences), while nested counters are additionally scoped by the
+	/// already-rendered leading segments so composite declarations count independently per parent
+	/// (for example executive orders per owning onrush).
+	/// </summary>
+	private static string BuildIncrementalSequenceKey(string declaration, IReadOnlyList<string> renderedSegments)
 	{
-		var sequence = context.PuckSequences.SingleOrDefault(x => x.Key == declaration);
+		return renderedSegments.Count == 0
+			? declaration
+			: $"{declaration}|{string.Join('-', renderedSegments)}";
+	}
+
+	private static string GenerateIncremental(PlainfraContext context, string sequenceKey, int width, long seed)
+	{
+		var sequence = context.PuckSequences.SingleOrDefault(x => x.Key == sequenceKey);
 		if (sequence is null)
 		{
 			sequence = new PuckSequence
 			{
-				Key = declaration,
+				Key = sequenceKey,
 				NextValue = seed + 1,
 			};
 			context.PuckSequences.Add(sequence);

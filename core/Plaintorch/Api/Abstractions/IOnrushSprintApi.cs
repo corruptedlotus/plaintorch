@@ -57,4 +57,24 @@ public interface IOnrushSprintApi
 	/// Assigns all onrush-state objectives to the target sprint.
 	/// </summary>
 	Task<IReadOnlyList<Objective>> AssignAllOnrushStateObjectivesToSelfAsync(string onrushSprintId, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Issues a new executive order against an onrush sprint.
+	/// </summary>
+	Task<ExecutiveOrder> IssueExecutiveOrderAsync(string onrushSprintId, ExecutiveOrderPlan plan, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Lists the executive orders issued against an onrush sprint.
+	/// </summary>
+	Task<IReadOnlyList<ExecutiveOrder>> ListExecutiveOrdersAsync(string onrushSprintId, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Updates the mutable fields of an executive order.
+	/// </summary>
+	Task<ExecutiveOrder> UpdateExecutiveOrderAsync(string executiveOrderId, ExecutiveOrderUpdate update, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Deletes an executive order and its markdown file.
+	/// </summary>
+	Task DeleteExecutiveOrderAsync(string executiveOrderId, CancellationToken cancellationToken = default);
 }

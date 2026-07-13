@@ -37,6 +37,13 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 				.Select(item => item.Id)
 				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
 
+		CreateModel<ExecutiveOrder>(layout, [layout.OnrushRoot], VaultStorageShape.SingleFile, static path =>
+			IsExecutiveOrderMarkdownFile(path), static (context, cancellationToken) =>
+			context.ExecutiveOrders
+				.AsNoTracking()
+				.Select(item => item.Id)
+				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
+
 		CreateModel<PolarisCycle>(layout, [layout.JournalRoot], VaultStorageShape.SingleFile, static path =>
 			string.Equals(Path.GetExtension(path), ".md", StringComparison.OrdinalIgnoreCase), static (context, cancellationToken) =>
 			context.PolarisCycles
@@ -265,6 +272,27 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 		}
 
 		return false;
+	}
+
+	/// <summary>
+	/// Determines whether a markdown file path should be classified as an executive order file.
+	/// Order files live inside the order partition folder of a self-named onrush sprint directory.
+	/// </summary>
+	/// <param name="path">The markdown file path to classify.</param>
+	/// <returns><see langword="true"/> when the file is an executive order markdown candidate.</returns>
+	private static bool IsExecutiveOrderMarkdownFile(string path)
+	{
+		if (!string.Equals(Path.GetExtension(path), ".md", StringComparison.OrdinalIgnoreCase))
+		{
+			return false;
+		}
+
+		if (MarkdownFileLocator.IsPrimarySelfNamedFile(path))
+		{
+			return false;
+		}
+
+		return !string.IsNullOrWhiteSpace(MarkdownFileLocator.TryGetContainingOnrushSprintId(path));
 	}
 
 	private static string? TryResolveContainingDirectiveIdWithOwnershipBoundaries(string? path, VaultLayout layout, bool skipCurrentIfSelfNamed)

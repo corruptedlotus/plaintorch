@@ -33,4 +33,10 @@ public sealed class OnrushSprint : PuckNamedEntity
 	/// Gets the objectives tracked by this sprint.
 	/// </summary>
 	public List<Objective> Objectives { get; set; } = [];
+
+	[InverseProperty(nameof(ExecutiveOrder.OnrushSprint))]
+	/// <summary>
+	/// Gets the executive orders that shape how this sprint is moved through.
+	/// </summary>
+	public List<ExecutiveOrder> ExecutiveOrders { get; set; } = [];
 }
