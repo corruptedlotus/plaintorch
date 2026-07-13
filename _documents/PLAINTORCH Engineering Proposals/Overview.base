@@ -5,6 +5,8 @@ filters:
   and:
     - file.folder == "Project Everglow/Moonlight Impact 3rd/PLAINTORCH/PLAINTORCH Engineering Proposals"
     - /(PEP|SEP)[0-9]{3} - .+/.matches(file.name)
+formulas:
+  Untitled: ""
 properties:
   note.status:
     displayName: Status
@@ -17,6 +19,7 @@ views:
       - file.name
       - status
       - assignee
+      - formula.Untitled
     sort:
       - property: patches
         direction: ASC
