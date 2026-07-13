@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: implemented
 assignee: Copilot 🤖
 ---
 # Working Time Unit

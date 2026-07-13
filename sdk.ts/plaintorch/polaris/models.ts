@@ -30,6 +30,12 @@ export interface Executive {
 	objective?: Objective | undefined
 	title: string | undefined
 	executed: boolean
+	/** Primary time allocation, as a whole-minute working time unit. Doubles as a progress marker. */
+	estimation: number | undefined
+	/** Minimum time allocation, as a whole-minute working time unit. */
+	minimum: number | undefined
+	/** Maximum time allocation, as a whole-minute working time unit. */
+	maximum: number | undefined
 }
 
 export interface Reflective {
@@ -50,6 +56,12 @@ export interface PolarisExecutivePlan {
 	college?: ObjectiveCollege | undefined
 	celestronValue?: number | undefined
 	objectiveIsEnduring?: boolean
+	/** Primary time allocation to seed on the planned executive, as a whole-minute working time unit. */
+	estimation?: number | undefined
+	/** Minimum time allocation to seed on the planned executive, as a whole-minute working time unit. */
+	minimum?: number | undefined
+	/** Maximum time allocation to seed on the planned executive, as a whole-minute working time unit. */
+	maximum?: number | undefined
 }
 
 export interface PolarisExecutivePlanResult {
@@ -62,6 +74,18 @@ export interface ExecutiveUpdate {
 	objectiveId?: string | undefined
 	title?: string | undefined
 	clearObjective?: boolean
+	/** Primary time allocation, as a whole-minute working time unit. Leave undefined to keep the current value. */
+	estimation?: number | undefined
+	/** Minimum time allocation, as a whole-minute working time unit. Leave undefined to keep the current value. */
+	minimum?: number | undefined
+	/** Maximum time allocation, as a whole-minute working time unit. Leave undefined to keep the current value. */
+	maximum?: number | undefined
+	/** Clears the estimation allocation regardless of any provided value. */
+	clearEstimation?: boolean
+	/** Clears the minimum allocation regardless of any provided value. */
+	clearMinimum?: boolean
+	/** Clears the maximum allocation regardless of any provided value. */
+	clearMaximum?: boolean
 }
 
 export interface ReflectiveDrawRequest {

@@ -208,7 +208,11 @@ public sealed class PolarisCycleApiService(
 			PolarisCycleId = cycle.Id,
 			ObjectiveId = objective?.Id,
 			Executed = false,
+			Estimation = plan.Estimation,
+			Minimum = plan.Minimum,
+			Maximum = plan.Maximum,
 		};
+		executive.NormalizeTimeAllocations();
 
 		context.Add(executive);
 		await context.SaveChangesAsync(cancellationToken);
@@ -217,7 +221,7 @@ public sealed class PolarisCycleApiService(
 			"polaris.plan-executive",
 			subjectType: nameof(Executive),
 			subjectId: executive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-			details: new { cycleId = cycle.Id, objectiveId = objective?.Id, mode = plan.Mode.ToString() },
+			details: new { cycleId = cycle.Id, objectiveId = objective?.Id, mode = plan.Mode.ToString(), estimation = executive.Estimation, minimum = executive.Minimum, maximum = executive.Maximum },
 			cancellationToken: cancellationToken);
 		return new PolarisExecutivePlanResult(objective, executive);
 	}
@@ -244,13 +248,45 @@ public sealed class PolarisCycleApiService(
 			executive.ObjectiveId = null;
 		}
 
+		if (update.Estimation is not null)
+		{
+			executive.Estimation = update.Estimation;
+		}
+
+		if (update.ClearEstimation)
+		{
+			executive.Estimation = null;
+		}
+
+		if (update.Minimum is not null)
+		{
+			executive.Minimum = update.Minimum;
+		}
+
+		if (update.ClearMinimum)
+		{
+			executive.Minimum = null;
+		}
+
+		if (update.Maximum is not null)
+		{
+			executive.Maximum = update.Maximum;
+		}
+
+		if (update.ClearMaximum)
+		{
+			executive.Maximum = null;
+		}
+
+		executive.NormalizeTimeAllocations();
+
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"polaris.update-executive",
 			subjectType: nameof(Executive),
 			subjectId: executive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-			details: new { objectiveId = executive.ObjectiveId, executed = executive.Executed },
+			details: new { objectiveId = executive.ObjectiveId, executed = executive.Executed, estimation = executive.Estimation, minimum = executive.Minimum, maximum = executive.Maximum },
 			cancellationToken: cancellationToken);
 		return executive;
 	}

@@ -209,6 +209,10 @@ public enum PolarisExecutivePlanningMode
 /// <summary>
 /// Represents the data needed to plan a Polaris executive.
 /// </summary>
+/// <remarks>
+/// The optional <paramref name="Estimation"/>, <paramref name="Minimum"/>, and <paramref name="Maximum"/> time
+/// allocations are whole-minute working time units that are reconciled through <see cref="Executive.NormalizeTimeAllocations"/>.
+/// </remarks>
 public sealed record PolarisExecutivePlan(
 	PolarisExecutivePlanningMode Mode,
 	string? Title = null,
@@ -218,7 +222,10 @@ public sealed record PolarisExecutivePlan(
 	string? OnrushSprintId = null,
 	ObjectiveCollege? College = null,
 	int? CelestronValue = null,
-	bool ObjectiveIsEnduring = false);
+	bool ObjectiveIsEnduring = false,
+	int? Estimation = null,
+	int? Minimum = null,
+	int? Maximum = null);
 
 /// <summary>
 /// Represents the outcome of planning a Polaris executive.
@@ -228,10 +235,21 @@ public sealed record PolarisExecutivePlanResult(Objective? Objective, Executive 
 /// <summary>
 /// Represents a mutable update to an executive record.
 /// </summary>
+/// <remarks>
+/// The time allocation fields carry whole-minute working time units. Each is paired with a
+/// <c>Clear*</c> flag so a caller can distinguish "leave unchanged" (null) from "unset" (clear).
+/// After the values are applied the record is reconciled through <see cref="Executive.NormalizeTimeAllocations"/>.
+/// </remarks>
 public sealed record ExecutiveUpdate(
 	bool? Executed = null,
 	string? ObjectiveId = null,
-	bool ClearObjective = false);
+	bool ClearObjective = false,
+	int? Estimation = null,
+	int? Minimum = null,
+	int? Maximum = null,
+	bool ClearEstimation = false,
+	bool ClearMinimum = false,
+	bool ClearMaximum = false);
 
 /// <summary>
 /// Represents the inputs used to draw reflectives for a Polaris cycle.
