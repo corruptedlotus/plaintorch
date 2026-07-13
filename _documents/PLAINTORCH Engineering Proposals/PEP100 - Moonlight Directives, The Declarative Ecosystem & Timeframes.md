@@ -1,5 +1,5 @@
 ---
-status: draft
+status: proposed
 assignee: Copilot 🤖
 ---
 # Directives
