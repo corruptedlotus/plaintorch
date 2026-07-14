@@ -34,8 +34,12 @@ Decrees have the following states:
 - Abandoned
 ## Siblings to Objectives
 Declaratives are siblings to Objectives, they share the same table and the same base class `Incentive`, each with a discriminator to identify them.
+## Orbit Specification
+Both declarative types can specify an Orbit notation to enable scheduling. The Orbit should always resolve to day-granularity.
 # Polaris Cycle Backlog
 ## Eventives
+When a Polaris cycle begins, any Fate that collides within 24h of the starting point creates an Eventive in the cycle. Eventives are just like Executives, 
 ## Reflectives
+[[PEP100 - Moonlight Directives, The Declarative Ecosystem & Timeframes 2026-07-14 17.37.02.excalidraw]]
 
 ![[structure-map.svg|657]]
