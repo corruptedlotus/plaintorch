@@ -24,8 +24,7 @@ Fates follow the PUCK notation format `e{S:8}`.
 ### State
 Fates have the following states:
 - Active
-- Opt-out
-- Cancelled
+- Abandoned
 ## Declarative: Decree
 Decrees are essentially enduring objectives that control the flow of routines, laws and keep track of requirements. Their most important function is to specify Orbits that define routines. These routines will behave slightly differently based on whether or not they're part of a Moonlight directive hierarchy. (ref. [[#Reflectives]])
 
@@ -85,6 +84,4 @@ Timeframes are directive-level definitions of portions of time within a Polaris 
 
 Affinity is purely semantic and demands nothing engineering-wise. Executives can define a timeframe as their affinity, meaning that timeframe is preferred for their execution.
 # Hierarchy Map
-[[PEP100 - Moonlight Directives, The Declarative Ecosystem & Timeframes 2026-07-14 17.37.02.excalidraw]]
-
-![[structure-map.svg|657]]
+![[PEP100 - Moonlight Directives, The Declarative Ecosystem & Timeframes 2026-07-14 17.37.02.excalidraw]]
