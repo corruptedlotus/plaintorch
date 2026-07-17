@@ -144,13 +144,21 @@ public sealed record DirectiveWorkflowShift(DirectiveStatus Status);
 /// <summary>
 /// Represents the mutable fields of an objective for generic update actions.
 /// </summary>
+/// <remarks>
+/// <paramref name="ParentIncentiveId"/> participates in the PEP100 parent system: an objective may name
+/// another objective (subtask) or a fate declarative as its parent. <paramref name="ClearParentIncentive"/>
+/// distinguishes "leave unchanged" (null) from "unset".
+/// </remarks>
 public sealed record ObjectiveUpdate(
 	string? Title = null,
 	string? DirectiveId = null,
 	string? OnrushSprintId = null,
 	ObjectiveCollege? College = null,
 	int? CelestronValue = null,
-	bool? IsEnduring = null);
+	bool? IsEnduring = null,
+	DateOnly? Due = null,
+	string? ParentIncentiveId = null,
+	bool ClearParentIncentive = false);
 
 /// <summary>
 /// Represents a workflow shift for an objective.
@@ -257,6 +265,8 @@ public sealed record PolarisExecutivePlanResult(Objective? Objective, Executive 
 /// The time allocation fields carry whole-minute working time units. Each is paired with a
 /// <c>Clear*</c> flag so a caller can distinguish "leave unchanged" (null) from "unset" (clear).
 /// After the values are applied the record is reconciled through <see cref="Executive.NormalizeTimeAllocations"/>.
+/// <paramref name="AffinityTimeframeId"/> names a timeframe as the executive's preferred execution window (PEP100);
+/// affinity is purely semantic.
 /// </remarks>
 public sealed record ExecutiveUpdate(
 	bool? Executed = null,
@@ -267,7 +277,9 @@ public sealed record ExecutiveUpdate(
 	int? Maximum = null,
 	bool ClearEstimation = false,
 	bool ClearMinimum = false,
-	bool ClearMaximum = false);
+	bool ClearMaximum = false,
+	long? AffinityTimeframeId = null,
+	bool ClearAffinityTimeframe = false);
 
 /// <summary>
 /// Represents the inputs used to draw reflectives for a Polaris cycle.
@@ -283,4 +295,152 @@ public sealed record ReflectiveDrawRequest(
 /// </summary>
 public sealed record ReflectiveUpdate(
 	string? Description = null,
-	bool? Executed = null);
+	bool? Executed = null,
+	TimeOnly? Time = null);
+
+/// <summary>
+/// Represents a moonlight workflow shift for a lunar directive (PEP100).
+/// </summary>
+/// <param name="Status">The new lunar directive status.</param>
+public sealed record LunarDirectiveWorkflowShift(LunarDirectiveStatus Status);
+
+/// <summary>
+/// Represents the data required to create a fate declarative (PEP100).
+/// </summary>
+public sealed record FatePlan(
+	string Title,
+	string? Id = null,
+	string? DirectiveId = null,
+	string? ParentIncentiveId = null,
+	DateOnly? Date = null,
+	TimeOnly? StartTime = null,
+	TimeOnly? EndTime = null,
+	string? Orbit = null,
+	int? EventDuration = null);
+
+/// <summary>
+/// Represents the mutable fields of a fate declarative for generic update actions.
+/// </summary>
+public sealed record FateUpdate(
+	string? Title = null,
+	FateStatus? Status = null,
+	string? DirectiveId = null,
+	string? ParentIncentiveId = null,
+	bool ClearParentIncentive = false,
+	DateOnly? Date = null,
+	TimeOnly? StartTime = null,
+	TimeOnly? EndTime = null,
+	string? Orbit = null,
+	int? EventDuration = null);
+
+/// <summary>
+/// Represents the data required to create a decree declarative (PEP100).
+/// </summary>
+public sealed record DecreePlan(
+	string Title,
+	string? Id = null,
+	string? DirectiveId = null,
+	string? Orbit = null,
+	int? DefaultLength = null,
+	int ActiveCelestron = 0,
+	bool Reflect = false);
+
+/// <summary>
+/// Represents the mutable fields of a decree declarative for generic update actions.
+/// </summary>
+public sealed record DecreeUpdate(
+	string? Title = null,
+	DecreeStatus? Status = null,
+	string? DirectiveId = null,
+	string? Orbit = null,
+	int? DefaultLength = null,
+	int? ActiveCelestron = null,
+	bool? Reflect = null);
+
+/// <summary>
+/// Represents the caller-supplied occurrence details when interacting with a fate or an objective due date
+/// to materialize an eventive (PEP100).
+/// </summary>
+public sealed record EventiveMaterialization(
+	DateOnly? Date = null,
+	TimeOnly? StartTime = null,
+	TimeOnly? EndTime = null);
+
+/// <summary>
+/// Represents a mutable update to an eventive occurrence. Eventives are never Polaris-bound, so their time
+/// specification can always be moved.
+/// </summary>
+public sealed record EventiveUpdate(
+	DateOnly? Date = null,
+	TimeOnly? StartTime = null,
+	TimeOnly? EndTime = null,
+	EventiveResolution? Resolution = null,
+	int? Estimation = null,
+	int? Minimum = null,
+	int? Maximum = null);
+
+/// <summary>
+/// Represents the caller-supplied occurrence details when interacting with a decree to materialize an
+/// unbound attentive (PEP100). The time allocation defaults to the decree's default length.
+/// </summary>
+public sealed record AttentiveMaterialization(
+	DateOnly? Date = null,
+	TimeOnly? Time = null,
+	int? Estimation = null,
+	int? Minimum = null,
+	int? Maximum = null);
+
+/// <summary>
+/// Represents a mutable update to an attentive occurrence.
+/// </summary>
+/// <remarks>
+/// Mobility rules (PEP100): <paramref name="Date"/> reschedules and is only valid while unbound;
+/// <paramref name="MoveToPolarisCycleId"/> is only valid while Polaris-bound.
+/// </remarks>
+public sealed record AttentiveUpdate(
+	DateOnly? Date = null,
+	TimeOnly? Time = null,
+	AttentiveResolution? Resolution = null,
+	string? MoveToPolarisCycleId = null,
+	int? Estimation = null,
+	int? Minimum = null,
+	int? Maximum = null);
+
+/// <summary>
+/// Represents the data required to manually add a decree to a Polaris cycle, creating a Polaris-bound
+/// attentive (PEP100).
+/// </summary>
+public sealed record PolarisAttentiveAdd(
+	string DecreeId,
+	DateOnly? Date = null,
+	TimeOnly? Time = null,
+	int? Estimation = null,
+	int? Minimum = null,
+	int? Maximum = null);
+
+/// <summary>
+/// Represents the unbound items a Polaris cycle includes non-structurally because they fall within 24h of
+/// its beginning (PEP100). The cycle never relationally owns these records.
+/// </summary>
+public sealed record PolarisCycleInclusions(
+	IReadOnlyList<Eventive> Eventives,
+	IReadOnlyList<Attentive> Attentives);
+
+/// <summary>
+/// Represents the data required to define a directive-level timeframe (PEP100).
+/// </summary>
+public sealed record TimeframePlan(
+	string Title,
+	TimeOnly StartTime,
+	TimeOnly EndTime,
+	string? Orbit = null);
+
+/// <summary>
+/// Represents the mutable fields of a timeframe definition.
+/// </summary>
+public sealed record TimeframeUpdate(
+	string? Title = null,
+	TimeOnly? StartTime = null,
+	TimeOnly? EndTime = null,
+	string? Orbit = null,
+	bool ClearOrbit = false);

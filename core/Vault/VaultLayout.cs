@@ -60,6 +60,16 @@ public sealed class VaultLayout(VaultOptions options)
 	public string ObjectivesRoot => GetLocationRoot(VaultLocationKeys.Objectives);
 
 	/// <summary>
+	/// Gets the canonical standalone fates root directory (PEP100).
+	/// </summary>
+	public string FatesRoot => GetLocationRoot(VaultLocationKeys.Fates);
+
+	/// <summary>
+	/// Gets the canonical standalone decrees root directory (PEP100).
+	/// </summary>
+	public string DecreesRoot => GetLocationRoot(VaultLocationKeys.Decrees);
+
+	/// <summary>
 	/// Gets the canonical journal root directory.
 	/// </summary>
 	public string JournalRoot => GetLocationRoot(VaultLocationKeys.Journal);
@@ -103,6 +113,8 @@ public sealed class VaultLayout(VaultOptions options)
 		yield return DirectivesRoot;
 		yield return OnrushRoot;
 		yield return ObjectivesRoot;
+		yield return FatesRoot;
+		yield return DecreesRoot;
 		yield return JournalRoot;
 		yield return SagaRoot;
 	}

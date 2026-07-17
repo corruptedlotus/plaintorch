@@ -51,4 +51,11 @@ public sealed class PolarisCycle : PuckNamedEntity
 	/// Gets the reflective records belonging to the cycle.
 	/// </summary>
 	public List<Reflective> Reflectives { get; set; } = [];
+
+	[InverseProperty(nameof(Attentive.PolarisCycle))]
+	/// <summary>
+	/// Gets the Polaris-bound attentives belonging to the cycle (PEP100).
+	/// Unbound attentives and eventives are never listed here; their 24h inclusion is presentational.
+	/// </summary>
+	public List<Attentive> Attentives { get; set; } = [];
 }

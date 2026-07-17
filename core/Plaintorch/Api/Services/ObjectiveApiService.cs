@@ -125,10 +125,74 @@ public sealed class ObjectiveApiService(
 			objective.IsEnduring = update.IsEnduring.Value;
 		}
 
+		if (update.Due is not null)
+		{
+			objective.Due = update.Due;
+		}
+
+		if (!string.IsNullOrWhiteSpace(update.ParentIncentiveId))
+		{
+			var parent = await context.Incentives
+				.AsNoTracking()
+				.IgnoreAutoIncludes()
+				.FirstOrDefaultAsync(item => item.Id == update.ParentIncentiveId, cancellationToken)
+				?? throw new InvalidOperationException($"Parent incentive '{update.ParentIncentiveId}' was not found.");
+			IncentiveParenting.EnsureValidParent(objective, parent);
+			objective.ParentIncentiveId = parent.Id;
+		}
+
+		if (update.ClearParentIncentive)
+		{
+			objective.ParentIncentiveId = null;
+		}
+
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveObjectiveAsync(objective, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.update", subject: objective, cancellationToken: cancellationToken);
 		return objective;
+	}
+
+	/// <inheritdoc />
+	public async Task<Eventive> MaterializeDueEventiveAsync(string objectiveId, EventiveMaterialization request, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(objectiveId);
+		ArgumentNullException.ThrowIfNull(request);
+
+		var objective = await context.Objectives
+			.AsNoTracking()
+			.IgnoreAutoIncludes()
+			.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
+			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
+
+		var date = request.Date
+			?? objective.Due
+			?? throw new InvalidOperationException($"Objective '{objectiveId}' has no due date; supply a date to materialize its eventive.");
+
+		var existing = await context.Eventives.FirstOrDefaultAsync(item => item.ObjectiveId == objective.Id && item.Date == date, cancellationToken);
+		if (existing is not null)
+		{
+			return existing;
+		}
+
+		var eventive = new Eventive
+		{
+			ObjectiveId = objective.Id,
+			Date = date,
+			StartTime = request.StartTime,
+			EndTime = request.EndTime,
+		};
+		eventive.Normalize();
+
+		context.Eventives.Add(eventive);
+		await context.SaveChangesAsync(cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"objective.materialize-eventive",
+			subjectType: nameof(Eventive),
+			subjectId: eventive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+			details: new { objectiveId = objective.Id, date = date.ToString("yyyy-MM-dd") },
+			cancellationToken: cancellationToken);
+		return eventive;
 	}
 
 	/// <inheritdoc />

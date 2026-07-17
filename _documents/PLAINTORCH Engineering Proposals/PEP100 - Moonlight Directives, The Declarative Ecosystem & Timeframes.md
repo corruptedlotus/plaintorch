@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: implemented
 assignee: Copilot 🤖
 ---
 # Directives
@@ -64,8 +64,14 @@ Reflectives, attentives and eventives share the same structure as executives, in
 - **Executives** are filled by the user, as usual. Their creation from objectives is unaffected by this PEP.
 - **Eventives** take their duration from the owning fate's event duration (from its Orbit or its specification).
 - **Attentives** take their length from the owning decree's default length, overridable per instance as described above.
+## Record States & Mobility
+Each record kind resolves differently:
+- **Executives** can only be done. They keep the whole time allocation system of [[PEP098 - Executive Time Units]], per-day and per-executive.
+- **Eventives** can be missed or cancelled. They carry a time specification, and since an eventive is never bound to a Polaris cycle, it can also be moved.
+- **Attentives** can have a time either way. When unbound, they can be done, skipped, or rescheduled (delayed). When Polaris-bound, they can only be done, skipped, or moved to another Polaris cycle.
+- **Reflectives** can have a time, and can be done or not. The rest of their behavior is left to [[PEP104 - Reflective Generation Engine]].
 ## Eventives
-When a Polaris cycle begins, any Fate that collides within 24h of the starting point has an eventive — created through proximity if it does not exist yet — which the cycle includes. Eventives are just like Executives structurally, but they record occurrences that happen rather than work that gets done: an occurrence can be missed or cancelled instead of being executed or left undone. Eventives carry no Celestron reward.
+When a Polaris cycle begins, any Fate that collides within 24h of the starting point has an eventive — created through proximity if it does not exist yet — which the cycle includes. Eventives are never Polaris-bound; the inclusion is always the non-structural kind (ref. [[#Inclusion of Unbound Items]]). Eventives are just like Executives structurally, but they record occurrences that happen rather than work that gets done: an occurrence can be missed or cancelled instead of being executed or left undone. Eventives carry no Celestron reward.
 
 The due date of an objective also creates an eventive, again through proximity, exactly like fates and decrees.
 ## Attentives
@@ -73,7 +79,11 @@ Attentives are the per-occurrence instances of decrees. They are created unbound
 
 The Celestron reward of an attentive is predefined on its decree and cannot be overridden. The reward is granted on each attentive execution.
 ## Reflectives
-Lunar-hierarchy decrees with `reflect: true` participate in daily reflective generation. The generation engine itself belongs to [[PEP104 - Reflective Generation Engine]] and is not a criteria of action for this PEP; this PEP only establishes the `reflect` property and its eligibility rules.
+Lunar-hierarchy decrees with `reflect: true` participate in daily reflective generation. Reflectives are
+Polaris-bound schedules: the decree's orbit is resolved only to day granularity, against the day the Polaris
+cycle started — if it falls within that day, it's a match, and the matching decree generates a cycle-bound
+reflective when the cycle begins. The fuller generation engine (source pools, weighting, cooldowns, prompt
+synthesis) belongs to [[PEP104 - Reflective Generation Engine]].
 
 Reflectives are a special kind: they do not respect the reward of the decree that sets them. Instead, when all reflectives of a single Polaris cycle are done, that entire collection rewards the user with a fixed amount of Celestron.
 ## Inclusion of Unbound Items

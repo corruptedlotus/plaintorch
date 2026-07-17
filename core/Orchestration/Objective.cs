@@ -7,6 +7,7 @@ namespace Pleiades.Orchestration;
 
 /// <summary>
 /// Represents an actionable objective attached to directives and optional onrush sprints.
+/// Objectives are incentives: they share their table with the fate and decree declaratives (PEP100).
 /// </summary>
 [PuckFormat("j{S:8}")]
 [VaultStorage(
@@ -16,20 +17,8 @@ namespace Pleiades.Orchestration;
 	ParentIdProperty = nameof(DirectiveId),
 	ParentEntityType = typeof(Directive),
 	PartitionUnder = "Objectives")]
-public sealed class Objective : PuckNamedEntity
+public sealed class Objective : Incentive
 {
-	/// <summary>
-	/// Gets or sets the related directive identifier.
-	/// </summary>
-	public string? DirectiveId { get; set; }
-
-	[ForeignKey(nameof(DirectiveId))]
-	[InverseProperty(nameof(Directive.Objectives))]
-	/// <summary>
-	/// Gets or sets the related directive.
-	/// </summary>
-	public Directive? Directive { get; set; }
-
 	/// <summary>
 	/// Gets or sets the related onrush sprint identifier.
 	/// </summary>
@@ -78,4 +67,10 @@ public sealed class Objective : PuckNamedEntity
 	/// </summary>
 	[InverseProperty(nameof(Executive.Objective))]
 	public List<Executive> Executives { get; set; } = [];
+
+	/// <summary>
+	/// Gets the eventives materialized from this objective's due date (PEP100).
+	/// </summary>
+	[InverseProperty(nameof(Eventive.Objective))]
+	public List<Eventive> Eventives { get; set; } = [];
 }

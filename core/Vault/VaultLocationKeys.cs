@@ -21,6 +21,16 @@ public static class VaultLocationKeys
 	public const string Objectives = "Objectives";
 
 	/// <summary>
+	/// The standalone fate declaratives location key (PEP100).
+	/// </summary>
+	public const string Fates = "Fates";
+
+	/// <summary>
+	/// The standalone decree declaratives location key (PEP100).
+	/// </summary>
+	public const string Decrees = "Decrees";
+
+	/// <summary>
 	/// The journal location key.
 	/// </summary>
 	public const string Journal = "Journal";

@@ -1,3 +1,4 @@
+import type { Attentive, Eventive } from "../declaratives/models"
 import type { Objective, ObjectiveCollege } from "../objectives/models"
 export enum PolarisExecutivePlanningMode {
 	OneShot = 0,
@@ -20,6 +21,27 @@ export interface PolarisCycle {
 	isForecast?: boolean
 	executives: Executive[]
 	reflectives: Reflective[]
+	/** Polaris-bound attentives (PEP100). Unbound inclusions are served separately. */
+	attentives?: Attentive[]
+}
+
+/**
+ * Unbound eventives and attentives a Polaris cycle includes non-structurally because they fall within
+ * 24h of its beginning (PEP100). The cycle never relationally owns these records.
+ */
+export interface PolarisCycleInclusions {
+	eventives: Eventive[]
+	attentives: Attentive[]
+}
+
+/** Manually adds a decree to a Polaris cycle, creating a Polaris-bound attentive (PEP100). */
+export interface PolarisAttentiveAdd {
+	decreeId: string
+	date?: string | undefined
+	time?: string | undefined
+	estimation?: number | undefined
+	minimum?: number | undefined
+	maximum?: number | undefined
 }
 
 export interface Executive {
@@ -36,6 +58,8 @@ export interface Executive {
 	minimum: number | undefined
 	/** Maximum time allocation, as a whole-minute working time unit. */
 	maximum: number | undefined
+	/** Preferred timeframe for execution (affinity, PEP100). Purely semantic. */
+	affinityTimeframeId: number | undefined
 }
 
 export interface Reflective {
@@ -44,6 +68,10 @@ export interface Reflective {
 	polarisCycleId: string
 	polarisCycle?: PolarisCycle | undefined
 	executed: boolean
+	/** Optional time of day (PEP100); further reflective behavior belongs to PEP104. */
+	time: string | undefined
+	/** Originating decree when generated through lunar reflection (PEP100). */
+	decreeId: string | undefined
 }
 
 export interface PolarisExecutivePlan {
@@ -86,6 +114,10 @@ export interface ExecutiveUpdate {
 	clearMinimum?: boolean
 	/** Clears the maximum allocation regardless of any provided value. */
 	clearMaximum?: boolean
+	/** Preferred timeframe for execution (affinity, PEP100). */
+	affinityTimeframeId?: number | undefined
+	/** Clears the affinity timeframe regardless of any provided value. */
+	clearAffinityTimeframe?: boolean
 }
 
 export interface ReflectiveDrawRequest {
@@ -98,6 +130,7 @@ export interface ReflectiveDrawRequest {
 export interface ReflectiveUpdate {
 	description?: string | undefined
 	executed?: boolean | undefined
+	time?: string | undefined
 }
 
 export interface PolarisCycleUpdate {

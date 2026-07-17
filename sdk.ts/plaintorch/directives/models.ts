@@ -9,8 +9,16 @@ export enum DirectiveStatus {
 	Failed = 5
 }
 
+export enum LunarDirectiveStatus {
+	OnHold = 0,
+	Active = 1,
+	Stale = 2
+}
+
 @model('Directive')
 export class Directive {
+	/** Polymorphic discriminator emitted by the core: "stellar" or "lunar". */
+	$type?: string
 	id!: string
 	title!: string
 	codename: string | undefined
@@ -23,6 +31,23 @@ export class Directive {
 	startDate: string | undefined
 	endDate: string | undefined
 	objectives: Objective[] = []
+	timeframes?: Timeframe[]
+	/** Moonlight state; only present on lunar directives (PEP100). */
+	lunarStatus?: LunarDirectiveStatus
+
+	get isLunar() {
+		return this.$type === 'lunar' || this.lunarStatus !== undefined
+	}
+}
+
+/** Directive-level definition of a portion of the day (PEP100). Purely semantic. */
+export interface Timeframe {
+	id: number
+	directiveId: string
+	title: string
+	startTime: string
+	endTime: string
+	orbit: string | undefined
 }
 
 export interface CreateDirectiveRequest {
@@ -48,4 +73,29 @@ export interface DirectiveUpdate {
 
 export interface DirectiveWorkflowShift {
 	status: DirectiveStatus
+}
+
+export interface CreateLunarDirectiveRequest {
+	title: string
+	codename?: string | undefined
+	parentDirectiveId?: string | undefined
+}
+
+export interface LunarDirectiveWorkflowShift {
+	status: LunarDirectiveStatus
+}
+
+export interface TimeframePlan {
+	title: string
+	startTime: string
+	endTime: string
+	orbit?: string | undefined
+}
+
+export interface TimeframeUpdate {
+	title?: string | undefined
+	startTime?: string | undefined
+	endTime?: string | undefined
+	orbit?: string | undefined
+	clearOrbit?: boolean
 }

@@ -1,11 +1,16 @@
 import type { PlaintorchCoreClient } from "../coreClient"
 import type {
 	CreateDirectiveRequest,
+	CreateLunarDirectiveRequest,
 	Directive,
 	InitDirectiveRequest,
 	DirectiveUpdate,
 	DirectiveWorkflowShift,
-	DirectiveSummary
+	DirectiveSummary,
+	LunarDirectiveWorkflowShift,
+	Timeframe,
+	TimeframePlan,
+	TimeframeUpdate
 } from "./contracts"
 export class PlaintorchDirectivesSdk {
 	public constructor(private readonly client: PlaintorchCoreClient) { }
@@ -45,5 +50,40 @@ export class PlaintorchDirectivesSdk {
 
 	public async delete(directiveId: string): Promise<boolean> {
 		return await this.client.delete(`/api/directives/${encodeURIComponent(directiveId)}`)
+	}
+
+	public async createLunar(request: CreateLunarDirectiveRequest): Promise<Directive | undefined> {
+		return await this.client.postForJson<Directive>("/api/directives/lunar", request)
+	}
+
+	public async shiftLunarWorkflow(
+		directiveId: string,
+		request: LunarDirectiveWorkflowShift
+	): Promise<Directive | undefined> {
+		return await this.client.postForJson<Directive>(
+			`/api/directives/${encodeURIComponent(directiveId)}/lunar-workflow`,
+			request
+		)
+	}
+
+	public async listTimeframes(directiveId: string): Promise<Timeframe[]> {
+		return (
+			(await this.client.getJson<Timeframe[]>(`/api/directives/${encodeURIComponent(directiveId)}/timeframes`)) ?? []
+		)
+	}
+
+	public async createTimeframe(directiveId: string, plan: TimeframePlan): Promise<Timeframe | undefined> {
+		return await this.client.postForJson<Timeframe>(
+			`/api/directives/${encodeURIComponent(directiveId)}/timeframes`,
+			plan
+		)
+	}
+
+	public async updateTimeframe(timeframeId: number, update: TimeframeUpdate): Promise<Timeframe | undefined> {
+		return await this.client.putForJson<Timeframe>(`/api/timeframes/${timeframeId}`, update)
+	}
+
+	public async deleteTimeframe(timeframeId: number): Promise<boolean> {
+		return await this.client.delete(`/api/timeframes/${timeframeId}`)
 	}
 }

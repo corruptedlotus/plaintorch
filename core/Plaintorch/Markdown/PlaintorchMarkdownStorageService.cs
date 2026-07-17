@@ -89,6 +89,46 @@ public sealed class PlaintorchMarkdownStorageService(
 	}
 
 	/// <summary>
+	/// Writes the canonical markdown file for a fate declarative.
+	/// </summary>
+	/// <param name="beginBoundary">
+	/// When <see langword="true"/>, materializes the file for the implicit entity even if its synchronization
+	/// boundary has not begun yet, thereby beginning that boundary.
+	/// </param>
+	public async Task SaveFateAsync(Fate fate, Fate? previous = null, string? sourcePath = null, bool beginBoundary = false, CancellationToken cancellationToken = default)
+	{
+		await SaveCanonicalMarkdownAsync(fate, previous, sourcePath, cancellationToken, beginBoundary);
+	}
+
+	/// <summary>
+	/// Deletes a fate markdown file.
+	/// </summary>
+	public Task<FileGraveyardEntry?> DeleteFateAsync(Fate fate, CancellationToken cancellationToken = default)
+	{
+		return DeleteEntityPathAsync(fate, cancellationToken);
+	}
+
+	/// <summary>
+	/// Writes the canonical markdown file for a decree declarative.
+	/// </summary>
+	/// <param name="beginBoundary">
+	/// When <see langword="true"/>, materializes the file for the implicit entity even if its synchronization
+	/// boundary has not begun yet, thereby beginning that boundary.
+	/// </param>
+	public async Task SaveDecreeAsync(Decree decree, Decree? previous = null, string? sourcePath = null, bool beginBoundary = false, CancellationToken cancellationToken = default)
+	{
+		await SaveCanonicalMarkdownAsync(decree, previous, sourcePath, cancellationToken, beginBoundary);
+	}
+
+	/// <summary>
+	/// Deletes a decree markdown file.
+	/// </summary>
+	public Task<FileGraveyardEntry?> DeleteDecreeAsync(Decree decree, CancellationToken cancellationToken = default)
+	{
+		return DeleteEntityPathAsync(decree, cancellationToken);
+	}
+
+	/// <summary>
 	/// Writes the canonical markdown file for an onrush sprint.
 	/// </summary>
 	public async Task SaveOnrushSprintAsync(OnrushSprint sprint, OnrushSprint? previous = null, string? sourcePath = null, CancellationToken cancellationToken = default)
@@ -248,12 +288,12 @@ public sealed class PlaintorchMarkdownStorageService(
 			return canonicalPath;
 		}
 
-		if (entity is not Objective objective)
+		if (entity is not Incentive incentive)
 		{
 			return canonicalPath;
 		}
 
-		if (!IsObjectiveSourcePlacementValid(objective, fullSourcePath))
+		if (!IsIncentiveSourcePlacementValid(incentive, fullSourcePath))
 		{
 			return canonicalPath;
 		}
@@ -267,20 +307,20 @@ public sealed class PlaintorchMarkdownStorageService(
 		return Path.Combine(sourceDirectory, Path.GetFileName(canonicalPath));
 	}
 
-	private bool IsObjectiveSourcePlacementValid(Objective objective, string fullSourcePath)
+	private bool IsIncentiveSourcePlacementValid(Incentive incentive, string fullSourcePath)
 	{
-		if (string.IsNullOrWhiteSpace(objective.DirectiveId))
+		if (string.IsNullOrWhiteSpace(incentive.DirectiveId))
 		{
-			return IsUnderRoot(fullSourcePath, layout.ObjectivesRoot);
+			return IsUnderRoot(fullSourcePath, ResolveStorageRoot(incentive.GetType()));
 		}
 
 		var containingDirectiveId = pathPolicy.TryResolveContainingDirectiveId(fullSourcePath);
-		if (!string.Equals(containingDirectiveId, objective.DirectiveId, StringComparison.OrdinalIgnoreCase))
+		if (!string.Equals(containingDirectiveId, incentive.DirectiveId, StringComparison.OrdinalIgnoreCase))
 		{
 			return false;
 		}
 
-		var storage = GetStorageAttribute(typeof(Objective));
+		var storage = GetStorageAttribute(incentive.GetType());
 		if (string.IsNullOrWhiteSpace(storage.PartitionUnder))
 		{
 			return true;
@@ -345,6 +385,8 @@ public sealed class PlaintorchMarkdownStorageService(
 		var fullPath = Path.GetFullPath(path);
 		return IsUnderRoot(fullPath, layout.MetadataRoot)
 			|| IsUnderRoot(fullPath, layout.ObjectivesRoot)
+			|| IsUnderRoot(fullPath, layout.FatesRoot)
+			|| IsUnderRoot(fullPath, layout.DecreesRoot)
 			|| IsUnderRoot(fullPath, layout.OnrushRoot)
 			|| IsUnderRoot(fullPath, layout.JournalRoot)
 			|| IsUnderRoot(fullPath, layout.SagaRoot);
@@ -793,6 +835,8 @@ public sealed class PlaintorchMarkdownStorageService(
 		{
 			layout.DirectivesRoot,
 			layout.ObjectivesRoot,
+			layout.FatesRoot,
+			layout.DecreesRoot,
 			layout.OnrushRoot,
 			layout.JournalRoot,
 			layout.SagaRoot,

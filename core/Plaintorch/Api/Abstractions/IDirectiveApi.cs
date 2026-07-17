@@ -52,4 +52,34 @@ public interface IDirectiveApi
 	/// Initializes a directive from an existing vault markdown path using watcher creation policy.
 	/// </summary>
 	Task<Directive> InitializeFromPathAsync(string vaultRelativePath, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Creates a lunar (Moonlight) directive (PEP100).
+	/// </summary>
+	Task<LunarDirective> CreateLunarAsync(string title, string? codename = null, string? parentDirectiveId = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Applies a moonlight workflow shift to a lunar directive.
+	/// </summary>
+	Task<LunarDirective> ShiftLunarWorkflowAsync(string directiveId, LunarDirectiveWorkflowShift shift, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Defines a timeframe under a directive (PEP100).
+	/// </summary>
+	Task<Timeframe> CreateTimeframeAsync(string directiveId, TimeframePlan plan, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Lists the timeframes defined by a directive.
+	/// </summary>
+	Task<IReadOnlyList<Timeframe>> ListTimeframesAsync(string directiveId, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Updates a timeframe definition.
+	/// </summary>
+	Task<Timeframe> UpdateTimeframeAsync(long timeframeId, TimeframeUpdate update, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Deletes a timeframe definition, clearing any executive affinity references to it.
+	/// </summary>
+	Task DeleteTimeframeAsync(long timeframeId, CancellationToken cancellationToken = default);
 }

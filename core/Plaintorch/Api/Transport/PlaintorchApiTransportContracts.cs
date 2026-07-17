@@ -15,6 +15,14 @@ public sealed record CreateDirectiveRequest(
 public sealed record InitDirectiveRequest(string Path);
 
 /// <summary>
+/// Represents the transport payload used to create a lunar (Moonlight) directive (PEP100).
+/// </summary>
+public sealed record CreateLunarDirectiveRequest(
+	string Title,
+	string? Codename = null,
+	string? ParentDirectiveId = null);
+
+/// <summary>
 /// Represents the transport payload used to create an objective.
 /// </summary>
 public sealed record CreateObjectiveRequest(

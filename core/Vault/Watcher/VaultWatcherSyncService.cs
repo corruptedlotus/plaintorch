@@ -127,6 +127,11 @@ public sealed class VaultWatcherSyncService(
 			await NormalizeObjectiveForeignKeysAsync(objective, candidate.VaultRelativePath, cancellationToken);
 		}
 
+		if (model is Fate or Decree)
+		{
+			await NormalizeIncentiveDirectiveAsync((Incentive)model, candidate.VaultRelativePath, cancellationToken);
+		}
+
 		if (model is not IPuckNamedEntity namedEntity)
 		{
 			throw new InvalidOperationException($"Watcher create-from-file requires a PUCK-named model, but '{candidate.Model.EntityName}' is not PUCK-backed.");
@@ -234,6 +239,18 @@ public sealed class VaultWatcherSyncService(
 		if (existing is Objective objective)
 		{
 			await NormalizeObjectiveForeignKeysAsync(objective, candidate.VaultRelativePath, cancellationToken);
+		}
+
+		if (existing is Incentive existingIncentive)
+		{
+			// Parenting is not markdown-mapped, so a frontmatter sync must never clear it.
+			existingIncentive.ParentIncentiveId = existingEntry.OriginalValues.GetValue<string?>(nameof(Incentive.ParentIncentiveId));
+		}
+
+		if (existing is Fate or Decree)
+		{
+			await NormalizeIncentiveDirectiveAsync((Incentive)existing, candidate.VaultRelativePath, cancellationToken);
+			await ResetOrbitStateOnChangeAsync(existingEntry, ((Incentive)existing).Id, cancellationToken);
 		}
 
 		if (existing is IPuckNamedEntity namedEntity && !string.IsNullOrWhiteSpace(candidate.PathTitle))
@@ -363,6 +380,53 @@ public sealed class VaultWatcherSyncService(
 					vaultRelativePath);
 				objective.OnrushSprintId = null;
 			}
+		}
+	}
+
+	/// <summary>
+	/// Normalizes a declarative's directive relation when the referenced directive no longer exists.
+	/// </summary>
+	private async Task NormalizeIncentiveDirectiveAsync(Incentive incentive, string vaultRelativePath, CancellationToken cancellationToken)
+	{
+		if (string.IsNullOrWhiteSpace(incentive.DirectiveId))
+		{
+			return;
+		}
+
+		var directiveExists = await context.Directives
+			.AsNoTracking()
+			.AnyAsync(item => item.Id == incentive.DirectiveId, cancellationToken);
+		if (!directiveExists)
+		{
+			logger.LogWarning(
+				"Watcher normalized missing directive relation '{DirectiveId}' on incentive '{IncentiveId}' from '{Path}'.",
+				incentive.DirectiveId,
+				incentive.Id,
+				vaultRelativePath);
+			incentive.DirectiveId = null;
+		}
+	}
+
+	/// <summary>
+	/// Resets the persisted orbit schedule state when a file sync changed a declarative's orbit notation.
+	/// A fresh state (anchored at reset time) is lazily rebuilt on the next seeking resolution.
+	/// </summary>
+	private async Task ResetOrbitStateOnChangeAsync(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry, string incentiveId, CancellationToken cancellationToken)
+	{
+		var originalOrbit = entry.OriginalValues.GetValue<string?>("Orbit");
+		var currentOrbit = entry.CurrentValues.GetValue<string?>("Orbit");
+		if (string.Equals(originalOrbit, currentOrbit, StringComparison.Ordinal))
+		{
+			return;
+		}
+
+		var states = await context.Set<OrbitScheduleState>()
+			.Where(state => state.IncentiveId == incentiveId)
+			.ToListAsync(cancellationToken);
+		if (states.Count > 0)
+		{
+			context.RemoveRange(states);
+			logger.LogInformation("Watcher reset orbit schedule state for '{IncentiveId}' after an orbit change.", incentiveId);
 		}
 	}
 
@@ -571,6 +635,16 @@ public sealed class VaultWatcherSyncService(
 			return await context.Objectives.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
 		}
 
+		if (entityType == typeof(Fate))
+		{
+			return await context.Fates.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+		}
+
+		if (entityType == typeof(Decree))
+		{
+			return await context.Decrees.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+		}
+
 		if (entityType == typeof(OnrushSprint))
 		{
 			return await context.OnrushSprints.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
@@ -610,6 +684,12 @@ public sealed class VaultWatcherSyncService(
 				break;
 			case Objective objective:
 				await markdownStorageService.SaveObjectiveAsync(objective, previous as Objective, sourcePath, cancellationToken: cancellationToken);
+				break;
+			case Fate fate:
+				await markdownStorageService.SaveFateAsync(fate, previous as Fate, sourcePath, cancellationToken: cancellationToken);
+				break;
+			case Decree decree:
+				await markdownStorageService.SaveDecreeAsync(decree, previous as Decree, sourcePath, cancellationToken: cancellationToken);
 				break;
 			case OnrushSprint sprint:
 				await markdownStorageService.SaveOnrushSprintAsync(sprint, previous as OnrushSprint, sourcePath, cancellationToken);
@@ -659,6 +739,32 @@ public sealed class VaultWatcherSyncService(
 				Status = objective.Status,
 				CelestronValue = objective.CelestronValue,
 				IsEnduring = objective.IsEnduring,
+				Due = objective.Due,
+				ParentIncentiveId = objective.ParentIncentiveId,
+			},
+			Fate fate => new Fate
+			{
+				Id = fate.Id,
+				Title = fate.Title,
+				DirectiveId = fate.DirectiveId,
+				ParentIncentiveId = fate.ParentIncentiveId,
+				Status = fate.Status,
+				Orbit = fate.Orbit,
+				Date = fate.Date,
+				StartTime = fate.StartTime,
+				EndTime = fate.EndTime,
+				EventDuration = fate.EventDuration,
+			},
+			Decree decree => new Decree
+			{
+				Id = decree.Id,
+				Title = decree.Title,
+				DirectiveId = decree.DirectiveId,
+				Status = decree.Status,
+				Orbit = decree.Orbit,
+				DefaultLength = decree.DefaultLength,
+				ActiveCelestron = decree.ActiveCelestron,
+				Reflect = decree.Reflect,
 			},
 			OnrushSprint sprint => new OnrushSprint
 			{

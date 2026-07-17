@@ -13,6 +13,8 @@ namespace Pleiades.Vault.Watcher;
 public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 {
 	private static readonly string? ObjectivePartitionName = ResolvePartitionUnder(typeof(Objective));
+	private static readonly string? FatePartitionName = ResolvePartitionUnder(typeof(Fate));
+	private static readonly string? DecreePartitionName = ResolvePartitionUnder(typeof(Decree));
 	private static readonly HashSet<string> PartitionFolderNames = ResolvePartitionFolderNames();
 
 	private readonly IReadOnlyList<VaultPathSyncModel> _models =
@@ -24,9 +26,26 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
 
 		CreateModel<Objective>(layout, [layout.ObjectivesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
-			IsObjectiveMarkdownFile(path, layout), static (context, cancellationToken) =>
+			IsIncentiveMarkdownFile(path, layout, layout.ObjectivesRoot, ObjectivePartitionName), static (context, cancellationToken) =>
 			context.Objectives
 				.AsNoTracking()
+				.IgnoreAutoIncludes()
+				.Select(item => item.Id)
+				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
+
+		CreateModel<Fate>(layout, [layout.FatesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
+			IsIncentiveMarkdownFile(path, layout, layout.FatesRoot, FatePartitionName), static (context, cancellationToken) =>
+			context.Fates
+				.AsNoTracking()
+				.IgnoreAutoIncludes()
+				.Select(item => item.Id)
+				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
+
+		CreateModel<Decree>(layout, [layout.DecreesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
+			IsIncentiveMarkdownFile(path, layout, layout.DecreesRoot, DecreePartitionName), static (context, cancellationToken) =>
+			context.Decrees
+				.AsNoTracking()
+				.IgnoreAutoIncludes()
 				.Select(item => item.Id)
 				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
 
@@ -222,12 +241,16 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	}
 
 	/// <summary>
-	/// Determines whether a markdown file path should be classified as an objective file.
+	/// Determines whether a markdown file path should be classified as an incentive file of a specific kind
+	/// (objective, fate, or decree). Each kind lives in its standalone root, directly inside a directive
+	/// directory, or inside its own partition folder within a directive.
 	/// </summary>
 	/// <param name="path">The markdown file path to classify.</param>
 	/// <param name="layout">The active vault layout.</param>
-	/// <returns><see langword="true"/> when the file is an objective markdown candidate.</returns>
-	private static bool IsObjectiveMarkdownFile(string path, VaultLayout layout)
+	/// <param name="standaloneRoot">The kind's standalone root directory.</param>
+	/// <param name="partitionName">The kind's directive partition folder name.</param>
+	/// <returns><see langword="true"/> when the file is a candidate of this incentive kind.</returns>
+	private static bool IsIncentiveMarkdownFile(string path, VaultLayout layout, string standaloneRoot, string? partitionName)
 	{
 		if (!string.Equals(Path.GetExtension(path), ".md", StringComparison.OrdinalIgnoreCase))
 		{
@@ -245,9 +268,16 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 			return false;
 		}
 
-		if (string.Equals(parentDirectory, layout.ObjectivesRoot, StringComparison.OrdinalIgnoreCase))
+		if (string.Equals(parentDirectory, standaloneRoot, StringComparison.OrdinalIgnoreCase))
 		{
 			return true;
+		}
+
+		// Another incentive kind's standalone root or partition folder is never a candidate here;
+		// identity-driven belonging would reject it anyway, but the path gate keeps candidates tight.
+		if (IsForeignIncentiveContainer(parentDirectory, layout, standaloneRoot, partitionName))
+		{
+			return false;
 		}
 
 		if (MarkdownFileLocator.IsSelfNamedDirectory(parentDirectory))
@@ -260,18 +290,42 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 			return false;
 		}
 
-		if (string.IsNullOrWhiteSpace(ObjectivePartitionName))
+		if (string.IsNullOrWhiteSpace(partitionName))
 		{
 			return true;
 		}
 
 		var containingDirectoryName = Path.GetFileName(parentDirectory);
-		if (string.Equals(containingDirectoryName, ObjectivePartitionName, StringComparison.OrdinalIgnoreCase))
+		if (string.Equals(containingDirectoryName, partitionName, StringComparison.OrdinalIgnoreCase))
 		{
 			return true;
 		}
 
 		return false;
+	}
+
+	/// <summary>
+	/// Determines whether a directory belongs to a different incentive kind (its standalone root or
+	/// partition folder) than the one being classified.
+	/// </summary>
+	private static bool IsForeignIncentiveContainer(string directory, VaultLayout layout, string ownRoot, string? ownPartition)
+	{
+		foreach (var root in new[] { layout.ObjectivesRoot, layout.FatesRoot, layout.DecreesRoot })
+		{
+			if (!string.Equals(root, ownRoot, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(directory, root, StringComparison.OrdinalIgnoreCase))
+			{
+				return true;
+			}
+		}
+
+		var directoryName = Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+		if (string.IsNullOrWhiteSpace(directoryName) || !PartitionFolderNames.Contains(directoryName))
+		{
+			return false;
+		}
+
+		return !string.Equals(directoryName, ownPartition, StringComparison.OrdinalIgnoreCase);
 	}
 
 	/// <summary>
@@ -345,6 +399,8 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 		if (IsDirectoryEqual(directoryPath, layout.VaultRoot)
 			|| IsDirectoryEqual(directoryPath, layout.DirectivesRoot)
 			|| IsDirectoryEqual(directoryPath, layout.ObjectivesRoot)
+			|| IsDirectoryEqual(directoryPath, layout.FatesRoot)
+			|| IsDirectoryEqual(directoryPath, layout.DecreesRoot)
 			|| IsDirectoryEqual(directoryPath, layout.OnrushRoot)
 			|| IsDirectoryEqual(directoryPath, layout.JournalRoot)
 			|| IsDirectoryEqual(directoryPath, layout.SagaRoot)
@@ -360,6 +416,8 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 		}
 
 		if (IsPathUnderRoot(directoryPath, layout.ObjectivesRoot)
+			|| IsPathUnderRoot(directoryPath, layout.FatesRoot)
+			|| IsPathUnderRoot(directoryPath, layout.DecreesRoot)
 			|| IsPathUnderRoot(directoryPath, layout.OnrushRoot)
 			|| IsPathUnderRoot(directoryPath, layout.JournalRoot)
 			|| IsPathUnderRoot(directoryPath, layout.SagaRoot)

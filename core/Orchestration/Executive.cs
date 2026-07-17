@@ -7,7 +7,7 @@ namespace Pleiades.Orchestration;
 /// <summary>
 /// Represents an execution record captured inside a Polaris cycle.
 /// </summary>
-public sealed class Executive
+public sealed class Executive : ITimeAllocated
 {
 	[Key]
 	/// <summary>
@@ -64,28 +64,22 @@ public sealed class Executive
 	public int? Maximum { get; set; }
 
 	/// <summary>
-	/// Reconciles the executive time allocations so they honour the coupling and clamping rules:
-	/// when a minimum or maximum bound is present but no estimation has been specified yet, the estimation
-	/// adopts that bound (preferring the minimum); and whenever a bound is present the estimation is clamped
-	/// into the resulting <c>[minimum, maximum]</c> envelope.
+	/// Gets or sets the optional timeframe this executive prefers for its execution (its affinity).
+	/// Affinity is purely semantic: it flags a preferred portion of the day and enforces nothing.
+	/// </summary>
+	public long? AffinityTimeframeId { get; set; }
+
+	[ForeignKey(nameof(AffinityTimeframeId))]
+	/// <summary>
+	/// Gets or sets the preferred timeframe for this executive's execution.
+	/// </summary>
+	public Timeframe? AffinityTimeframe { get; set; }
+
+	/// <summary>
+	/// Reconciles the executive time allocations through the shared rules of <see cref="TimeAllocations.Normalize"/>.
 	/// </summary>
 	public void NormalizeTimeAllocations()
 	{
-		Estimation ??= Minimum ?? Maximum;
-
-		if (Estimation is null)
-		{
-			return;
-		}
-
-		if (Maximum is not null && Estimation > Maximum)
-		{
-			Estimation = Maximum;
-		}
-
-		if (Minimum is not null && Estimation < Minimum)
-		{
-			Estimation = Minimum;
-		}
+		this.Normalize();
 	}
 }
