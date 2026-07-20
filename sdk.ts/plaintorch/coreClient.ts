@@ -7,6 +7,7 @@ import {
 	type PlaintorchCoreResponse,
 	type PlaintorchCoreTransport
 } from "./internal/transport"
+import { PlaintorchDeclarativesSdk } from "./declaratives/declarativesSdk"
 import { PlaintorchObjectivesSdk } from "./objectives/objectivesSdk"
 import { PlaintorchOnrushSdk } from "./onrush/onrushSdk"
 import { PlaintorchPolarisSdk } from "./polaris/polarisSdk"
@@ -32,6 +33,7 @@ export class PlaintorchCoreClient {
 	public readonly system: PlaintorchSystemSdk
 	public readonly directives: PlaintorchDirectivesSdk
 	public readonly objectives: PlaintorchObjectivesSdk
+	public readonly declaratives: PlaintorchDeclarativesSdk
 	public readonly onrush: PlaintorchOnrushSdk
 	public readonly polaris: PlaintorchPolarisSdk
 	public readonly lore: PlaintorchLoreSdk
@@ -49,6 +51,7 @@ export class PlaintorchCoreClient {
 		this.system = new PlaintorchSystemSdk(this, options.cacheTtlMs ?? 15_000)
 		this.directives = new PlaintorchDirectivesSdk(this)
 		this.objectives = new PlaintorchObjectivesSdk(this)
+		this.declaratives = new PlaintorchDeclarativesSdk(this)
 		this.onrush = new PlaintorchOnrushSdk(this)
 		this.polaris = new PlaintorchPolarisSdk(this)
 		this.lore = new PlaintorchLoreSdk(this)

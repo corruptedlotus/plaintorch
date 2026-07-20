@@ -59,6 +59,11 @@ public interface IObjectiveApi
 	Task<Objective> BeginBoundaryAsync(string objectiveId, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Materializes (or returns) the eventive for an objective's due date — the interaction trigger (PEP100).
+	/// </summary>
+	Task<Eventive> MaterializeDueEventiveAsync(string objectiveId, EventiveMaterialization request, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Deletes an objective.
 	/// </summary>
 	Task DeleteAsync(string objectiveId, CancellationToken cancellationToken = default);

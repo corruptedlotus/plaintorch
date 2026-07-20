@@ -97,6 +97,8 @@ public sealed class VaultSettings
             [VaultLocationKeys.Directives] = "Directives",
             [VaultLocationKeys.Onrush] = "Onrush",
             [VaultLocationKeys.Objectives] = "Objectives",
+            [VaultLocationKeys.Fates] = "Fates",
+            [VaultLocationKeys.Decrees] = "Decrees",
             [VaultLocationKeys.Journal] = "Journal",
             [VaultLocationKeys.Saga] = "Saga",
         };

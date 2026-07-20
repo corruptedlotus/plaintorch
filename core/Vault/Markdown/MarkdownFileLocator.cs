@@ -43,6 +43,8 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 		{
 			Directive directive => GetDirectiveFilePath(directive, parentEntity as Directive),
 			Objective objective => GetObjectiveFilePath(objective, parentEntity as Directive),
+			Fate fate => GetIncentiveFilePath(fate, layout.FatesRoot, parentEntity as Directive),
+			Decree decree => GetIncentiveFilePath(decree, layout.DecreesRoot, parentEntity as Directive),
 			OnrushSprint sprint => GetOnrushSprintFilePath(sprint),
 			ExecutiveOrder order => GetExecutiveOrderFilePath(order, parentEntity as OnrushSprint),
 			PolarisCycle cycle => GetPolarisCycleFilePath(cycle),
@@ -109,6 +111,22 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 		var container = owningDirective is null
 			? layout.ObjectivesRoot
 			: ResolvePartitionedParentDirectory(typeof(Objective), GetDirectiveDirectoryPath(owningDirective, owningDirective.ParentDirective));
+
+		return Path.Combine(container, $"{fileName}.md");
+	}
+
+	/// <summary>
+	/// Resolves the markdown file path for a declarative incentive (fate or decree), which follows the
+	/// objective placement policy: its standalone root, or its partition folder inside the owning directive.
+	/// </summary>
+	private string GetIncentiveFilePath(Incentive incentive, string standaloneRoot, Directive? owningDirective)
+	{
+		var storage = incentive.GetType().GetCustomAttribute<VaultStorageAttribute>()
+			?? throw new InvalidOperationException($"Type '{incentive.GetType().Name}' is not configured for vault markdown storage.");
+		var fileName = ResolvePuckFileBaseName(storage, incentive.Id, incentive.Title);
+		var container = owningDirective is null
+			? standaloneRoot
+			: ResolvePartitionedParentDirectory(incentive.GetType(), GetDirectiveDirectoryPath(owningDirective, owningDirective.ParentDirective));
 
 		return Path.Combine(container, $"{fileName}.md");
 	}
@@ -258,9 +276,18 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	/// </summary>
 	public static void ApplyObjectiveCompositionFromPath(Objective objective, string path)
 	{
-		ArgumentNullException.ThrowIfNull(objective);
-		ApplyLoosePuckIdentityFromPath(objective, path);
-		objective.DirectiveId = TryGetContainingDirectiveId(path, skipCurrentIfSelfNamed: false);
+		ApplyIncentiveCompositionFromPath(objective, path);
+	}
+
+	/// <summary>
+	/// Derives incentive identity and owning directive relation from a canonical markdown path.
+	/// Applies to all incentive kinds: objectives and the fate/decree declaratives (PEP100).
+	/// </summary>
+	public static void ApplyIncentiveCompositionFromPath(Incentive incentive, string path)
+	{
+		ArgumentNullException.ThrowIfNull(incentive);
+		ApplyLoosePuckIdentityFromPath(incentive, path);
+		incentive.DirectiveId = TryGetContainingDirectiveId(path, skipCurrentIfSelfNamed: false);
 	}
 
 	/// <summary>

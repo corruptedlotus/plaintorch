@@ -12,6 +12,14 @@ namespace Pleiades.Plaintorch.State;
 public sealed class PlaintorchStatePolicyProcessor
 {
 	private const string ObjectiveSettlementDescriptionPrefix = "PLAINTORCH objective settlement";
+	private const string AttentiveExecutionDescriptionPrefix = "PLAINTORCH attentive execution";
+	private const string ReflectiveCollectionDescriptionPrefix = "PLAINTORCH reflective collection";
+
+	/// <summary>
+	/// The fixed Celestron amount granted when all reflectives of a single Polaris cycle are done (PEP100).
+	/// The concrete amount is a placeholder until a proposal pins it down.
+	/// </summary>
+	public const decimal ReflectiveCollectionReward = 10;
 
 	/// <summary>
 	/// Applies all centralized state policies to the supplied context.
@@ -23,6 +31,8 @@ public sealed class PlaintorchStatePolicyProcessor
 		await EnforceOnrushRulesAsync(context, cancellationToken);
 		var supersededForecasts = await EnforcePolarisRulesAsync(context, cancellationToken);
 		await ApplyObjectiveSettlementRulesAsync(context, cancellationToken);
+		await ApplyAttentiveRewardRulesAsync(context, cancellationToken);
+		await ApplyReflectiveCollectionRewardRulesAsync(context, cancellationToken);
 
 		return supersededForecasts.Count == 0
 			? PlaintorchStatePolicyResult.Empty
@@ -188,6 +198,139 @@ public sealed class PlaintorchStatePolicyProcessor
 					SourcePuck = current.Id,
 					Description = $"{ObjectiveSettlementDescriptionPrefix} ({current.Status})",
 				});
+				continue;
+			}
+
+			if (existingTransactions.Count > 0)
+			{
+				context.CelestronLedger.RemoveRange(existingTransactions);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Grants the decree-predefined Celestron reward on each attentive execution (PEP100). The reward is
+	/// granted when an attentive transitions to Done and revoked when it leaves Done, keyed per attentive
+	/// instance so repeated occurrences of the same decree each reward independently.
+	/// </summary>
+	private static async Task ApplyAttentiveRewardRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var attentiveEntries = context.ChangeTracker.Entries<Attentive>()
+			.Where(entry => entry.State == EntityState.Modified)
+			.ToList();
+
+		if (attentiveEntries.Count == 0)
+		{
+			return;
+		}
+
+		foreach (var entry in attentiveEntries)
+		{
+			var current = entry.Entity;
+			var previousResolution = entry.OriginalValues.GetValue<AttentiveResolution>(nameof(Attentive.Resolution));
+			var wasDone = previousResolution == AttentiveResolution.Done;
+			var isDone = current.Resolution == AttentiveResolution.Done;
+
+			if (wasDone == isDone)
+			{
+				continue;
+			}
+
+			var executionDescription = $"{AttentiveExecutionDescriptionPrefix} (attentive {current.Id.ToString(CultureInfo.InvariantCulture)})";
+			var existingTransactions = await context.CelestronLedger
+				.Where(item => item.SourcePuck == current.DecreeId && item.Description == executionDescription)
+				.ToListAsync(cancellationToken);
+
+			if (isDone)
+			{
+				if (existingTransactions.Count > 0)
+				{
+					continue;
+				}
+
+				var reward = await context.Decrees
+					.AsNoTracking()
+					.IgnoreAutoIncludes()
+					.Where(item => item.Id == current.DecreeId)
+					.Select(item => item.ActiveCelestron)
+					.FirstOrDefaultAsync(cancellationToken);
+
+				if (reward == 0)
+				{
+					continue;
+				}
+
+				context.CelestronLedger.Add(new CelestronTransaction
+				{
+					Amount = reward,
+					SourcePuck = current.DecreeId,
+					Description = executionDescription,
+				});
+				continue;
+			}
+
+			if (existingTransactions.Count > 0)
+			{
+				context.CelestronLedger.RemoveRange(existingTransactions);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Applies the reflective collection reward (PEP100): reflectives ignore decree rewards; instead, once
+	/// all reflectives of a single Polaris cycle are done, the whole collection grants a fixed Celestron
+	/// amount. Un-executing a reflective revokes the cycle's collection reward.
+	/// </summary>
+	private static async Task ApplyReflectiveCollectionRewardRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var affectedCycleIds = context.ChangeTracker.Entries<Reflective>()
+			.Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+			.Select(entry => entry.Entity.PolarisCycleId)
+			.Where(cycleId => !string.IsNullOrWhiteSpace(cycleId))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+
+		foreach (var cycleId in affectedCycleIds)
+		{
+			var storedStates = await context.Set<Reflective>()
+				.AsNoTracking()
+				.Where(item => item.PolarisCycleId == cycleId)
+				.Select(item => new { item.Id, item.Executed })
+				.ToListAsync(cancellationToken);
+
+			// Overlay tracked changes on top of the stored snapshot so the decision reflects this save.
+			var effective = storedStates.ToDictionary(item => item.Id, item => item.Executed);
+			foreach (var entry in context.ChangeTracker.Entries<Reflective>()
+				.Where(entry => string.Equals(entry.Entity.PolarisCycleId, cycleId, StringComparison.OrdinalIgnoreCase)))
+			{
+				if (entry.State == EntityState.Deleted)
+				{
+					effective.Remove(entry.Entity.Id);
+				}
+				else
+				{
+					effective[entry.Entity.Id] = entry.Entity.Executed;
+				}
+			}
+
+			var allDone = effective.Count > 0 && effective.Values.All(executed => executed);
+			var collectionDescription = $"{ReflectiveCollectionDescriptionPrefix} (cycle {cycleId})";
+			var existingTransactions = await context.CelestronLedger
+				.Where(item => item.SourcePuck == cycleId && item.Description == collectionDescription)
+				.ToListAsync(cancellationToken);
+
+			if (allDone)
+			{
+				if (existingTransactions.Count == 0)
+				{
+					context.CelestronLedger.Add(new CelestronTransaction
+					{
+						Amount = ReflectiveCollectionReward,
+						SourcePuck = cycleId,
+						Description = collectionDescription,
+					});
+				}
+
 				continue;
 			}
 

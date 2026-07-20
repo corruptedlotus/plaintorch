@@ -148,6 +148,10 @@ public sealed class DirectiveApiService(
 
 		var directive = await context.Directives.FirstOrDefaultAsync(item => item.Id == directiveId, cancellationToken)
 			?? throw new InvalidOperationException($"Directive '{directiveId}' was not found.");
+		if (directive is LunarDirective)
+		{
+			throw new InvalidOperationException($"Directive '{directiveId}' is a lunar directive; shift its moonlight state through the lunar workflow instead.");
+		}
 
 		var previous = Clone(directive);
 		directive.Status = shift.Status;
@@ -168,13 +172,13 @@ public sealed class DirectiveApiService(
 		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
 		var directive = await context.Directives
 			.Include(item => item.Subdirectives)
-			.Include(item => item.Objectives)
+			.Include(item => item.Incentives)
 			.FirstOrDefaultAsync(item => item.Id == directiveId, cancellationToken)
 			?? throw new InvalidOperationException($"Directive '{directiveId}' was not found.");
 
-		if (directive.Subdirectives.Count > 0 || directive.Objectives.Count > 0)
+		if (directive.Subdirectives.Count > 0 || directive.Incentives.Count > 0)
 		{
-			throw new InvalidOperationException("Directive cannot be deleted while it still has subdirectives or objectives.");
+			throw new InvalidOperationException("Directive cannot be deleted while it still has subdirectives or incentives.");
 		}
 
 		var snapshot = Clone(directive);
@@ -286,6 +290,169 @@ public sealed class DirectiveApiService(
 	{
 		return string.Equals(issue.FieldPath, "id", StringComparison.OrdinalIgnoreCase)
 			&& issue.Message.Contains("missing required caller-provided PUCK input", StringComparison.OrdinalIgnoreCase);
+	}
+
+	/// <inheritdoc />
+	public async Task<LunarDirective> CreateLunarAsync(string title, string? codename = null, string? parentDirectiveId = null, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(title);
+		if (!string.IsNullOrWhiteSpace(parentDirectiveId))
+		{
+			var parentExists = await context.Directives.AnyAsync(directive => directive.Id == parentDirectiveId, cancellationToken);
+			if (!parentExists)
+			{
+				throw new InvalidOperationException($"Parent directive '{parentDirectiveId}' was not found.");
+			}
+		}
+
+		var directive = new LunarDirective
+		{
+			Id = puckCreationService.CreateIdFor<LunarDirective>(),
+			Title = title,
+			Codename = codename,
+			ParentDirectiveId = parentDirectiveId,
+		};
+
+		context.Directives.Add(directive);
+		await context.SaveChangesAsync(cancellationToken);
+		await markdownFileService.SaveDirectiveAsync(directive, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync("api", "directive.create-lunar", subject: directive, cancellationToken: cancellationToken);
+		return directive;
+	}
+
+	/// <inheritdoc />
+	public async Task<LunarDirective> ShiftLunarWorkflowAsync(string directiveId, LunarDirectiveWorkflowShift shift, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
+		ArgumentNullException.ThrowIfNull(shift);
+
+		var directive = await context.Directives.FirstOrDefaultAsync(item => item.Id == directiveId, cancellationToken)
+			?? throw new InvalidOperationException($"Directive '{directiveId}' was not found.");
+		if (directive is not LunarDirective lunar)
+		{
+			throw new InvalidOperationException($"Directive '{directiveId}' is a stellar directive and has no moonlight state; use the regular workflow shift instead.");
+		}
+
+		var previousStatus = lunar.LunarStatus;
+		lunar.LunarStatus = shift.Status;
+		await context.SaveChangesAsync(cancellationToken);
+		await markdownFileService.SaveDirectiveAsync(lunar, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"directive.lunar-workflow-shift",
+			subject: lunar,
+			details: new { from = previousStatus.ToString(), to = lunar.LunarStatus.ToString() },
+			cancellationToken: cancellationToken);
+		return lunar;
+	}
+
+	/// <inheritdoc />
+	public async Task<Timeframe> CreateTimeframeAsync(string directiveId, TimeframePlan plan, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
+		ArgumentNullException.ThrowIfNull(plan);
+		ArgumentException.ThrowIfNullOrWhiteSpace(plan.Title);
+
+		var directiveExists = await context.Directives.AnyAsync(item => item.Id == directiveId, cancellationToken);
+		if (!directiveExists)
+		{
+			throw new InvalidOperationException($"Directive '{directiveId}' was not found.");
+		}
+
+		PlaintorchOrbitService.ValidateTimeframeOrbit(plan.Orbit);
+		var timeframe = new Timeframe
+		{
+			DirectiveId = directiveId,
+			Title = plan.Title,
+			StartTime = plan.StartTime,
+			EndTime = plan.EndTime,
+			Orbit = plan.Orbit,
+		};
+
+		context.Timeframes.Add(timeframe);
+		await context.SaveChangesAsync(cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"directive.create-timeframe",
+			subjectType: nameof(Timeframe),
+			subjectId: timeframe.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+			subjectTitle: timeframe.Title,
+			details: new { directiveId },
+			cancellationToken: cancellationToken);
+		return timeframe;
+	}
+
+	/// <inheritdoc />
+	public async Task<IReadOnlyList<Timeframe>> ListTimeframesAsync(string directiveId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
+		return await context.Timeframes
+			.AsNoTracking()
+			.Where(item => item.DirectiveId == directiveId)
+			.OrderBy(item => item.StartTime)
+			.ToListAsync(cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public async Task<Timeframe> UpdateTimeframeAsync(long timeframeId, TimeframeUpdate update, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(update);
+		var timeframe = await context.Timeframes.FirstOrDefaultAsync(item => item.Id == timeframeId, cancellationToken)
+			?? throw new InvalidOperationException($"Timeframe '{timeframeId}' was not found.");
+
+		if (!string.IsNullOrWhiteSpace(update.Title))
+		{
+			timeframe.Title = update.Title;
+		}
+
+		if (update.StartTime is not null)
+		{
+			timeframe.StartTime = update.StartTime.Value;
+		}
+
+		if (update.EndTime is not null)
+		{
+			timeframe.EndTime = update.EndTime.Value;
+		}
+
+		if (update.Orbit is not null)
+		{
+			var normalizedOrbit = string.IsNullOrWhiteSpace(update.Orbit) ? null : update.Orbit;
+			PlaintorchOrbitService.ValidateTimeframeOrbit(normalizedOrbit);
+			timeframe.Orbit = normalizedOrbit;
+		}
+
+		if (update.ClearOrbit)
+		{
+			timeframe.Orbit = null;
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"directive.update-timeframe",
+			subjectType: nameof(Timeframe),
+			subjectId: timeframe.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+			subjectTitle: timeframe.Title,
+			cancellationToken: cancellationToken);
+		return timeframe;
+	}
+
+	/// <inheritdoc />
+	public async Task DeleteTimeframeAsync(long timeframeId, CancellationToken cancellationToken = default)
+	{
+		var timeframe = await context.Timeframes.FirstOrDefaultAsync(item => item.Id == timeframeId, cancellationToken)
+			?? throw new InvalidOperationException($"Timeframe '{timeframeId}' was not found.");
+
+		context.Timeframes.Remove(timeframe);
+		await context.SaveChangesAsync(cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"directive.delete-timeframe",
+			subjectType: nameof(Timeframe),
+			subjectId: timeframe.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+			subjectTitle: timeframe.Title,
+			cancellationToken: cancellationToken);
 	}
 
 	private async Task<Directive> CreateInternalAsync(string title, string? codename, string? parentDirectiveId, string? requestedId, CancellationToken cancellationToken)

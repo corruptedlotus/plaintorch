@@ -97,12 +97,28 @@ public sealed class PuckEntityResolutionService(
 	{
 		if (entityType == typeof(Directive))
 		{
-			return await context.Directives.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+			// Lunar directives resolve through their own declaration; keep base resolution stellar-only.
+			return await context.Directives.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id && !(item is LunarDirective), cancellationToken);
+		}
+
+		if (entityType == typeof(LunarDirective))
+		{
+			return await context.LunarDirectives.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
 		}
 
 		if (entityType == typeof(Objective))
 		{
-			return await context.Objectives.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+			return await context.Objectives.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+		}
+
+		if (entityType == typeof(Fate))
+		{
+			return await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+		}
+
+		if (entityType == typeof(Decree))
+		{
+			return await context.Decrees.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
 		}
 
 		if (entityType == typeof(OnrushSprint))

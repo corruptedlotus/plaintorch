@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Puck;
 using Pleiades.Vault;
@@ -7,7 +8,9 @@ using Pleiades.Vault.Markdown;
 namespace Pleiades.Orchestration;
 
 /// <summary>
-/// Represents a long-running directive that can own objectives and nested directives.
+/// Represents a long-running stellar directive that can own incentives and nested directives.
+/// PEP100 renames this classic lifecycle-driven kind to "Stellar"; it shares its table with
+/// <see cref="LunarDirective"/> through a discriminator.
 /// </summary>
 [PuckFormat("A{S:6}")]
 [VaultStorage(
@@ -17,7 +20,10 @@ namespace Pleiades.Orchestration;
 	ParentIdProperty = nameof(ParentDirectiveId),
 	ParentEntityType = typeof(Directive))]
 [Index(nameof(Codename), IsUnique = true)]
-public sealed class Directive : PuckNamedEntity
+[JsonPolymorphic]
+[JsonDerivedType(typeof(Directive), "stellar")]
+[JsonDerivedType(typeof(LunarDirective), "lunar")]
+public class Directive : PuckNamedEntity
 {
 	/// <summary>
 	/// Gets or sets the optional directive codename for cross-referencing in lore and communication.
@@ -73,9 +79,21 @@ public sealed class Directive : PuckNamedEntity
 	[MarkdownField("endDate")]
 	public DateOnly? EndDate { get; set; }
 
-	[InverseProperty(nameof(Objective.Directive))]
+	[InverseProperty(nameof(Incentive.Directive))]
+	/// <summary>
+	/// Gets the incentives (objectives and declaratives) attached to this directive.
+	/// </summary>
+	public List<Incentive> Incentives { get; set; } = [];
+
+	[InverseProperty(nameof(Timeframe.Directive))]
+	/// <summary>
+	/// Gets the timeframes defined by this directive.
+	/// </summary>
+	public List<Timeframe> Timeframes { get; set; } = [];
+
+	[NotMapped]
 	/// <summary>
 	/// Gets the objectives attached to this directive.
 	/// </summary>
-	public List<Objective> Objectives { get; set; } = [];
+	public IEnumerable<Objective> Objectives => Incentives.OfType<Objective>();
 }

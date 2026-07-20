@@ -54,6 +54,17 @@ public interface IPolarisCycleApi
 	Task<Executive> UpdateExecutiveAsync(long executiveId, ExecutiveUpdate update, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Gets the unbound eventives and attentives a Polaris cycle includes non-structurally because they fall
+	/// within 24h of its beginning (PEP100).
+	/// </summary>
+	Task<PolarisCycleInclusions> GetInclusionsAsync(string? polarisCycleId = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Manually adds a decree to a Polaris cycle, creating a Polaris-bound attentive (PEP100).
+	/// </summary>
+	Task<Attentive> AddDecreeAttentiveAsync(PolarisAttentiveAdd request, string? polarisCycleId = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Draws reflectives for a Polaris cycle.
 	/// </summary>
 	Task<IReadOnlyList<Reflective>> DrawReflectivesAsync(ReflectiveDrawRequest request, CancellationToken cancellationToken = default);

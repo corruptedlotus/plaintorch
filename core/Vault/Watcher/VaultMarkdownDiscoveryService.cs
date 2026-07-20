@@ -511,8 +511,8 @@ public sealed class VaultMarkdownDiscoveryService(
 			case Directive directive:
 				MarkdownFileLocator.ApplyDirectiveCompositionFromPath(directive, path);
 				break;
-			case Objective objective:
-				MarkdownFileLocator.ApplyObjectiveCompositionFromPath(objective, path);
+			case Incentive incentive:
+				MarkdownFileLocator.ApplyIncentiveCompositionFromPath(incentive, path);
 				break;
 			case ExecutiveOrder order:
 				MarkdownFileLocator.ApplyExecutiveOrderCompositionFromPath(order, path);
@@ -553,12 +553,15 @@ public sealed class VaultMarkdownDiscoveryService(
 
 				break;
 			}
-			case Objective objective:
+			case Incentive incentive:
 			{
-				var normalizedObjectivesRoot = Path.GetFullPath(layout.ObjectivesRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+				// Each incentive kind's standalone root carries no directive ancestry authority.
+				var storage = incentive.GetType().GetCustomAttribute<VaultStorageAttribute>();
+				var standaloneRoot = storage is null ? layout.ObjectivesRoot : layout.GetLocationRoot(storage.LocationKey);
+				var normalizedStandaloneRoot = Path.GetFullPath(standaloneRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 				var normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-				if (string.Equals(normalizedPath, normalizedObjectivesRoot, StringComparison.OrdinalIgnoreCase)
-					|| normalizedPath.StartsWith(normalizedObjectivesRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+				if (string.Equals(normalizedPath, normalizedStandaloneRoot, StringComparison.OrdinalIgnoreCase)
+					|| normalizedPath.StartsWith(normalizedStandaloneRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
 				{
 					break;
 				}
@@ -569,14 +572,14 @@ public sealed class VaultMarkdownDiscoveryService(
 					break;
 				}
 
-				if (!string.Equals(objective.DirectiveId, pathDirectiveId, StringComparison.OrdinalIgnoreCase))
+				if (!string.Equals(incentive.DirectiveId, pathDirectiveId, StringComparison.OrdinalIgnoreCase))
 				{
-					if (!string.IsNullOrWhiteSpace(objective.DirectiveId))
+					if (!string.IsNullOrWhiteSpace(incentive.DirectiveId))
 					{
-						issues.Add(new MarkdownValidationIssue("directive", "Frontmatter directive relation does not match the path-derived directive container.", objective.DirectiveId));
+						issues.Add(new MarkdownValidationIssue("directive", "Frontmatter directive relation does not match the path-derived directive container.", incentive.DirectiveId));
 					}
 
-					objective.DirectiveId = pathDirectiveId;
+					incentive.DirectiveId = pathDirectiveId;
 				}
 
 				break;

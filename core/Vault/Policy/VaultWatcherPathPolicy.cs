@@ -196,6 +196,8 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout)
 	{
 		return IsUnderRoot(fullPath, layout.MetadataRoot)
 			|| IsUnderRoot(fullPath, layout.ObjectivesRoot)
+			|| IsUnderRoot(fullPath, layout.FatesRoot)
+			|| IsUnderRoot(fullPath, layout.DecreesRoot)
 			|| IsUnderRoot(fullPath, layout.OnrushRoot)
 			|| IsUnderRoot(fullPath, layout.JournalRoot)
 			|| IsUnderRoot(fullPath, layout.SagaRoot);
@@ -225,6 +227,8 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout)
 	{
 		return IsDirectoryEqual(fullPath, layout.DirectivesRoot)
 			|| IsDirectoryEqual(fullPath, layout.ObjectivesRoot)
+			|| IsDirectoryEqual(fullPath, layout.FatesRoot)
+			|| IsDirectoryEqual(fullPath, layout.DecreesRoot)
 			|| IsDirectoryEqual(fullPath, layout.OnrushRoot)
 			|| IsDirectoryEqual(fullPath, layout.JournalRoot)
 			|| IsDirectoryEqual(fullPath, layout.SagaRoot)

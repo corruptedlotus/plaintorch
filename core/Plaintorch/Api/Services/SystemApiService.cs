@@ -149,7 +149,10 @@ public sealed class SystemApiService(
 		var entityKind = resolved.EntityType switch
 		{
 			nameof(Directive) => "directive",
+			nameof(LunarDirective) => "lunar-directive",
 			nameof(Objective) => "objective",
+			nameof(Fate) => "fate",
+			nameof(Decree) => "decree",
 			nameof(OnrushSprint) => "onrush-sprint",
 			nameof(ExecutiveOrder) => "executive-order",
 			nameof(PolarisCycle) => "polaris-cycle",
