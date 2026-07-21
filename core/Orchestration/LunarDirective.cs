@@ -12,6 +12,7 @@ namespace Pleiades.Orchestration;
 /// They ignore the stellar lifecycle <see cref="Directive.Status"/> and carry their own
 /// <see cref="LunarStatus"/> instead. Vault storage metadata is inherited from <see cref="Directive"/>.
 /// </remarks>
+[PuckEntity("lunar-directive")]
 [PuckFormat("LUNA{S:3}")]
 public sealed class LunarDirective : Directive
 {

@@ -1,10 +1,10 @@
 import { Component, component, css, html, property, state, literal as l } from '@a11d/lit'
 import { App } from 'obsidian'
-import { plaintorchNodeCoreClient, VaultNoteAuthorityResolution } from '@pleiades/sdk/plaintorch/node'
+import { plaintorchNodeCoreClient, EntityExistence } from '@pleiades/sdk/plaintorch/node'
 
 @component('p7t-note-banner')
 export class NoteBanner extends Component {
-	@state() note?: VaultNoteAuthorityResolution
+	@state() note?: EntityExistence
 	@property({ reflect: true, type: Boolean }) invalid = true
 	
 	app?: App
@@ -57,10 +57,14 @@ export class NoteBanner extends Component {
 		}
 	}
 
+	private get entityTitle(): string {
+		return (this.note?.entity as { title?: string } | undefined)?.title ?? ''
+	}
+
 	protected override async initialized() {
 		const note = await plaintorchNodeCoreClient.system.resolveNote(this.file)
 		this.note = note
-		this.invalid = !(note?.isPlaintorchEntity)
+		this.invalid = !(note?.exists)
 	}
 }
 
