@@ -15,7 +15,7 @@ public interface ISystemApi
 	/// <summary>
 	/// Resolves the authoritative PLAINTORCH entity interpretation for a vault-relative markdown path.
 	/// </summary>
-	Task<VaultNoteAuthorityResolution> ResolveVaultNoteAsync(string vaultRelativePath, CancellationToken cancellationToken = default);
+	Task<EntityExistence> ResolveVaultNoteAsync(string vaultRelativePath, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Resolves a PUCK identifier into its authoritative entity representation.

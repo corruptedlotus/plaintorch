@@ -13,6 +13,7 @@ namespace Pleiades.Orchestration;
 /// Decrees are event-like: they are never acted on directly; each occurrence materializes an
 /// <see cref="Attentive"/> instead. Decrees are exempt from the incentive parent system.
 /// </remarks>
+[PuckEntity("decree")]
 [PuckFormat("r{S:8}")]
 [VaultStorage(
 	LocationKey = VaultLocationKeys.Decrees,

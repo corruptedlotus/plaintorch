@@ -23,36 +23,21 @@ public sealed record SystemBriefing(
 	IReadOnlyList<LorePage> ActiveLorePages);
 
 /// <summary>
-/// Represents the authoritative PLAINTORCH interpretation of a vault markdown path.
+/// Represents a resolution payload for system-level entity lookup, produced by both PUCK identifier and
+/// vault-note resolution. The payload is deliberately client-agnostic: surfaces derive their own presentation
+/// concerns (such as custom-element tag names) from <see cref="EntityKind"/>.
 /// </summary>
-/// <param name="VaultRelativePath">The vault-relative markdown path that was resolved.</param>
-/// <param name="IsPlaintorchEntity">Indicates whether the path resolves to a PLAINTORCH-backed entity.</param>
-/// <param name="EntityKind">The normalized plugin-facing entity kind when the path is recognized.</param>
-/// <param name="EntityName">The CLR/domain entity name when the path is recognized.</param>
-/// <param name="TagName">The matching custom-element tag name when the path is recognized.</param>
-/// <param name="Puck">The parsed PUCK token when one is present in the file identity.</param>
-/// <param name="Title">The resolved entity title from the file identity.</param>
-public sealed record VaultNoteAuthorityResolution(
-	string VaultRelativePath,
-	bool IsPlaintorchEntity,
-	string? EntityKind = null,
-	string? EntityName = null,
-	string? TagName = null,
-	string? Puck = null,
-	string? Title = null);
-
-/// <summary>
-/// Represents a PUCK resolution payload for system-level entity lookup.
-/// </summary>
-/// <param name="Puck">The PUCK identifier being resolved.</param>
-/// <param name="Exists">Indicates whether an entity exists for the provided PUCK.</param>
-/// <param name="EntityType">The resolved entity type name when found.</param>
+/// <param name="Puck">The PUCK identifier being resolved, or empty when a recognized note has no resolvable identity.</param>
+/// <param name="Exists">Indicates whether the lookup resolves to a PLAINTORCH-backed entity.</param>
+/// <param name="EntityType">The resolved entity CLR type name when found.</param>
+/// <param name="EntityKind">The stable entity kind declared by the entity via its <c>PuckEntity</c> attribute when found.</param>
 /// <param name="Entity">The resolved entity payload when found.</param>
 /// <param name="AssociatedNote">The associated vault-relative markdown path when found and file-backed.</param>
 public sealed record EntityExistence(
 	string Puck,
 	bool Exists,
 	string? EntityType = null,
+	string? EntityKind = null,
 	object? Entity = null,
 	string? AssociatedNote = null);
 

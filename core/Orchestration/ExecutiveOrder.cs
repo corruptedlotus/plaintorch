@@ -12,6 +12,7 @@ namespace Pleiades.Orchestration;
 /// The PUCK notation embeds the owning onrush's trimmed numeric part as its manual first segment
 /// (<c>Onrush x0180 -&gt; E.O. x180-o01</c>), and the order counter increments per owning onrush.
 /// </remarks>
+[PuckEntity("executive-order")]
 [PuckFormat("x{?}-o{I:2:1}")]
 [VaultStorage(
 	LocationKey = VaultLocationKeys.Onrush,

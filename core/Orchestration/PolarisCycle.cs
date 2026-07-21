@@ -8,6 +8,7 @@ namespace Pleiades.Orchestration;
 /// <summary>
 /// Represents a Polaris planning or execution cycle for a single day.
 /// </summary>
+[PuckEntity("polaris-cycle")]
 [PuckFormat("{D:p}")]
 [VaultStorage(
 	LocationKey = VaultLocationKeys.Journal,

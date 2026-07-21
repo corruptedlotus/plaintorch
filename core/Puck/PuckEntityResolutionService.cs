@@ -54,7 +54,7 @@ public sealed class PuckEntityResolutionService(
 
 		var match = matches[0];
 		var associatedNote = ResolveAssociatedNotePath(match.Type, normalizedId);
-		return new PuckEntityExistence(normalizedId, true, match.Type.Name, match.Entity, associatedNote);
+		return new PuckEntityExistence(normalizedId, true, match.Type.Name, PuckEntityAttribute.ResolveKind(match.Type), match.Entity, associatedNote);
 	}
 
 	private async Task<IReadOnlyList<PuckCompiledModel>> ResolveCandidatesAsync(string id, CancellationToken cancellationToken)

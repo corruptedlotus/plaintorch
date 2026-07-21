@@ -10,6 +10,7 @@ namespace Pleiades.Orchestration;
 /// Fates can be missed or cancelled, be all-day or carry a start and end time (ref. CalDAV vEVENT),
 /// and can schedule themselves through the Orbit notation.
 /// </summary>
+[PuckEntity("fate")]
 [PuckFormat("e{S:8}")]
 [VaultStorage(
 	LocationKey = VaultLocationKeys.Fates,

@@ -1,5 +1,5 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian"
-import type { SystemBriefing, VaultNoteAuthorityResolution } from "@pleiades/sdk/plaintorch"
+import type { EntityExistence, SystemBriefing } from "@pleiades/sdk/plaintorch"
 
 export const PLAINTORCH_BRIEFING_VIEW_TYPE = "plaintorch-briefing"
 
@@ -306,7 +306,7 @@ async function detectPlaintorchEntity(
 	fallbackTitle: string
 ): Promise<PlaintorchEntityDescriptor | undefined> {
 	const coreResult = await coreClient.system.resolveNote(filePath)
-	if (!coreResult?.isPlaintorchEntity || !coreResult.entityKind) {
+	if (!coreResult?.exists || !coreResult.entityKind) {
 		return undefined
 	}
 
@@ -315,10 +315,12 @@ async function detectPlaintorchEntity(
 		return undefined
 	}
 
+	const resolvedTitle = (coreResult.entity as { title?: string } | undefined)?.title
+
 	return {
 		kind,
 		label: entityMetadata[kind].label,
-		title: coreResult.title ?? fallbackTitle,
+		title: resolvedTitle ?? fallbackTitle,
 		puck: coreResult.puck
 	}
 }
@@ -333,7 +335,7 @@ async function getPlaintorchNodeCoreClient(): Promise<PlaintorchNodeCoreClient> 
 	return cachedCoreClient
 }
 
-function normalizeKind(result: VaultNoteAuthorityResolution): PlaintorchEntityKind | undefined {
+function normalizeKind(result: EntityExistence): PlaintorchEntityKind | undefined {
 	if (!result.entityKind) {
 		return undefined
 	}

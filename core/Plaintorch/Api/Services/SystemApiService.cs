@@ -67,7 +67,7 @@ public sealed class SystemApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<VaultNoteAuthorityResolution> ResolveVaultNoteAsync(string vaultRelativePath, CancellationToken cancellationToken = default)
+	public async Task<EntityExistence> ResolveVaultNoteAsync(string vaultRelativePath, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(vaultRelativePath);
 		var normalizedRelativePath = vaultRelativePath
@@ -83,41 +83,31 @@ public sealed class SystemApiService(
 
 		if (!pathSyncModelCatalog.TryResolve(absolutePath, out var model) || model is null)
 		{
-			var freeformResolution = await ResolveByFrontMatterPuckAsync(absolutePath, normalizedRelativePath, cancellationToken);
-			return freeformResolution ?? new VaultNoteAuthorityResolution(normalizedRelativePath, false);
+			var freeformResolution = await ResolveByFrontMatterPuckAsync(absolutePath, cancellationToken);
+			return freeformResolution ?? new EntityExistence(normalizedRelativePath, false);
 		}
 
-		var entityKind = model.EntityType.Name switch
-		{
-			"Directive" => "directive",
-			"Objective" => "objective",
-			"OnrushSprint" => "onrush-sprint",
-			"PolarisCycle" => "polaris-cycle",
-			"LorePage" => "lore-page",
-			_ => null,
-		};
-
+		var entityKind = PuckEntityAttribute.ResolveKind(model.EntityType);
 		if (entityKind is null)
 		{
-			return new VaultNoteAuthorityResolution(normalizedRelativePath, false);
+			return new EntityExistence(normalizedRelativePath, false);
 		}
 
 		var (pathPuck, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(absolutePath);
-		var (resolvedPuck, resolvedTitle) = await ResolveEntityIdentityAsync(model.EntityType, absolutePath, pathPuck, pathTitle, cancellationToken, logger);
+		var (resolvedPuck, _) = await ResolveEntityIdentityAsync(model.EntityType, absolutePath, pathPuck, pathTitle, cancellationToken, logger);
 
-		return new VaultNoteAuthorityResolution(
-			normalizedRelativePath,
-			true,
-			entityKind,
-			model.EntityName,
-			$"plaintorch-{entityKind}",
-			resolvedPuck,
-			resolvedTitle);
+		if (string.IsNullOrWhiteSpace(resolvedPuck))
+		{
+			// The note is a recognized PLAINTORCH entity kind by path shape, but its identity is not yet
+			// resolvable to a stored entity (for example, an implicit note not yet synced to the database).
+			return new EntityExistence(string.Empty, true, model.EntityType.Name, entityKind, null, normalizedRelativePath);
+		}
+
+		return await ResolveEntityByPuckAsync(resolvedPuck, cancellationToken);
 	}
 
-	private async Task<VaultNoteAuthorityResolution?> ResolveByFrontMatterPuckAsync(
+	private async Task<EntityExistence?> ResolveByFrontMatterPuckAsync(
 		string absolutePath,
-		string normalizedRelativePath,
 		CancellationToken cancellationToken)
 	{
 		if (!File.Exists(absolutePath)
@@ -141,42 +131,12 @@ public sealed class SystemApiService(
 		}
 
 		var resolved = await puckEntityResolutionService.ResolveAsync(puck, cancellationToken);
-		if (!resolved.Exists || string.IsNullOrWhiteSpace(resolved.EntityType))
+		if (!resolved.Exists || string.IsNullOrWhiteSpace(resolved.EntityKind))
 		{
 			return null;
 		}
 
-		var entityKind = resolved.EntityType switch
-		{
-			nameof(Directive) => "directive",
-			nameof(LunarDirective) => "lunar-directive",
-			nameof(Objective) => "objective",
-			nameof(Fate) => "fate",
-			nameof(Decree) => "decree",
-			nameof(OnrushSprint) => "onrush-sprint",
-			nameof(ExecutiveOrder) => "executive-order",
-			nameof(PolarisCycle) => "polaris-cycle",
-			nameof(LorePage) => "lore-page",
-			_ => null,
-		};
-
-		if (entityKind is null)
-		{
-			return null;
-		}
-
-		var resolvedTitle = resolved.Entity is IPuckNamedEntity named
-			? named.Title
-			: MarkdownFileLocator.ParseLoosePuckIdentityFromPath(absolutePath).Title;
-
-		return new VaultNoteAuthorityResolution(
-			normalizedRelativePath,
-			true,
-			entityKind,
-			resolved.EntityType,
-			$"plaintorch-{entityKind}",
-			resolved.Id,
-			resolvedTitle);
+		return ToEntityExistence(resolved);
 	}
 
 	private static string NormalizeFrontMatterPuck(string rawPuck)
@@ -188,10 +148,16 @@ public sealed class SystemApiService(
 	public async Task<EntityExistence> ResolveEntityByPuckAsync(string id, CancellationToken cancellationToken = default)
 	{
 		var resolved = await puckEntityResolutionService.ResolveAsync(id, cancellationToken);
+		return ToEntityExistence(resolved);
+	}
+
+	private static EntityExistence ToEntityExistence(PuckEntityExistence resolved)
+	{
 		return new EntityExistence(
 			resolved.Id,
 			resolved.Exists,
 			resolved.EntityType,
+			resolved.EntityKind,
 			resolved.Entity,
 			resolved.AssociatedNote);
 	}

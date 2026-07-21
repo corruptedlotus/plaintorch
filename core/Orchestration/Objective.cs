@@ -9,6 +9,7 @@ namespace Pleiades.Orchestration;
 /// Represents an actionable objective attached to directives and optional onrush sprints.
 /// Objectives are incentives: they share their table with the fate and decree declaratives (PEP100).
 /// </summary>
+[PuckEntity("objective")]
 [PuckFormat("j{S:8}")]
 [VaultStorage(
 	LocationKey = VaultLocationKeys.Objectives,

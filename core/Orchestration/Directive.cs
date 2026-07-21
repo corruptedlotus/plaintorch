@@ -12,6 +12,7 @@ namespace Pleiades.Orchestration;
 /// PEP100 renames this classic lifecycle-driven kind to "Stellar"; it shares its table with
 /// <see cref="LunarDirective"/> through a discriminator.
 /// </summary>
+[PuckEntity("directive")]
 [PuckFormat("A{S:6}")]
 [VaultStorage(
 	LocationKey = VaultLocationKeys.Directives,
