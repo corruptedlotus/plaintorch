@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations.Schema;
 using Pleiades.Puck;
 using Pleiades.Vault.Markdown;
 
@@ -19,6 +20,12 @@ public sealed class LunarDirective : Directive
 	/// <summary>
 	/// Gets or sets the moonlight state of the lunar directive.
 	/// </summary>
-	[MarkdownField("lunarStatus")]
-	public LunarDirectiveStatus LunarStatus { get; set; } = LunarDirectiveStatus.OnHold;
+	[MarkdownField("status")]
+	public LunarDirectiveStatus Status { get; set; } = LunarDirectiveStatus.OnHold;
+
+	[InverseProperty(nameof(Timeframe.Directive))]
+	/// <summary>
+	/// Gets the timeframes defined by this directive.
+	/// </summary>
+	public List<Timeframe> Timeframes { get; set; } = [];
 }

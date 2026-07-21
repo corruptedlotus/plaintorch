@@ -22,9 +22,9 @@ namespace Pleiades.Orchestration;
 	ParentEntityType = typeof(Directive))]
 [Index(nameof(Codename), IsUnique = true)]
 [JsonPolymorphic]
-[JsonDerivedType(typeof(Directive), "stellar")]
+[JsonDerivedType(typeof(StellarDirective), "stellar")]
 [JsonDerivedType(typeof(LunarDirective), "lunar")]
-public class Directive : PuckNamedEntity
+public abstract class Directive : PuckNamedEntity
 {
 	/// <summary>
 	/// Gets or sets the optional directive codename for cross-referencing in lore and communication.
@@ -51,46 +51,16 @@ public class Directive : PuckNamedEntity
 	public List<Directive> Subdirectives { get; set; } = [];
 
 	/// <summary>
-	/// Gets or sets the current directive workflow status.
-	/// </summary>
-	[MarkdownField("status")]
-	public DirectiveStatus Status { get; set; } = DirectiveStatus.Planned;
-
-	/// <summary>
 	/// Gets or sets the assigned tag identifiers.
 	/// </summary>
 	[MarkdownField("tags")]
 	public List<string> Tags { get; set; } = [];
-
-	/// <summary>
-	/// Gets or sets the optional due date.
-	/// </summary>
-	[MarkdownField("due")]
-	public DateOnly? Due { get; set; }
-
-	/// <summary>
-	/// Gets or sets the optional directive start date.
-	/// </summary>
-	[MarkdownField("startDate")]
-	public DateOnly? StartDate { get; set; }
-
-	/// <summary>
-	/// Gets or sets the optional directive end date.
-	/// </summary>
-	[MarkdownField("endDate")]
-	public DateOnly? EndDate { get; set; }
 
 	[InverseProperty(nameof(Incentive.Directive))]
 	/// <summary>
 	/// Gets the incentives (objectives and declaratives) attached to this directive.
 	/// </summary>
 	public List<Incentive> Incentives { get; set; } = [];
-
-	[InverseProperty(nameof(Timeframe.Directive))]
-	/// <summary>
-	/// Gets the timeframes defined by this directive.
-	/// </summary>
-	public List<Timeframe> Timeframes { get; set; } = [];
 
 	[NotMapped]
 	/// <summary>

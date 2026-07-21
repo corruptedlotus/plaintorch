@@ -6,3 +6,5 @@ _sandbox/
 _sandbox_live/
 node_modules/
 **/.pt-temp/
+.vscode/
+.claude/

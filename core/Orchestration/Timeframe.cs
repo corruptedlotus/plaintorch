@@ -26,11 +26,11 @@ public sealed class Timeframe
 	public required string DirectiveId { get; set; }
 
 	[ForeignKey(nameof(DirectiveId))]
-	[InverseProperty(nameof(Orchestration.Directive.Timeframes))]
+	[InverseProperty(nameof(Orchestration.LunarDirective.Timeframes))]
 	/// <summary>
 	/// Gets or sets the defining directive.
 	/// </summary>
-	public Directive? Directive { get; set; }
+	public LunarDirective? Directive { get; set; }
 
 	/// <summary>
 	/// Gets or sets the human-readable timeframe title.
