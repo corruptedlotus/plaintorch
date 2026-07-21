@@ -59,6 +59,12 @@ public sealed class Decree : Incentive
 	public bool Reflect { get; set; }
 
 	/// <summary>
+	/// Gets or sets the decree college.
+	/// </summary>
+	[MarkdownField("college")]
+	public ObjectiveCollege College { get; set; } = ObjectiveCollege.Unspecified;
+
+	/// <summary>
 	/// Gets the attentives materialized from this decree (PEP100).
 	/// </summary>
 	[InverseProperty(nameof(Attentive.Decree))]
