@@ -8,15 +8,41 @@ namespace Pleiades.Plaintorch;
 /// </summary>
 public sealed class PlaintorchUserLayout
 {
-	private PlaintorchUserLayout(string rootPath)
+	/// <summary>
+	/// The name of the static predefined OS account that interactive/manual <c>serve</c> runs as during development.
+	/// End users run PLAINTORCH through the installed service runner instead, which uses the real per-user environment.
+	/// </summary>
+	public const string DevUserName = "PLAINTORCHDEV";
+
+	/// <summary>
+	/// The environment variable that overrides the development account password used to relaunch manual <c>serve</c>.
+	/// </summary>
+	public const string DevPasswordEnvironmentVariable = "PLAINTORCHDEV_PASSWORD";
+
+	/// <summary>
+	/// The documented default development account password. This is a deliberately static, dev-only value shared with the
+	/// setup scripts for an unprivileged local account; override it through <see cref="DevPasswordEnvironmentVariable"/>.
+	/// </summary>
+	public const string DefaultDevPassword = "Plaintorch-Dev-Local-1";
+
+	private readonly bool _ephemeral;
+
+	private PlaintorchUserLayout(string rootPath, bool ephemeral = false)
 	{
 		RootPath = rootPath;
+		_ephemeral = ephemeral;
 	}
 
 	/// <summary>
 	/// Gets the root directory that stores per-user PLAINTORCH host state.
 	/// </summary>
 	public string RootPath { get; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the fixed loopback HTTP endpoint should be bound in addition to the socket.
+	/// Socket-only is the default; the loopback endpoint is opt-in.
+	/// </summary>
+	public bool LoopbackEnabled { get; set; }
 
 	/// <summary>
 	/// Gets the path of the shared per-user host configuration file.
@@ -54,6 +80,21 @@ public sealed class PlaintorchUserLayout
 	public string SplashScriptPath => Path.Combine(SplashRootPath, "plaintorch-core-splash.ps1");
 
 	/// <summary>
+	/// Gets a value indicating whether this layout is an ephemeral, user-independent development profile.
+	/// </summary>
+	public bool IsEphemeral => _ephemeral;
+
+	/// <summary>
+	/// Resolves the development account password used to relaunch manual <c>serve</c>, honoring the environment override.
+	/// </summary>
+	/// <returns>The resolved development password.</returns>
+	public static string ResolveDevPassword()
+	{
+		var overridden = Environment.GetEnvironmentVariable(DevPasswordEnvironmentVariable);
+		return string.IsNullOrEmpty(overridden) ? DefaultDevPassword : overridden;
+	}
+
+	/// <summary>
 	/// Creates the default per-user PLAINTORCH host layout for the current platform.
 	/// </summary>
 	/// <returns>The resolved host layout.</returns>
@@ -64,11 +105,55 @@ public sealed class PlaintorchUserLayout
 	}
 
 	/// <summary>
+	/// Creates a per-user host layout rooted at an explicit directory.
+	/// </summary>
+	/// <param name="rootPath">The root directory that should hold per-user host state.</param>
+	/// <returns>The resolved host layout.</returns>
+	public static PlaintorchUserLayout CreateAt(string rootPath)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
+		return new PlaintorchUserLayout(Path.GetFullPath(rootPath));
+	}
+
+	/// <summary>
+	/// Creates a randomised, user-independent ephemeral host layout under the OS temporary directory.
+	/// Used by tests and throwaway sandbox runs so multiple instances never collide on the socket, config, or port.
+	/// </summary>
+	/// <returns>The resolved ephemeral host layout.</returns>
+	public static PlaintorchUserLayout CreateEphemeral()
+	{
+		var root = Path.Combine(Path.GetTempPath(), "plaintorch-dev", Guid.NewGuid().ToString("N"));
+		return new PlaintorchUserLayout(root, ephemeral: true);
+	}
+
+	/// <summary>
 	/// Ensures the per-user host root directory exists.
 	/// </summary>
 	public void EnsureExists()
 	{
 		Directory.CreateDirectory(RootPath);
+	}
+
+	/// <summary>
+	/// Removes an ephemeral host root and its contents. No-op for non-ephemeral layouts.
+	/// </summary>
+	public void Cleanup()
+	{
+		if (!_ephemeral || !Directory.Exists(RootPath))
+		{
+			return;
+		}
+
+		try
+		{
+			Directory.Delete(RootPath, recursive: true);
+		}
+		catch (IOException)
+		{
+		}
+		catch (UnauthorizedAccessException)
+		{
+		}
 	}
 }
 

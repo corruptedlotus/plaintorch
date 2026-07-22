@@ -1,0 +1,185 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
+using Pleiades.Orchestration;
+using Pleiades.Plaintorch;
+using Pleiades.Plaintorch.Api.Abstractions;
+using Pleiades.Vault;
+using Pleiades.Vault.Database;
+using Pleiades.Vault.Watcher;
+using Xunit;
+
+namespace Pleiades.Tests.Harness;
+
+/// <summary>
+/// A fully isolated, initialized PLAINTORCH vault for a single test: its own temp directory and SQLite database,
+/// built and initialized through the real dependency-injection graph, and torn down afterwards.
+/// </summary>
+/// <remarks>
+/// Each operation runs in its own DI scope, mirroring the production model where each request/watcher event gets a fresh
+/// scope — so tests exercise scope/tracking behaviour faithfully rather than sharing one long-lived context.
+/// </remarks>
+public sealed class TestVault : IAsyncLifetime
+{
+	private WebApplication _app = null!;
+
+	/// <summary>
+	/// Gets the absolute root path of the isolated test vault.
+	/// </summary>
+	public string VaultRoot { get; private set; } = null!;
+
+	/// <summary>
+	/// Gets the resolved vault layout (a singleton, safe to read outside a scope).
+	/// </summary>
+	public VaultLayout Layout => _app.Services.GetRequiredService<VaultLayout>();
+
+	/// <summary>
+	/// Resolves a singleton service from the root provider. Use only for singletons, not scoped services.
+	/// </summary>
+	public T GetSingleton<T>() where T : notnull => _app.Services.GetRequiredService<T>();
+
+	/// <inheritdoc />
+	public async ValueTask InitializeAsync()
+	{
+		VaultRoot = Path.Combine(Path.GetTempPath(), "plaintorch-tests", Guid.NewGuid().ToString("N"));
+		Directory.CreateDirectory(VaultRoot);
+		_app = PlaintorchTestHost.Build(VaultRoot);
+		await WithScopeAsync(services => services.GetRequiredService<PlaintorchEngine>().InitializeVaultAsync());
+	}
+
+	/// <summary>
+	/// Runs an action inside a fresh DI scope and returns its result.
+	/// </summary>
+	public async Task<T> WithScopeAsync<T>(Func<IServiceProvider, Task<T>> action)
+	{
+		ArgumentNullException.ThrowIfNull(action);
+		using var scope = _app.Services.CreateScope();
+		return await action(scope.ServiceProvider);
+	}
+
+	/// <summary>
+	/// Runs an action inside a fresh DI scope.
+	/// </summary>
+	public async Task WithScopeAsync(Func<IServiceProvider, Task> action)
+	{
+		ArgumentNullException.ThrowIfNull(action);
+		using var scope = _app.Services.CreateScope();
+		await action(scope.ServiceProvider);
+	}
+
+	/// <summary>
+	/// Runs a query against a fresh database context scope.
+	/// </summary>
+	public Task<T> QueryAsync<T>(Func<PlainfraContext, Task<T>> query)
+	{
+		ArgumentNullException.ThrowIfNull(query);
+		return WithScopeAsync(services => query(services.GetRequiredService<PlainfraContext>()));
+	}
+
+	// --- vault file helpers ---
+
+	/// <summary>Resolves a vault-relative path to an absolute path.</summary>
+	public string AbsolutePath(string vaultRelativePath)
+	{
+		ArgumentNullException.ThrowIfNull(vaultRelativePath);
+		return Path.Combine(VaultRoot, vaultRelativePath.Replace('/', Path.DirectorySeparatorChar));
+	}
+
+	/// <summary>Writes raw content to a vault file (used to place legacy/edge-case files directly).</summary>
+	public void WriteVaultFile(string vaultRelativePath, string content)
+	{
+		var path = AbsolutePath(vaultRelativePath);
+		Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+		File.WriteAllText(path, content);
+	}
+
+	/// <summary>Reads a vault file's content.</summary>
+	public string ReadVaultFile(string vaultRelativePath) => File.ReadAllText(AbsolutePath(vaultRelativePath));
+
+	/// <summary>Determines whether a vault file exists.</summary>
+	public bool VaultFileExists(string vaultRelativePath) => File.Exists(AbsolutePath(vaultRelativePath));
+
+	/// <summary>Enumerates markdown files under an absolute directory.</summary>
+	public IReadOnlyList<string> MarkdownFilesUnder(string absoluteDirectory)
+	{
+		return Directory.Exists(absoluteDirectory)
+			? Directory.GetFiles(absoluteDirectory, "*.md", SearchOption.AllDirectories)
+			: [];
+	}
+
+	// --- seeding (through real services) ---
+
+	/// <summary>Creates a standalone objective through the real application API.</summary>
+	public Task<Objective> SeedStandaloneObjectiveAsync(string title, string? requestedId = null)
+		=> WithScopeAsync(services => services.GetRequiredService<IObjectiveApi>().CreateStandaloneAsync(title, requestedId: requestedId));
+
+	/// <summary>Materializes an implicit objective's file and begins its synchronization boundary.</summary>
+	public Task<Objective> BeginObjectiveBoundaryAsync(string objectiveId)
+		=> WithScopeAsync(services => services.GetRequiredService<IObjectiveApi>().BeginBoundaryAsync(objectiveId));
+
+	// --- pipeline drivers (deterministic, no live watcher) ---
+
+	/// <summary>Runs a full discovery scan and returns the produced candidates.</summary>
+	public Task<VaultDiscoveryScanResult> ScanAsync()
+		=> WithScopeAsync(services => services.GetRequiredService<VaultMarkdownDiscoveryService>().ScanAsync("test"));
+
+	/// <summary>Inspects a single path and returns the discovery candidate (no reconciliation applied).</summary>
+	public Task<VaultSyncCandidate?> InspectAsync(string absolutePath)
+		=> WithScopeAsync(services => services.GetRequiredService<VaultMarkdownDiscoveryService>().InspectPathAsync(absolutePath, "test"));
+
+	/// <summary>Inspects a path and executes its suggested reconciliation action, in one scope (as a watcher event would).</summary>
+	public Task<VaultSyncCandidate?> ReconcileAsync(string absolutePath)
+	{
+		return WithScopeAsync(async services =>
+		{
+			var discovery = services.GetRequiredService<VaultMarkdownDiscoveryService>();
+			var sync = services.GetRequiredService<VaultWatcherSyncService>();
+			var candidate = await discovery.InspectPathAsync(absolutePath, "test");
+			if (candidate is not null)
+			{
+				await sync.ExecuteAsync(candidate, "test");
+			}
+
+			return candidate;
+		});
+	}
+
+	/// <inheritdoc />
+	public async ValueTask DisposeAsync()
+	{
+		if (_app is not null)
+		{
+			_app.Services.GetRequiredService<PlaintorchUserLayout>().Cleanup();
+			await _app.DisposeAsync();
+		}
+
+		// Release SQLite file handles before deleting the temp directory (SQLite/Windows).
+		SqliteConnection.ClearAllPools();
+		TryDeleteDirectory(VaultRoot);
+	}
+
+	private static void TryDeleteDirectory(string path)
+	{
+		if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+		{
+			return;
+		}
+
+		for (var attempt = 0; attempt < 3; attempt++)
+		{
+			try
+			{
+				Directory.Delete(path, recursive: true);
+				return;
+			}
+			catch (IOException)
+			{
+				Thread.Sleep(50);
+			}
+			catch (UnauthorizedAccessException)
+			{
+				Thread.Sleep(50);
+			}
+		}
+	}
+}
