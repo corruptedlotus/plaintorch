@@ -717,17 +717,26 @@ public sealed class VaultWatcherSyncService(
 	{
 		return entity switch
 		{
-			Directive directive => new Directive
+			StellarDirective stellar => new StellarDirective
 			{
-				Id = directive.Id,
-				Title = directive.Title,
-				Codename = directive.Codename,
-				ParentDirectiveId = directive.ParentDirectiveId,
-				Status = directive.Status,
-				Tags = directive.Tags.ToList(),
-				Due = directive.Due,
-				StartDate = directive.StartDate,
-				EndDate = directive.EndDate,
+				Id = stellar.Id,
+				Title = stellar.Title,
+				Codename = stellar.Codename,
+				ParentDirectiveId = stellar.ParentDirectiveId,
+				Status = stellar.Status,
+				Tags = stellar.Tags.ToList(),
+				Due = stellar.Due,
+				StartDate = stellar.StartDate,
+				EndDate = stellar.EndDate,
+			},
+			LunarDirective lunar => new LunarDirective
+			{
+				Id = lunar.Id,
+				Title = lunar.Title,
+				Codename = lunar.Codename,
+				ParentDirectiveId = lunar.ParentDirectiveId,
+				Status = lunar.Status,
+				Tags = lunar.Tags.ToList(),
 			},
 			Objective objective => new Objective
 			{

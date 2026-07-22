@@ -21,10 +21,10 @@ export class DirectiveBanner extends EntityBanner<Directive> {
 			const entity = this.entity
 			switch (keyPath) {
 				case 'status':
-					await core.directives.shiftWorkflow(entity!.id, { status: entity!.status })
+					await core.directives.shiftStellarWorkflow(entity!.id, { status: entity!.status as DirectiveStatus })
 					break
 				default:
-					await core.directives.update(entity!.id, entity!) ?? entity
+					await core.directives.updateStellar(entity!.id, entity!) ?? entity
 					break
 			}
 			this.entity = await core.directives.get(entity!.id)

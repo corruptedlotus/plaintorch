@@ -97,8 +97,14 @@ public sealed class PuckEntityResolutionService(
 	{
 		if (entityType == typeof(Directive))
 		{
-			// Lunar directives resolve through their own declaration; keep base resolution stellar-only.
+			// Legacy base-declaration ids (A{S:6}) resolve to stellar rows; lunar directives resolve through
+			// their own declaration.
 			return await context.Directives.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id && !(item is LunarDirective), cancellationToken);
+		}
+
+		if (entityType == typeof(StellarDirective))
+		{
+			return await context.Directives.AsNoTracking().OfType<StellarDirective>().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
 		}
 
 		if (entityType == typeof(LunarDirective))
@@ -146,7 +152,10 @@ public sealed class PuckEntityResolutionService(
 
 	private string? ResolveAssociatedNotePath(Type entityType, string id)
 	{
-		var model = pathSyncModelCatalog.GetModels().FirstOrDefault(item => item.EntityType == entityType);
+		// A path-sync model may anchor a polymorphic family under an abstract base while composing a concrete
+		// subtype (e.g. the directive model composes StellarDirective), so match either identity.
+		var model = pathSyncModelCatalog.GetModels()
+			.FirstOrDefault(item => item.EntityType == entityType || item.InstantiationType == entityType);
 		if (model is null)
 		{
 			return null;

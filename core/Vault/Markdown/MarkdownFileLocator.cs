@@ -59,9 +59,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	public string GetDirectiveDirectoryPath(Directive directive, Directive? parentDirective = null)
 	{
 		ArgumentNullException.ThrowIfNull(directive);
-		EnsureFileBacking<Directive>();
-		var storage = typeof(Directive).GetCustomAttribute<VaultStorageAttribute>()
-			?? throw new InvalidOperationException($"Type '{typeof(Directive).Name}' is not configured for vault markdown storage.");
+		var storage = ResolveDirectiveStorage(directive.GetType());
 		var folderName = ResolvePuckFileBaseName(storage, directive.Id, directive.Title);
 		var parentDirectory = ResolveDirectiveParentDirectory(directive, parentDirective);
 		return Path.Combine(parentDirectory, folderName);
@@ -83,8 +81,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	public string GetDirectiveFilePath(Directive directive, Directive? parentDirective)
 	{
 		ArgumentNullException.ThrowIfNull(directive);
-		var storage = typeof(Directive).GetCustomAttribute<VaultStorageAttribute>()
-			?? throw new InvalidOperationException($"Type '{typeof(Directive).Name}' is not configured for vault markdown storage.");
+		var storage = ResolveDirectiveStorage(directive.GetType());
 		var folderName = ResolvePuckFileBaseName(storage, directive.Id, directive.Title);
 		var directory = GetDirectiveDirectoryPath(directive, parentDirective);
 		return Path.Combine(directory, $"{folderName}.md");
@@ -504,10 +501,18 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	{
 		if (parentDirective is not null)
 		{
-			return ResolvePartitionedParentDirectory(typeof(Directive), GetDirectiveDirectoryPath(parentDirective, parentDirective.ParentDirective));
+			return ResolvePartitionedParentDirectory(directive.GetType(), GetDirectiveDirectoryPath(parentDirective, parentDirective.ParentDirective));
 		}
 
-		return layout.GetLocationRoot(VaultLocationKeys.Directives);
+		// Root directives land in the location declared by their concrete type: stellar under Directives, lunar
+		// under its dedicated Moonlight root (PEP100).
+		return layout.GetLocationRoot(ResolveDirectiveStorage(directive.GetType()).LocationKey);
+	}
+
+	private static VaultStorageAttribute ResolveDirectiveStorage(Type directiveType)
+	{
+		return directiveType.GetCustomAttribute<VaultStorageAttribute>(inherit: true)
+			?? throw new InvalidOperationException($"Type '{directiveType.Name}' is not configured for vault markdown storage.");
 	}
 
 	private string ResolvePartitionedParentDirectory(Type entityType, string parentDirectory)

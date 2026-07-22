@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using Pleiades.Puck;
+using Pleiades.Vault;
 using Pleiades.Vault.Markdown;
 
 namespace Pleiades.Orchestration;
@@ -9,12 +10,19 @@ namespace Pleiades.Orchestration;
 /// acting as a law, routine, or requirement of Project Moonlight (PEP100).
 /// </summary>
 /// <remarks>
-/// Lunar directives live as table siblings to stellar <see cref="Directive"/> records through a discriminator.
-/// They ignore the stellar lifecycle <see cref="Directive.Status"/> and carry their own
-/// <see cref="LunarStatus"/> instead. Vault storage metadata is inherited from <see cref="Directive"/>.
+/// Lunar directives live as table siblings to stellar <see cref="StellarDirective"/> records through a
+/// discriminator, but keep their own dedicated vault storage location (<see cref="VaultLocationKeys.Moonlight"/>,
+/// defaulting to <c>./Moonlight</c>) instead of inheriting the stellar <see cref="VaultLocationKeys.Directives"/>
+/// root. They carry their own moonlight <see cref="Status"/> and define <see cref="Timeframes"/>.
 /// </remarks>
 [PuckEntity("lunar-directive")]
 [PuckFormat("LUNA{S:3}")]
+[VaultStorage(
+	LocationKey = VaultLocationKeys.Moonlight,
+	Mode = VaultStorageMode.Freeform,
+	Shape = VaultStorageShape.SelfNamedDirectory,
+	ParentIdProperty = nameof(ParentDirectiveId),
+	ParentEntityType = typeof(Directive))]
 public sealed class LunarDirective : Directive
 {
 	/// <summary>

@@ -25,17 +25,17 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 
 		Assert.StartsWith("LUNA", lunar.Id);
 		Assert.Equal(7, lunar.Id.Length);
-		Assert.Equal(LunarDirectiveStatus.OnHold, lunar.LunarStatus);
+		Assert.Equal(LunarDirectiveStatus.OnHold, lunar.Status);
 
 		var shifted = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IDirectiveApi>()
 			.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Active), cancellationToken));
-		Assert.Equal(LunarDirectiveStatus.Active, shifted.LunarStatus);
+		Assert.Equal(LunarDirectiveStatus.Active, shifted.Status);
 
 		// The stellar workflow does not apply to lunar directives, and vice versa.
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Vault.WithScopeAsync(services => services
 			.GetRequiredService<IDirectiveApi>()
-			.ShiftWorkflowAsync(lunar.Id, new DirectiveWorkflowShift(DirectiveStatus.Active), cancellationToken)));
+			.ShiftStellarWorkflowAsync(lunar.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Active), cancellationToken)));
 
 		var stellar = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IDirectiveApi>()
@@ -43,6 +43,93 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Vault.WithScopeAsync(services => services
 			.GetRequiredService<IDirectiveApi>()
 			.ShiftLunarWorkflowAsync(stellar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Stale), cancellationToken)));
+	}
+
+	[Fact]
+	public async Task Directive_listing_filters_and_shorthands_split_by_kind()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+
+		var stellar = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.CreateStandaloneAsync("Stellar One", cancellationToken: cancellationToken));
+		var lunar = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.CreateLunarAsync("Lunar One", cancellationToken: cancellationToken));
+
+		var all = await Vault.WithScopeAsync(services => services.GetRequiredService<IDirectiveApi>().ListAsync(null, cancellationToken));
+		Assert.Contains(all, directive => directive.Id == stellar.Id);
+		Assert.Contains(all, directive => directive.Id == lunar.Id);
+
+		var stellarFiltered = await Vault.WithScopeAsync(services => services.GetRequiredService<IDirectiveApi>().ListAsync(DirectiveKind.Stellar, cancellationToken));
+		Assert.All(stellarFiltered, directive => Assert.IsType<StellarDirective>(directive));
+		Assert.Contains(stellarFiltered, directive => directive.Id == stellar.Id);
+
+		var lunarShorthand = await Vault.WithScopeAsync(services => services.GetRequiredService<IDirectiveApi>().ListLunarAsync(cancellationToken));
+		Assert.Contains(lunarShorthand, directive => directive.Id == lunar.Id);
+		Assert.DoesNotContain(lunarShorthand, directive => directive.Id == stellar.Id);
+
+		var stellarShorthand = await Vault.WithScopeAsync(services => services.GetRequiredService<IDirectiveApi>().ListStellarAsync(cancellationToken));
+		Assert.Contains(stellarShorthand, directive => directive.Id == stellar.Id);
+		Assert.DoesNotContain(stellarShorthand, directive => directive.Id == lunar.Id);
+	}
+
+	[Fact]
+	public async Task Stellar_and_lunar_updates_are_separate()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+
+		var stellar = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.CreateStandaloneAsync("Roadmap", cancellationToken: cancellationToken));
+		var due = new DateOnly(2026, 8, 1);
+		var updatedStellar = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.UpdateStellarAsync(stellar.Id, new StellarDirectiveUpdate(Title: "Roadmap v2", Due: due), cancellationToken));
+		Assert.Equal("Roadmap v2", updatedStellar.Title);
+		Assert.Equal(due, updatedStellar.Due);
+
+		var lunar = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.CreateLunarAsync("Sleep", cancellationToken: cancellationToken));
+		var updatedLunar = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.UpdateLunarAsync(lunar.Id, new LunarDirectiveUpdate(Title: "Sleep Well"), cancellationToken));
+		Assert.Equal("Sleep Well", updatedLunar.Title);
+
+		// A lunar directive cannot be updated through the stellar action and vice versa.
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.UpdateStellarAsync(lunar.Id, new StellarDirectiveUpdate(Title: "Nope"), cancellationToken)));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.UpdateLunarAsync(stellar.Id, new LunarDirectiveUpdate(Title: "Nope"), cancellationToken)));
+	}
+
+	[Fact]
+	public async Task Timeframes_belong_only_to_lunar_directives_and_list_globally()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+
+		var stellar = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.CreateStandaloneAsync("Stellar", cancellationToken: cancellationToken));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.CreateTimeframeAsync(stellar.Id, new TimeframePlan("Nope", new TimeOnly(9, 0), new TimeOnly(10, 0)), cancellationToken)));
+
+		var lunar = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.CreateLunarAsync("Rhythm", cancellationToken: cancellationToken));
+		var timeframe = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.CreateTimeframeAsync(lunar.Id, new TimeframePlan("Deep Work", new TimeOnly(8, 0), new TimeOnly(12, 0)), cancellationToken));
+
+		var all = await Vault.WithScopeAsync(services => services.GetRequiredService<IDirectiveApi>().ListAllTimeframesAsync(cancellationToken));
+		var record = Assert.Single(all, item => item.Id == timeframe.Id);
+		Assert.Equal(lunar.Id, record.DirectiveId);
+		Assert.Equal("Rhythm", record.DirectiveTitle);
+		Assert.Equal("Deep Work", record.Title);
 	}
 
 	[Fact]

@@ -80,9 +80,9 @@ public sealed class VaultLoader(
 			return null;
 		}
 
-		var entity = Activator.CreateInstance(model.EntityType)
-			?? throw new InvalidOperationException($"Could not construct entity '{model.EntityType.Name}' during vault load.");
-		HydrateFields(entity, model.EntityType, markdown);
+		var entity = Activator.CreateInstance(model.InstantiationType)
+			?? throw new InvalidOperationException($"Could not construct entity '{model.InstantiationType.Name}' during vault load.");
+		HydrateFields(entity, model.InstantiationType, markdown);
 		if (entity is IPuckNamedEntity namedEntity)
 		{
 			namedEntity.Id = id;

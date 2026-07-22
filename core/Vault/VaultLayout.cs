@@ -50,6 +50,11 @@ public sealed class VaultLayout(VaultOptions options)
 	public string DirectivesRoot => GetLocationRoot(VaultLocationKeys.Directives);
 
 	/// <summary>
+	/// Gets the canonical lunar (Moonlight) directives root directory (PEP100).
+	/// </summary>
+	public string MoonlightRoot => GetLocationRoot(VaultLocationKeys.Moonlight);
+
+	/// <summary>
 	/// Gets the canonical onrush root directory.
 	/// </summary>
 	public string OnrushRoot => GetLocationRoot(VaultLocationKeys.Onrush);
@@ -111,6 +116,7 @@ public sealed class VaultLayout(VaultOptions options)
 		yield return GraveyardRoot;
 		yield return FileGraveyardRoot;
 		yield return DirectivesRoot;
+		yield return MoonlightRoot;
 		yield return OnrushRoot;
 		yield return ObjectivesRoot;
 		yield return FatesRoot;

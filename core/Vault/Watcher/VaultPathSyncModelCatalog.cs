@@ -19,11 +19,14 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 
 	private readonly IReadOnlyList<VaultPathSyncModel> _models =
 	[
+		// The directive family is polymorphic: the abstract Directive anchors identity/known-id lookups, while
+		// path composition materializes a concrete StellarDirective (lunar directives are authored through the API).
 		CreateModel<Directive>(layout, [layout.VaultRoot], VaultStorageShape.SelfNamedDirectory, static _ => false, static (context, cancellationToken) =>
 			context.Directives
 				.AsNoTracking()
 				.Select(item => item.Id)
-				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
+				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken),
+			concreteType: typeof(StellarDirective)),
 
 		CreateModel<Objective>(layout, [layout.ObjectivesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
 			IsIncentiveMarkdownFile(path, layout, layout.ObjectivesRoot, ObjectivePartitionName), static (context, cancellationToken) =>
@@ -207,7 +210,8 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 		IReadOnlyList<string> scanRoots,
 		VaultStorageShape expectedShape,
 		Func<string, bool> isCandidatePath,
-		Func<PlainfraContext, CancellationToken, Task<HashSet<string>>> loadKnownIdsAsync)
+		Func<PlainfraContext, CancellationToken, Task<HashSet<string>>> loadKnownIdsAsync,
+		Type? concreteType = null)
 	{
 		var attribute = typeof(T).GetCustomAttributes(typeof(VaultStorageAttribute), inherit: true)
 			.OfType<VaultStorageAttribute>()
@@ -225,7 +229,8 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 			attribute.Mode,
 			attribute.Shape,
 			isCandidatePath,
-			loadKnownIdsAsync);
+			loadKnownIdsAsync,
+			concreteType);
 	}
 
 	/// <summary>

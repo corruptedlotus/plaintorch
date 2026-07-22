@@ -1,14 +1,16 @@
 using Pleiades.Puck;
+using Pleiades.Vault;
 using Pleiades.Vault.Markdown;
 
 namespace Pleiades.Orchestration;
 
 /// <summary>
-/// Represents a Stellar directive: an operational directive with a specific definition and goal.
+/// Represents a Stellar directive: an operational, lifecycle-driven directive with a specific definition and goal.
 /// </summary>
 /// <remarks>
-/// Stellar directives live as table siblings to lunar <see cref="Directive"/> records through a discriminator.
-/// They follow the stellar lifecycle <see cref="Directive.Status"/>. Vault storage metadata is inherited from <see cref="Directive"/>.
+/// Stellar directives live as table siblings to <see cref="LunarDirective"/> records through a discriminator and
+/// share the <see cref="VaultLocationKeys.Directives"/> vault storage inherited from <see cref="Directive"/>.
+/// They follow the stellar lifecycle <see cref="Status"/> and carry optional scheduling dates.
 /// </remarks>
 [PuckEntity("stellar-directive")]
 [PuckFormat("A{S:8}")]
@@ -20,7 +22,7 @@ public sealed class StellarDirective : Directive
 	[MarkdownField("status")]
 	public DirectiveStatus Status { get; set; } = DirectiveStatus.Planned;
 
-		/// <summary>
+	/// <summary>
 	/// Gets or sets the optional due date.
 	/// </summary>
 	[MarkdownField("due")]

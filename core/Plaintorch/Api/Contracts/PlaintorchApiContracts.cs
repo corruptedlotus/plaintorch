@@ -109,9 +109,25 @@ public sealed record LorePageRecord(
 public sealed record SearchRequest(string Query, int? Take = null);
 
 /// <summary>
-/// Represents the mutable fields of a directive for generic update actions.
+/// Identifies which directive kind an action targets or filters (PEP100).
 /// </summary>
-public sealed record DirectiveUpdate(
+public enum DirectiveKind
+{
+	/// <summary>
+	/// A stellar (lifecycle-driven) directive.
+	/// </summary>
+	Stellar,
+
+	/// <summary>
+	/// A lunar (Moonlight everglow) directive.
+	/// </summary>
+	Lunar,
+}
+
+/// <summary>
+/// Represents the mutable fields of a stellar directive for update actions, including its scheduling dates.
+/// </summary>
+public sealed record StellarDirectiveUpdate(
 	string? Title = null,
 	string? Codename = null,
 	string? ParentDirectiveId = null,
@@ -121,10 +137,20 @@ public sealed record DirectiveUpdate(
 	DateOnly? EndDate = null);
 
 /// <summary>
-/// Represents a workflow shift for a directive.
+/// Represents the mutable fields of a lunar directive for update actions. Lunar directives are everglow and
+/// therefore carry no scheduling dates (PEP100).
 /// </summary>
-/// <param name="Status">The new directive status.</param>
-public sealed record DirectiveWorkflowShift(DirectiveStatus Status);
+public sealed record LunarDirectiveUpdate(
+	string? Title = null,
+	string? Codename = null,
+	string? ParentDirectiveId = null,
+	IReadOnlyList<string>? Tags = null);
+
+/// <summary>
+/// Represents a stellar directive workflow shift.
+/// </summary>
+/// <param name="Status">The new stellar directive status.</param>
+public sealed record StellarDirectiveWorkflowShift(DirectiveStatus Status);
 
 /// <summary>
 /// Represents the mutable fields of an objective for generic update actions.
@@ -429,3 +455,27 @@ public sealed record TimeframeUpdate(
 	TimeOnly? EndTime = null,
 	string? Orbit = null,
 	bool ClearOrbit = false);
+
+/// <summary>
+/// Represents a timeframe together with a summary of the lunar directive that defines it, used by the global
+/// timeframe listing that spans every lunar directive (PEP100).
+/// </summary>
+/// <param name="Id">The timeframe database identity.</param>
+/// <param name="DirectiveId">The owning lunar directive identifier.</param>
+/// <param name="DirectiveTitle">The owning lunar directive title.</param>
+/// <param name="DirectiveCodename">The owning lunar directive codename, when set.</param>
+/// <param name="DirectiveStatus">The owning lunar directive moonlight status.</param>
+/// <param name="Title">The human-readable timeframe title.</param>
+/// <param name="StartTime">The start of the flagged portion of the day.</param>
+/// <param name="EndTime">The end of the flagged portion of the day.</param>
+/// <param name="Orbit">The optional Orbit notation scoping the timeframe to particular Polaris cycles.</param>
+public sealed record DirectiveTimeframeRecord(
+	long Id,
+	string DirectiveId,
+	string DirectiveTitle,
+	string? DirectiveCodename,
+	LunarDirectiveStatus DirectiveStatus,
+	string Title,
+	TimeOnly StartTime,
+	TimeOnly EndTime,
+	string? Orbit);

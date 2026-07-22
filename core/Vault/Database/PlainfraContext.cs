@@ -146,9 +146,12 @@ public class PlainfraContext : DbContext
 			value => (value ?? new List<string>()).Aggregate(0, (hash, item) => HashCode.Combine(hash, item.GetHashCode(StringComparison.Ordinal))),
 			value => (value ?? new List<string>()).ToList());
 
-		modelBuilder.Entity<Directive>()
+		// Stellar and lunar directives share the Directives table (TPH). Their same-named Status properties carry
+		// different enums, so each maps to an explicit column to keep the shared table readable and unambiguous.
+		modelBuilder.Entity<StellarDirective>()
 			.Property(x => x.Status)
-			.HasConversion<string>();
+			.HasConversion<string>()
+			.HasColumnName("Status");
 
 		modelBuilder.Entity<Directive>()
 			.Property(x => x.Tags)
@@ -192,8 +195,9 @@ public class PlainfraContext : DbContext
 			.HasColumnName("Orbit");
 
 		modelBuilder.Entity<LunarDirective>()
-			.Property(x => x.LunarStatus)
-			.HasConversion<string>();
+			.Property(x => x.Status)
+			.HasConversion<string>()
+			.HasColumnName("LunarStatus");
 
 		modelBuilder.Entity<Attentive>()
 			.Property(x => x.Resolution)

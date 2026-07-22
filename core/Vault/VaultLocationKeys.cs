@@ -11,6 +11,11 @@ public static class VaultLocationKeys
 	public const string Directives = "Directives";
 
 	/// <summary>
+	/// The lunar (Moonlight) directives location key (PEP100).
+	/// </summary>
+	public const string Moonlight = "Moonlight";
+
+	/// <summary>
 	/// The onrush location key.
 	/// </summary>
 	public const string Onrush = "Onrush";

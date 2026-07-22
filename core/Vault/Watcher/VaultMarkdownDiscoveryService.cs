@@ -232,7 +232,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		var (pathId, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(fullPath);
 		var pathDerivedId = pathId;
 		var pathDerivedTitle = pathTitle;
-		var parsedModel = CreatePathComposedModel(model.EntityType, fullPath);
+		var parsedModel = CreatePathComposedModel(model.InstantiationType, fullPath);
 		if (parsedModel is IPuckNamedEntity namedEntity)
 		{
 			if (!string.IsNullOrWhiteSpace(namedEntity.Id))
@@ -252,7 +252,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		var isNewEntity = string.IsNullOrWhiteSpace(pathId) || !knownIds.Contains(pathId);
 		var preserveDefaultsForMissingFields = isNewEntity
 			|| (!model.Mode.IsIdentityDriven() && typeof(IPuckNamedEntity).IsAssignableFrom(model.EntityType));
-		var issues = DeserializeInto(parsedModel, model.EntityType, markdown, preserveDefaultsForMissingFields: preserveDefaultsForMissingFields)
+		var issues = DeserializeInto(parsedModel, model.InstantiationType, markdown, preserveDefaultsForMissingFields: preserveDefaultsForMissingFields)
 			.Select(issue => issue)
 			.ToList();
 		ApplyPathAuthorities(parsedModel, fullPath, issues);
@@ -291,7 +291,7 @@ public sealed class VaultMarkdownDiscoveryService(
 			if (!string.IsNullOrWhiteSpace(pathId) && !knownIds.Contains(pathId))
 			{
 				var resolved = await puckEntityResolutionService.ResolveAsync(pathId, cancellationToken);
-				if (resolved.Exists && !string.Equals(resolved.EntityType, nameof(Directive), StringComparison.Ordinal))
+				if (resolved.Exists && !IsDirectiveEntityTypeName(resolved.EntityType))
 				{
 					return null;
 				}
@@ -493,6 +493,17 @@ public sealed class VaultMarkdownDiscoveryService(
 
 		return (IReadOnlyList<MarkdownValidationIssue>)(issuesProperty.GetValue(result)
 			?? Array.Empty<MarkdownValidationIssue>());
+	}
+
+	/// <summary>
+	/// Determines whether a resolved entity type name belongs to the directive family (the abstract base or either
+	/// stellar/lunar sibling), used to gate freeform directive identity collisions (PEP100).
+	/// </summary>
+	private static bool IsDirectiveEntityTypeName(string? entityTypeName)
+	{
+		return string.Equals(entityTypeName, nameof(Directive), StringComparison.Ordinal)
+			|| string.Equals(entityTypeName, nameof(StellarDirective), StringComparison.Ordinal)
+			|| string.Equals(entityTypeName, nameof(LunarDirective), StringComparison.Ordinal);
 	}
 
 	/// <summary>

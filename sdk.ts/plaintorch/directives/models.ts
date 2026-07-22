@@ -15,32 +15,43 @@ export enum LunarDirectiveStatus {
 	Stale = 2
 }
 
+/** The kind discriminator used to filter directives (PEP100). */
+export type DirectiveKind = 'stellar' | 'lunar'
+
 @model('Directive')
 export class Directive {
 	/** Polymorphic discriminator emitted by the core: "stellar" or "lunar". */
-	$type?: string
+	$type?: DirectiveKind
 	id!: string
 	title!: string
 	codename: string | undefined
 	parentDirectiveId: string | undefined
 	parentDirective?: Directive | undefined
 	subdirectives: Directive[] = []
-	status: DirectiveStatus = DirectiveStatus.Planned
+	/**
+	 * Workflow state. Stellar directives carry a {@link DirectiveStatus} lifecycle value; lunar directives carry a
+	 * {@link LunarDirectiveStatus} moonlight value (both are emitted on the same `status` field, PEP100).
+	 */
+	status: DirectiveStatus | LunarDirectiveStatus = DirectiveStatus.Planned
 	tags: string[] = []
-	due: string | undefined
-	startDate: string | undefined
-	endDate: string | undefined
 	objectives: Objective[] = []
+	/** Scheduling dates; only present on stellar directives. */
+	due?: string | undefined
+	startDate?: string | undefined
+	endDate?: string | undefined
+	/** Timeframes; only present on lunar directives (PEP100). */
 	timeframes?: Timeframe[]
-	/** Moonlight state; only present on lunar directives (PEP100). */
-	lunarStatus?: LunarDirectiveStatus
 
 	get isLunar() {
-		return this.$type === 'lunar' || this.lunarStatus !== undefined
+		return this.$type === 'lunar'
+	}
+
+	get isStellar() {
+		return this.$type === 'stellar'
 	}
 }
 
-/** Directive-level definition of a portion of the day (PEP100). Purely semantic. */
+/** Directive-level definition of a portion of the day (PEP100). Belongs to a lunar directive; purely semantic. */
 export interface Timeframe {
 	id: number
 	directiveId: string
@@ -48,6 +59,19 @@ export interface Timeframe {
 	startTime: string
 	endTime: string
 	orbit: string | undefined
+}
+
+/** A timeframe paired with a summary of the lunar directive that owns it (global timeframe listing, PEP100). */
+export interface DirectiveTimeframeRecord {
+	id: number
+	directiveId: string
+	directiveTitle: string
+	directiveCodename?: string | undefined
+	directiveStatus: LunarDirectiveStatus
+	title: string
+	startTime: string
+	endTime: string
+	orbit?: string | undefined
 }
 
 export interface CreateDirectiveRequest {
@@ -61,7 +85,8 @@ export interface InitDirectiveRequest {
 	path: string
 }
 
-export interface DirectiveUpdate {
+/** Stellar directive update, including scheduling dates. */
+export interface StellarDirectiveUpdate {
 	title?: string | undefined
 	codename?: string | undefined
 	parentDirectiveId?: string | undefined
@@ -71,7 +96,15 @@ export interface DirectiveUpdate {
 	endDate?: string | undefined
 }
 
-export interface DirectiveWorkflowShift {
+/** Lunar directive update. Lunar directives are everglow and carry no scheduling dates (PEP100). */
+export interface LunarDirectiveUpdate {
+	title?: string | undefined
+	codename?: string | undefined
+	parentDirectiveId?: string | undefined
+	tags?: string[] | undefined
+}
+
+export interface StellarDirectiveWorkflowShift {
 	status: DirectiveStatus
 }
 
