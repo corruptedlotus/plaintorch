@@ -473,24 +473,26 @@ public sealed class DirectiveApiService(
 	/// <inheritdoc />
 	public async Task<IReadOnlyList<DirectiveTimeframeRecord>> ListAllTimeframesAsync(CancellationToken cancellationToken = default)
 	{
+		// Order on the entity columns before projecting into the record so the query stays SQL-translatable.
 		return await context.Timeframes
 			.AsNoTracking()
 			.Join(
 				context.LunarDirectives.AsNoTracking(),
 				timeframe => timeframe.DirectiveId,
 				directive => directive.Id,
-				(timeframe, directive) => new DirectiveTimeframeRecord(
-					timeframe.Id,
-					directive.Id,
-					directive.Title,
-					directive.Codename,
-					directive.Status,
-					timeframe.Title,
-					timeframe.StartTime,
-					timeframe.EndTime,
-					timeframe.Orbit))
-			.OrderBy(record => record.DirectiveTitle)
-			.ThenBy(record => record.StartTime)
+				(timeframe, directive) => new { Timeframe = timeframe, Directive = directive })
+			.OrderBy(pair => pair.Directive.Title)
+			.ThenBy(pair => pair.Timeframe.StartTime)
+			.Select(pair => new DirectiveTimeframeRecord(
+				pair.Timeframe.Id,
+				pair.Directive.Id,
+				pair.Directive.Title,
+				pair.Directive.Codename,
+				pair.Directive.Status,
+				pair.Timeframe.Title,
+				pair.Timeframe.StartTime,
+				pair.Timeframe.EndTime,
+				pair.Timeframe.Orbit))
 			.ToListAsync(cancellationToken);
 	}
 

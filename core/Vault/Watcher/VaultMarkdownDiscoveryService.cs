@@ -302,7 +302,7 @@ public sealed class VaultMarkdownDiscoveryService(
 
 		await ApplyDomainValidationsAsync(parsedModel, issues, cancellationToken);
 
-		if (string.IsNullOrWhiteSpace(pathId) && puckCreationService.RequiresCallerInputFor(model.EntityType))
+		if (string.IsNullOrWhiteSpace(pathId) && puckCreationService.RequiresCallerInputFor(model.InstantiationType))
 		{
 			issues.Add(new MarkdownValidationIssue("id", "Path identity is missing required caller-provided PUCK input."));
 		}

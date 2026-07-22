@@ -37,7 +37,7 @@ public sealed class FileLocatorTests : VaultTestBase
 	public void Directive_owned_objective_lands_in_partition_folder()
 	{
 		var locator = Vault.GetSingleton<MarkdownFileLocator>();
-		var directive = new Directive { Id = "A123", Title = "Campaign" };
+		var directive = new StellarDirective { Id = "A123", Title = "Campaign" };
 		var objective = new Objective { Id = "j12345678", Title = "Ship it", DirectiveId = "A123" };
 
 		var path = locator.GetObjectiveFilePath(objective, directive);

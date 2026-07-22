@@ -137,15 +137,17 @@ public sealed class VaultWatcherSyncService(
 			throw new InvalidOperationException($"Watcher create-from-file requires a PUCK-named model, but '{candidate.Model.EntityName}' is not PUCK-backed.");
 		}
 
+		// Identity is declared per concrete type (a polymorphic family's siblings may carry different PUCK
+		// declarations), so id creation keys on the composed instantiation type rather than the anchor type.
 		var ignoredPathId = default(string);
-		if (!puckCreationService.RequiresCallerInputFor(candidate.Model.EntityType))
+		if (!puckCreationService.RequiresCallerInputFor(candidate.Model.InstantiationType))
 		{
 			ignoredPathId = string.IsNullOrWhiteSpace(candidate.PathId) ? null : candidate.PathId;
-			namedEntity.Id = puckCreationService.CreateIdFor(candidate.Model.EntityType);
+			namedEntity.Id = puckCreationService.CreateIdFor(candidate.Model.InstantiationType);
 		}
 		else if (string.IsNullOrWhiteSpace(namedEntity.Id))
 		{
-			namedEntity.Id = puckCreationService.CreateIdFor(candidate.Model.EntityType);
+			namedEntity.Id = puckCreationService.CreateIdFor(candidate.Model.InstantiationType);
 		}
 
 		context.Add(model);
