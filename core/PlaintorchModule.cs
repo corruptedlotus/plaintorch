@@ -44,6 +44,8 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<VaultImplicitBoundaryService>();
 		services.AddSingleton<PuckNotationParser>();
 		services.AddSingleton<PuckRuntimeCompilationCatalog>();
+		services.AddSingleton<VaultEntityModelCatalog>();
+		services.AddScoped<VaultEntityGateway>();
 		services.AddSingleton<PuckTokenizer>();
 		services.AddSingleton<PuckPathDiscriminabilityService>();
 		services.AddSingleton<PuckSemanticProjector>();

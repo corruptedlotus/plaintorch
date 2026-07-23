@@ -16,7 +16,8 @@ public sealed class PuckEntityResolutionService(
 	VaultLayout layout,
 	PuckRuntimeCompilationCatalog compilationCatalog,
 	PuckTokenizer puckTokenizer,
-	VaultPathSyncModelCatalog pathSyncModelCatalog)
+	VaultPathSyncModelCatalog pathSyncModelCatalog,
+	VaultEntityGateway entityGateway)
 {
 	/// <summary>
 	/// Resolves a PUCK identifier into its concrete entity and note association when available.
@@ -93,61 +94,12 @@ public sealed class PuckEntityResolutionService(
 		}
 	}
 
-	private async Task<object?> FindEntityByIdAsync(Type entityType, string id, CancellationToken cancellationToken)
+	private Task<object?> FindEntityByIdAsync(Type entityType, string id, CancellationToken cancellationToken)
 	{
-		if (entityType == typeof(Directive))
-		{
-			// Legacy base-declaration ids (A{S:6}) resolve to stellar rows; lunar directives resolve through
-			// their own declaration.
-			return await context.Directives.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id && !(item is LunarDirective), cancellationToken);
-		}
-
-		if (entityType == typeof(StellarDirective))
-		{
-			return await context.Directives.AsNoTracking().OfType<StellarDirective>().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(LunarDirective))
-		{
-			return await context.LunarDirectives.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(Objective))
-		{
-			return await context.Objectives.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(Fate))
-		{
-			return await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(Decree))
-		{
-			return await context.Decrees.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(OnrushSprint))
-		{
-			return await context.OnrushSprints.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(ExecutiveOrder))
-		{
-			return await context.ExecutiveOrders.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(PolarisCycle))
-		{
-			return await context.PolarisCycles.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(LorePage))
-		{
-			return await context.LorePages.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		return null;
+		// Candidates arrive tokenization-gated: a declaration only reaches this lookup with ids it can mint, so
+		// each type (including abstract family anchors, which span their whole discriminated family) queries its
+		// own set without per-type filtering. Cross-declaration ambiguity is rejected by the caller.
+		return entityGateway.FindByIdAsync(entityType, id, track: false, cancellationToken);
 	}
 
 	private string? ResolveAssociatedNotePath(Type entityType, string id)

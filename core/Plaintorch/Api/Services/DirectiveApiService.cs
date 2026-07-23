@@ -22,7 +22,8 @@ public sealed class DirectiveApiService(
 	VaultMarkdownDiscoveryService watcherDiscoveryService,
 	VaultWatcherSyncService watcherSyncService,
 	VaultTemporalDataService temporalDataService,
-	VaultAuditLogService auditLogService) : IDirectiveApi
+	VaultAuditLogService auditLogService,
+	VaultEntityGateway entityGateway) : IDirectiveApi
 {
 	/// <inheritdoc />
 	public Task<Directive?> GetAsync(string directiveId, CancellationToken cancellationToken = default)
@@ -577,32 +578,8 @@ public sealed class DirectiveApiService(
 		return directive;
 	}
 
-	private static Directive Clone(Directive directive)
+	private Directive Clone(Directive directive)
 	{
-		return directive switch
-		{
-			StellarDirective stellar => new StellarDirective
-			{
-				Id = stellar.Id,
-				Title = stellar.Title,
-				Codename = stellar.Codename,
-				ParentDirectiveId = stellar.ParentDirectiveId,
-				Status = stellar.Status,
-				Tags = stellar.Tags.ToList(),
-				Due = stellar.Due,
-				StartDate = stellar.StartDate,
-				EndDate = stellar.EndDate,
-			},
-			LunarDirective lunar => new LunarDirective
-			{
-				Id = lunar.Id,
-				Title = lunar.Title,
-				Codename = lunar.Codename,
-				ParentDirectiveId = lunar.ParentDirectiveId,
-				Status = lunar.Status,
-				Tags = lunar.Tags.ToList(),
-			},
-			_ => throw new InvalidOperationException($"Directive '{directive.Id}' has an unsupported kind '{directive.GetType().Name}'."),
-		};
+		return (Directive)entityGateway.CloneScalars(directive);
 	}
 }

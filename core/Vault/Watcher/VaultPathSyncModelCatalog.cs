@@ -19,66 +19,32 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 
 	private readonly IReadOnlyList<VaultPathSyncModel> _models =
 	[
-		// The directive family is polymorphic: the abstract Directive anchors identity/known-id lookups, while
-		// path composition materializes a concrete StellarDirective (lunar directives are authored through the API).
-		CreateModel<Directive>(layout, [layout.VaultRoot], VaultStorageShape.SelfNamedDirectory, static _ => false, static (context, cancellationToken) =>
-			context.Directives
-				.AsNoTracking()
-				.Select(item => item.Id)
-				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken),
+		// The directive family is polymorphic: the abstract Directive anchors identity/known-id lookups (spanning
+		// the whole discriminated family), while path composition materializes a concrete StellarDirective (lunar
+		// directives are authored through the API).
+		CreateModel<Directive>(layout, [layout.VaultRoot], VaultStorageShape.SelfNamedDirectory, static _ => false,
 			concreteType: typeof(StellarDirective)),
 
 		CreateModel<Objective>(layout, [layout.ObjectivesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
-			IsIncentiveMarkdownFile(path, layout, layout.ObjectivesRoot, ObjectivePartitionName), static (context, cancellationToken) =>
-			context.Objectives
-				.AsNoTracking()
-				.IgnoreAutoIncludes()
-				.Select(item => item.Id)
-				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
+			IsIncentiveMarkdownFile(path, layout, layout.ObjectivesRoot, ObjectivePartitionName)),
 
 		CreateModel<Fate>(layout, [layout.FatesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
-			IsIncentiveMarkdownFile(path, layout, layout.FatesRoot, FatePartitionName), static (context, cancellationToken) =>
-			context.Fates
-				.AsNoTracking()
-				.IgnoreAutoIncludes()
-				.Select(item => item.Id)
-				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
+			IsIncentiveMarkdownFile(path, layout, layout.FatesRoot, FatePartitionName)),
 
 		CreateModel<Decree>(layout, [layout.DecreesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
-			IsIncentiveMarkdownFile(path, layout, layout.DecreesRoot, DecreePartitionName), static (context, cancellationToken) =>
-			context.Decrees
-				.AsNoTracking()
-				.IgnoreAutoIncludes()
-				.Select(item => item.Id)
-				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
+			IsIncentiveMarkdownFile(path, layout, layout.DecreesRoot, DecreePartitionName)),
 
 		CreateModel<OnrushSprint>(layout, [layout.OnrushRoot], VaultStorageShape.SelfNamedDirectory, path =>
-			IsPrimarySelfNamedEntityFile(path, layout.OnrushRoot), static (context, cancellationToken) =>
-			context.OnrushSprints
-				.AsNoTracking()
-				.Select(item => item.Id)
-				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
+			IsPrimarySelfNamedEntityFile(path, layout.OnrushRoot)),
 
 		CreateModel<ExecutiveOrder>(layout, [layout.OnrushRoot], VaultStorageShape.SingleFile, static path =>
-			IsExecutiveOrderMarkdownFile(path), static (context, cancellationToken) =>
-			context.ExecutiveOrders
-				.AsNoTracking()
-				.Select(item => item.Id)
-				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
+			IsExecutiveOrderMarkdownFile(path)),
 
 		CreateModel<PolarisCycle>(layout, [layout.JournalRoot], VaultStorageShape.SingleFile, static path =>
-			string.Equals(Path.GetExtension(path), ".md", StringComparison.OrdinalIgnoreCase), static (context, cancellationToken) =>
-			context.PolarisCycles
-				.AsNoTracking()
-				.Select(item => item.Id)
-				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
+			string.Equals(Path.GetExtension(path), ".md", StringComparison.OrdinalIgnoreCase)),
 
 		CreateModel<LorePage>(layout, [layout.SagaRoot], VaultStorageShape.SelfNamedDirectory, path =>
-			IsPrimarySelfNamedEntityFile(path, layout.SagaRoot), static (context, cancellationToken) =>
-			context.LorePages
-				.AsNoTracking()
-				.Select(item => item.Id)
-				.ToHashSetAsync(StringComparer.OrdinalIgnoreCase, cancellationToken)),
+			IsPrimarySelfNamedEntityFile(path, layout.SagaRoot)),
 	];
 
 	/// <summary>
@@ -210,7 +176,6 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 		IReadOnlyList<string> scanRoots,
 		VaultStorageShape expectedShape,
 		Func<string, bool> isCandidatePath,
-		Func<PlainfraContext, CancellationToken, Task<HashSet<string>>> loadKnownIdsAsync,
 		Type? concreteType = null)
 	{
 		var attribute = typeof(T).GetCustomAttributes(typeof(VaultStorageAttribute), inherit: true)
@@ -229,7 +194,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 			attribute.Mode,
 			attribute.Shape,
 			isCandidatePath,
-			loadKnownIdsAsync,
+			static (context, cancellationToken) => VaultEntityGateway.LoadKnownIdsAsync(context, typeof(T), cancellationToken),
 			concreteType);
 	}
 
