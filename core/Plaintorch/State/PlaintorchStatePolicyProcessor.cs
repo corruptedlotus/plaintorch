@@ -9,7 +9,7 @@ namespace Pleiades.Plaintorch.State;
 /// <summary>
 /// Applies reusable PLAINTORCH state rules to tracked EF entities before they are persisted.
 /// </summary>
-public sealed class PlaintorchStatePolicyProcessor
+public sealed class PlaintorchStatePolicyProcessor(DependencyReconciler dependencyReconciler)
 {
 	private const string ObjectiveSettlementDescriptionPrefix = "PLAINTORCH objective settlement";
 	private const string AttentiveExecutionDescriptionPrefix = "PLAINTORCH attentive execution";
@@ -33,6 +33,7 @@ public sealed class PlaintorchStatePolicyProcessor
 		await ApplyObjectiveSettlementRulesAsync(context, cancellationToken);
 		await ApplyAttentiveRewardRulesAsync(context, cancellationToken);
 		await ApplyReflectiveCollectionRewardRulesAsync(context, cancellationToken);
+		await dependencyReconciler.ReconcileAsync(context, cancellationToken);
 
 		return supersededForecasts.Count == 0
 			? PlaintorchStatePolicyResult.Empty

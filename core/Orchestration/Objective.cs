@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Vault;
 using Pleiades.Vault.Markdown;
@@ -49,6 +50,7 @@ public sealed class Objective : Incentive
 	/// Gets or sets the current objective workflow status.
 	/// </summary>
 	[MarkdownField("status")]
+	[LifecycleStatus]
 	public ObjectiveStatus Status { get; set; } = ObjectiveStatus.Standby;
 
 	/// <summary>

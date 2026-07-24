@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Vault;
 using Pleiades.Vault.Markdown;
@@ -25,6 +26,7 @@ public sealed class Fate : Incentive
 	/// Gets or sets the current fate state.
 	/// </summary>
 	[MarkdownField("status")]
+	[LifecycleStatus]
 	public FateStatus Status { get; set; } = FateStatus.Active;
 
 	/// <summary>

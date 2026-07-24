@@ -1,4 +1,39 @@
+using Pleiades.Orchestration;
+
 namespace Pleiades.Plaintorch.Api.Transport;
+
+/// <summary>
+/// Represents one endpoint of a dependency in a transport payload (PEP101): a kind plus an id, optionally
+/// qualified by an occurrence slot (iCalendar <c>RECURRENCE-ID</c>) for an eventive endpoint.
+/// </summary>
+public sealed record DependencyEndpointRequest(
+	DependencyEndpointKind Kind,
+	string Id,
+	DateOnly? RecurrenceDate = null,
+	TimeOnly? RecurrenceTime = null);
+
+/// <summary>
+/// Represents the transport payload used to create a dependency edge (source blocks target) (PEP101).
+/// </summary>
+public sealed record CreateDependencyRequest(
+	DependencyEndpointRequest Source,
+	DependencyEndpointRequest Target,
+	DependencyTrigger? Trigger = null,
+	DependencyConstraint? Constraint = null);
+
+/// <summary>
+/// Represents the transport payload used to create a checkpoint (PEP101).
+/// </summary>
+public sealed record CreateCheckpointRequest(
+	string Title,
+	string? Id = null,
+	int? CelestronToll = null,
+	bool? ExternalCondition = null);
+
+/// <summary>
+/// Represents the transport payload used to set a checkpoint's external condition switch (PEP101).
+/// </summary>
+public sealed record SetCheckpointConditionRequest(bool Met);
 
 /// <summary>
 /// Represents the transport payload used to create a directive.

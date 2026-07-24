@@ -4,6 +4,7 @@ using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
+using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch.Api.Services;
@@ -16,6 +17,7 @@ public sealed class ObjectiveApiService(
 	PuckCreationService puckCreationService,
 	PlaintorchMarkdownStorageService markdownStorageService,
 	VaultTemporalDataService temporalDataService,
+	DependencyGateService dependencyGate,
 	VaultAuditLogService auditLogService) : IObjectiveApi
 {
 	/// <inheritdoc />
@@ -168,7 +170,7 @@ public sealed class ObjectiveApiService(
 			?? objective.Due
 			?? throw new InvalidOperationException($"Objective '{objectiveId}' has no due date; supply a date to materialize its eventive.");
 
-		var existing = await context.Eventives.FirstOrDefaultAsync(item => item.ObjectiveId == objective.Id && item.Date == date, cancellationToken);
+		var existing = await context.Eventives.FirstOrDefaultAsync(item => item.ObjectiveId == objective.Id && item.RecurrenceDate == date, cancellationToken);
 		if (existing is not null)
 		{
 			return existing;
@@ -180,6 +182,8 @@ public sealed class ObjectiveApiService(
 			Date = date,
 			StartTime = request.StartTime,
 			EndTime = request.EndTime,
+			RecurrenceDate = date,
+			RecurrenceTime = request.StartTime,
 		};
 		eventive.Normalize();
 
@@ -203,6 +207,9 @@ public sealed class ObjectiveApiService(
 
 		var objective = await context.Objectives.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
 			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
+
+		await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Objective, objective.Id), shift.Status, cancellationToken);
+
 		var previous = Clone(objective);
 
 		objective.Status = shift.Status;

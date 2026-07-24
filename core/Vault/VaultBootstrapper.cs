@@ -1,4 +1,5 @@
 using Pleiades.Vault.Database;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 
 namespace Pleiades.Vault;
@@ -12,6 +13,7 @@ public sealed class VaultBootstrapper(
 	PlainfraContextInitializer contextInitializer,
 	VaultStorageTopologyValidator topologyValidator,
 	VaultEntityModelCatalog entityModelCatalog,
+	EntityLifecycleResolver lifecycleResolver,
 	PuckRuntimeCompilationCatalog puckRuntimeCompilationCatalog)
 {
 	/// <summary>
@@ -50,6 +52,7 @@ public sealed class VaultBootstrapper(
 	private void ValidateDeclarations()
 	{
 		entityModelCatalog.Validate(context.Model);
+		lifecycleResolver.Validate();
 		topologyValidator.Validate();
 	}
 

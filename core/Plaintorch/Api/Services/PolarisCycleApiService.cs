@@ -20,6 +20,7 @@ public sealed class PolarisCycleApiService(
 	PlaintorchStateService stateService,
 	PlaintorchMarkdownStorageService markdownFileService,
 	PlaintorchOrbitService orbitService,
+	DependencyGateService dependencyGate,
 	VaultAuditLogService auditLogService) : IPolarisCycleApi
 {
 	/// <inheritdoc />
@@ -518,7 +519,7 @@ public sealed class PolarisCycleApiService(
 
 		foreach (var objective in dueObjectives)
 		{
-			var exists = await context.Eventives.AnyAsync(item => item.ObjectiveId == objective.Id && item.Date == objective.Due!.Value, cancellationToken);
+			var exists = await context.Eventives.AnyAsync(item => item.ObjectiveId == objective.Id && item.RecurrenceDate == objective.Due!.Value, cancellationToken);
 			if (exists)
 			{
 				continue;
@@ -528,6 +529,7 @@ public sealed class PolarisCycleApiService(
 			{
 				ObjectiveId = objective.Id,
 				Date = objective.Due!.Value,
+				RecurrenceDate = objective.Due!.Value,
 			});
 			created++;
 		}
@@ -573,8 +575,14 @@ public sealed class PolarisCycleApiService(
 
 	private async Task<bool> EnsureFateEventiveCoreAsync(Fate fate, DateOnly day, TimeOnly? startTime, TimeOnly? endTime, int? estimation, CancellationToken cancellationToken)
 	{
+		// PEP101: a locked whole-fate pauses orbit generation; a locked single occurrence blocks just itself.
+		if (await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, day, startTime, cancellationToken))
+		{
+			return false;
+		}
+
 		var exists = await context.Eventives.AnyAsync(
-			item => item.FateId == fate.Id && item.Date == day && item.StartTime == startTime,
+			item => item.FateId == fate.Id && item.RecurrenceDate == day && item.RecurrenceTime == startTime,
 			cancellationToken);
 		if (exists)
 		{
@@ -587,6 +595,8 @@ public sealed class PolarisCycleApiService(
 			Date = day,
 			StartTime = startTime,
 			EndTime = endTime,
+			RecurrenceDate = day,
+			RecurrenceTime = startTime,
 			Estimation = estimation,
 		};
 		eventive.Normalize();

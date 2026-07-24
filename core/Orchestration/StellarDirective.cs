@@ -1,3 +1,4 @@
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Vault;
 using Pleiades.Vault.Markdown;
@@ -20,6 +21,7 @@ public sealed class StellarDirective : Directive
 	/// Gets or sets the state of the stellar directive.
 	/// </summary>
 	[MarkdownField("status")]
+	[LifecycleStatus]
 	public DirectiveStatus Status { get; set; } = DirectiveStatus.Planned;
 
 	/// <summary>

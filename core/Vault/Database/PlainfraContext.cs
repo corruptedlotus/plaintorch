@@ -98,6 +98,16 @@ public class PlainfraContext : DbContext
 	public DbSet<CelestronTransaction> CelestronLedger => Set<CelestronTransaction>();
 
 	/// <summary>
+	/// Gets the checkpoints tracked in the database (PEP101).
+	/// </summary>
+	public DbSet<Checkpoint> Checkpoints => Set<Checkpoint>();
+
+	/// <summary>
+	/// Gets the dependency edges tracked in the database (PEP101).
+	/// </summary>
+	public DbSet<Dependency> Dependencies => Set<Dependency>();
+
+	/// <summary>
 	/// Gets the issued PUCK registry entries tracked in the database.
 	/// </summary>
 	public DbSet<PuckRegistryEntry> PuckRegistryEntries => Set<PuckRegistryEntry>();
@@ -198,6 +208,30 @@ public class PlainfraContext : DbContext
 			.Property(x => x.Status)
 			.HasConversion<string>()
 			.HasColumnName("LunarStatus");
+
+		// PEP101 dependency system: heterogeneous endpoint kinds and the optional trigger/constraint store as
+		// readable strings; the loose endpoint ids are indexed for reconciliation lookups.
+		modelBuilder.Entity<Dependency>()
+			.Property(x => x.SourceKind)
+			.HasConversion<string>();
+
+		modelBuilder.Entity<Dependency>()
+			.Property(x => x.TargetKind)
+			.HasConversion<string>();
+
+		modelBuilder.Entity<Dependency>()
+			.Property(x => x.Trigger)
+			.HasConversion<string>();
+
+		modelBuilder.Entity<Dependency>()
+			.Property(x => x.Constraint)
+			.HasConversion<string>();
+
+		modelBuilder.Entity<Dependency>()
+			.HasIndex(x => x.SourceId);
+
+		modelBuilder.Entity<Dependency>()
+			.HasIndex(x => x.TargetId);
 
 		modelBuilder.Entity<Attentive>()
 			.Property(x => x.Resolution)
