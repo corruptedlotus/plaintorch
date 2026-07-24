@@ -192,7 +192,9 @@ public sealed class PlaintorchStatePolicyProcessor(DependencyReconciler dependen
 					continue;
 				}
 
-				var multiplier = string.Equals(activeOnrushId, current.OnrushSprintId, StringComparison.OrdinalIgnoreCase) ? 2 : 1;
+				var isInActiveOnrush = !string.IsNullOrWhiteSpace(activeOnrushId)
+					&& string.Equals(activeOnrushId, current.OnrushSprintId, StringComparison.OrdinalIgnoreCase);
+				var multiplier = isInActiveOnrush ? 2 : 1;
 				context.CelestronLedger.Add(new CelestronTransaction
 				{
 					Amount = current.CelestronValue * multiplier,
