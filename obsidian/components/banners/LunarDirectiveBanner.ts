@@ -1,27 +1,27 @@
 import { component, css, html } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { Directive, DirectiveStatus } from '@pleiades/sdk'
+import { Directive, DirectiveStatus, LunarDirective } from '@pleiades/sdk'
 import { core, ReactiveBinder, SelectDirectiveStatusModal } from ".."
 import { App } from "obsidian"
 
-@component('p7t-directive-banner')
-export class DirectiveBanner extends EntityBanner<Directive> {
+@component('p7t-ldirective-banner')
+export class LunarDirectiveBanner extends EntityBanner<LunarDirective> {
 	override icon = 'directive'
 
 	override get preHeadingTemplate() {
 		return !this.entity?.codename ? html`
-			<span>Stellar Directive</span>
+			<span>Lunar Directive</span>
 		` : html`
 			<span>Codename ${this.entity.codename.toUpperCase()}</span>
 		`
 	}
 	
-	protected binder = new ReactiveBinder<Directive>(this, 'entity', {
+	protected binder = new ReactiveBinder<LunarDirective>(this, 'entity', {
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity
 			switch (keyPath) {
 				case 'status':
-					await core.directives.shiftStellarWorkflow(entity!.id, { status: entity!.status as DirectiveStatus })
+					await core.directives.shiftLunarWorkflow(entity!.id, { status: entity!.status as LunarStatus })
 					break
 				default:
 					await core.directives.updateStellar(entity!.id, entity!) ?? entity
@@ -122,6 +122,6 @@ export class DirectiveBanner extends EntityBanner<Directive> {
 
 declare global {
 	interface HTMLTagNameMap {
-		'p7t-directive-banner': DirectiveBanner
+		'p7t-ldirective-banner': LunarDirectiveBanner
 	}
 }

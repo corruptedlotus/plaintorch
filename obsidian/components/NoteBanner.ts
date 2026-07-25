@@ -42,8 +42,8 @@ export class NoteBanner extends Component {
 
 	protected getTagForKind(kind?: string) {
 		switch (kind) {
-			case 'directive': return l`p7t-directive-banner`
-			case 'lunar-directive': return l`p7t-lunar-directive-banner`
+			case 'stellar-directive': return l`p7t-sdirective-banner`
+			case 'lunar-directive': return l`p7t-ldirective-banner`
 
 			case 'objective': return l`p7t-objective-banner`
 			case 'fate': return l`p7t-fate-banner`

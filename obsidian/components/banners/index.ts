@@ -1,5 +1,5 @@
 export * from './EntityBanner'
-export * from './DirectiveBanner'
+export * from './StellarDirectiveBanner'
 export * from './ObjectiveBanner'
 export * from './OnrushBanner'
 export * from './PolarisBanner'
