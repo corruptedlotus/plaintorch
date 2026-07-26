@@ -498,6 +498,7 @@ public sealed class SystemApiService(
 		var sprint = await context.OnrushSprints
 			.AsNoTracking()
 			.Include(item => item.Objectives)
+			.Include(item => item.ExecutiveOrders)
 			.FirstOrDefaultAsync(item => item.Id == sprintId, cancellationToken);
 
 		return sprint;
