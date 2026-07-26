@@ -13,8 +13,16 @@
 			"name": "Obsidian Plugin",
 		},
 		{
+			"name": "SDK: TypeScript (Node)",
+			"path": "sdk.ts"
+		},
+		{
 			"path": "sipa",
 			"name": "Sunnyside Interface"
+		},
+		{
+			"path": "core.tests",
+			"name": "Unit Tests: Core"
 		},
 		{
 			"path": "_documents",

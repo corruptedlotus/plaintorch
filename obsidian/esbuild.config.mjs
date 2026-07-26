@@ -6,6 +6,11 @@ const production = process.argv.includes("production");
 const watch = !production;
 const outputDirectory = "_dist";
 
+console.log("---- FOR THE GLORY OF THE TRILUNE ----")
+console.log("Pleiades Affairs Intelligence & Tristate Orchestrator (PLAINTORCH) Obsidian Plugin")
+console.log("--------------------------------------")
+console.log(`Building for ${production ? "production" : "development"}...`)
+
 const copyManifestPlugin = {
   name: "copy-manifest",
   setup(build) {
@@ -47,7 +52,7 @@ const context = await esbuild.context({
 });
 
 if (watch) {
-	console.log("Watching PLAINTORCH Obsidian plugin...");
+	console.warn("Initiating watcher...");
   await context.watch();
 } else {
   await context.rebuild();
