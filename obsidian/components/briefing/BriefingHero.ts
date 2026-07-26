@@ -1,5 +1,5 @@
 import { component, css, html, nothing, property, unsafeCSS } from "@a11d/lit"
-import { SystemBriefing } from "@pleiades/sdk";
+import { ExecutiveOrder, SystemBriefing } from "@pleiades/sdk";
 import { toRomanNumeral } from "@pleiades/sdk/helpers";
 import { CardComponent } from "components/design"
 import { 'plaintorch-bgx-png' as bannerBg } from 'assets/design'
@@ -92,6 +92,8 @@ export class BriefingHero extends CardComponent {
 				display: flex;
 				flex-direction: column;
 				align-items: flex-end;
+				justify-content: space-between;
+				gap: .8rem;
 				grid-area: extra;
 			}
 
@@ -112,6 +114,37 @@ export class BriefingHero extends CardComponent {
 					width: 24px;
 					height: 24px;
 					opacity: .91;
+				}
+			}
+
+			/* Active executive orders sit at the bottom-right, sharing the Celestron chip's
+			   look but far less opaque. Colour is a temporary yellow. */
+			.exec-orders {
+				display: flex;
+				flex-direction: column;
+				align-items: stretch;
+				gap: 3px;
+				background-color: color-mix(in srgb, var(--text-normal) 5%, transparent);
+				border-radius: 8px;
+				padding: .35em .6em;
+				color: #ffd23f;
+				max-width: 24em;
+			}
+
+			.exec-order {
+				display: flex;
+				align-items: flex-start;
+				gap: 6px;
+				font-size: .82em;
+				font-weight: 400;
+				font-family: var(--font-text);
+				line-height: 1.25;
+
+				& p7t-icon {
+					width: 18px;
+					height: 18px;
+					flex: 0 0 18px;
+					margin-top: .1em;
 				}
 			}
 
@@ -139,6 +172,15 @@ export class BriefingHero extends CardComponent {
 				grid-area: header;
 			}
 		`
+	}
+
+	/** Executive orders of the current onrush that are in effect today. */
+	private get activeExecutiveOrders(): ExecutiveOrder[] {
+		const orders = this.briefing?.currentOnrush?.executiveOrders ?? []
+		const today = todayKey()
+		return orders.filter(order =>
+			(!order.effectiveFrom || order.effectiveFrom <= today)
+			&& (!order.effectiveUntil || order.effectiveUntil >= today))
 	}
 
 	override get template() {
@@ -194,6 +236,16 @@ export class BriefingHero extends CardComponent {
 						<span>${this.briefing?.celestronBanked ?? 0}</span>
 						<p7t-icon icon='starfire'></p7t-icon>
 					</div>
+					${this.activeExecutiveOrders.length === 0 ? nothing : html`
+						<div class='exec-orders'>
+							${this.activeExecutiveOrders.map(order => html`
+								<div class='exec-order'>
+									<p7t-icon icon='exec-order'></p7t-icon>
+									<span>Executive Order ${order.id}: ${order.summary}</span>
+								</div>
+							`)}
+						</div>
+					`}
 				</div>
 			</div>
 		`
@@ -204,6 +256,13 @@ export class BriefingHero extends CardComponent {
 			<p7t-date-view></p7t-date-view>
 		`
 	}
+}
+
+/** Local date as a 'YYYY-MM-DD' key, comparable against serialized DateOnly effective dates. */
+function todayKey(): string {
+	const now = new Date()
+	const pad = (value: number) => value.toString().padStart(2, '0')
+	return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
 declare global {
