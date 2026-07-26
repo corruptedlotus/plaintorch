@@ -230,6 +230,8 @@ public enum PolarisExecutivePlanningMode
 /// <remarks>
 /// The optional <paramref name="Estimation"/>, <paramref name="Minimum"/>, and <paramref name="Maximum"/> time
 /// allocations are whole-minute working time units that are reconciled through <see cref="Executive.NormalizeTimeAllocations"/>.
+/// There is no elapsed-time input here: a freshly planned executive has not been worked yet, so its tracked
+/// minutes always start at <c>0</c> and are only accrued later through <see cref="ExecutiveUpdate"/>.
 /// </remarks>
 public sealed record PolarisExecutivePlan(
 	PolarisExecutivePlanningMode Mode,
@@ -257,6 +259,8 @@ public sealed record PolarisExecutivePlanResult(Objective? Objective, Executive 
 /// The time allocation fields carry whole-minute working time units. Each is paired with a
 /// <c>Clear*</c> flag so a caller can distinguish "leave unchanged" (null) from "unset" (clear).
 /// After the values are applied the record is reconciled through <see cref="Executive.NormalizeTimeAllocations"/>.
+/// <paramref name="Elapsed"/> is the raw tracked-minute tally: <c>null</c> leaves it unchanged and any
+/// supplied value (including <c>0</c> to reset) overwrites it. It has no <c>Clear*</c> flag because it is never unset.
 /// </remarks>
 public sealed record ExecutiveUpdate(
 	bool? Executed = null,
@@ -267,7 +271,8 @@ public sealed record ExecutiveUpdate(
 	int? Maximum = null,
 	bool ClearEstimation = false,
 	bool ClearMinimum = false,
-	bool ClearMaximum = false);
+	bool ClearMaximum = false,
+	int? Elapsed = null);
 
 /// <summary>
 /// Represents the inputs used to draw reflectives for a Polaris cycle.

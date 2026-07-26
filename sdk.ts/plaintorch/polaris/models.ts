@@ -36,6 +36,8 @@ export interface Executive {
 	minimum: number | undefined
 	/** Maximum time allocation, as a whole-minute working time unit. */
 	maximum: number | undefined
+	/** Raw count of tracked (passed) minutes spent on this executive. Defaults to 0. */
+	elapsed: number
 }
 
 export interface Reflective {
@@ -86,6 +88,8 @@ export interface ExecutiveUpdate {
 	clearMinimum?: boolean
 	/** Clears the maximum allocation regardless of any provided value. */
 	clearMaximum?: boolean
+	/** Raw tracked-minute tally. Leave undefined to keep the current value; supply a value (including 0 to reset) to overwrite. */
+	elapsed?: number | undefined
 }
 
 export interface ReflectiveDrawRequest {

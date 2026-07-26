@@ -64,6 +64,16 @@ public sealed class Executive
 	public int? Maximum { get; set; }
 
 	/// <summary>
+	/// Gets or sets the raw count of tracked (passed) minutes spent on this executive.
+	/// </summary>
+	/// <remarks>
+	/// Unlike the estimation/minimum/maximum allocations, this is not a target but a running tally of
+	/// actually elapsed work, expressed as whole minutes. It defaults to <c>0</c> and is never clamped
+	/// against the allocation envelope.
+	/// </remarks>
+	public int Elapsed { get; set; }
+
+	/// <summary>
 	/// Reconciles the executive time allocations so they honour the coupling and clamping rules:
 	/// when a minimum or maximum bound is present but no estimation has been specified yet, the estimation
 	/// adopts that bound (preferring the minimum); and whenever a bound is present the estimation is clamped
