@@ -5,5 +5,6 @@ export * from './EditableDataLink'
 export * from './SelectCollegeModal'
 export * from './SelectStatusModal'
 export * from './EditableStarfire'
+export * from './EditableOrbit'
 
 export const getApp = () => (window as any).app as App

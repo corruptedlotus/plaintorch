@@ -1,8 +1,13 @@
 import { Component, component, css, CSSResult, html, property } from "@a11d/lit"
-import { DirectiveStatus, ObjectiveStatus } from "@pleiades/sdk"
+import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus } from "@pleiades/sdk"
 import { IconName } from "components"
 
-type Status = keyof typeof DirectiveStatus | keyof typeof ObjectiveStatus
+type Status =
+	| keyof typeof DirectiveStatus
+	| keyof typeof ObjectiveStatus
+	| keyof typeof LunarDirectiveStatus
+	| keyof typeof FateStatus
+	| keyof typeof DecreeStatus
 type StatusDescriptor = {
 	icon: IconName,
 	label: string,
@@ -12,20 +17,25 @@ type StatusDescriptor = {
 export const statusDescriptors: Record<Status, StatusDescriptor> = {
 	Standby: { icon: 'state-zero', label: 'Standby' },
 	Planned: { icon: 'state-zero', label: 'Planned' },
+	OnHold: { icon: 'state-zero', label: 'On Hold' },
 	Blocked: { icon: 'state-blocked', label: 'Blocked' },
 	Committed: { icon: 'state-commit', label: 'Committed' },
 
 	Active: { icon: 'state-active', label: 'Active' },
 	Onrush: { icon: 'state-onrush', label: 'Onrush' },
 	Polaris: { icon: 'state-polaris', label: 'Polaris' },
-	
+
 	Done: { icon: 'state-done', label: 'Done' },
 	Fulfilled: { icon: 'state-done', label: 'Fulfilled' },
 
 	Archived: { icon: 'state-archived', label: 'Archived' },
 	Over: { icon: 'state-archived', label: 'Over' },
+	Stale: { icon: 'state-archived', label: 'Stale' },
+	OptOut: { icon: 'state-archived', label: 'Opted Out' },
+	Abandoned: { icon: 'state-archived', label: 'Abandoned' },
 
 	Failed: { icon: 'state-failed', label: 'Failed' },
+	Cancelled: { icon: 'state-failed', label: 'Cancelled' },
 }
 
 @component('p7t-status-item')

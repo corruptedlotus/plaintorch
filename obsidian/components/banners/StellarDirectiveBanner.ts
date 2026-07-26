@@ -1,44 +1,45 @@
 import { component, css, html } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { Directive, DirectiveStatus, StellarDirective } from '@pleiades/sdk'
-import { core, ReactiveBinder, SelectDirectiveStatusModal } from ".."
+import { Directive, DirectiveStatus, StellarDirectiveUpdate } from '@pleiades/sdk'
+import { core, IconName, ReactiveBinder, SelectDirectiveStatusModal } from ".."
 import { App } from "obsidian"
 
+/**
+ * Banner for a Stellar directive (PEP100) — the classic lifecycle-driven directive kind. It
+ * carries the {@link DirectiveStatus} lifecycle and can hold scheduling dates.
+ */
 @component('p7t-sdirective-banner')
-export class StellarDirectiveBanner extends EntityBanner<StellarDirective> {
-	override icon = 'directive'
+export class StellarDirectiveBanner extends EntityBanner<Directive> {
+	override icon: IconName = 'directive'
 
-	override get preHeadingTemplate() {
+	protected override get preHeadingTemplate() {
 		return !this.entity?.codename ? html`
 			<span>Stellar Directive</span>
 		` : html`
 			<span>Codename ${this.entity.codename.toUpperCase()}</span>
 		`
 	}
-	
-	protected binder = new ReactiveBinder<StellarDirective>(this, 'entity', {
+
+	protected binder = new ReactiveBinder<Directive>(this, 'entity', {
 		sourceUpdated: async (_, keyPath) => {
-			const entity = this.entity
+			const entity = this.entity!
 			switch (keyPath) {
 				case 'status':
-					await core.directives.shiftStellarWorkflow(entity!.id, { status: entity!.status as DirectiveStatus })
+					await core.directives.shiftStellarWorkflow(entity.id, { status: entity.status as DirectiveStatus })
 					break
+				case 'title': {
+					const update: StellarDirectiveUpdate = { title: entity.title }
+					await core.directives.updateStellar(entity.id, update)
+					break
+				}
 				default:
-					await core.directives.updateStellar(entity!.id, entity!) ?? entity
-					break
+					return
 			}
-			this.entity = await core.directives.get(entity!.id)
 
-			if (keyPath === 'title')
-			{
-				const existence = await core.system.resolveEntity(entity!.id)
-	
-				const app = (window as any).app as App
-				if (!existence?.associatedNote
-					|| app.workspace.activeEditor?.file?.path === existence?.associatedNote) return
-	
-				const file = app.vault.getFileByPath(existence.associatedNote)!
-				app.workspace.getLeaf(true).openFile(file)
+			this.entity = await core.directives.get(entity.id)
+
+			if (keyPath === 'title') {
+				await this.revealAssociatedNote(entity.id)
 			}
 		}
 	})
@@ -47,37 +48,22 @@ export class StellarDirectiveBanner extends EntityBanner<StellarDirective> {
 		return core.directives.get(puck)
 	}
 
+	private async revealAssociatedNote(directiveId: string) {
+		const existence = await core.system.resolveEntity(directiveId)
+		const app = (window as any).app as App
+		if (!existence?.associatedNote
+			|| app.workspace.activeEditor?.file?.path === existence.associatedNote) return
+
+		const file = app.vault.getFileByPath(existence.associatedNote)!
+		app.workspace.getLeaf(true).openFile(file)
+	}
+
 	static override get styles() {
 		return css`
 			${super.styles}
 
 			:host {
 				padding-inline: 1.2em;
-			}
-
-			.college {
-				display: flex;
-				align-items: center;
-				user-select: none;
-
-				& span {
-					padding: 0.08em 0.8ch;
-					border-radius: 4px;
-					background: color-mix(in srgb, var(--text-normal) 15%, transparent);
-					color: color-mix(in srgb, var(--text-normal) 60%, transparent);
-					font-family: var(--font-interface);
-				}
-			}
-
-			.switcher {
-				font-size: .7em;
-				opacity: .6;
-				line-height: .9;
-			}
-
-			.marker-icon {
-				width: 1.4em;
-				height: 1.4em;
 			}
 
 			:host::part(sub-heading) {
@@ -93,7 +79,6 @@ export class StellarDirectiveBanner extends EntityBanner<StellarDirective> {
 		`
 	}
 
-	
 	protected override get secondary() {
 		const directiveTitle = this.entity!.parentDirective?.title
 		return !directiveTitle ? html`
@@ -113,7 +98,7 @@ export class StellarDirectiveBanner extends EntityBanner<StellarDirective> {
 		return html`
 			<p7t-editable .doEdit=${SelectDirectiveStatusModal.prompt} ${this.binder.bind('status')}>
 				<p7t-status-item
-					.status=${DirectiveStatus[this.entity!.status] as keyof typeof DirectiveStatus}>
+					.status=${DirectiveStatus[this.entity!.status as DirectiveStatus] as keyof typeof DirectiveStatus}>
 				</p7t-status-item>
 			</p7t-editable>
 		`

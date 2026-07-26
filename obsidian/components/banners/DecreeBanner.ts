@@ -1,65 +1,89 @@
-import { component, css, html, state } from "@a11d/lit"
+import { component, css, html, nothing, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { Objective, PolarisCycle } from '@pleiades/sdk'
-import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
-import { OnrushSprint } from "@pleiades/sdk"
-import { App, Notice, SuggestModal } from "obsidian"
-import { core, IconItem, IconName, ReactiveBinder, SelectCollegeModal, SelectObjectiveStatusModal } from ".."
+import { Decree, DecreeStatus, DecreeUpdate, PolarisCycle } from '@pleiades/sdk'
+import { App, Notice } from "obsidian"
+import { core, IconName, ReactiveBinder, SelectDecreeStatusModal } from ".."
 
-@component('p7t-objective-banner')
-export class ObjectiveBanner extends EntityBanner<Objective> {
-	override icon = 'objective'
+/**
+ * Banner for a Decree declarative (PEP100). Decrees are enduring routines: the banner shows
+ * their Orbit definition above the actions, exposes the two decree-appropriate actions
+ * (add to Polaris, and the per-run Celestron reward), and — only inside a Moonlight (lunar)
+ * hierarchy — a toggleable Lunar Reflection row.
+ */
+@component('p7t-decree-banner')
+export class DecreeBanner extends EntityBanner<Decree> {
+	// TODO(icons): no dedicated 'decree' icon exists yet; 'everglow' stands in for the enduring/law-like nature.
+	override icon: IconName = 'everglow'
 
 	@state() activePolaris?: PolarisCycle
 
-	protected binder = new ReactiveBinder<Objective>(this, 'entity', {
+	protected binder = new ReactiveBinder<Decree>(this, 'entity', {
 		sourceUpdated: async (_, keyPath) => {
-			const entity = this.entity
+			const entity = this.entity!
+			const update: DecreeUpdate = {}
 			switch (keyPath) {
 				case 'status':
-					await core.objectives.shiftWorkflow(entity!.id, { status: entity!.status })
+					update.status = entity.status
+					break
+				case 'orbit':
+					// Empty string clears the schedule server-side; undefined would be a no-op.
+					update.orbit = entity.orbit ?? ''
+					break
+				case 'activeCelestron':
+					update.activeCelestron = entity.activeCelestron
+					break
+				case 'reflect':
+					update.reflect = entity.reflect
+					break
+				case 'title':
+					update.title = entity.title
 					break
 				default:
-					await core.objectives.update(entity!.id, entity!) ?? entity
-					break
+					return
 			}
-			this.entity = await core.objectives.get(entity!.id)
 
-			if (keyPath === 'title')
-			{
-				const existence = await core.system.resolveEntity(entity!.id)
-	
-				const app = (window as any).app as App
-				if (!existence?.associatedNote
-					|| app.workspace.activeEditor?.file?.path === existence?.associatedNote) return
-	
-				const file = app.vault.getFileByPath(existence.associatedNote)!
-				app.workspace.getLeaf(true).openFile(file)
+			await core.declaratives.updateDecree(entity.id, update)
+			this.entity = await core.declaratives.getDecree(entity.id)
+
+			if (keyPath === 'title') {
+				await this.revealAssociatedNote(entity.id)
 			}
 		}
 	})
 
 	override async fetchEntity(puck: string) {
 		this.activePolaris = await core.polaris.getCurrent()
-		return core.objectives.get(puck)
+		return core.declaratives.getDecree(puck)
+	}
+
+	/** A decree participates in Moonlight reflection only when its directive is lunar (PEP100). */
+	protected get isLunarHierarchy() {
+		return this.entity!.directive?.$type === 'lunar'
 	}
 
 	protected get isInActivePolaris() {
-		if (!this.activePolaris) return false
-		if (!this.entity) return false
-		return this.activePolaris.executives.some(exec => exec.objective!.id === this.entity!.id)
-	}
-
-	pickOnrush = () => {
-		new AddToOnrushModal(this.app!, this).open()
+		if (!this.activePolaris || !this.entity) return false
+		return (this.activePolaris.attentives ?? []).some(attentive => attentive.decreeId === this.entity!.id)
 	}
 
 	addToPolaris = async () => {
 		if (this.isInActivePolaris) return
-		if (await core.polaris.addObjectiveToCurrent(this.entity!.id)) {
+		const attentive = await core.polaris.addAttentive({ decreeId: this.entity!.id })
+		if (attentive) {
 			new Notice('Added to active Polaris cycle.')
-			this.entity = await core.objectives.get(this.entity!.id)
+			this.activePolaris = await core.polaris.getCurrent()
+			this.entity = await core.declaratives.getDecree(this.entity!.id)
 		}
+	}
+
+	private async revealAssociatedNote(decreeId: string) {
+		const existence = await core.system.resolveEntity(decreeId)
+		const app = (window as any).app as App
+		if (!existence?.associatedNote
+			|| app.workspace.activeEditor?.file?.path === existence.associatedNote) return
+
+		const file = app.vault.getFileByPath(existence.associatedNote)!
+		app.workspace.getLeaf(true).openFile(file)
 	}
 
 	static override get styles() {
@@ -70,18 +94,15 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 				padding-inline: 1.2em;
 			}
 
-			.college {
-				display: flex;
-				align-items: center;
-				user-select: none;
+			:host::part(sub-heading) {
+				font-weight: 300;
+				font-size: .9em;
+				margin-top: -.2em;
+				opacity: 1;
+			}
 
-				& span {
-					padding: 0.08em 0.8ch;
-					border-radius: 4px;
-					background: color-mix(in srgb, var(--text-normal) 15%, transparent);
-					color: color-mix(in srgb, var(--text-normal) 60%, transparent);
-					font-family: var(--font-interface);
-				}
+			p7t-status-item::part(icon) {
+				height: 1.4em;
 			}
 
 			.switcher {
@@ -95,79 +116,83 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 				height: 1.4em;
 			}
 
-			:host::part(sub-heading) {
-				font-weight: 300;
-				font-size: .9em;
-				margin-top: -.2em;
-				opacity: 1;
+			.reflection {
+				align-self: flex-start;
+				user-select: none;
 			}
 
-			p7t-status-item::part(icon) {
+			.reflection p7t-icon-item::part(icon) {
+				width: 1.4em;
 				height: 1.4em;
+			}
+
+			.reflection p7t-icon-item {
+				font-weight: 300;
+				font-size: .9em;
+			}
+
+			.schedule {
+				display: flex;
+				align-items: center;
+				gap: .5em;
+				font-weight: 300;
+				opacity: .85;
+			}
+
+			.per-run {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				line-height: 1;
 			}
 		`
 	}
 
-	
 	protected override get secondary() {
 		const directiveTitle = this.entity!.directive?.title
-		return !directiveTitle ? html`
+		const parentage = !directiveTitle ? html`
 			<span style='opacity: .5'>World Quest</span>
 		` : html`
 			<span>${directiveTitle}</span>
 		`
+
+		return html`
+			${parentage}
+			${!this.isLunarHierarchy ? nothing : this.reflectionRow}
+		`
+	}
+
+	/** Editable Lunar Reflection toggle; shown only inside a lunar hierarchy. */
+	protected get reflectionRow() {
+		const reflected = this.entity!.reflect
+		return html`
+			<p7t-editable
+				class='reflection'
+				.doEdit=${(current?: boolean) => Promise.resolve(!current)}
+				${this.binder.bind('reflect')}>
+				<p7t-icon-item
+					.icon=${reflected ? 'reflective' : ('attentive' as IconName)}
+					.text=${reflected ? 'Lunar Reflection Enabled' : 'Not Reflected'}>
+				</p7t-icon-item>
+			</p7t-editable>
+		`
 	}
 
 	protected override get info() {
-		let college = ObjectiveCollege[this.entity!.college]
-
 		return html`
-			<p7t-editable .doEdit=${SelectCollegeModal.prompt} ${this.binder.bind('college')} class='college'>
-				<span>${college === 'Unspecified' ? 'No College' : 'College of ' + college}</span>
-			</p7t-editable>
-		`
-	}
-
-	protected override get headingTemplate() {
-		return html`
-			<p7t-editable-plaintext ${this.binder.bind('title')}></p7t-editable-plaintext>
-		`
-	}
-	
-	protected override get preHeadingTemplate() {
-		return html`<span>Pleiades Objective</span>`
-	}
-
-	protected override get subHeadingTemplate() {
-		return html`
-			<p7t-editable .doEdit=${SelectObjectiveStatusModal.prompt} ${this.binder.bind('status')}>
-				<p7t-status-item
-					.status=${ObjectiveStatus[this.entity!.status] as keyof typeof ObjectiveStatus}>
-				</p7t-status-item>
-			</p7t-editable>
+			<div class='schedule'>
+				<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>
+			</div>
 		`
 	}
 
 	protected override get actions() {
-		const onrush = this.entity!.onrushSprint
-		let onrushText = 'Past Onrush'
-		if (!onrush?.endDate) {
-			onrushText = 'Active Onrush'
-			if (!onrush?.startDate) {
-				onrushText = 'In Planning'
-			}
-		}
-
-		let inPolaris = this.isInActivePolaris
-
+		const inPolaris = this.isInActivePolaris
 		return html`
-			<p7t-editable-starfire ${this.binder.bind('celestronValue')}></p7t-editable-starfire>
-			<p7t-button large icon='onrush' @click=${() => this.pickOnrush()}>
-				${!onrush ? html`<span>Add to Onrush</span>` : html`
-					<span>${onrushText}</span>
-					<span class='switcher'>Reassign</span>
-				`}
-			</p7t-button>
+			<div class='per-run'>
+				<p7t-editable-starfire ${this.binder.bind('activeCelestron')}></p7t-editable-starfire>
+				<span class='switcher'>per run</span>
+			</div>
 			<p7t-button ?disabled=${inPolaris} large icon='polaris' @click=${() => this.addToPolaris()}>
 				${!inPolaris ? html`<span>Add to Polaris</span>` : html`
 					<p7t-icon class='marker-icon' icon='lucide:check'></p7t-icon>
@@ -176,52 +201,29 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 		`
 	}
 
-	protected override get stamp() {
-		let college = ObjectiveCollege[this.entity!.college]
-		college = college === 'Unspecified' ? 'None' : college
-		return `college-${college.toLowerCase()}` as IconName
-	}
-}
-
-class AddToOnrushModal extends SuggestModal<OnrushSprint | null> {
-	constructor(app: App, protected readonly objectiveBanner: ObjectiveBanner) {
-		super(app)
+	protected override get headingTemplate() {
+		return html`
+			<p7t-editable-plaintext ${this.binder.bind('title')}></p7t-editable-plaintext>
+		`
 	}
 
-	override async getSuggestions(query: string) {
-		return [...await core.onrush.available(), null]
+	protected override get preHeadingTemplate() {
+		return html`<span>Pleiades Decree</span>`
 	}
 
-	renderSuggestion(sprint: OnrushSprint | null, el: HTMLElement) {
-		if (!sprint) {
-			const item = el.createEl('p7t-icon-item') as IconItem<OnrushSprint | null>
-			item.icon = 'lucide:circle-off'
-			item.text = 'No Onrush'
-			item.small = true
-			return
-		}
-		el.createEl('div', { text: sprint.title })
-		el.createEl('small', { text: (sprint.id === '0' ? 'Planning' : 'Active') + ' Onrush' })
+	protected override get subHeadingTemplate() {
+		return html`
+			<p7t-editable .doEdit=${SelectDecreeStatusModal.prompt} ${this.binder.bind('status')}>
+				<p7t-status-item
+					.status=${DecreeStatus[this.entity!.status] as keyof typeof DecreeStatus}>
+				</p7t-status-item>
+			</p7t-editable>
+		`
 	}
-
-	override async onChooseSuggestion(item: OnrushSprint | null, evt: MouseEvent | KeyboardEvent) {
-		if (!!item) {
-			if (await core.objectives.addToOnrush(this.objectiveBanner.entity!.id, item.id)) {
-				new Notice(`Added to ${(item.id === '0' ? 'planning' : 'active')} Onrush.`)
-				this.objectiveBanner.entity = await core.objectives.get(this.objectiveBanner.entity!.id)
-			}
-		} else {
-			if (await core.objectives.removeFromOnrush(this.objectiveBanner.entity!.id)) {
-				new Notice('Removed from Onrush.')
-				this.objectiveBanner.entity = await core.objectives.get(this.objectiveBanner.entity!.id)
-			}
-		}
-	}
-
 }
 
 declare global {
 	interface HTMLTagNameMap {
-		'p7t-objective-banner': ObjectiveBanner
+		'p7t-decree-banner': DecreeBanner
 	}
 }

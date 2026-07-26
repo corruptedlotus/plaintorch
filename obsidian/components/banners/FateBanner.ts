@@ -1,65 +1,78 @@
-import { component, css, html, state } from "@a11d/lit"
+import { component, css, html, nothing, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { Objective, PolarisCycle } from '@pleiades/sdk'
-import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
-import { OnrushSprint } from "@pleiades/sdk"
-import { App, Notice, SuggestModal } from "obsidian"
-import { core, IconItem, IconName, ReactiveBinder, SelectCollegeModal, SelectObjectiveStatusModal } from ".."
+import { Eventive, EventiveResolution, Fate, FateStatus, FateUpdate, PleiadeanDate } from '@pleiades/sdk'
+import { App } from "obsidian"
+import { core, IconName, ReactiveBinder, SelectFateStatusModal } from ".."
 
+/**
+ * Banner for a Fate declarative (PEP100). Fates are event-like: they show their Orbit
+ * definition — the same place a lorepage shows its date — when they recur, or their
+ * datetime [range] when they are single-instance, with the next materialized eventive
+ * surfaced above.
+ */
 @component('p7t-fate-banner')
-export class FateBanner extends EntityBanner<Objective> {
-	override icon = 'fate'
+export class FateBanner extends EntityBanner<Fate> {
+	// TODO(icons): no dedicated 'fate' icon exists yet; 'eventive' stands in for now.
+	override icon: IconName = 'eventive'
 
-	@state() activePolaris?: PolarisCycle
+	@state() nextEventive?: Eventive
 
-	protected binder = new ReactiveBinder<Objective>(this, 'entity', {
+	protected binder = new ReactiveBinder<Fate>(this, 'entity', {
 		sourceUpdated: async (_, keyPath) => {
-			const entity = this.entity
+			const entity = this.entity!
+			const update: FateUpdate = {}
 			switch (keyPath) {
 				case 'status':
-					await core.objectives.shiftWorkflow(entity!.id, { status: entity!.status })
+					update.status = entity.status
+					break
+				case 'orbit':
+					// Empty string clears the schedule server-side; undefined would be a no-op.
+					update.orbit = entity.orbit ?? ''
+					break
+				case 'title':
+					update.title = entity.title
 					break
 				default:
-					await core.objectives.update(entity!.id, entity!) ?? entity
-					break
+					return
 			}
-			this.entity = await core.objectives.get(entity!.id)
 
-			if (keyPath === 'title')
-			{
-				const existence = await core.system.resolveEntity(entity!.id)
-	
-				const app = (window as any).app as App
-				if (!existence?.associatedNote
-					|| app.workspace.activeEditor?.file?.path === existence?.associatedNote) return
-	
-				const file = app.vault.getFileByPath(existence.associatedNote)!
-				app.workspace.getLeaf(true).openFile(file)
+			await core.declaratives.updateFate(entity.id, update)
+			this.entity = await core.declaratives.getFate(entity.id)
+			if (this.entity) {
+				await this.loadNextEventive(this.entity.id)
+			}
+
+			if (keyPath === 'title') {
+				await this.revealAssociatedNote(entity.id)
 			}
 		}
 	})
 
 	override async fetchEntity(puck: string) {
-		this.activePolaris = await core.polaris.getCurrent()
-		return core.objectives.get(puck)
-	}
-
-	protected get isInActivePolaris() {
-		if (!this.activePolaris) return false
-		if (!this.entity) return false
-		return this.activePolaris.executives.some(exec => exec.objective!.id === this.entity!.id)
-	}
-
-	pickOnrush = () => {
-		new AddToOnrushModal(this.app!, this).open()
-	}
-
-	addToPolaris = async () => {
-		if (this.isInActivePolaris) return
-		if (await core.polaris.addObjectiveToCurrent(this.entity!.id)) {
-			new Notice('Added to active Polaris cycle.')
-			this.entity = await core.objectives.get(this.entity!.id)
+		const fate = await core.declaratives.getFate(puck)
+		if (fate) {
+			await this.loadNextEventive(fate.id)
 		}
+		return fate
+	}
+
+	private async loadNextEventive(fateId: string) {
+		const eventives = await core.declaratives.listEventives(fateId)
+		this.nextEventive = pickNextEventive(eventives)
+	}
+
+	private async revealAssociatedNote(fateId: string) {
+		const existence = await core.system.resolveEntity(fateId)
+		const app = (window as any).app as App
+		if (!existence?.associatedNote
+			|| app.workspace.activeEditor?.file?.path === existence.associatedNote) return
+
+		const file = app.vault.getFileByPath(existence.associatedNote)!
+		app.workspace.getLeaf(true).openFile(file)
+	}
+
+	protected get isSingleInstance() {
+		return !this.entity!.orbit && !!this.entity!.date
 	}
 
 	static override get styles() {
@@ -68,31 +81,6 @@ export class FateBanner extends EntityBanner<Objective> {
 
 			:host {
 				padding-inline: 1.2em;
-			}
-
-			.college {
-				display: flex;
-				align-items: center;
-				user-select: none;
-
-				& span {
-					padding: 0.08em 0.8ch;
-					border-radius: 4px;
-					background: color-mix(in srgb, var(--text-normal) 15%, transparent);
-					color: color-mix(in srgb, var(--text-normal) 60%, transparent);
-					font-family: var(--font-interface);
-				}
-			}
-
-			.switcher {
-				font-size: .7em;
-				opacity: .6;
-				line-height: .9;
-			}
-
-			.marker-icon {
-				width: 1.4em;
-				height: 1.4em;
 			}
 
 			:host::part(sub-heading) {
@@ -105,10 +93,41 @@ export class FateBanner extends EntityBanner<Objective> {
 			p7t-status-item::part(icon) {
 				height: 1.4em;
 			}
+
+			.next-eventive {
+				display: flex;
+				align-items: center;
+				gap: .5em;
+				font-weight: 300;
+			}
+
+			.next-eventive .label {
+				font-size: .7em;
+				text-transform: uppercase;
+				letter-spacing: .08em;
+				opacity: .6;
+			}
+
+			.schedule,
+			.date-span {
+				display: flex;
+				align-items: center;
+				gap: .5em;
+				font-weight: 300;
+				opacity: .85;
+			}
+
+			.schedule p7t-editable-orbit {
+				font-size: 1em;
+			}
+
+			.time {
+				font-variant-numeric: tabular-nums;
+				opacity: .8;
+			}
 		`
 	}
 
-	
 	protected override get secondary() {
 		const directiveTitle = this.entity!.directive?.title
 		return !directiveTitle ? html`
@@ -119,12 +138,47 @@ export class FateBanner extends EntityBanner<Objective> {
 	}
 
 	protected override get info() {
-		let college = ObjectiveCollege[this.entity!.college]
+		if (!this.nextEventive) return html``
+		return html`
+			<div class='next-eventive'>
+				<span class='label'>Next</span>
+				<p7t-date-view .date=${PleiadeanDate.fromDate(new Date(this.nextEventive.date))}></p7t-date-view>
+				${!this.nextEventive.startTime ? nothing : html`
+					<span class='time'>${formatTime(this.nextEventive.startTime)}</span>
+				`}
+			</div>
+		`
+	}
+
+	protected override get actions() {
+		// Single-instance fates show their datetime [range]; anything else exposes the
+		// Orbit definition inline (editable), mirroring where a lorepage shows its date.
+		if (this.isSingleInstance) {
+			return html`
+				<div class='date-span'>
+					<p7t-date-view .date=${PleiadeanDate.fromDate(new Date(this.entity!.date!))}></p7t-date-view>
+					${this.timeRangeTemplate}
+				</div>
+			`
+		}
 
 		return html`
-			<p7t-editable .doEdit=${SelectCollegeModal.prompt} ${this.binder.bind('college')} class='college'>
-				<span>${college === 'Unspecified' ? 'No College' : 'College of ' + college}</span>
-			</p7t-editable>
+			<div class='schedule'>
+				<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>
+			</div>
+		`
+	}
+
+	protected get timeRangeTemplate() {
+		const start = this.entity!.startTime
+		if (!start) return nothing
+		const end = this.entity!.endTime
+		return html`
+			<span class='time'>${formatTime(start)}</span>
+			${!end ? nothing : html`
+				<p7t-icon icon='lucide:arrow-right'></p7t-icon>
+				<span class='time'>${formatTime(end)}</span>
+			`}
 		`
 	}
 
@@ -133,54 +187,42 @@ export class FateBanner extends EntityBanner<Objective> {
 			<p7t-editable-plaintext ${this.binder.bind('title')}></p7t-editable-plaintext>
 		`
 	}
-	
+
 	protected override get preHeadingTemplate() {
-		return html`<span>Pleiades Objective</span>`
+		return html`<span>Pleiades Fate</span>`
 	}
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${SelectObjectiveStatusModal.prompt} ${this.binder.bind('status')}>
+			<p7t-editable .doEdit=${SelectFateStatusModal.prompt} ${this.binder.bind('status')}>
 				<p7t-status-item
-					.status=${ObjectiveStatus[this.entity!.status] as keyof typeof ObjectiveStatus}>
+					.status=${FateStatus[this.entity!.status] as keyof typeof FateStatus}>
 				</p7t-status-item>
 			</p7t-editable>
 		`
 	}
+}
 
-	protected override get actions() {
-		const onrush = this.entity!.onrushSprint
-		let onrushText = 'Past Onrush'
-		if (!onrush?.endDate) {
-			onrushText = 'Active Onrush'
-			if (!onrush?.startDate) {
-				onrushText = 'In Planning'
-			}
-		}
+/** Earliest still-pending eventive on or after today; undefined when none is upcoming. */
+function pickNextEventive(eventives: Eventive[]): Eventive | undefined {
+	const today = todayKey()
+	return eventives
+		.filter(eventive => eventive.resolution === EventiveResolution.Pending && eventive.date >= today)
+		.sort((a, b) => a.date.localeCompare(b.date) || (a.startTime ?? '').localeCompare(b.startTime ?? ''))[0]
+}
 
-		let inPolaris = this.isInActivePolaris
+function todayKey(): string {
+	const now = new Date()
+	return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
 
-		return html`
-			<p7t-editable-starfire ${this.binder.bind('celestronValue')}></p7t-editable-starfire>
-			<p7t-button large icon='onrush' @click=${() => this.pickOnrush()}>
-				${!onrush ? html`<span>Add to Onrush</span>` : html`
-					<span>${onrushText}</span>
-					<span class='switcher'>Reassign</span>
-				`}
-			</p7t-button>
-			<p7t-button ?disabled=${inPolaris} large icon='polaris' @click=${() => this.addToPolaris()}>
-				${!inPolaris ? html`<span>Add to Polaris</span>` : html`
-					<p7t-icon class='marker-icon' icon='lucide:check'></p7t-icon>
-				`}
-			</p7t-button>
-		`
-	}
+/** Trims a serialized TimeOnly ("HH:MM:SS") down to "HH:MM". */
+function formatTime(time: string): string {
+	return time.slice(0, 5)
+}
 
-	protected override get stamp() {
-		let college = ObjectiveCollege[this.entity!.college]
-		college = college === 'Unspecified' ? 'None' : college
-		return `college-${college.toLowerCase()}` as IconName
-	}
+function pad(value: number): string {
+	return value.toString().padStart(2, '0')
 }
 
 declare global {
