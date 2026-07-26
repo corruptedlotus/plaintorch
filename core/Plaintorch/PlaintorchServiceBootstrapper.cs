@@ -51,13 +51,15 @@ public sealed class PlaintorchServiceBootstrapper(PlaintorchUserLayout userLayou
 		var processPath = Environment.ProcessPath ?? throw new InvalidOperationException("Unable to determine the current process path.");
 		var entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
 
+		// The installed service is the real per-user daemon, so it must bind the real ~/.pleiades/plaintorch profile.
+		// Service-context detection already routes it there, and `--daemon` makes that explicit and detection-independent.
 		if (Path.GetFileName(processPath).StartsWith("dotnet", StringComparison.OrdinalIgnoreCase)
 			&& !string.IsNullOrWhiteSpace(entryAssemblyPath))
 		{
-			return $"\"{processPath}\" \"{entryAssemblyPath}\" serve";
+			return $"\"{processPath}\" \"{entryAssemblyPath}\" serve --daemon";
 		}
 
-		return $"\"{processPath}\" serve";
+		return $"\"{processPath}\" serve --daemon";
 	}
 
 	private static string WriteWindowsInstallScript(string serviceRoot, string launchCommand)

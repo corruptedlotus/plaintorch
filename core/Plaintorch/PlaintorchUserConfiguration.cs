@@ -8,29 +8,14 @@ namespace Pleiades.Plaintorch;
 /// </summary>
 public sealed class PlaintorchUserLayout
 {
-	/// <summary>
-	/// The name of the static predefined OS account that interactive/manual <c>serve</c> runs as during development.
-	/// End users run PLAINTORCH through the installed service runner instead, which uses the real per-user environment.
-	/// </summary>
-	public const string DevUserName = "PLAINTORCHDEV";
-
-	/// <summary>
-	/// The environment variable that overrides the development account password used to relaunch manual <c>serve</c>.
-	/// </summary>
-	public const string DevPasswordEnvironmentVariable = "PLAINTORCHDEV_PASSWORD";
-
-	/// <summary>
-	/// The documented default development account password. This is a deliberately static, dev-only value shared with the
-	/// setup scripts for an unprivileged local account; override it through <see cref="DevPasswordEnvironmentVariable"/>.
-	/// </summary>
-	public const string DefaultDevPassword = "Plaintorch-Dev-Local-1";
-
 	private readonly bool _ephemeral;
+	private readonly bool _devProfile;
 
-	private PlaintorchUserLayout(string rootPath, bool ephemeral = false)
+	private PlaintorchUserLayout(string rootPath, bool ephemeral = false, bool devProfile = false)
 	{
 		RootPath = rootPath;
 		_ephemeral = ephemeral;
+		_devProfile = devProfile;
 	}
 
 	/// <summary>
@@ -85,14 +70,11 @@ public sealed class PlaintorchUserLayout
 	public bool IsEphemeral => _ephemeral;
 
 	/// <summary>
-	/// Resolves the development account password used to relaunch manual <c>serve</c>, honoring the environment override.
+	/// Gets a value indicating whether this layout is the current user's persistent development sub-profile.
+	/// Manual <c>serve</c> runs against this isolated sub-profile so a developer sandbox never collides with the real
+	/// per-user daemon; unlike an ephemeral profile it persists between runs and is never auto-removed.
 	/// </summary>
-	/// <returns>The resolved development password.</returns>
-	public static string ResolveDevPassword()
-	{
-		var overridden = Environment.GetEnvironmentVariable(DevPasswordEnvironmentVariable);
-		return string.IsNullOrEmpty(overridden) ? DefaultDevPassword : overridden;
-	}
+	public bool IsDevProfile => _devProfile;
 
 	/// <summary>
 	/// Creates the default per-user PLAINTORCH host layout for the current platform.
@@ -102,6 +84,19 @@ public sealed class PlaintorchUserLayout
 	{
 		var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 		return new PlaintorchUserLayout(Path.Combine(home, ".pleiades", "plaintorch"));
+	}
+
+	/// <summary>
+	/// Creates the current user's persistent development sub-profile layout under <c>~/.pleiades/plaintorch-dev</c>.
+	/// Ordinary manual <c>serve</c> runs use this isolated-but-persistent sub-profile instead of the real per-user
+	/// profile, so a developer sandbox keeps its own config/socket/port across runs without touching a real installed
+	/// daemon and without provisioning a separate OS account.
+	/// </summary>
+	/// <returns>The resolved development sub-profile layout.</returns>
+	public static PlaintorchUserLayout CreateDevProfile()
+	{
+		var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+		return new PlaintorchUserLayout(Path.Combine(home, ".pleiades", "plaintorch-dev"), devProfile: true);
 	}
 
 	/// <summary>

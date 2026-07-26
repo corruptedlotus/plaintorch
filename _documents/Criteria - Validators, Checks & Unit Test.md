@@ -16,14 +16,14 @@ SQLite database) built through the real DI graph via the `TestVault` harness; ru
 |---|---|---|---|
 | `serve --ephemeral` uses a random user-independent temp profile (own socket/config) | happy | ✅ | manual (sandbox) |
 | `serve` is socket-only by default; loopback is opt-in via `--loopback` | happy | ✅ | manual (sandbox) |
-| Interactive `serve` without a `PLAINTORCHDEV` account rejects with a setup hint | fault | ✅ | manual (sandbox) |
-| `serve` under the service runner uses the normal per-user environment | happy | ⏳ | — |
-| Interactive `serve` relaunches successfully as `PLAINTORCHDEV` | happy | 🔲 | needs the account; not CI-exercisable |
-| Ephemeral profile is cleaned up after use | edge | ⏳ | — |
+| Ordinary manual `serve` uses the persistent `~/.pleiades/plaintorch-dev` sub-profile, not the real per-user profile | happy | ⏳ | — |
+| `serve --daemon` uses the real per-user profile (`~/.pleiades/plaintorch`) | happy | ⏳ | — |
+| `serve` under the service runner uses the real per-user profile | happy | ⏳ | — |
+| Ephemeral profile is cleaned up after use; the dev sub-profile persists across runs | edge | ⏳ | — |
 
-**Edge cases / faults:** relaunch failure (missing account, wrong password, non-interactive session) must reject, not
-fall through to the real environment; ephemeral roots must never collide across parallel runs; the static dev password is
-overridable via `PLAINTORCHDEV_PASSWORD`.
+**Edge cases / faults:** the dev sub-profile and the real per-user profile must never share a socket/config/port, so a
+manual sandbox `serve` can never disturb an installed daemon; ephemeral roots must never collide across parallel runs and
+must be removed after use, while the dev sub-profile must persist between runs.
 
 ## Version store (PEP092)
 | Behaviour / Invariant | Kind | Status | Test ref |

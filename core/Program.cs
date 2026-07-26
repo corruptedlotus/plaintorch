@@ -2,9 +2,7 @@
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting.Systemd;
 using Microsoft.Extensions.Hosting.WindowsServices;
-using System.Diagnostics;
 using System.Net.Sockets;
-using System.Runtime.InteropServices;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Pleiades.Calendar;
@@ -36,14 +34,6 @@ public static class Program
 		{
 			Console.Error.WriteLine("Unknown command. Supported commands: init, activate, serve, bootstrap-service.");
 			return 1;
-		}
-
-		if (command == "serve"
-			&& !HasArgumentFlag(args, "--ephemeral")
-			&& !IsRunningAsService()
-			&& !IsRunningAsDevUser())
-		{
-			return await RelaunchServeAsDevUserAsync(args);
 		}
 
 		var userLayout = ResolveUserLayout(command, args);
@@ -116,6 +106,10 @@ public static class Program
 			if (userLayout.IsEphemeral)
 			{
 				Console.WriteLine("PLAINTORCH environment: ephemeral (dev)");
+			}
+			else if (userLayout.IsDevProfile)
+			{
+				Console.WriteLine("PLAINTORCH environment: dev sub-profile (persistent; pass --daemon to run the real per-user profile)");
 			}
 		}
 
@@ -308,83 +302,43 @@ public static class Program
 	}
 
 	/// <summary>
-	/// Determines whether the current process is already running as the development account.
-	/// </summary>
-	private static bool IsRunningAsDevUser()
-	{
-		return string.Equals(Environment.UserName, PlaintorchUserLayout.DevUserName, StringComparison.OrdinalIgnoreCase);
-	}
-
-	/// <summary>
 	/// Resolves the per-user host layout for the current command and flags.
 	/// </summary>
 	private static PlaintorchUserLayout ResolveUserLayout(string command, IReadOnlyList<string> args)
 	{
-		var layout = command == "serve" && HasArgumentFlag(args, "--ephemeral")
-			? PlaintorchUserLayout.CreateEphemeral()
-			: PlaintorchUserLayout.CreateDefault();
+		var layout = ResolveUserLayoutRoot(command, args);
 		layout.LoopbackEnabled = HasArgumentFlag(args, "--loopback");
 		return layout;
 	}
 
 	/// <summary>
-	/// Relaunches interactive <c>serve</c> as the development account, forwarding the child exit code.
-	/// Rejects (returns a non-zero exit code) when the relaunch cannot be performed.
+	/// Selects which per-user host profile a command should run against.
 	/// </summary>
-	private static async Task<int> RelaunchServeAsDevUserAsync(IReadOnlyList<string> args)
+	/// <remarks>
+	/// Only <c>serve</c> has development profiles. <c>serve --ephemeral</c> gets a throwaway temp profile; an ordinary
+	/// manual <c>serve</c> gets the current user's persistent development sub-profile (<c>~/.pleiades/plaintorch-dev</c>)
+	/// so a sandbox never collides with a real installed daemon and no separate OS account is required. The installed
+	/// service runner, and any manual <c>serve --daemon</c> for a developer building their own background daemon, use the
+	/// real per-user profile. Every non-<c>serve</c> command also uses the real per-user profile.
+	/// </remarks>
+	private static PlaintorchUserLayout ResolveUserLayoutRoot(string command, IReadOnlyList<string> args)
 	{
-		var executablePath = Environment.ProcessPath;
-		if (string.IsNullOrWhiteSpace(executablePath))
+		if (command != "serve")
 		{
-			Console.Error.WriteLine("Manual 'serve' could not resolve its own executable path to relaunch as the development account.");
-			return 1;
+			return PlaintorchUserLayout.CreateDefault();
 		}
 
-		var startInfo = new ProcessStartInfo
+		if (HasArgumentFlag(args, "--ephemeral"))
 		{
-			UseShellExecute = false,
-		};
-
-		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-		{
-			startInfo.FileName = executablePath;
-			foreach (var argument in args)
-			{
-				startInfo.ArgumentList.Add(argument);
-			}
-
-			startInfo.UserName = PlaintorchUserLayout.DevUserName;
-			startInfo.Domain = ".";
-#pragma warning disable CA1416
-			startInfo.PasswordInClearText = PlaintorchUserLayout.ResolveDevPassword();
-#pragma warning restore CA1416
-		}
-		else
-		{
-			startInfo.FileName = "sudo";
-			startInfo.ArgumentList.Add("-u");
-			startInfo.ArgumentList.Add(PlaintorchUserLayout.DevUserName.ToLowerInvariant());
-			startInfo.ArgumentList.Add(executablePath);
-			foreach (var argument in args)
-			{
-				startInfo.ArgumentList.Add(argument);
-			}
+			return PlaintorchUserLayout.CreateEphemeral();
 		}
 
-		try
+		if (!IsRunningAsService() && !HasArgumentFlag(args, "--daemon"))
 		{
-			using var process = Process.Start(startInfo)
-				?? throw new InvalidOperationException("Process.Start returned no process.");
-			await process.WaitForExitAsync();
-			return process.ExitCode;
+			return PlaintorchUserLayout.CreateDevProfile();
 		}
-		catch (Exception exception)
-		{
-			Console.Error.WriteLine(
-				$"Manual 'serve' must run as the '{PlaintorchUserLayout.DevUserName}' development account, but relaunching as that account failed: {exception.Message}");
-			Console.Error.WriteLine("Create the account first (core/DevUser/Setup-DevUser.ps1 on Windows, setup-devuser.sh on Linux), or use 'serve --ephemeral' for an isolated throwaway environment.");
-			return 1;
-		}
+
+		return PlaintorchUserLayout.CreateDefault();
 	}
 
 	/// <summary>
