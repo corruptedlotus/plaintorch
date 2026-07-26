@@ -82,7 +82,7 @@ export class ObjectiveItem extends EntityItem<Objective> {
 		}
 	}
 
-	protected override get notch() {
+	protected override get notchTemplate() {
 		return html`
 			<p7t-icon
 				icon=${statusDescriptors[ObjectiveStatus[this.objective!.status] as keyof typeof ObjectiveStatus]?.icon}>

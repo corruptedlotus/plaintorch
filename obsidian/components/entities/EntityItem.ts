@@ -152,7 +152,7 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 	protected override get template() {
 		return html`
 			<div class='grid'>
-				<div @click=${async () => await this.notchAction()} class='notch part'>${this.notch}</div>
+				<div @click=${async () => await this.notchAction()} class='notch part'>${this.notchTemplate}</div>
 				<div class='toplane'>
 					${this.preTitle}
 					<div class='filler'></div>
@@ -181,7 +181,7 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 		return html``
 	}
 
-	protected get notch() {
+	protected get notchTemplate() {
 		return html`
 			<slot>
 				<p7t-icon class='notch-icon' icon='state-active'></p7t-icon>
