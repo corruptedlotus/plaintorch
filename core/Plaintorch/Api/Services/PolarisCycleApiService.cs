@@ -278,6 +278,11 @@ public sealed class PolarisCycleApiService(
 			executive.Maximum = null;
 		}
 
+		if (update.Elapsed is not null)
+		{
+			executive.Elapsed = update.Elapsed.Value;
+		}
+
 		executive.NormalizeTimeAllocations();
 
 		await context.SaveChangesAsync(cancellationToken);
@@ -286,7 +291,7 @@ public sealed class PolarisCycleApiService(
 			"polaris.update-executive",
 			subjectType: nameof(Executive),
 			subjectId: executive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-			details: new { objectiveId = executive.ObjectiveId, executed = executive.Executed, estimation = executive.Estimation, minimum = executive.Minimum, maximum = executive.Maximum },
+			details: new { objectiveId = executive.ObjectiveId, executed = executive.Executed, estimation = executive.Estimation, minimum = executive.Minimum, maximum = executive.Maximum, elapsed = executive.Elapsed },
 			cancellationToken: cancellationToken);
 		return executive;
 	}
