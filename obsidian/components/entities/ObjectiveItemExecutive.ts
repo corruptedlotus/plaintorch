@@ -1,6 +1,7 @@
 import { component, html, property } from "@a11d/lit"
 import { ObjectiveItem } from "./ObjectiveItem"
 import { Executive } from "@pleiades/sdk"
+import { ExecutiveModal, getApp } from ".."
 
 @component('p7t-objective-item-exec')
 export class ObjectiveItemExecutive extends ObjectiveItem {
@@ -15,12 +16,20 @@ export class ObjectiveItemExecutive extends ObjectiveItem {
 		return undefined
 	}
 
+	protected override async notchAction() {
+		if (!this.executive) return
+		new ExecutiveModal(getApp(), this.executive, executive => {
+			this.executive = executive
+			this.dispatchEvent(new CustomEvent<void>('updateRequest', { bubbles: true, composed: true }))
+		}).open()
+	}
+
 	protected override get notchTemplate() {
-		// if done, inherit super, otherwise show a <p7t-time-unit>
+		// if done, inherit super, otherwise show the time still left against the estimation
 		return this.executive?.executed ? super.notchTemplate : html`
-			<p7t-time-unit .value=${this.executive?.estimation - this.executive?.}></p7t-time-unit>
+			<p7t-time-unit .value=${Math.max(0, (this.executive?.estimation ?? 0) - (this.executive?.elapsed ?? 0))}></p7t-time-unit>
 		`
-	} 
+	}
 }
 
 declare global {

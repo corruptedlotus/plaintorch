@@ -32,7 +32,7 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 	protected override get listContent() {
 		return html`
 			${this.data!.executives.map(executive => html`
-				<p7t-objective-item-exec interactive .entity=${executive.objective}></p7t-objective-item-exec>
+				<p7t-objective-item-exec interactive .executive=${executive}></p7t-objective-item-exec>
 			`)}
 		`
 	}

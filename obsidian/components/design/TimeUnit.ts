@@ -19,7 +19,7 @@ export class TimeUnit extends Component {
 
 			.cls-1 {
 				fill: none;
-				stroke: var(--p7t-flare-accent, var(--interactive-accent));
+				stroke: var(--p7t-time-unit-arc, var(--p7t-flare-accent, var(--interactive-accent)));
 				stroke-linecap: round;
 				stroke-miterlimit: 10;
 				stroke-width: 7px;
