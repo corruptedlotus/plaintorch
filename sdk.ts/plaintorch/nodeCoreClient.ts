@@ -15,7 +15,13 @@ export interface NodePlaintorchCoreClientOptions extends Omit<PlaintorchCoreClie
 	preferSocket?: boolean
 }
 
-const defaultSocketPath = path.join(homedir(), ".pleiades", "plaintorch", "plaintorch.sock")
+// The per-user PLAINTORCH host profile the default socket lives under. A dev build — e.g. the Obsidian plugin's
+// esbuild dev/watch build — replaces `process.env.PLAINTORCH_DEV_PROFILE` with "true" at build time (esbuild `define`),
+// so the default client targets the persistent dev sub-profile a manual `serve` binds (`~/.pleiades/plaintorch-dev`)
+// instead of the real per-user profile (`~/.pleiades/plaintorch`). Node consumers built without that define read the
+// real environment variable at runtime and default to the real profile, but can opt in by setting it.
+const defaultProfileDirectory = process.env.PLAINTORCH_DEV_PROFILE === "true" ? "plaintorch-dev" : "plaintorch"
+const defaultSocketPath = path.join(homedir(), ".pleiades", defaultProfileDirectory, "plaintorch.sock")
 export class NodePlaintorchCoreClient extends PlaintorchCoreClient {
 	public constructor(options: NodePlaintorchCoreClientOptions = {}) {
 		const baseUrl = options.baseUrl ?? createLoopbackBaseUrl(options.host ?? "127.0.0.1", options.loopbackPort ?? 43118)

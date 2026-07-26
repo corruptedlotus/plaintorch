@@ -33,6 +33,11 @@ const context = await esbuild.context({
   format: "cjs",
   target: "es2020",
   logLevel: "info",
+  define: {
+    // Dev/watch builds route the bundled node core client at the persistent dev sub-profile socket
+    // (~/.pleiades/plaintorch-dev) that a manual `serve` binds; production builds use the real per-user profile.
+    "process.env.PLAINTORCH_DEV_PROFILE": JSON.stringify(production ? "false" : "true")
+  },
   sourcemap: production ? false : "inline",
   outfile: `${outputDirectory}/main.js`,
   plugins: [copyManifestPlugin],
