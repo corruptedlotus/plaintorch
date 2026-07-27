@@ -8,3 +8,4 @@ node_modules/
 **/.pt-temp/
 .vscode/
 .claude/
+.worktrees/
