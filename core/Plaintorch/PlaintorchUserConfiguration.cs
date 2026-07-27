@@ -40,6 +40,20 @@ public sealed class PlaintorchUserLayout
 	public string SocketPath => Path.Combine(RootPath, "plaintorch.sock");
 
 	/// <summary>
+	/// Gets the Windows named-pipe name for the core IPC endpoint. On Windows a Node client's socket path resolves to
+	/// a named pipe rather than an AF_UNIX socket, so the host binds this pipe and clients connect to it instead of
+	/// <see cref="SocketPath"/>. The name is per-profile and per-user so dev/real profiles and separate users never
+	/// collide on the machine-global pipe namespace (Windows pipe names match case-insensitively).
+	/// </summary>
+	public string PipeName => $"{Path.GetFileName(RootPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}.{Environment.UserName}";
+
+	/// <summary>
+	/// Gets the transport endpoint clients connect to on the current platform: the Windows named pipe, or the
+	/// AF_UNIX socket path elsewhere.
+	/// </summary>
+	public string EndpointDisplay => OperatingSystem.IsWindows() ? $@"\\.\pipe\{PipeName}" : SocketPath;
+
+	/// <summary>
 	/// Gets the loopback HTTP port exposed for desktop integrations that cannot reliably use the socket transport.
 	/// </summary>
 	public int LoopbackPort => 43118;
