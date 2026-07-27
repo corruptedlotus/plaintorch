@@ -15,12 +15,15 @@ export interface NodePlaintorchCoreClientOptions extends Omit<PlaintorchCoreClie
 	preferSocket?: boolean
 }
 
-// The per-user PLAINTORCH host profile the default socket lives under. A dev build — e.g. the Obsidian plugin's
-// esbuild dev/watch build — replaces `process.env.PLAINTORCH_DEV_PROFILE` with "true" at build time (esbuild `define`),
-// so the default client targets the persistent dev sub-profile a manual `serve` binds (`~/.pleiades/plaintorch-dev`)
-// instead of the real per-user profile (`~/.pleiades/plaintorch`). Node consumers built without that define read the
-// real environment variable at runtime and default to the real profile, but can opt in by setting it.
-const defaultProfileDirectory = process.env.PLAINTORCH_DEV_PROFILE === "true" ? "plaintorch-dev" : "plaintorch"
+// Compile-time flag baked into the bundle by the bundler (see the Obsidian plugin's esbuild `define`). A dev/watch
+// build substitutes `true` here, so the default client targets the persistent dev sub-profile socket a manual `serve`
+// binds (`~/.pleiades/plaintorch-dev`); a production build substitutes `false`. The `typeof` guard keeps the SDK safe
+// when it is consumed without the define at all (the identifier is simply absent from the output) — it then falls back
+// to the real per-user profile (`~/.pleiades/plaintorch`). This is a build-time substitution, not a runtime env read,
+// so it survives into the shipped bundle regardless of the process environment it later runs in.
+declare const __PLAINTORCH_DEV_PROFILE__: boolean
+const useDevProfile = typeof __PLAINTORCH_DEV_PROFILE__ !== "undefined" && __PLAINTORCH_DEV_PROFILE__
+const defaultProfileDirectory = useDevProfile ? "plaintorch-dev" : "plaintorch"
 const defaultSocketPath = path.join(homedir(), ".pleiades", defaultProfileDirectory, "plaintorch.sock")
 export class NodePlaintorchCoreClient extends PlaintorchCoreClient {
 	public constructor(options: NodePlaintorchCoreClientOptions = {}) {
