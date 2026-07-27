@@ -1,5 +1,5 @@
 import { request as sendRequest } from "node:http"
-import { homedir } from "node:os"
+import { homedir, userInfo } from "node:os"
 import path from "node:path"
 import {
 	createLoopbackBaseUrl,
@@ -22,7 +22,12 @@ export interface NodePlaintorchCoreClientOptions extends Omit<PlaintorchCoreClie
 declare const __PLAINTORCH_DEV_PROFILE__: boolean
 const useDevProfile = typeof __PLAINTORCH_DEV_PROFILE__ !== "undefined" && __PLAINTORCH_DEV_PROFILE__
 const defaultProfileDirectory = useDevProfile ? "plaintorch-dev" : "plaintorch"
-const defaultSocketPath = path.join(homedir(), ".pleiades", defaultProfileDirectory, "plaintorch.sock")
+// On Windows the core binds a named pipe, because Node resolves a socket path to a named pipe there and cannot reach a
+// .NET AF_UNIX socket; every other platform uses the AF_UNIX socket under the profile directory. The pipe name mirrors
+// the host's: `{profileDir}.{user}` — per-profile and per-user (Windows pipe names match case-insensitively).
+const defaultSocketPath = process.platform === "win32"
+	? `\\\\.\\pipe\\${defaultProfileDirectory}.${userInfo().username}`
+	: path.join(homedir(), ".pleiades", defaultProfileDirectory, "plaintorch.sock")
 export class NodePlaintorchCoreClient extends PlaintorchCoreClient {
 	public constructor(options: NodePlaintorchCoreClientOptions = {}) {
 		// Node clients talk to the core exclusively over its per-user unix domain socket. `serve` always binds the
@@ -66,7 +71,12 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 					resolve(wrapNodeResponse(response))
 				}
 			)
-			httpRequest.on("error", () => resolve(undefined))
+			httpRequest.on("error", (error) => {
+				// Surface transport failures instead of swallowing them — a silent connection error here is exactly what
+				// makes the plugin look like it is "making no API calls" when the core is unreachable.
+				console.error(`PLAINTORCH core request failed: ${request.method} ${request.path} via ${this.socketPath}`, error)
+				resolve(undefined)
+			})
 			if (payload !== undefined) {
 				httpRequest.write(payload)
 			}

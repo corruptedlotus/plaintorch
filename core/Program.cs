@@ -67,10 +67,16 @@ public static class Program
 			VaultPath = vaultPath,
 		});
 		builder.Services.AddSingleton(userLayout);
+		if (OperatingSystem.IsWindows())
+		{
+			// A Node client on Windows resolves a socket path to a named pipe, not an AF_UNIX socket, so register the
+			// named-pipe transport alongside the default socket transport (which still serves the opt-in loopback endpoint).
+			builder.WebHost.UseNamedPipes();
+		}
+
 		builder.WebHost.ConfigureKestrel(options =>
 		{
 			userLayout.EnsureExists();
-			TryDeleteStaleSocket(userLayout.SocketPath);
 			if (userLayout.LoopbackEnabled)
 			{
 				options.ListenLocalhost(userLayout.LoopbackPort, listenOptions =>
@@ -79,10 +85,22 @@ public static class Program
 				});
 			}
 
-			options.ListenUnixSocket(userLayout.SocketPath, listenOptions =>
+			if (OperatingSystem.IsWindows())
 			{
-				listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1;
-			});
+				// Windows clients reach the core over this named pipe; a .NET AF_UNIX socket is unreachable from Node there.
+				options.ListenNamedPipe(userLayout.PipeName, listenOptions =>
+				{
+					listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1;
+				});
+			}
+			else
+			{
+				TryDeleteStaleSocket(userLayout.SocketPath);
+				options.ListenUnixSocket(userLayout.SocketPath, listenOptions =>
+				{
+					listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1;
+				});
+			}
 		});
 
 		var app = builder.Install<PLAINTORCH>().Build();
@@ -97,7 +115,7 @@ public static class Program
 
 		if (command == "serve")
 		{
-			Console.WriteLine($"PLAINTORCH socket: {userLayout.SocketPath}");
+			Console.WriteLine($"PLAINTORCH endpoint: {userLayout.EndpointDisplay}");
 			if (userLayout.LoopbackEnabled)
 			{
 				Console.WriteLine($"PLAINTORCH loopback: {userLayout.LoopbackBaseUrl}");
@@ -166,7 +184,7 @@ public static class Program
 			Console.WriteLine("Active vault updated.");
 			Console.WriteLine($"Vault: {activeVaultPath}");
 			Console.WriteLine($"User Config: {userLayout.ConfigurationPath}");
-			Console.WriteLine($"Socket: {userLayout.SocketPath}");
+			Console.WriteLine($"Endpoint: {userLayout.EndpointDisplay}");
 			Console.WriteLine($"Loopback API: {userLayout.LoopbackBaseUrl}");
 			return 0;
 		}
