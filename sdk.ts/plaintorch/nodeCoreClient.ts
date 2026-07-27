@@ -3,7 +3,6 @@ import { homedir } from "node:os"
 import path from "node:path"
 import {
 	createLoopbackBaseUrl,
-	FetchPlaintorchCoreTransport,
 	type PlaintorchCoreRequest,
 	type PlaintorchCoreResponse,
 	type PlaintorchCoreTransport
@@ -12,7 +11,6 @@ import { PlaintorchCoreClient, type PlaintorchCoreClientOptions } from "./coreCl
 import { ModelValueConstructor } from "@a11d/api-dotnet"
 export interface NodePlaintorchCoreClientOptions extends Omit<PlaintorchCoreClientOptions, "transports"> {
 	socketPath?: string
-	preferSocket?: boolean
 }
 
 // Compile-time flag baked into the bundle by the bundler (see the Obsidian plugin's esbuild `define`). A dev/watch
@@ -27,19 +25,17 @@ const defaultProfileDirectory = useDevProfile ? "plaintorch-dev" : "plaintorch"
 const defaultSocketPath = path.join(homedir(), ".pleiades", defaultProfileDirectory, "plaintorch.sock")
 export class NodePlaintorchCoreClient extends PlaintorchCoreClient {
 	public constructor(options: NodePlaintorchCoreClientOptions = {}) {
+		// Node clients talk to the core exclusively over its per-user unix domain socket. `serve` always binds the
+		// socket (the loopback HTTP endpoint is opt-in and, when present, is shared across instances), so no
+		// fetch/loopback fallback is wired up — a fallback could silently cross-talk to a different instance (e.g. the
+		// real daemon on the shared loopback port) whenever the intended socket is unavailable. `baseUrl` is still
+		// resolved because the base client uses it to build static asset URLs (`icon()`), not for API requests.
 		const baseUrl = options.baseUrl ?? createLoopbackBaseUrl(options.host ?? "127.0.0.1", options.loopbackPort ?? 43118)
-		const fetchTransport = new FetchPlaintorchCoreTransport({
-			baseUrl,
-			headers: options.headers
-		})
 		const socketTransport = new NodeSocketPlaintorchCoreTransport(options.socketPath ?? defaultSocketPath)
-		const transports = options.preferSocket
-			? [socketTransport, fetchTransport]
-			: [fetchTransport, socketTransport]
 		super({
 			...options,
 			baseUrl,
-			transports
+			transports: [socketTransport]
 		})
 	}
 }

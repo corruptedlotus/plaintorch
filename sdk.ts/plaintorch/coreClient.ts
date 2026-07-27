@@ -141,5 +141,3 @@ export class PlaintorchCoreClient {
 		return (await this.send(request)) !== undefined
 	}
 }
-
-export const plaintorchCoreClient = new PlaintorchCoreClient()
