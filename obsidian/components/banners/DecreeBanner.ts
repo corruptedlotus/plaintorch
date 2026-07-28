@@ -42,8 +42,8 @@ export class DecreeBanner extends EntityBanner<Decree> {
 					return
 			}
 
-			await core.declaratives.updateDecree(entity.id, update)
-			this.entity = await core.declaratives.getDecree(entity.id)
+			this.publishEntityEdit()
+			await core.repos.decrees.mutate(entity.id, async () => await core.declaratives.updateDecree(entity.id, update))
 
 			if (keyPath === 'title') {
 				await this.revealAssociatedNote(entity.id)
@@ -51,9 +51,10 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		}
 	})
 
-	override async fetchEntity(puck: string) {
+	protected override readonly entityTypeName = 'Decree' as const
+
+	protected override async loadRelated() {
 		this.activePolaris = await core.polaris.getCurrent()
-		return core.declaratives.getDecree(puck)
 	}
 
 	/** A decree participates in Moonlight reflection only when its directive is lunar (PEP100). */
@@ -68,16 +69,18 @@ export class DecreeBanner extends EntityBanner<Decree> {
 
 	addToPolaris = async () => {
 		if (this.isInActivePolaris) return
-		const attentive = await core.polaris.addAttentive({ decreeId: this.entity!.id })
+		const decreeId = this.entity!.id
+		const attentive = await core.repos.decrees.mutate(decreeId, async () =>
+			await core.polaris.addAttentive({ decreeId }))
 		if (attentive) {
 			new Notice('Added to active Polaris cycle.')
 			this.activePolaris = await core.polaris.getCurrent()
-			this.entity = await core.declaratives.getDecree(this.entity!.id)
+			await core.repos.decrees.refresh(decreeId)
 		}
 	}
 
 	private async revealAssociatedNote(decreeId: string) {
-		const existence = await core.system.resolveEntity(decreeId)
+		const existence = await core.repos.entityResolution.refresh(decreeId)
 		const app = (window as any).app as App
 		if (!existence?.associatedNote
 			|| app.workspace.activeEditor?.file?.path === existence.associatedNote) return

@@ -36,11 +36,9 @@ export class FateBanner extends EntityBanner<Fate> {
 					return
 			}
 
-			await core.declaratives.updateFate(entity.id, update)
-			this.entity = await core.declaratives.getFate(entity.id)
-			if (this.entity) {
-				await this.loadNextEventive(this.entity.id)
-			}
+			this.publishEntityEdit()
+			await core.repos.fates.mutate(entity.id, async () => await core.declaratives.updateFate(entity.id, update))
+			await this.loadNextEventive(entity.id)
 
 			if (keyPath === 'title') {
 				await this.revealAssociatedNote(entity.id)
@@ -48,12 +46,12 @@ export class FateBanner extends EntityBanner<Fate> {
 		}
 	})
 
-	override async fetchEntity(puck: string) {
-		const fate = await core.declaratives.getFate(puck)
-		if (fate) {
-			await this.loadNextEventive(fate.id)
+	protected override readonly entityTypeName = 'Fate' as const
+
+	protected override async loadRelated() {
+		if (this.puck) {
+			await this.loadNextEventive(this.puck)
 		}
-		return fate
 	}
 
 	private async loadNextEventive(fateId: string) {
@@ -62,7 +60,7 @@ export class FateBanner extends EntityBanner<Fate> {
 	}
 
 	private async revealAssociatedNote(fateId: string) {
-		const existence = await core.system.resolveEntity(fateId)
+		const existence = await core.repos.entityResolution.refresh(fateId)
 		const app = (window as any).app as App
 		if (!existence?.associatedNote
 			|| app.workspace.activeEditor?.file?.path === existence.associatedNote) return

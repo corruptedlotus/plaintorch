@@ -1,4 +1,5 @@
 import { identify, type EntityKey } from "./identity"
+import { isEquivalent } from "./equivalence"
 
 /** Notified when the canonical instance behind an identity changes. */
 export type EntitySubscriber = () => void
@@ -114,6 +115,23 @@ export class EntityStore {
 		return !!record && record.subscribers.size > 0
 	}
 
+	/**
+	 * Announces that the canonical instance of an identity was changed in place.
+	 *
+	 * Two-way bindings write straight through to the instance they were handed, so the change is already
+	 * applied by the time anything hears about it and there is nothing left for {@link absorb} to detect.
+	 * This is how such an edit still reaches the other surfaces showing the same entity.
+	 */
+	public touch(key: EntityKey): void {
+		const record = this.records.get(key)
+		if (!record?.value) {
+			return
+		}
+
+		record.version++
+		notify(record)
+	}
+
 	/** Marks an identity as needing revalidation on next read. */
 	public markStale(key: EntityKey): void {
 		const record = this.records.get(key)
@@ -225,39 +243,6 @@ function mergeInto(target: object, source: object, keys?: readonly string[]): bo
 	}
 
 	return changed
-}
-
-/**
- * Determines whether an existing field value is indistinguishable from an incoming one.
- *
- * Entities short-circuit on identity, which also keeps this terminating: every cycle in the canonical
- * graph runs through an entity reference, so recursion never re-enters one.
- */
-function isEquivalent(a: unknown, b: unknown, depth = 0): boolean {
-	if (a === b) {
-		return true
-	}
-
-	if (depth > 8 || !a || !b || typeof a !== "object" || typeof b !== "object") {
-		return false
-	}
-
-	const keyA = identify(a)
-	if (keyA !== undefined || identify(b) !== undefined) {
-		return keyA === identify(b)
-	}
-
-	if (Array.isArray(a) || Array.isArray(b)) {
-		return Array.isArray(a)
-			&& Array.isArray(b)
-			&& a.length === b.length
-			&& a.every((item, index) => isEquivalent(item, b[index], depth + 1))
-	}
-
-	const entriesA = Object.entries(a)
-	const entriesB = Object.entries(b)
-	return entriesA.length === entriesB.length
-		&& entriesA.every(([key, value]) => key in b && isEquivalent(value, (b as Record<string, unknown>)[key], depth + 1))
 }
 
 /**

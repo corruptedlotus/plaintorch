@@ -43,6 +43,9 @@
 			"@": [
 				"src"
 			],
+			"components": [
+				"components/index.ts"
+			],
 			"components/*": [
 				"components/*"
 			],
@@ -60,6 +63,7 @@
 	"include": [
 		"src/**/*.ts",
 		"src/**/*.d.ts",
-		"../sdk.ts/src/**/*.ts"
+		"components/**/*.ts",
+		"assets/**/*.ts"
 	]
 }

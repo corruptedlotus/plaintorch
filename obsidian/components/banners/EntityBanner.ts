@@ -2,24 +2,79 @@ import { component, css, html, nothing, property, state } from '@a11d/lit'
 import { CardComponent } from 'components/design'
 import { IconName } from 'components/PleiadesIcon'
 import { App } from 'obsidian'
+import { EntityTypeName } from '@pleiades/sdk'
+import { core, EntityRef } from '..'
 
 @component('p7t-entity-banner')
 export class EntityBanner<T extends { id: string, title: string }> extends CardComponent {
 	@property() xtype?: string
 	@property() puck = ''
 
-	@state() entity?: T
-	
 	app?: App
 
 	readonly icon: string = 'plaintorch'
 
-	async fetchEntity(puck: string): Promise<T | undefined> {
-		return Promise.resolve(undefined)
+	/**
+	 * The icon actually rendered. Overridable as a getter for banners whose icon depends on the resolved
+	 * entity, which a plain field cannot express now that the entity arrives asynchronously.
+	 */
+	protected get resolvedIcon(): string {
+		return this.icon
+	}
+
+	/**
+	 * Runtime type name of the entity this banner renders. Subclasses declare it; the base resolves and
+	 * observes the entity from it, so a subclass never fetches its own entity.
+	 */
+	protected readonly entityTypeName?: EntityTypeName
+
+	/**
+	 * Holds an entity handed in directly rather than resolved by PUCK, which is how the generic banner
+	 * renders a note whose kind has no dedicated banner.
+	 */
+	@state() private providedEntity?: T
+
+	protected readonly ref = new EntityRef<T & object>(
+		this,
+		() => core.repos.forTypeName<T & object>(this.entityTypeName),
+		() => this.puck
+	)
+
+	get entity(): T | undefined {
+		return this.ref.value ?? this.providedEntity
+	}
+
+	set entity(value: T | undefined) {
+		this.providedEntity = value
+	}
+
+	/** Whether the entity is still resolving. */
+	protected get loading(): boolean {
+		return this.ref.loading
+	}
+
+	/**
+	 * Loads anything beyond the entity itself that the banner renders. Overridden by banners that also
+	 * need, say, the active Polaris cycle or a declarative's materialized occurrences.
+	 */
+	protected async loadRelated(): Promise<void> {
+	}
+
+	/**
+	 * Announces an in-place edit of the entity to every other surface showing it.
+	 *
+	 * Two-way bindings write straight through to the canonical instance they were handed, so the change is
+	 * already applied and there is nothing left for absorption to detect — without this it would stay
+	 * invisible to everything except the banner the edit was made in.
+	 */
+	protected publishEntityEdit(): void {
+		if (this.entityTypeName && this.puck) {
+			core.repos.forTypeName(this.entityTypeName)?.touch(this.puck)
+		}
 	}
 
 	protected override async initialized() {
-		this.entity = await this.fetchEntity(this.puck)
+		await this.loadRelated()
 	}
 
 	static override get styles() {
@@ -132,7 +187,7 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 	protected override get template() {
 		return !this.entity ? html`` : html`
 			<div class='render-grid'>
-				<p7t-icon class='icon' icon='${this.icon}'></p7t-icon>
+				<p7t-icon class='icon' icon='${this.resolvedIcon}'></p7t-icon>
 				${this.headerTemplate}
 
 				<span class='indicator'></span>

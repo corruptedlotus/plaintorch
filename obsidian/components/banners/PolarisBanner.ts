@@ -14,33 +14,27 @@ export class PolarisBanner extends EntityBanner<PolarisCycle> {
 		`
 	}
 	
+	protected override readonly entityTypeName = 'PolarisCycle' as const
+
 	protected binder = new ReactiveBinder<PolarisCycle>(this, 'entity', {
 		sourceUpdated: async (_, keyPath) => {
-			const entity = this.entity
-			switch (keyPath) {
-				default:
-					await core.polaris.update(entity!.id, entity!) ?? entity
-					break
-			}
-			this.entity = await core.polaris.get(entity!.id)
+			const entity = this.entity!
+			this.publishEntityEdit()
+			await core.repos.polaris.mutate(entity.id, async () => await core.polaris.update(entity.id, entity))
 
 			if (keyPath === 'title')
 			{
-				const existence = await core.system.resolveEntity(entity!.id)
-	
+				const existence = await core.repos.entityResolution.refresh(entity.id)
+
 				const app = (window as any).app as App
 				if (!existence?.associatedNote
 					|| app.workspace.activeEditor?.file?.path === existence?.associatedNote) return
-	
+
 				const file = app.vault.getFileByPath(existence.associatedNote)!
 				app.workspace.getLeaf(true).openFile(file)
 			}
 		}
 	})
-
-	override async fetchEntity(puck: string) {
-		return core.polaris.get(puck)
-	}
 
 	static override get styles() {
 		return css`

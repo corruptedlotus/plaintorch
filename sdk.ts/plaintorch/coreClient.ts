@@ -12,7 +12,7 @@ import { PlaintorchOnrushSdk } from "./onrush/onrushSdk"
 import { PlaintorchPolarisSdk } from "./polaris/polarisSdk"
 import { PlaintorchLoreSdk } from "./lore/loreSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
-import { createAbsorbingReviver, EntityStore } from "./repository"
+import { createAbsorbingReviver, EntityStore, PlaintorchRepositories } from "./repository"
 
 
 export interface PlaintorchCoreClientOptions {
@@ -35,6 +35,11 @@ export class PlaintorchCoreClient {
 	 * reads, so call sites that have not moved onto repositories still contribute to it.
 	 */
 	public readonly store: EntityStore
+	/**
+	 * Cached, observable reads over the domain SDKs. Use these for anything a surface displays and must
+	 * keep current; the SDKs below stay the way to run a one-shot query or an imperative command.
+	 */
+	public readonly repos: PlaintorchRepositories
 	public readonly system: PlaintorchSystemSdk
 	public readonly directives: PlaintorchDirectivesSdk
 	public readonly objectives: PlaintorchObjectivesSdk
@@ -62,6 +67,8 @@ export class PlaintorchCoreClient {
 		this.onrush = new PlaintorchOnrushSdk(this)
 		this.polaris = new PlaintorchPolarisSdk(this)
 		this.lore = new PlaintorchLoreSdk(this)
+		// Constructed last: the repositories delegate to the SDKs above.
+		this.repos = new PlaintorchRepositories(this)
 	}
 
 	public icon(icon: string): string {

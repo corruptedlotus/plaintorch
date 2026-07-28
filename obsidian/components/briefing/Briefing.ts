@@ -1,20 +1,18 @@
 import { Component, component, css, eventListener, html, state } from "@a11d/lit"
-import { SystemBriefing } from "@pleiades/sdk"
-import { core } from ".."
+import { core, DerivedRef } from ".."
 
 @component('p7t-briefing')
 export class Briefing extends Component {
 	@state() page = 'throne'
-	@state() data?: SystemBriefing
+
+	private readonly briefingRef = new DerivedRef(this, core.repos.briefing)
+
+	get data() {
+		return this.briefingRef.value
+	}
 
 	@eventListener('keyNavigationRequest')
 	protected onKeyNavigationRequest(e: CustomEvent<string>) {
-		e.stopPropagation()
-	}
-
-	@eventListener('updateRequest')
-	protected onUpdateRequest(e: CustomEvent<void>) {
-		core.system.getBriefing().then(briefing => this.data = briefing)
 		e.stopPropagation()
 	}
 
@@ -60,10 +58,6 @@ export class Briefing extends Component {
 		}
 	}
 
-	protected override async initialized() {
-		const briefing = await core.system.getBriefing()
-		this.data = briefing
-	}
 }
 
 declare global {

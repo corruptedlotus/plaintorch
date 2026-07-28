@@ -1,3 +1,7 @@
 export * from "./identity"
+export * from "./equivalence"
 export * from "./entityStore"
 export * from "./absorption"
+export * from "./entityRepository"
+export * from "./derivedRepository"
+export * from "./repositories"

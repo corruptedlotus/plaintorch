@@ -76,9 +76,14 @@ export class ObjectiveItem extends EntityItem<Objective> {
 	}
 
 	protected override async extraAction() {
-		if (await core.polaris.addObjectiveToCurrent(this.objective!.id)) {
-			const ev = new CustomEvent<void>('updateRequest', { bubbles: true, composed: true })
-			this.dispatchEvent(ev)
+		const objectiveId = this.objective!.id
+		const added = await core.repos.objectives.mutate(objectiveId, async () =>
+			await core.polaris.addObjectiveToCurrent(objectiveId))
+		if (added) {
+			await Promise.all([
+				core.repos.objectives.refresh(objectiveId),
+				core.repos.briefing.revalidateIfObserved()
+			])
 		}
 	}
 

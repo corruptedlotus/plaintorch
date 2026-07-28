@@ -1,14 +1,24 @@
-import { Component, component, css, html, property, state, literal as l } from '@a11d/lit'
+import { Component, component, css, html, property, literal as l } from '@a11d/lit'
 import { App } from 'obsidian'
 import { plaintorchNodeCoreClient, EntityExistence } from '@pleiades/sdk/plaintorch/node'
+import { DerivedRef } from 'components/data'
 
 @component('p7t-note-banner')
 export class NoteBanner extends Component {
-	@state() note?: EntityExistence
 	@property({ reflect: true, type: Boolean }) invalid = true
-	
+
 	app?: App
 	file: string = ''
+
+	private readonly noteRef = new DerivedRef(
+		this,
+		plaintorchNodeCoreClient.repos.noteResolution,
+		() => this.file
+	)
+
+	protected get note() {
+		return this.noteRef.value
+	}
 
 	static override get styles() {
 		return css`
@@ -26,18 +36,24 @@ export class NoteBanner extends Component {
 	}
 
 	protected override get template() {
-		return !this.note ? html`
+		const note = this.note
+		return !note ? html`
 			Loading...
-		` : this.renderBannerElement()
+		` : this.renderBannerElement(note)
 	}
 
-	protected renderBannerElement() {
-		const tag = this.getTagForKind(this.note?.entityKind)
+	protected renderBannerElement(note: EntityExistence) {
+		const tag = this.getTagForKind(note.entityKind)
 		if (tag) {
-			return html`<${tag} .puck=${this.note.puck} .app=${this.app}></${tag}>`
+			return html`<${tag} .puck=${note.puck} .app=${this.app}></${tag}>`
 		} else {
-			return html`<p7t-entity-banner .puck=${this.note?.puck ?? ''} .xtype=${this.note?.entityKind} .entity=${{ id: this.note?.puck ?? '', title: this.note?.title ?? '' }} .app=${this.app}></p7t-entity-banner>`
+			return html`<p7t-entity-banner .puck=${note.puck ?? ''} .xtype=${note.entityKind} .entity=${{ id: note.puck ?? '', title: this.entityTitle }} .app=${this.app}></p7t-entity-banner>`
 		}
+	}
+
+	/** A kind with no dedicated banner still renders a title, which only the resolved entity carries. */
+	private get entityTitle(): string {
+		return (this.note?.entity as { title?: string } | undefined)?.title ?? ''
 	}
 
 	protected getTagForKind(kind?: string) {
@@ -57,14 +73,8 @@ export class NoteBanner extends Component {
 		}
 	}
 
-	private get entityTitle(): string {
-		return (this.note?.entity as { title?: string } | undefined)?.title ?? ''
-	}
-
-	protected override async initialized() {
-		const note = await plaintorchNodeCoreClient.system.resolveNote(this.file)
-		this.note = note
-		this.invalid = !(note?.exists)
+	protected override updated() {
+		this.invalid = !this.note?.exists
 	}
 }
 

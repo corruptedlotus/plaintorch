@@ -20,23 +20,25 @@ export class StellarDirectiveBanner extends EntityBanner<Directive> {
 		`
 	}
 
+	protected override readonly entityTypeName = 'Directive' as const
+
 	protected binder = new ReactiveBinder<Directive>(this, 'entity', {
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
-			switch (keyPath) {
-				case 'status':
-					await core.directives.shiftStellarWorkflow(entity.id, { status: entity.status as DirectiveStatus })
-					break
-				case 'title': {
-					const update: StellarDirectiveUpdate = { title: entity.title }
-					await core.directives.updateStellar(entity.id, update)
-					break
-				}
-				default:
-					return
+			if (keyPath !== 'status' && keyPath !== 'title') {
+				return
 			}
 
-			this.entity = await core.directives.get(entity.id)
+			this.publishEntityEdit()
+			await core.repos.directives.mutate(entity.id, async () => {
+				if (keyPath === 'status') {
+					await core.directives.shiftStellarWorkflow(entity.id, { status: entity.status as DirectiveStatus })
+					return
+				}
+
+				const update: StellarDirectiveUpdate = { title: entity.title }
+				await core.directives.updateStellar(entity.id, update)
+			})
 
 			if (keyPath === 'title') {
 				await this.revealAssociatedNote(entity.id)
@@ -44,12 +46,8 @@ export class StellarDirectiveBanner extends EntityBanner<Directive> {
 		}
 	})
 
-	override async fetchEntity(puck: string) {
-		return core.directives.get(puck)
-	}
-
 	private async revealAssociatedNote(directiveId: string) {
-		const existence = await core.system.resolveEntity(directiveId)
+		const existence = await core.repos.entityResolution.refresh(directiveId)
 		const app = (window as any).app as App
 		if (!existence?.associatedNote
 			|| app.workspace.activeEditor?.file?.path === existence.associatedNote) return
