@@ -1,7 +1,13 @@
 import { Component, component, css, event, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
-import type { Directive } from '@pleiades/sdk'
-import { EntityWatch, ExpandingAction, IconName, ReactiveBinder } from '..'
-import { directiveActions, entityIcon, entityKindOf, isDirectiveKind, objectiveActions, openEntityNote, renameEntity } from './entityActions'
+import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, type Directive } from '@pleiades/sdk'
+import {
+	EntityWatch, ExpandingAction, IconName, ReactiveBinder,
+	SelectDirectiveStatusModal, SelectLunarDirectiveStatusModal, SelectObjectiveStatusModal
+} from '..'
+import {
+	directiveActions, entityIcon, entityKindOf, isDirectiveKind, isSingleInstanceFate,
+	objectiveActions, openEntityNote, saveEntityField, type EditableField
+} from './entityActions'
 import type { GridRow } from './entityTree'
 
 /**
@@ -24,17 +30,17 @@ export class GridItem extends Component {
 	 */
 	protected readonly watch = new EntityWatch(this, () => this.row?.entity)
 
-	protected readonly binder = new ReactiveBinder<{ title: string }>(this, 'boundEntity', {
-		sourceUpdated: async () => {
+	protected readonly binder = new ReactiveBinder<Record<string, unknown>>(this, 'boundEntity', {
+		sourceUpdated: async (_, keyPath) => {
 			const entity = this.row?.entity
-			if (!entity) {
+			if (!entity || !keyPath) {
 				return
 			}
 
-			// The binding already wrote the new title into the canonical instance, so every other surface
+			// The binding already wrote the value into the canonical instance, so every other surface
 			// showing this entity is told about it before the write is even sent.
 			this.watch.publish()
-			await renameEntity(entity, entity.title)
+			await saveEntityField(entity, keyPath as EditableField)
 		}
 	})
 
@@ -152,6 +158,18 @@ export class GridItem extends Component {
 				justify-content: flex-end;
 				padding-inline: .2em;
 				font-size: .9em;
+				white-space: nowrap;
+			}
+
+			/* The state icons are sized for a banner; a row wants them at text scale. */
+			p7t-status-item::part(icon) {
+				height: 1.4em;
+				width: 1.4em;
+			}
+
+			p7t-editable-starfire p7t-icon {
+				width: 1.2em;
+				height: 1.2em;
 			}
 
 			/* Row-level affordances stay out of the way until the row is under the pointer. */
@@ -233,11 +251,63 @@ export class GridItem extends Component {
 	/**
 	 * The cells before the two trailing action columns.
 	 *
-	 * Empty for now: the tracks exist and stay aligned across every row, and what goes in them is still
-	 * to be designed. Overriding this is how a variant fills them.
+	 * The first holds whatever quantity or schedule a kind carries, the second holds its workflow state.
+	 * Splitting them this way is what the shared tracks are for: every kind's state lands in one column,
+	 * so a run of mixed rows can be read straight down.
 	 */
 	protected get leadingCells(): (HTMLTemplateResult | typeof nothing)[] {
-		return [nothing, nothing]
+		return [this.measureCell, this.statusCell]
+	}
+
+	/** The kind's own quantity or schedule: an objective's Celestron, a declarative's timing. */
+	protected get measureCell(): HTMLTemplateResult | typeof nothing {
+		const entity = this.row!.entity
+		switch (entityKindOf(entity)) {
+			case 'objective':
+				return html`<p7t-editable-starfire ${this.binder.bind('celestronValue')}></p7t-editable-starfire>`
+			case 'fate':
+				// A one-off fate is placed by its date; a recurring one by its Orbit definition.
+				return isSingleInstanceFate(entity)
+					? html`<p7t-editable-date ${this.binder.bind('date')}></p7t-editable-date>`
+					: html`<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>`
+			case 'decree':
+				return html`<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>`
+			default:
+				return nothing
+		}
+	}
+
+	/** The workflow state, for the kinds that carry a lifecycle worth shifting from here. */
+	protected get statusCell(): HTMLTemplateResult | typeof nothing {
+		const entity = this.row!.entity
+		const kind = entityKindOf(entity)
+		const prompt = kind === 'objective' ? SelectObjectiveStatusModal.prompt
+			: kind === 'stellar-directive' ? SelectDirectiveStatusModal.prompt
+			: kind === 'lunar-directive' ? SelectLunarDirectiveStatusModal.prompt
+			: undefined
+
+		return !prompt ? nothing : html`
+			<p7t-editable .doEdit=${prompt} ${this.binder.bind('status')}>
+				<p7t-status-item .status=${this.statusName}></p7t-status-item>
+			</p7t-editable>
+		`
+	}
+
+	/**
+	 * The descriptor name of the entity's state.
+	 *
+	 * Every kind numbers its own state enum from zero, so the value alone is ambiguous — a directive's `2`
+	 * is Active while an objective's is Onrush. The kind has to pick the enum.
+	 */
+	protected get statusName() {
+		const status = (this.row!.entity as { status?: number }).status ?? 0
+		switch (entityKindOf(this.row!.entity)) {
+			case 'lunar-directive': return LunarDirectiveStatus[status] ?? 'OnHold'
+			case 'stellar-directive': return DirectiveStatus[status] ?? 'Planned'
+			case 'fate': return FateStatus[status] ?? 'Active'
+			case 'decree': return DecreeStatus[status] ?? 'Active'
+			default: return ObjectiveStatus[status] ?? 'Standby'
+		}
 	}
 
 	/** What the row's add button offers, which depends on what the row holds. */

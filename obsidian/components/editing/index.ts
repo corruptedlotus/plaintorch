@@ -6,6 +6,7 @@ export * from './SelectCollegeModal'
 export * from './SelectStatusModal'
 export * from './EditableStarfire'
 export * from './EditableOrbit'
+export * from './EditableDate'
 export * from './PromptTextModal'
 
 export const getApp = () => (window as any).app as App

@@ -99,28 +99,60 @@ async function createOfKind(kind: EntityKind, title: string, directiveId?: strin
 	}
 }
 
+/** A field of an entity the grid lets you edit in place. */
+export type EditableField = 'title' | 'status' | 'celestronValue' | 'orbit' | 'date'
+
 /**
- * Renames an entity through the update call its kind uses.
+ * Saves one edited field through the call its kind and field require.
  *
- * Every kind has its own update contract, so a rename cannot be expressed once; what is shared is that it
- * goes through the repository, which is what publishes it to the other surfaces showing the entity.
+ * There is no single shape for this: each kind has its own update contract, and a workflow state moves
+ * through a dedicated shift endpoint rather than an update. What is common is that the write goes through
+ * the repository, which is what publishes it to every other surface showing the entity.
+ *
+ * The value is read from the entity rather than passed in, because the binding has already written it
+ * there — that is what makes the edit visible everywhere before the write is even sent.
  */
-export async function renameEntity(entity: GridEntity, title: string): Promise<boolean> {
-	const kind = entityKindOf(entity)
+export async function saveEntityField(entity: GridEntity, field: EditableField): Promise<boolean> {
 	const id = entity.id
 	const repositories = core.repos
-	switch (kind) {
+	const value = entity as unknown as Record<string, unknown>
+	// An empty schedule has to be sent as an empty string to clear it; undefined would be a no-op.
+	const orbit = (value.orbit as string | undefined) ?? ''
+
+	switch (entityKindOf(entity)) {
 		case 'stellar-directive':
-			return !!await repositories.directives.mutate(id, async () => await core.directives.updateStellar(id, { title }))
+			return !!await repositories.directives.mutate(id, async () => field === 'status'
+				? await core.directives.shiftStellarWorkflow(id, { status: value.status as never })
+				: await core.directives.updateStellar(id, { title: entity.title }))
 		case 'lunar-directive':
-			return !!await repositories.lunarDirectives.mutate(id, async () => await core.directives.updateLunar(id, { title }))
+			return !!await repositories.lunarDirectives.mutate(id, async () => field === 'status'
+				? await core.directives.shiftLunarWorkflow(id, { status: value.status as never })
+				: await core.directives.updateLunar(id, { title: entity.title }))
 		case 'objective':
-			return !!await repositories.objectives.mutate(id, async () => await core.objectives.update(id, { title }))
+			return !!await repositories.objectives.mutate(id, async () => field === 'status'
+				? await core.objectives.shiftWorkflow(id, { status: value.status as never })
+				: await core.objectives.update(id, { title: entity.title, celestronValue: value.celestronValue as number }))
 		case 'fate':
-			return !!await repositories.fates.mutate(id, async () => await core.declaratives.updateFate(id, { title }))
+			return !!await repositories.fates.mutate(id, async () => await core.declaratives.updateFate(id, field === 'orbit'
+				? { orbit }
+				: field === 'date'
+					? { date: value.date as string | undefined }
+					: field === 'status'
+						? { status: value.status as never }
+						: { title: entity.title }))
 		case 'decree':
-			return !!await repositories.decrees.mutate(id, async () => await core.declaratives.updateDecree(id, { title }))
+			return !!await repositories.decrees.mutate(id, async () => await core.declaratives.updateDecree(id, field === 'orbit'
+				? { orbit }
+				: field === 'status'
+					? { status: value.status as never }
+					: { title: entity.title }))
 	}
+}
+
+/** Whether a fate is a one-off occurrence rather than a recurring schedule. */
+export function isSingleInstanceFate(entity: GridEntity): boolean {
+	const fate = entity as { orbit?: string, date?: string }
+	return !fate.orbit && !!fate.date
 }
 
 /** Opens the note an entity is the authority for, in a new tab. */
