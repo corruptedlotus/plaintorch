@@ -1,6 +1,7 @@
-import { Component, component, css, eventListener, html, repeat, state } from '@a11d/lit'
+import { Component, component, css, eventListener, html, nothing, repeat, state } from '@a11d/lit'
 import type { EntitySubscription } from '@pleiades/sdk'
 import { core, DerivedRef } from '..'
+import { creationActions } from './entityActions'
 import { buildGridRows, type GridRow } from './entityTree'
 
 /**
@@ -23,6 +24,7 @@ export class EntityGrid extends Component {
 	static override get styles() {
 		return css`
 			:host {
+				position: relative;
 				display: grid;
 				/*
 				 * The shared tracks. The leading track is sized by the deepest row's indentation, so it
@@ -41,6 +43,19 @@ export class EntityGrid extends Component {
 				opacity: .5;
 				font-family: var(--font-interface);
 				font-weight: 300;
+			}
+
+			/*
+			 * Sticks to the corner of the scrolling area rather than to the document, so it stays reachable
+			 * however far down the list runs. It sits in the last row's track so it never overlaps a row.
+			 */
+			.fab {
+				position: sticky;
+				grid-column: 1 / -1;
+				justify-self: end;
+				bottom: 1em;
+				margin: .5em 1em 0 0;
+				z-index: 5;
 			}
 		`
 	}
@@ -88,16 +103,22 @@ export class EntityGrid extends Component {
 
 	protected override get template() {
 		const rows = this.rows
-		if (rows.length === 0) {
-			return html`<div class='notice'>${this.loading ? 'Loading…' : 'No directives or incentives yet'}</div>`
-		}
-
-		// Keyed by entity so a row keeps its element — and therefore its subscription — as the tree is
-		// expanded and collapsed around it.
 		return html`
-			${repeat(rows, row => row.key, row => html`
+			${rows.length > 0 ? nothing : html`
+				<div class='notice'>${this.loading ? 'Loading…' : 'No directives or incentives yet'}</div>
+			`}
+			${/*
+				Keyed by entity so a row keeps its element — and therefore its subscription — as the tree
+				is expanded and collapsed around it.
+			*/ repeat(rows, row => row.key, row => html`
 				<p7t-grid-item .row=${row}></p7t-grid-item>
 			`)}
+			<p7t-expanding-actions
+				class='fab'
+				large
+				actionLabel='Add an entity'
+				.actions=${creationActions()}>
+			</p7t-expanding-actions>
 		`
 	}
 }

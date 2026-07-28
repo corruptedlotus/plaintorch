@@ -1,6 +1,7 @@
 import { Component, component, css, event, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
-import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus } from '@pleiades/sdk'
-import { EntityWatch, IconName, navigateToEntity, statusDescriptors } from '..'
+import type { Directive } from '@pleiades/sdk'
+import { EntityWatch, ExpandingAction, IconName, ReactiveBinder } from '..'
+import { directiveActions, entityIcon, entityKindOf, isDirectiveKind, objectiveActions, openEntityNote, renameEntity } from './entityActions'
 import type { GridRow } from './entityTree'
 
 /**
@@ -23,6 +24,25 @@ export class GridItem extends Component {
 	 */
 	protected readonly watch = new EntityWatch(this, () => this.row?.entity)
 
+	protected readonly binder = new ReactiveBinder<{ title: string }>(this, 'boundEntity', {
+		sourceUpdated: async () => {
+			const entity = this.row?.entity
+			if (!entity) {
+				return
+			}
+
+			// The binding already wrote the new title into the canonical instance, so every other surface
+			// showing this entity is told about it before the write is even sent.
+			this.watch.publish()
+			await renameEntity(entity, entity.title)
+		}
+	})
+
+	/** The binding target. Named apart from `row` so the binder writes into the entity, not the row. */
+	protected get boundEntity() {
+		return this.row?.entity
+	}
+
 	static override get styles() {
 		return css`
 			:host {
@@ -31,11 +51,13 @@ export class GridItem extends Component {
 				grid-column: 1 / -1;
 				align-items: stretch;
 				font-family: var(--font-interface);
+				border-radius: 12px;
+				transition: background-color .3s ease;
 				--p7t-grid-lane-width: 1.5em;
 			}
 
 			:host(:hover) {
-				background-color: color-mix(in srgb, var(--text-normal) 6%, transparent);
+				background-color: color-mix(in srgb, var(--text-normal) 8%, transparent);
 			}
 
 			.lead {
@@ -68,38 +90,46 @@ export class GridItem extends Component {
 				display: flex;
 				align-items: center;
 				justify-content: center;
-				flex: 0 0 1.8em;
-				width: 1.8em;
-				padding-block: .35em;
+				flex: 0 0 1.9em;
+				width: 1.9em;
+				padding-block: .4em;
+				border-radius: 6px;
 			}
 
 			.notch p7t-icon {
-				width: 1.25em;
-				height: 1.25em;
+				width: 1.3em;
+				height: 1.3em;
 			}
 
-			.expander {
+			.notch.expandable {
 				cursor: pointer;
-				border-radius: 4px;
-				transition: transform .2s ease, background-color .2s ease;
 			}
 
-			.expander:hover {
-				background-color: color-mix(in srgb, var(--text-normal) 12%, transparent);
+			.notch.expandable:hover {
+				background-color: color-mix(in srgb, var(--text-normal) 14%, transparent);
 			}
 
-			:host([data-expanded]) .expander {
-				transform: rotate(0deg);
+			/*
+			 * The type icon gives way to a chevron once the row is open, and while the row is hovered
+			 * before it is — otherwise a collapsed directive gives no sign that it holds anything.
+			 */
+			.notch .chevron {
+				display: none;
 			}
 
-			.expander:not(.open) {
-				transform: rotate(-90deg);
+			:host(:hover) .notch.expandable .kind,
+			.notch.open .kind {
+				display: none;
+			}
+
+			:host(:hover) .notch.expandable .chevron,
+			.notch.open .chevron {
+				display: block;
 			}
 
 			.title {
 				display: flex;
 				align-items: center;
-				gap: .4em;
 				padding-inline: .5em;
 				font-weight: 300;
 				font-size: 1.05em;
@@ -107,20 +137,55 @@ export class GridItem extends Component {
 				min-width: 0;
 			}
 
-			.title span {
+			p7t-editable-plaintext {
+				justify-content: flex-start;
+				text-align: start;
+				min-width: 0;
 				overflow: hidden;
 				text-overflow: ellipsis;
 				white-space: nowrap;
-				cursor: pointer;
 			}
 
 			.cell {
 				display: flex;
 				align-items: center;
 				justify-content: flex-end;
-				padding-inline: .4em;
+				padding-inline: .2em;
 				font-size: .9em;
-				opacity: .75;
+			}
+
+			/* Row-level affordances stay out of the way until the row is under the pointer. */
+			.cell.actions {
+				opacity: 0;
+				transition: opacity .2s ease;
+			}
+
+			:host(:hover) .cell.actions,
+			.cell.actions:focus-within {
+				opacity: 1;
+			}
+
+			.goto {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				min-width: 1.9em;
+				min-height: 1.9em;
+				border: none;
+				border-radius: 8px;
+				background: transparent;
+				color: inherit;
+				cursor: pointer;
+				transition: background-color .2s ease;
+			}
+
+			.goto:hover {
+				background-color: color-mix(in srgb, var(--text-normal) 14%, transparent);
+			}
+
+			.goto p7t-icon {
+				width: 1.2em;
+				height: 1.2em;
 			}
 		`
 	}
@@ -134,66 +199,66 @@ export class GridItem extends Component {
 		return html`
 			<div class='lead'>
 				${row.guides.map(guide => html`<span class='lane' data-guide=${guide}></span>`)}
-				<div class='notch'>${this.notch}</div>
+				<div
+					class='notch ${row.expandable ? 'expandable' : ''} ${row.expanded ? 'open' : ''}'
+					@click=${() => this.toggleExpansion()}>
+					<p7t-icon class='kind' .icon=${this.kindIcon}></p7t-icon>
+					${!row.expandable ? '' : html`
+						<p7t-icon class='chevron' icon=${row.expanded ? 'lucide:chevron-down' : 'lucide:chevron-right'}></p7t-icon>
+					`}
+				</div>
 			</div>
 			<div class='title'>
-				<span @click=${() => this.navigate()}>${row.entity.title}</span>
+				<p7t-editable-plaintext ${this.binder.bind('title')}></p7t-editable-plaintext>
 			</div>
-			${this.cells.map(cell => html`<div class='cell'>${cell}</div>`)}
+			${this.leadingCells.map(cell => html`<div class='cell'>${cell}</div>`)}
+			<div class='cell actions'>
+				<button class='goto' aria-label='Open note' @click=${() => this.open()}>
+					<p7t-icon icon='lucide:square-arrow-out-up-right'></p7t-icon>
+				</button>
+			</div>
+			<div class='cell actions'>
+				${this.actions.length === 0 ? nothing : html`
+					<p7t-expanding-actions .actions=${this.actions} actionLabel='Add'></p7t-expanding-actions>
+				`}
+			</div>
 		`
 	}
 
-	/**
-	 * The leading marker: an expander when the row has children, otherwise the entity's state.
-	 */
-	protected get notch(): HTMLTemplateResult {
-		const row = this.row!
-		return !row.expandable
-			? html`<p7t-icon icon=${this.statusIcon}></p7t-icon>`
-			: html`
-				<p7t-icon
-					class='expander ${row.expanded ? 'open' : ''}'
-					icon='lucide:chevron-down'
-					@click=${() => this.requestRowToggle.dispatch(row.key)}>
-				</p7t-icon>
-			`
+	/** The icon of the entity's own kind, shown while the row is closed. */
+	protected get kindIcon(): IconName {
+		return entityIcon(this.row!.entity)
 	}
 
 	/**
-	 * The trailing cells, in column order.
+	 * The cells before the two trailing action columns.
 	 *
-	 * Empty for now: the column tracks exist and stay aligned across every row, and what goes in them is
-	 * still to be designed. Overriding this is how a variant fills them.
+	 * Empty for now: the tracks exist and stay aligned across every row, and what goes in them is still
+	 * to be designed. Overriding this is how a variant fills them.
 	 */
-	protected get cells(): (HTMLTemplateResult | typeof nothing)[] {
-		return [nothing, nothing, nothing, nothing]
+	protected get leadingCells(): (HTMLTemplateResult | typeof nothing)[] {
+		return [nothing, nothing]
 	}
 
-	protected get statusIcon(): IconName {
-		const entity = this.row!.entity as { status?: number, $type?: string }
-		const name = statusName(entity)
-		return statusDescriptors[name as keyof typeof statusDescriptors]?.icon ?? 'state-zero'
+	/** What the row's add button offers, which depends on what the row holds. */
+	protected get actions(): ExpandingAction[] {
+		const entity = this.row!.entity
+		const kind = entityKindOf(entity)
+		if (isDirectiveKind(kind)) {
+			return directiveActions(entity as Directive)
+		}
+
+		return kind === 'objective' ? objectiveActions(entity.id) : []
 	}
 
-	protected navigate() {
-		navigateToEntity(this.row!.entity.id)
+	protected toggleExpansion() {
+		if (this.row?.expandable) {
+			this.requestRowToggle.dispatch(this.row.key)
+		}
 	}
-}
 
-/**
- * Resolves the descriptor name of an entity's state.
- *
- * Every kind numbers its own state enum from zero, so the value alone is ambiguous — a directive's `2` is
- * Active while an objective's is Onrush. The kind has to pick the enum.
- */
-function statusName(entity: { status?: number, $type?: string }): string {
-	const status = entity.status ?? 0
-	switch (entity.$type) {
-		case 'lunar': return LunarDirectiveStatus[status] ?? 'OnHold'
-		case 'stellar': return DirectiveStatus[status] ?? 'Planned'
-		case 'fate': return FateStatus[status] ?? 'Active'
-		case 'decree': return DecreeStatus[status] ?? 'Active'
-		default: return ObjectiveStatus[status] ?? 'Standby'
+	protected async open() {
+		await openEntityNote(this.row!.entity)
 	}
 }
 

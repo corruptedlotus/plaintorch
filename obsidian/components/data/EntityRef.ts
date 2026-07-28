@@ -137,6 +137,18 @@ export class EntityWatch extends Controller {
 		this.release()
 	}
 
+	/**
+	 * Announces an in-place edit of the observed entity to every other surface showing it.
+	 *
+	 * A two-way binding writes straight through to the canonical instance, so the change is applied before
+	 * anything is sent and there is nothing left for absorption to detect.
+	 */
+	public publish(): void {
+		if (this.observedKey !== undefined) {
+			plaintorchNodeCoreClient.store.touch(this.observedKey)
+		}
+	}
+
 	private sync(): void {
 		const key = identify(this.source())
 		if (key === this.observedKey) {
