@@ -47,6 +47,18 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	public readonly polaris: EntityRepository<PolarisCycle>
 	public readonly lore: EntityRepository<LorePage>
 
+	/**
+	 * Full listings, cached under {@link briefingRecordKey}.
+	 *
+	 * The entities inside are canonical, so a surface showing one of them individually and a surface
+	 * showing the listing agree without either refetching for the other. What the record adds is
+	 * membership — which entities exist, and how they relate.
+	 */
+	public readonly directiveList: DerivedRepository<Directive[]>
+	public readonly objectiveList: DerivedRepository<Objective[]>
+	public readonly fateList: DerivedRepository<Fate[]>
+	public readonly decreeList: DerivedRepository<Decree[]>
+
 	/** The system briefing, cached under {@link briefingRecordKey}. */
 	public readonly briefing: DerivedRepository<SystemBriefing>
 	/** Note-to-entity resolutions, keyed by vault-relative path. */
@@ -70,6 +82,11 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		this.onrush = new EntityRepository(store, "OnrushSprint", (id) => client.onrush.get(id), entity)
 		this.polaris = new EntityRepository(store, "PolarisCycle", (id) => client.polaris.get(id), entity)
 		this.lore = new EntityRepository(store, "LorePage", (id) => client.lore.get(id), entity)
+
+		this.directiveList = new DerivedRepository(async () => await client.directives.list())
+		this.objectiveList = new DerivedRepository(async () => await client.objectives.list())
+		this.fateList = new DerivedRepository(async () => await client.declaratives.listFates())
+		this.decreeList = new DerivedRepository(async () => await client.declaratives.listDecrees())
 
 		const resolution = { freshnessMs: options.resolutionFreshnessMs }
 		this.briefing = new DerivedRepository(async () => await client.system.getBriefing())
@@ -109,11 +126,19 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	 * a change feed reconnects after missing events.
 	 */
 	public async revalidateObservedRecords(): Promise<void> {
-		await Promise.all([
-			this.briefing.revalidateObserved(),
-			this.noteResolution.revalidateObserved(),
-			this.entityResolution.revalidateObserved()
-		])
+		await Promise.all(this.records.map(async (record) => await record.revalidateObserved()))
+	}
+
+	private get records(): DerivedRepository<unknown>[] {
+		return [
+			this.briefing,
+			this.noteResolution,
+			this.entityResolution,
+			this.directiveList as DerivedRepository<unknown>,
+			this.objectiveList as DerivedRepository<unknown>,
+			this.fateList as DerivedRepository<unknown>,
+			this.decreeList as DerivedRepository<unknown>
+		]
 	}
 
 	/** @inheritdoc */
@@ -150,8 +175,8 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	/** Marks everything as needing revalidation, without fetching anything. */
 	public invalidateAll(): void {
 		this.client.store.markAllStale()
-		this.briefing.invalidate()
-		this.noteResolution.invalidate()
-		this.entityResolution.invalidate()
+		for (const record of this.records) {
+			record.invalidate()
+		}
 	}
 }

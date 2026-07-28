@@ -25,6 +25,7 @@ interface EntityRecord {
  */
 export class EntityStore {
 	private readonly records = new Map<EntityKey, EntityRecord>()
+	private readonly globalSubscribers = new Set<EntitySubscriber>()
 
 	/**
 	 * Registers or merges a value and returns the canonical instance for its identity.
@@ -58,7 +59,7 @@ export class EntityStore {
 			existing.value = value as object
 			existing.stale = false
 			existing.version++
-			notify(existing)
+			this.announce(existing)
 			return value
 		}
 
@@ -66,7 +67,7 @@ export class EntityStore {
 		existing.stale = false
 		if (changed) {
 			existing.version++
-			notify(existing)
+			this.announce(existing)
 		}
 
 		return existing.value as T
@@ -105,6 +106,20 @@ export class EntityStore {
 	}
 
 	/**
+	 * Observes every identity at once.
+	 *
+	 * For surfaces whose shape depends on entity fields rather than on one entity — a tree built from
+	 * parent references restructures when any member is reparented, which no per-identity subscription
+	 * would report, since the entity that moved is still the same entity.
+	 */
+	public subscribeAll(subscriber: EntitySubscriber): EntitySubscription {
+		this.globalSubscribers.add(subscriber)
+		return () => {
+			this.globalSubscribers.delete(subscriber)
+		}
+	}
+
+	/**
 	 * Determines whether anything is currently observing an identity.
 	 *
 	 * Invalidation uses this to refetch only what is on screen; everything else is left marked stale
@@ -129,7 +144,7 @@ export class EntityStore {
 		}
 
 		record.version++
-		notify(record)
+		this.announce(record)
 	}
 
 	/** Marks an identity as needing revalidation on next read. */
@@ -176,7 +191,7 @@ export class EntityStore {
 
 		if (mergeInto(record.value, snapshot)) {
 			record.version++
-			notify(record)
+			this.announce(record)
 		}
 	}
 
@@ -191,7 +206,7 @@ export class EntityStore {
 
 		if (mergeInto(record.value, change)) {
 			record.version++
-			notify(record)
+			this.announce(record)
 		}
 	}
 
@@ -210,11 +225,21 @@ export class EntityStore {
 		this.records.set(key, record)
 		return record
 	}
-}
 
-function notify(record: EntityRecord): void {
-	for (const subscriber of [...record.subscribers]) {
-		subscriber()
+	/**
+	 * Tells everything observing an identity, and everything observing the store, that it changed.
+	 *
+	 * Subscriber sets are copied first: a subscriber is free to release its subscription while being
+	 * notified, which a live iteration would not survive.
+	 */
+	private announce(record: EntityRecord): void {
+		for (const subscriber of [...record.subscribers]) {
+			subscriber()
+		}
+
+		for (const subscriber of [...this.globalSubscribers]) {
+			subscriber()
+		}
 	}
 }
 

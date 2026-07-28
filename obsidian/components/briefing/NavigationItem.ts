@@ -34,6 +34,7 @@ export class NavigationItem extends Component {
 				display: flex;
 				align-items: center;
 				gap: 0;
+				cursor: pointer;
 				transition: ease .3s;
 				
 				:host([active]) & {
@@ -81,7 +82,7 @@ export class NavigationItem extends Component {
 
 	protected override get template() {
 		return html`
-			<div class='main'>
+			<div class='main' @click=${() => this.requestKeyNavigation.dispatch(this.key ?? '')}>
 				<p7t-icon class='icon' icon=${ifDefined(this.icon)}></p7t-icon>
 				<span class='title'>
 					<slot></slot>
