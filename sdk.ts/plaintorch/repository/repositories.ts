@@ -15,6 +15,11 @@ import type { EntityKey, EntityTypeName } from "./identity"
 /** Key under which the single briefing record is cached. */
 export const briefingRecordKey = ""
 
+export interface PlaintorchRepositoriesOptions {
+	/** How long a resolved note or PUCK lookup is served before it is revalidated. */
+	resolutionFreshnessMs?: number
+}
+
 /**
  * The repository surface of a core client.
  *
@@ -51,24 +56,25 @@ export class PlaintorchRepositories implements InvalidationTarget {
 
 	private readonly byTypeName: Map<EntityTypeName, EntityRepository<never>>
 
-	public constructor(private readonly client: PlaintorchCoreClient) {
+	public constructor(private readonly client: PlaintorchCoreClient, options: PlaintorchRepositoriesOptions = {}) {
 		const store = client.store
 		// Resolved lazily: the scheduler reaches back into the repositories it is handed to.
 		this.invalidation = new InvalidationScheduler(store, () => this)
-		const options = { invalidation: this.invalidation }
+		const entity = { invalidation: this.invalidation }
 
-		this.objectives = new EntityRepository(store, "Objective", (id) => client.objectives.get(id), options)
-		this.fates = new EntityRepository(store, "Fate", (id) => client.declaratives.getFate(id), options)
-		this.decrees = new EntityRepository(store, "Decree", (id) => client.declaratives.getDecree(id), options)
-		this.directives = new EntityRepository(store, "Directive", (id) => client.directives.get(id), options)
-		this.lunarDirectives = new EntityRepository(store, "LunarDirective", (id) => client.directives.get(id), options)
-		this.onrush = new EntityRepository(store, "OnrushSprint", (id) => client.onrush.get(id), options)
-		this.polaris = new EntityRepository(store, "PolarisCycle", (id) => client.polaris.get(id), options)
-		this.lore = new EntityRepository(store, "LorePage", (id) => client.lore.get(id), options)
+		this.objectives = new EntityRepository(store, "Objective", (id) => client.objectives.get(id), entity)
+		this.fates = new EntityRepository(store, "Fate", (id) => client.declaratives.getFate(id), entity)
+		this.decrees = new EntityRepository(store, "Decree", (id) => client.declaratives.getDecree(id), entity)
+		this.directives = new EntityRepository(store, "Directive", (id) => client.directives.get(id), entity)
+		this.lunarDirectives = new EntityRepository(store, "LunarDirective", (id) => client.directives.get(id), entity)
+		this.onrush = new EntityRepository(store, "OnrushSprint", (id) => client.onrush.get(id), entity)
+		this.polaris = new EntityRepository(store, "PolarisCycle", (id) => client.polaris.get(id), entity)
+		this.lore = new EntityRepository(store, "LorePage", (id) => client.lore.get(id), entity)
 
+		const resolution = { freshnessMs: options.resolutionFreshnessMs }
 		this.briefing = new DerivedRepository(async () => await client.system.getBriefing())
-		this.noteResolution = new DerivedRepository(async (path) => await client.system.resolveNote(path))
-		this.entityResolution = new DerivedRepository(async (puck) => await client.system.resolveEntity(puck))
+		this.noteResolution = new DerivedRepository(async (path) => await client.system.resolveNote(path), resolution)
+		this.entityResolution = new DerivedRepository(async (puck) => await client.system.resolveEntity(puck), resolution)
 
 		this.byTypeName = new Map<EntityTypeName, EntityRepository<never>>([
 			["Objective", this.objectives as EntityRepository<never>],

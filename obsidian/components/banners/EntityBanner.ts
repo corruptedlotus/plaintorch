@@ -48,11 +48,6 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 		this.providedEntity = value
 	}
 
-	/** Whether the entity is still resolving. */
-	protected get loading(): boolean {
-		return this.ref.loading
-	}
-
 	/**
 	 * Loads anything beyond the entity itself that the banner renders. Overridden by banners that also
 	 * need, say, the active Polaris cycle or a declarative's materialized occurrences.

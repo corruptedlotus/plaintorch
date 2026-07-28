@@ -19,6 +19,7 @@ export interface PlaintorchCoreClientOptions {
 	baseUrl?: string
 	loopbackPort?: number
 	host?: string
+	/** How long a resolved note or PUCK lookup is served before it is revalidated. */
 	cacheTtlMs?: number
 	headers?: Record<string, string>
 	transports?: PlaintorchCoreTransport[]
@@ -60,7 +61,7 @@ export class PlaintorchCoreClient {
 		]
 		this.store = new EntityStore()
 		this.reviver = createAbsorbingReviver(this.store)
-		this.system = new PlaintorchSystemSdk(this, options.cacheTtlMs ?? 15_000)
+		this.system = new PlaintorchSystemSdk(this)
 		this.directives = new PlaintorchDirectivesSdk(this)
 		this.objectives = new PlaintorchObjectivesSdk(this)
 		this.declaratives = new PlaintorchDeclarativesSdk(this)
@@ -68,7 +69,7 @@ export class PlaintorchCoreClient {
 		this.polaris = new PlaintorchPolarisSdk(this)
 		this.lore = new PlaintorchLoreSdk(this)
 		// Constructed last: the repositories delegate to the SDKs above.
-		this.repos = new PlaintorchRepositories(this)
+		this.repos = new PlaintorchRepositories(this, { resolutionFreshnessMs: options.cacheTtlMs })
 	}
 
 	public icon(icon: string): string {

@@ -23,6 +23,6 @@
 - [ ] Status bar
 - [ ] Add constraints to editable plaintext
 ## Extras
-- [ ] Use SignalR to update briefing
+- [x] Use SignalR to update briefing — shipped as server-sent events instead ([[PEP106 - Frontend Repository System]]). One-directional was all it needed, since writes already go over REST, and Kestrel is HTTP/1.1-only on both listeners, which makes a websocket upgrade over the socket the fragile path.
 - [ ] Make the quantum time/starfire editor
-- [ ] Add a global loading mechanism and unify entity components.
+- [x] Add a global loading mechanism and unify entity components. — entity components are unified: they declare a type name and the base resolves and observes for them. Loading/error state is exposed on the reference controllers but not yet rendered; see `core/.DISCUSSION.md`.

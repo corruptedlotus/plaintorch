@@ -1,6 +1,6 @@
 ---
-status: idea
-assignee: Soraya 🧙‍♀️
+status: implemented
+assignee: Copilot 🤖
 ---
 # Frontend Repository System
 The frontend has no shared notion of "the objective with this PUCK". Every component that displays an entity holds its own private copy, fetched independently and mutated independently. Two surfaces showing the same entity are two unrelated objects, and a change to one is invisible to the other.
