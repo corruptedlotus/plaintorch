@@ -9,7 +9,6 @@ export interface PlaintorchCoreResponse {
 	ok: boolean
 	status: number
 	text(): Promise<string>
-	json<T>(): Promise<T>
 }
 
 export interface PlaintorchCoreTransport {
@@ -62,9 +61,6 @@ function wrapFetchResponse(response: Response): PlaintorchCoreResponse {
 		status: response.status,
 		async text() {
 			return await response.text()
-		},
-		async json<T>() {
-			return (await response.json()) as T
 		}
 	}
 }

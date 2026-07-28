@@ -1,4 +1,3 @@
-import { ModelValueConstructor } from "@a11d/api-dotnet"
 import { PlaintorchDirectivesSdk } from "./directives/directivesSdk"
 import {
 	createLoopbackBaseUrl,
@@ -13,7 +12,7 @@ import { PlaintorchOnrushSdk } from "./onrush/onrushSdk"
 import { PlaintorchPolarisSdk } from "./polaris/polarisSdk"
 import { PlaintorchLoreSdk } from "./lore/loreSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
-import { apiValueConstructor, ApiValueConstructor } from '@a11d/api'
+import { createAbsorbingReviver, EntityStore } from "./repository"
 
 
 export interface PlaintorchCoreClientOptions {
@@ -30,6 +29,12 @@ const defaultHost = "127.0.0.1"
 export class PlaintorchCoreClient {
 	private readonly baseUrl: string
 	private readonly transports: PlaintorchCoreTransport[]
+	private readonly reviver: (key: string, value: unknown) => unknown
+	/**
+	 * Canonical instances of every entity this client has seen. Populated by every response the client
+	 * reads, so call sites that have not moved onto repositories still contribute to it.
+	 */
+	public readonly store: EntityStore
 	public readonly system: PlaintorchSystemSdk
 	public readonly directives: PlaintorchDirectivesSdk
 	public readonly objectives: PlaintorchObjectivesSdk
@@ -48,6 +53,8 @@ export class PlaintorchCoreClient {
 				headers: options.headers
 			})
 		]
+		this.store = new EntityStore()
+		this.reviver = createAbsorbingReviver(this.store)
 		this.system = new PlaintorchSystemSdk(this, options.cacheTtlMs ?? 15_000)
 		this.directives = new PlaintorchDirectivesSdk(this)
 		this.objectives = new PlaintorchObjectivesSdk(this)
@@ -134,7 +141,7 @@ export class PlaintorchCoreClient {
 			return undefined
 		}
 
-		return new ModelValueConstructor().construct(JSON.parse(payload)) as T
+		return JSON.parse(payload, this.reviver) as T
 	}
 
 	private async sendForSuccess(request: PlaintorchCoreRequest): Promise<boolean> {

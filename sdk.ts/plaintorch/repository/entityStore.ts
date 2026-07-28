@@ -1,0 +1,271 @@
+import { identify, type EntityKey } from "./identity"
+
+/** Notified when the canonical instance behind an identity changes. */
+export type EntitySubscriber = () => void
+
+/** Releases a subscription. */
+export type EntitySubscription = () => void
+
+interface EntityRecord {
+	/** Undefined while an identity is observed but has not been absorbed yet. */
+	value: object | undefined
+	version: number
+	stale: boolean
+	readonly subscribers: Set<EntitySubscriber>
+}
+
+/**
+ * Holds exactly one canonical instance per entity identity.
+ *
+ * Responses are absorbed rather than handed out directly: an entity already in the store has the
+ * incoming fields merged into the instance that is already on screen, so every surface holding a
+ * reference is looking at current state by construction. Synchronizing surfaces is then only a matter
+ * of telling them to re-render, which is what subscriptions are for.
+ */
+export class EntityStore {
+	private readonly records = new Map<EntityKey, EntityRecord>()
+
+	/**
+	 * Registers or merges a value and returns the canonical instance for its identity.
+	 *
+	 * Values that are not tracked entities are returned untouched, which lets the caller run this over
+	 * every node of a response without knowing which ones matter.
+	 */
+	public absorb<T>(value: T): T {
+		const key = identify(value)
+		if (key === undefined) {
+			return value
+		}
+
+		const existing = this.records.get(key)
+		if (!existing) {
+			this.records.set(key, {
+				value: value as object,
+				version: 0,
+				stale: false,
+				subscribers: new Set()
+			})
+			return value
+		}
+
+		if (!existing.value) {
+			existing.value = value as object
+			existing.stale = false
+			existing.version++
+			notify(existing)
+			return value
+		}
+
+		const changed = mergeInto(existing.value, value as object)
+		existing.stale = false
+		if (changed) {
+			existing.version++
+			notify(existing)
+		}
+
+		return existing.value as T
+	}
+
+	/**
+	 * Returns the canonical instance for an identity without fetching it.
+	 */
+	public peek<T>(key: EntityKey): T | undefined {
+		return this.records.get(key)?.value as T | undefined
+	}
+
+	/**
+	 * Determines whether an identity has ever been absorbed.
+	 */
+	public has(key: EntityKey): boolean {
+		return this.records.get(key)?.value !== undefined
+	}
+
+	/**
+	 * Returns the change counter of an identity, which advances only when a field actually changed.
+	 */
+	public version(key: EntityKey): number {
+		return this.records.get(key)?.version ?? 0
+	}
+
+	/**
+	 * Observes an identity. The subscriber runs whenever the canonical instance changes.
+	 */
+	public subscribe(key: EntityKey, subscriber: EntitySubscriber): EntitySubscription {
+		const record = this.records.get(key) ?? this.createPlaceholder(key)
+		record.subscribers.add(subscriber)
+		return () => {
+			record.subscribers.delete(subscriber)
+		}
+	}
+
+	/**
+	 * Determines whether anything is currently observing an identity.
+	 *
+	 * Invalidation uses this to refetch only what is on screen; everything else is left marked stale
+	 * and resolved lazily if it is ever displayed.
+	 */
+	public hasSubscribers(key: EntityKey): boolean {
+		const record = this.records.get(key)
+		return !!record && record.subscribers.size > 0
+	}
+
+	/** Marks an identity as needing revalidation on next read. */
+	public markStale(key: EntityKey): void {
+		const record = this.records.get(key)
+		if (record) {
+			record.stale = true
+		}
+	}
+
+	/** Marks every known identity as needing revalidation, used when a change feed reconnects. */
+	public markAllStale(): void {
+		for (const record of this.records.values()) {
+			record.stale = true
+		}
+	}
+
+	/** Determines whether an identity needs revalidation. */
+	public isStale(key: EntityKey): boolean {
+		return this.records.get(key)?.stale ?? true
+	}
+
+	/** Returns every identity currently held. */
+	public keys(): IterableIterator<EntityKey> {
+		return this.records.keys()
+	}
+
+	/**
+	 * Captures the current field values of an identity so an optimistic write can be undone.
+	 */
+	public snapshot(key: EntityKey): Record<string, unknown> | undefined {
+		const record = this.records.get(key)
+		return record?.value ? { ...record.value } : undefined
+	}
+
+	/**
+	 * Applies field values captured by {@link snapshot}, rolling back a failed optimistic write.
+	 */
+	public restore(key: EntityKey, snapshot: Record<string, unknown>): void {
+		const record = this.records.get(key)
+		if (!record?.value) {
+			return
+		}
+
+		if (mergeInto(record.value, snapshot)) {
+			record.version++
+			notify(record)
+		}
+	}
+
+	/**
+	 * Applies a partial change to the canonical instance of an identity, as an optimistic write does.
+	 */
+	public patch(key: EntityKey, change: Record<string, unknown>): void {
+		const record = this.records.get(key)
+		if (!record?.value) {
+			return
+		}
+
+		if (mergeInto(record.value, change)) {
+			record.version++
+			notify(record)
+		}
+	}
+
+	/**
+	 * Registers an identity that is observed but not absorbed yet, so a component can subscribe before
+	 * its first fetch settles. The first absorption adopts the incoming instance verbatim, which keeps
+	 * the constructed model prototype intact.
+	 */
+	private createPlaceholder(key: EntityKey): EntityRecord {
+		const record: EntityRecord = {
+			value: undefined,
+			version: 0,
+			stale: true,
+			subscribers: new Set()
+		}
+		this.records.set(key, record)
+		return record
+	}
+}
+
+function notify(record: EntityRecord): void {
+	for (const subscriber of [...record.subscribers]) {
+		subscriber()
+	}
+}
+
+/**
+ * Copies the fields present in `source` onto `target`, reporting whether anything actually changed.
+ *
+ * Only keys the payload carries are copied, so a sparse response never erases richer cached fields, and
+ * unchanged values are left in place so array and object references stay stable across refetches.
+ */
+function mergeInto(target: object, source: object): boolean {
+	let changed = false
+	for (const [key, value] of Object.entries(source)) {
+		if (!isAssignable(target, key)) {
+			continue
+		}
+
+		const current = (target as Record<string, unknown>)[key]
+		if (isEquivalent(current, value)) {
+			continue
+		}
+
+		;(target as Record<string, unknown>)[key] = value
+		changed = true
+	}
+
+	return changed
+}
+
+/**
+ * Determines whether an existing field value is indistinguishable from an incoming one.
+ *
+ * Entities short-circuit on identity, which also keeps this terminating: every cycle in the canonical
+ * graph runs through an entity reference, so recursion never re-enters one.
+ */
+function isEquivalent(a: unknown, b: unknown, depth = 0): boolean {
+	if (a === b) {
+		return true
+	}
+
+	if (depth > 8 || !a || !b || typeof a !== "object" || typeof b !== "object") {
+		return false
+	}
+
+	const keyA = identify(a)
+	if (keyA !== undefined || identify(b) !== undefined) {
+		return keyA === identify(b)
+	}
+
+	if (Array.isArray(a) || Array.isArray(b)) {
+		return Array.isArray(a)
+			&& Array.isArray(b)
+			&& a.length === b.length
+			&& a.every((item, index) => isEquivalent(item, b[index], depth + 1))
+	}
+
+	const entriesA = Object.entries(a)
+	const entriesB = Object.entries(b)
+	return entriesA.length === entriesB.length
+		&& entriesA.every(([key, value]) => key in b && isEquivalent(value, (b as Record<string, unknown>)[key], depth + 1))
+}
+
+/**
+ * Determines whether a key can be written on a target, so getter-only fields are left alone.
+ */
+function isAssignable(target: object, key: string): boolean {
+	let current: object | null = target
+	while (current) {
+		const descriptor = Object.getOwnPropertyDescriptor(current, key)
+		if (descriptor) {
+			return descriptor.writable === true || typeof descriptor.set === "function"
+		}
+
+		current = Object.getPrototypeOf(current)
+	}
+
+	return true
+}

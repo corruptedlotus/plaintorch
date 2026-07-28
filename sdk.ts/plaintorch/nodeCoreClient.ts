@@ -8,7 +8,6 @@ import {
 	type PlaintorchCoreTransport
 } from "./internal/transport"
 import { PlaintorchCoreClient, type PlaintorchCoreClientOptions } from "./coreClient"
-import { ModelValueConstructor } from "@a11d/api-dotnet"
 export interface NodePlaintorchCoreClientOptions extends Omit<PlaintorchCoreClientOptions, "transports"> {
 	socketPath?: string
 }
@@ -102,9 +101,6 @@ function wrapNodeResponse(response: NodeJS.ReadableStream & { statusCode?: numbe
 				return value
 			})
 			return await readPromise
-		},
-		async json<T>() {
-			return new ModelValueConstructor().construct(JSON.parse(await this.text())) as T
 		}
 	}
 }
