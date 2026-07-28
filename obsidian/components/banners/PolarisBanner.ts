@@ -17,10 +17,13 @@ export class PolarisBanner extends EntityBanner<PolarisCycle> {
 	protected override readonly entityTypeName = 'PolarisCycle' as const
 
 	protected binder = new ReactiveBinder<PolarisCycle>(this, 'entity', {
+		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
-			this.publishEntityEdit()
-			await core.repos.polaris.mutate(entity.id, async () => await core.polaris.update(entity.id, entity))
+			const saved = await this.commitEntityEdit(async () => await core.polaris.update(entity.id, entity))
+			if (!saved) {
+				return
+			}
 
 			if (keyPath === 'title')
 			{

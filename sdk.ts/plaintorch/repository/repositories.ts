@@ -8,7 +8,8 @@ import type { LorePage } from "../lore/models"
 import type { EntityExistence, SystemBriefing } from "../system/models"
 import { EntityRepository } from "./entityRepository"
 import { DerivedRepository } from "./derivedRepository"
-import type { EntityTypeName } from "./identity"
+import { InvalidationScheduler, type InvalidationTarget } from "./invalidation"
+import type { EntityKey, EntityTypeName } from "./identity"
 
 /** Key under which the single briefing record is cached. */
 export const briefingRecordKey = ""
@@ -20,7 +21,10 @@ export const briefingRecordKey = ""
  * method names mirror the domain SDKs, which the repositories delegate to — the SDK stays the way to talk
  * to the core directly, and this is the way to display something and keep it current.
  */
-export class PlaintorchRepositories {
+export class PlaintorchRepositories implements InvalidationTarget {
+	/** Queues what a write makes stale and revalidates whatever of it is on screen. */
+	public readonly invalidation: InvalidationScheduler
+
 	public readonly objectives: EntityRepository<Objective>
 	public readonly fates: EntityRepository<Fate>
 	public readonly decrees: EntityRepository<Decree>
@@ -42,15 +46,18 @@ export class PlaintorchRepositories {
 
 	public constructor(private readonly client: PlaintorchCoreClient) {
 		const store = client.store
+		// Resolved lazily: the scheduler reaches back into the repositories it is handed to.
+		this.invalidation = new InvalidationScheduler(store, () => this)
+		const options = { invalidation: this.invalidation }
 
-		this.objectives = new EntityRepository(store, "Objective", (id) => client.objectives.get(id))
-		this.fates = new EntityRepository(store, "Fate", (id) => client.declaratives.getFate(id))
-		this.decrees = new EntityRepository(store, "Decree", (id) => client.declaratives.getDecree(id))
-		this.directives = new EntityRepository(store, "Directive", (id) => client.directives.get(id))
-		this.lunarDirectives = new EntityRepository(store, "LunarDirective", (id) => client.directives.get(id))
-		this.onrush = new EntityRepository(store, "OnrushSprint", (id) => client.onrush.get(id))
-		this.polaris = new EntityRepository(store, "PolarisCycle", (id) => client.polaris.get(id))
-		this.lore = new EntityRepository(store, "LorePage", (id) => client.lore.get(id))
+		this.objectives = new EntityRepository(store, "Objective", (id) => client.objectives.get(id), options)
+		this.fates = new EntityRepository(store, "Fate", (id) => client.declaratives.getFate(id), options)
+		this.decrees = new EntityRepository(store, "Decree", (id) => client.declaratives.getDecree(id), options)
+		this.directives = new EntityRepository(store, "Directive", (id) => client.directives.get(id), options)
+		this.lunarDirectives = new EntityRepository(store, "LunarDirective", (id) => client.directives.get(id), options)
+		this.onrush = new EntityRepository(store, "OnrushSprint", (id) => client.onrush.get(id), options)
+		this.polaris = new EntityRepository(store, "PolarisCycle", (id) => client.polaris.get(id), options)
+		this.lore = new EntityRepository(store, "LorePage", (id) => client.lore.get(id), options)
 
 		this.briefing = new DerivedRepository(async () => await client.system.getBriefing())
 		this.noteResolution = new DerivedRepository(async (path) => await client.system.resolveNote(path))
@@ -92,6 +99,24 @@ export class PlaintorchRepositories {
 			this.noteResolution.revalidateObserved(),
 			this.entityResolution.revalidateObserved()
 		])
+	}
+
+	/** @inheritdoc */
+	public async revalidateRecordsIfObserved(): Promise<void> {
+		await this.revalidateObservedRecords()
+	}
+
+	/**
+	 * @inheritdoc
+	 *
+	 * Routed by type name so the scheduler can name a dependency of any kind without knowing which
+	 * repository serves it.
+	 */
+	public async revalidateEntityIfObserved(key: EntityKey): Promise<void> {
+		const separator = key.indexOf(":")
+		const typeName = key.slice(0, separator)
+		const id = key.slice(separator + 1)
+		await this.forTypeName(typeName)?.revalidateIfObserved(id)
 	}
 
 	/** Marks everything as needing revalidation, without fetching anything. */

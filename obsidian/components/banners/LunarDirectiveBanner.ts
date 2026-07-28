@@ -24,24 +24,23 @@ export class LunarDirectiveBanner extends EntityBanner<Directive> {
 	protected override readonly entityTypeName = 'LunarDirective' as const
 
 	protected binder = new ReactiveBinder<Directive>(this, 'entity', {
+		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
 			if (keyPath !== 'status' && keyPath !== 'title') {
 				return
 			}
 
-			this.publishEntityEdit()
-			await core.repos.lunarDirectives.mutate(entity.id, async () => {
+			const saved = await this.commitEntityEdit(async () => {
 				if (keyPath === 'status') {
-					await core.directives.shiftLunarWorkflow(entity.id, { status: entity.status as LunarDirectiveStatus })
-					return
+					return await core.directives.shiftLunarWorkflow(entity.id, { status: entity.status as LunarDirectiveStatus })
 				}
 
 				const update: LunarDirectiveUpdate = { title: entity.title }
-				await core.directives.updateLunar(entity.id, update)
+				return await core.directives.updateLunar(entity.id, update)
 			})
 
-			if (keyPath === 'title') {
+			if (saved && keyPath === 'title') {
 				await this.revealAssociatedNote(entity.id)
 			}
 		}

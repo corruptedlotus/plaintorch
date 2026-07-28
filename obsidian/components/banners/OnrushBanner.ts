@@ -17,10 +17,13 @@ export class OnrushBanner extends EntityBanner<OnrushSprint> {
 	protected override readonly entityTypeName = 'OnrushSprint' as const
 
 	protected binder = new ReactiveBinder<OnrushSprint>(this, 'entity', {
+		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
-			this.publishEntityEdit()
-			await core.repos.onrush.mutate(entity.id, async () => await core.onrush.update(entity.id, entity))
+			const saved = await this.commitEntityEdit(async () => await core.onrush.update(entity.id, entity))
+			if (!saved) {
+				return
+			}
 
 			if (keyPath === 'title')
 			{

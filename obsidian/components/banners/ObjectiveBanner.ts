@@ -15,17 +15,16 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 	protected override readonly entityTypeName = 'Objective' as const
 
 	protected binder = new ReactiveBinder<Objective>(this, 'entity', {
+		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
-			this.publishEntityEdit()
-			await core.repos.objectives.mutate(entity.id, async () => {
-				if (keyPath === 'status') {
-					await core.objectives.shiftWorkflow(entity.id, { status: entity.status })
-					return
-				}
+			const saved = await this.commitEntityEdit(async () => keyPath === 'status'
+				? await core.objectives.shiftWorkflow(entity.id, { status: entity.status })
+				: await core.objectives.update(entity.id, entity))
 
-				await core.objectives.update(entity.id, entity)
-			})
+			if (!saved) {
+				return
+			}
 
 			if (keyPath === 'title')
 			{

@@ -23,24 +23,23 @@ export class StellarDirectiveBanner extends EntityBanner<Directive> {
 	protected override readonly entityTypeName = 'Directive' as const
 
 	protected binder = new ReactiveBinder<Directive>(this, 'entity', {
+		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
 			if (keyPath !== 'status' && keyPath !== 'title') {
 				return
 			}
 
-			this.publishEntityEdit()
-			await core.repos.directives.mutate(entity.id, async () => {
+			const saved = await this.commitEntityEdit(async () => {
 				if (keyPath === 'status') {
-					await core.directives.shiftStellarWorkflow(entity.id, { status: entity.status as DirectiveStatus })
-					return
+					return await core.directives.shiftStellarWorkflow(entity.id, { status: entity.status as DirectiveStatus })
 				}
 
 				const update: StellarDirectiveUpdate = { title: entity.title }
-				await core.directives.updateStellar(entity.id, update)
+				return await core.directives.updateStellar(entity.id, update)
 			})
 
-			if (keyPath === 'title') {
+			if (saved && keyPath === 'title') {
 				await this.revealAssociatedNote(entity.id)
 			}
 		}

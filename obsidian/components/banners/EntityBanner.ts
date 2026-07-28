@@ -1,8 +1,8 @@
 import { component, css, html, nothing, property, state } from '@a11d/lit'
 import { CardComponent } from 'components/design'
 import { IconName } from 'components/PleiadesIcon'
-import { App } from 'obsidian'
-import { EntityTypeName } from '@pleiades/sdk'
+import { App, Notice } from 'obsidian'
+import { EntityTypeName, isSuccessfulMutation } from '@pleiades/sdk'
 import { core, EntityRef } from '..'
 
 @component('p7t-entity-banner')
@@ -60,6 +60,13 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 	protected async loadRelated(): Promise<void> {
 	}
 
+	/** Field values as they were before the current edit, kept so a rejected write can be undone. */
+	private editSnapshot?: Record<string, unknown>
+
+	protected get entityRepository() {
+		return core.repos.forTypeName<T & object>(this.entityTypeName)
+	}
+
 	/**
 	 * Announces an in-place edit of the entity to every other surface showing it.
 	 *
@@ -68,9 +75,43 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 	 * invisible to everything except the banner the edit was made in.
 	 */
 	protected publishEntityEdit(): void {
-		if (this.entityTypeName && this.puck) {
-			core.repos.forTypeName(this.entityTypeName)?.touch(this.puck)
+		if (this.puck) {
+			this.entityRepository?.touch(this.puck)
 		}
+	}
+
+	/**
+	 * Captures the entity before a two-way binding writes an edit into it.
+	 *
+	 * Bindings apply the edit before anything is sent, so this is the last moment the previous state still
+	 * exists anywhere.
+	 */
+	protected beginEntityEdit(): void {
+		this.editSnapshot = this.puck ? this.entityRepository?.snapshot(this.puck) : undefined
+	}
+
+	/**
+	 * Publishes the edit, sends it, and puts the entity back if the core rejected it.
+	 *
+	 * Without the rollback a rejected write is indistinguishable from an accepted one: the edit is already
+	 * on screen, and a failed request reports itself by returning nothing rather than throwing.
+	 */
+	protected async commitEntityEdit<R>(send: () => Promise<R>): Promise<R | undefined> {
+		const repository = this.entityRepository
+		if (!repository || !this.puck) {
+			return await send()
+		}
+
+		this.publishEntityEdit()
+		const snapshot = this.editSnapshot
+		this.editSnapshot = undefined
+
+		const result = await repository.mutate(this.puck, send, { rollbackTo: snapshot })
+		if (!isSuccessfulMutation(result)) {
+			new Notice('PLAINTORCH could not save that change.')
+		}
+
+		return result
 	}
 
 	protected override async initialized() {

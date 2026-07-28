@@ -1,5 +1,6 @@
 import { entityKey, type EntityKey, type EntityTypeName } from "./identity"
 import type { EntityStore, EntitySubscriber, EntitySubscription } from "./entityStore"
+import type { InvalidationScheduler } from "./invalidation"
 
 /** Resolves one entity of a repository's type from the core. */
 export type EntityFetcher<T> = (id: string) => Promise<T | undefined>
@@ -7,6 +8,30 @@ export type EntityFetcher<T> = (id: string) => Promise<T | undefined>
 export interface EntityRepositoryOptions {
 	/** How long a resolved entity is served from the store before it is revalidated. */
 	freshnessMs?: number
+	/** Queues what a successful write makes stale. */
+	invalidation?: InvalidationScheduler
+}
+
+export interface MutateOptions<R> {
+	/**
+	 * Field values to restore if the write is rejected, captured before the edit was applied.
+	 *
+	 * Two-way bindings apply an edit to the canonical instance before anything is sent, so the caller is
+	 * the only one who can capture the previous state in time.
+	 */
+	rollbackTo?: Record<string, unknown>
+	/** Whether a result counts as success. Defaults to {@link isSuccessfulMutation}. */
+	succeeded?: (result: R) => boolean
+}
+
+/**
+ * Whether a write result means the core accepted it.
+ *
+ * The client reports a failed request by returning nothing rather than throwing, so an absent result is a
+ * rejection and not merely an operation with no return value.
+ */
+export function isSuccessfulMutation(result: unknown): boolean {
+	return result !== undefined && result !== null && result !== false
 }
 
 const defaultFreshnessMs = 30_000
@@ -23,6 +48,7 @@ export class EntityRepository<T extends object> {
 	private readonly resolvedAt = new Map<EntityKey, number>()
 	private readonly mutating = new Set<EntityKey>()
 	private readonly freshnessMs: number
+	private readonly invalidation?: InvalidationScheduler
 
 	public constructor(
 		protected readonly store: EntityStore,
@@ -31,6 +57,7 @@ export class EntityRepository<T extends object> {
 		options: EntityRepositoryOptions = {}
 	) {
 		this.freshnessMs = options.freshnessMs ?? defaultFreshnessMs
+		this.invalidation = options.invalidation
 	}
 
 	/** Builds the store identity of an entity of this type. */
@@ -109,21 +136,44 @@ export class EntityRepository<T extends object> {
 	}
 
 	/**
-	 * Runs a write against an entity, republishing it afterwards.
+	 * Runs a write against an entity, undoing it if the core rejects it and republishing what it changed.
 	 *
-	 * While the write is in flight the identity is held so a change feed event — including the echo of
-	 * this very write — cannot refetch over it and clobber an edit the user is still making.
+	 * While the write is in flight the identity is held, so a revalidation — including the echo of this
+	 * very write arriving on the change feed — cannot refetch over an edit the user is still making.
 	 */
-	public async mutate<R>(id: string, operation: () => Promise<R>): Promise<R> {
+	public async mutate<R>(id: string, operation: () => Promise<R>, options: MutateOptions<R> = {}): Promise<R> {
 		const key = this.key(id)
 		this.mutating.add(key)
 		try {
 			const result = await operation()
+			const succeeded = (options.succeeded ?? isSuccessfulMutation)(result)
+			if (!succeeded) {
+				this.rollback(id, options.rollbackTo)
+				return result
+			}
+
 			this.resolvedAt.set(key, Date.now())
+			this.invalidation?.invalidate(this.typeName, id)
 			return result
+		}
+		catch (error) {
+			this.rollback(id, options.rollbackTo)
+			throw error
 		}
 		finally {
 			this.mutating.delete(key)
+		}
+	}
+
+	/** Captures the current field values of an entity so a rejected write can be undone. */
+	public snapshot(id: string): Record<string, unknown> | undefined {
+		return this.store.snapshot(this.key(id))
+	}
+
+	/** Restores field values captured by {@link snapshot}. */
+	public rollback(id: string, snapshot: Record<string, unknown> | undefined): void {
+		if (snapshot) {
+			this.store.restore(this.key(id), snapshot)
 		}
 	}
 

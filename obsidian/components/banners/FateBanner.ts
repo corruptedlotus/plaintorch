@@ -18,6 +18,7 @@ export class FateBanner extends EntityBanner<Fate> {
 	@state() nextEventive?: Eventive
 
 	protected binder = new ReactiveBinder<Fate>(this, 'entity', {
+		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
 			const update: FateUpdate = {}
@@ -36,8 +37,11 @@ export class FateBanner extends EntityBanner<Fate> {
 					return
 			}
 
-			this.publishEntityEdit()
-			await core.repos.fates.mutate(entity.id, async () => await core.declaratives.updateFate(entity.id, update))
+			const saved = await this.commitEntityEdit(async () => await core.declaratives.updateFate(entity.id, update))
+			if (!saved) {
+				return
+			}
+
 			await this.loadNextEventive(entity.id)
 
 			if (keyPath === 'title') {

@@ -18,6 +18,7 @@ export class DecreeBanner extends EntityBanner<Decree> {
 	@state() activePolaris?: PolarisCycle
 
 	protected binder = new ReactiveBinder<Decree>(this, 'entity', {
+		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
 			const update: DecreeUpdate = {}
@@ -42,8 +43,10 @@ export class DecreeBanner extends EntityBanner<Decree> {
 					return
 			}
 
-			this.publishEntityEdit()
-			await core.repos.decrees.mutate(entity.id, async () => await core.declaratives.updateDecree(entity.id, update))
+			const saved = await this.commitEntityEdit(async () => await core.declaratives.updateDecree(entity.id, update))
+			if (!saved) {
+				return
+			}
 
 			if (keyPath === 'title') {
 				await this.revealAssociatedNote(entity.id)
