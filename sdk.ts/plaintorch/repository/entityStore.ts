@@ -30,8 +30,13 @@ export class EntityStore {
 	 *
 	 * Values that are not tracked entities are returned untouched, which lets the caller run this over
 	 * every node of a response without knowing which ones matter.
+	 *
+	 * `payloadKeys` must be the keys the wire payload actually carried. Constructing a model widens a
+	 * sparse response to the full shape of its class — declared fields appear as `undefined`, and
+	 * initialized ones as their defaults — so without it a response that merely omits a field would
+	 * overwrite the cached value with a default.
 	 */
-	public absorb<T>(value: T): T {
+	public absorb<T>(value: T, payloadKeys?: readonly string[]): T {
 		const key = identify(value)
 		if (key === undefined) {
 			return value
@@ -56,7 +61,7 @@ export class EntityStore {
 			return value
 		}
 
-		const changed = mergeInto(existing.value, value as object)
+		const changed = mergeInto(existing.value, value as object, payloadKeys)
 		existing.stale = false
 		if (changed) {
 			existing.version++
@@ -196,18 +201,20 @@ function notify(record: EntityRecord): void {
 }
 
 /**
- * Copies the fields present in `source` onto `target`, reporting whether anything actually changed.
+ * Copies the named fields of `source` onto `target`, reporting whether anything actually changed.
  *
- * Only keys the payload carries are copied, so a sparse response never erases richer cached fields, and
- * unchanged values are left in place so array and object references stay stable across refetches.
+ * Restricting the copy to keys the payload carried is what keeps a sparse response from erasing richer
+ * cached fields, and unchanged values are left in place so array and object references stay stable
+ * across refetches.
  */
-function mergeInto(target: object, source: object): boolean {
+function mergeInto(target: object, source: object, keys?: readonly string[]): boolean {
 	let changed = false
-	for (const [key, value] of Object.entries(source)) {
+	for (const key of keys ?? Object.keys(source)) {
 		if (!isAssignable(target, key)) {
 			continue
 		}
 
+		const value = (source as Record<string, unknown>)[key]
 		const current = (target as Record<string, unknown>)[key]
 		if (isEquivalent(current, value)) {
 			continue

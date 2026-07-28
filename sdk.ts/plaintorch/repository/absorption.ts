@@ -13,8 +13,13 @@ const modelValueConstructor = new ModelValueConstructor()
  */
 export function createAbsorbingReviver(store: EntityStore): (key: string, value: unknown) => unknown {
 	return (_key, value) => {
-		return !modelValueConstructor.shallConstruct(value)
-			? value
-			: store.absorb(modelValueConstructor.construct(value))
+		if (!modelValueConstructor.shallConstruct(value)) {
+			return value
+		}
+
+		// Captured before construction: constructing a model widens a sparse payload to the full shape of
+		// its class, which would otherwise make an omitted field indistinguishable from a cleared one.
+		const payloadKeys = Object.keys(value as object)
+		return store.absorb(modelValueConstructor.construct(value), payloadKeys)
 	}
 }
