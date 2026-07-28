@@ -20,6 +20,7 @@ public sealed class VaultWatcherSyncService(
 	VaultAuditLogService auditLogService,
 	VaultImplicitBoundaryService implicitBoundaryService,
 	VaultWatcherWriteBarrier writeBarrier,
+	VaultEntityGateway entityGateway,
 	ILogger<VaultWatcherSyncService> logger)
 {
 	/// <summary>
@@ -127,20 +128,27 @@ public sealed class VaultWatcherSyncService(
 			await NormalizeObjectiveForeignKeysAsync(objective, candidate.VaultRelativePath, cancellationToken);
 		}
 
+		if (model is Fate or Decree)
+		{
+			await NormalizeIncentiveDirectiveAsync((Incentive)model, candidate.VaultRelativePath, cancellationToken);
+		}
+
 		if (model is not IPuckNamedEntity namedEntity)
 		{
 			throw new InvalidOperationException($"Watcher create-from-file requires a PUCK-named model, but '{candidate.Model.EntityName}' is not PUCK-backed.");
 		}
 
+		// Identity is declared per concrete type (a polymorphic family's siblings may carry different PUCK
+		// declarations), so id creation keys on the composed instantiation type rather than the anchor type.
 		var ignoredPathId = default(string);
-		if (!puckCreationService.RequiresCallerInputFor(candidate.Model.EntityType))
+		if (!puckCreationService.RequiresCallerInputFor(candidate.Model.InstantiationType))
 		{
 			ignoredPathId = string.IsNullOrWhiteSpace(candidate.PathId) ? null : candidate.PathId;
-			namedEntity.Id = puckCreationService.CreateIdFor(candidate.Model.EntityType);
+			namedEntity.Id = puckCreationService.CreateIdFor(candidate.Model.InstantiationType);
 		}
 		else if (string.IsNullOrWhiteSpace(namedEntity.Id))
 		{
-			namedEntity.Id = puckCreationService.CreateIdFor(candidate.Model.EntityType);
+			namedEntity.Id = puckCreationService.CreateIdFor(candidate.Model.InstantiationType);
 		}
 
 		context.Add(model);
@@ -234,6 +242,18 @@ public sealed class VaultWatcherSyncService(
 		if (existing is Objective objective)
 		{
 			await NormalizeObjectiveForeignKeysAsync(objective, candidate.VaultRelativePath, cancellationToken);
+		}
+
+		if (existing is Incentive existingIncentive)
+		{
+			// Parenting is not markdown-mapped, so a frontmatter sync must never clear it.
+			existingIncentive.ParentIncentiveId = existingEntry.OriginalValues.GetValue<string?>(nameof(Incentive.ParentIncentiveId));
+		}
+
+		if (existing is Fate or Decree)
+		{
+			await NormalizeIncentiveDirectiveAsync((Incentive)existing, candidate.VaultRelativePath, cancellationToken);
+			await ResetOrbitStateOnChangeAsync(existingEntry, ((Incentive)existing).Id, cancellationToken);
 		}
 
 		if (existing is IPuckNamedEntity namedEntity && !string.IsNullOrWhiteSpace(candidate.PathTitle))
@@ -363,6 +383,53 @@ public sealed class VaultWatcherSyncService(
 					vaultRelativePath);
 				objective.OnrushSprintId = null;
 			}
+		}
+	}
+
+	/// <summary>
+	/// Normalizes a declarative's directive relation when the referenced directive no longer exists.
+	/// </summary>
+	private async Task NormalizeIncentiveDirectiveAsync(Incentive incentive, string vaultRelativePath, CancellationToken cancellationToken)
+	{
+		if (string.IsNullOrWhiteSpace(incentive.DirectiveId))
+		{
+			return;
+		}
+
+		var directiveExists = await context.Directives
+			.AsNoTracking()
+			.AnyAsync(item => item.Id == incentive.DirectiveId, cancellationToken);
+		if (!directiveExists)
+		{
+			logger.LogWarning(
+				"Watcher normalized missing directive relation '{DirectiveId}' on incentive '{IncentiveId}' from '{Path}'.",
+				incentive.DirectiveId,
+				incentive.Id,
+				vaultRelativePath);
+			incentive.DirectiveId = null;
+		}
+	}
+
+	/// <summary>
+	/// Resets the persisted orbit schedule state when a file sync changed a declarative's orbit notation.
+	/// A fresh state (anchored at reset time) is lazily rebuilt on the next seeking resolution.
+	/// </summary>
+	private async Task ResetOrbitStateOnChangeAsync(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry, string incentiveId, CancellationToken cancellationToken)
+	{
+		var originalOrbit = entry.OriginalValues.GetValue<string?>("Orbit");
+		var currentOrbit = entry.CurrentValues.GetValue<string?>("Orbit");
+		if (string.Equals(originalOrbit, currentOrbit, StringComparison.Ordinal))
+		{
+			return;
+		}
+
+		var states = await context.Set<OrbitScheduleState>()
+			.Where(state => state.IncentiveId == incentiveId)
+			.ToListAsync(cancellationToken);
+		if (states.Count > 0)
+		{
+			context.RemoveRange(states);
+			logger.LogInformation("Watcher reset orbit schedule state for '{IncentiveId}' after an orbit change.", incentiveId);
 		}
 	}
 
@@ -559,39 +626,9 @@ public sealed class VaultWatcherSyncService(
 	/// <param name="id">The identifier of the entity.</param>
 	/// <param name="cancellationToken">A token used to cancel lookup.</param>
 	/// <returns>The existing entity instance, or <see langword="null"/> when not found.</returns>
-	private async Task<object?> LoadExistingAsync(Type entityType, string id, CancellationToken cancellationToken)
+	private Task<object?> LoadExistingAsync(Type entityType, string id, CancellationToken cancellationToken)
 	{
-		if (entityType == typeof(Directive))
-		{
-			return await context.Directives.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(Objective))
-		{
-			return await context.Objectives.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(OnrushSprint))
-		{
-			return await context.OnrushSprints.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(ExecutiveOrder))
-		{
-			return await context.ExecutiveOrders.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(PolarisCycle))
-		{
-			return await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(LorePage))
-		{
-			return await context.LorePages.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		throw new InvalidOperationException($"Watcher synchronization does not support entity type '{entityType.Name}'.");
+		return entityGateway.FindByIdAsync(entityType, id, track: true, cancellationToken);
 	}
 
 	/// <summary>
@@ -610,6 +647,12 @@ public sealed class VaultWatcherSyncService(
 				break;
 			case Objective objective:
 				await markdownStorageService.SaveObjectiveAsync(objective, previous as Objective, sourcePath, cancellationToken: cancellationToken);
+				break;
+			case Fate fate:
+				await markdownStorageService.SaveFateAsync(fate, previous as Fate, sourcePath, cancellationToken: cancellationToken);
+				break;
+			case Decree decree:
+				await markdownStorageService.SaveDecreeAsync(decree, previous as Decree, sourcePath, cancellationToken: cancellationToken);
 				break;
 			case OnrushSprint sprint:
 				await markdownStorageService.SaveOnrushSprintAsync(sprint, previous as OnrushSprint, sourcePath, cancellationToken);
@@ -633,79 +676,8 @@ public sealed class VaultWatcherSyncService(
 	/// </summary>
 	/// <param name="entity">The entity instance to clone.</param>
 	/// <returns>A detached clone with relevant persisted fields copied.</returns>
-	private static object CloneEntity(object entity)
+	private object CloneEntity(object entity)
 	{
-		return entity switch
-		{
-			Directive directive => new Directive
-			{
-				Id = directive.Id,
-				Title = directive.Title,
-				Codename = directive.Codename,
-				ParentDirectiveId = directive.ParentDirectiveId,
-				Status = directive.Status,
-				Tags = directive.Tags.ToList(),
-				Due = directive.Due,
-				StartDate = directive.StartDate,
-				EndDate = directive.EndDate,
-			},
-			Objective objective => new Objective
-			{
-				Id = objective.Id,
-				Title = objective.Title,
-				DirectiveId = objective.DirectiveId,
-				OnrushSprintId = objective.OnrushSprintId,
-				College = objective.College,
-				Status = objective.Status,
-				CelestronValue = objective.CelestronValue,
-				IsEnduring = objective.IsEnduring,
-			},
-			OnrushSprint sprint => new OnrushSprint
-			{
-				Id = sprint.Id,
-				Title = sprint.Title,
-				StartDate = sprint.StartDate,
-				EndDate = sprint.EndDate,
-			},
-			ExecutiveOrder order => new ExecutiveOrder
-			{
-				Id = order.Id,
-				Title = order.Title,
-				OnrushSprintId = order.OnrushSprintId,
-				Summary = order.Summary,
-				EffectiveFrom = order.EffectiveFrom,
-				EffectiveUntil = order.EffectiveUntil,
-			},
-			PolarisCycle cycle => new PolarisCycle
-			{
-				Id = cycle.Id,
-				Title = cycle.Title,
-				Forecast = cycle.Forecast is null
-					? null
-					: new PolarisForecast
-					{
-						ForecastReference = cycle.Forecast.ForecastReference,
-						ForecastTarget = cycle.Forecast.ForecastTarget,
-					},
-				StartTime = cycle.StartTime,
-				EndTime = cycle.EndTime,
-			},
-			LorePage lorePage => new LorePage
-			{
-				Id = lorePage.Id,
-				Title = lorePage.Title,
-				OverrideIdentifier = lorePage.OverrideIdentifier,
-				Beginning = lorePage.Beginning,
-				ParentId = lorePage.ParentId,
-				Level = lorePage.Level,
-				RelativePath = lorePage.RelativePath,
-				Era = lorePage.Era,
-				Chapter = lorePage.Chapter,
-				Act = lorePage.Act,
-				Phase = lorePage.Phase,
-				IndexedUtc = lorePage.IndexedUtc,
-			},
-			_ => throw new InvalidOperationException($"Watcher synchronization cannot clone entity type '{entity.GetType().Name}'."),
-		};
+		return entityGateway.CloneScalars(entity);
 	}
 }

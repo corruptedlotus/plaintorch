@@ -23,36 +23,21 @@ public sealed record SystemBriefing(
 	IReadOnlyList<LorePage> ActiveLorePages);
 
 /// <summary>
-/// Represents the authoritative PLAINTORCH interpretation of a vault markdown path.
+/// Represents a resolution payload for system-level entity lookup, produced by both PUCK identifier and
+/// vault-note resolution. The payload is deliberately client-agnostic: surfaces derive their own presentation
+/// concerns (such as custom-element tag names) from <see cref="EntityKind"/>.
 /// </summary>
-/// <param name="VaultRelativePath">The vault-relative markdown path that was resolved.</param>
-/// <param name="IsPlaintorchEntity">Indicates whether the path resolves to a PLAINTORCH-backed entity.</param>
-/// <param name="EntityKind">The normalized plugin-facing entity kind when the path is recognized.</param>
-/// <param name="EntityName">The CLR/domain entity name when the path is recognized.</param>
-/// <param name="TagName">The matching custom-element tag name when the path is recognized.</param>
-/// <param name="Puck">The parsed PUCK token when one is present in the file identity.</param>
-/// <param name="Title">The resolved entity title from the file identity.</param>
-public sealed record VaultNoteAuthorityResolution(
-	string VaultRelativePath,
-	bool IsPlaintorchEntity,
-	string? EntityKind = null,
-	string? EntityName = null,
-	string? TagName = null,
-	string? Puck = null,
-	string? Title = null);
-
-/// <summary>
-/// Represents a PUCK resolution payload for system-level entity lookup.
-/// </summary>
-/// <param name="Puck">The PUCK identifier being resolved.</param>
-/// <param name="Exists">Indicates whether an entity exists for the provided PUCK.</param>
-/// <param name="EntityType">The resolved entity type name when found.</param>
+/// <param name="Puck">The PUCK identifier being resolved, or empty when a recognized note has no resolvable identity.</param>
+/// <param name="Exists">Indicates whether the lookup resolves to a PLAINTORCH-backed entity.</param>
+/// <param name="EntityType">The resolved entity CLR type name when found.</param>
+/// <param name="EntityKind">The stable entity kind declared by the entity via its <c>PuckEntity</c> attribute when found.</param>
 /// <param name="Entity">The resolved entity payload when found.</param>
 /// <param name="AssociatedNote">The associated vault-relative markdown path when found and file-backed.</param>
 public sealed record EntityExistence(
 	string Puck,
 	bool Exists,
 	string? EntityType = null,
+	string? EntityKind = null,
 	object? Entity = null,
 	string? AssociatedNote = null);
 
@@ -124,9 +109,25 @@ public sealed record LorePageRecord(
 public sealed record SearchRequest(string Query, int? Take = null);
 
 /// <summary>
-/// Represents the mutable fields of a directive for generic update actions.
+/// Identifies which directive kind an action targets or filters (PEP100).
 /// </summary>
-public sealed record DirectiveUpdate(
+public enum DirectiveKind
+{
+	/// <summary>
+	/// A stellar (lifecycle-driven) directive.
+	/// </summary>
+	Stellar,
+
+	/// <summary>
+	/// A lunar (Moonlight everglow) directive.
+	/// </summary>
+	Lunar,
+}
+
+/// <summary>
+/// Represents the mutable fields of a stellar directive for update actions, including its scheduling dates.
+/// </summary>
+public sealed record StellarDirectiveUpdate(
 	string? Title = null,
 	string? Codename = null,
 	string? ParentDirectiveId = null,
@@ -136,21 +137,39 @@ public sealed record DirectiveUpdate(
 	DateOnly? EndDate = null);
 
 /// <summary>
-/// Represents a workflow shift for a directive.
+/// Represents the mutable fields of a lunar directive for update actions. Lunar directives are everglow and
+/// therefore carry no scheduling dates (PEP100).
 /// </summary>
-/// <param name="Status">The new directive status.</param>
-public sealed record DirectiveWorkflowShift(DirectiveStatus Status);
+public sealed record LunarDirectiveUpdate(
+	string? Title = null,
+	string? Codename = null,
+	string? ParentDirectiveId = null,
+	IReadOnlyList<string>? Tags = null);
+
+/// <summary>
+/// Represents a stellar directive workflow shift.
+/// </summary>
+/// <param name="Status">The new stellar directive status.</param>
+public sealed record StellarDirectiveWorkflowShift(DirectiveStatus Status);
 
 /// <summary>
 /// Represents the mutable fields of an objective for generic update actions.
 /// </summary>
+/// <remarks>
+/// <paramref name="ParentIncentiveId"/> participates in the PEP100 parent system: an objective may name
+/// another objective (subtask) or a fate declarative as its parent. <paramref name="ClearParentIncentive"/>
+/// distinguishes "leave unchanged" (null) from "unset".
+/// </remarks>
 public sealed record ObjectiveUpdate(
 	string? Title = null,
 	string? DirectiveId = null,
 	string? OnrushSprintId = null,
 	ObjectiveCollege? College = null,
 	int? CelestronValue = null,
-	bool? IsEnduring = null);
+	bool? IsEnduring = null,
+	DateOnly? Due = null,
+	string? ParentIncentiveId = null,
+	bool ClearParentIncentive = false);
 
 /// <summary>
 /// Represents a workflow shift for an objective.
@@ -261,6 +280,8 @@ public sealed record PolarisExecutivePlanResult(Objective? Objective, Executive 
 /// After the values are applied the record is reconciled through <see cref="Executive.NormalizeTimeAllocations"/>.
 /// <paramref name="Elapsed"/> is the raw tracked-minute tally: <c>null</c> leaves it unchanged and any
 /// supplied value (including <c>0</c> to reset) overwrites it. It has no <c>Clear*</c> flag because it is never unset.
+/// <paramref name="AffinityTimeframeId"/> names a timeframe as the executive's preferred execution window (PEP100);
+/// affinity is purely semantic.
 /// </remarks>
 public sealed record ExecutiveUpdate(
 	bool? Executed = null,
@@ -272,7 +293,9 @@ public sealed record ExecutiveUpdate(
 	bool ClearEstimation = false,
 	bool ClearMinimum = false,
 	bool ClearMaximum = false,
-	int? Elapsed = null);
+	int? Elapsed = null,
+	long? AffinityTimeframeId = null,
+	bool ClearAffinityTimeframe = false);
 
 /// <summary>
 /// Represents the inputs used to draw reflectives for a Polaris cycle.
@@ -288,4 +311,176 @@ public sealed record ReflectiveDrawRequest(
 /// </summary>
 public sealed record ReflectiveUpdate(
 	string? Description = null,
-	bool? Executed = null);
+	bool? Executed = null,
+	TimeOnly? Time = null);
+
+/// <summary>
+/// Represents a moonlight workflow shift for a lunar directive (PEP100).
+/// </summary>
+/// <param name="Status">The new lunar directive status.</param>
+public sealed record LunarDirectiveWorkflowShift(LunarDirectiveStatus Status);
+
+/// <summary>
+/// Represents the data required to create a fate declarative (PEP100).
+/// </summary>
+public sealed record FatePlan(
+	string Title,
+	string? Id = null,
+	string? DirectiveId = null,
+	string? ParentIncentiveId = null,
+	DateOnly? Date = null,
+	TimeOnly? StartTime = null,
+	TimeOnly? EndTime = null,
+	string? Orbit = null,
+	int? EventDuration = null);
+
+/// <summary>
+/// Represents the mutable fields of a fate declarative for generic update actions.
+/// </summary>
+public sealed record FateUpdate(
+	string? Title = null,
+	FateStatus? Status = null,
+	string? DirectiveId = null,
+	string? ParentIncentiveId = null,
+	bool ClearParentIncentive = false,
+	DateOnly? Date = null,
+	TimeOnly? StartTime = null,
+	TimeOnly? EndTime = null,
+	string? Orbit = null,
+	int? EventDuration = null);
+
+/// <summary>
+/// Represents the data required to create a decree declarative (PEP100).
+/// </summary>
+public sealed record DecreePlan(
+	string Title,
+	string? Id = null,
+	string? DirectiveId = null,
+	string? Orbit = null,
+	int? DefaultLength = null,
+	int ActiveCelestron = 0,
+	bool Reflect = false);
+
+/// <summary>
+/// Represents the mutable fields of a decree declarative for generic update actions.
+/// </summary>
+public sealed record DecreeUpdate(
+	string? Title = null,
+	DecreeStatus? Status = null,
+	string? DirectiveId = null,
+	string? Orbit = null,
+	int? DefaultLength = null,
+	int? ActiveCelestron = null,
+	bool? Reflect = null);
+
+/// <summary>
+/// Represents the caller-supplied occurrence details when interacting with a fate or an objective due date
+/// to materialize an eventive (PEP100).
+/// </summary>
+public sealed record EventiveMaterialization(
+	DateOnly? Date = null,
+	TimeOnly? StartTime = null,
+	TimeOnly? EndTime = null);
+
+/// <summary>
+/// Represents a mutable update to an eventive occurrence. Eventives are never Polaris-bound, so their time
+/// specification can always be moved.
+/// </summary>
+public sealed record EventiveUpdate(
+	DateOnly? Date = null,
+	TimeOnly? StartTime = null,
+	TimeOnly? EndTime = null,
+	EventiveResolution? Resolution = null,
+	int? Estimation = null,
+	int? Minimum = null,
+	int? Maximum = null);
+
+/// <summary>
+/// Represents the caller-supplied occurrence details when interacting with a decree to materialize an
+/// unbound attentive (PEP100). The time allocation defaults to the decree's default length.
+/// </summary>
+public sealed record AttentiveMaterialization(
+	DateOnly? Date = null,
+	TimeOnly? Time = null,
+	int? Estimation = null,
+	int? Minimum = null,
+	int? Maximum = null);
+
+/// <summary>
+/// Represents a mutable update to an attentive occurrence.
+/// </summary>
+/// <remarks>
+/// Mobility rules (PEP100): <paramref name="Date"/> reschedules and is only valid while unbound;
+/// <paramref name="MoveToPolarisCycleId"/> is only valid while Polaris-bound.
+/// </remarks>
+public sealed record AttentiveUpdate(
+	DateOnly? Date = null,
+	TimeOnly? Time = null,
+	AttentiveResolution? Resolution = null,
+	string? MoveToPolarisCycleId = null,
+	int? Estimation = null,
+	int? Minimum = null,
+	int? Maximum = null);
+
+/// <summary>
+/// Represents the data required to manually add a decree to a Polaris cycle, creating a Polaris-bound
+/// attentive (PEP100).
+/// </summary>
+public sealed record PolarisAttentiveAdd(
+	string DecreeId,
+	DateOnly? Date = null,
+	TimeOnly? Time = null,
+	int? Estimation = null,
+	int? Minimum = null,
+	int? Maximum = null);
+
+/// <summary>
+/// Represents the unbound items a Polaris cycle includes non-structurally because they fall within 24h of
+/// its beginning (PEP100). The cycle never relationally owns these records.
+/// </summary>
+public sealed record PolarisCycleInclusions(
+	IReadOnlyList<Eventive> Eventives,
+	IReadOnlyList<Attentive> Attentives);
+
+/// <summary>
+/// Represents the data required to define a directive-level timeframe (PEP100).
+/// </summary>
+public sealed record TimeframePlan(
+	string Title,
+	TimeOnly StartTime,
+	TimeOnly EndTime,
+	string? Orbit = null);
+
+/// <summary>
+/// Represents the mutable fields of a timeframe definition.
+/// </summary>
+public sealed record TimeframeUpdate(
+	string? Title = null,
+	TimeOnly? StartTime = null,
+	TimeOnly? EndTime = null,
+	string? Orbit = null,
+	bool ClearOrbit = false);
+
+/// <summary>
+/// Represents a timeframe together with a summary of the lunar directive that defines it, used by the global
+/// timeframe listing that spans every lunar directive (PEP100).
+/// </summary>
+/// <param name="Id">The timeframe database identity.</param>
+/// <param name="DirectiveId">The owning lunar directive identifier.</param>
+/// <param name="DirectiveTitle">The owning lunar directive title.</param>
+/// <param name="DirectiveCodename">The owning lunar directive codename, when set.</param>
+/// <param name="DirectiveStatus">The owning lunar directive moonlight status.</param>
+/// <param name="Title">The human-readable timeframe title.</param>
+/// <param name="StartTime">The start of the flagged portion of the day.</param>
+/// <param name="EndTime">The end of the flagged portion of the day.</param>
+/// <param name="Orbit">The optional Orbit notation scoping the timeframe to particular Polaris cycles.</param>
+public sealed record DirectiveTimeframeRecord(
+	long Id,
+	string DirectiveId,
+	string DirectiveTitle,
+	string? DirectiveCodename,
+	LunarDirectiveStatus DirectiveStatus,
+	string Title,
+	TimeOnly StartTime,
+	TimeOnly EndTime,
+	string? Orbit);

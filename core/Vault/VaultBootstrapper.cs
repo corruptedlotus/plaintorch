@@ -11,6 +11,7 @@ public sealed class VaultBootstrapper(
 	PlainfraContext context,
 	PlainfraContextInitializer contextInitializer,
 	VaultStorageTopologyValidator topologyValidator,
+	VaultEntityModelCatalog entityModelCatalog,
 	PuckRuntimeCompilationCatalog puckRuntimeCompilationCatalog)
 {
 	/// <summary>
@@ -24,7 +25,7 @@ public sealed class VaultBootstrapper(
 		}
 
 		layout.EnsureSettingsFile();
-		topologyValidator.Validate();
+		ValidateDeclarations();
 		CompilePuckModels();
 
 		contextInitializer.Initialize();
@@ -41,9 +42,15 @@ public sealed class VaultBootstrapper(
 		}
 
 		layout.EnsureSettingsFile();
-		topologyValidator.Validate();
+		ValidateDeclarations();
 		CompilePuckModels();
 		await contextInitializer.InitializeAsync(cancellationToken);
+	}
+
+	private void ValidateDeclarations()
+	{
+		entityModelCatalog.Validate(context.Model);
+		topologyValidator.Validate();
 	}
 
 	private void CompilePuckModels()

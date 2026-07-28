@@ -95,8 +95,11 @@ public sealed class VaultSettings
         return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             [VaultLocationKeys.Directives] = "Directives",
+            [VaultLocationKeys.Moonlight] = "Moonlight",
             [VaultLocationKeys.Onrush] = "Onrush",
             [VaultLocationKeys.Objectives] = "Objectives",
+            [VaultLocationKeys.Fates] = "Fates",
+            [VaultLocationKeys.Decrees] = "Decrees",
             [VaultLocationKeys.Journal] = "Journal",
             [VaultLocationKeys.Saga] = "Saga",
         };

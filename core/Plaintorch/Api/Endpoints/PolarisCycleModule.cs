@@ -71,6 +71,18 @@ public sealed class PolarisCycleModule : Module
 		cycles.MapPost("/current/executives/plan", async (PolarisExecutivePlan request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.PlanExecutiveAsync(request, null, cancellationToken)));
 
+		cycles.MapGet("/current/inclusions", async (IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.GetInclusionsAsync(null, cancellationToken)));
+
+		cycles.MapGet("/{polarisCycleId}/inclusions", async (string polarisCycleId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.GetInclusionsAsync(polarisCycleId, cancellationToken)));
+
+		cycles.MapPost("/current/attentives", async (PolarisAttentiveAdd request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.AddDecreeAttentiveAsync(request, null, cancellationToken)));
+
+		cycles.MapPost("/{polarisCycleId}/attentives", async (string polarisCycleId, PolarisAttentiveAdd request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.AddDecreeAttentiveAsync(request, polarisCycleId, cancellationToken)));
+
 		cycles.MapPost("/{polarisCycleId}/reflectives/draw", async (string polarisCycleId, ReflectiveDrawRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.DrawReflectivesAsync(request with { PolarisCycleId = polarisCycleId }, cancellationToken)));
 

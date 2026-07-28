@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Plaintorch.State;
@@ -20,7 +21,7 @@ public sealed class PlaintorchModule : Module
 	/// <inheritdoc />
 	public override void ConfigureServices(IServiceCollection services)
 	{
-		services.AddSingleton(PlaintorchUserLayout.CreateDefault());
+		services.TryAddSingleton(_ => PlaintorchUserLayout.CreateDefault());
 		services.AddSingleton<PlaintorchUserConfigurationStore>();
 		services.AddSingleton<PlaintorchVaultActivationService>();
 		services.AddSingleton<VaultLayout>();
@@ -43,6 +44,8 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<VaultImplicitBoundaryService>();
 		services.AddSingleton<PuckNotationParser>();
 		services.AddSingleton<PuckRuntimeCompilationCatalog>();
+		services.AddSingleton<VaultEntityModelCatalog>();
+		services.AddScoped<VaultEntityGateway>();
 		services.AddSingleton<PuckTokenizer>();
 		services.AddSingleton<PuckPathDiscriminabilityService>();
 		services.AddSingleton<PuckSemanticProjector>();

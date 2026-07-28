@@ -43,6 +43,8 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 		{
 			Directive directive => GetDirectiveFilePath(directive, parentEntity as Directive),
 			Objective objective => GetObjectiveFilePath(objective, parentEntity as Directive),
+			Fate fate => GetIncentiveFilePath(fate, layout.FatesRoot, parentEntity as Directive),
+			Decree decree => GetIncentiveFilePath(decree, layout.DecreesRoot, parentEntity as Directive),
 			OnrushSprint sprint => GetOnrushSprintFilePath(sprint),
 			ExecutiveOrder order => GetExecutiveOrderFilePath(order, parentEntity as OnrushSprint),
 			PolarisCycle cycle => GetPolarisCycleFilePath(cycle),
@@ -57,9 +59,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	public string GetDirectiveDirectoryPath(Directive directive, Directive? parentDirective = null)
 	{
 		ArgumentNullException.ThrowIfNull(directive);
-		EnsureFileBacking<Directive>();
-		var storage = typeof(Directive).GetCustomAttribute<VaultStorageAttribute>()
-			?? throw new InvalidOperationException($"Type '{typeof(Directive).Name}' is not configured for vault markdown storage.");
+		var storage = ResolveDirectiveStorage(directive.GetType());
 		var folderName = ResolvePuckFileBaseName(storage, directive.Id, directive.Title);
 		var parentDirectory = ResolveDirectiveParentDirectory(directive, parentDirective);
 		return Path.Combine(parentDirectory, folderName);
@@ -81,8 +81,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	public string GetDirectiveFilePath(Directive directive, Directive? parentDirective)
 	{
 		ArgumentNullException.ThrowIfNull(directive);
-		var storage = typeof(Directive).GetCustomAttribute<VaultStorageAttribute>()
-			?? throw new InvalidOperationException($"Type '{typeof(Directive).Name}' is not configured for vault markdown storage.");
+		var storage = ResolveDirectiveStorage(directive.GetType());
 		var folderName = ResolvePuckFileBaseName(storage, directive.Id, directive.Title);
 		var directory = GetDirectiveDirectoryPath(directive, parentDirective);
 		return Path.Combine(directory, $"{folderName}.md");
@@ -109,6 +108,22 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 		var container = owningDirective is null
 			? layout.ObjectivesRoot
 			: ResolvePartitionedParentDirectory(typeof(Objective), GetDirectiveDirectoryPath(owningDirective, owningDirective.ParentDirective));
+
+		return Path.Combine(container, $"{fileName}.md");
+	}
+
+	/// <summary>
+	/// Resolves the markdown file path for a declarative incentive (fate or decree), which follows the
+	/// objective placement policy: its standalone root, or its partition folder inside the owning directive.
+	/// </summary>
+	private string GetIncentiveFilePath(Incentive incentive, string standaloneRoot, Directive? owningDirective)
+	{
+		var storage = incentive.GetType().GetCustomAttribute<VaultStorageAttribute>()
+			?? throw new InvalidOperationException($"Type '{incentive.GetType().Name}' is not configured for vault markdown storage.");
+		var fileName = ResolvePuckFileBaseName(storage, incentive.Id, incentive.Title);
+		var container = owningDirective is null
+			? standaloneRoot
+			: ResolvePartitionedParentDirectory(incentive.GetType(), GetDirectiveDirectoryPath(owningDirective, owningDirective.ParentDirective));
 
 		return Path.Combine(container, $"{fileName}.md");
 	}
@@ -258,9 +273,18 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	/// </summary>
 	public static void ApplyObjectiveCompositionFromPath(Objective objective, string path)
 	{
-		ArgumentNullException.ThrowIfNull(objective);
-		ApplyLoosePuckIdentityFromPath(objective, path);
-		objective.DirectiveId = TryGetContainingDirectiveId(path, skipCurrentIfSelfNamed: false);
+		ApplyIncentiveCompositionFromPath(objective, path);
+	}
+
+	/// <summary>
+	/// Derives incentive identity and owning directive relation from a canonical markdown path.
+	/// Applies to all incentive kinds: objectives and the fate/decree declaratives (PEP100).
+	/// </summary>
+	public static void ApplyIncentiveCompositionFromPath(Incentive incentive, string path)
+	{
+		ArgumentNullException.ThrowIfNull(incentive);
+		ApplyLoosePuckIdentityFromPath(incentive, path);
+		incentive.DirectiveId = TryGetContainingDirectiveId(path, skipCurrentIfSelfNamed: false);
 	}
 
 	/// <summary>
@@ -477,10 +501,18 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	{
 		if (parentDirective is not null)
 		{
-			return ResolvePartitionedParentDirectory(typeof(Directive), GetDirectiveDirectoryPath(parentDirective, parentDirective.ParentDirective));
+			return ResolvePartitionedParentDirectory(directive.GetType(), GetDirectiveDirectoryPath(parentDirective, parentDirective.ParentDirective));
 		}
 
-		return layout.GetLocationRoot(VaultLocationKeys.Directives);
+		// Root directives land in the location declared by their concrete type: stellar under Directives, lunar
+		// under its dedicated Moonlight root (PEP100).
+		return layout.GetLocationRoot(ResolveDirectiveStorage(directive.GetType()).LocationKey);
+	}
+
+	private static VaultStorageAttribute ResolveDirectiveStorage(Type directiveType)
+	{
+		return directiveType.GetCustomAttribute<VaultStorageAttribute>(inherit: true)
+			?? throw new InvalidOperationException($"Type '{directiveType.Name}' is not configured for vault markdown storage.");
 	}
 
 	private string ResolvePartitionedParentDirectory(Type entityType, string parentDirectory)

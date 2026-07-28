@@ -264,6 +264,7 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		{
 			string text => Escape(text),
 			DateOnly dateOnly => dateOnly.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+			TimeOnly timeOnly => timeOnly.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
 			DateTimeOffset dateTimeOffset => dateTimeOffset.ToString("O", CultureInfo.InvariantCulture),
 			DateTime dateTime => dateTime.ToString("O", CultureInfo.InvariantCulture),
 			Enum enumValue => enumValue.ToString(),
@@ -469,6 +470,14 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		if (propertyType == typeof(DateOnly) && TryConvertDateOnlyValue(normalizedValue, out var dateOnlyValue))
 		{
 			convertedValue = dateOnlyValue;
+			return true;
+		}
+
+		if (propertyType == typeof(TimeOnly)
+			&& (TimeOnly.TryParseExact(normalizedValue, "HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var timeOnlyValue)
+				|| TimeOnly.TryParseExact(normalizedValue, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out timeOnlyValue)))
+		{
+			convertedValue = timeOnlyValue;
 			return true;
 		}
 

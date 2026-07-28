@@ -36,7 +36,7 @@ public static class Program
 			return 1;
 		}
 
-		var userLayout = PlaintorchUserLayout.CreateDefault();
+		var userLayout = ResolveUserLayout(command, args);
 		var configurationStore = new PlaintorchUserConfigurationStore(userLayout);
 		var vaultPath = ResolveVaultPath(command, args, configurationStore);
 
@@ -66,18 +66,41 @@ public static class Program
 		{
 			VaultPath = vaultPath,
 		});
+		builder.Services.AddSingleton(userLayout);
+		if (OperatingSystem.IsWindows())
+		{
+			// A Node client on Windows resolves a socket path to a named pipe, not an AF_UNIX socket, so register the
+			// named-pipe transport alongside the default socket transport (which still serves the opt-in loopback endpoint).
+			builder.WebHost.UseNamedPipes();
+		}
+
 		builder.WebHost.ConfigureKestrel(options =>
 		{
 			userLayout.EnsureExists();
-			TryDeleteStaleSocket(userLayout.SocketPath);
-			options.ListenLocalhost(userLayout.LoopbackPort, listenOptions =>
+			if (userLayout.LoopbackEnabled)
 			{
-				listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1;
-			});
-			options.ListenUnixSocket(userLayout.SocketPath, listenOptions =>
+				options.ListenLocalhost(userLayout.LoopbackPort, listenOptions =>
+				{
+					listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1;
+				});
+			}
+
+			if (OperatingSystem.IsWindows())
 			{
-				listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1;
-			});
+				// Windows clients reach the core over this named pipe; a .NET AF_UNIX socket is unreachable from Node there.
+				options.ListenNamedPipe(userLayout.PipeName, listenOptions =>
+				{
+					listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1;
+				});
+			}
+			else
+			{
+				TryDeleteStaleSocket(userLayout.SocketPath);
+				options.ListenUnixSocket(userLayout.SocketPath, listenOptions =>
+				{
+					listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1;
+				});
+			}
 		});
 
 		var app = builder.Install<PLAINTORCH>().Build();
@@ -89,6 +112,24 @@ public static class Program
 			RequestPath = "/assets"
 		});
 		app.Configure<PLAINTORCH>();
+
+		if (command == "serve")
+		{
+			Console.WriteLine($"PLAINTORCH endpoint: {userLayout.EndpointDisplay}");
+			if (userLayout.LoopbackEnabled)
+			{
+				Console.WriteLine($"PLAINTORCH loopback: {userLayout.LoopbackBaseUrl}");
+			}
+
+			if (userLayout.IsEphemeral)
+			{
+				Console.WriteLine("PLAINTORCH environment: ephemeral (dev)");
+			}
+			else if (userLayout.IsDevProfile)
+			{
+				Console.WriteLine("PLAINTORCH environment: dev sub-profile (persistent; pass --daemon to run the real per-user profile)");
+			}
+		}
 
 		switch (command)
 		{
@@ -143,7 +184,7 @@ public static class Program
 			Console.WriteLine("Active vault updated.");
 			Console.WriteLine($"Vault: {activeVaultPath}");
 			Console.WriteLine($"User Config: {userLayout.ConfigurationPath}");
-			Console.WriteLine($"Socket: {userLayout.SocketPath}");
+			Console.WriteLine($"Endpoint: {userLayout.EndpointDisplay}");
 			Console.WriteLine($"Loopback API: {userLayout.LoopbackBaseUrl}");
 			return 0;
 		}
@@ -252,6 +293,70 @@ public static class Program
 		Console.WriteLine($"Vault Root: {layout.VaultRoot}");
 		Console.WriteLine($"Pleiadean Today: {today}");
 		Console.WriteLine();
+	}
+
+	/// <summary>
+	/// Determines whether a boolean command-line flag is present.
+	/// </summary>
+	private static bool HasArgumentFlag(IReadOnlyList<string> args, string flag)
+	{
+		foreach (var argument in args)
+		{
+			if (string.Equals(argument, flag, StringComparison.OrdinalIgnoreCase))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/// <summary>
+	/// Determines whether the process is running under the installed service runner (Windows Service or systemd).
+	/// </summary>
+	private static bool IsRunningAsService()
+	{
+		return WindowsServiceHelpers.IsWindowsService() || SystemdHelpers.IsSystemdService();
+	}
+
+	/// <summary>
+	/// Resolves the per-user host layout for the current command and flags.
+	/// </summary>
+	private static PlaintorchUserLayout ResolveUserLayout(string command, IReadOnlyList<string> args)
+	{
+		var layout = ResolveUserLayoutRoot(command, args);
+		layout.LoopbackEnabled = HasArgumentFlag(args, "--loopback");
+		return layout;
+	}
+
+	/// <summary>
+	/// Selects which per-user host profile a command should run against.
+	/// </summary>
+	/// <remarks>
+	/// Only <c>serve</c> has development profiles. <c>serve --ephemeral</c> gets a throwaway temp profile; an ordinary
+	/// manual <c>serve</c> gets the current user's persistent development sub-profile (<c>~/.pleiades/plaintorch-dev</c>)
+	/// so a sandbox never collides with a real installed daemon and no separate OS account is required. The installed
+	/// service runner, and any manual <c>serve --daemon</c> for a developer building their own background daemon, use the
+	/// real per-user profile. Every non-<c>serve</c> command also uses the real per-user profile.
+	/// </remarks>
+	private static PlaintorchUserLayout ResolveUserLayoutRoot(string command, IReadOnlyList<string> args)
+	{
+		if (command != "serve")
+		{
+			return PlaintorchUserLayout.CreateDefault();
+		}
+
+		if (HasArgumentFlag(args, "--ephemeral"))
+		{
+			return PlaintorchUserLayout.CreateEphemeral();
+		}
+
+		if (!IsRunningAsService() && !HasArgumentFlag(args, "--daemon"))
+		{
+			return PlaintorchUserLayout.CreateDevProfile();
+		}
+
+		return PlaintorchUserLayout.CreateDefault();
 	}
 
 	/// <summary>

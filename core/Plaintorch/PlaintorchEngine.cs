@@ -64,9 +64,9 @@ public sealed class PlaintorchEngine(
 			? null
 			: repository.GetDirective(parentDirectiveId);
 
-		var directive = new Directive
+		var directive = new StellarDirective
 		{
-			Id = puckCreationService.CreateIdFor<Directive>(),
+			Id = puckCreationService.CreateIdFor<StellarDirective>(),
 			Title = title,
 			ParentDirectiveId = parentDirectiveId,
 		};

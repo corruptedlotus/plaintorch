@@ -49,6 +49,12 @@
 			"assets/*": [
 				"assets/*"
 			],
+			"orbits": [
+				"orbits/index.ts"
+			],
+			"orbits/*": [
+				"orbits/*"
+			],
 		}
 	},
 	"include": [

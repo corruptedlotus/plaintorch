@@ -21,6 +21,11 @@ public interface IPlaintorchApi
 	IObjectiveApi Objectives { get; }
 
 	/// <summary>
+	/// Gets the declarative-facing API surface (PEP100).
+	/// </summary>
+	IDeclarativeApi Declaratives { get; }
+
+	/// <summary>
 	/// Gets the onrush sprint-facing API surface.
 	/// </summary>
 	IOnrushSprintApi OnrushSprints { get; }

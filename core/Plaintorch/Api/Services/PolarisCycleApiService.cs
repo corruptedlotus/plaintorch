@@ -19,6 +19,7 @@ public sealed class PolarisCycleApiService(
 	PolarisCycleLifecycle lifecycle,
 	PlaintorchStateService stateService,
 	PlaintorchMarkdownStorageService markdownFileService,
+	PlaintorchOrbitService orbitService,
 	VaultAuditLogService auditLogService) : IPolarisCycleApi
 {
 	/// <inheritdoc />
@@ -50,6 +51,7 @@ public sealed class PolarisCycleApiService(
 		var started = lifecycle.Start(cycle, startTime ?? DateTimeOffset.UtcNow);
 		ApplyCycle(cycle, started);
 		await context.SaveChangesAsync(cancellationToken);
+		await MaterializeProximityEventivesAsync(cycle, cancellationToken);
 		await markdownFileService.SavePolarisCycleAsync(cycle, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "polaris.begin", subject: cycle, cancellationToken: cancellationToken);
 		return cycle;
@@ -69,6 +71,7 @@ public sealed class PolarisCycleApiService(
 
 		context.PolarisCycles.Add(cycle);
 		await context.SaveChangesAsync(cancellationToken);
+		await MaterializeProximityEventivesAsync(cycle, cancellationToken);
 		await markdownFileService.SavePolarisCycleAsync(cycle, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "polaris.start-new", subject: cycle, cancellationToken: cancellationToken);
 		return cycle;
@@ -283,6 +286,22 @@ public sealed class PolarisCycleApiService(
 			executive.Elapsed = update.Elapsed.Value;
 		}
 
+		if (update.AffinityTimeframeId is not null)
+		{
+			var timeframeExists = await context.Timeframes.AnyAsync(item => item.Id == update.AffinityTimeframeId.Value, cancellationToken);
+			if (!timeframeExists)
+			{
+				throw new InvalidOperationException($"Timeframe '{update.AffinityTimeframeId}' was not found.");
+			}
+
+			executive.AffinityTimeframeId = update.AffinityTimeframeId;
+		}
+
+		if (update.ClearAffinityTimeframe)
+		{
+			executive.AffinityTimeframeId = null;
+		}
+
 		executive.NormalizeTimeAllocations();
 
 		await context.SaveChangesAsync(cancellationToken);
@@ -294,6 +313,352 @@ public sealed class PolarisCycleApiService(
 			details: new { objectiveId = executive.ObjectiveId, executed = executive.Executed, estimation = executive.Estimation, minimum = executive.Minimum, maximum = executive.Maximum, elapsed = executive.Elapsed },
 			cancellationToken: cancellationToken);
 		return executive;
+	}
+
+	/// <inheritdoc />
+	public async Task<PolarisCycleInclusions> GetInclusionsAsync(string? polarisCycleId = null, CancellationToken cancellationToken = default)
+	{
+		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, requireTodayFallback: false, cancellationToken)
+			?? throw new InvalidOperationException("No Polaris cycle is available for inclusion listing.");
+
+		if (cycle.StartTime is null)
+		{
+			return new PolarisCycleInclusions([], []);
+		}
+
+		var (windowStart, windowEnd) = ResolveInclusionWindow(cycle);
+		var candidateDates = EnumerateWindowDates(windowStart, windowEnd);
+
+		var eventives = await context.Eventives
+			.AsNoTracking()
+			.Where(item => candidateDates.Contains(item.Date))
+			.OrderBy(item => item.Date)
+			.ThenBy(item => item.StartTime)
+			.ToListAsync(cancellationToken);
+
+		// Super-day attentives (week/month/year occurrences) occupy their whole period, so an instance whose
+		// period covers this window collides even when its start date is well before it — this is how a
+		// single attentive collides with multiple Polaris cycles.
+		var minCandidate = candidateDates[0];
+		var maxCandidateExclusive = candidateDates[^1].AddDays(1);
+		var attentives = await context.Attentives
+			.AsNoTracking()
+			.Where(item => item.PolarisCycleId == null
+				&& (candidateDates.Contains(item.Date)
+					|| (item.PeriodEndDate != null && item.Date < maxCandidateExclusive && item.PeriodEndDate > minCandidate)))
+			.OrderBy(item => item.Date)
+			.ThenBy(item => item.Time)
+			.ToListAsync(cancellationToken);
+
+		return new PolarisCycleInclusions(
+			eventives.Where(item => IntersectsWindow(item.Date, item.StartTime, item.EndTime, windowStart, windowEnd)).ToList(),
+			attentives.Where(item => AttentiveIntersectsWindow(item, windowStart, windowEnd)).ToList());
+	}
+
+	/// <inheritdoc />
+	public async Task<Attentive> AddDecreeAttentiveAsync(PolarisAttentiveAdd request, string? polarisCycleId = null, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(request);
+		ArgumentException.ThrowIfNullOrWhiteSpace(request.DecreeId);
+
+		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, requireTodayFallback: false, cancellationToken)
+			?? throw new InvalidOperationException("No Polaris cycle is available for attentive planning.");
+		var decree = await context.Decrees.AsNoTracking().FirstOrDefaultAsync(item => item.Id == request.DecreeId, cancellationToken)
+			?? throw new InvalidOperationException($"Decree '{request.DecreeId}' was not found.");
+		if (decree.Status != DecreeStatus.Active)
+		{
+			throw new InvalidOperationException($"Decree '{decree.Id}' is {decree.Status} and cannot be added to a Polaris cycle.");
+		}
+
+		var attentive = new Attentive
+		{
+			DecreeId = decree.Id,
+			PolarisCycleId = cycle.Id,
+			Date = request.Date ?? ResolveCycleDate(cycle),
+			Time = request.Time,
+			Estimation = request.Estimation ?? decree.DefaultLength,
+			Minimum = request.Minimum,
+			Maximum = request.Maximum,
+		};
+		attentive.Normalize();
+
+		context.Attentives.Add(attentive);
+		await context.SaveChangesAsync(cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"polaris.add-attentive",
+			subjectType: nameof(Attentive),
+			subjectId: attentive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+			details: new { cycleId = cycle.Id, decreeId = decree.Id, date = attentive.Date.ToString("yyyy-MM-dd") },
+			cancellationToken: cancellationToken);
+		return attentive;
+	}
+
+	/// <summary>
+	/// Materializes backlog instances through proximity for a beginning cycle (PEP100):
+	/// dated and orbit-scheduled fates colliding within 24h of the starting point ensure their eventives,
+	/// objective due dates ensure their eventives, orbit-scheduled decrees ensure their unbound attentives,
+	/// and lunar-hierarchy reflect-decrees whose orbit matches the cycle's start day generate cycle-bound
+	/// reflectives. Orbit resolution here SEEKS (advances the persisted schedule state); instance identity is
+	/// the occurrence date, so previously interacted future instances are recognized, not duplicated.
+	/// </summary>
+	private async Task MaterializeProximityEventivesAsync(PolarisCycle cycle, CancellationToken cancellationToken)
+	{
+		if (cycle.StartTime is null)
+		{
+			return;
+		}
+
+		var (windowStart, windowEnd) = ResolveInclusionWindow(cycle);
+		var candidateDates = EnumerateWindowDates(windowStart, windowEnd);
+		var startDay = DateOnly.FromDateTime(windowStart);
+		var windowEndDayExclusive = DateOnly.FromDateTime(windowEnd).AddDays(windowEnd.TimeOfDay > TimeSpan.Zero ? 1 : 0);
+		var created = 0;
+
+		// Dated fates: collide by their explicit time specification.
+		var datedFates = await context.Fates
+			.AsNoTracking()
+			.IgnoreAutoIncludes()
+			.Where(fate => fate.Status == FateStatus.Active && fate.Date != null && candidateDates.Contains(fate.Date.Value))
+			.ToListAsync(cancellationToken);
+
+		foreach (var fate in datedFates)
+		{
+			if (!IntersectsWindow(fate.Date!.Value, fate.StartTime, fate.EndTime, windowStart, windowEnd))
+			{
+				continue;
+			}
+
+			created += await EnsureFateEventiveAsync(fate, fate.Date.Value, cancellationToken) ? 1 : 0;
+		}
+
+		// Orbit-scheduled fates: seek their (Gregorian-calendar) schedules through the window end, catching up
+		// on anything pending since the last seek. Span-format orbits carry the eventive length themselves.
+		var orbitFates = await context.Fates
+			.IgnoreAutoIncludes()
+			.Where(fate => fate.Status == FateStatus.Active && fate.Orbit != null)
+			.ToListAsync(cancellationToken);
+
+		foreach (var fate in orbitFates)
+		{
+			foreach (var occurrence in await orbitService.SeekOccurrencesAsync(fate, fate.Orbit!, windowEndDayExclusive, cancellationToken))
+			{
+				created += await EnsureFateEventiveAsync(fate, occurrence, cancellationToken) ? 1 : 0;
+			}
+		}
+
+		// Orbit-scheduled decrees resolve on the Pleiadean calendar. Lunar reflect-decrees resolve at day
+		// granularity against the cycle's start day and generate cycle-bound reflectives; every other decree
+		// materializes unbound attentives — timed for sub-day granularities, period-spanning for super-day
+		// granularities (so multiple cycles can collide with one instance).
+		var orbitDecrees = await context.Decrees
+			.IgnoreAutoIncludes()
+			.Where(decree => decree.Status == DecreeStatus.Active && decree.Orbit != null)
+			.ToListAsync(cancellationToken);
+
+		foreach (var decree in orbitDecrees)
+		{
+			var reflects = decree.Reflect && await orbitService.IsInLunarHierarchyAsync(decree.DirectiveId, cancellationToken);
+			if (reflects)
+			{
+				var occurrences = await orbitService.SeekOccurrencesAsync(decree, decree.Orbit!, startDay.AddDays(1), cancellationToken);
+				if (occurrences.Any(occurrence => occurrence.Date <= startDay && startDay < occurrence.PeriodEndExclusive))
+				{
+					var reflectiveExists = await context.Set<Reflective>()
+						.AnyAsync(item => item.PolarisCycleId == cycle.Id && item.DecreeId == decree.Id, cancellationToken);
+					if (!reflectiveExists)
+					{
+						context.Add(new Reflective
+						{
+							Description = decree.Title,
+							PolarisCycleId = cycle.Id,
+							DecreeId = decree.Id,
+							Executed = false,
+						});
+						created++;
+					}
+				}
+
+				continue;
+			}
+
+			foreach (var occurrence in await orbitService.SeekOccurrencesAsync(decree, decree.Orbit!, windowEndDayExclusive, cancellationToken))
+			{
+				var attentiveExists = await context.Attentives.AnyAsync(
+					item => item.DecreeId == decree.Id
+						&& item.Date == occurrence.Date
+						&& item.Time == occurrence.StartTime
+						&& item.PolarisCycleId == null,
+					cancellationToken);
+				if (attentiveExists)
+				{
+					continue;
+				}
+
+				var attentive = new Attentive
+				{
+					DecreeId = decree.Id,
+					Date = occurrence.Date,
+					Time = occurrence.StartTime,
+					PeriodEndDate = occurrence.PeriodEndExclusive > occurrence.Date.AddDays(1)
+						? occurrence.PeriodEndExclusive
+						: null,
+					Estimation = decree.DefaultLength,
+				};
+				attentive.Normalize();
+				context.Attentives.Add(attentive);
+				created++;
+			}
+		}
+
+		var dueObjectives = await context.Objectives
+			.AsNoTracking()
+			.IgnoreAutoIncludes()
+			.Where(objective => objective.Due != null
+				&& candidateDates.Contains(objective.Due.Value)
+				&& objective.Status != ObjectiveStatus.Done
+				&& objective.Status != ObjectiveStatus.Archived
+				&& objective.Status != ObjectiveStatus.Failed)
+			.ToListAsync(cancellationToken);
+
+		foreach (var objective in dueObjectives)
+		{
+			var exists = await context.Eventives.AnyAsync(item => item.ObjectiveId == objective.Id && item.Date == objective.Due!.Value, cancellationToken);
+			if (exists)
+			{
+				continue;
+			}
+
+			context.Eventives.Add(new Eventive
+			{
+				ObjectiveId = objective.Id,
+				Date = objective.Due!.Value,
+			});
+			created++;
+		}
+
+		// Advanced orbit states persist even when no new instances were created.
+		await context.SaveChangesAsync(cancellationToken);
+		if (created > 0)
+		{
+			await auditLogService.WriteAsync(
+				"api",
+				"polaris.materialize-proximity",
+				subjectType: nameof(PolarisCycle),
+				subjectId: cycle.Id,
+				subjectTitle: cycle.Title,
+				details: new { created },
+				cancellationToken: cancellationToken);
+		}
+	}
+
+	/// <summary>
+	/// Ensures a dated fate's eventive exists for an occurrence day, returning whether one was created.
+	/// </summary>
+	private Task<bool> EnsureFateEventiveAsync(Fate fate, DateOnly day, CancellationToken cancellationToken)
+	{
+		return EnsureFateEventiveCoreAsync(fate, day, fate.StartTime, fate.EndTime, fate.ResolveEventiveDuration(), cancellationToken);
+	}
+
+	/// <summary>
+	/// Ensures a fate's eventive exists for an orbit occurrence, returning whether one was created.
+	/// Span occurrences carry their own start/end/length; granular occurrences fall back to the fate's
+	/// time specification.
+	/// </summary>
+	private Task<bool> EnsureFateEventiveAsync(Fate fate, Pleiades.Orbits.OrbitOccurrenceInstance occurrence, CancellationToken cancellationToken)
+	{
+		return EnsureFateEventiveCoreAsync(
+			fate,
+			occurrence.Date,
+			occurrence.StartTime ?? fate.StartTime,
+			occurrence.EndTime ?? (occurrence.StartTime is null ? fate.EndTime : null),
+			occurrence.DurationMinutes ?? fate.ResolveEventiveDuration(),
+			cancellationToken);
+	}
+
+	private async Task<bool> EnsureFateEventiveCoreAsync(Fate fate, DateOnly day, TimeOnly? startTime, TimeOnly? endTime, int? estimation, CancellationToken cancellationToken)
+	{
+		var exists = await context.Eventives.AnyAsync(
+			item => item.FateId == fate.Id && item.Date == day && item.StartTime == startTime,
+			cancellationToken);
+		if (exists)
+		{
+			return false;
+		}
+
+		var eventive = new Eventive
+		{
+			FateId = fate.Id,
+			Date = day,
+			StartTime = startTime,
+			EndTime = endTime,
+			Estimation = estimation,
+		};
+		eventive.Normalize();
+		context.Eventives.Add(eventive);
+		return true;
+	}
+
+	/// <summary>
+	/// Resolves the 24h inclusion window that follows the cycle's starting point.
+	/// </summary>
+	private static (DateTime Start, DateTime End) ResolveInclusionWindow(PolarisCycle cycle)
+	{
+		var start = cycle.StartTime!.Value.LocalDateTime;
+		return (start, start.AddHours(24));
+	}
+
+	/// <summary>
+	/// Enumerates the occurrence dates that can possibly intersect the window (used to prefilter in SQL).
+	/// </summary>
+	private static List<DateOnly> EnumerateWindowDates(DateTime windowStart, DateTime windowEnd)
+	{
+		var dates = new List<DateOnly>();
+		for (var date = DateOnly.FromDateTime(windowStart); date <= DateOnly.FromDateTime(windowEnd); date = date.AddDays(1))
+		{
+			dates.Add(date);
+		}
+
+		return dates;
+	}
+
+	/// <summary>
+	/// Determines whether an occurrence intersects the inclusion window. Items without times occupy their
+	/// whole day; timed items occupy their start/end span.
+	/// </summary>
+	private static bool IntersectsWindow(DateOnly date, TimeOnly? startTime, TimeOnly? endTime, DateTime windowStart, DateTime windowEnd)
+	{
+		var occurrenceStart = startTime is null
+			? date.ToDateTime(TimeOnly.MinValue)
+			: date.ToDateTime(startTime.Value);
+		var occurrenceEnd = startTime is null
+			? date.AddDays(1).ToDateTime(TimeOnly.MinValue)
+			: date.ToDateTime(endTime ?? startTime.Value);
+
+		return occurrenceEnd >= windowStart && occurrenceStart < windowEnd;
+	}
+
+	/// <summary>
+	/// Determines whether an attentive collides with the inclusion window: period attentives occupy
+	/// [Date, PeriodEndDate), timed attentives their instant, and all-day attentives their whole day.
+	/// </summary>
+	private static bool AttentiveIntersectsWindow(Attentive attentive, DateTime windowStart, DateTime windowEnd)
+	{
+		if (attentive.PeriodEndDate is { } periodEnd)
+		{
+			var occurrenceStart = attentive.Date.ToDateTime(TimeOnly.MinValue);
+			var occurrenceEnd = periodEnd.ToDateTime(TimeOnly.MinValue);
+			return occurrenceEnd >= windowStart && occurrenceStart < windowEnd;
+		}
+
+		return IntersectsWindow(attentive.Date, attentive.Time, attentive.Time, windowStart, windowEnd);
+	}
+
+	private static DateOnly ResolveCycleDate(PolarisCycle cycle)
+	{
+		return cycle.StartTime is not null
+			? DateOnly.FromDateTime(cycle.StartTime.Value.LocalDateTime)
+			: DateOnly.FromDateTime(DateTime.Today);
 	}
 
 	/// <inheritdoc />
@@ -352,6 +717,11 @@ public sealed class PolarisCycleApiService(
 		if (update.Executed is not null)
 		{
 			reflective.Executed = update.Executed.Value;
+		}
+
+		if (update.Time is not null)
+		{
+			reflective.Time = update.Time;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);

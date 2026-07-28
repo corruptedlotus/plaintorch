@@ -1,8 +1,8 @@
 import type { PlaintorchCoreClient } from "../coreClient"
-import type { EntityExistence, HealthStatus, SystemBriefing, VaultNoteAuthorityResolution, WatcherIssueReport } from "./contracts"
+import type { EntityExistence, HealthStatus, SystemBriefing, WatcherIssueReport } from "./contracts"
 interface CacheEntry {
 	expiresAt: number
-	value: VaultNoteAuthorityResolution | undefined
+	value: EntityExistence | undefined
 }
 
 export class PlaintorchSystemSdk {
@@ -12,14 +12,14 @@ export class PlaintorchSystemSdk {
 		private readonly cacheTtlMs: number
 	) { }
 
-	public async resolveNote(vaultRelativePath: string): Promise<VaultNoteAuthorityResolution | undefined> {
+	public async resolveNote(vaultRelativePath: string): Promise<EntityExistence | undefined> {
 		const normalizedPath = normalizeVaultRelativePath(vaultRelativePath)
 		const cached = this.noteResolutionCache.get(normalizedPath)
 		if (cached && cached.expiresAt > Date.now()) {
 			return cached.value
 		}
 
-		const result = await this.client.getJson<VaultNoteAuthorityResolution>(
+		const result = await this.client.getJson<EntityExistence>(
 			`/api/system/resolve-note?path=${encodeURIComponent(normalizedPath)}`
 		)
 		this.noteResolutionCache.set(normalizedPath, {

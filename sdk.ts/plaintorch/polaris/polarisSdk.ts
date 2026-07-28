@@ -1,8 +1,11 @@
 import type { PlaintorchCoreClient } from "../coreClient"
+import type { Attentive } from "../declaratives/models"
 import type {
 	Executive,
 	ExecutiveUpdate,
+	PolarisAttentiveAdd,
 	PolarisCycle,
+	PolarisCycleInclusions,
 	PolarisCyclePlanRequest,
 	PolarisCycleTimeRequest,
 	PolarisCycleUpdate,
@@ -102,6 +105,27 @@ export class PlaintorchPolarisSdk {
 				`/api/polaris/${encodeURIComponent(polarisCycleId)}/reflectives/draw`,
 				request
 			)) ?? []
+		)
+	}
+
+	public async getInclusions(): Promise<PolarisCycleInclusions | undefined> {
+		return await this.client.getJson<PolarisCycleInclusions>("/api/polaris/current/inclusions")
+	}
+
+	public async getInclusionsForCycle(polarisCycleId: string): Promise<PolarisCycleInclusions | undefined> {
+		return await this.client.getJson<PolarisCycleInclusions>(
+			`/api/polaris/${encodeURIComponent(polarisCycleId)}/inclusions`
+		)
+	}
+
+	public async addAttentive(request: PolarisAttentiveAdd): Promise<Attentive | undefined> {
+		return await this.client.postForJson<Attentive>("/api/polaris/current/attentives", request)
+	}
+
+	public async addAttentiveForCycle(polarisCycleId: string, request: PolarisAttentiveAdd): Promise<Attentive | undefined> {
+		return await this.client.postForJson<Attentive>(
+			`/api/polaris/${encodeURIComponent(polarisCycleId)}/attentives`,
+			request
 		)
 	}
 

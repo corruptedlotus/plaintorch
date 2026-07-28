@@ -1,10 +1,19 @@
 import { CSSResult } from "@a11d/lit";
-import { Directive, DirectiveStatus, Objective, ObjectiveStatus } from "@pleiades/sdk";
-import { Notice, SuggestModal } from "obsidian"
-import { core, getApp, IconName } from "..";
+import {
+	DecreeStatus,
+	DirectiveStatus,
+	FateStatus,
+	LunarDirectiveStatus,
+	ObjectiveStatus
+} from "@pleiades/sdk";
+import { SuggestModal } from "obsidian"
+import { getApp, IconName } from "..";
 import { createDeferredExecutor, DeferredPromiseExecutor } from "@open-draft/deferred-promise";
 
-type StatusDescriptor<T extends ObjectiveStatus | DirectiveStatus> = {
+/** Every workflow state the status modals can prompt for (PEP100 adds the declarative + lunar kinds). */
+type AnyStatus = ObjectiveStatus | DirectiveStatus | LunarDirectiveStatus | FateStatus | DecreeStatus
+
+type StatusDescriptor<T extends AnyStatus> = {
 	value: T,
 	icon: IconName,
 	label: string,
@@ -30,7 +39,27 @@ export const directiveStatusDescriptors: Record<keyof typeof DirectiveStatus, St
 	Failed: { value: DirectiveStatus.Failed, icon: 'state-failed', label: 'Failed' },
 }
 
-abstract class SelectStatusModal<T extends ObjectiveStatus | DirectiveStatus> extends SuggestModal<T> {
+/** Moonlight directives are everglow: on hold, active, or stale (PEP100). */
+export const lunarDirectiveStatusDescriptors: Record<keyof typeof LunarDirectiveStatus, StatusDescriptor<LunarDirectiveStatus>> = {
+	OnHold: { value: LunarDirectiveStatus.OnHold, icon: 'state-zero', label: 'On Hold' },
+	Active: { value: LunarDirectiveStatus.Active, icon: 'state-active', label: 'Active' },
+	Stale: { value: LunarDirectiveStatus.Stale, icon: 'state-archived', label: 'Stale' },
+}
+
+/** Fates happen rather than get done: they can be opted out of or cancelled (PEP100). */
+export const fateStatusDescriptors: Record<keyof typeof FateStatus, StatusDescriptor<FateStatus>> = {
+	Active: { value: FateStatus.Active, icon: 'state-active', label: 'Active' },
+	OptOut: { value: FateStatus.OptOut, icon: 'state-archived', label: 'Opted Out' },
+	Cancelled: { value: FateStatus.Cancelled, icon: 'state-failed', label: 'Cancelled' },
+}
+
+/** Decrees are enduring routines: active or abandoned (PEP100). */
+export const decreeStatusDescriptors: Record<keyof typeof DecreeStatus, StatusDescriptor<DecreeStatus>> = {
+	Active: { value: DecreeStatus.Active, icon: 'state-active', label: 'Active' },
+	Abandoned: { value: DecreeStatus.Abandoned, icon: 'state-archived', label: 'Abandoned' },
+}
+
+abstract class SelectStatusModal<T extends AnyStatus> extends SuggestModal<T> {
 	protected dpe?: DeferredPromiseExecutor<T | undefined>
 	abstract get getDescriptors(): Record<string, StatusDescriptor<T>>
 
@@ -80,5 +109,44 @@ export class SelectDirectiveStatusModal extends SelectStatusModal<DirectiveStatu
 
 	override get getDescriptors() {
 		return directiveStatusDescriptors
+	}
+}
+
+export class SelectLunarDirectiveStatusModal extends SelectStatusModal<LunarDirectiveStatus> {
+	static prompt = (currentValue?: LunarDirectiveStatus) => {
+		const modal = new SelectLunarDirectiveStatusModal(getApp())
+		modal.dpe = createDeferredExecutor()
+		modal.open()
+		return new Promise(modal.dpe)
+	}
+
+	override get getDescriptors() {
+		return lunarDirectiveStatusDescriptors
+	}
+}
+
+export class SelectFateStatusModal extends SelectStatusModal<FateStatus> {
+	static prompt = (currentValue?: FateStatus) => {
+		const modal = new SelectFateStatusModal(getApp())
+		modal.dpe = createDeferredExecutor()
+		modal.open()
+		return new Promise(modal.dpe)
+	}
+
+	override get getDescriptors() {
+		return fateStatusDescriptors
+	}
+}
+
+export class SelectDecreeStatusModal extends SelectStatusModal<DecreeStatus> {
+	static prompt = (currentValue?: DecreeStatus) => {
+		const modal = new SelectDecreeStatusModal(getApp())
+		modal.dpe = createDeferredExecutor()
+		modal.open()
+		return new Promise(modal.dpe)
+	}
+
+	override get getDescriptors() {
+		return decreeStatusDescriptors
 	}
 }

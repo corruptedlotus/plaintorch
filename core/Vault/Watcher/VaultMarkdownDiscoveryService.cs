@@ -232,7 +232,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		var (pathId, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(fullPath);
 		var pathDerivedId = pathId;
 		var pathDerivedTitle = pathTitle;
-		var parsedModel = CreatePathComposedModel(model.EntityType, fullPath);
+		var parsedModel = CreatePathComposedModel(model.InstantiationType, fullPath);
 		if (parsedModel is IPuckNamedEntity namedEntity)
 		{
 			if (!string.IsNullOrWhiteSpace(namedEntity.Id))
@@ -252,7 +252,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		var isNewEntity = string.IsNullOrWhiteSpace(pathId) || !knownIds.Contains(pathId);
 		var preserveDefaultsForMissingFields = isNewEntity
 			|| (!model.Mode.IsIdentityDriven() && typeof(IPuckNamedEntity).IsAssignableFrom(model.EntityType));
-		var issues = DeserializeInto(parsedModel, model.EntityType, markdown, preserveDefaultsForMissingFields: preserveDefaultsForMissingFields)
+		var issues = DeserializeInto(parsedModel, model.InstantiationType, markdown, preserveDefaultsForMissingFields: preserveDefaultsForMissingFields)
 			.Select(issue => issue)
 			.ToList();
 		ApplyPathAuthorities(parsedModel, fullPath, issues);
@@ -291,7 +291,7 @@ public sealed class VaultMarkdownDiscoveryService(
 			if (!string.IsNullOrWhiteSpace(pathId) && !knownIds.Contains(pathId))
 			{
 				var resolved = await puckEntityResolutionService.ResolveAsync(pathId, cancellationToken);
-				if (resolved.Exists && !string.Equals(resolved.EntityType, nameof(Directive), StringComparison.Ordinal))
+				if (resolved.Exists && !IsDirectiveEntityTypeName(resolved.EntityType))
 				{
 					return null;
 				}
@@ -302,7 +302,7 @@ public sealed class VaultMarkdownDiscoveryService(
 
 		await ApplyDomainValidationsAsync(parsedModel, issues, cancellationToken);
 
-		if (string.IsNullOrWhiteSpace(pathId) && puckCreationService.RequiresCallerInputFor(model.EntityType))
+		if (string.IsNullOrWhiteSpace(pathId) && puckCreationService.RequiresCallerInputFor(model.InstantiationType))
 		{
 			issues.Add(new MarkdownValidationIssue("id", "Path identity is missing required caller-provided PUCK input."));
 		}
@@ -496,6 +496,17 @@ public sealed class VaultMarkdownDiscoveryService(
 	}
 
 	/// <summary>
+	/// Determines whether a resolved entity type name belongs to the directive family (the abstract base or either
+	/// stellar/lunar sibling), used to gate freeform directive identity collisions (PEP100).
+	/// </summary>
+	private static bool IsDirectiveEntityTypeName(string? entityTypeName)
+	{
+		return string.Equals(entityTypeName, nameof(Directive), StringComparison.Ordinal)
+			|| string.Equals(entityTypeName, nameof(StellarDirective), StringComparison.Ordinal)
+			|| string.Equals(entityTypeName, nameof(LunarDirective), StringComparison.Ordinal);
+	}
+
+	/// <summary>
 	/// Creates a path-composed model instance and applies path-derived authorities before frontmatter hydration.
 	/// </summary>
 	/// <param name="entityType">The entity CLR type to instantiate.</param>
@@ -511,8 +522,8 @@ public sealed class VaultMarkdownDiscoveryService(
 			case Directive directive:
 				MarkdownFileLocator.ApplyDirectiveCompositionFromPath(directive, path);
 				break;
-			case Objective objective:
-				MarkdownFileLocator.ApplyObjectiveCompositionFromPath(objective, path);
+			case Incentive incentive:
+				MarkdownFileLocator.ApplyIncentiveCompositionFromPath(incentive, path);
 				break;
 			case ExecutiveOrder order:
 				MarkdownFileLocator.ApplyExecutiveOrderCompositionFromPath(order, path);
@@ -553,12 +564,15 @@ public sealed class VaultMarkdownDiscoveryService(
 
 				break;
 			}
-			case Objective objective:
+			case Incentive incentive:
 			{
-				var normalizedObjectivesRoot = Path.GetFullPath(layout.ObjectivesRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+				// Each incentive kind's standalone root carries no directive ancestry authority.
+				var storage = incentive.GetType().GetCustomAttribute<VaultStorageAttribute>();
+				var standaloneRoot = storage is null ? layout.ObjectivesRoot : layout.GetLocationRoot(storage.LocationKey);
+				var normalizedStandaloneRoot = Path.GetFullPath(standaloneRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 				var normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-				if (string.Equals(normalizedPath, normalizedObjectivesRoot, StringComparison.OrdinalIgnoreCase)
-					|| normalizedPath.StartsWith(normalizedObjectivesRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+				if (string.Equals(normalizedPath, normalizedStandaloneRoot, StringComparison.OrdinalIgnoreCase)
+					|| normalizedPath.StartsWith(normalizedStandaloneRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
 				{
 					break;
 				}
@@ -569,14 +583,14 @@ public sealed class VaultMarkdownDiscoveryService(
 					break;
 				}
 
-				if (!string.Equals(objective.DirectiveId, pathDirectiveId, StringComparison.OrdinalIgnoreCase))
+				if (!string.Equals(incentive.DirectiveId, pathDirectiveId, StringComparison.OrdinalIgnoreCase))
 				{
-					if (!string.IsNullOrWhiteSpace(objective.DirectiveId))
+					if (!string.IsNullOrWhiteSpace(incentive.DirectiveId))
 					{
-						issues.Add(new MarkdownValidationIssue("directive", "Frontmatter directive relation does not match the path-derived directive container.", objective.DirectiveId));
+						issues.Add(new MarkdownValidationIssue("directive", "Frontmatter directive relation does not match the path-derived directive container.", incentive.DirectiveId));
 					}
 
-					objective.DirectiveId = pathDirectiveId;
+					incentive.DirectiveId = pathDirectiveId;
 				}
 
 				break;

@@ -11,6 +11,11 @@ public static class VaultLocationKeys
 	public const string Directives = "Directives";
 
 	/// <summary>
+	/// The lunar (Moonlight) directives location key (PEP100).
+	/// </summary>
+	public const string Moonlight = "Moonlight";
+
+	/// <summary>
 	/// The onrush location key.
 	/// </summary>
 	public const string Onrush = "Onrush";
@@ -19,6 +24,16 @@ public static class VaultLocationKeys
 	/// The standalone objectives location key.
 	/// </summary>
 	public const string Objectives = "Objectives";
+
+	/// <summary>
+	/// The standalone fate declaratives location key (PEP100).
+	/// </summary>
+	public const string Fates = "Fates";
+
+	/// <summary>
+	/// The standalone decree declaratives location key (PEP100).
+	/// </summary>
+	public const string Decrees = "Decrees";
 
 	/// <summary>
 	/// The journal location key.

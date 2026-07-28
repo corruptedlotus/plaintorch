@@ -8,15 +8,26 @@ namespace Pleiades.Plaintorch;
 /// </summary>
 public sealed class PlaintorchUserLayout
 {
-	private PlaintorchUserLayout(string rootPath)
+	private readonly bool _ephemeral;
+	private readonly bool _devProfile;
+
+	private PlaintorchUserLayout(string rootPath, bool ephemeral = false, bool devProfile = false)
 	{
 		RootPath = rootPath;
+		_ephemeral = ephemeral;
+		_devProfile = devProfile;
 	}
 
 	/// <summary>
 	/// Gets the root directory that stores per-user PLAINTORCH host state.
 	/// </summary>
 	public string RootPath { get; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the fixed loopback HTTP endpoint should be bound in addition to the socket.
+	/// Socket-only is the default; the loopback endpoint is opt-in.
+	/// </summary>
+	public bool LoopbackEnabled { get; set; }
 
 	/// <summary>
 	/// Gets the path of the shared per-user host configuration file.
@@ -27,6 +38,20 @@ public sealed class PlaintorchUserLayout
 	/// Gets the path of the per-user socket file that future clients will connect to.
 	/// </summary>
 	public string SocketPath => Path.Combine(RootPath, "plaintorch.sock");
+
+	/// <summary>
+	/// Gets the Windows named-pipe name for the core IPC endpoint. On Windows a Node client's socket path resolves to
+	/// a named pipe rather than an AF_UNIX socket, so the host binds this pipe and clients connect to it instead of
+	/// <see cref="SocketPath"/>. The name is per-profile and per-user so dev/real profiles and separate users never
+	/// collide on the machine-global pipe namespace (Windows pipe names match case-insensitively).
+	/// </summary>
+	public string PipeName => $"{Path.GetFileName(RootPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}.{Environment.UserName}";
+
+	/// <summary>
+	/// Gets the transport endpoint clients connect to on the current platform: the Windows named pipe, or the
+	/// AF_UNIX socket path elsewhere.
+	/// </summary>
+	public string EndpointDisplay => OperatingSystem.IsWindows() ? $@"\\.\pipe\{PipeName}" : SocketPath;
 
 	/// <summary>
 	/// Gets the loopback HTTP port exposed for desktop integrations that cannot reliably use the socket transport.
@@ -54,6 +79,18 @@ public sealed class PlaintorchUserLayout
 	public string SplashScriptPath => Path.Combine(SplashRootPath, "plaintorch-core-splash.ps1");
 
 	/// <summary>
+	/// Gets a value indicating whether this layout is an ephemeral, user-independent development profile.
+	/// </summary>
+	public bool IsEphemeral => _ephemeral;
+
+	/// <summary>
+	/// Gets a value indicating whether this layout is the current user's persistent development sub-profile.
+	/// Manual <c>serve</c> runs against this isolated sub-profile so a developer sandbox never collides with the real
+	/// per-user daemon; unlike an ephemeral profile it persists between runs and is never auto-removed.
+	/// </summary>
+	public bool IsDevProfile => _devProfile;
+
+	/// <summary>
 	/// Creates the default per-user PLAINTORCH host layout for the current platform.
 	/// </summary>
 	/// <returns>The resolved host layout.</returns>
@@ -64,11 +101,68 @@ public sealed class PlaintorchUserLayout
 	}
 
 	/// <summary>
+	/// Creates the current user's persistent development sub-profile layout under <c>~/.pleiades/plaintorch-dev</c>.
+	/// Ordinary manual <c>serve</c> runs use this isolated-but-persistent sub-profile instead of the real per-user
+	/// profile, so a developer sandbox keeps its own config/socket/port across runs without touching a real installed
+	/// daemon and without provisioning a separate OS account.
+	/// </summary>
+	/// <returns>The resolved development sub-profile layout.</returns>
+	public static PlaintorchUserLayout CreateDevProfile()
+	{
+		var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+		return new PlaintorchUserLayout(Path.Combine(home, ".pleiades", "plaintorch-dev"), devProfile: true);
+	}
+
+	/// <summary>
+	/// Creates a per-user host layout rooted at an explicit directory.
+	/// </summary>
+	/// <param name="rootPath">The root directory that should hold per-user host state.</param>
+	/// <returns>The resolved host layout.</returns>
+	public static PlaintorchUserLayout CreateAt(string rootPath)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
+		return new PlaintorchUserLayout(Path.GetFullPath(rootPath));
+	}
+
+	/// <summary>
+	/// Creates a randomised, user-independent ephemeral host layout under the OS temporary directory.
+	/// Used by tests and throwaway sandbox runs so multiple instances never collide on the socket, config, or port.
+	/// </summary>
+	/// <returns>The resolved ephemeral host layout.</returns>
+	public static PlaintorchUserLayout CreateEphemeral()
+	{
+		var root = Path.Combine(Path.GetTempPath(), "plaintorch-dev", Guid.NewGuid().ToString("N"));
+		return new PlaintorchUserLayout(root, ephemeral: true);
+	}
+
+	/// <summary>
 	/// Ensures the per-user host root directory exists.
 	/// </summary>
 	public void EnsureExists()
 	{
 		Directory.CreateDirectory(RootPath);
+	}
+
+	/// <summary>
+	/// Removes an ephemeral host root and its contents. No-op for non-ephemeral layouts.
+	/// </summary>
+	public void Cleanup()
+	{
+		if (!_ephemeral || !Directory.Exists(RootPath))
+		{
+			return;
+		}
+
+		try
+		{
+			Directory.Delete(RootPath, recursive: true);
+		}
+		catch (IOException)
+		{
+		}
+		catch (UnauthorizedAccessException)
+		{
+		}
 	}
 }
 

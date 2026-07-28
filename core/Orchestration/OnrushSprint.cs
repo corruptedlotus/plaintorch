@@ -8,6 +8,7 @@ namespace Pleiades.Orchestration;
 /// <summary>
 /// Represents a short-term sprint that groups focused objectives.
 /// </summary>
+[PuckEntity("onrush-sprint")]
 [PuckFormat("x{I:4:100}")]
 [VaultStorage(LocationKey = VaultLocationKeys.Onrush,
 		Mode = VaultStorageMode.Enforced,

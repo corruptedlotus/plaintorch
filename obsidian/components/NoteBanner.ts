@@ -1,10 +1,10 @@
-import { Component, component, css, html, property, state } from '@a11d/lit'
+import { Component, component, css, html, property, state, literal as l } from '@a11d/lit'
 import { App } from 'obsidian'
-import { plaintorchNodeCoreClient, VaultNoteAuthorityResolution } from '@pleiades/sdk/plaintorch/node'
+import { plaintorchNodeCoreClient, EntityExistence } from '@pleiades/sdk/plaintorch/node'
 
 @component('p7t-note-banner')
 export class NoteBanner extends Component {
-	@state() note?: VaultNoteAuthorityResolution
+	@state() note?: EntityExistence
 	@property({ reflect: true, type: Boolean }) invalid = true
 	
 	app?: App
@@ -33,25 +33,29 @@ export class NoteBanner extends Component {
 
 	protected renderBannerElement() {
 		switch (this.note?.entityKind) {
-			case 'directive':
-				return html`<p7t-directive-banner .puck=${this.note.puck} .app=${this.app}></p7t-directive-banner>`
-			case 'objective':
-				return html`<p7t-objective-banner .puck=${this.note.puck} .app=${this.app}></p7t-objective-banner>`
-			case 'onrush-sprint':
-				return html`<p7t-onrush-banner .puck=${this.note.puck} .app=${this.app}></p7t-onrush-banner>`
-			case 'polaris-cycle':
-				return html`<p7t-polaris-banner .puck=${this.note.puck} .app=${this.app}></p7t-polaris-banner>`
-			case 'lore-page':
-				return html`<p7t-lore-banner .puck=${this.note.puck} .app=${this.app}></p7t-lore-banner>`
-			default:
-				return html`<p7t-entity-banner .puck=${this.note?.puck ?? ''} .xtype=${this.note?.entityKind} .entity=${{ id: this.note?.puck ?? '', title: this.note?.title ?? '' }} .app=${this.app}></p7t-entity-banner>`
+			case 'stellar-directive': return html`<p7t-sdirective-banner puck=${this.note?.puck}></p7t-sdirective-banner>`
+			case 'lunar-directive': return html`<p7t-ldirective-banner puck=${this.note?.puck}></p7t-ldirective-banner>`
+
+			case 'objective': return html`<p7t-objective-banner puck=${this.note?.puck}></p7t-objective-banner>`
+			case 'fate': return html`<p7t-fate-banner puck=${this.note?.puck}></p7t-fate-banner>`
+			case 'decree': return html`<p7t-decree-banner puck=${this.note?.puck}></p7t-decree-banner>`
+
+			case 'onrush-sprint': return html`<p7t-onrush-banner puck=${this.note?.puck}></p7t-onrush-banner>`
+			case 'polaris-cycle': return html`<p7t-polaris-banner puck=${this.note?.puck}></p7t-polaris-banner>`
+			case 'lore-page': return html`<p7t-lore-banner puck=${this.note?.puck}></p7t-lore-banner>`
+
+			default: return html`<p7t-entity-banner .puck=${this.note?.puck ?? ''} .xtype=${this.note?.entityKind} .entity=${{ id: this.note?.puck ?? '', title: this.note?.title ?? '' }} .app=${this.app}></p7t-entity-banner>`
 		}
+	}
+
+	private get entityTitle(): string {
+		return (this.note?.entity as { title?: string } | undefined)?.title ?? ''
 	}
 
 	protected override async initialized() {
 		const note = await plaintorchNodeCoreClient.system.resolveNote(this.file)
 		this.note = note
-		this.invalid = !(note?.isPlaintorchEntity)
+		this.invalid = !(note?.exists)
 	}
 }
 

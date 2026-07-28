@@ -16,7 +16,8 @@ public sealed class PuckEntityResolutionService(
 	VaultLayout layout,
 	PuckRuntimeCompilationCatalog compilationCatalog,
 	PuckTokenizer puckTokenizer,
-	VaultPathSyncModelCatalog pathSyncModelCatalog)
+	VaultPathSyncModelCatalog pathSyncModelCatalog,
+	VaultEntityGateway entityGateway)
 {
 	/// <summary>
 	/// Resolves a PUCK identifier into its concrete entity and note association when available.
@@ -54,7 +55,7 @@ public sealed class PuckEntityResolutionService(
 
 		var match = matches[0];
 		var associatedNote = ResolveAssociatedNotePath(match.Type, normalizedId);
-		return new PuckEntityExistence(normalizedId, true, match.Type.Name, match.Entity, associatedNote);
+		return new PuckEntityExistence(normalizedId, true, match.Type.Name, PuckEntityAttribute.ResolveKind(match.Type), match.Entity, associatedNote);
 	}
 
 	private async Task<IReadOnlyList<PuckCompiledModel>> ResolveCandidatesAsync(string id, CancellationToken cancellationToken)
@@ -93,44 +94,20 @@ public sealed class PuckEntityResolutionService(
 		}
 	}
 
-	private async Task<object?> FindEntityByIdAsync(Type entityType, string id, CancellationToken cancellationToken)
+	private Task<object?> FindEntityByIdAsync(Type entityType, string id, CancellationToken cancellationToken)
 	{
-		if (entityType == typeof(Directive))
-		{
-			return await context.Directives.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(Objective))
-		{
-			return await context.Objectives.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(OnrushSprint))
-		{
-			return await context.OnrushSprints.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(ExecutiveOrder))
-		{
-			return await context.ExecutiveOrders.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(PolarisCycle))
-		{
-			return await context.PolarisCycles.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		if (entityType == typeof(LorePage))
-		{
-			return await context.LorePages.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-		}
-
-		return null;
+		// Candidates arrive tokenization-gated: a declaration only reaches this lookup with ids it can mint, so
+		// each type (including abstract family anchors, which span their whole discriminated family) queries its
+		// own set without per-type filtering. Cross-declaration ambiguity is rejected by the caller.
+		return entityGateway.FindByIdAsync(entityType, id, track: false, cancellationToken);
 	}
 
 	private string? ResolveAssociatedNotePath(Type entityType, string id)
 	{
-		var model = pathSyncModelCatalog.GetModels().FirstOrDefault(item => item.EntityType == entityType);
+		// A path-sync model may anchor a polymorphic family under an abstract base while composing a concrete
+		// subtype (e.g. the directive model composes StellarDirective), so match either identity.
+		var model = pathSyncModelCatalog.GetModels()
+			.FirstOrDefault(item => item.EntityType == entityType || item.InstantiationType == entityType);
 		if (model is null)
 		{
 			return null;

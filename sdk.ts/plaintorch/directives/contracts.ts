@@ -1,9 +1,18 @@
 export type {
 	CreateDirectiveRequest,
+	CreateLunarDirectiveRequest,
 	InitDirectiveRequest,
 	Directive,
+	DirectiveKind,
 	DirectiveStatus,
-	DirectiveUpdate,
-	DirectiveWorkflowShift
+	DirectiveTimeframeRecord,
+	StellarDirectiveUpdate,
+	LunarDirectiveUpdate,
+	StellarDirectiveWorkflowShift,
+	LunarDirectiveStatus,
+	LunarDirectiveWorkflowShift,
+	Timeframe,
+	TimeframePlan,
+	TimeframeUpdate
 } from "./models"
 export type DirectiveSummary = import("./models").Directive

@@ -6,6 +6,11 @@ const production = process.argv.includes("production");
 const watch = !production;
 const outputDirectory = "_dist";
 
+console.log("---- FOR THE GLORY OF THE TRILUNE ----")
+console.log("Pleiades Affairs Intelligence & Tristate Orchestrator (PLAINTORCH) Obsidian Plugin")
+console.log("--------------------------------------")
+console.log(`Building for ${production ? "production" : "development"}...`)
+
 const copyManifestPlugin = {
   name: "copy-manifest",
   setup(build) {
@@ -28,6 +33,12 @@ const context = await esbuild.context({
   format: "cjs",
   target: "es2020",
   logLevel: "info",
+  define: {
+    // Bake the dev-profile flag directly into the bundle as a literal (compile-time substitution, not a runtime
+    // env read). Dev/watch builds route the bundled node core client at the persistent dev sub-profile socket
+    // (~/.pleiades/plaintorch-dev) that a manual `serve` binds; production builds use the real per-user profile.
+    __PLAINTORCH_DEV_PROFILE__: production ? "false" : "true"
+  },
   sourcemap: production ? false : "inline",
   outfile: `${outputDirectory}/main.js`,
   plugins: [copyManifestPlugin],
@@ -47,7 +58,7 @@ const context = await esbuild.context({
 });
 
 if (watch) {
-	console.log("Watching PLAINTORCH Obsidian plugin...");
+	console.warn("Initiating watcher...");
   await context.watch();
 } else {
   await context.rebuild();

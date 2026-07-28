@@ -23,12 +23,17 @@ export enum ObjectiveCollege {
 
 @model('Objective')
 export class Objective {
+	/** Polymorphic incentive discriminator emitted by the core: "objective", "fate", or "decree". */
+	$type?: string
 	id: string = ''
 	title: string = ''
 	directiveId: string | undefined
 	directive?: Directive | undefined
+	/** Parent incentive per the PEP100 parent system: another objective (subtask) or a fate. */
+	parentIncentiveId: string | undefined
 	onrushSprintId: string | undefined
 	onrushSprint?: OnrushSprint | undefined
+	due: string | undefined
 	college: ObjectiveCollege = ObjectiveCollege.Unspecified
 	status: ObjectiveStatus = ObjectiveStatus.Standby
 	celestronValue: number = 0
@@ -55,6 +60,9 @@ export interface ObjectiveUpdate {
 	college?: ObjectiveCollege | undefined
 	celestronValue?: number | undefined
 	isEnduring?: boolean | undefined
+	due?: string | undefined
+	parentIncentiveId?: string | undefined
+	clearParentIncentive?: boolean
 }
 
 export interface ObjectiveWorkflowShift {
