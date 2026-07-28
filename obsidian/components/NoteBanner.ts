@@ -32,28 +32,19 @@ export class NoteBanner extends Component {
 	}
 
 	protected renderBannerElement() {
-		const tag = this.getTagForKind(this.note?.entityKind)
-		if (tag) {
-			return html`<${tag} .puck=${this.note.puck} .app=${this.app}></${tag}>`
-		} else {
-			return html`<p7t-entity-banner .puck=${this.note?.puck ?? ''} .xtype=${this.note?.entityKind} .entity=${{ id: this.note?.puck ?? '', title: this.note?.title ?? '' }} .app=${this.app}></p7t-entity-banner>`
-		}
-	}
+		switch (this.note?.entityKind) {
+			case 'stellar-directive': return html`<p7t-sdirective-banner puck=${this.note?.puck}></p7t-sdirective-banner>`
+			case 'lunar-directive': return html`<p7t-ldirective-banner puck=${this.note?.puck}></p7t-ldirective-banner>`
 
-	protected getTagForKind(kind?: string) {
-		switch (kind) {
-			case 'stellar-directive': return l`p7t-sdirective-banner`
-			case 'lunar-directive': return l`p7t-ldirective-banner`
+			case 'objective': return html`<p7t-objective-banner puck=${this.note?.puck}></p7t-objective-banner>`
+			case 'fate': return html`<p7t-fate-banner puck=${this.note?.puck}></p7t-fate-banner>`
+			case 'decree': return html`<p7t-decree-banner puck=${this.note?.puck}></p7t-decree-banner>`
 
-			case 'objective': return l`p7t-objective-banner`
-			case 'fate': return l`p7t-fate-banner`
-			case 'decree': return l`p7t-decree-banner`
+			case 'onrush-sprint': return html`<p7t-onrush-banner puck=${this.note?.puck}></p7t-onrush-banner>`
+			case 'polaris-cycle': return html`<p7t-polaris-banner puck=${this.note?.puck}></p7t-polaris-banner>`
+			case 'lore-page': return html`<p7t-lore-banner puck=${this.note?.puck}></p7t-lore-banner>`
 
-			case 'onrush-sprint': return l`p7t-onrush-banner`
-			case 'polaris-cycle': return l`p7t-polaris-banner`
-			case 'lore-page': return l`p7t-lore-banner`
-
-			default: return undefined
+			default: return html`<p7t-entity-banner .puck=${this.note?.puck ?? ''} .xtype=${this.note?.entityKind} .entity=${{ id: this.note?.puck ?? '', title: this.note?.title ?? '' }} .app=${this.app}></p7t-entity-banner>`
 		}
 	}
 

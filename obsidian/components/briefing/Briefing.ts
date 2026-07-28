@@ -42,10 +42,10 @@ export class Briefing extends Component {
 			<p7t-briefing-hero .briefing=${this.data} style='margin-bottom: .1em'></p7t-briefing-hero>
 			<div class='navbar'>
 				<p7t-navitem key='throne' icon='everglow' active>Throne Room</p7t-navitem>
+				<p7t-navitem key='directives' icon='directive'>Backlog</p7t-navitem>
+				<p7t-navitem key='moonlight' icon='objective-lunar'>Moonlight</p7t-navitem>
 				<p7t-navitem key='forecast' icon='polaris'>Forecast</p7t-navitem>
 				<p7t-navitem key='planning' icon='onrush'>Planning</p7t-navitem>
-				<p7t-navitem key='directives' icon='directive'>Directives</p7t-navitem>
-				<p7t-navitem key='objectives' icon='objective'>Objectives</p7t-navitem>
 			</div>
 			${this.content}
 		`

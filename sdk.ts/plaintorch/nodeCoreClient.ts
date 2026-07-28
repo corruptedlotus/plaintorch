@@ -67,8 +67,10 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 							})
 					}
 				},
-				(response) => {
-					resolve(wrapNodeResponse(response))
+				async (response) => {
+					const result = wrapNodeResponse(response)
+					// console.log(`PLAINTORCH core responded ${request.method} ${request.path} via ${this.socketPath}`, JSON.parse(await result.text()))
+					resolve(result)
 				}
 			)
 			httpRequest.on("error", (error) => {

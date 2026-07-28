@@ -50,5 +50,13 @@
 		},
 		"window.title": "${dirty}${activeEditorShort}${separator}${rootNameShort} / ${folderName}",
 		"typescript.tsdk": "Obsidian Plugin\\node_modules\\typescript\\lib",
-	}
+		"files.exclude": {
+			"**/.git": true,
+			"**/.svn": true,
+			"**/.hg": true,
+			"**/.DS_Store": true,
+			"**/Thumbs.db": true,
+			"**/.worktrees": true,
+		}
+	},
 }
