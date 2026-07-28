@@ -127,6 +127,23 @@ export class PlaintorchCoreClient {
 		})
 	}
 
+	/**
+	 * Opens a long-lived response on the first transport able to hold one open.
+	 *
+	 * Returns nothing when no transport supports streaming, which callers must treat as a capability that
+	 * is simply absent rather than as a failure.
+	 */
+	public async openStream(path: string, signal: AbortSignal): Promise<AsyncIterable<string> | undefined> {
+		for (const transport of this.transports) {
+			const stream = await transport.stream?.({ method: "GET", path }, signal)
+			if (stream) {
+				return stream
+			}
+		}
+
+		return undefined
+	}
+
 	protected async send(request: PlaintorchCoreRequest): Promise<PlaintorchCoreResponse | undefined> {
 		for (const transport of this.transports) {
 			const response = await transport.send(request)

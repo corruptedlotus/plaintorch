@@ -118,6 +118,17 @@ export class EntityRepository<T extends object> {
 		}
 	}
 
+	/** Revalidates every entity of this type that something is observing, leaving the rest stale. */
+	public async revalidateObserved(): Promise<void> {
+		const observed = [...this.resolvedAt.keys()].filter((key) => this.store.hasSubscribers(key))
+		await Promise.all(observed.map(async (key) => {
+			const id = key.slice(key.indexOf(":") + 1)
+			if (!this.mutating.has(key)) {
+				await this.refresh(id)
+			}
+		}))
+	}
+
 	/** Marks an identity as needing revalidation on next read. */
 	public invalidate(id: string): void {
 		const key = this.key(id)

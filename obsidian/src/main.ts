@@ -68,10 +68,31 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 				void this.initializeDirectiveFromCurrentFile()
 			}
 		})
+
+		void this.startChangeFeed()
 	}
 
 	public override onunload(): void {
+		cachedCoreClient?.repos.changeFeed.stop()
 		this.app.workspace.detachLeavesOfType(PLAINTORCH_BRIEFING_VIEW_TYPE)
+	}
+
+	/**
+	 * Listens for writes made outside the plugin, so a markdown edit the watcher picks up or a change made
+	 * by the CLI reaches whatever is on screen.
+	 *
+	 * The feed is an optimization, never a requirement — revalidating on leaf activation covers the case
+	 * where it cannot be established at all, and is what the plugin relied on before it existed.
+	 */
+	private async startChangeFeed(): Promise<void> {
+		const coreClient = await getPlaintorchNodeCoreClient()
+		coreClient.repos.changeFeed.start()
+
+		this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
+			if (!coreClient.repos.changeFeed.connected) {
+				void coreClient.repos.revalidateObserved()
+			}
+		}))
 	}
 
 	private async activateBriefingView(): Promise<void> {

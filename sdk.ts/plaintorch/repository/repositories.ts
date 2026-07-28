@@ -9,6 +9,7 @@ import type { EntityExistence, SystemBriefing } from "../system/models"
 import { EntityRepository } from "./entityRepository"
 import { DerivedRepository } from "./derivedRepository"
 import { InvalidationScheduler, type InvalidationTarget } from "./invalidation"
+import { PlaintorchChangeFeed } from "./changeFeed"
 import type { EntityKey, EntityTypeName } from "./identity"
 
 /** Key under which the single briefing record is cached. */
@@ -24,6 +25,12 @@ export const briefingRecordKey = ""
 export class PlaintorchRepositories implements InvalidationTarget {
 	/** Queues what a write makes stale and revalidates whatever of it is on screen. */
 	public readonly invalidation: InvalidationScheduler
+
+	/**
+	 * Carries writes made outside this client — the watcher, the CLI, the scheduler — back to the store.
+	 * Not started automatically; the host decides when to listen.
+	 */
+	public readonly changeFeed: PlaintorchChangeFeed
 
 	public readonly objectives: EntityRepository<Objective>
 	public readonly fates: EntityRepository<Fate>
@@ -73,6 +80,8 @@ export class PlaintorchRepositories implements InvalidationTarget {
 			["PolarisCycle", this.polaris as EntityRepository<never>],
 			["LorePage", this.lore as EntityRepository<never>]
 		])
+
+		this.changeFeed = new PlaintorchChangeFeed(client, this)
 	}
 
 	/**
@@ -117,6 +126,19 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		const typeName = key.slice(0, separator)
 		const id = key.slice(separator + 1)
 		await this.forTypeName(typeName)?.revalidateIfObserved(id)
+	}
+
+	/**
+	 * Revalidates everything currently on screen — entities and records alike.
+	 *
+	 * The coarse recovery path, for when promptness cannot be relied on: a change feed reconnecting after
+	 * missing events, or a host waking a surface back up.
+	 */
+	public async revalidateObserved(): Promise<void> {
+		await Promise.all([
+			...[...this.byTypeName.values()].map(async (repository) => await repository.revalidateObserved()),
+			this.revalidateObservedRecords()
+		])
 	}
 
 	/** Marks everything as needing revalidation, without fetching anything. */

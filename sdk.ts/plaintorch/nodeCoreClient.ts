@@ -3,6 +3,7 @@ import { homedir, userInfo } from "node:os"
 import path from "node:path"
 import {
 	createLoopbackBaseUrl,
+	toLines,
 	type PlaintorchCoreRequest,
 	type PlaintorchCoreResponse,
 	type PlaintorchCoreTransport
@@ -80,6 +81,43 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 				httpRequest.write(payload)
 			}
 
+			httpRequest.end()
+		})
+	}
+
+	/**
+	 * Opens a long-lived response over the socket, yielding the body as it arrives.
+	 *
+	 * The ordinary request path buffers to the end, which never comes for a feed that stays open; this
+	 * consumes the response as a stream instead.
+	 */
+	public async stream(request: PlaintorchCoreRequest, signal: AbortSignal): Promise<AsyncIterable<string> | undefined> {
+		return await new Promise<AsyncIterable<string> | undefined>((resolve) => {
+			const httpRequest = sendRequest(
+				{
+					socketPath: this.socketPath,
+					path: request.path,
+					method: request.method,
+					headers: {
+						Accept: "text/event-stream",
+						...request.headers
+					}
+				},
+				(response) => {
+					const status = response.statusCode ?? 0
+					if (status < 200 || status >= 300) {
+						response.resume()
+						resolve(undefined)
+						return
+					}
+
+					response.setEncoding("utf8")
+					resolve(toLines(response as AsyncIterable<string>))
+				}
+			)
+
+			httpRequest.on("error", () => resolve(undefined))
+			signal.addEventListener("abort", () => httpRequest.destroy(), { once: true })
 			httpRequest.end()
 		})
 	}
