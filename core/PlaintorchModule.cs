@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Changes;
 using Pleiades.Plaintorch.State;
@@ -26,6 +27,8 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<PlaintorchUserConfigurationStore>();
 		services.AddSingleton<PlaintorchVaultActivationService>();
 		services.AddSingleton<VaultLayout>();
+		services.AddScoped<DependencyReconciler>();
+		services.AddScoped<DependencyGateService>();
 		services.AddScoped<PlaintorchStatePolicyProcessor>();
 		services.AddScoped<PlaintorchStatePolicyFileSyncService>();
 		services.AddScoped<PlaintorchStatePolicyInterceptor>();
@@ -51,6 +54,8 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<PuckNotationParser>();
 		services.AddSingleton<PuckRuntimeCompilationCatalog>();
 		services.AddSingleton<VaultEntityModelCatalog>();
+		services.AddSingleton<ILifecyclePhaseSource, EventiveLifecyclePhaseSource>();
+		services.AddSingleton<EntityLifecycleResolver>();
 		services.AddScoped<VaultEntityGateway>();
 		services.AddSingleton<PuckTokenizer>();
 		services.AddSingleton<PuckPathDiscriminabilityService>();

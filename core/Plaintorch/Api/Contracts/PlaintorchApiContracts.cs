@@ -462,6 +462,20 @@ public sealed record TimeframeUpdate(
 	bool ClearOrbit = false);
 
 /// <summary>
+/// Represents the emitted dependency lock for an entity (PEP101), computed from its unsatisfied incoming
+/// dependencies. It is deliberately separate from the entity's own status field.
+/// </summary>
+/// <param name="EntityId">The blocked entity id (or eventive owner id).</param>
+/// <param name="BlockedBegin">Whether an unmet begin-constraining dependency is currently blocking begin.</param>
+/// <param name="BlockedFinish">Whether an unmet finish-constraining dependency is currently blocking finish.</param>
+/// <param name="Unsatisfied">The unsatisfied incoming dependencies.</param>
+public sealed record DependencyLockView(
+	string EntityId,
+	bool BlockedBegin,
+	bool BlockedFinish,
+	IReadOnlyList<Dependency> Unsatisfied);
+
+/// <summary>
 /// Represents a timeframe together with a summary of the lunar directive that defines it, used by the global
 /// timeframe listing that spans every lunar directive (PEP100).
 /// </summary>

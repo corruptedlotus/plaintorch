@@ -224,6 +224,7 @@ Identity-driven: concrete-type selection by `LUNA` declaration, never by directo
 | D4 | Base-declaration lookups query the whole family; the defensive stellar-only filter was dropped — PUCK tokenization + the ambiguity guard carry the discipline; no resolution-scope hook until a real special behaviour needs one | phase 1 |
 | D5 | Previous-state snapshots cover **all** mapped scalars + owned references, replacing hand-picked field lists | phase 1 |
 | D6 | Init-from-path mints ids from the composed **instantiation type**, not the family anchor (`A{S:8}`, matching API creation) | phase 1 prep |
+| D7 | PEP101's begin/finish uses the same declarative-attribute approach this plan endorses (`[LifecyclePhase]`/`[LifecycleStatus]` + `EntityLifecycleResolver`, with an `ILifecyclePhaseSource` hook for temporal kinds) — a concrete instance of the "declarations drive; hooks stay available" principle | PEP101 (dependency system) |
 
 ## Standing constraints
 

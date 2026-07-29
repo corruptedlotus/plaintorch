@@ -11,6 +11,7 @@ import { PlaintorchObjectivesSdk } from "./objectives/objectivesSdk"
 import { PlaintorchOnrushSdk } from "./onrush/onrushSdk"
 import { PlaintorchPolarisSdk } from "./polaris/polarisSdk"
 import { PlaintorchLoreSdk } from "./lore/loreSdk"
+import { PlaintorchDependenciesSdk } from "./dependencies/dependenciesSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
 import { createAbsorbingReviver, EntityStore, PlaintorchRepositories } from "./repository"
 
@@ -48,6 +49,7 @@ export class PlaintorchCoreClient {
 	public readonly onrush: PlaintorchOnrushSdk
 	public readonly polaris: PlaintorchPolarisSdk
 	public readonly lore: PlaintorchLoreSdk
+	public readonly dependencies: PlaintorchDependenciesSdk
 	public constructor(options: PlaintorchCoreClientOptions = {}) {
 		const host = options.host ?? defaultHost
 		const loopbackPort = options.loopbackPort ?? defaultLoopbackPort
@@ -68,6 +70,7 @@ export class PlaintorchCoreClient {
 		this.onrush = new PlaintorchOnrushSdk(this)
 		this.polaris = new PlaintorchPolarisSdk(this)
 		this.lore = new PlaintorchLoreSdk(this)
+		this.dependencies = new PlaintorchDependenciesSdk(this)
 		// Constructed last: the repositories delegate to the SDKs above.
 		this.repos = new PlaintorchRepositories(this, { resolutionFreshnessMs: options.cacheTtlMs })
 	}

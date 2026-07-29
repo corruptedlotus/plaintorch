@@ -4,6 +4,7 @@ using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
+using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Watcher;
@@ -23,6 +24,7 @@ public sealed class DirectiveApiService(
 	VaultWatcherSyncService watcherSyncService,
 	VaultTemporalDataService temporalDataService,
 	VaultAuditLogService auditLogService,
+	DependencyGateService dependencyGate,
 	VaultEntityGateway entityGateway) : IDirectiveApi
 {
 	/// <inheritdoc />
@@ -228,6 +230,8 @@ public sealed class DirectiveApiService(
 		{
 			throw new InvalidOperationException($"Directive '{directiveId}' is a lunar directive; shift its moonlight state through the lunar workflow instead.");
 		}
+
+		await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Directive, stellar.Id), shift.Status, cancellationToken);
 
 		var previousStatus = stellar.Status;
 		stellar.Status = shift.Status;

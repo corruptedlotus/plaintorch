@@ -60,6 +60,20 @@ public sealed class Eventive : ITimeAllocated
 	public TimeOnly? EndTime { get; set; }
 
 	/// <summary>
+	/// Gets or sets the original occurrence slot date (iCalendar <c>RECURRENCE-ID</c>) that identifies this
+	/// occurrence within its owner's recurrence (PEP101). Unlike <see cref="Date"/> (which is mutable — an
+	/// eventive can be moved), this stays fixed at the occurrence's original <c>DTSTART</c>, so dependency
+	/// references and orbit dedup resolve to the same occurrence after a reschedule. Set at materialization.
+	/// </summary>
+	public DateOnly RecurrenceDate { get; set; }
+
+	/// <summary>
+	/// Gets or sets the original occurrence slot time for a timed occurrence; <see langword="null"/> for an
+	/// all-day slot. Together with <see cref="RecurrenceDate"/> it forms the stable <c>RECURRENCE-ID</c>.
+	/// </summary>
+	public TimeOnly? RecurrenceTime { get; set; }
+
+	/// <summary>
 	/// Gets or sets how the occurrence resolved. Passing is temporal rather than stateful:
 	/// an occurrence that simply happened stays <see cref="EventiveResolution.Pending"/>.
 	/// </summary>

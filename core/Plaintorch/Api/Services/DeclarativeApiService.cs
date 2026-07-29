@@ -5,6 +5,7 @@ using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
+using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch.Api.Services;
@@ -26,6 +27,7 @@ public sealed class DeclarativeApiService(
 	PlaintorchMarkdownStorageService markdownStorageService,
 	PlaintorchOrbitService orbitService,
 	VaultTemporalDataService temporalDataService,
+	DependencyGateService dependencyGate,
 	VaultAuditLogService auditLogService) : IDeclarativeApi
 {
 	/// <inheritdoc />
@@ -96,8 +98,9 @@ public sealed class DeclarativeApiService(
 			fate.Title = update.Title;
 		}
 
-		if (update.Status is not null)
+		if (update.Status is not null && update.Status.Value != fate.Status)
 		{
+			await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Fate, fate.Id), update.Status.Value, cancellationToken);
 			fate.Status = update.Status.Value;
 		}
 
@@ -379,8 +382,15 @@ public sealed class DeclarativeApiService(
 		}
 
 		var startTime = occurrence?.StartTime ?? request.StartTime ?? fate.StartTime;
+
+		// PEP101: a locked whole-fate freezes all materialization; a locked single occurrence blocks just itself.
+		if (await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, date, startTime, cancellationToken))
+		{
+			throw new InvalidOperationException($"Fate '{fateId}' occurrence on {date:yyyy-MM-dd} is blocked by unmet dependencies and cannot be materialized.");
+		}
+
 		var existing = await context.Eventives.FirstOrDefaultAsync(
-			item => item.FateId == fate.Id && item.Date == date && item.StartTime == startTime,
+			item => item.FateId == fate.Id && item.RecurrenceDate == date && item.RecurrenceTime == startTime,
 			cancellationToken);
 		if (existing is not null)
 		{
@@ -393,6 +403,8 @@ public sealed class DeclarativeApiService(
 			Date = date,
 			StartTime = startTime,
 			EndTime = occurrence?.EndTime ?? request.EndTime ?? fate.EndTime,
+			RecurrenceDate = date,
+			RecurrenceTime = startTime,
 			Estimation = occurrence?.DurationMinutes ?? fate.ResolveEventiveDuration(),
 		};
 		eventive.Normalize();
