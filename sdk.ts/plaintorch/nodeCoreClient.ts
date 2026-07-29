@@ -56,6 +56,13 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 					socketPath: this.socketPath,
 					path: request.path,
 					method: request.method,
+					// A fresh connection per request rather than the global agent's keep-alive pool. Over the
+					// named pipe (and the unix socket), a pooled connection that Kestrel has since closed is
+					// handed to the next request and fails as `read EPIPE` the moment it is read from — an
+					// intermittent error that scales with request rate, which is why a polling surface like
+					// the dependency canvas surfaces it. Connection setup on a local pipe is cheap, so there
+					// is nothing to reuse a connection for.
+					agent: false,
 					headers: {
 						Accept: "application/json",
 						...request.headers,
@@ -100,6 +107,9 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 					socketPath: this.socketPath,
 					path: request.path,
 					method: request.method,
+					// Its own connection, off the pool — see `send`. A long-lived feed on a pooled connection
+					// would also pin that connection out of rotation for its whole lifetime.
+					agent: false,
 					headers: {
 						Accept: "text/event-stream",
 						...request.headers
