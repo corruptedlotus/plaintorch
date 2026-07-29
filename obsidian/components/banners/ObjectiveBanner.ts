@@ -12,36 +12,36 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 
 	@state() activePolaris?: PolarisCycle
 
+	protected override readonly entityTypeName = 'Objective' as const
+
 	protected binder = new ReactiveBinder<Objective>(this, 'entity', {
+		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
-			const entity = this.entity
-			switch (keyPath) {
-				case 'status':
-					await core.objectives.shiftWorkflow(entity!.id, { status: entity!.status })
-					break
-				default:
-					await core.objectives.update(entity!.id, entity!) ?? entity
-					break
+			const entity = this.entity!
+			const saved = await this.commitEntityEdit(async () => keyPath === 'status'
+				? await core.objectives.shiftWorkflow(entity.id, { status: entity.status })
+				: await core.objectives.update(entity.id, entity))
+
+			if (!saved) {
+				return
 			}
-			this.entity = await core.objectives.get(entity!.id)
 
 			if (keyPath === 'title')
 			{
-				const existence = await core.system.resolveEntity(entity!.id)
-	
+				const existence = await core.repos.entityResolution.refresh(entity.id)
+
 				const app = (window as any).app as App
 				if (!existence?.associatedNote
 					|| app.workspace.activeEditor?.file?.path === existence?.associatedNote) return
-	
+
 				const file = app.vault.getFileByPath(existence.associatedNote)!
 				app.workspace.getLeaf(true).openFile(file)
 			}
 		}
 	})
 
-	override async fetchEntity(puck: string) {
+	protected override async loadRelated() {
 		this.activePolaris = await core.polaris.getCurrent()
-		return core.objectives.get(puck)
 	}
 
 	protected get isInActivePolaris() {
@@ -56,9 +56,13 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 
 	addToPolaris = async () => {
 		if (this.isInActivePolaris) return
-		if (await core.polaris.addObjectiveToCurrent(this.entity!.id)) {
+		const objectiveId = this.entity!.id
+		const added = await core.repos.objectives.mutate(objectiveId, async () =>
+			await core.polaris.addObjectiveToCurrent(objectiveId))
+		if (added) {
 			new Notice('Added to active Polaris cycle.')
-			this.entity = await core.objectives.get(this.entity!.id)
+			await core.repos.objectives.refresh(objectiveId)
+			this.activePolaris = await core.polaris.getCurrent()
 		}
 	}
 
@@ -205,17 +209,19 @@ class AddToOnrushModal extends SuggestModal<OnrushSprint | null> {
 	}
 
 	override async onChooseSuggestion(item: OnrushSprint | null, evt: MouseEvent | KeyboardEvent) {
-		if (!!item) {
-			if (await core.objectives.addToOnrush(this.objectiveBanner.entity!.id, item.id)) {
-				new Notice(`Added to ${(item.id === '0' ? 'planning' : 'active')} Onrush.`)
-				this.objectiveBanner.entity = await core.objectives.get(this.objectiveBanner.entity!.id)
-			}
-		} else {
-			if (await core.objectives.removeFromOnrush(this.objectiveBanner.entity!.id)) {
-				new Notice('Removed from Onrush.')
-				this.objectiveBanner.entity = await core.objectives.get(this.objectiveBanner.entity!.id)
-			}
+		const objectiveId = this.objectiveBanner.entity!.id
+		const succeeded = await core.repos.objectives.mutate(objectiveId, async () => !item
+			? await core.objectives.removeFromOnrush(objectiveId)
+			: await core.objectives.addToOnrush(objectiveId, item.id))
+
+		if (!succeeded) {
+			return
 		}
+
+		new Notice(!item
+			? 'Removed from Onrush.'
+			: `Added to ${(item.id === '0' ? 'planning' : 'active')} Onrush.`)
+		await core.repos.objectives.refresh(objectiveId)
 	}
 
 }

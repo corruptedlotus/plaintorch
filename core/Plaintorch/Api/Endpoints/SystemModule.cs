@@ -1,4 +1,5 @@
 using Pleiades.Plaintorch.Api.Abstractions;
+using Pleiades.Plaintorch.Api.Changes;
 using Pleiades.Plaintorch.Api.Services;
 
 namespace Pleiades.Plaintorch.Api.Endpoints;
@@ -26,6 +27,14 @@ public sealed class SystemModule : Module
 		group.MapGet("/briefing", async (ISystemApi api, CancellationToken cancellationToken) =>
 		{
 			return Results.Ok(await api.GetBriefingAsync(cancellationToken));
+		});
+
+		// Long-lived: holds the response open and streams entity changes as they are saved, so a client
+		// learns about writes it did not make — a markdown edit picked up by the watcher, the CLI, or the
+		// scheduler.
+		group.MapGet("/changes", async (HttpContext http, PlaintorchChangeBroker broker, CancellationToken cancellationToken) =>
+		{
+			await PlaintorchChangeFeedWriter.WriteAsync(http, broker, cancellationToken);
 		});
 
 		group.MapGet("/resolve-note", async (string path, ISystemApi api, CancellationToken cancellationToken) =>

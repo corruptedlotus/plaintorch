@@ -1,32 +1,20 @@
 import type { PlaintorchCoreClient } from "../coreClient"
 import type { EntityExistence, HealthStatus, SystemBriefing, WatcherIssueReport } from "./contracts"
-interface CacheEntry {
-	expiresAt: number
-	value: EntityExistence | undefined
-}
 
 export class PlaintorchSystemSdk {
-	private readonly noteResolutionCache = new Map<string, CacheEntry>()
-	public constructor(
-		private readonly client: PlaintorchCoreClient,
-		private readonly cacheTtlMs: number
-	) { }
+	public constructor(private readonly client: PlaintorchCoreClient) { }
 
+	/**
+	 * Resolves which entity a vault note is the authority for.
+	 *
+	 * Uncached on purpose: `repos.noteResolution` owns freshness for this. A second cache behind it would
+	 * make a forced refresh silently no-op for as long as the inner entry lived.
+	 */
 	public async resolveNote(vaultRelativePath: string): Promise<EntityExistence | undefined> {
 		const normalizedPath = normalizeVaultRelativePath(vaultRelativePath)
-		const cached = this.noteResolutionCache.get(normalizedPath)
-		if (cached && cached.expiresAt > Date.now()) {
-			return cached.value
-		}
-
-		const result = await this.client.getJson<EntityExistence>(
+		return await this.client.getJson<EntityExistence>(
 			`/api/system/resolve-note?path=${encodeURIComponent(normalizedPath)}`
 		)
-		this.noteResolutionCache.set(normalizedPath, {
-			expiresAt: Date.now() + this.cacheTtlMs,
-			value: result
-		})
-		return result
 	}
 
 	public async getBriefing(): Promise<SystemBriefing | undefined> {

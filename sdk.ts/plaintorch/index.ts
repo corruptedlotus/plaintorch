@@ -1,4 +1,5 @@
 export * from "./coreClient"
+export * from "./repository"
 export * from "./system"
 export * from "./directives"
 export * from "./objectives"

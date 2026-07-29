@@ -14,33 +14,30 @@ export class OnrushBanner extends EntityBanner<OnrushSprint> {
 		`
 	}
 	
+	protected override readonly entityTypeName = 'OnrushSprint' as const
+
 	protected binder = new ReactiveBinder<OnrushSprint>(this, 'entity', {
+		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
-			const entity = this.entity
-			switch (keyPath) {
-				default:
-					await core.onrush.update(entity!.id, entity!) ?? entity
-					break
+			const entity = this.entity!
+			const saved = await this.commitEntityEdit(async () => await core.onrush.update(entity.id, entity))
+			if (!saved) {
+				return
 			}
-			this.entity = await core.onrush.get(entity!.id)
 
 			if (keyPath === 'title')
 			{
-				const existence = await core.system.resolveEntity(entity!.id)
-	
+				const existence = await core.repos.entityResolution.refresh(entity.id)
+
 				const app = (window as any).app as App
 				if (!existence?.associatedNote
 					|| app.workspace.activeEditor?.file?.path === existence?.associatedNote) return
-	
+
 				const file = app.vault.getFileByPath(existence.associatedNote)!
 				app.workspace.getLeaf(true).openFile(file)
 			}
 		}
 	})
-
-	override async fetchEntity(puck: string) {
-		return core.onrush.get(puck)
-	}
 
 	static override get styles() {
 		return css`

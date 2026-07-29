@@ -1,4 +1,3 @@
-import { ModelValueConstructor } from "@a11d/api-dotnet"
 import { PlaintorchDirectivesSdk } from "./directives/directivesSdk"
 import {
 	createLoopbackBaseUrl,
@@ -13,13 +12,14 @@ import { PlaintorchOnrushSdk } from "./onrush/onrushSdk"
 import { PlaintorchPolarisSdk } from "./polaris/polarisSdk"
 import { PlaintorchLoreSdk } from "./lore/loreSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
-import { apiValueConstructor, ApiValueConstructor } from '@a11d/api'
+import { createAbsorbingReviver, EntityStore, PlaintorchRepositories } from "./repository"
 
 
 export interface PlaintorchCoreClientOptions {
 	baseUrl?: string
 	loopbackPort?: number
 	host?: string
+	/** How long a resolved note or PUCK lookup is served before it is revalidated. */
 	cacheTtlMs?: number
 	headers?: Record<string, string>
 	transports?: PlaintorchCoreTransport[]
@@ -30,6 +30,17 @@ const defaultHost = "127.0.0.1"
 export class PlaintorchCoreClient {
 	private readonly baseUrl: string
 	private readonly transports: PlaintorchCoreTransport[]
+	private readonly reviver: (key: string, value: unknown) => unknown
+	/**
+	 * Canonical instances of every entity this client has seen. Populated by every response the client
+	 * reads, so call sites that have not moved onto repositories still contribute to it.
+	 */
+	public readonly store: EntityStore
+	/**
+	 * Cached, observable reads over the domain SDKs. Use these for anything a surface displays and must
+	 * keep current; the SDKs below stay the way to run a one-shot query or an imperative command.
+	 */
+	public readonly repos: PlaintorchRepositories
 	public readonly system: PlaintorchSystemSdk
 	public readonly directives: PlaintorchDirectivesSdk
 	public readonly objectives: PlaintorchObjectivesSdk
@@ -48,13 +59,17 @@ export class PlaintorchCoreClient {
 				headers: options.headers
 			})
 		]
-		this.system = new PlaintorchSystemSdk(this, options.cacheTtlMs ?? 15_000)
+		this.store = new EntityStore()
+		this.reviver = createAbsorbingReviver(this.store)
+		this.system = new PlaintorchSystemSdk(this)
 		this.directives = new PlaintorchDirectivesSdk(this)
 		this.objectives = new PlaintorchObjectivesSdk(this)
 		this.declaratives = new PlaintorchDeclarativesSdk(this)
 		this.onrush = new PlaintorchOnrushSdk(this)
 		this.polaris = new PlaintorchPolarisSdk(this)
 		this.lore = new PlaintorchLoreSdk(this)
+		// Constructed last: the repositories delegate to the SDKs above.
+		this.repos = new PlaintorchRepositories(this, { resolutionFreshnessMs: options.cacheTtlMs })
 	}
 
 	public icon(icon: string): string {
@@ -113,6 +128,23 @@ export class PlaintorchCoreClient {
 		})
 	}
 
+	/**
+	 * Opens a long-lived response on the first transport able to hold one open.
+	 *
+	 * Returns nothing when no transport supports streaming, which callers must treat as a capability that
+	 * is simply absent rather than as a failure.
+	 */
+	public async openStream(path: string, signal: AbortSignal): Promise<AsyncIterable<string> | undefined> {
+		for (const transport of this.transports) {
+			const stream = await transport.stream?.({ method: "GET", path }, signal)
+			if (stream) {
+				return stream
+			}
+		}
+
+		return undefined
+	}
+
 	protected async send(request: PlaintorchCoreRequest): Promise<PlaintorchCoreResponse | undefined> {
 		for (const transport of this.transports) {
 			const response = await transport.send(request)
@@ -134,7 +166,7 @@ export class PlaintorchCoreClient {
 			return undefined
 		}
 
-		return new ModelValueConstructor().construct(JSON.parse(payload)) as T
+		return JSON.parse(payload, this.reviver) as T
 	}
 
 	private async sendForSuccess(request: PlaintorchCoreRequest): Promise<boolean> {

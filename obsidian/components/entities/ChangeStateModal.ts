@@ -18,10 +18,13 @@ export class ChangeStateModal extends SuggestModal<keyof typeof ObjectiveStatus>
 	}
 
 	override async onChooseSuggestion(item: keyof typeof ObjectiveStatus, _: MouseEvent | KeyboardEvent) {
-		const results = await core.objectives.shiftWorkflow(this.host.entity!.id, { status: ObjectiveStatus[item] })
+		const objectiveId = this.host.entity!.id
+		// The response is absorbed into the canonical instance on the way back, so every surface showing
+		// this objective updates without the modal telling any of them.
+		const results = await core.repos.objectives.mutate(objectiveId, async () =>
+			await core.objectives.shiftWorkflow(objectiveId, { status: ObjectiveStatus[item] }))
 		if (!!results) {
-			this.host.entity = results
-			new Notice(`${this.host.entity!.title}: ${item}`)
+			new Notice(`${results.title}: ${item}`)
 		} else {
 			new Notice(`Failed to update objective status.`)
 		}

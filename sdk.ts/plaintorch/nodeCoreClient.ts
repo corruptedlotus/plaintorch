@@ -3,12 +3,12 @@ import { homedir, userInfo } from "node:os"
 import path from "node:path"
 import {
 	createLoopbackBaseUrl,
+	toLines,
 	type PlaintorchCoreRequest,
 	type PlaintorchCoreResponse,
 	type PlaintorchCoreTransport
 } from "./internal/transport"
 import { PlaintorchCoreClient, type PlaintorchCoreClientOptions } from "./coreClient"
-import { ModelValueConstructor } from "@a11d/api-dotnet"
 export interface NodePlaintorchCoreClientOptions extends Omit<PlaintorchCoreClientOptions, "transports"> {
 	socketPath?: string
 }
@@ -86,6 +86,43 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 			httpRequest.end()
 		})
 	}
+
+	/**
+	 * Opens a long-lived response over the socket, yielding the body as it arrives.
+	 *
+	 * The ordinary request path buffers to the end, which never comes for a feed that stays open; this
+	 * consumes the response as a stream instead.
+	 */
+	public async stream(request: PlaintorchCoreRequest, signal: AbortSignal): Promise<AsyncIterable<string> | undefined> {
+		return await new Promise<AsyncIterable<string> | undefined>((resolve) => {
+			const httpRequest = sendRequest(
+				{
+					socketPath: this.socketPath,
+					path: request.path,
+					method: request.method,
+					headers: {
+						Accept: "text/event-stream",
+						...request.headers
+					}
+				},
+				(response) => {
+					const status = response.statusCode ?? 0
+					if (status < 200 || status >= 300) {
+						response.resume()
+						resolve(undefined)
+						return
+					}
+
+					response.setEncoding("utf8")
+					resolve(toLines(response as AsyncIterable<string>))
+				}
+			)
+
+			httpRequest.on("error", () => resolve(undefined))
+			signal.addEventListener("abort", () => httpRequest.destroy(), { once: true })
+			httpRequest.end()
+		})
+	}
 }
 
 function wrapNodeResponse(response: NodeJS.ReadableStream & { statusCode?: number }): PlaintorchCoreResponse {
@@ -104,9 +141,6 @@ function wrapNodeResponse(response: NodeJS.ReadableStream & { statusCode?: numbe
 				return value
 			})
 			return await readPromise
-		},
-		async json<T>() {
-			return new ModelValueConstructor().construct(JSON.parse(await this.text())) as T
 		}
 	}
 }

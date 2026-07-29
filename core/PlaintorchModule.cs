@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
+using Pleiades.Plaintorch.Api.Changes;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
@@ -28,12 +29,17 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<PlaintorchStatePolicyProcessor>();
 		services.AddScoped<PlaintorchStatePolicyFileSyncService>();
 		services.AddScoped<PlaintorchStatePolicyInterceptor>();
+		services.AddSingleton<PlaintorchChangeBroker>();
+		services.AddScoped<PlaintorchChangeFeedInterceptor>();
 		services.AddDbContext<PlainfraContext>((serviceProvider, options) =>
 		{
 			var layout = serviceProvider.GetRequiredService<VaultLayout>();
 			Directory.CreateDirectory(layout.MetadataRoot);
 			options.UseSqlite($"Data Source={layout.DatabasePath}");
 			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchStatePolicyInterceptor>());
+			// Registered after the state policy, so the changes it announces are the ones policy left
+			// behind rather than what the caller originally asked for.
+			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchChangeFeedInterceptor>());
 		});
 
 		services.AddScoped<PlainfraContextInitializer>();

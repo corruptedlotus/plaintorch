@@ -1,14 +1,24 @@
-import { Component, component, css, html, property, state, literal as l } from '@a11d/lit'
+import { Component, component, css, html, property, literal as l } from '@a11d/lit'
 import { App } from 'obsidian'
 import { plaintorchNodeCoreClient, EntityExistence } from '@pleiades/sdk/plaintorch/node'
+import { DerivedRef } from 'components/data'
 
 @component('p7t-note-banner')
 export class NoteBanner extends Component {
-	@state() note?: EntityExistence
 	@property({ reflect: true, type: Boolean }) invalid = true
-	
+
 	app?: App
 	file: string = ''
+
+	private readonly noteRef = new DerivedRef(
+		this,
+		plaintorchNodeCoreClient.repos.noteResolution,
+		() => this.file
+	)
+
+	protected get note() {
+		return this.noteRef.value
+	}
 
 	static override get styles() {
 		return css`
@@ -44,7 +54,7 @@ export class NoteBanner extends Component {
 			case 'polaris-cycle': return html`<p7t-polaris-banner puck=${this.note?.puck}></p7t-polaris-banner>`
 			case 'lore-page': return html`<p7t-lore-banner puck=${this.note?.puck}></p7t-lore-banner>`
 
-			default: return html`<p7t-entity-banner .puck=${this.note?.puck ?? ''} .xtype=${this.note?.entityKind} .entity=${{ id: this.note?.puck ?? '', title: this.note?.title ?? '' }} .app=${this.app}></p7t-entity-banner>`
+			default: return html`<p7t-entity-banner .puck=${this.note?.puck ?? ''} .xtype=${this.note?.entityKind} .entity=${{ id: this.note?.puck ?? '', title: this.entityTitle }} .app=${this.app}></p7t-entity-banner>`
 		}
 	}
 
@@ -52,10 +62,8 @@ export class NoteBanner extends Component {
 		return (this.note?.entity as { title?: string } | undefined)?.title ?? ''
 	}
 
-	protected override async initialized() {
-		const note = await plaintorchNodeCoreClient.system.resolveNote(this.file)
-		this.note = note
-		this.invalid = !(note?.exists)
+	protected override updated() {
+		this.invalid = !this.note?.exists
 	}
 }
 

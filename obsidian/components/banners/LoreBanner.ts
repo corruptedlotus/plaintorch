@@ -1,7 +1,7 @@
 import { component, css, html } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { LorePage, PleiadeanDate } from '@pleiades/sdk'
-import { core, IconName } from ".."
+import { IconName } from ".."
 import { toRomanNumeral } from "@pleiades/sdk/helpers"
 
 @component('p7t-lore-banner')
@@ -72,18 +72,16 @@ export class LoreBanner extends EntityBanner<LorePage> {
 		`
 	}
 
-	override async fetchEntity(puck: string) {
-		const entity = await core.lore.get(puck)
-		if (!entity) return entity
+	protected override readonly entityTypeName = 'LorePage' as const
 
-		switch (entity.level) {
-			case 'Era': this.icon = 'lore-era'; break
-			case 'Cha': this.icon = 'lore-chapter'; break
-			case 'Act': this.icon = 'lore-act'; break
-			case 'p': this.icon = 'lore-phase'; break
-			default: this.icon = 'lorepage'; break
+	protected override get resolvedIcon(): IconName {
+		switch (this.entity?.level) {
+			case 'Era': return 'lore-era'
+			case 'Cha': return 'lore-chapter'
+			case 'Act': return 'lore-act'
+			case 'p': return 'lore-phase'
+			default: return 'lorepage'
 		}
-		return entity
 	}
 
 	override icon: IconName = 'lorepage'

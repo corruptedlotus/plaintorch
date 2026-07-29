@@ -1,10 +1,16 @@
 import { component, Component, css, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
-import { navigateToEntity } from '..'
+import { EntityWatch, navigateToEntity } from '..'
 
 @component('p7t-entity-item')
 export class EntityItem<T extends { id: string, title: string }> extends Component {
 	@property({ type: Object }) entity?: T
 	@property({ type: Boolean, reflect: true }) interactive = false
+
+	/**
+	 * The entity arrives as a property from whichever aggregate rendered this item, and that instance is
+	 * canonical. Observing it is what makes a list row follow an edit made in a banner elsewhere.
+	 */
+	protected readonly watch = new EntityWatch(this, () => this.entity)
 
 	protected async navigateToEntity() {
 		if (!this.interactive) return
