@@ -28,9 +28,16 @@ export const contextModeLabels: Record<CanvasContextMode, string> = {
  * that can draw occurrences.
  */
 export function onrushContext(sprint: OnrushSprint | undefined, dependencies: readonly Dependency[]): CanvasGraph {
-	const nodes = (sprint?.objectives ?? []).map(objectiveNode)
+	// Guarded rather than mapped straight over: a listing is only ever as good as what reached it, and the
+	// same defensiveness the entity tree applies to a hand-edited vault applies to a collection that
+	// travelled here as part of some other entity's payload.
+	const nodes = (sprint?.objectives ?? []).filter(isObjective).map(objectiveNode)
 	const keys = new Set(nodes.map(node => node.key))
 	return { nodes, edges: resolveEdges(dependencies, keys) }
+}
+
+function isObjective(value: Objective | undefined | null): value is Objective {
+	return !!value && typeof value.id === 'string' && value.id.length > 0
 }
 
 /** Addresses an objective as a dependency endpoint. */

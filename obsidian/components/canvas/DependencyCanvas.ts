@@ -12,7 +12,7 @@ import type { CanvasNodePointer } from './CanvasNodeItem'
 /** Which gesture a pointer is currently carrying out. */
 type Gesture =
 	| { readonly sort: 'pan', readonly pointerId: number, readonly originX: number, readonly originY: number, readonly fromX: number, readonly fromY: number }
-	| { readonly sort: 'drag', readonly pointerId: number, readonly nodeKey: string, readonly offsetX: number, readonly offsetY: number }
+	| { readonly sort: 'drag', readonly pointerId: number, readonly nodeKey: string, readonly offsetX: number, readonly offsetY: number, readonly originX: number, readonly originY: number }
 	| { readonly sort: 'link', readonly pointerId: number, readonly nodeKey: string, readonly at: Point }
 
 /** What the popover is showing, when it is showing anything. */
@@ -22,6 +22,8 @@ type MenuTarget =
 
 const minimumScale = 0.3
 const maximumScale = 2.5
+/** How far a pointer must travel before it is a drag rather than an unsteady click. */
+const dragThreshold = 3
 
 /**
  * The dependency canvas: the backlog as a graph you can draw on.
@@ -563,11 +565,10 @@ export class DependencyCanvas extends Component {
 	}
 
 	private onPointerDown(e: PointerEvent) {
-		if (e.button !== 0) {
+		if (e.button !== 0 || !this.isBackground(e.target)) {
 			return
 		}
 
-		// Only the empty space behind the graph reaches here; a node stops its own pointerdown.
 		this.selected = undefined
 		this.gesture = {
 			sort: 'pan',
@@ -578,6 +579,19 @@ export class DependencyCanvas extends Component {
 			fromY: this.pan.y
 		}
 		this.capture(e.pointerId)
+	}
+
+	/**
+	 * Whether a pointer landed on the empty backdrop rather than on something with behaviour of its own.
+	 *
+	 * Panning captures the pointer, and a captured pointer never delivers a click to what it started over.
+	 * Beginning a pan for every pointer that reaches the viewport therefore silently disables the action
+	 * button, the edges, and anything else placed in the viewport later — so only the two elements that
+	 * genuinely *are* the backdrop pan.
+	 */
+	private isBackground(target: EventTarget | null): boolean {
+		return target === this.viewportElement
+			|| (target instanceof Element && target.classList.contains('surface'))
 	}
 
 	private onNodePointerDown(e: PointerEvent, nodeKey: string, box: NodeBox) {
@@ -594,7 +608,9 @@ export class DependencyCanvas extends Component {
 			pointerId: e.pointerId,
 			nodeKey,
 			offsetX: point.x - box.x,
-			offsetY: point.y - box.y
+			offsetY: point.y - box.y,
+			originX: e.clientX,
+			originY: e.clientY
 		}
 		this.capture(e.pointerId)
 	}
@@ -630,6 +646,12 @@ export class DependencyCanvas extends Component {
 				}
 				return
 			case 'drag': {
+				// Below the threshold this is still a click being held, and moving the node — or swallowing
+				// the click that follows — would be reading intent into an unsteady hand.
+				if (!this.dragged && Math.hypot(e.clientX - gesture.originX, e.clientY - gesture.originY) < dragThreshold) {
+					return
+				}
+
 				this.dragged = true
 				const point = this.toCanvas(e.clientX, e.clientY)
 				const next = new Map(this.overrides)

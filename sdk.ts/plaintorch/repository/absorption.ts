@@ -17,9 +17,38 @@ export function createAbsorbingReviver(store: EntityStore): (key: string, value:
 			return value
 		}
 
+		const payload = value as Record<string, unknown>
 		// Captured before construction: constructing a model widens a sparse payload to the full shape of
 		// its class, which would otherwise make an omitted field indistinguishable from a cleared one.
-		const payloadKeys = Object.keys(value as object)
-		return store.absorb(modelValueConstructor.construct(value), payloadKeys)
+		const payloadKeys: string[] = []
+		for (const key of Object.keys(payload)) {
+			const field = payload[key]
+			if (isCycleTruncated(field)) {
+				payload[key] = field.filter(item => item !== null)
+				continue
+			}
+
+			payloadKeys.push(key)
+		}
+
+		return store.absorb(modelValueConstructor.construct(payload), payloadKeys)
 	}
+}
+
+/**
+ * Determines whether a collection came back with cycle holes in it.
+ *
+ * The core serializes with `ReferenceHandler.IgnoreCycles`, which writes `null` wherever an object would
+ * recur within its own serialization. A back-reference therefore drags a *truncated* copy of its owner's
+ * collection along with it: asking for one objective returns its sprint, and that sprint's `objectives`
+ * arrives as `[null]` — the hole being the objective that was asked for.
+ *
+ * Such a collection is repaired for the instance being constructed and then left out of the payload keys,
+ * so it is never merged over a canonical collection that was loaded properly. Both halves matter: without
+ * the repair a consumer iterates a hole, and without the omission a fetch of one objective would empty the
+ * sprint that every other surface is reading. Nothing in this API sends a meaningful `null` inside an
+ * array, so a hole is always this and never data.
+ */
+function isCycleTruncated(value: unknown): value is unknown[] {
+	return Array.isArray(value) && value.some(item => item === null)
 }
