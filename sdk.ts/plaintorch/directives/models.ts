@@ -18,7 +18,13 @@ export enum LunarDirectiveStatus {
 /** The kind discriminator used to filter directives (PEP100). */
 export type DirectiveKind = 'stellar' | 'lunar'
 
-@model('Directive')
+/**
+ * Both directive kinds share this model, so it is registered under both runtime type names the core
+ * actually emits. `Directive` itself is abstract on the core side and never appears on the wire — a
+ * registration under that name matches nothing, which is why these getters were silently missing from
+ * every directive the API returned.
+ */
+@model('StellarDirective')
 export class Directive {
 	/** Polymorphic discriminator emitted by the core: "stellar" or "lunar". */
 	$type?: DirectiveKind
@@ -50,6 +56,8 @@ export class Directive {
 		return this.$type === 'stellar'
 	}
 }
+
+model('LunarDirective')(Directive)
 
 /** Directive-level definition of a portion of the day (PEP100). Belongs to a lunar directive; purely semantic. */
 export interface Timeframe {

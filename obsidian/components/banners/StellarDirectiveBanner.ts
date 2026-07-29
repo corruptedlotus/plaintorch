@@ -20,7 +20,7 @@ export class StellarDirectiveBanner extends EntityBanner<Directive> {
 		`
 	}
 
-	protected override readonly entityTypeName = 'Directive' as const
+	protected override readonly entityTypeName = 'StellarDirective' as const
 
 	protected binder = new ReactiveBinder<Directive>(this, 'entity', {
 		sourceUpdate: () => this.beginEntityEdit(),

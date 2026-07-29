@@ -22,7 +22,7 @@ const asArray = (value: unknown): Record<string, unknown>[] =>
  */
 const dependents: Partial<Record<EntityTypeName, DependentResolver>> = {
 	Objective: (objective) => [
-		key("Directive", objective.directiveId),
+		key("StellarDirective", objective.directiveId),
 		key("LunarDirective", objective.directiveId),
 		key("OnrushSprint", objective.onrushSprintId),
 		key("Objective", objective.parentIncentiveId),
@@ -30,21 +30,21 @@ const dependents: Partial<Record<EntityTypeName, DependentResolver>> = {
 		...asArray(objective.executives).map((executive) => key("PolarisCycle", executive.polarisCycleId))
 	],
 	Fate: (fate) => [
-		key("Directive", fate.directiveId),
+		key("StellarDirective", fate.directiveId),
 		key("LunarDirective", fate.directiveId),
 		key("Fate", fate.parentIncentiveId)
 	],
 	Decree: (decree) => [
-		key("Directive", decree.directiveId),
+		key("StellarDirective", decree.directiveId),
 		key("LunarDirective", decree.directiveId),
 		...asArray(decree.attentives).map((attentive) => key("PolarisCycle", attentive.polarisCycleId))
 	],
-	Directive: (directive) => [
-		key("Directive", directive.parentDirectiveId),
+	StellarDirective: (directive) => [
+		key("StellarDirective", directive.parentDirectiveId),
 		key("LunarDirective", directive.parentDirectiveId)
 	],
 	LunarDirective: (directive) => [
-		key("Directive", directive.parentDirectiveId),
+		key("StellarDirective", directive.parentDirectiveId),
 		key("LunarDirective", directive.parentDirectiveId)
 	],
 	OnrushSprint: (sprint) => asArray(sprint.executiveOrders).map((order) => key("ExecutiveOrder", order.id)),

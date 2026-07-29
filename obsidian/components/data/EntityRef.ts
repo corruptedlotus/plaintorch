@@ -5,6 +5,17 @@ import { plaintorchNodeCoreClient } from '@pleiades/sdk/plaintorch/node'
 /** Supplies the identifier a reference should resolve, re-read on every host update. */
 export type EntityRefSource = () => string | undefined
 
+const warnedTags = new Set<string>()
+
+function warnMissingRepository(tag: string) {
+	if (warnedTags.has(tag)) {
+		return
+	}
+
+	warnedTags.add(tag)
+	console.warn(`PLAINTORCH: <${tag}> asks for an entity type no repository serves — check its entityTypeName against the runtime type the core emits as "@type".`)
+}
+
 /**
  * Binds a component to one canonical entity.
  *
@@ -72,6 +83,13 @@ export class EntityRef<T extends object> extends Controller {
 	private sync(): void {
 		const repository = this.repository()
 		const id = this.source()
+		// A surface asking for an entity by a type name nothing serves would otherwise just render blank
+		// forever, which is how a drifted type name stayed invisible: the banner looked empty rather than
+		// broken. Say so once per name instead.
+		if (id && !repository) {
+			warnMissingRepository((this.host as unknown as Element).tagName?.toLowerCase() ?? 'unknown element')
+		}
+
 		const key = !repository || !id ? undefined : repository.key(id)
 		if (key === this.observedKey) {
 			return

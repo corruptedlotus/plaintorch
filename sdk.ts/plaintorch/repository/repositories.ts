@@ -99,7 +99,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		this.objectives = new EntityRepository(store, "Objective", (id) => client.objectives.get(id), entity)
 		this.fates = new EntityRepository(store, "Fate", (id) => client.declaratives.getFate(id), entity)
 		this.decrees = new EntityRepository(store, "Decree", (id) => client.declaratives.getDecree(id), entity)
-		this.directives = new EntityRepository(store, "Directive", (id) => client.directives.get(id), entity)
+		this.directives = new EntityRepository(store, "StellarDirective", (id) => client.directives.get(id), entity)
 		this.lunarDirectives = new EntityRepository(store, "LunarDirective", (id) => client.directives.get(id), entity)
 		this.onrush = new EntityRepository(store, "OnrushSprint", (id) => client.onrush.get(id), entity)
 		this.polaris = new EntityRepository(store, "PolarisCycle", (id) => client.polaris.get(id), entity)
@@ -125,7 +125,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 			["Objective", this.objectives as EntityRepository<never>],
 			["Fate", this.fates as EntityRepository<never>],
 			["Decree", this.decrees as EntityRepository<never>],
-			["Directive", this.directives as EntityRepository<never>],
+			["StellarDirective", this.directives as EntityRepository<never>],
 			["LunarDirective", this.lunarDirectives as EntityRepository<never>],
 			["OnrushSprint", this.onrush as EntityRepository<never>],
 			["PolarisCycle", this.polaris as EntityRepository<never>],

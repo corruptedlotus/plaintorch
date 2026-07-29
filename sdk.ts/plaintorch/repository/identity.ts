@@ -1,36 +1,18 @@
 import { ModelValueConstructor } from "@a11d/api-dotnet"
 
 /**
- * Runtime type names of the entities the repository system tracks by identity.
+ * Runtime type name of a tracked entity, as the core stamps it on the wire.
  *
- * These are exactly the `PuckNamedEntity` subclasses of the core: everything with a PUCK token for an
- * identifier. Child records such as `Executive`, `Reflective`, `Eventive` and `Attentive` carry numeric
- * keys and are always reached through an owner, so they are absorbed as part of that owner rather than
- * tracked on their own.
- *
- * The list cannot be derived from the `@model` registry: only a few contracts are classes, and a
- * polymorphic entity serializes under its own runtime type name (a fate is `Fate`, not `Objective`).
+ * Deliberately not a closed union. It was one, listing the type names by hand, and the list drifted: the
+ * core's concrete stellar directive is `StellarDirective`, the list said `Directive`, and every directive
+ * silently stopped being tracked — an entity that is never absorbed has no canonical instance, so nothing
+ * observing it ever hears anything. Which names exist belongs to the core, so recognizing an entity is now
+ * structural (see {@link identify}) and only *routing* a name to a repository is declared.
  */
-export const entityTypeNames = [
-	"Objective",
-	"Fate",
-	"Decree",
-	"Directive",
-	"LunarDirective",
-	"PolarisCycle",
-	"OnrushSprint",
-	"ExecutiveOrder",
-	"LorePage",
-	"Checkpoint"
-] as const
-
-/** Runtime type name of a tracked entity. */
-export type EntityTypeName = (typeof entityTypeNames)[number]
+export type EntityTypeName = string
 
 /** Identity of a tracked entity within the store, in the form `{typeName}:{id}`. */
 export type EntityKey = string
-
-const trackedTypeNames: ReadonlySet<string> = new Set(entityTypeNames)
 
 /**
  * Builds the store identity for a type name and identifier.
@@ -54,16 +36,30 @@ export function typeNameOf(value: unknown): string | undefined {
 /**
  * Resolves the store identity of a value, or `undefined` when it is not a tracked entity.
  *
- * Works on both raw payloads and constructed model instances, since the type name survives construction.
+ * An entity is recognized by shape rather than by name: the core's `IPuckNamedEntity` contract is a PUCK
+ * token and a title, so a runtime type name plus a non-empty string `id` plus a string `title` is exactly
+ * what an entity looks like on the wire, whatever it happens to be called.
+ *
+ * Both halves of the shape test carry weight. The `id` must be a string because a child record like a
+ * dependency edge keys on a number, and the `title` must be present because a value object can carry a
+ * string `id` that is a *reference* to another entity — a dependency endpoint does, and tracking those
+ * would merge two unrelated references that happen to point at the same entity into one instance.
+ *
+ * Works on raw payloads and constructed model instances alike, since the type name survives construction.
  */
 export function identify(value: unknown): EntityKey | undefined {
 	const typeName = typeNameOf(value)
-	if (!typeName || !trackedTypeNames.has(typeName)) {
+	if (!typeName) {
 		return undefined
 	}
 
-	const id = (value as Record<string, unknown>).id
-	return typeof id === "string" && id.length > 0 ? entityKey(typeName, id) : undefined
+	const record = value as Record<string, unknown>
+	const id = record.id
+	if (typeof id !== "string" || id.length === 0 || typeof record.title !== "string") {
+		return undefined
+	}
+
+	return entityKey(typeName, id)
 }
 
 /**
