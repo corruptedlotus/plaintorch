@@ -17,6 +17,24 @@
 	padding: 0.2em 1em 1.4em !important;
 }
 
+/*
+ * The canvas pans rather than scrolls, so it has to be told the height of the pane instead of growing to fit
+ * its contents — an unbounded height would let the graph push the view open and take the panning with it.
+ */
+.plaintorch-canvas-view {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	padding: 0.2em 0.4em 0.4em !important;
+	overflow: hidden !important;
+}
+
+.plaintorch-canvas-view>p7t-dependency-canvas {
+	flex: 1;
+	min-height: 0;
+}
+
 .plaintorch-briefing-hero {
 	margin-bottom: 1rem;
 	padding: 1rem 1.1rem;

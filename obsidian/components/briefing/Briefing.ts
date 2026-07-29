@@ -58,6 +58,8 @@ export class Briefing extends Component {
 				return html`<p7t-throne-view .data=${this.data}></p7t-throne-view>`
 			case 'directives':
 				return html`<p7t-entity-grid></p7t-entity-grid>`
+			case 'planning':
+				return html`<p7t-dependency-canvas></p7t-dependency-canvas>`
 			default:
 				return html`<div class='empty'>Nothing to show</div>`
 		}
