@@ -30,6 +30,7 @@ The core is the authority on what is a legal edge, but the node transport resolv
 ### Supporting changes
 - `dependencyList`, `checkpointList`, `onrushCurrent` and `onrushPlanning` repository records, and `Checkpoint` added to the tracked entity types — it is a `PuckNamedEntity` and was already announced by the feed, but nothing absorbed it.
 - `PlaintorchChangeFeedInterceptor` now announces a dependency edge as a change to both of its endpoints. An edge is neither a PUCK-named entity nor reachable through a foreign key, so before this, creating or deleting one broadcast nothing at all.
+- The absorbing reviver now repairs cycle-truncated collections instead of merging them. `ReferenceHandler.IgnoreCycles` writes `null` where an object would recur inside itself, so fetching one objective returned its sprint with `objectives: [null]` and emptied the canonical sprint the canvas was drawing. Latent until the edge announcement above started causing those refetches mid-session; see the frontend repository notes in `core/.DISCUSSION.md`.
 
 ### Open edges
 - There is **no `PUT /api/dependencies/{id}`**. Changing an edge's trigger or constraint is a delete followed by a create, which is not one transaction; the original is restored if the recreate is refused. Worth a real endpoint if edge editing turns out to be frequent.
