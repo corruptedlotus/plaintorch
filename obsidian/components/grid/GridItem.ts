@@ -59,7 +59,10 @@ export class GridItem extends Component {
 				font-family: var(--font-interface);
 				border-radius: 12px;
 				transition: background-color .3s ease;
-				--p7t-grid-lane-width: 1.5em;
+				--p7t-grid-lane-width: 1em;
+				font-size: 1.1em;
+				padding-block: .2em;
+				padding-inline-end: .2em;
 			}
 
 			:host(:hover) {
@@ -69,7 +72,7 @@ export class GridItem extends Component {
 			.lead {
 				display: flex;
 				align-items: stretch;
-				padding-left: .5em;
+				padding-inline-start: .5em;
 			}
 
 			/*
@@ -77,19 +80,20 @@ export class GridItem extends Component {
 			 * run of consecutive rows joins into one unbroken line down the group.
 			 */
 			.lane {
+				margin-inline-start: var(--p7t-grid-lane-width);
 				flex: 0 0 var(--p7t-grid-lane-width);
 				width: var(--p7t-grid-lane-width);
-				border-left: 1px solid transparent;
+				border-inline-start: 2px solid transparent;
 			}
 
 			.lane[data-guide='directive'] {
-				border-left-style: dashed;
-				border-left-color: color-mix(in srgb, var(--text-normal) 25%, transparent);
+				border-inline-start-style: dashed;
+				border-inline-start-color: color-mix(in srgb, var(--text-normal) 25%, transparent);
 			}
 
 			.lane[data-guide='incentive'] {
-				border-left-style: solid;
-				border-left-color: color-mix(in srgb, var(--text-normal) 45%, transparent);
+				border-inline-start-style: solid;
+				border-inline-start-color: color-mix(in srgb, var(--text-normal) 45%, transparent);
 			}
 
 			.notch {
@@ -155,7 +159,7 @@ export class GridItem extends Component {
 			.cell {
 				display: flex;
 				align-items: center;
-				justify-content: flex-end;
+				justify-content: stretch;
 				padding-inline: .2em;
 				font-size: .9em;
 				white-space: nowrap;

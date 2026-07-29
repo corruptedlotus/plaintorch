@@ -6,7 +6,7 @@ export class NavigationItem extends Component {
 	@property() key?: string
 	@property() icon?: IconName
 	@property({ type: Boolean, reflect: true }) active = false
-	@event({ bubbles: true }) requestKeyNavigation!: EventDispatcher<string>
+	@event({ bubbles: true, composed: true }) requestKeyNavigation!: EventDispatcher<string>
 
 	static override get styles() {
 		return css`
