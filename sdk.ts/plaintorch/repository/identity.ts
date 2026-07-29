@@ -20,7 +20,8 @@ export const entityTypeNames = [
 	"PolarisCycle",
 	"OnrushSprint",
 	"ExecutiveOrder",
-	"LorePage"
+	"LorePage",
+	"Checkpoint"
 ] as const
 
 /** Runtime type name of a tracked entity. */

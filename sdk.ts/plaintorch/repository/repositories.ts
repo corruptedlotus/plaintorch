@@ -5,6 +5,7 @@ import type { Decree, Fate } from "../declaratives/models"
 import type { OnrushSprint } from "../onrush/models"
 import type { PolarisCycle } from "../polaris/models"
 import type { LorePage } from "../lore/models"
+import type { Checkpoint, Dependency } from "../dependencies/models"
 import type { EntityExistence, SystemBriefing } from "../system/models"
 import { EntityRepository } from "./entityRepository"
 import { DerivedRepository } from "./derivedRepository"
@@ -46,6 +47,8 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	public readonly onrush: EntityRepository<OnrushSprint>
 	public readonly polaris: EntityRepository<PolarisCycle>
 	public readonly lore: EntityRepository<LorePage>
+	/** Checkpoints (PEP101). PUCK-addressable like the rest, but database-only — they carry no note. */
+	public readonly checkpoints: EntityRepository<Checkpoint>
 
 	/**
 	 * Full listings, cached under {@link briefingRecordKey}.
@@ -58,6 +61,25 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	public readonly objectiveList: DerivedRepository<Objective[]>
 	public readonly fateList: DerivedRepository<Fate[]>
 	public readonly decreeList: DerivedRepository<Decree[]>
+
+	/**
+	 * Every dependency edge, and every checkpoint (PEP101).
+	 *
+	 * Edges are listed rather than tracked by identity: a {@link Dependency} has a numeric key and no PUCK
+	 * token, and its endpoints are loose references the core deliberately leaves without foreign keys. There
+	 * is nothing to absorb into the store, so the listing itself is the record a graph surface observes.
+	 */
+	public readonly dependencyList: DerivedRepository<Dependency[]>
+	public readonly checkpointList: DerivedRepository<Checkpoint[]>
+
+	/**
+	 * The onrush sprint currently being run, and the one being planned.
+	 *
+	 * Kept as records rather than reached through {@link onrush} by id, because which sprint is current is
+	 * itself the question a surface asks — it has no identifier to look up until the core answers.
+	 */
+	public readonly onrushCurrent: DerivedRepository<OnrushSprint>
+	public readonly onrushPlanning: DerivedRepository<OnrushSprint>
 
 	/** The system briefing, cached under {@link briefingRecordKey}. */
 	public readonly briefing: DerivedRepository<SystemBriefing>
@@ -82,11 +104,17 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		this.onrush = new EntityRepository(store, "OnrushSprint", (id) => client.onrush.get(id), entity)
 		this.polaris = new EntityRepository(store, "PolarisCycle", (id) => client.polaris.get(id), entity)
 		this.lore = new EntityRepository(store, "LorePage", (id) => client.lore.get(id), entity)
+		this.checkpoints = new EntityRepository(store, "Checkpoint", (id) => client.dependencies.getCheckpoint(id), entity)
 
 		this.directiveList = new DerivedRepository(async () => await client.directives.list())
 		this.objectiveList = new DerivedRepository(async () => await client.objectives.list())
 		this.fateList = new DerivedRepository(async () => await client.declaratives.listFates())
 		this.decreeList = new DerivedRepository(async () => await client.declaratives.listDecrees())
+
+		this.dependencyList = new DerivedRepository(async () => await client.dependencies.list())
+		this.checkpointList = new DerivedRepository(async () => await client.dependencies.listCheckpoints())
+		this.onrushCurrent = new DerivedRepository(async () => await client.onrush.getCurrent())
+		this.onrushPlanning = new DerivedRepository(async () => await client.onrush.getPlanning())
 
 		const resolution = { freshnessMs: options.resolutionFreshnessMs }
 		this.briefing = new DerivedRepository(async () => await client.system.getBriefing())
@@ -101,7 +129,8 @@ export class PlaintorchRepositories implements InvalidationTarget {
 			["LunarDirective", this.lunarDirectives as EntityRepository<never>],
 			["OnrushSprint", this.onrush as EntityRepository<never>],
 			["PolarisCycle", this.polaris as EntityRepository<never>],
-			["LorePage", this.lore as EntityRepository<never>]
+			["LorePage", this.lore as EntityRepository<never>],
+			["Checkpoint", this.checkpoints as EntityRepository<never>]
 		])
 
 		this.changeFeed = new PlaintorchChangeFeed(client, this)
@@ -137,7 +166,11 @@ export class PlaintorchRepositories implements InvalidationTarget {
 			this.directiveList as DerivedRepository<unknown>,
 			this.objectiveList as DerivedRepository<unknown>,
 			this.fateList as DerivedRepository<unknown>,
-			this.decreeList as DerivedRepository<unknown>
+			this.decreeList as DerivedRepository<unknown>,
+			this.dependencyList as DerivedRepository<unknown>,
+			this.checkpointList as DerivedRepository<unknown>,
+			this.onrushCurrent as DerivedRepository<unknown>,
+			this.onrushPlanning as DerivedRepository<unknown>
 		]
 	}
 

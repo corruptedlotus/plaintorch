@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Vault.Database;
 
@@ -80,6 +81,17 @@ public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broke
 				// The runtime type, so a polymorphic entity is announced as what it actually is — a fate
 				// reports Fate, not Incentive — matching the @type the API serializes.
 				Add(changes, seen, entry.Entity.GetType().Name, named.Id, operation.Value);
+				continue;
+			}
+
+			if (entry.Entity is Dependency dependency)
+			{
+				// An edge has no identity on the far side and, by design, no foreign key for OwnersOf to walk,
+				// so neither branch above reaches it. What a client observes is the entities it joins, so it is
+				// announced as a change to both endpoints. An eventive endpoint names its owner rather than a
+				// tracked type, which still carries: any announcement revalidates the observed listings.
+				Add(changes, seen, dependency.Source.Kind.ToString(), dependency.Source.Id, EntityChangeOperation.Modified);
+				Add(changes, seen, dependency.Target.Kind.ToString(), dependency.Target.Id, EntityChangeOperation.Modified);
 				continue;
 			}
 

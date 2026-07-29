@@ -1,5 +1,6 @@
 import { addIcon, Notice, Plugin, type WorkspaceLeaf } from "obsidian"
 import { PlaintorchBriefingView, PLAINTORCH_BRIEFING_VIEW_TYPE } from "./briefing/PlaintorchBriefingView"
+import { PlaintorchCanvasView, PLAINTORCH_CANVAS_VIEW_TYPE } from "./canvas/PlaintorchCanvasView"
 import { PageBannerRenderer } from "./banner/PageBannerRenderer"
 
 import 'components'
@@ -49,6 +50,11 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 			(leaf: WorkspaceLeaf) => new PlaintorchBriefingView(leaf)
 		)
 
+		this.registerView(
+			PLAINTORCH_CANVAS_VIEW_TYPE,
+			(leaf: WorkspaceLeaf) => new PlaintorchCanvasView(leaf)
+		)
+
 		this.addRibbonIcon("plaintorch", "PLAINTORCH briefing", () => {
 			void this.activateBriefingView()
 		})
@@ -58,6 +64,14 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 			name: "Open PLAINTORCH briefing",
 			callback: () => {
 				void this.activateBriefingView()
+			}
+		})
+
+		this.addCommand({
+			id: "open-plaintorch-dependency-canvas",
+			name: "Open PLAINTORCH dependency canvas",
+			callback: () => {
+				void this.activateCanvasView()
 			}
 		})
 
@@ -75,6 +89,7 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 	public override onunload(): void {
 		cachedCoreClient?.repos.changeFeed.stop()
 		this.app.workspace.detachLeavesOfType(PLAINTORCH_BRIEFING_VIEW_TYPE)
+		this.app.workspace.detachLeavesOfType(PLAINTORCH_CANVAS_VIEW_TYPE)
 	}
 
 	/**
@@ -104,6 +119,27 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 			type: PLAINTORCH_BRIEFING_VIEW_TYPE,
 			active: true
 		})
+
+		workspace.revealLeaf(leaf)
+	}
+
+	/**
+	 * Opens the dependency canvas in its own leaf, reusing the one already open rather than replacing it.
+	 *
+	 * Unlike the briefing, this is a surface to keep beside whatever is being planned, so an existing canvas
+	 * is revealed instead of detached and rebuilt — which would throw away its pan, zoom and arrangement.
+	 */
+	private async activateCanvasView(): Promise<void> {
+		const workspace = this.app.workspace
+		const [existing] = workspace.getLeavesOfType(PLAINTORCH_CANVAS_VIEW_TYPE)
+		const leaf = existing ?? workspace.getLeaf(true)
+
+		if (!existing) {
+			await leaf.setViewState({
+				type: PLAINTORCH_CANVAS_VIEW_TYPE,
+				active: true
+			})
+		}
 
 		workspace.revealLeaf(leaf)
 	}
