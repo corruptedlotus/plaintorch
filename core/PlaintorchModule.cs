@@ -39,6 +39,9 @@ public sealed class PlaintorchModule : Module
 			var layout = serviceProvider.GetRequiredService<VaultLayout>();
 			Directory.CreateDirectory(layout.MetadataRoot);
 			options.UseSqlite($"Data Source={layout.DatabasePath}");
+			// Sets WAL and a busy timeout on every connection so the concurrent reads a client fires around a
+			// write do not meet a whole-file lock with no timeout. Stateless, so a fresh instance per context.
+			options.AddInterceptors(new SqlitePragmaConnectionInterceptor());
 			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchStatePolicyInterceptor>());
 			// Registered after the state policy, so the changes it announces are the ones policy left
 			// behind rather than what the caller originally asked for.
