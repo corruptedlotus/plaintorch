@@ -59,7 +59,10 @@ export function layoutGraph(graph: CanvasGraph, options: LayoutOptions = {}): Ca
 	}
 
 	const settings = { ...defaults, ...options }
-	const model = new graphlib.Graph({ directed: true })
+	// Multigraph so each edge can carry its own key: two objectives can be joined by more than one dependency
+	// (a different trigger or constraint), and without names the second would overwrite the first in the
+	// layout model — and naming an edge at all is rejected unless the graph is a multigraph.
+	const model = new graphlib.Graph({ directed: true, multigraph: true })
 	model.setGraph({
 		rankdir: 'LR',
 		ranksep: settings.rankSeparation,
