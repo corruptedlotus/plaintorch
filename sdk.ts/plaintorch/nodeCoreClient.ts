@@ -1,4 +1,4 @@
-import { request as sendRequest } from "node:http"
+import { Agent, request as sendRequest } from "node:http"
 import { homedir, userInfo } from "node:os"
 import path from "node:path"
 import {
@@ -46,6 +46,18 @@ export class NodePlaintorchCoreClient extends PlaintorchCoreClient {
 }
 
 class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
+	/**
+	 * A bounded keep-alive pool for one-shot requests.
+	 *
+	 * Two failure modes are being avoided at once, both of which a resync surfaces because it fans a write
+	 * out into a burst of reads. Reusing connections keeps that burst from opening a fresh pipe connection
+	 * for every request — repeatedly setting one up and tearing it straight down races the server's pool of
+	 * pipe instances and shows up as `read EPIPE`. Capping `maxSockets` keeps the burst from opening an
+	 * unbounded number of them at once; anything past the cap queues on the agent instead. The long-lived
+	 * feed does not use this — it gets its own connection so it never occupies a slot for its whole life.
+	 */
+	private readonly agent = new Agent({ keepAlive: true, maxSockets: 8 })
+
 	public constructor(private readonly socketPath: string) { }
 
 	public async send(request: PlaintorchCoreRequest): Promise<PlaintorchCoreResponse | undefined> {
@@ -56,13 +68,8 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 					socketPath: this.socketPath,
 					path: request.path,
 					method: request.method,
-					// A fresh connection per request rather than the global agent's keep-alive pool. Over the
-					// named pipe (and the unix socket), a pooled connection that Kestrel has since closed is
-					// handed to the next request and fails as `read EPIPE` the moment it is read from — an
-					// intermittent error that scales with request rate, which is why a polling surface like
-					// the dependency canvas surfaces it. Connection setup on a local pipe is cheap, so there
-					// is nothing to reuse a connection for.
-					agent: false,
+					// A bounded keep-alive pool rather than the process-wide default agent — see the field.
+					agent: this.agent,
 					headers: {
 						Accept: "application/json",
 						...request.headers,
@@ -107,8 +114,8 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 					socketPath: this.socketPath,
 					path: request.path,
 					method: request.method,
-					// Its own connection, off the pool — see `send`. A long-lived feed on a pooled connection
-					// would also pin that connection out of rotation for its whole lifetime.
+					// Its own dedicated connection, never pooled: a feed held open for the session would
+					// otherwise occupy a pooled slot for its entire lifetime and starve the one-shot requests.
 					agent: false,
 					headers: {
 						Accept: "text/event-stream",

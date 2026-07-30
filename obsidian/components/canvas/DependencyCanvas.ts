@@ -54,8 +54,11 @@ export class DependencyCanvas extends Component {
 	@query('.menu') private readonly menuElement!: HTMLElement
 
 	private readonly dependencies = new DerivedRef(this, core.repos.dependencyList)
-	private readonly activeSprint = new DerivedRef(this, core.repos.onrushCurrent)
-	private readonly planningSprint = new DerivedRef(this, core.repos.onrushPlanning)
+	// Each sprint is only observed while its mode is the one on screen: an undefined key makes the ref
+	// release its subscription and fetch nothing, so the canvas never fetches or revalidates the sprint it
+	// is not showing. Switching mode re-subscribes the other.
+	private readonly activeSprint = new DerivedRef(this, core.repos.onrushCurrent, () => this.mode === 'onrush-active' ? '' : undefined)
+	private readonly planningSprint = new DerivedRef(this, core.repos.onrushPlanning, () => this.mode === 'onrush-planning' ? '' : undefined)
 
 	private storeSubscription?: EntitySubscription
 	private layoutCache?: { readonly signature: string, readonly layout: CanvasLayout }
