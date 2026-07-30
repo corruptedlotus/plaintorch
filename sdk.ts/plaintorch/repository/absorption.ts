@@ -1,5 +1,5 @@
 import { ModelValueConstructor } from "@a11d/api-dotnet"
-import type { EntityStore } from "./entityStore"
+import type { AbsorptionContext, EntityStore } from "./entityStore"
 
 const modelValueConstructor = new ModelValueConstructor()
 
@@ -11,7 +11,10 @@ const modelValueConstructor = new ModelValueConstructor()
  * is what the client did before — left nested models as plain objects and skipped list responses
  * entirely, since a root array carries no runtime type name of its own.
  */
-export function createAbsorbingReviver(store: EntityStore): (key: string, value: unknown) => unknown {
+export function createAbsorbingReviver(
+	store: EntityStore,
+	context?: AbsorptionContext
+): (key: string, value: unknown) => unknown {
 	return (_key, value) => {
 		if (!modelValueConstructor.shallConstruct(value)) {
 			return value
@@ -20,6 +23,6 @@ export function createAbsorbingReviver(store: EntityStore): (key: string, value:
 		// Captured before construction: constructing a model widens a sparse payload to the full shape of
 		// its class, which would otherwise make an omitted field indistinguishable from a cleared one.
 		const payloadKeys = Object.keys(value as object)
-		return store.absorb(modelValueConstructor.construct(value), payloadKeys)
+		return store.absorb(modelValueConstructor.construct(value), payloadKeys, context)
 	}
 }

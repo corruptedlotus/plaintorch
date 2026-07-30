@@ -155,6 +155,10 @@ export class EntityRepository<T extends object> {
 	public async mutate<R>(id: string, operation: () => Promise<R>, options: MutateOptions<R> = {}): Promise<R> {
 		const key = this.key(id)
 		this.mutating.add(key)
+		// Marked at both ends. Holding the identity only stops a revalidation from *starting*; a read
+		// already in flight would still land afterwards and revert the edit, because absorption has no
+		// sense of order and the older response simply arrived later.
+		this.store.noteLocalChange(key)
 		try {
 			const result = await operation()
 			const succeeded = (options.succeeded ?? isSuccessfulMutation)(result)
@@ -172,6 +176,7 @@ export class EntityRepository<T extends object> {
 			throw error
 		}
 		finally {
+			this.store.noteLocalChange(key)
 			this.mutating.delete(key)
 		}
 	}

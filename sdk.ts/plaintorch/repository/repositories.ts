@@ -11,7 +11,7 @@ import { EntityRepository } from "./entityRepository"
 import { DerivedRepository } from "./derivedRepository"
 import { InvalidationScheduler, type InvalidationTarget } from "./invalidation"
 import { PlaintorchChangeFeed } from "./changeFeed"
-import type { EntityKey, EntityTypeName } from "./identity"
+import { entityKey, type EntityKey, type EntityTypeName } from "./identity"
 
 /** Key under which the single briefing record is cached. */
 export const briefingRecordKey = ""
@@ -203,6 +203,16 @@ export class PlaintorchRepositories implements InvalidationTarget {
 			...[...this.byTypeName.values()].map(async (repository) => await repository.revalidateObserved()),
 			this.revalidateObservedRecords()
 		])
+	}
+
+	/**
+	 * Gives up the local claim on an identity, so the next read of it applies whatever its age.
+	 *
+	 * Used for changes the core declares authoritative. A write still in flight keeps its own protection —
+	 * this only concedes the ordering, it does not interrupt anything.
+	 */
+	public acceptAuthority(typeName: string, id: string): void {
+		this.client.store.acceptAuthority(entityKey(typeName, id))
 	}
 
 	/** Marks everything as needing revalidation, without fetching anything. */

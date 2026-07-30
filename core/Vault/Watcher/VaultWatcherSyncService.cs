@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orchestration;
+using Pleiades.Plaintorch.Api.Changes;
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Puck;
 using Pleiades.Saga;
@@ -33,6 +34,10 @@ public sealed class VaultWatcherSyncService(
 	{
 		ArgumentNullException.ThrowIfNull(candidate);
 		ArgumentException.ThrowIfNullOrWhiteSpace(origin);
+
+		// Reconciling a file makes the vault the authority on the entity it describes, so a client must
+		// apply what comes out of this even over an edit it has in flight.
+		using var critical = PlaintorchChangeOrigin.Critical();
 
 		switch (candidate.SuggestedAction)
 		{
@@ -87,6 +92,8 @@ public sealed class VaultWatcherSyncService(
 	{
 		ArgumentNullException.ThrowIfNull(candidate);
 		ArgumentException.ThrowIfNullOrWhiteSpace(origin);
+
+		using var critical = PlaintorchChangeOrigin.Critical();
 
 		if (!candidate.IsValid)
 		{

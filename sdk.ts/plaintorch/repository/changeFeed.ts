@@ -7,6 +7,11 @@ export interface EntityChangeEvent {
 	type: string
 	id: string
 	operation: "Added" | "Modified" | "Deleted"
+	/**
+	 * Whether this must be applied even over an edit made since the read went out. Set by the core for the
+	 * vault reconciling a hand-edited file, and for removals.
+	 */
+	critical?: boolean
 }
 
 export interface ChangeFeedOptions {
@@ -154,8 +159,14 @@ export class PlaintorchChangeFeed {
 			return
 		}
 
-		// A write this client is still making holds its identity, so the echo of it cannot refetch over an
-		// edit that has not settled yet.
+		// A local edit normally outranks a refresh, so the echo of this client's own write cannot revert it.
+		// A critical change is the core saying otherwise — the vault reconciling a hand-edited file is the
+		// authority on that entity, and a removal leaves nothing for an edit to be about — so the local
+		// claim is given up and the revalidation that follows is allowed to win.
+		if (change.critical) {
+			this.repositories.acceptAuthority(change.type, change.id)
+		}
+
 		this.repositories.invalidation.invalidate(change.type as EntityTypeName, change.id)
 	}
 }
