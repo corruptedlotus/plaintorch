@@ -233,6 +233,41 @@ public class PlainfraContext : DbContext
 		modelBuilder.Entity<Dependency>()
 			.HasIndex(x => x.TargetId);
 
+		// A backstop for the uniqueness rule DependencyRules enforces (source-target-trigger-constraint). It
+		// catches exact duplicates; SQLite counts each null as distinct, so a duplicate with a defaulted
+		// (null) trigger slips past it, which is why the application check on the resolved values is the
+		// authority and this only supplements it (PEP102).
+		modelBuilder.Entity<Dependency>()
+			.HasIndex(x => new
+			{
+				x.SourceKind,
+				x.SourceId,
+				x.SourceRecurrenceDate,
+				x.SourceRecurrenceTime,
+				x.TargetKind,
+				x.TargetId,
+				x.TargetRecurrenceDate,
+				x.TargetRecurrenceTime,
+				x.Trigger,
+				x.Constraint,
+			})
+			.IsUnique();
+
+		// PEP102 milestone binding: an onrush tracks checkpoints like objectives (its milestone one of them),
+		// and names one of them as its milestone. Both sides detach rather than cascade — deleting a sprint
+		// leaves its checkpoints, and a checkpoint that is a milestone is refused deletion in the service.
+		modelBuilder.Entity<OnrushSprint>()
+			.HasMany(x => x.Checkpoints)
+			.WithOne(x => x.OnrushSprint)
+			.HasForeignKey(x => x.OnrushSprintId)
+			.OnDelete(DeleteBehavior.SetNull);
+
+		modelBuilder.Entity<OnrushSprint>()
+			.HasOne(x => x.MilestoneCheckpoint)
+			.WithMany()
+			.HasForeignKey(x => x.MilestoneCheckpointId)
+			.OnDelete(DeleteBehavior.SetNull);
+
 		modelBuilder.Entity<Attentive>()
 			.Property(x => x.Resolution)
 			.HasConversion<string>();

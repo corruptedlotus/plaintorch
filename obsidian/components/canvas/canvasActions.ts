@@ -1,12 +1,13 @@
 import {
 	DependencyConstraint,
+	DependencyEndpointKind,
 	DependencyTrigger,
 	type DependencyEndpointRequest,
 	type EndpointRef,
 	type OnrushSprint
 } from '@pleiades/sdk'
 import { Notice } from 'obsidian'
-import { core } from '..'
+import { core, PromptTextModal } from '..'
 import { effectiveConstraint, effectiveTrigger, sourceRef, targetRef, type CanvasEdge } from './graphModel'
 import type { CanvasContextMode } from './graphContext'
 
@@ -30,10 +31,28 @@ function toRequest(ref: EndpointRef): DependencyEndpointRequest {
 }
 
 /**
+ * Sends a create with the trigger and constraint each end actually admits.
+ *
+ * A checkpoint has no begin or finish, so its side is left empty however the caller asked; the core rejects a
+ * checkpoint endpoint that carries one. The single place both drawing and reshaping route through, so neither
+ * can send an edge the validator will refuse for that reason.
+ */
+function sendCreate(source: EndpointRef, target: EndpointRef, trigger: DependencyTrigger, constraint: DependencyConstraint) {
+	return core.dependencies.create({
+		source: toRequest(source),
+		target: toRequest(target),
+		trigger: source.kind === DependencyEndpointKind.Checkpoint ? undefined : trigger,
+		constraint: target.kind === DependencyEndpointKind.Checkpoint ? undefined : constraint
+	})
+}
+
+/**
  * Draws a new edge: the source blocks the target.
  *
  * Defaults to the pairing the core itself defaults to — satisfied when the prerequisite finishes, gating the
- * dependant's begin — which is the ordinary reading of "this comes before that".
+ * dependant's begin — which is the ordinary reading of "this comes before that". A checkpoint endpoint is the
+ * exception on its own side: it has no begin or finish, so a checkpoint source carries no trigger and a
+ * checkpoint target no constraint, which the core requires to be empty rather than defaulted.
  */
 export async function createDependency(
 	source: EndpointRef,
@@ -41,13 +60,7 @@ export async function createDependency(
 	trigger: DependencyTrigger = DependencyTrigger.OnFinish,
 	constraint: DependencyConstraint = DependencyConstraint.ToBegin
 ): Promise<boolean> {
-	const created = await core.dependencies.create({
-		source: toRequest(source),
-		target: toRequest(target),
-		trigger,
-		constraint
-	})
-
+	const created = await sendCreate(source, target, trigger, constraint)
 	if (!created) {
 		new Notice('PLAINTORCH refused that dependency.')
 		return false
@@ -92,21 +105,10 @@ export async function reshapeDependency(
 		return false
 	}
 
-	const recreated = await core.dependencies.create({
-		source: toRequest(source),
-		target: toRequest(target),
-		trigger,
-		constraint
-	})
-
+	const recreated = await sendCreate(source, target, trigger, constraint)
 	if (!recreated) {
 		new Notice('PLAINTORCH refused the change; restoring the dependency.')
-		await core.dependencies.create({
-			source: toRequest(source),
-			target: toRequest(target),
-			trigger: effectiveTrigger(edge.dependency),
-			constraint: effectiveConstraint(edge.dependency)
-		})
+		await sendCreate(source, target, effectiveTrigger(edge.dependency), effectiveConstraint(edge.dependency))
 		await refreshGraph()
 		return false
 	}
@@ -147,18 +149,66 @@ export async function removeObjectiveFromOnrush(objectiveId: string): Promise<bo
 	return true
 }
 
+/**
+ * Adds a new checkpoint the sprint tracks, asking for its title first.
+ *
+ * Created already bound to the sprint, so it appears on the canvas as one of the sprint's checkpoints beside
+ * its milestone. A dismissed prompt is not a failure and does nothing.
+ */
+export async function addCheckpointToOnrush(sprint: OnrushSprint): Promise<boolean> {
+	let title: string | undefined
+	try {
+		title = await PromptTextModal.prompt('New Checkpoint', 'Title')
+	}
+	catch {
+		return false
+	}
+
+	if (!title) {
+		return false
+	}
+
+	const created = await core.dependencies.createCheckpoint({ title, onrushSprintId: sprint.id })
+	if (!created) {
+		new Notice('PLAINTORCH could not create that checkpoint.')
+		return false
+	}
+
+	new Notice(`Checkpoint added: ${title}`)
+	await refreshOnrush()
+	return true
+}
+
+/** Deletes a checkpoint (and the edges touching it). A milestone is refused by the core and never offered. */
+export async function deleteCheckpoint(checkpointId: string): Promise<boolean> {
+	const deleted = await core.dependencies.deleteCheckpoint(checkpointId)
+	if (!deleted) {
+		new Notice('PLAINTORCH could not delete that checkpoint.')
+		return false
+	}
+
+	await Promise.all([refreshGraph(), refreshOnrush()])
+	return true
+}
+
 /** Re-reads the edges after a write to them. */
 export async function refreshGraph(): Promise<void> {
 	await core.repos.dependencyList.refresh()
 }
 
-/** Re-reads both sprints, since which one holds an objective is what just changed. */
+/** Re-reads both sprints (and the checkpoint listing), since what a sprint holds is what just changed. */
 export async function refreshOnrush(): Promise<void> {
 	await Promise.all([
 		core.repos.onrushCurrent.refresh(),
 		core.repos.onrushPlanning.refresh(),
-		core.repos.objectiveList.refresh()
+		core.repos.objectiveList.refresh(),
+		core.repos.checkpointList.refresh()
 	])
+}
+
+/** Persists the sprint's canvas layout — best effort, since a lost layout only costs a re-placement. */
+export async function saveGraphLayout(sprintId: string, layout: string | undefined): Promise<void> {
+	await core.onrush.setGraphLayout(sprintId, layout)
 }
 
 /** Which repository record a mode reads its sprint from. */

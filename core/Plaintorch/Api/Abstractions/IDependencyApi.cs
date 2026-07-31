@@ -36,7 +36,7 @@ public interface IDependencyApi
 	/// <summary>
 	/// Creates a checkpoint.
 	/// </summary>
-	Task<Checkpoint> CreateCheckpointAsync(string title, string? requestedId = null, int? celestronToll = null, bool? externalCondition = null, CancellationToken cancellationToken = default);
+	Task<Checkpoint> CreateCheckpointAsync(string title, string? requestedId = null, int? celestronToll = null, bool? externalCondition = null, string? onrushSprintId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Gets a checkpoint by id.

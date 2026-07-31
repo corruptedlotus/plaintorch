@@ -39,4 +39,16 @@ public sealed class Checkpoint : PuckNamedEntity
 	/// reconciler; it is the emitted unlock signal that satisfies dependencies whose source is this checkpoint.
 	/// </summary>
 	public bool Unlocked { get; set; }
+
+	/// <summary>
+	/// Gets or sets the onrush sprint that tracks this checkpoint, if any (PEP102). An onrush tracks
+	/// checkpoints the way it tracks objectives; a sprint's milestone is one of them, singled out by
+	/// <see cref="OnrushSprint.MilestoneCheckpointId"/>.
+	/// </summary>
+	public string? OnrushSprintId { get; set; }
+
+	/// <summary>
+	/// Gets or sets the onrush sprint that tracks this checkpoint.
+	/// </summary>
+	public OnrushSprint? OnrushSprint { get; set; }
 }

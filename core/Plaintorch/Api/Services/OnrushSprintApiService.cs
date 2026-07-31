@@ -37,10 +37,35 @@ public sealed class OnrushSprintApiService(
 		};
 
 		context.OnrushSprints.Add(sprint);
+		AttachMilestone(sprint);
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownFileService.SaveOnrushSprintAsync(sprint, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.plan", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
+	}
+
+	/// <summary>
+	/// Gives a sprint its milestone checkpoint (PEP102), unless it already has one. The checkpoint is tracked
+	/// by the sprint like an objective, and named as its milestone; it carries no toll or external condition,
+	/// so it stands purely for the sprint's completion.
+	/// </summary>
+	private void AttachMilestone(OnrushSprint sprint)
+	{
+		if (!string.IsNullOrWhiteSpace(sprint.MilestoneCheckpointId))
+		{
+			return;
+		}
+
+		var milestone = new Checkpoint
+		{
+			Id = puckCreationService.CreateIdFor<Checkpoint>(),
+			Title = $"{sprint.Title} milestone",
+			OnrushSprintId = sprint.Id,
+		};
+
+		context.Checkpoints.Add(milestone);
+		sprint.MilestoneCheckpointId = milestone.Id;
+		sprint.MilestoneCheckpoint = milestone;
 	}
 
 	/// <inheritdoc />
@@ -49,6 +74,7 @@ public sealed class OnrushSprintApiService(
 		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
 		var sprint = await context.OnrushSprints
 			.Include(item => item.Objectives)
+			.Include(item => item.MilestoneCheckpoint)
 			.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
 			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
 
@@ -76,6 +102,29 @@ public sealed class OnrushSprintApiService(
 				objective.OnrushSprintId = activatedSprint.Id;
 			}
 
+			// Carry the milestone (and any other tracked checkpoints) onto the real sprint before the
+			// placeholder is removed, so the milestone begun with the sprint is the one it planned with rather
+			// than a fresh one. A placeholder from before this feature has none, so one is attached instead.
+			var trackedCheckpoints = await context.Checkpoints
+				.Where(checkpoint => checkpoint.OnrushSprintId == sprint.Id)
+				.ToListAsync(cancellationToken);
+			foreach (var checkpoint in trackedCheckpoints)
+			{
+				checkpoint.OnrushSprintId = activatedSprint.Id;
+			}
+
+			if (!string.IsNullOrWhiteSpace(sprint.MilestoneCheckpointId))
+			{
+				activatedSprint.MilestoneCheckpointId = sprint.MilestoneCheckpointId;
+				// Detach the milestone from the placeholder first: its row is about to be removed, and the FK
+				// would otherwise still name it.
+				sprint.MilestoneCheckpointId = null;
+			}
+			else
+			{
+				AttachMilestone(activatedSprint);
+			}
+
 			context.OnrushSprints.Remove(sprint);
 			await context.SaveChangesAsync(cancellationToken);
 			await markdownFileService.SaveOnrushSprintAsync(activatedSprint, previous, cancellationToken: cancellationToken);
@@ -84,6 +133,7 @@ public sealed class OnrushSprintApiService(
 		}
 
 		sprint.StartDate = resolvedStartDate;
+		AttachMilestone(sprint);
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.begin", subject: sprint, cancellationToken: cancellationToken);
@@ -102,6 +152,7 @@ public sealed class OnrushSprintApiService(
 		};
 
 		context.OnrushSprints.Add(sprint);
+		AttachMilestone(sprint);
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownFileService.SaveOnrushSprintAsync(sprint, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.start-new", subject: sprint, cancellationToken: cancellationToken);
@@ -132,6 +183,8 @@ public sealed class OnrushSprintApiService(
 				.AsNoTracking()
 				.Include(sprint => sprint.Objectives)
 				.Include(sprint => sprint.ExecutiveOrders)
+				.Include(sprint => sprint.Checkpoints)
+				.Include(sprint => sprint.MilestoneCheckpoint)
 				.FirstOrDefaultAsync(sprint => sprint.Id == onrushSprintId, cancellationToken);
 		}
 
@@ -145,6 +198,8 @@ public sealed class OnrushSprintApiService(
 			.AsNoTracking()
 			.Include(sprint => sprint.Objectives)
 			.Include(sprint => sprint.ExecutiveOrders)
+			.Include(sprint => sprint.Checkpoints)
+			.Include(sprint => sprint.MilestoneCheckpoint)
 			.FirstOrDefaultAsync(sprint => sprint.Id == activeSprint.Id, cancellationToken);
 	}
 
@@ -161,6 +216,8 @@ public sealed class OnrushSprintApiService(
 			.AsNoTracking()
 			.Include(sprint => sprint.Objectives)
 			.Include(sprint => sprint.ExecutiveOrders)
+			.Include(sprint => sprint.Checkpoints)
+			.Include(sprint => sprint.MilestoneCheckpoint)
 			.FirstOrDefaultAsync(sprint => sprint.Id == planningSprint.Id, cancellationToken);
 	}
 
@@ -223,6 +280,19 @@ public sealed class OnrushSprintApiService(
 		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.update", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
+	}
+
+	/// <inheritdoc />
+	public async Task SetGraphLayoutAsync(string onrushSprintId, string? graphLayout, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
+		var sprint = await context.OnrushSprints.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
+			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
+
+		// The column only; no markdown rewrite and no audit entry. Layout is UI state, written on every drag,
+		// and rewriting the sprint's note or logging each nudge would be churn for something the vault never sees.
+		sprint.GraphLayout = graphLayout;
+		await context.SaveChangesAsync(cancellationToken);
 	}
 
 	/// <inheritdoc />

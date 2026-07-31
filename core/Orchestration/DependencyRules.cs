@@ -9,8 +9,16 @@ public static class DependencyRules
 {
 	/// <summary>
 	/// Validates a prospective dependency edge (source blocks target) against the structural rules and the
-	/// existing edge set (for cycle detection).
+	/// existing edge set (for the uniqueness rule).
 	/// </summary>
+	/// <remarks>
+	/// These are the pure rules. Logical possibility — whether the edge contradicts the begin/finish ordering
+	/// the existing edges already impose — is a temporal reachability question over the whole graph and is
+	/// checked in the application layer against the database (PEP102), which also subsumes the plain
+	/// node-level acyclicity this used to enforce: a temporal contradiction is always a node cycle, but a node
+	/// cycle is not always a contradiction (a begin gating a begin gating the same node's finish is fine), so
+	/// the coarse check would forbid orderings the temporal one correctly allows.
+	/// </remarks>
 	/// <param name="source">The source (blocking/prerequisite) endpoint.</param>
 	/// <param name="target">The target (blocked/dependant) endpoint.</param>
 	/// <param name="trigger">The source-side trigger, or <see langword="null"/>.</param>
@@ -25,10 +33,13 @@ public static class DependencyRules
 	{
 		ArgumentNullException.ThrowIfNull(existing);
 
-		if (source == target)
+		// Same node, whatever occurrence slot each side names: an entity cannot be its own prerequisite.
+		if (source.Kind == target.Kind && string.Equals(source.Id, target.Id, StringComparison.OrdinalIgnoreCase))
 		{
 			throw new InvalidOperationException("A dependency cannot link an endpoint to itself.");
 		}
+
+		EnsureNotDuplicate(source, target, trigger, constraint, existing);
 
 		if (source.Kind == DependencyEndpointKind.Checkpoint && trigger is not null)
 		{
@@ -42,7 +53,50 @@ public static class DependencyRules
 
 		EnsureRecurrenceShape("source", source);
 		EnsureRecurrenceShape("target", target);
-		EnsureNoCycle(source, target, existing);
+	}
+
+	/// <summary>
+	/// The trigger an edge acts on once the omitted default is resolved (finish-triggered), so a null and an
+	/// explicit <see cref="DependencyTrigger.OnFinish"/> count as the one relation. A checkpoint source leaves
+	/// it empty and has no default.
+	/// </summary>
+	private static DependencyTrigger? EffectiveTrigger(EndpointRef source, DependencyTrigger? trigger)
+	{
+		return source.Kind == DependencyEndpointKind.Checkpoint ? null : trigger ?? DependencyTrigger.OnFinish;
+	}
+
+	/// <summary>
+	/// The constraint an edge gates once the omitted default is resolved (begin-constraining). A checkpoint
+	/// target leaves it empty.
+	/// </summary>
+	private static DependencyConstraint? EffectiveConstraint(EndpointRef target, DependencyConstraint? constraint)
+	{
+		return target.Kind == DependencyEndpointKind.Checkpoint ? null : constraint ?? DependencyConstraint.ToBegin;
+	}
+
+	private static void EnsureNotDuplicate(
+		EndpointRef source,
+		EndpointRef target,
+		DependencyTrigger? trigger,
+		DependencyConstraint? constraint,
+		IReadOnlyCollection<Dependency> existing)
+	{
+		// Compared on the resolved trigger and constraint, not the raw nullable columns, so an edge saved with
+		// an explicit finish-trigger and one that left it to the default are recognised as the same relation
+		// rather than sneaking past as distinct. A SQLite unique index cannot do this itself — it treats each
+		// null as distinct — so this is the authority and the index is a backstop for the non-null case.
+		var effectiveTrigger = EffectiveTrigger(source, trigger);
+		var effectiveConstraint = EffectiveConstraint(target, constraint);
+		foreach (var dependency in existing)
+		{
+			if (dependency.Source == source
+				&& dependency.Target == target
+				&& EffectiveTrigger(dependency.Source, dependency.Trigger) == effectiveTrigger
+				&& EffectiveConstraint(dependency.Target, dependency.Constraint) == effectiveConstraint)
+			{
+				throw new InvalidOperationException("An identical dependency already exists between these two endpoints.");
+			}
+		}
 	}
 
 	private static void EnsureRecurrenceShape(string side, EndpointRef endpoint)
@@ -65,37 +119,4 @@ public static class DependencyRules
 		}
 	}
 
-	private static void EnsureNoCycle(EndpointRef source, EndpointRef target, IReadOnlyCollection<Dependency> existing)
-	{
-		// Model "X depends on Y" as an edge X -> Y (dependant -> prerequisite). The new edge is target -> source.
-		// A cycle forms if `source` can already reach `target` through existing depends-on edges.
-		var adjacency = existing
-			.GroupBy(dependency => dependency.Target)
-			.ToDictionary(group => group.Key, group => group.Select(dependency => dependency.Source).ToList());
-
-		var visited = new HashSet<EndpointRef>();
-		var stack = new Stack<EndpointRef>();
-		stack.Push(source);
-		while (stack.Count > 0)
-		{
-			var node = stack.Pop();
-			if (!visited.Add(node))
-			{
-				continue;
-			}
-
-			if (node == target)
-			{
-				throw new InvalidOperationException("Adding this dependency would create a cycle in the dependency graph.");
-			}
-
-			if (adjacency.TryGetValue(node, out var prerequisites))
-			{
-				foreach (var prerequisite in prerequisites)
-				{
-					stack.Push(prerequisite);
-				}
-			}
-		}
-	}
 }

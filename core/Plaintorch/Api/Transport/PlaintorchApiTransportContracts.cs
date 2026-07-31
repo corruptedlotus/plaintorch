@@ -28,7 +28,8 @@ public sealed record CreateCheckpointRequest(
 	string Title,
 	string? Id = null,
 	int? CelestronToll = null,
-	bool? ExternalCondition = null);
+	bool? ExternalCondition = null,
+	string? OnrushSprintId = null);
 
 /// <summary>
 /// Represents the transport payload used to set a checkpoint's external condition switch (PEP101).
@@ -76,6 +77,12 @@ public sealed record AddObjectiveToOnrushRequest(string OnrushSprintId);
 /// Represents the transport payload used to shift onrush sprint dates.
 /// </summary>
 public sealed record OnrushSprintDateRequest(DateOnly? Date = null);
+
+/// <summary>
+/// Represents the transport payload that persists a sprint's dependency-canvas layout (PEP102). A
+/// <see langword="null"/> layout forgets the saved positions.
+/// </summary>
+public sealed record SetGraphLayoutRequest(string? Layout = null);
 
 /// <summary>
 /// Represents the transport payload used to shift Polaris cycle times.

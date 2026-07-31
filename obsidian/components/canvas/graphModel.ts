@@ -12,6 +12,26 @@ export interface CanvasNode {
 	readonly key: string
 	readonly ref: EndpointRef
 	readonly entity: CanvasEntity
+	/**
+	 * A node the context does not itself contain, pulled in only because it blocks something that is — an
+	 * out-of-onrush prerequisite (PEP102). Drawn faintly, never removable, and gone on its own once the block
+	 * it explains is resolved.
+	 */
+	readonly ghostly?: boolean
+	/** The checkpoint that stands for the onrush's completion (PEP102). At most one, never removable. */
+	readonly milestone?: boolean
+}
+
+/** The runtime type name under which the store tracks an entity of each endpoint kind, for resolution. */
+export function endpointTypeName(kind: DependencyEndpointKind): string | undefined {
+	switch (kind) {
+		case DependencyEndpointKind.Directive: return 'Directive'
+		case DependencyEndpointKind.Objective: return 'Objective'
+		case DependencyEndpointKind.Fate: return 'Fate'
+		case DependencyEndpointKind.Checkpoint: return 'Checkpoint'
+		// An eventive names its owner under its own id but a different type, which cannot be told apart here.
+		default: return undefined
+	}
 }
 
 /** One dependency edge, resolved onto the nodes it joins. */

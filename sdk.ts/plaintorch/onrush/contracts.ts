@@ -6,4 +6,5 @@ export type {
 	OnrushSprint,
 	OnrushSprintPlan,
 	OnrushSprintUpdate,
+	SetGraphLayoutRequest,
 } from "./models"

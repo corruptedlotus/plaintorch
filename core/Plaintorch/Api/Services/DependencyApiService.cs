@@ -1,4 +1,6 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
@@ -29,6 +31,7 @@ public sealed class DependencyApiService(
 
 		var existing = await context.Dependencies.AsNoTracking().ToListAsync(cancellationToken);
 		DependencyRules.EnsureValid(source, target, trigger, constraint, existing);
+		await EnsureLogicallyPossibleAsync(source, target, trigger, constraint, cancellationToken);
 
 		var dependency = new Dependency
 		{
@@ -99,12 +102,18 @@ public sealed class DependencyApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<Checkpoint> CreateCheckpointAsync(string title, string? requestedId = null, int? celestronToll = null, bool? externalCondition = null, CancellationToken cancellationToken = default)
+	public async Task<Checkpoint> CreateCheckpointAsync(string title, string? requestedId = null, int? celestronToll = null, bool? externalCondition = null, string? onrushSprintId = null, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(title);
 		if (celestronToll is < 0)
 		{
 			throw new InvalidOperationException("A checkpoint's Celestron toll cannot be negative.");
+		}
+
+		if (!string.IsNullOrWhiteSpace(onrushSprintId)
+			&& !await context.OnrushSprints.AnyAsync(sprint => sprint.Id == onrushSprintId, cancellationToken))
+		{
+			throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
 		}
 
 		var checkpoint = new Checkpoint
@@ -113,6 +122,7 @@ public sealed class DependencyApiService(
 			Title = title,
 			CelestronToll = celestronToll,
 			ExternalCondition = externalCondition,
+			OnrushSprintId = string.IsNullOrWhiteSpace(onrushSprintId) ? null : onrushSprintId,
 		};
 
 		context.Checkpoints.Add(checkpoint);
@@ -140,6 +150,13 @@ public sealed class DependencyApiService(
 		ArgumentException.ThrowIfNullOrWhiteSpace(checkpointId);
 		var checkpoint = await context.Checkpoints.FirstOrDefaultAsync(item => item.Id == checkpointId, cancellationToken)
 			?? throw new InvalidOperationException($"Checkpoint '{checkpointId}' was not found.");
+
+		// A milestone stands for its onrush's completion and is bound to it for the sprint's life (PEP102):
+		// it goes only when the sprint does, never on its own.
+		if (await context.OnrushSprints.AnyAsync(sprint => sprint.MilestoneCheckpointId == checkpointId, cancellationToken))
+		{
+			throw new InvalidOperationException("A sprint's milestone checkpoint cannot be deleted on its own.");
+		}
 
 		var edges = await context.Dependencies
 			.Where(dependency =>
@@ -220,6 +237,123 @@ public sealed class DependencyApiService(
 			details: new { met, unlocked = checkpoint.Unlocked },
 			cancellationToken: cancellationToken);
 		return checkpoint;
+	}
+
+	/// <summary>
+	/// Whether the target's side (constraint, or a checkpoint's empty side) is on the shared begin/finish axis.
+	/// </summary>
+	private static object SideOf(DependencyEndpointKind kind, DependencyConstraint? constraint)
+	{
+		return kind == DependencyEndpointKind.Checkpoint
+			? DBNull.Value
+			: constraint == DependencyConstraint.ToFinish ? 1 : 0;
+	}
+
+	/// <inheritdoc cref="SideOf(DependencyEndpointKind, DependencyConstraint?)"/>
+	private static object SideOf(DependencyEndpointKind kind, DependencyTrigger? trigger)
+	{
+		return kind == DependencyEndpointKind.Checkpoint
+			? DBNull.Value
+			: trigger == DependencyTrigger.OnBegin ? 0 : 1;
+	}
+
+	/// <summary>
+	/// Rejects a dependency the existing graph makes logically impossible (PEP102).
+	/// </summary>
+	/// <remarks>
+	/// The new edge asserts <c>source.trigger</c> comes before <c>target.constraint</c>. Impossible if the
+	/// graph already orders them the other way — if, walking forward in time from the target's constrained
+	/// side, the source's triggering side is already reachable. The walk lives in a two-sided state space
+	/// (each node a begin=0 and a finish=1) over three steps: a dependency carries its source's triggering
+	/// side to its dependant's constrained side; a node's begin precedes its own finish; and the start is the
+	/// target's constrained side. A checkpoint has no side — its trigger and constraint are null — so it is a
+	/// dead end here and drops out of the begin→finish step on its own, which is the intended handling.
+	///
+	/// This is temporal-cycle detection, and it is the whole of the cycle rule: it is strictly finer than the
+	/// node-level acyclicity it replaced, since it permits the begin/finish cycles that are actually orderable.
+	/// The trigger and constraint are stored as text and on different vocabularies, so both the stored edges
+	/// and the prospective one are normalised to the shared begin/finish axis, resolving an omitted trigger to
+	/// finish and an omitted constraint to begin, exactly as the engine reads them.
+	/// </remarks>
+	private async Task EnsureLogicallyPossibleAsync(EndpointRef source, EndpointRef target, DependencyTrigger? trigger, DependencyConstraint? constraint, CancellationToken cancellationToken)
+	{
+		// A recursive CTE run directly on the connection rather than through the query pipeline: the pipeline
+		// wraps a raw statement as a subquery, and a top-level WITH cannot be wrapped that way.
+		const string sql = @"
+WITH RECURSIVE
+edges(src, dst, sside, dside) AS (
+    SELECT
+        SourceKind || '|' || SourceId || '|' || COALESCE(SourceRecurrenceDate, '') || '|' || COALESCE(SourceRecurrenceTime, ''),
+        TargetKind || '|' || TargetId || '|' || COALESCE(TargetRecurrenceDate, '') || '|' || COALESCE(TargetRecurrenceTime, ''),
+        CASE WHEN SourceKind = 'Checkpoint' THEN NULL WHEN ""Trigger"" = 'OnBegin' THEN 0 ELSE 1 END,
+        CASE WHEN TargetKind = 'Checkpoint' THEN NULL WHEN ""Constraint"" = 'ToFinish' THEN 1 ELSE 0 END
+    FROM Dependencies
+),
+origin(node, side) AS (
+    SELECT $sourceKind || '|' || $sourceId || '|' || COALESCE($sourceDate, '') || '|' || COALESCE($sourceTime, ''), $sourceSide
+),
+seed(node, side) AS (
+    SELECT $targetKind || '|' || $targetId || '|' || COALESCE($targetDate, '') || '|' || COALESCE($targetTime, ''), $targetSide
+),
+path(node, side) AS (
+    SELECT node, side FROM seed
+    UNION
+    SELECT e.dst, e.dside
+        FROM path p JOIN edges e ON e.src = p.node AND e.sside = p.side
+        WHERE p.node != (SELECT node FROM origin) OR p.side != (SELECT side FROM origin)
+    UNION
+    SELECT x.node, 1 FROM path x WHERE x.side = 0
+)
+SELECT NOT EXISTS (
+    SELECT 1 FROM path JOIN origin ON path.node = origin.node AND path.side = origin.side
+)";
+
+		var connection = context.Database.GetDbConnection();
+		await using var command = connection.CreateCommand();
+		command.CommandText = sql;
+		command.Transaction = context.Database.CurrentTransaction?.GetDbTransaction();
+		AddParameter(command, "$sourceKind", source.Kind.ToString());
+		AddParameter(command, "$sourceId", source.Id);
+		AddParameter(command, "$sourceDate", (object?)source.RecurrenceDate ?? DBNull.Value);
+		AddParameter(command, "$sourceTime", (object?)source.RecurrenceTime ?? DBNull.Value);
+		AddParameter(command, "$targetKind", target.Kind.ToString());
+		AddParameter(command, "$targetId", target.Id);
+		AddParameter(command, "$targetDate", (object?)target.RecurrenceDate ?? DBNull.Value);
+		AddParameter(command, "$targetTime", (object?)target.RecurrenceTime ?? DBNull.Value);
+		AddParameter(command, "$sourceSide", SideOf(source.Kind, trigger));
+		AddParameter(command, "$targetSide", SideOf(target.Kind, constraint));
+
+		var opened = false;
+		if (connection.State != ConnectionState.Open)
+		{
+			await connection.OpenAsync(cancellationToken);
+			opened = true;
+		}
+
+		try
+		{
+			var possible = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+			if (possible == 0)
+			{
+				throw new InvalidOperationException(
+					"This dependency is logically impossible: it would contradict the begin/finish ordering the existing dependencies already impose.");
+			}
+		}
+		finally
+		{
+			if (opened)
+			{
+				await connection.CloseAsync();
+			}
+		}
+	}
+
+	private static void AddParameter(System.Data.Common.DbCommand command, string name, object value)
+	{
+		var parameter = command.CreateParameter();
+		parameter.ParameterName = name;
+		parameter.Value = value;
+		command.Parameters.Add(parameter);
 	}
 
 	private async Task ValidateEndpointAsync(string side, EndpointRef endpoint, CancellationToken cancellationToken)

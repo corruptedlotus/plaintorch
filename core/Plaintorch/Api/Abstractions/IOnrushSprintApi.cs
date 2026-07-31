@@ -54,6 +54,13 @@ public interface IOnrushSprintApi
 	Task<OnrushSprint> UpdateAsync(string onrushSprintId, OnrushSprintUpdate update, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Persists the dependency-canvas layout of a sprint (PEP102): a JSON map of node key to position, or
+	/// <see langword="null"/> to forget it. Database-only UI state, so it touches neither the vault nor the
+	/// audit log — it is written often (after a drag) and losing it costs only a re-layout.
+	/// </summary>
+	Task SetGraphLayoutAsync(string onrushSprintId, string? graphLayout, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Assigns all onrush-state objectives to the target sprint.
 	/// </summary>
 	Task<IReadOnlyList<Objective>> AssignAllOnrushStateObjectivesToSelfAsync(string onrushSprintId, CancellationToken cancellationToken = default);

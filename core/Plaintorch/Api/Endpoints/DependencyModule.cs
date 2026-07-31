@@ -51,7 +51,7 @@ public sealed class DependencyModule : Module
 
 		checkpoints.MapPost("/", async (CreateCheckpointRequest request, IDependencyApi api, CancellationToken cancellationToken) =>
 		{
-			var checkpoint = await api.CreateCheckpointAsync(request.Title, request.Id, request.CelestronToll, request.ExternalCondition, cancellationToken);
+			var checkpoint = await api.CreateCheckpointAsync(request.Title, request.Id, request.CelestronToll, request.ExternalCondition, request.OnrushSprintId, cancellationToken);
 			return Results.Created($"/api/checkpoints/{checkpoint.Id}", checkpoint);
 		});
 

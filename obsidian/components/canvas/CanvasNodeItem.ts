@@ -29,6 +29,15 @@ export interface CanvasNodePointer {
 }
 
 /**
+ * How an entity is held back by its unmet dependencies.
+ *
+ * `blocked` is the severe case — an unmet dependency gating its *begin*, so it cannot even start. `raced` is
+ * the softer one — only its *finish* is gated (a to-finish constraint), so it may run but not complete, a
+ * race it is expected to win. `none` is unencumbered.
+ */
+export type NodeLock = 'none' | 'blocked' | 'raced'
+
+/**
  * One node of the dependency canvas.
  *
  * An entity item with the affordances a graph needs rather than a component of its own: the card, the notch,
@@ -46,8 +55,17 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 
 	@property({ type: Boolean, reflect: true }) selected = false
 
-	/** Whether an unsatisfied dependency is holding this entity back. */
-	@property({ type: Boolean, reflect: true }) blocked = false
+	/**
+	 * Whether this node is the one in focus — clicked into, so the elements inside it take their own clicks.
+	 * Reserved as the hook a later pass expands its shown data behind.
+	 */
+	@property({ type: Boolean, reflect: true }) active = false
+
+	/** How this entity's unmet dependencies hold it back, drawn as a badge and a border tint. */
+	@property({ reflect: true }) lock: NodeLock = 'none'
+
+	/** Whether this is a pulled-in blocker rather than a member — drawn faintly, and not removable. */
+	@property({ type: Boolean, reflect: true }) ghostly = false
 
 	/** Whether an edge is being drawn somewhere on the canvas, which is when a node becomes a drop target. */
 	@property({ type: Boolean, reflect: true }) linking = false
@@ -79,8 +97,35 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 				box-shadow: 0 0 0 2px color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 35%, transparent);
 			}
 
-			:host([blocked]) {
+			:host([active]) {
+				cursor: default;
+				box-shadow: 0 0 0 2px var(--p7t-flare-accent, var(--interactive-accent)), 0 6px 20px rgb(0 0 0 / .22);
+			}
+
+			:host([lock='blocked']) {
 				border-color: color-mix(in srgb, var(--text-error, crimson) 45%, transparent);
+			}
+
+			/* Raced is the softer state — a finish it has yet to win, not a begin it is barred from. */
+			:host([lock='raced']) {
+				border-color: color-mix(in srgb, var(--text-warning, goldenrod) 45%, transparent);
+			}
+
+			/* A blocker shown for context, not a member: faint, and dashed to read as not-quite-here. */
+			:host([ghostly]) {
+				opacity: .55;
+				border-style: dashed;
+				background-color: color-mix(in srgb, var(--background-primary, transparent) 70%, transparent);
+			}
+
+			/*
+			 * Until the node is the active one its body is inert, so a press anywhere on it selects and moves
+			 * the node rather than triggering the title or the notch beneath the finger. Clicking into the node
+			 * makes it active, and only then do its own controls take their clicks. The connection handles stay
+			 * live throughout — an edge can be drawn from a node without first focusing it.
+			 */
+			:host(:not([active])) .grid {
+				pointer-events: none;
 			}
 
 			/*
@@ -138,18 +183,25 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 				line-height: .9;
 			}
 
-			.blocked-badge {
+			.lock-badge {
 				display: flex;
 				align-items: center;
 				gap: 3px;
 				font-size: .85em;
 				line-height: .9;
-				color: color-mix(in srgb, var(--text-error, crimson) 80%, var(--text-normal));
 
 				& p7t-icon {
 					width: 1.1em;
 					height: 1.1em;
 				}
+			}
+
+			.lock-badge.blocked {
+				color: color-mix(in srgb, var(--text-error, crimson) 80%, var(--text-normal));
+			}
+
+			.lock-badge.raced {
+				color: color-mix(in srgb, var(--text-warning, goldenrod) 80%, var(--text-normal));
 			}
 		`
 	}
@@ -179,12 +231,25 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 	}
 
 	protected override get info() {
-		return !this.blocked ? html`` : html`
-			<div class='blocked-badge'>
-				<p7t-icon icon='state-blocked'></p7t-icon>
-				<span>Blocked</span>
-			</div>
-		`
+		if (this.lock === 'blocked') {
+			return html`
+				<div class='lock-badge blocked'>
+					<p7t-icon icon='state-blocked'></p7t-icon>
+					<span>Blocked</span>
+				</div>
+			`
+		}
+
+		if (this.lock === 'raced') {
+			return html`
+				<div class='lock-badge raced'>
+					<p7t-icon icon='state-onrush'></p7t-icon>
+					<span>Raced</span>
+				</div>
+			`
+		}
+
+		return html``
 	}
 
 	/**
