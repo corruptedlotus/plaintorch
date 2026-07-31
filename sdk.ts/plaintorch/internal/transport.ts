@@ -5,6 +5,28 @@ export interface PlaintorchCoreRequest {
 	headers?: Record<string, string>
 }
 
+/**
+ * How long a request may go unanswered before it is treated as failed.
+ *
+ * There was no bound at all, and an unanswered request never settles. Combined with the request dedup a
+ * repository keeps, one stalled call poisoned that identity for the rest of the session: every later read of
+ * it joined the same promise and waited forever, and any surface action awaiting a read hung with it.
+ */
+export const defaultRequestTimeoutMs = 10_000
+
+/** How long establishing a long-lived stream may take. The stream itself is then unbounded by design. */
+export const defaultStreamConnectTimeoutMs = 10_000
+
+/**
+ * Whether a request can be safely sent again after a timeout.
+ *
+ * Only reads. A write that timed out may well have been applied, and repeating it could duplicate the
+ * effect — reporting the failure is the honest outcome there.
+ */
+export function isRetryable(request: PlaintorchCoreRequest): boolean {
+	return request.method === "GET"
+}
+
 export interface PlaintorchCoreResponse {
 	ok: boolean
 	status: number

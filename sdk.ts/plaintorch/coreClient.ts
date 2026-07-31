@@ -13,7 +13,7 @@ import { PlaintorchPolarisSdk } from "./polaris/polarisSdk"
 import { PlaintorchLoreSdk } from "./lore/loreSdk"
 import { PlaintorchDependenciesSdk } from "./dependencies/dependenciesSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
-import { createAbsorbingReviver, EntityStore, PlaintorchRepositories } from "./repository"
+import { createAbsorbingReviver, EntityStore, PlaintorchRepositories, type AbsorptionContext } from "./repository"
 
 
 export interface PlaintorchCoreClientOptions {
@@ -31,7 +31,6 @@ const defaultHost = "127.0.0.1"
 export class PlaintorchCoreClient {
 	private readonly baseUrl: string
 	private readonly transports: PlaintorchCoreTransport[]
-	private readonly reviver: (key: string, value: unknown) => unknown
 	/**
 	 * Canonical instances of every entity this client has seen. Populated by every response the client
 	 * reads, so call sites that have not moved onto repositories still contribute to it.
@@ -62,7 +61,6 @@ export class PlaintorchCoreClient {
 			})
 		]
 		this.store = new EntityStore()
-		this.reviver = createAbsorbingReviver(this.store)
 		this.system = new PlaintorchSystemSdk(this)
 		this.directives = new PlaintorchDirectivesSdk(this)
 		this.objectives = new PlaintorchObjectivesSdk(this)
@@ -79,32 +77,44 @@ export class PlaintorchCoreClient {
 		return `${this.baseUrl}/assets/icons/${encodeURIComponent(icon)}.svg`
 	}
 
-	public async getJson<T>(path: string): Promise<T | undefined> {
+	/**
+	 * @param context Marks a read as authoritative, for changes the core declares a client must not hold
+	 * off. Ordinary reads leave it unset and are discarded for any entity changed locally since they went
+	 * out.
+	 */
+	public async getJson<T>(path: string, context?: AbsorptionContext): Promise<T | undefined> {
+		// Captured before the request leaves, so a change made while it is in flight supersedes it.
+		const issuedAt = this.store.currentRevision
 		return await this.readJsonResponse<T>(
 			await this.send({
 				method: "GET",
 				path
-			})
+			}),
+			{ issuedAt, ...context }
 		)
 	}
 
 	public async postForJson<T>(path: string, body: unknown): Promise<T | undefined> {
+		const issuedAt = this.store.currentRevision
 		return await this.readJsonResponse<T>(
 			await this.send({
 				method: "POST",
 				path,
 				body
-			})
+			}),
+			{ issuedAt }
 		)
 	}
 
 	public async putForJson<T>(path: string, body: unknown): Promise<T | undefined> {
+		const issuedAt = this.store.currentRevision
 		return await this.readJsonResponse<T>(
 			await this.send({
 				method: "PUT",
 				path,
 				body
-			})
+			}),
+			{ issuedAt }
 		)
 	}
 
@@ -159,7 +169,10 @@ export class PlaintorchCoreClient {
 		return undefined
 	}
 
-	private async readJsonResponse<T>(response: PlaintorchCoreResponse | undefined): Promise<T | undefined> {
+	private async readJsonResponse<T>(
+		response: PlaintorchCoreResponse | undefined,
+		context?: AbsorptionContext
+	): Promise<T | undefined> {
 		if (!response) {
 			return undefined
 		}
@@ -169,7 +182,8 @@ export class PlaintorchCoreClient {
 			return undefined
 		}
 
-		return JSON.parse(payload, this.reviver) as T
+		// A reviver per response, because whether it may overwrite local state depends on when it was issued.
+		return JSON.parse(payload, createAbsorbingReviver(this.store, context)) as T
 	}
 
 	private async sendForSuccess(request: PlaintorchCoreRequest): Promise<boolean> {

@@ -67,6 +67,8 @@ public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broke
 	{
 		var changes = new List<EntityChange>();
 		var seen = new HashSet<(string Type, string Id)>();
+		// Read once per save: whatever decided this work was authoritative did so several layers above.
+		var criticalScope = PlaintorchChangeOrigin.IsCritical;
 
 		foreach (var entry in context.ChangeTracker.Entries())
 		{
@@ -76,11 +78,15 @@ public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broke
 				continue;
 			}
 
+			// A removal is authoritative on its own terms: there is nothing left for a local edit to be
+			// about, so a client must not hold it off.
+			var critical = criticalScope || operation.Value == EntityChangeOperation.Deleted;
+
 			if (entry.Entity is IPuckNamedEntity named)
 			{
 				// The runtime type, so a polymorphic entity is announced as what it actually is — a fate
 				// reports Fate, not Incentive — matching the @type the API serializes.
-				Add(changes, seen, entry.Entity.GetType().Name, named.Id, operation.Value);
+				Add(changes, seen, entry.Entity.GetType().Name, named.Id, operation.Value, critical);
 				continue;
 			}
 
@@ -90,8 +96,8 @@ public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broke
 				// so neither branch above reaches it. What a client observes is the entities it joins, so it is
 				// announced as a change to both endpoints. An eventive endpoint names its owner rather than a
 				// tracked type, which still carries: any announcement revalidates the observed listings.
-				Add(changes, seen, dependency.Source.Kind.ToString(), dependency.Source.Id, EntityChangeOperation.Modified);
-				Add(changes, seen, dependency.Target.Kind.ToString(), dependency.Target.Id, EntityChangeOperation.Modified);
+				Add(changes, seen, dependency.Source.Kind.ToString(), dependency.Source.Id, EntityChangeOperation.Modified, critical);
+				Add(changes, seen, dependency.Target.Kind.ToString(), dependency.Target.Id, EntityChangeOperation.Modified, critical);
 				continue;
 			}
 
@@ -99,7 +105,7 @@ public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broke
 			// whichever entity owns it.
 			foreach (var owner in OwnersOf(entry))
 			{
-				Add(changes, seen, owner.Type, owner.Id, EntityChangeOperation.Modified);
+				Add(changes, seen, owner.Type, owner.Id, EntityChangeOperation.Modified, critical);
 			}
 		}
 
@@ -139,11 +145,12 @@ public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broke
 		HashSet<(string Type, string Id)> seen,
 		string type,
 		string id,
-		EntityChangeOperation operation)
+		EntityChangeOperation operation,
+		bool critical)
 	{
 		if (!string.IsNullOrWhiteSpace(id) && seen.Add((type, id)))
 		{
-			changes.Add(new EntityChange(type, id, operation));
+			changes.Add(new EntityChange(type, id, operation, critical));
 		}
 	}
 

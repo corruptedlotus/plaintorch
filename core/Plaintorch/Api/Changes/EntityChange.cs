@@ -25,4 +25,9 @@ public enum EntityChangeOperation
 /// <param name="Type">The runtime type name of the entity, matching what the API serializes as <c>@type</c>.</param>
 /// <param name="Id">The PUCK token of the entity.</param>
 /// <param name="Operation">What happened to the entity.</param>
-public readonly record struct EntityChange(string Type, string Id, EntityChangeOperation Operation);
+/// <param name="Critical">
+/// Whether a client must apply this regardless of edits it has in flight. An ordinary announcement is
+/// advisory — a refresh it triggers loses to a change the user is making — but the vault reconciling a
+/// hand-edited file is the authority on that entity, and a purge removes it outright.
+/// </param>
+public readonly record struct EntityChange(string Type, string Id, EntityChangeOperation Operation, bool Critical = false);

@@ -23,9 +23,33 @@ interface EntityRecord {
  * reference is looking at current state by construction. Synchronizing surfaces is then only a matter
  * of telling them to re-render, which is what subscriptions are for.
  */
+/**
+ * What a caller knows about a response when handing it to the store.
+ */
+export interface AbsorptionContext {
+	/**
+	 * The store's revision at the moment the request was issued. A response is discarded for any identity
+	 * changed since, because it was already out of date before it arrived.
+	 */
+	readonly issuedAt?: number
+	/**
+	 * Whether this must be applied even over an unsettled local change. Reserved for changes the core
+	 * declares authoritative: the vault reconciling a hand-edited file, and removals.
+	 */
+	readonly authoritative?: boolean
+}
+
 export class EntityStore {
 	private readonly records = new Map<EntityKey, EntityRecord>()
 	private readonly globalSubscribers = new Set<EntitySubscriber>()
+	/**
+	 * Advances on every local change, so a response can be compared against the state it was issued under.
+	 *
+	 * A revision counter rather than a clock: two events in the same millisecond still order correctly, and
+	 * nothing depends on the two sides agreeing about time.
+	 */
+	private revision = 0
+	private readonly changedAt = new Map<EntityKey, number>()
 
 	/**
 	 * Registers or merges a value and returns the canonical instance for its identity.
@@ -38,10 +62,16 @@ export class EntityStore {
 	 * initialized ones as their defaults — so without it a response that merely omits a field would
 	 * overwrite the cached value with a default.
 	 */
-	public absorb<T>(value: T, payloadKeys?: readonly string[]): T {
+	public absorb<T>(value: T, payloadKeys?: readonly string[], context?: AbsorptionContext): T {
 		const key = identify(value)
 		if (key === undefined) {
 			return value
+		}
+
+		if (this.isSuperseded(key, context)) {
+			// The local value is newer than this response. Hand back what is already held rather than
+			// reverting an edit the user has made since the request went out.
+			return (this.records.get(key)?.value as T) ?? value
 		}
 
 		const existing = this.records.get(key)
@@ -105,6 +135,44 @@ export class EntityStore {
 		}
 	}
 
+	/** The current revision, to be captured before a request is issued. */
+	public get currentRevision(): number {
+		return this.revision
+	}
+
+	/**
+	 * Records that an identity was changed locally, so responses issued before now stop applying to it.
+	 *
+	 * Called at both ends of a write: on entry, so a read taken while it is in flight is discarded, and on
+	 * completion, so one taken during it is too.
+	 */
+	public noteLocalChange(key: EntityKey): void {
+		this.changedAt.set(key, ++this.revision)
+	}
+
+	/**
+	 * Gives up the local claim on an identity, so the next response applies to it whatever its age.
+	 *
+	 * For changes the core declares authoritative — the vault reconciling a hand-edited file, or a removal.
+	 * Clearing the claim is what makes the following read win, rather than threading a flag from the feed
+	 * down through every fetcher.
+	 */
+	public acceptAuthority(key: EntityKey): void {
+		this.changedAt.delete(key)
+	}
+
+	/**
+	 * Whether a response is older than the local state of an identity.
+	 */
+	private isSuperseded(key: EntityKey, context?: AbsorptionContext): boolean {
+		if (context?.authoritative || context?.issuedAt === undefined) {
+			return false
+		}
+
+		const changed = this.changedAt.get(key)
+		return changed !== undefined && changed > context.issuedAt
+	}
+
 	/**
 	 * Observes every identity at once.
 	 *
@@ -143,6 +211,9 @@ export class EntityStore {
 			return
 		}
 
+		// The instance was edited in place, which is a local change like any other: a response already in
+		// flight predates it and must not be allowed to put the old value back.
+		this.noteLocalChange(key)
 		record.version++
 		this.announce(record)
 	}
@@ -203,6 +274,8 @@ export class EntityStore {
 		if (!record?.value) {
 			return
 		}
+
+		this.noteLocalChange(key)
 
 		if (mergeInto(record.value, change)) {
 			record.version++

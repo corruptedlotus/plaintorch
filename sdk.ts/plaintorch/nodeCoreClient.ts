@@ -3,6 +3,9 @@ import { homedir, userInfo } from "node:os"
 import path from "node:path"
 import {
 	createLoopbackBaseUrl,
+	defaultRequestTimeoutMs,
+	defaultStreamConnectTimeoutMs,
+	isRetryable,
 	toLines,
 	type PlaintorchCoreRequest,
 	type PlaintorchCoreResponse,
@@ -46,23 +49,44 @@ export class NodePlaintorchCoreClient extends PlaintorchCoreClient {
 }
 
 class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
+	public constructor(
+		private readonly socketPath: string,
+		private readonly timeoutMs = defaultRequestTimeoutMs
+	) { }
+
 	/**
-	 * A bounded keep-alive pool for one-shot requests.
+	 * Sends a request, giving a read one further attempt if the core does not answer in time.
 	 *
-	 * Two failure modes are being avoided at once, both of which a resync surfaces because it fans a write
-	 * out into a burst of reads. Reusing connections keeps that burst from opening a fresh pipe connection
-	 * for every request — repeatedly setting one up and tearing it straight down races the server's pool of
-	 * pipe instances and shows up as `read EPIPE`. Capping `maxSockets` keeps the burst from opening an
-	 * unbounded number of them at once; anything past the cap queues on the agent instead. The long-lived
-	 * feed does not use this — it gets its own connection so it never occupies a slot for its whole life.
+	 * A stalled core used to hang the caller indefinitely; a bounded attempt turns that into an ordinary
+	 * failure, which every caller already handles.
 	 */
-	private readonly agent = new Agent({ keepAlive: true, maxSockets: 8 })
-
-	public constructor(private readonly socketPath: string) { }
-
 	public async send(request: PlaintorchCoreRequest): Promise<PlaintorchCoreResponse | undefined> {
-		return await new Promise<PlaintorchCoreResponse | undefined>((resolve) => {
+		const first = await this.attempt(request)
+		if (first.response || !first.timedOut || !isRetryable(request)) {
+			return first.response
+		}
+
+		console.warn(`PLAINTORCH core did not answer ${request.method} ${request.path} within ${this.timeoutMs}ms; retrying once`)
+		const second = await this.attempt(request)
+		if (!second.response) {
+			console.error(`PLAINTORCH core request failed after a retry: ${request.method} ${request.path} via ${this.socketPath}`)
+		}
+
+		return second.response
+	}
+
+	private async attempt(request: PlaintorchCoreRequest): Promise<{ response?: PlaintorchCoreResponse, timedOut: boolean }> {
+		return await new Promise<{ response?: PlaintorchCoreResponse, timedOut: boolean }>((resolve) => {
 			const payload = request.body === undefined ? undefined : JSON.stringify(request.body)
+			let settled = false
+			const settle = (response: PlaintorchCoreResponse | undefined, timedOut = false) => {
+				if (!settled) {
+					settled = true
+					clearTimeout(timer)
+					resolve({ response, timedOut })
+				}
+			}
+
 			const httpRequest = sendRequest(
 				{
 					socketPath: this.socketPath,
@@ -81,18 +105,24 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 							})
 					}
 				},
-				async (response) => {
-					const result = wrapNodeResponse(response)
-					// console.log(`PLAINTORCH core responded ${request.method} ${request.path} via ${this.socketPath}`, JSON.parse(await result.text()))
-					resolve(result)
-				}
+				(response) => settle(wrapNodeResponse(response))
 			)
+
+			const timer = setTimeout(() => {
+				httpRequest.destroy()
+				settle(undefined, true)
+			}, this.timeoutMs)
+
 			httpRequest.on("error", (error) => {
 				// Surface transport failures instead of swallowing them — a silent connection error here is exactly what
 				// makes the plugin look like it is "making no API calls" when the core is unreachable.
-				console.error(`PLAINTORCH core request failed: ${request.method} ${request.path} via ${this.socketPath}`, error)
-				resolve(undefined)
+				if (!settled) {
+					console.error(`PLAINTORCH core request failed: ${request.method} ${request.path} via ${this.socketPath}`, error)
+				}
+
+				settle(undefined)
 			})
+
 			if (payload !== undefined) {
 				httpRequest.write(payload)
 			}
@@ -109,6 +139,21 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 	 */
 	public async stream(request: PlaintorchCoreRequest, signal: AbortSignal): Promise<AsyncIterable<string> | undefined> {
 		return await new Promise<AsyncIterable<string> | undefined>((resolve) => {
+			let settled = false
+			// Bounds only the connect, not the stream: a feed that stays open all day is the point of it.
+			const timer = setTimeout(() => {
+				httpRequest.destroy()
+				settle(undefined)
+			}, defaultStreamConnectTimeoutMs)
+
+			const settle = (value: AsyncIterable<string> | undefined) => {
+				if (!settled) {
+					settled = true
+					clearTimeout(timer)
+					resolve(value)
+				}
+			}
+
 			const httpRequest = sendRequest(
 				{
 					socketPath: this.socketPath,
@@ -126,16 +171,16 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 					const status = response.statusCode ?? 0
 					if (status < 200 || status >= 300) {
 						response.resume()
-						resolve(undefined)
+						settle(undefined)
 						return
 					}
 
 					response.setEncoding("utf8")
-					resolve(toLines(response as AsyncIterable<string>))
+					settle(toLines(response as AsyncIterable<string>))
 				}
 			)
 
-			httpRequest.on("error", () => resolve(undefined))
+			httpRequest.on("error", () => settle(undefined))
 			signal.addEventListener("abort", () => httpRequest.destroy(), { once: true })
 			httpRequest.end()
 		})
