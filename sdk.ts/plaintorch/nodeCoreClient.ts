@@ -53,6 +53,16 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 
 	timeoutMs = defaultRequestTimeoutMs
 
+	/**
+	 * A bounded keep-alive pool for one-shot requests.
+	 *
+	 * Reusing connections keeps a resync burst from opening a fresh pipe connection per request — repeated
+	 * setup-and-teardown races the server's pool of pipe instances and shows up as `read EPIPE` — and the
+	 * `maxSockets` cap keeps the burst from opening an unbounded number at once; anything past it queues on the
+	 * agent. The long-lived feed does not use this; it gets its own connection so it never holds a slot.
+	 */
+	private readonly agent = new Agent({ keepAlive: true, maxSockets: 8 })
+
 	public async send(request: PlaintorchCoreRequest): Promise<PlaintorchCoreResponse | undefined> {
 		const first = await this.attempt(request)
 		if (first.response || !first.timedOut || !isRetryable(request)) {

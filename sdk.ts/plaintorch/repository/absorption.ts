@@ -15,33 +15,41 @@ export function createAbsorbingReviver(
 	store: EntityStore,
 	context?: AbsorptionContext
 ): (key: string, value: unknown) => unknown {
-	return (_key, value) => {
+	return (key, value) => {
 		if (!modelValueConstructor.shallConstruct(value)) {
 			return value
 		}
 
-		const payload = value as Record<string, unknown>
 		// Captured before construction: constructing a model widens a sparse payload to the full shape of
 		// its class, which would otherwise make an omitted field indistinguishable from a cleared one.
-		const payloadKeys = Object.keys(value as object)
+		const payloadKeys = authoritativeKeys(key, value as Record<string, unknown>)
 		return store.absorb(modelValueConstructor.construct(value), payloadKeys, context)
 	}
 }
 
 /**
- * Determines whether a collection came back with cycle holes in it.
+ * The fields a payload is allowed to merge onto the canonical instance.
  *
- * The core serializes with `ReferenceHandler.IgnoreCycles`, which writes `null` wherever an object would
- * recur within its own serialization. A back-reference therefore drags a *truncated* copy of its owner's
- * collection along with it: asking for one objective returns its sprint, and that sprint's `objectives`
- * arrives as `[null]` — the hole being the objective that was asked for.
+ * The root of a response speaks for the entity it fetched, collections and all — a directly fetched onrush's
+ * `checkpoints: []` is a genuine emptying and must apply. A *nested* entity does not: it is a back-reference
+ * dragged in by an `Include`, and its navigations were not loaded, so the core serializes an unloaded
+ * collection as an empty array and a cycle back-reference as a `[null]` hole (`ReferenceHandler.IgnoreCycles`
+ * writes `null` where an object would recur). Either, merged, would wipe the collection a direct fetch had
+ * populated — which is how a checkpoint vanished the moment an objective beside it was refetched, since the
+ * objective carries the sprint as a back-reference. So a nested entity withholds its empty and holed arrays,
+ * keeping only a genuinely populated one, while its scalar and single-reference fields merge as before.
  *
- * Such a collection is repaired for the instance being constructed and then left out of the payload keys,
- * so it is never merged over a canonical collection that was loaded properly. Both halves matter: without
- * the repair a consumer iterates a hole, and without the omission a fetch of one objective would empty the
- * sprint that every other surface is reading. Nothing in this API sends a meaningful `null` inside an
- * array, so a hole is always this and never data.
+ * Root is told from nested by the reviver key: `JSON.parse` calls the reviver for the whole document last,
+ * under the empty key. Everything reached under a property name or an array index is nested.
  */
-function isCycleTruncated(value: unknown): value is unknown[] {
-	return Array.isArray(value) && value.some(item => item === null)
+function authoritativeKeys(key: string, payload: Record<string, unknown>): string[] {
+	const keys = Object.keys(payload)
+	if (key === '') {
+		return keys
+	}
+
+	return keys.filter(field => {
+		const value = payload[field]
+		return !Array.isArray(value) || (value.length > 0 && !value.some(item => item === null))
+	})
 }

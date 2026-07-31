@@ -24,6 +24,7 @@ public sealed class DependencySystemTests : VaultTestBase
 	private Task<T> Deps<T>(Func<IDependencyApi, Task<T>> action) => Vault.WithScopeAsync(services => action(services.GetRequiredService<IDependencyApi>()));
 	private Task Deps(Func<IDependencyApi, Task> action) => Vault.WithScopeAsync(services => action(services.GetRequiredService<IDependencyApi>()));
 	private Task<T> Onrush<T>(Func<IOnrushSprintApi, Task<T>> action) => Vault.WithScopeAsync(services => action(services.GetRequiredService<IOnrushSprintApi>()));
+	private Task Onrush(Func<IOnrushSprintApi, Task> action) => Vault.WithScopeAsync(services => action(services.GetRequiredService<IOnrushSprintApi>()));
 
 	private static EndpointRef DirectiveRef(string id) => new(DependencyEndpointKind.Directive, id);
 	private static EndpointRef CheckpointRef(string id) => new(DependencyEndpointKind.Checkpoint, id);
@@ -200,6 +201,21 @@ public sealed class DependencySystemTests : VaultTestBase
 		var into = await Deps(api => api.CreateAsync(DirectiveRef(a.Id), CheckpointRef(checkpoint.Id), cancellationToken: Ct));
 		var outOf = await Deps(api => api.CreateAsync(CheckpointRef(checkpoint.Id), DirectiveRef(b.Id), cancellationToken: Ct));
 		Assert.True(into.Id > 0 && outOf.Id > 0);
+	}
+
+	[Fact]
+	public async Task Saving_the_graph_layout_keeps_the_sprints_checkpoints(/* PEP102 */)
+	{
+		var sprint = await Onrush(api => api.PlanAsync(new OnrushSprintPlan("Sprint"), Ct));
+		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Gate", onrushSprintId: sprint.Id, cancellationToken: Ct));
+
+		// A layout save touches only the sprint's own column; the checkpoints it tracks must be undisturbed.
+		await Onrush(api => api.SetGraphLayoutAsync(sprint.Id, $"{{\"Checkpoint:{checkpoint.Id}\":{{\"x\":10,\"y\":20}}}}", Ct));
+
+		var reloaded = await Onrush(api => api.GetAsync(sprint.Id, Ct));
+		Assert.NotNull(reloaded);
+		Assert.Contains(reloaded!.Checkpoints, item => item.Id == checkpoint.Id);
+		Assert.Contains(reloaded.Checkpoints, item => item.Id == sprint.MilestoneCheckpointId);
 	}
 
 	[Fact]
