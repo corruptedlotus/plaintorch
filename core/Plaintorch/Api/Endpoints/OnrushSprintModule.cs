@@ -53,6 +53,12 @@ public sealed class OnrushSprintModule : Module
 		group.MapPut("/{onrushSprintId}", async (string onrushSprintId, OnrushSprintUpdate request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateAsync(onrushSprintId, request, cancellationToken)));
 
+		group.MapPut("/{onrushSprintId}/graph-layout", async (string onrushSprintId, SetGraphLayoutRequest request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
+		{
+			await api.SetGraphLayoutAsync(onrushSprintId, request.Layout, cancellationToken);
+			return Results.NoContent();
+		});
+
 		group.MapPost("/plan", async (OnrushSprintPlan request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 		{
 			var sprint = await api.PlanAsync(request, cancellationToken);

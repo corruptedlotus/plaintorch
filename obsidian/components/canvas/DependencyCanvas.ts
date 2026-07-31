@@ -1,18 +1,18 @@
 import { Component, component, css, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
-import { DependencyConstraint, DependencyTrigger, type EntitySubscription } from '@pleiades/sdk'
+import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EntitySubscription } from '@pleiades/sdk'
 import { Notice } from 'obsidian'
 import { core, DerivedRef, navigateToEntity, type ExpandingAction } from '..'
-import { addObjectiveToOnrush, createDependency, deleteDependency, removeObjectiveFromOnrush, reshapeDependency } from './canvasActions'
-import { contextModeLabels, onrushContext, type CanvasContextMode } from './graphContext'
-import { edgeCurve, entryPoint, exitPoint, layoutGraph, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
-import { describeEdge, effectiveConstraint, effectiveTrigger, wouldCycle, type CanvasEdge, type CanvasGraph } from './graphModel'
+import { addCheckpointToOnrush, addObjectiveToOnrush, createDependency, deleteCheckpoint, deleteDependency, removeObjectiveFromOnrush, reshapeDependency, saveGraphLayout } from './canvasActions'
+import { contextModeLabels, onrushContext, type CanvasContextMode, type EndpointResolver } from './graphContext'
+import { edgeCurve, entryPoint, exitPoint, layoutGraph, parsePositions, serializePositions, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
+import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpointTypeName, targetRef, wouldCycle, type CanvasEdge, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
 import { SelectObjectiveModal } from './SelectObjectiveModal'
-import type { CanvasNodePointer } from './CanvasNodeItem'
+import type { CanvasNodePointer, NodeLock } from './CanvasNodeItem'
 
 /** Which gesture a pointer is currently carrying out. */
 type Gesture =
 	| { readonly sort: 'pan', readonly pointerId: number, readonly originX: number, readonly originY: number, readonly fromX: number, readonly fromY: number }
-	| { readonly sort: 'drag', readonly pointerId: number, readonly nodeKey: string, readonly offsetX: number, readonly offsetY: number }
+	| { readonly sort: 'drag', readonly pointerId: number, readonly nodeKey: string, readonly offsetX: number, readonly offsetY: number, readonly originX: number, readonly originY: number }
 	| { readonly sort: 'link', readonly pointerId: number, readonly nodeKey: string, readonly at: Point }
 
 /** What the popover is showing, when it is showing anything. */
@@ -22,6 +22,8 @@ type MenuTarget =
 
 const minimumScale = 0.3
 const maximumScale = 2.5
+/** How far a pointer must travel before it is a drag rather than an unsteady click. */
+const dragThreshold = 3
 
 /**
  * The dependency canvas: the backlog as a graph you can draw on.
@@ -45,6 +47,8 @@ export class DependencyCanvas extends Component {
 	/** Node positions the reader has moved, which win over the layout until it is reset. */
 	@state() private overrides: ReadonlyMap<string, Point> = new Map()
 	@state() private selected?: string
+	/** The node clicked into, whose own contents take their clicks. At most one at a time. */
+	@state() private activeKey?: string
 	@state() private gesture?: Gesture
 	@state() private menu?: MenuTarget
 
@@ -52,14 +56,24 @@ export class DependencyCanvas extends Component {
 	@query('.menu') private readonly menuElement!: HTMLElement
 
 	private readonly dependencies = new DerivedRef(this, core.repos.dependencyList)
-	private readonly activeSprint = new DerivedRef(this, core.repos.onrushCurrent)
-	private readonly planningSprint = new DerivedRef(this, core.repos.onrushPlanning)
+	// Observed so their entities are in the store for resolving a ghostly blocker's title — an objective or
+	// checkpoint outside the sprint that no other surface here has loaded.
+	private readonly objectiveList = new DerivedRef(this, core.repos.objectiveList)
+	private readonly checkpointList = new DerivedRef(this, core.repos.checkpointList)
+	// Each sprint is only observed while its mode is the one on screen: an undefined key makes the ref
+	// release its subscription and fetch nothing, so the canvas never fetches or revalidates the sprint it
+	// is not showing. Switching mode re-subscribes the other.
+	private readonly activeSprint = new DerivedRef(this, core.repos.onrushCurrent, () => this.mode === 'onrush-active' ? '' : undefined)
+	private readonly planningSprint = new DerivedRef(this, core.repos.onrushPlanning, () => this.mode === 'onrush-planning' ? '' : undefined)
 
 	private storeSubscription?: EntitySubscription
 	private layoutCache?: { readonly signature: string, readonly layout: CanvasLayout }
 	private framed = false
 	/** Whether the drag in progress has actually moved, which is what tells a drag from a click. */
 	private dragged = false
+	/** The sprint whose saved layout is currently loaded into {@link overrides}. */
+	private layoutSprintId?: string
+	private layoutSaveTimer?: number
 
 	static override get styles() {
 		return css`
@@ -160,6 +174,19 @@ export class DependencyCanvas extends Component {
 				stroke-dasharray: 5 4;
 			}
 
+			.edge-finish-label {
+				fill: color-mix(in srgb, var(--text-normal) 60%, transparent);
+				font-family: var(--font-interface);
+				font-size: 10px;
+				font-weight: 600;
+				letter-spacing: .02em;
+				text-transform: uppercase;
+				/* The line beneath is drawn over by a halo so the word stays legible on top of the edge. */
+				paint-order: stroke;
+				stroke: var(--background-primary, transparent);
+				stroke-width: 3px;
+			}
+
 			/* An invisible fat stroke over each curve, because a 2px line is not a target anyone can hit. */
 			.edge-hit {
 				fill: none;
@@ -247,6 +274,13 @@ export class DependencyCanvas extends Component {
 				margin: .25em .3em;
 				background-color: color-mix(in srgb, var(--text-normal) 12%, transparent);
 			}
+
+			.menu-note {
+				padding: .4em .6em;
+				opacity: .6;
+				font-size: .85em;
+				line-height: 1.25;
+			}
 		`
 	}
 
@@ -259,6 +293,7 @@ export class DependencyCanvas extends Component {
 	protected override disconnected() {
 		this.storeSubscription?.()
 		this.storeSubscription = undefined
+		window.clearTimeout(this.layoutSaveTimer)
 	}
 
 	/** The sprint the current mode reads. */
@@ -267,7 +302,36 @@ export class DependencyCanvas extends Component {
 	}
 
 	private get graph(): CanvasGraph {
-		return onrushContext(this.sprint, this.dependencies.value ?? [])
+		return onrushContext(this.sprint, this.dependencies.value ?? [], this.resolveEndpoint)
+	}
+
+	/**
+	 * Resolves an out-of-context endpoint to the entity behind it, for a ghostly blocker's label.
+	 *
+	 * The store first, since it holds anything any surface has loaded; then the two listings this canvas keeps
+	 * observed, which cover the kinds a blocker most often is even when nothing else has fetched them. A miss
+	 * leaves the blocker to be labelled by its id, which is enough to say what is holding a member back.
+	 */
+	private readonly resolveEndpoint: EndpointResolver = (kind, id) => {
+		const typeName = endpointTypeName(kind)
+		if (typeName === undefined) {
+			return undefined
+		}
+
+		const stored = core.store.peek<CanvasEntity>(entityKey(typeName, id))
+		if (stored) {
+			return stored
+		}
+
+		if (kind === DependencyEndpointKind.Objective) {
+			return this.objectiveList.value?.find(objective => objective.id === id)
+		}
+
+		if (kind === DependencyEndpointKind.Checkpoint) {
+			return this.checkpointList.value?.find(checkpoint => checkpoint.id === id)
+		}
+
+		return undefined
 	}
 
 	private get loading() {
@@ -300,13 +364,47 @@ export class DependencyCanvas extends Component {
 		return boxes
 	}
 
+	/**
+	 * How each node is locked, read from *every* edge that targets it, not only the ones inside this context.
+	 *
+	 * A dependant can be held back by a prerequisite the current onrush does not contain, and that lock is
+	 * still true of it — so the whole dependency set is consulted. A begin gate is the severe `blocked`; a
+	 * finish-only gate is the softer `raced`; begin wins when both are present.
+	 */
+	private get locks(): ReadonlyMap<string, NodeLock> {
+		const begin = new Set<string>()
+		const finish = new Set<string>()
+		for (const dependency of this.dependencies.value ?? []) {
+			if (dependency.satisfied) {
+				continue
+			}
+
+			const target = endpointKey(targetRef(dependency))
+			if (effectiveConstraint(dependency) === DependencyConstraint.ToFinish) {
+				finish.add(target)
+			}
+			else {
+				begin.add(target)
+			}
+		}
+
+		const locks = new Map<string, NodeLock>()
+		for (const key of finish) {
+			locks.set(key, 'raced')
+		}
+
+		for (const key of begin) {
+			locks.set(key, 'blocked')
+		}
+
+		return locks
+	}
+
 	protected override get template() {
 		const graph = this.graph
 		const layout = this.layoutFor(graph)
 		const boxes = this.boxesFor(layout)
-		// An edge that is not yet satisfied is holding its dependant back. Only edges inside this context are
-		// counted, so a node blocked from outside the sprint does not read as blocked here.
-		const blocked = new Set(graph.edges.filter(edge => !edge.dependency.satisfied).map(edge => edge.target))
+		const locks = this.locks
 
 		return html`
 			<div class='toolbar'>
@@ -339,6 +437,9 @@ export class DependencyCanvas extends Component {
 							<marker id='arrow-satisfied' viewBox='0 0 8 8' refX='7' refY='4' markerWidth='7' markerHeight='7' orient='auto-start-reverse'>
 								<path d='M 0 0 L 8 4 L 0 8 z' fill='color-mix(in srgb, var(--text-success, seagreen) 70%, var(--text-normal))'></path>
 							</marker>
+							<marker id='edge-begin' viewBox='0 0 10 10' refX='5' refY='5' markerWidth='7' markerHeight='7' orient='auto'>
+								<circle cx='5' cy='5' r='3.4' fill='var(--background-primary, transparent)' stroke='context-stroke' stroke-width='1.6'></circle>
+							</marker>
 						</defs>
 						${repeat(graph.edges, edge => edge.key, edge => this.edgeTemplate(edge, boxes))}
 						${this.linkTemplate(boxes)}
@@ -352,15 +453,7 @@ export class DependencyCanvas extends Component {
 								style='transform: translate(${box.x}px, ${box.y}px)'
 								@pointerdown=${(e: PointerEvent) => this.onNodePointerDown(e, node.key, box)}
 								@click=${{ handleEvent: (e: Event) => this.onNodeClick(e), capture: true }}>
-								<p7t-canvas-node
-									interactive
-									.nodeKey=${node.key}
-									.entity=${node.entity}
-									.kind=${node.ref.kind}
-									?selected=${this.selected === node.key}
-									?blocked=${blocked.has(node.key)}
-									?linking=${this.gesture?.sort === 'link' && this.gesture.nodeKey !== node.key}>
-								</p7t-canvas-node>
+								${this.nodeTemplate(node, locks.get(node.key) ?? 'none')}
 							</div>
 						`
 					})}
@@ -387,6 +480,54 @@ export class DependencyCanvas extends Component {
 			: `There is no ${contextModeLabels[this.mode].toLowerCase()}.`
 	}
 
+	/**
+	 * The right node element for what the node stands for.
+	 *
+	 * A checkpoint gets its own component — no lifecycle, its milestone flagged — while everything else is an
+	 * entity node. Both share the pointer contract the container drives them by.
+	 */
+	private nodeTemplate(node: CanvasNode, lock: NodeLock) {
+		const shared = {
+			nodeKey: node.key,
+			entity: node.entity,
+			kind: node.ref.kind,
+			selected: this.selected === node.key,
+			active: this.activeKey === node.key,
+			ghostly: node.ghostly === true,
+			linking: this.gesture?.sort === 'link' && this.gesture.nodeKey !== node.key
+		}
+
+		if (node.ref.kind === DependencyEndpointKind.Checkpoint) {
+			return html`
+				<p7t-canvas-checkpoint
+					interactive
+					.nodeKey=${shared.nodeKey}
+					.entity=${shared.entity}
+					.kind=${shared.kind}
+					?milestone=${node.milestone === true}
+					?selected=${shared.selected}
+					?active=${shared.active}
+					?ghostly=${shared.ghostly}
+					?linking=${shared.linking}>
+				</p7t-canvas-checkpoint>
+			`
+		}
+
+		return html`
+			<p7t-canvas-node
+				interactive
+				.nodeKey=${shared.nodeKey}
+				.entity=${shared.entity}
+				.kind=${shared.kind}
+				.lock=${lock}
+				?selected=${shared.selected}
+				?active=${shared.active}
+				?ghostly=${shared.ghostly}
+				?linking=${shared.linking}>
+			</p7t-canvas-node>
+		`
+	}
+
 	private edgeTemplate(edge: CanvasEdge, boxes: ReadonlyMap<string, NodeBox>) {
 		const source = boxes.get(edge.source)
 		const target = boxes.get(edge.target)
@@ -394,10 +535,22 @@ export class DependencyCanvas extends Component {
 			return nothing
 		}
 
-		const path = edgeCurve(exitPoint(source), entryPoint(target))
+		const entry = entryPoint(target)
+		const path = edgeCurve(exitPoint(source), entry)
 		const satisfied = edge.dependency.satisfied
+		// A begin-triggered edge fires on its source *starting*, not finishing, so it wears the same
+		// start-circle tail whatever it gates — the begin-to-begin form generalised to every begin trigger.
+		const beginTriggered = effectiveTrigger(edge.dependency) === DependencyTrigger.OnBegin
+		// A to-finish constraint gates the dependant's finish rather than its begin; the label says which.
+		const toFinish = effectiveConstraint(edge.dependency) === DependencyConstraint.ToFinish
 		return svg`
-			<path class='edge ${satisfied ? 'satisfied' : 'pending'}' d=${path} marker-end='url(#${satisfied ? 'arrow-satisfied' : 'arrow-pending'})'></path>
+			<path
+				class='edge ${satisfied ? 'satisfied' : 'pending'}'
+				d=${path}
+				marker-end='url(#${satisfied ? 'arrow-satisfied' : 'arrow-pending'})'
+				marker-start=${beginTriggered ? 'url(#edge-begin)' : nothing}>
+			</path>
+			${toFinish ? svg`<text class='edge-finish-label' x=${entry.x - 12} y=${entry.y - 9} text-anchor='end'>Finish</text>` : nothing}
 			<path class='edge-hit' d=${path} @click=${(e: MouseEvent) => void this.openMenu(e.clientX, e.clientY, { sort: 'edge', edge })}></path>
 		`
 	}
@@ -426,25 +579,33 @@ export class DependencyCanvas extends Component {
 	private edgeMenuTemplate(edge: CanvasEdge) {
 		const trigger = effectiveTrigger(edge.dependency)
 		const constraint = effectiveConstraint(edge.dependency)
+		// A checkpoint has no begin or finish, so it offers no trigger on its source side and no constraint on
+		// its target side — those are empty by rule, not a choice, so the menu withholds them entirely.
+		const sourceIsCheckpoint = edge.dependency.sourceKind === DependencyEndpointKind.Checkpoint
+		const targetIsCheckpoint = edge.dependency.targetKind === DependencyEndpointKind.Checkpoint
 		return html`
 			<div class='menu-title'>This ${describeEdge(edge.dependency)}</div>
-			<button class='menu-item' aria-pressed=${trigger === DependencyTrigger.OnFinish}
-				@click=${() => void this.reshape(edge, DependencyTrigger.OnFinish, constraint)}>
-				Satisfied when it finishes
-			</button>
-			<button class='menu-item' aria-pressed=${trigger === DependencyTrigger.OnBegin}
-				@click=${() => void this.reshape(edge, DependencyTrigger.OnBegin, constraint)}>
-				Satisfied when it begins
-			</button>
-			<div class='menu-separator'></div>
-			<button class='menu-item' aria-pressed=${constraint === DependencyConstraint.ToBegin}
-				@click=${() => void this.reshape(edge, trigger, DependencyConstraint.ToBegin)}>
-				Gates the dependant's begin
-			</button>
-			<button class='menu-item' aria-pressed=${constraint === DependencyConstraint.ToFinish}
-				@click=${() => void this.reshape(edge, trigger, DependencyConstraint.ToFinish)}>
-				Gates the dependant's finish
-			</button>
+			${sourceIsCheckpoint ? nothing : html`
+				<button class='menu-item' aria-pressed=${trigger === DependencyTrigger.OnFinish}
+					@click=${() => void this.reshape(edge, DependencyTrigger.OnFinish, constraint)}>
+					Satisfied when it finishes
+				</button>
+				<button class='menu-item' aria-pressed=${trigger === DependencyTrigger.OnBegin}
+					@click=${() => void this.reshape(edge, DependencyTrigger.OnBegin, constraint)}>
+					Satisfied when it begins
+				</button>
+			`}
+			${sourceIsCheckpoint || targetIsCheckpoint ? nothing : html`<div class='menu-separator'></div>`}
+			${targetIsCheckpoint ? nothing : html`
+				<button class='menu-item' aria-pressed=${constraint === DependencyConstraint.ToBegin}
+					@click=${() => void this.reshape(edge, trigger, DependencyConstraint.ToBegin)}>
+					Gates the dependant's begin
+				</button>
+				<button class='menu-item' aria-pressed=${constraint === DependencyConstraint.ToFinish}
+					@click=${() => void this.reshape(edge, trigger, DependencyConstraint.ToFinish)}>
+					Gates the dependant's finish
+				</button>
+			`}
 			<div class='menu-separator'></div>
 			<button class='menu-item' @click=${() => void this.run(async () => await deleteDependency(edge))}>
 				Remove dependency
@@ -458,24 +619,61 @@ export class DependencyCanvas extends Component {
 			return nothing
 		}
 
+		const isCheckpoint = node.ref.kind === DependencyEndpointKind.Checkpoint
 		return html`
 			<div class='menu-title'>${node.entity.title}</div>
+			${isCheckpoint ? this.checkpointMenu(node) : this.entityMenu(node)}
+		`
+	}
+
+	private entityMenu(node: CanvasNode) {
+		return html`
 			<button class='menu-item' @click=${() => void this.run(async () => { await navigateToEntity(node.entity.id) })}>
 				Open note
 			</button>
-			<button class='menu-item' @click=${() => void this.run(async () => await removeObjectiveFromOnrush(node.entity.id))}>
-				Remove from Onrush
+			${node.ghostly ? html`
+				<div class='menu-note'>A prerequisite outside this Onrush. It goes when the block is resolved.</div>
+			` : html`
+				<button class='menu-item' @click=${() => void this.run(async () => await removeObjectiveFromOnrush(node.entity.id))}>
+					Remove from Onrush
+				</button>
+			`}
+		`
+	}
+
+	private checkpointMenu(node: CanvasNode) {
+		// A milestone stands for the sprint's completion and is bound to it; it offers nothing to remove. A
+		// ghostly checkpoint is context, not a member. Everything else is a checkpoint the sprint tracks.
+		if (node.milestone) {
+			return html`<div class='menu-note'>The sprint's milestone — it stays for the sprint's life.</div>`
+		}
+
+		if (node.ghostly) {
+			return html`<div class='menu-note'>A checkpoint outside this Onrush, shown because it blocks a member.</div>`
+		}
+
+		return html`
+			<button class='menu-item' @click=${() => void this.run(async () => await deleteCheckpoint(node.entity.id))}>
+				Delete checkpoint
 			</button>
 		`
 	}
 
 	private get additions(): ExpandingAction[] {
-		return [{
-			key: 'objective',
-			icon: 'objective',
-			label: 'Add objective',
-			run: async () => await this.addObjective()
-		}]
+		return [
+			{
+				key: 'objective',
+				icon: 'objective',
+				label: 'Add objective',
+				run: async () => await this.addObjective()
+			},
+			{
+				key: 'checkpoint',
+				icon: 'lucide:milestone',
+				label: 'Add checkpoint',
+				run: async () => await this.addCheckpoint()
+			}
+		]
 	}
 
 	@eventListener('requestLinkStart')
@@ -506,16 +704,20 @@ export class DependencyCanvas extends Component {
 		}
 
 		this.mode = mode
-		// A different context is a different graph; positions from the last one mean nothing in it.
+		// A different context is a different graph; positions from the last one mean nothing in it, and its
+		// saved layout is adopted afresh once the new sprint resolves.
 		this.overrides = new Map()
+		this.layoutSprintId = undefined
 		this.selected = undefined
+		this.activeKey = undefined
 		this.framed = false
 	}
 
-	/** Puts every node back where the layout placed it, and frames the graph again. */
+	/** Puts every node back where the layout placed it, forgets the saved arrangement, and reframes. */
 	private reset(layout: CanvasLayout) {
 		this.overrides = new Map()
 		this.frame(layout)
+		this.scheduleLayoutSave()
 	}
 
 	private async addObjective() {
@@ -530,6 +732,16 @@ export class DependencyCanvas extends Component {
 		if (objective) {
 			await addObjectiveToOnrush(objective.id, sprint)
 		}
+	}
+
+	private async addCheckpoint() {
+		const sprint = this.sprint
+		if (!sprint) {
+			new Notice(`There is no ${contextModeLabels[this.mode].toLowerCase()} to add to.`)
+			return
+		}
+
+		await addCheckpointToOnrush(sprint)
 	}
 
 	private async reshape(edge: CanvasEdge, trigger: DependencyTrigger, constraint: DependencyConstraint) {
@@ -563,12 +775,13 @@ export class DependencyCanvas extends Component {
 	}
 
 	private onPointerDown(e: PointerEvent) {
-		if (e.button !== 0) {
+		if (e.button !== 0 || !this.isBackground(e.target)) {
 			return
 		}
 
-		// Only the empty space behind the graph reaches here; a node stops its own pointerdown.
+		// Pressing the backdrop drops focus: the active node's contents go inert again, and it can be moved.
 		this.selected = undefined
+		this.activeKey = undefined
 		this.gesture = {
 			sort: 'pan',
 			pointerId: e.pointerId,
@@ -580,8 +793,27 @@ export class DependencyCanvas extends Component {
 		this.capture(e.pointerId)
 	}
 
+	/**
+	 * Whether a pointer landed on the empty backdrop rather than on something with behaviour of its own.
+	 *
+	 * Panning captures the pointer, and a captured pointer never delivers a click to what it started over.
+	 * Beginning a pan for every pointer that reaches the viewport therefore silently disables the action
+	 * button, the edges, and anything else placed in the viewport later — so only the two elements that
+	 * genuinely *are* the backdrop pan.
+	 */
+	private isBackground(target: EventTarget | null): boolean {
+		return target === this.viewportElement
+			|| (target instanceof Element && target.classList.contains('surface'))
+	}
+
 	private onNodePointerDown(e: PointerEvent, nodeKey: string, box: NodeBox) {
 		if (e.button !== 0) {
+			return
+		}
+
+		// The active node's body is live, so a press there belongs to whatever control is under it — dragging
+		// would fight it. Its handles still start edges; moving it means dropping focus (a backdrop press) first.
+		if (this.activeKey === nodeKey) {
 			return
 		}
 
@@ -594,26 +826,37 @@ export class DependencyCanvas extends Component {
 			pointerId: e.pointerId,
 			nodeKey,
 			offsetX: point.x - box.x,
-			offsetY: point.y - box.y
+			offsetY: point.y - box.y,
+			originX: e.clientX,
+			originY: e.clientY
 		}
 		this.capture(e.pointerId)
 	}
 
 	/**
-	 * Swallows the click a finished drag leaves behind.
+	 * Resolves a click that landed on a node.
 	 *
-	 * Releasing a dragged node over its own title would otherwise reach the title's handler and open the
-	 * note. Caught on the way down, before it reaches the item at all, because the item is what would act
-	 * on it.
+	 * A finished drag leaves a click behind — releasing a dragged node over its own title would otherwise
+	 * open the note — so that one is swallowed. Otherwise a clean click on a node that is not yet the active
+	 * one focuses it: the first click brings the node forward and its contents come alive, and only a second
+	 * click, now reaching those live contents, acts on them. Caught in the capture phase, ahead of the
+	 * contents, because until the node is active the click is the canvas's to interpret, not the item's.
 	 */
 	private onNodeClick(e: Event) {
-		if (!this.dragged) {
+		if (this.dragged) {
+			e.stopPropagation()
+			e.preventDefault()
+			this.dragged = false
 			return
 		}
 
-		e.stopPropagation()
-		e.preventDefault()
-		this.dragged = false
+		const key = (e.currentTarget as HTMLElement | null)?.getAttribute('data-key') ?? undefined
+		if (key !== undefined && this.activeKey !== key) {
+			e.stopPropagation()
+			e.preventDefault()
+			this.selected = key
+			this.activeKey = key
+		}
 	}
 
 	private onPointerMove(e: PointerEvent) {
@@ -630,6 +873,12 @@ export class DependencyCanvas extends Component {
 				}
 				return
 			case 'drag': {
+				// Below the threshold this is still a click being held, and moving the node — or swallowing
+				// the click that follows — would be reading intent into an unsteady hand.
+				if (!this.dragged && Math.hypot(e.clientX - gesture.originX, e.clientY - gesture.originY) < dragThreshold) {
+					return
+				}
+
 				this.dragged = true
 				const point = this.toCanvas(e.clientX, e.clientY)
 				const next = new Map(this.overrides)
@@ -652,6 +901,10 @@ export class DependencyCanvas extends Component {
 		this.endGesture()
 		if (gesture.sort === 'link') {
 			await this.completeLink(gesture.nodeKey, e.clientX, e.clientY)
+		}
+		else if (gesture.sort === 'drag' && this.dragged) {
+			// A node was moved to rest — remember where, so the arrangement survives a reopen.
+			this.scheduleLayoutSave()
 		}
 	}
 
@@ -740,12 +993,44 @@ export class DependencyCanvas extends Component {
 	}
 
 	protected override updated() {
+		this.adoptSavedLayout()
+
 		// Framed once, when there is finally something to frame, and never again — refitting on every change
 		// would move the graph out from under someone reading it.
 		if (!this.framed && this.layoutCache && this.layoutCache.layout.nodes.size > 0 && this.viewportElement) {
 			this.framed = true
 			this.frame(this.layoutCache.layout)
 		}
+	}
+
+	/**
+	 * Takes the sprint's saved positions as the starting overrides when a sprint first appears or changes.
+	 *
+	 * Keyed by node key, so a saved position applies to a node still present and is ignored for one that is
+	 * gone; a node with no saved position keeps its dagre placement. That is the whole of the new-and-removed
+	 * handling — the layout is a hint, never a requirement, and never wiped for a membership change.
+	 */
+	private adoptSavedLayout() {
+		const sprint = this.sprint
+		if (!sprint || this.layoutSprintId === sprint.id) {
+			return
+		}
+
+		this.layoutSprintId = sprint.id
+		this.overrides = parsePositions(sprint.graphLayout)
+	}
+
+	/** Writes the current overrides to the sprint after a short rest, coalescing a run of drags into one save. */
+	private scheduleLayoutSave() {
+		const sprint = this.sprint
+		if (!sprint) {
+			return
+		}
+
+		window.clearTimeout(this.layoutSaveTimer)
+		const id = sprint.id
+		const payload = serializePositions(this.overrides)
+		this.layoutSaveTimer = window.setTimeout(() => void saveGraphLayout(id, payload), 600)
 	}
 
 	/** Centres the graph and zooms out far enough to hold it, never past life size. */

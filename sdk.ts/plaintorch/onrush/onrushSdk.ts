@@ -7,7 +7,8 @@ import type {
 	OnrushSprint,
 	OnrushSprintDateRequest,
 	OnrushSprintPlan,
-	OnrushSprintUpdate
+	OnrushSprintUpdate,
+	SetGraphLayoutRequest
 } from "./contracts"
 export class PlaintorchOnrushSdk {
 	public constructor(private readonly client: PlaintorchCoreClient) { }
@@ -53,6 +54,12 @@ export class PlaintorchOnrushSdk {
 
 	public async update(onrushId: string, update: OnrushSprintUpdate): Promise<OnrushSprint | undefined> {
 		return await this.client.putForJson<OnrushSprint>(`/api/onrush/${encodeURIComponent(onrushId)}`, update)
+	}
+
+	/** Persists a sprint's dependency-canvas layout (PEP102); pass undefined to forget it. */
+	public async setGraphLayout(onrushId: string, layout: string | undefined): Promise<boolean> {
+		const request: SetGraphLayoutRequest = { layout }
+		return await this.client.putJson(`/api/onrush/${encodeURIComponent(onrushId)}/graph-layout`, request)
 	}
 
 	public async assignOnrushStateObjectives(onrushId: string): Promise<Objective[]> {

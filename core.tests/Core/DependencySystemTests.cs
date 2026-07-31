@@ -23,6 +23,7 @@ public sealed class DependencySystemTests : VaultTestBase
 	private Task<T> Declarative<T>(Func<IDeclarativeApi, Task<T>> action) => Vault.WithScopeAsync(services => action(services.GetRequiredService<IDeclarativeApi>()));
 	private Task<T> Deps<T>(Func<IDependencyApi, Task<T>> action) => Vault.WithScopeAsync(services => action(services.GetRequiredService<IDependencyApi>()));
 	private Task Deps(Func<IDependencyApi, Task> action) => Vault.WithScopeAsync(services => action(services.GetRequiredService<IDependencyApi>()));
+	private Task<T> Onrush<T>(Func<IOnrushSprintApi, Task<T>> action) => Vault.WithScopeAsync(services => action(services.GetRequiredService<IOnrushSprintApi>()));
 
 	private static EndpointRef DirectiveRef(string id) => new(DependencyEndpointKind.Directive, id);
 	private static EndpointRef CheckpointRef(string id) => new(DependencyEndpointKind.Checkpoint, id);
@@ -137,6 +138,84 @@ public sealed class DependencySystemTests : VaultTestBase
 
 		// Lunar directives are excluded.
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Deps(api => api.CreateAsync(DirectiveRef(lunar.Id), DirectiveRef(b.Id), cancellationToken: Ct)));
+	}
+
+	[Fact]
+	public async Task Validator_rejects_a_duplicate_edge_including_the_defaulted_trigger(/* PEP102 */)
+	{
+		var a = await Directive(api => api.CreateStandaloneAsync("Prereq", cancellationToken: Ct));
+		var b = await Directive(api => api.CreateStandaloneAsync("Dependant", cancellationToken: Ct));
+
+		// First edge takes the defaults (finish-triggered, begin-constraining).
+		await Deps(api => api.CreateAsync(DirectiveRef(a.Id), DirectiveRef(b.Id), cancellationToken: Ct));
+
+		// An identical edge is refused — even when it names the finish-trigger the first left to default, which
+		// the application check resolves to the same relation though a raw-column unique index would not.
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Deps(api => api.CreateAsync(DirectiveRef(a.Id), DirectiveRef(b.Id), cancellationToken: Ct)));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Deps(api => api.CreateAsync(DirectiveRef(a.Id), DirectiveRef(b.Id), trigger: DependencyTrigger.OnFinish, constraint: DependencyConstraint.ToBegin, cancellationToken: Ct)));
+
+		// A different constraint is a different relation and is allowed.
+		var distinct = await Deps(api => api.CreateAsync(DirectiveRef(a.Id), DirectiveRef(b.Id), constraint: DependencyConstraint.ToFinish, cancellationToken: Ct));
+		Assert.True(distinct.Id > 0);
+	}
+
+	[Fact]
+	public async Task Logical_possibility_allows_a_temporally_orderable_begin_finish_cycle(/* PEP102 */)
+	{
+		var a = await Directive(api => api.CreateStandaloneAsync("A", cancellationToken: Ct));
+		var b = await Directive(api => api.CreateStandaloneAsync("B", cancellationToken: Ct));
+
+		// A's begin gates B's begin (A.begin < B.begin).
+		await Deps(api => api.CreateAsync(DirectiveRef(a.Id), DirectiveRef(b.Id), DependencyTrigger.OnBegin, DependencyConstraint.ToBegin, Ct));
+
+		// B's begin gates A's finish (B.begin < A.finish). This closes a node-level loop A→B→A, which the old
+		// acyclicity check forbade, but it orders cleanly as A.begin < B.begin < A.finish — so it is allowed.
+		var possible = await Deps(api => api.CreateAsync(DirectiveRef(b.Id), DirectiveRef(a.Id), DependencyTrigger.OnBegin, DependencyConstraint.ToFinish, Ct));
+		Assert.True(possible.Id > 0);
+	}
+
+	[Fact]
+	public async Task Logical_possibility_rejects_an_unorderable_finish_before_begin_loop(/* PEP102 */)
+	{
+		var a = await Directive(api => api.CreateStandaloneAsync("A", cancellationToken: Ct));
+		var b = await Directive(api => api.CreateStandaloneAsync("B", cancellationToken: Ct));
+
+		// A.finish < B.begin, then asking B.finish < A.begin closes an impossible loop:
+		// A.begin < A.finish < B.begin < B.finish < A.begin.
+		await Deps(api => api.CreateAsync(DirectiveRef(a.Id), DirectiveRef(b.Id), DependencyTrigger.OnFinish, DependencyConstraint.ToBegin, Ct));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Deps(api =>
+			api.CreateAsync(DirectiveRef(b.Id), DirectiveRef(a.Id), DependencyTrigger.OnFinish, DependencyConstraint.ToBegin, Ct)));
+	}
+
+	[Fact]
+	public async Task Logical_possibility_does_not_trip_over_checkpoint_endpoints(/* PEP102 */)
+	{
+		var a = await Directive(api => api.CreateStandaloneAsync("A", cancellationToken: Ct));
+		var b = await Directive(api => api.CreateStandaloneAsync("B", cancellationToken: Ct));
+		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Gate", cancellationToken: Ct));
+
+		// A checkpoint has no begin/finish, so it is a dead end in the ordering walk: a chain A → gate → B
+		// carries no orderable constraint across the gate, and every edge is accepted rather than the null
+		// side aborting the query.
+		var into = await Deps(api => api.CreateAsync(DirectiveRef(a.Id), CheckpointRef(checkpoint.Id), cancellationToken: Ct));
+		var outOf = await Deps(api => api.CreateAsync(CheckpointRef(checkpoint.Id), DirectiveRef(b.Id), cancellationToken: Ct));
+		Assert.True(into.Id > 0 && outOf.Id > 0);
+	}
+
+	[Fact]
+	public async Task Planning_an_onrush_creates_its_milestone_which_cannot_be_deleted_alone(/* PEP102 */)
+	{
+		var sprint = await Onrush(api => api.PlanAsync(new OnrushSprintPlan("Sprint One"), Ct));
+		Assert.False(string.IsNullOrWhiteSpace(sprint.MilestoneCheckpointId));
+
+		// The milestone is a real, tracked checkpoint of the sprint.
+		var reloaded = await Onrush(api => api.GetAsync(sprint.Id, Ct));
+		Assert.NotNull(reloaded);
+		Assert.Equal(sprint.MilestoneCheckpointId, reloaded!.MilestoneCheckpoint?.Id);
+		Assert.Contains(reloaded.Checkpoints, checkpoint => checkpoint.Id == sprint.MilestoneCheckpointId);
+
+		// It is bound to the sprint for the sprint's life: it cannot be deleted on its own.
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Deps(api => api.DeleteCheckpointAsync(sprint.MilestoneCheckpointId!, Ct)));
 	}
 
 	[Fact]

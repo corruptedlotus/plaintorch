@@ -1,4 +1,5 @@
 import type { Objective } from "../objectives/models"
+import type { Checkpoint } from "../dependencies/models"
 export interface OnrushSprint {
 	id: string
 	title: string
@@ -6,6 +7,14 @@ export interface OnrushSprint {
 	endDate: string | undefined
 	objectives: Objective[]
 	executiveOrders: ExecutiveOrder[]
+	/** The checkpoints this sprint tracks, its milestone among them (PEP102). */
+	checkpoints: Checkpoint[]
+	/** The id of this sprint's milestone checkpoint, created with the sprint (PEP102). */
+	milestoneCheckpointId: string | undefined
+	/** This sprint's milestone checkpoint, when loaded. */
+	milestoneCheckpoint?: Checkpoint | undefined
+	/** Persisted dependency-canvas layout: a JSON map of node key to position, or absent (PEP102). */
+	graphLayout: string | undefined
 }
 
 export interface ExecutiveOrder {
@@ -40,6 +49,11 @@ export interface OnrushSprintPlan {
 
 export interface OnrushSprintDateRequest {
 	date?: string | undefined
+}
+
+/** Payload that persists a sprint's dependency-canvas layout; a null layout forgets it (PEP102). */
+export interface SetGraphLayoutRequest {
+	layout?: string | undefined
 }
 
 export interface OnrushSprintUpdate {

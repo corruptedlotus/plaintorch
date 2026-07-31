@@ -76,6 +76,8 @@ export class Checkpoint {
 	externalCondition: boolean | undefined
 	/** The emitted unlock signal, maintained by the core. */
 	unlocked: boolean = false
+	/** The onrush sprint that tracks this checkpoint, if any (PEP102). */
+	onrushSprintId: string | undefined
 }
 
 /** The emitted dependency lock for an entity, separate from its status (PEP101). */
@@ -108,6 +110,8 @@ export interface CreateCheckpointRequest {
 	id?: string | undefined
 	celestronToll?: number | undefined
 	externalCondition?: boolean | undefined
+	/** The onrush sprint that should track this checkpoint, if any (PEP102). */
+	onrushSprintId?: string | undefined
 }
 
 /** Payload to set a checkpoint's external condition switch (PEP101). */

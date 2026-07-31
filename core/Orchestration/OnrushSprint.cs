@@ -40,4 +40,29 @@ public sealed class OnrushSprint : PuckNamedEntity
 	/// Gets the executive orders that shape how this sprint is moved through.
 	/// </summary>
 	public List<ExecutiveOrder> ExecutiveOrders { get; set; } = [];
+
+	[InverseProperty(nameof(Checkpoint.OnrushSprint))]
+	/// <summary>
+	/// Gets the checkpoints this sprint tracks, its milestone among them (PEP102).
+	/// </summary>
+	public List<Checkpoint> Checkpoints { get; set; } = [];
+
+	/// <summary>
+	/// Gets or sets the id of this sprint's milestone checkpoint, created with the sprint (PEP102). Optional
+	/// only in the schema; every sprint the application creates has one.
+	/// </summary>
+	public string? MilestoneCheckpointId { get; set; }
+
+	/// <summary>
+	/// Gets or sets this sprint's milestone checkpoint — the single checkpoint that stands for the sprint's
+	/// completion, distinct from the others it merely tracks.
+	/// </summary>
+	public Checkpoint? MilestoneCheckpoint { get; set; }
+
+	/// <summary>
+	/// Gets or sets the persisted graph layout for this sprint's dependency canvas: a JSON map of node key to
+	/// position. Database-only UI state, never written to the vault, and safe to be absent or stale — a node
+	/// with no saved position is simply laid out afresh.
+	/// </summary>
+	public string? GraphLayout { get; set; }
 }

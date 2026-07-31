@@ -59,7 +59,10 @@ export function layoutGraph(graph: CanvasGraph, options: LayoutOptions = {}): Ca
 	}
 
 	const settings = { ...defaults, ...options }
-	const model = new graphlib.Graph({ directed: true })
+	// Multigraph so each edge can carry its own key: two objectives can be joined by more than one dependency
+	// (a different trigger or constraint), and without names the second would overwrite the first in the
+	// layout model — and naming an edge at all is rejected unless the graph is a multigraph.
+	const model = new graphlib.Graph({ directed: true, multigraph: true })
 	model.setGraph({
 		rankdir: 'LR',
 		ranksep: settings.rankSeparation,
@@ -106,6 +109,54 @@ export function layoutGraph(graph: CanvasGraph, options: LayoutOptions = {}): Ca
 		width: width + settings.margin,
 		height: height + settings.margin
 	}
+}
+
+/**
+ * Reads saved node positions back into overrides, keyed by node key (PEP102).
+ *
+ * Forgiving by design: anything malformed, or a stored value that is not a finite pair, is skipped rather
+ * than thrown on — a layout is a hint, and a corrupt one should cost a re-placement, not a broken canvas.
+ */
+export function parsePositions(json: string | undefined): Map<string, Point> {
+	const positions = new Map<string, Point>()
+	if (!json) {
+		return positions
+	}
+
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(json)
+	}
+	catch {
+		return positions
+	}
+
+	if (!parsed || typeof parsed !== 'object') {
+		return positions
+	}
+
+	for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+		const point = value as { x?: unknown, y?: unknown }
+		if (typeof point?.x === 'number' && Number.isFinite(point.x) && typeof point?.y === 'number' && Number.isFinite(point.y)) {
+			positions.set(key, { x: point.x, y: point.y })
+		}
+	}
+
+	return positions
+}
+
+/** Serialises overrides for the column, or undefined when there is nothing to remember (PEP102). */
+export function serializePositions(positions: ReadonlyMap<string, Point>): string | undefined {
+	if (positions.size === 0) {
+		return undefined
+	}
+
+	const record: Record<string, Point> = {}
+	for (const [key, point] of positions) {
+		record[key] = point
+	}
+
+	return JSON.stringify(record)
 }
 
 /** Where an edge leaves a node: the middle of its trailing edge, since the flow runs left to right. */
