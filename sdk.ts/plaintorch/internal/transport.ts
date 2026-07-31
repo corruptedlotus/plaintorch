@@ -12,10 +12,10 @@ export interface PlaintorchCoreRequest {
  * repository keeps, one stalled call poisoned that identity for the rest of the session: every later read of
  * it joined the same promise and waited forever, and any surface action awaiting a read hung with it.
  */
-export const defaultRequestTimeoutMs = 10_000
+export const defaultRequestTimeoutMs = 6_000
 
 /** How long establishing a long-lived stream may take. The stream itself is then unbounded by design. */
-export const defaultStreamConnectTimeoutMs = 10_000
+export const defaultStreamConnectTimeoutMs = 12_000
 
 /**
  * Whether a request can be safely sent again after a timeout.

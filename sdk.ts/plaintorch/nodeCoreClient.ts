@@ -49,17 +49,10 @@ export class NodePlaintorchCoreClient extends PlaintorchCoreClient {
 }
 
 class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
-	public constructor(
-		private readonly socketPath: string,
-		private readonly timeoutMs = defaultRequestTimeoutMs
-	) { }
+	public constructor(private readonly socketPath: string) { }
 
-	/**
-	 * Sends a request, giving a read one further attempt if the core does not answer in time.
-	 *
-	 * A stalled core used to hang the caller indefinitely; a bounded attempt turns that into an ordinary
-	 * failure, which every caller already handles.
-	 */
+	timeoutMs = defaultRequestTimeoutMs
+
 	public async send(request: PlaintorchCoreRequest): Promise<PlaintorchCoreResponse | undefined> {
 		const first = await this.attempt(request)
 		if (first.response || !first.timedOut || !isRetryable(request)) {
