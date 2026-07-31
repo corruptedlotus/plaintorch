@@ -1,26 +1,30 @@
 {
-  "name": "@pleiades/sdk",
-  "version": "0.0.1",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "exports": {
-    ".": "./index.ts",
-    "./plaintorch": "./plaintorch/index.ts",
-    "./plaintorch/node": "./plaintorch/node.ts",
-	"./helpers": "./helpers/index.ts"
-  },
-  "devDependencies": {
-	"@typescript-eslint/parser": "^8.46.3",
-    "@types/node": "^22.15.17",
-	"eslint": "^9.38.0",
-    "tslib": "^2.8.1",
-    "typescript": "^5.8.3"
-  },
-  "dependencies": {
-    "@a11d/api": "^0.4.0",
-    "@a11d/api-dotnet": "^0.1.0"
-  }
+	"name": "@pleiades/sdk",
+	"author": {
+		"name": "Soraya Voidblume",
+		"email": "pleiades@corruptedlotus.com"
+	},
+	"version": "0.0.2",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json --noEmit"
+	},
+	"exports": {
+		".": "./index.ts",
+		"./plaintorch": "./plaintorch/index.ts",
+		"./plaintorch/node": "./plaintorch/node.ts",
+		"./helpers": "./helpers/index.ts"
+	},
+	"devDependencies": {
+		"@typescript-eslint/parser": "^8.46.3",
+		"@types/node": "^22.15.17",
+		"eslint": "^9.38.0",
+		"tslib": "^2.8.1",
+		"typescript": "^5.8.3"
+	},
+	"dependencies": {
+		"@a11d/api": "^0.4.0",
+		"@a11d/api-dotnet": "^0.1.0"
+	}
 }

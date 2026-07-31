@@ -13,7 +13,7 @@ namespace Pleiades.Orchestration;
 /// or constraint (as target) empty.
 /// </remarks>
 [PuckEntity("checkpoint")]
-[PuckFormat("c{S:4}")]
+[PuckFormat("cc{S:6}")]
 public sealed class Checkpoint : PuckNamedEntity
 {
 	/// <summary>
