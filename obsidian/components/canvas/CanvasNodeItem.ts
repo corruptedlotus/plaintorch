@@ -9,14 +9,14 @@ const kindIcons: Record<DependencyEndpointKind, IconName> = {
 	[DependencyEndpointKind.Objective]: 'objective',
 	[DependencyEndpointKind.Fate]: 'eventive',
 	[DependencyEndpointKind.Eventive]: 'eventive',
-	[DependencyEndpointKind.Checkpoint]: 'lucide:milestone'
+	[DependencyEndpointKind.Checkpoint]: 'checkpoint'
 }
 
 const kindLabels: Record<DependencyEndpointKind, string> = {
 	[DependencyEndpointKind.Directive]: 'Directive',
 	[DependencyEndpointKind.Objective]: 'Objective',
 	[DependencyEndpointKind.Fate]: 'Fate',
-	[DependencyEndpointKind.Eventive]: 'Occurrence',
+	[DependencyEndpointKind.Eventive]: 'Eventive',
 	[DependencyEndpointKind.Checkpoint]: 'Checkpoint'
 }
 
@@ -243,7 +243,7 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 		if (this.lock === 'raced') {
 			return html`
 				<div class='lock-badge raced'>
-					<p7t-icon icon='state-onrush'></p7t-icon>
+					<p7t-icon icon='state-raced'></p7t-icon>
 					<span>Raced</span>
 				</div>
 			`

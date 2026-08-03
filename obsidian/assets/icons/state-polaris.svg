@@ -1,1 +1,37 @@
-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400"><defs><symbol id="state-polaris" data-name="state-polaris" viewBox="0 0 400 400"><rect width="400" height="400" style="fill:none"/><circle cx="200" cy="200" r="90.14" style="fill:#fff"/><line x1="200" y1="39.98" x2="200" y2="65.01" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="318.46" y1="81.54" x2="290.14" y2="109.86" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="360.02" y1="200" x2="334.99" y2="200" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="318.46" y1="318.46" x2="290.14" y2="290.14" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="200" y1="360.02" x2="200" y2="334.99" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="81.54" y1="318.46" x2="109.86" y2="290.14" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="39.98" y1="200" x2="65.01" y2="200" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="81.54" y1="81.54" x2="109.86" y2="109.86" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><path d="M200,52.5A147.5,147.5,0,1,1,95.7,304.3" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/></symbol></defs><use width="400" height="400" xlink:href="#state-polaris"/></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2, .cls-3 {
+        fill: none;
+      }
+
+      .cls-3 {
+        stroke: #fff;
+        stroke-linecap: round;
+        stroke-miterlimit: 10;
+        stroke-width: 12px;
+      }
+    </style>
+    <symbol id="state-polaris" viewBox="0 0 400 400">
+      <g>
+        <rect class="cls-2" width="400" height="400"/>
+        <circle class="cls-1" cx="200" cy="200" r="90.14"/>
+        <line class="cls-3" x1="200" y1="38.73" x2="200" y2="66.26"/>
+        <line class="cls-3" x1="319.88" y1="80.12" x2="288.72" y2="111.28"/>
+        <line class="cls-3" x1="361.27" y1="200" x2="333.74" y2="200"/>
+        <line class="cls-3" x1="319.88" y1="319.88" x2="288.72" y2="288.72"/>
+        <line class="cls-3" x1="200" y1="361.27" x2="200" y2="333.74"/>
+        <line class="cls-3" x1="80.12" y1="319.88" x2="111.28" y2="288.72"/>
+        <line class="cls-3" x1="38.73" y1="200" x2="66.26" y2="200"/>
+        <line class="cls-3" x1="80.12" y1="80.12" x2="111.28" y2="111.28"/>
+        <path class="cls-3" d="M200,52.5c81.46,0,147.5,66.04,147.5,147.5s-66.04,147.5-147.5,147.5c-40.73,0-77.61-16.51-104.3-43.2"/>
+      </g>
+    </symbol>
+  </defs>
+  <use width="400" height="400" xlink:href="#state-polaris"/>
+</svg>

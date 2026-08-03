@@ -1,1 +1,31 @@
-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400"><defs><symbol id="state-onrush" data-name="state-onrush" viewBox="0 0 400 400"><path d="M341,237.74A146.37,146.37,0,0,0,208.87,54.07" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:11px;stroke-dasharray:72,36,48,42,24"/><path d="M237.46,341.3A146.37,146.37,0,0,1,53.79,209.15" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:11px;stroke-dasharray:72,36,48,42,24"/><circle cx="200" cy="200" r="90.14" style="fill:#fff"/><rect width="400" height="400" style="fill:none"/></symbol></defs><use width="400" height="400" xlink:href="#state-onrush"/></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2, .cls-3 {
+        fill: none;
+      }
+
+      .cls-3 {
+        stroke: #fff;
+        stroke-dasharray: 72 44 46 46 24;
+        stroke-linecap: round;
+        stroke-miterlimit: 10;
+        stroke-width: 12px;
+      }
+    </style>
+    <symbol id="state-onrush" viewBox="0 0 400 400">
+      <g>
+        <path class="cls-3" d="M341.02,237.74c3.21-12.04,4.92-24.69,4.92-37.74,0-77.68-60.58-141.21-137.07-145.93"/>
+        <path class="cls-3" d="M237.46,341.3c-12.04,3.21-24.69,4.92-37.74,4.92-77.68,0-141.21-60.58-145.93-137.07"/>
+        <circle class="cls-1" cx="200" cy="200" r="90.14"/>
+        <rect class="cls-2" y="0" width="400" height="400"/>
+      </g>
+    </symbol>
+  </defs>
+  <use width="400" height="400" xlink:href="#state-onrush"/>
+</svg>

@@ -1,1 +1,38 @@
-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400"><defs><filter id="luminosity-noclip" x="109.86" y="109.86" width="190.92" height="180.28" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feFlood flood-color="#fff" result="bg"/><feBlend in="SourceGraphic" in2="bg"/></filter><mask id="mask" x="109.86" y="109.86" width="190.92" height="180.28" maskUnits="userSpaceOnUse"><polyline points="147.92 190.8 193.61 254.08 288.78 122.26" style="fill:none;stroke:#000;stroke-linecap:round;stroke-linejoin:round;stroke-width:24px;filter:url(#luminosity-noclip)"/></mask></defs><g style="mask:url(#mask)"><circle cx="200" cy="200" r="90.14" style="fill:#fff"/></g></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        mask: url(#mask);
+      }
+
+      .cls-3 {
+        fill: none;
+        stroke: #000;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 24px;
+      }
+
+      .cls-4 {
+        filter: url(#luminosity-noclip);
+      }
+    </style>
+    <filter id="luminosity-noclip" x="109.86" y="109.86" width="190.92" height="180.28" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feFlood flood-color="#fff" result="bg"/>
+      <feBlend in="SourceGraphic" in2="bg"/>
+    </filter>
+    <mask id="mask" x="109.86" y="109.86" width="190.92" height="180.28" maskUnits="userSpaceOnUse">
+      <g class="cls-4">
+        <polyline class="cls-3" points="147.92 190.8 193.61 254.08 288.78 122.26"/>
+      </g>
+    </mask>
+  </defs>
+  <g class="cls-2">
+    <circle class="cls-1" cx="200" cy="200" r="90.14"/>
+  </g>
+</svg>

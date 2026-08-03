@@ -1,1 +1,62 @@
-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400"><defs><filter id="luminosity-invert-noclip" x="60.92" y="32.91" width="278.16" height="342.42" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feColorMatrix values="-1 0 0 0 1 0 -1 0 0 1 0 0 -1 0 1 0 0 0 1 0" result="invert"/><feFlood flood-color="#fff" result="bg"/><feBlend in="invert" in2="bg"/></filter><mask id="mask" x="60.92" y="32.91" width="278.16" height="342.42" maskUnits="userSpaceOnUse"><g style="filter:url(#luminosity-invert-noclip)"><path d="M142,278.35a71.13,71.13,0,0,0-2.15,30.8c.59,4,1.57,8,3.93,11.2s6.33,5.52,10.28,4.88c4.87-.79,8-5.52,10-10.05a59.31,59.31,0,0,0,4.53-30.31" style="fill:none;stroke:#fff;stroke-miterlimit:10;stroke-width:100px"/><path d="M214.88,99.85a26.17,26.17,0,0,1,7.25-15.4,27.1,27.1,0,0,1-1.58,21.61" style="fill:none;stroke:#fff;stroke-miterlimit:10;stroke-width:56px"/></g></mask></defs><path d="M221.34,122c-27.2-5.51-57.24,2.05-77.3,21.4" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-linejoin:round;stroke-width:9px"/><path d="M177.41,292.05a87,87,0,0,0,30.43,2.8c36.84-3.27,70.22-31.69,78.91-67.65,8.31-34.36-6.79-73.11-35.92-92.92" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-linejoin:round;stroke-width:9px"/><path d="M179,117.57c-12.13,0-33.88,9.3-45.56,22-25.09,27.19-31.85,69.91-16,103.33a89.3,89.3,0,0,0,22.82,29.52" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-linejoin:round;stroke-width:9px"/><path d="M206.15,132.85c23.59,1.38,43.77,24.18,42.26,47.77-9.71-20.31-3.16-47,14.83-60.55-8.12,6.63-21.18,2.47-27.56-5.86s-7.84-19.28-9.1-29.68a77.66,77.66,0,0,1-9.84,46.95" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-linejoin:round;stroke-width:9px"/><path d="M157,237.9a74.66,74.66,0,0,1-34.55,50.5c12.41-4,26.16,3.82,33.21,14.79s9,24.36,10.68,37.29c-4.36-34.55,12-70.91,40.8-90.51a28,28,0,0,1-47-22.34" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-linejoin:round;stroke-width:9px"/><g style="mask:url(#mask)"><path d="M186.73,55.15,81.19,116.09a26.51,26.51,0,0,0-13.27,23V260.94a26.51,26.51,0,0,0,13.27,23l105.54,60.94a26.54,26.54,0,0,0,26.54,0l105.54-60.94a26.51,26.51,0,0,0,13.27-23V139.06a26.51,26.51,0,0,0-13.27-23L213.27,55.15A26.54,26.54,0,0,0,186.73,55.15Z" style="fill:none;stroke:#fff;stroke-miterlimit:10;stroke-width:14px"/></g></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400">
+  <defs>
+    <style>
+      .cls-1 {
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 9px;
+      }
+
+      .cls-1, .cls-2, .cls-3, .cls-4 {
+        fill: none;
+        stroke: #fff;
+      }
+
+      .cls-5 {
+        mask: url(#mask);
+      }
+
+      .cls-6 {
+        filter: url(#luminosity-invert-noclip);
+      }
+
+      .cls-2 {
+        stroke-width: 14px;
+      }
+
+      .cls-2, .cls-3, .cls-4 {
+        stroke-miterlimit: 10;
+      }
+
+      .cls-3 {
+        stroke-width: 100px;
+      }
+
+      .cls-4 {
+        stroke-width: 56px;
+      }
+    </style>
+    <filter id="luminosity-invert-noclip" x="60.92" y="32.91" width="278.16" height="342.42" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feColorMatrix result="cm" values="-1 0 0 0 1 0 -1 0 0 1 0 0 -1 0 1 0 0 0 1 0"/>
+      <feFlood flood-color="#fff" result="bg"/>
+      <feBlend in="cm" in2="bg"/>
+    </filter>
+    <mask id="mask" x="60.92" y="32.91" width="278.16" height="342.42" maskUnits="userSpaceOnUse">
+      <g class="cls-6">
+        <g>
+          <path class="cls-3" d="M141.97,278.35c-2.96,9.94-3.7,20.54-2.15,30.8.6,3.95,1.58,7.97,3.93,11.19,2.35,3.23,6.34,5.52,10.28,4.88,4.88-.79,8.05-5.52,10.02-10.05,4.13-9.47,5.71-20.04,4.54-30.31"/>
+          <path class="cls-4" d="M214.88,99.85c.61-5.75,3.21-11.27,7.25-15.4,2.51,7,1.92,15.05-1.58,21.61"/>
+        </g>
+      </g>
+    </mask>
+  </defs>
+  <path class="cls-1" d="M221.34,121.99c-27.21-5.51-57.24,2.04-77.3,21.4"/>
+  <path class="cls-1" d="M177.41,292.05c9.88,2.68,20.19,3.71,30.43,2.8,36.85-3.27,70.23-31.7,78.92-67.65,8.3-34.36-6.79-73.11-35.93-92.92"/>
+  <path class="cls-1" d="M179.03,117.57c-12.13,0-33.88,9.3-45.56,21.96-25.09,27.19-31.85,69.91-16,103.33,5.38,11.35,13.29,21.37,22.82,29.52"/>
+  <path class="cls-1" d="M206.15,132.85c23.59,1.38,43.76,24.19,42.25,47.77-9.71-20.3-3.16-47.03,14.83-60.54-8.12,6.63-21.18,2.46-27.56-5.86-6.37-8.32-7.85-19.28-9.1-29.69,1.78,16.16-1.72,32.87-9.85,46.95"/>
+  <path class="cls-1" d="M157.01,237.9c-3.59,20.73-16.53,39.65-34.55,50.51,12.41-4.01,26.16,3.82,33.21,14.79,7.05,10.97,8.95,24.36,10.68,37.28-4.36-34.54,12.03-70.9,40.8-90.51-8.14,7.61-21.04,9.62-31.11,4.83-10.07-4.78-16.67-16.05-15.91-27.17"/>
+  <g class="cls-5">
+    <path class="cls-2" d="M186.73,55.15l-105.55,60.94c-8.21,4.74-13.27,13.5-13.27,22.98v121.88c0,9.48,5.06,18.24,13.27,22.98l105.55,60.94c8.21,4.74,18.32,4.74,26.53,0l105.55-60.94c8.21-4.74,13.27-13.5,13.27-22.98v-121.88c0-9.48-5.06-18.24-13.27-22.98l-105.55-60.94c-8.21-4.74-18.32-4.74-26.53,0Z"/>
+  </g>
+</svg>

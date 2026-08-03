@@ -20,29 +20,52 @@ export class CanvasCheckpointNode extends CanvasNodeItem {
 			${super.styles}
 
 			:host {
-				border-radius: 999px;
+				width: auto;
+				padding: 0;
+				border: none;
+				background: none;
 			}
 
 			.kind {
 				text-transform: uppercase;
 				letter-spacing: .04em;
-				font-size: .8em;
+				font-size: .7em;
 			}
 
-			/* Deliberately understated — a hook to build the milestone's real treatment on, not the treatment. */
-			:host([milestone]) {
-				border-width: 2px;
-				border-color: color-mix(in srgb, var(--p7t-accent-onrush, var(--interactive-accent)) 70%, transparent);
+			.grid {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: .2em;
+				text-align: center;
+
+				p7t-icon {
+					width: 3.6em;
+					height: 3.6em;
+				}
+			}
+
+			.title {
+				position: absolute;
+				font-weight: 400;
+				white-space: nowrap;
+				bottom: -1.6em;
+				background-color: 
+					color-mix(in srgb, var(--background-modifier-message) 90%, transparent);
+				padding: .2em .5em;
+				border-radius: 4em;
+				font-size: 1.1em;
+				line-height: 1.1em;
 			}
 		`
 	}
 
 	protected override get notchTemplate() {
-		return html`<p7t-icon icon=${this.milestone ? 'lucide:flag' : 'lucide:milestone' as IconName}></p7t-icon>`
+		return html`<p7t-icon icon=${this.milestone ? 'milestone' : 'checkpoint' as IconName}></p7t-icon>`
 	}
 
 	protected override get preTitle() {
-		return html`<div class='kind'><span>${this.milestone ? 'Milestone' : 'Checkpoint'}</span></div>`
+		return html``
 	}
 
 	/** A checkpoint carries no dependency lock badge of its own — it only aggregates, it is not gated. */

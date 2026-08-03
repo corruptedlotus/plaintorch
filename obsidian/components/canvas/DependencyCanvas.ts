@@ -669,7 +669,7 @@ export class DependencyCanvas extends Component {
 			},
 			{
 				key: 'checkpoint',
-				icon: 'lucide:milestone',
+				icon: 'checkpoint',
 				label: 'Add checkpoint',
 				run: async () => await this.addCheckpoint()
 			}

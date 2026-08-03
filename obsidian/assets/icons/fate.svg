@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2, .cls-3 {
+        fill: none;
+      }
+
+      .cls-3 {
+        stroke: #fff;
+        stroke-miterlimit: 10;
+        stroke-width: 11px;
+      }
+    </style>
+    <symbol id="fate-2" viewBox="0 0 400 400">
+      <g>
+        <rect class="cls-2" width="400" height="400"/>
+        <path class="cls-1" d="M200,58.22c2.58,0,5.01,1.01,6.83,2.83l132.11,132.11c1.83,1.83,2.83,4.25,2.83,6.83s-1.01,5.01-2.83,6.83l-132.11,132.11c-1.83,1.83-4.25,2.83-6.83,2.83s-5.01-1.01-6.83-2.83L61.05,206.83c-1.83-1.83-2.83-4.25-2.83-6.83s1.01-5.01,2.83-6.83L193.17,61.05c1.83-1.83,4.25-2.83,6.83-2.83M200,47.22c-5.29,0-10.58,2.02-14.61,6.05L53.27,185.39c-8.07,8.07-8.07,21.16,0,29.23l132.11,132.11c4.04,4.04,9.32,6.05,14.61,6.05s10.58-2.02,14.61-6.05l132.11-132.11c8.07-8.07,8.07-21.16,0-29.23L214.61,53.27c-4.04-4.04-9.32-6.05-14.61-6.05h0Z"/>
+        <g>
+          <circle class="cls-1" cx="126.78" cy="200" r="11.82"/>
+          <circle class="cls-1" cx="163.39" cy="163.39" r="11.82"/>
+          <circle class="cls-1" cx="200" cy="126.78" r="11.82"/>
+          <circle class="cls-1" cx="163.39" cy="236.61" r="11.82"/>
+          <circle class="cls-1" cx="200" cy="200" r="11.82"/>
+          <circle class="cls-1" cx="236.61" cy="236.61" r="11.82"/>
+          <circle class="cls-1" cx="236.61" cy="163.39" r="11.82"/>
+          <circle class="cls-1" cx="200" cy="273.22" r="11.82"/>
+          <circle class="cls-1" cx="273.22" cy="200" r="11.82"/>
+        </g>
+        <circle class="cls-3" cx="200" cy="200" r="44.26"/>
+      </g>
+    </symbol>
+  </defs>
+  <use width="400" height="400" xlink:href="#fate-2"/>
+</svg>

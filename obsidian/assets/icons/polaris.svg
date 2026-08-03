@@ -1,1 +1,37 @@
-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400"><defs><symbol id="polaris-ui" data-name="polaris-ui" viewBox="0 0 403.94 403.94"><path d="M204.87,184.92l23.25-23.25a.6.6,0,0,0-.06-.11L205.67,112a4.06,4.06,0,0,0-7.4,0l-22.4,49.59s0,.07-.05.11l23.25,23.25A4.09,4.09,0,0,0,204.87,184.92ZM292,198.27l-49.59-22.4-.11-.05L202,216.11l-40.3-40.29-.11.05L112,198.27a4.06,4.06,0,0,0,0,7.4l49.59,22.39a28.72,28.72,0,0,1,14.31,14.32L198.27,292a4.06,4.06,0,0,0,7.4,0l22.39-49.59a28.78,28.78,0,0,1,14.32-14.32L292,205.67A4.06,4.06,0,0,0,292,198.27Z" style="fill:#fff"/><line x1="201.97" y1="39.45" x2="201.97" y2="69.49" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="323.26" y1="80.68" x2="289.28" y2="114.66" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="364.49" y1="201.97" x2="334.45" y2="201.97" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="323.26" y1="323.26" x2="289.28" y2="289.28" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="201.97" y1="364.49" x2="201.97" y2="334.45" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="80.68" y1="323.26" x2="114.66" y2="289.28" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="39.45" y1="201.97" x2="69.49" y2="201.97" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><line x1="80.68" y1="80.68" x2="114.66" y2="114.66" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/><circle cx="201.97" cy="201.97" r="201.97" style="fill:none"/><path d="M202,54.47a147.5,147.5,0,1,1-104.3,251.8" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:8px"/></symbol></defs><use width="403.94" height="403.94" transform="scale(0.99)" xlink:href="#polaris-ui"/></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        stroke: #fff;
+        stroke-linecap: round;
+        stroke-miterlimit: 10;
+        stroke-width: 10px;
+      }
+
+      .cls-2, .cls-3 {
+        fill: none;
+      }
+    </style>
+    <symbol id="polaris-ui" viewBox="0 0 403.94 403.94">
+      <g>
+        <path class="cls-1" d="M204.87,184.92l23.25-23.25s-.04-.08-.06-.12l-22.4-49.59c-1.44-3.18-5.96-3.18-7.4,0l-22.4,49.59s-.04.08-.06.12l23.25,23.25c1.6,1.6,4.21,1.6,5.81,0ZM291.97,198.27l-49.59-22.4s-.08-.04-.12-.06l-40.3,40.3-40.3-40.3s-.08.04-.12.06l-49.59,22.4c-3.18,1.44-3.18,5.96,0,7.4l49.59,22.4c6.36,2.87,11.45,7.96,14.32,14.32l22.4,49.59c1.44,3.18,5.96,3.18,7.4,0l22.4-49.59c2.87-6.36,7.96-11.45,14.32-14.32l49.59-22.4c3.18-1.44,3.18-5.96,0-7.4Z"/>
+        <line class="cls-2" x1="201.97" y1="39.45" x2="201.97" y2="69.49"/>
+        <line class="cls-2" x1="323.26" y1="80.68" x2="289.28" y2="114.66"/>
+        <line class="cls-2" x1="364.49" y1="201.97" x2="334.45" y2="201.97"/>
+        <line class="cls-2" x1="323.26" y1="323.26" x2="289.28" y2="289.28"/>
+        <line class="cls-2" x1="201.97" y1="364.49" x2="201.97" y2="334.45"/>
+        <line class="cls-2" x1="80.68" y1="323.26" x2="114.66" y2="289.28"/>
+        <line class="cls-2" x1="39.45" y1="201.97" x2="69.49" y2="201.97"/>
+        <line class="cls-2" x1="80.68" y1="80.68" x2="114.66" y2="114.66"/>
+        <circle class="cls-3" cx="201.97" cy="201.97" r="201.97"/>
+        <path class="cls-2" d="M201.97,54.47c81.46,0,147.5,66.04,147.5,147.5s-66.04,147.5-147.5,147.5c-40.73,0-77.61-16.51-104.3-43.2"/>
+      </g>
+    </symbol>
+  </defs>
+  <use width="403.94" height="403.94" transform="" xlink:href="#polaris-ui"/>
+</svg>

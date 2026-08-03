@@ -1,1 +1,46 @@
-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><path d="M245.74,53.46A153.54,153.54,0,0,1,346.37,154.37" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:9px"/><path d="M53.46,154.26A153.54,153.54,0,0,1,154.37,53.63" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:9px"/><path d="M154.26,346.54A153.54,153.54,0,0,1,53.63,245.63" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:9px"/><path d="M346.54,245.74A153.54,153.54,0,0,1,245.63,346.37" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:9px"/><line x1="269.73" y1="269.73" x2="242.84" y2="242.84" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:11px;stroke-dasharray:15,22,6"/><line x1="351.55" y1="200" x2="255.53" y2="200" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:11px;stroke-dasharray:15,25,24,24"/><line x1="269.73" y1="130.27" x2="242.84" y2="157.16" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:11px;stroke-dasharray:15,22,6"/><line x1="200" y1="48.45" x2="200" y2="144.47" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:11px;stroke-dasharray:15,25,24,24"/><line x1="130.27" y1="130.27" x2="157.16" y2="157.16" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:11px;stroke-dasharray:15,22,6"/><line x1="48.22" y1="200" x2="144.47" y2="200" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:11px;stroke-dasharray:15,25,24,24"/><line x1="130.27" y1="269.73" x2="157.16" y2="242.84" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:11px;stroke-dasharray:15,22,6"/><line x1="200" y1="351.55" x2="200" y2="255.53" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:11px;stroke-dasharray:15,25,24,24"/><path d="M229.42,198.54l-15.83-7.15L220.15,180a.29.29,0,0,0-.4-.4l-11.39,6.56-7.15-15.83a1.33,1.33,0,0,0-2.42,0l-7.15,15.83-11.39-6.56a.29.29,0,0,0-.4.4l6.56,11.39-15.83,7.15a1.33,1.33,0,0,0,0,2.42l15.83,7.15-6.56,11.39a.29.29,0,0,0,.4.4l11.39-6.56,7.15,15.82a1.33,1.33,0,0,0,2.42,0l7.15-15.82,11.39,6.56a.29.29,0,0,0,.4-.4l-6.56-11.39L229.42,201A1.33,1.33,0,0,0,229.42,198.54Z" style="fill:#fff"/></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <defs>
+    <style>
+      .cls-1 {
+        stroke-dasharray: 15 25 24 24;
+      }
+
+      .cls-1, .cls-2, .cls-3 {
+        fill: none;
+        stroke: #fff;
+        stroke-linecap: round;
+        stroke-miterlimit: 10;
+      }
+
+      .cls-1, .cls-3 {
+        stroke-width: 11px;
+      }
+
+      .cls-4 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        stroke-width: 9px;
+      }
+
+      .cls-3 {
+        stroke-dasharray: 15 22 6;
+      }
+    </style>
+  </defs>
+  <path class="cls-2" d="M245.74,53.46c47.95,14.98,85.78,52.9,100.63,100.9"/>
+  <path class="cls-2" d="M53.46,154.26c14.98-47.95,52.9-85.78,100.9-100.63"/>
+  <path class="cls-2" d="M154.26,346.54c-47.95-14.98-85.78-52.9-100.63-100.9"/>
+  <path class="cls-2" d="M346.54,245.74c-14.98,47.95-52.9,85.78-100.9,100.63"/>
+  <line class="cls-3" x1="269.73" y1="269.73" x2="242.84" y2="242.84"/>
+  <line class="cls-1" x1="351.55" y1="200" x2="255.53" y2="200"/>
+  <line class="cls-3" x1="269.73" y1="130.27" x2="242.84" y2="157.16"/>
+  <line class="cls-1" x1="200" y1="48.45" x2="200" y2="144.47"/>
+  <line class="cls-3" x1="130.27" y1="130.27" x2="157.16" y2="157.16"/>
+  <line class="cls-1" x1="48.22" y1="200" x2="144.47" y2="200"/>
+  <line class="cls-3" x1="130.27" y1="269.73" x2="157.16" y2="242.84"/>
+  <line class="cls-1" x1="200" y1="351.55" x2="200" y2="255.53"/>
+  <path class="cls-4" d="M229.42,198.54l-15.83-7.15,6.56-11.39c.15-.26-.14-.55-.4-.4l-11.39,6.56-7.15-15.83c-.47-1.04-1.95-1.04-2.42,0l-7.15,15.83-11.39-6.56c-.26-.15-.55.14-.4.4l6.56,11.39-15.83,7.15c-1.04.47-1.04,1.95,0,2.42l15.83,7.15-6.56,11.39c-.15.26.14.55.4.4l11.39-6.56,7.15,15.83c.47,1.04,1.95,1.04,2.42,0l7.15-15.83,11.39,6.56c.26.15.55-.14.4-.4l-6.56-11.39,15.83-7.15c1.04-.47,1.04-1.95,0-2.42Z"/>
+</svg>

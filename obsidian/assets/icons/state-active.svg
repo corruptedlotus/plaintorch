@@ -1,1 +1,21 @@
-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><circle cx="200" cy="200" r="90.14" style="fill:#fff"/><path d="M200,58a142,142,0,1,1-95,247.42" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:11px"/><path d="M73.88,265.23A142.06,142.06,0,0,1,99.62,99.62" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:11px"/></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        fill: none;
+        stroke: #fff;
+        stroke-linecap: round;
+        stroke-miterlimit: 10;
+        stroke-width: 12px;
+      }
+    </style>
+  </defs>
+  <circle class="cls-1" cx="200" cy="200" r="90.14"/>
+  <path class="cls-2" d="M200,58.04c78.4,0,141.96,63.56,141.96,141.96s-63.56,141.96-141.96,141.96c-36.55,0-69.88-13.81-95.04-36.51"/>
+  <path class="cls-2" d="M63.35,238.59c-3.46-12.27-5.31-25.21-5.31-38.59,0-39.2,15.89-74.69,41.58-100.38"/>
+</svg>
