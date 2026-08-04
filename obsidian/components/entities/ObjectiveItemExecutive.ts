@@ -1,10 +1,22 @@
-import { component, html, property } from "@a11d/lit"
+import { component, css, html, property } from "@a11d/lit"
 import { ObjectiveItem } from "./ObjectiveItem"
 import { Executive } from "@pleiades/sdk"
 import { ExecutiveModal, getApp } from ".."
 
 @component('p7t-objective-item-exec')
 export class ObjectiveItemExecutive extends ObjectiveItem {
+
+	static override get styles() {
+		return css`
+			${super.styles}
+
+			p7t-time-unit {
+				font-size: 1.7em;
+				font-weight: 400;
+				margin: .1em;
+			}
+		`
+	}
 
 	@property({
 		updated(this: ObjectiveItemExecutive, value: Executive | undefined) {

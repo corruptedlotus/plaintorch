@@ -6,6 +6,7 @@ export class ValueProgress extends Component {
 	@property({ type: Number }) value = 0
 	@property({ type: Number }) max = 100
 	@property() icon: IconName = 'starfire'
+	@property({ type: Object }) valueTemplate = (value: number) => html`${value}`
 
 	static override get styles() {
 		return css`
@@ -78,7 +79,7 @@ export class ValueProgress extends Component {
 				<div class='value-box'>
 					<p7t-icon icon=${this.icon}></p7t-icon>
 					<span>
-						<span>${this.value}</span><span> / ${this.max}</span>
+						${this.valueTemplate(this.value)}<span> / ${this.valueTemplate(this.max)}</span>
 					</span>
 					<slot class='extra'></slot>
 				</div>
