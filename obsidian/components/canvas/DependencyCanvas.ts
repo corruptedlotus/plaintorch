@@ -1,8 +1,9 @@
 import { Component, component, css, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
 import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EntitySubscription } from '@pleiades/sdk'
 import { Notice } from 'obsidian'
-import { core, DerivedRef, navigateToEntity, type ExpandingAction } from '..'
-import { addCheckpointToOnrush, addObjectiveToOnrush, createDependency, deleteCheckpoint, deleteDependency, removeObjectiveFromOnrush, reshapeDependency, saveGraphLayout } from './canvasActions'
+import { core, DerivedRef, getApp, navigateToEntity, type ExpandingAction } from '..'
+import { addCheckpointToOnrush, addObjectiveToOnrush, createDependency, deleteCheckpoint, deleteDependency, deleteEntity, removeObjectiveFromOnrush, reshapeDependency, saveGraphLayout } from './canvasActions'
+import { EntityDetailModal } from './EntityDetailModal'
 import { contextModeLabels, onrushContext, type CanvasContextMode, type EndpointResolver } from './graphContext'
 import { edgeCurve, entryPoint, exitPoint, layoutGraph, parsePositions, serializePositions, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
 import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpointTypeName, targetRef, wouldCycle, type CanvasEdge, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
@@ -452,7 +453,9 @@ export class DependencyCanvas extends Component {
 								data-key=${node.key}
 								style='transform: translate(${box.x}px, ${box.y}px)'
 								@pointerdown=${(e: PointerEvent) => this.onNodePointerDown(e, node.key, box)}
-								@click=${{ handleEvent: (e: Event) => this.onNodeClick(e), capture: true }}>
+								@click=${{ handleEvent: (e: Event) => this.onNodeClick(e), capture: true }}
+								@dblclick=${() => this.openDetails(node)}
+								@contextmenu=${(e: MouseEvent) => this.onNodeContextMenu(e, node.key)}>
 								${this.nodeTemplate(node, locks.get(node.key) ?? 'none')}
 							</div>
 						`
@@ -622,6 +625,9 @@ export class DependencyCanvas extends Component {
 		const isCheckpoint = node.ref.kind === DependencyEndpointKind.Checkpoint
 		return html`
 			<div class='menu-title'>${node.entity.title}</div>
+			<button class='menu-item' @click=${() => void this.run(async () => this.openDetails(node))}>
+				Details
+			</button>
 			${isCheckpoint ? this.checkpointMenu(node) : this.entityMenu(node)}
 		`
 	}
@@ -638,12 +644,16 @@ export class DependencyCanvas extends Component {
 					Remove from Onrush
 				</button>
 			`}
+			<div class='menu-separator'></div>
+			<button class='menu-item' @click=${() => void this.run(async () => await deleteEntity(node))}>
+				Delete
+			</button>
 		`
 	}
 
 	private checkpointMenu(node: CanvasNode) {
-		// A milestone stands for the sprint's completion and is bound to it; it offers nothing to remove. A
-		// ghostly checkpoint is context, not a member. Everything else is a checkpoint the sprint tracks.
+		// A milestone stands for the sprint's completion and is bound to it; it offers nothing to remove — only
+		// its details. A ghostly checkpoint is context, not a member. Everything else the sprint tracks.
 		if (node.milestone) {
 			return html`<div class='menu-note'>The sprint's milestone — it stays for the sprint's life.</div>`
 		}
@@ -653,6 +663,7 @@ export class DependencyCanvas extends Component {
 		}
 
 		return html`
+			<div class='menu-separator'></div>
 			<button class='menu-item' @click=${() => void this.run(async () => await deleteCheckpoint(node.entity.id))}>
 				Delete checkpoint
 			</button>
@@ -696,6 +707,19 @@ export class DependencyCanvas extends Component {
 		const element = this.shadowRoot?.querySelector(`.node[data-key="${CSS.escape(e.detail.nodeKey)}"]`)
 		const anchor = element?.getBoundingClientRect()
 		void this.openMenu(anchor?.left ?? 0, anchor?.bottom ?? 0, { sort: 'node', nodeKey: e.detail.nodeKey })
+	}
+
+	/** Opens the node's context menu at the pointer, the right-click way in rather than through the notch. */
+	private onNodeContextMenu(e: MouseEvent, nodeKey: string) {
+		e.preventDefault()
+		e.stopPropagation()
+		this.selected = nodeKey
+		void this.openMenu(e.clientX, e.clientY, { sort: 'node', nodeKey })
+	}
+
+	/** Opens the entity behind a node in its banner, to view or edit. */
+	private openDetails(node: CanvasNode) {
+		new EntityDetailModal(getApp(), node.ref.kind, node.entity, { milestone: node.milestone === true }).open()
 	}
 
 	private setMode(mode: CanvasContextMode) {

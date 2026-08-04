@@ -139,6 +139,49 @@ public sealed class DependencyApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task<Checkpoint> UpdateCheckpointAsync(string checkpointId, CheckpointUpdate update, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(checkpointId);
+		ArgumentNullException.ThrowIfNull(update);
+		var checkpoint = await context.Checkpoints.FirstOrDefaultAsync(item => item.Id == checkpointId, cancellationToken)
+			?? throw new InvalidOperationException($"Checkpoint '{checkpointId}' was not found.");
+
+		if (!string.IsNullOrWhiteSpace(update.Title))
+		{
+			checkpoint.Title = update.Title;
+		}
+
+		if (update.ClearCelestronToll)
+		{
+			// Removing the toll removes what there was to pay, so the paid flag no longer means anything.
+			checkpoint.CelestronToll = null;
+			checkpoint.TollPaid = false;
+		}
+		else if (update.CelestronToll is int toll)
+		{
+			if (toll < 0)
+			{
+				throw new InvalidOperationException("A checkpoint's Celestron toll cannot be negative.");
+			}
+
+			checkpoint.CelestronToll = toll;
+		}
+
+		if (update.ClearExternalCondition)
+		{
+			checkpoint.ExternalCondition = null;
+		}
+		else if (update.ExternalCondition is bool condition)
+		{
+			checkpoint.ExternalCondition = condition;
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		await auditLogService.WriteAsync("api", "checkpoint.update", subject: checkpoint, cancellationToken: cancellationToken);
+		return checkpoint;
+	}
+
+	/// <inheritdoc />
 	public async Task<IReadOnlyList<Checkpoint>> ListCheckpointsAsync(CancellationToken cancellationToken = default)
 	{
 		return await context.Checkpoints.AsNoTracking().OrderBy(item => item.Title).ToListAsync(cancellationToken);

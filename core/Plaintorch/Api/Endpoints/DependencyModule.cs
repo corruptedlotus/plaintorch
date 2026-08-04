@@ -1,5 +1,6 @@
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Api.Abstractions;
+using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Api.Services;
 using Pleiades.Plaintorch.Api.Transport;
 
@@ -60,6 +61,9 @@ public sealed class DependencyModule : Module
 			var checkpoint = await api.GetCheckpointAsync(checkpointId, cancellationToken);
 			return checkpoint is null ? Results.NotFound() : Results.Ok(checkpoint);
 		});
+
+		checkpoints.MapPut("/{checkpointId}", async (string checkpointId, CheckpointUpdate request, IDependencyApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.UpdateCheckpointAsync(checkpointId, request, cancellationToken)));
 
 		checkpoints.MapDelete("/{checkpointId}", async (string checkpointId, IDependencyApi api, CancellationToken cancellationToken) =>
 		{

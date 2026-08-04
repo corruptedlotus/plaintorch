@@ -44,6 +44,11 @@ public interface IDependencyApi
 	Task<Checkpoint?> GetCheckpointAsync(string checkpointId, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Updates a checkpoint's name, toll, or external condition (PEP102).
+	/// </summary>
+	Task<Checkpoint> UpdateCheckpointAsync(string checkpointId, CheckpointUpdate update, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Lists checkpoints.
 	/// </summary>
 	Task<IReadOnlyList<Checkpoint>> ListCheckpointsAsync(CancellationToken cancellationToken = default);

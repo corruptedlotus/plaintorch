@@ -1,6 +1,7 @@
 import type { PlaintorchCoreClient } from "../coreClient"
 import type {
 	Checkpoint,
+	CheckpointUpdate,
 	CreateCheckpointRequest,
 	CreateDependencyRequest,
 	Dependency,
@@ -39,6 +40,11 @@ export class PlaintorchDependenciesSdk {
 	/** Gets a checkpoint by id. */
 	public async getCheckpoint(checkpointId: string): Promise<Checkpoint | undefined> {
 		return await this.client.getJson<Checkpoint>(`/api/checkpoints/${encodeURIComponent(checkpointId)}`)
+	}
+
+	/** Updates a checkpoint's name, toll, or external condition (PEP102). */
+	public async updateCheckpoint(checkpointId: string, update: CheckpointUpdate): Promise<Checkpoint | undefined> {
+		return await this.client.putForJson<Checkpoint>(`/api/checkpoints/${encodeURIComponent(checkpointId)}`, update)
 	}
 
 	/** Creates a checkpoint. */

@@ -8,6 +8,7 @@ export type {
 	DependencyEndpointRequest,
 	CreateDependencyRequest,
 	Checkpoint,
+	CheckpointUpdate,
 	CreateCheckpointRequest,
 	SetCheckpointConditionRequest
 } from "./models"

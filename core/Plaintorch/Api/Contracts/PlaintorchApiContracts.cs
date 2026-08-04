@@ -172,6 +172,23 @@ public sealed record ObjectiveUpdate(
 	bool ClearParentIncentive = false);
 
 /// <summary>
+/// Represents the editable fields of a checkpoint (PEP102): its name, its Celestron toll, and its external
+/// condition.
+/// </summary>
+/// <remarks>
+/// The toll and the condition are each optional on the checkpoint (a null means it has none), so a nullable
+/// value carries "set to this" while a paired <c>Clear…</c> flag carries "remove it"; null with the flag
+/// unset means "leave unchanged". Requiring a condition where there was none is <c>ExternalCondition = false</c>
+/// (present but unmet).
+/// </remarks>
+public sealed record CheckpointUpdate(
+	string? Title = null,
+	int? CelestronToll = null,
+	bool ClearCelestronToll = false,
+	bool? ExternalCondition = null,
+	bool ClearExternalCondition = false);
+
+/// <summary>
 /// Represents a workflow shift for an objective.
 /// </summary>
 /// <param name="Status">The new objective status.</param>

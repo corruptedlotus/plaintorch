@@ -204,6 +204,27 @@ public sealed class DependencySystemTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task Updating_a_checkpoint_changes_its_name_toll_and_condition(/* PEP102 */)
+	{
+		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Gate", cancellationToken: Ct));
+
+		// Set a name, a toll, and require an unmet condition.
+		var set = await Deps(api => api.UpdateCheckpointAsync(checkpoint.Id, new CheckpointUpdate(Title: "Grand Gate", CelestronToll: 12, ExternalCondition: false), Ct));
+		Assert.Equal("Grand Gate", set.Title);
+		Assert.Equal(12, set.CelestronToll);
+		Assert.False(set.ExternalCondition);
+
+		// A negative toll is refused.
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Deps(api => api.UpdateCheckpointAsync(checkpoint.Id, new CheckpointUpdate(CelestronToll: -1), Ct)));
+
+		// Clearing removes the toll and the condition; an unnamed update leaves the name alone.
+		var cleared = await Deps(api => api.UpdateCheckpointAsync(checkpoint.Id, new CheckpointUpdate(ClearCelestronToll: true, ClearExternalCondition: true), Ct));
+		Assert.Equal("Grand Gate", cleared.Title);
+		Assert.Null(cleared.CelestronToll);
+		Assert.Null(cleared.ExternalCondition);
+	}
+
+	[Fact]
 	public async Task Saving_the_graph_layout_keeps_the_sprints_checkpoints(/* PEP102 */)
 	{
 		var sprint = await Onrush(api => api.PlanAsync(new OnrushSprintPlan("Sprint"), Ct));

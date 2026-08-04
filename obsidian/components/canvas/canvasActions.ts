@@ -8,7 +8,7 @@ import {
 } from '@pleiades/sdk'
 import { Notice } from 'obsidian'
 import { core, PromptTextModal } from '..'
-import { effectiveConstraint, effectiveTrigger, sourceRef, targetRef, type CanvasEdge } from './graphModel'
+import { effectiveConstraint, effectiveTrigger, sourceRef, targetRef, type CanvasEdge, type CanvasNode } from './graphModel'
 import type { CanvasContextMode } from './graphContext'
 
 /**
@@ -177,6 +177,35 @@ export async function addCheckpointToOnrush(sprint: OnrushSprint): Promise<boole
 	new Notice(`Checkpoint added: ${title}`)
 	await refreshOnrush()
 	return true
+}
+
+/**
+ * Deletes the entity a node stands for, whatever kind it is.
+ *
+ * Unlike removing from the graph, this removes the entity itself — the objective, checkpoint, directive or
+ * fate — and, through the graph refresh, every edge that touched it. A milestone is refused by the core, so
+ * the menu never offers this for one.
+ */
+export async function deleteEntity(node: CanvasNode): Promise<boolean> {
+	const deleted = await deleteByKind(node.ref.kind, node.ref.id)
+	if (!deleted) {
+		new Notice(`PLAINTORCH could not delete ${node.entity.title}.`)
+		return false
+	}
+
+	new Notice(`Deleted ${node.entity.title}.`)
+	await Promise.all([refreshGraph(), refreshOnrush()])
+	return true
+}
+
+function deleteByKind(kind: DependencyEndpointKind, id: string): Promise<boolean> {
+	switch (kind) {
+		case DependencyEndpointKind.Objective: return core.objectives.delete(id)
+		case DependencyEndpointKind.Directive: return core.directives.delete(id)
+		case DependencyEndpointKind.Fate: return core.declaratives.deleteFate(id)
+		case DependencyEndpointKind.Checkpoint: return core.dependencies.deleteCheckpoint(id)
+		default: return Promise.resolve(false)
+	}
 }
 
 /** Deletes a checkpoint (and the edges touching it). A milestone is refused by the core and never offered. */

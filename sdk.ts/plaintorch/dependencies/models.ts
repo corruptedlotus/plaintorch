@@ -104,6 +104,20 @@ export interface CreateDependencyRequest {
 	constraint?: DependencyConstraint | undefined
 }
 
+/**
+ * Payload to update a checkpoint's name, toll, or external condition (PEP102).
+ *
+ * The toll and the condition are optional on the checkpoint, so a value sets it while the paired `clear…`
+ * flag removes it; leaving both unset leaves the field unchanged.
+ */
+export interface CheckpointUpdate {
+	title?: string | undefined
+	celestronToll?: number | undefined
+	clearCelestronToll?: boolean | undefined
+	externalCondition?: boolean | undefined
+	clearExternalCondition?: boolean | undefined
+}
+
 /** Payload to create a checkpoint (PEP101). */
 export interface CreateCheckpointRequest {
 	title: string
