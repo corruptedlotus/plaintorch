@@ -9,18 +9,20 @@ export class TimeUnit extends Component {
 			:host {
 				display: inline-flex;
 				align-items: center;
+				gap: .2ch;
 			}
 
 			svg {
-				margin: 0.02ch 0.15ch;
-				width: 0.7ch;
-				height: 0.7ch;
+				margin-top: 0;
+				width: 0.75ch;
+				height: 0.75ch;
 				align-self: flex-start;
 			}
 
 			span {
 				line-height: .9em;
 				vertical-align: middle;
+				font-variant-numeric: tabular-nums;
 			}
 
 			.cls-1 {
@@ -28,7 +30,7 @@ export class TimeUnit extends Component {
 				stroke: var(--p7t-time-unit-arc, var(--p7t-flare-accent, var(--interactive-accent)));
 				stroke-linecap: round;
 				stroke-miterlimit: 10;
-				stroke-width: 7px;
+				stroke-width: 6px;
 				transform: rotate(-90deg);
 				transform-origin: center;
 			}

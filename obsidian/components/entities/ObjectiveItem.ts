@@ -42,6 +42,10 @@ export class ObjectiveItem extends EntityItem<Objective> {
 		`
 	}
 
+	override get disabled() {
+		return (this.entity?.status ?? 99) > ObjectiveStatus.Done
+	}
+
 	protected override async notchAction() {
 		if (!this.objective) return
 		new ChangeStateModal((window as any).app! as App, this).open()

@@ -5,24 +5,29 @@ import { ExecutiveModal, getApp } from ".."
 
 @component('p7t-objective-item-exec')
 export class ObjectiveItemExecutive extends ObjectiveItem {
+	
+	@property({
+		updated(this: ObjectiveItemExecutive, value: Executive | undefined) {
+			this.entity = value?.objective
+		}
+	}) executive?: Executive
 
 	static override get styles() {
 		return css`
 			${super.styles}
 
 			p7t-time-unit {
-				font-size: 1.7em;
+				font-size: 1.5em;
 				font-weight: 400;
-				margin: .1em;
+				margin-block: .2em .05em;
+				align-self: center;
 			}
 		`
 	}
 
-	@property({
-		updated(this: ObjectiveItemExecutive, value: Executive | undefined) {
-			this.entity = value?.objective
-		}
-	}) executive?: Executive
+	override get disabled() {
+		return !!this.executive?.executed
+	}
 
 	protected override get extraActionTemplate() {
 		return undefined
@@ -38,9 +43,17 @@ export class ObjectiveItemExecutive extends ObjectiveItem {
 
 	protected override get notchTemplate() {
 		// if done, inherit super, otherwise show the time still left against the estimation
-		return this.executive?.executed ? super.notchTemplate : html`
-			<p7t-time-unit .value=${Math.max(0, (this.executive?.estimation ?? 0) - (this.executive?.elapsed ?? 0))}></p7t-time-unit>
-		`
+		return this.executive?.executed ? html`
+			<p7t-icon icon='state-done'></p7t-icon>
+		` : (!this.executive?.estimation ? html`
+				<p7t-icon icon='state-zero'></p7t-icon>
+			` : (this.executive.estimation <= this.executive.elapsed ? html`
+					<p7t-icon icon='state-active'></p7t-icon>
+				` : html`
+					<p7t-time-unit .value=${this.executive.estimation - this.executive.elapsed}></p7t-time-unit>
+				`
+			)
+		)
 	}
 }
 

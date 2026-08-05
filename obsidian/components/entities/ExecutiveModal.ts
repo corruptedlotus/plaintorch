@@ -34,9 +34,14 @@ export class ExecutiveEditor extends Component {
 	static override get styles() {
 		return css`
 			:host {
-				display: block;
+				display: flex;
+				flex-direction: column;
+				align-items: stretch;
+				gap: .8em;
 				font-family: var(--font-interface);
 				color: var(--text-normal);
+				box-sizing: border-box;
+				padding: 1em;
 			}
 
 			.header {
@@ -51,6 +56,8 @@ export class ExecutiveEditor extends Component {
 				font-size: 1.6em;
 				font-weight: 250;
 				line-height: 1.1;
+				margin-inline-end: .6em;
+				margin-top: -1em;
 				color: color-mix(in srgb, var(--text-normal) 88%, transparent);
 			}
 
@@ -110,6 +117,7 @@ export class ExecutiveEditor extends Component {
 
 			.allocations {
 				display: grid;
+				font-size: 1.2em;
 				grid-template-columns: 1fr auto 1fr;
 				align-items: center;
 				justify-items: center;
@@ -137,7 +145,7 @@ export class ExecutiveEditor extends Component {
 			}
 
 			.allocation.featured {
-				background-color: color-mix(in srgb, var(--text-normal) 8%, transparent);
+				background-color: color-mix(in srgb, var(--text-normal) 5%, transparent);
 				border-radius: 18px;
 				padding: .7em 1.1em;
 
@@ -163,12 +171,6 @@ export class ExecutiveEditor extends Component {
 		return html`
 			<div class='header'>
 				<div class='title'>${objective?.title ?? executive.title ?? 'Untitled Executive'}</div>
-				<p7t-icon
-					class='close'
-					icon='lucide:x'
-					title='Close'
-					@click=${() => this.requestClose()}>
-				</p7t-icon>
 			</div>
 
 			<div class='columns'>

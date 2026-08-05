@@ -62,23 +62,22 @@ export class EditableTimeUnit extends EditablePart<number> {
 			 */
 			.stepper {
 				position: absolute;
-				top: 50%;
-				width: .5em;
-				height: .5em;
-				translate: 0 -50%;
+				display: flex;
+				flex-direction: column;
+				justify-content: space-between;
+				align-items: center;
+				height: calc(100% + 1.2rem);
+				margin-block: -.6rem;
+				margin-inline: .2rem;
 				scale: .4;
 				opacity: 0;
 				transition: .2s ease;
 				pointer-events: none;
 				color: var(--p7t-flare-accent, var(--interactive-accent));
-			}
-
-			.stepper.decrement {
-				right: calc(100% + .2em);
-			}
-
-			.stepper.increment {
-				left: calc(100% + .2em);
+				left: calc(100% + .3rem);
+				background-color: color-mix(in srgb, black 50%, var(--background-primary));
+				font-size: .4em;
+				border-radius: 8px;
 			}
 
 			:host([active]) .stepper {
@@ -87,7 +86,7 @@ export class EditableTimeUnit extends EditablePart<number> {
 				pointer-events: auto;
 			}
 
-			:host([active]) .stepper:hover {
+			:host([active]) .stepper > *:hover {
 				opacity: 1;
 			}
 		`
@@ -95,19 +94,22 @@ export class EditableTimeUnit extends EditablePart<number> {
 
 	protected override get template() {
 		return html`
-			<p7t-icon
-				class='stepper decrement'
-				icon='lucide:chevron-down'
-				@mousedown=${(e: Event) => e.preventDefault()}
-				@click=${() => this.step(-1)}>
-			</p7t-icon>
 			<p7t-time-unit .value=${Math.max(0, this.value ?? 0)}></p7t-time-unit>
-			<p7t-icon
-				class='stepper increment'
-				icon='lucide:chevron-up'
-				@mousedown=${(e: Event) => e.preventDefault()}
-				@click=${() => this.step(1)}>
-			</p7t-icon>
+
+			<div class='stepper'>
+				<p7t-icon
+					class='increment'
+					icon='lucide:chevron-up'
+					@mousedown=${(e: Event) => e.preventDefault()}
+					@click=${() => this.step(1)}>
+				</p7t-icon>
+				<p7t-icon
+					class='decrement'
+					icon='lucide:chevron-down'
+					@mousedown=${(e: Event) => e.preventDefault()}
+					@click=${() => this.step(-1)}>
+				</p7t-icon>
+			</div>
 		`
 	}
 

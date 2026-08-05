@@ -6,6 +6,8 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 	@property({ type: Object }) entity?: T
 	@property({ type: Boolean, reflect: true }) interactive = false
 
+	get disabled() { return false }
+
 	/**
 	 * The entity arrives as a property from whichever aggregate rendered this item, and that instance is
 	 * canonical. Observing it is what makes a list row follow an edit made in a banner elsewhere.
@@ -57,7 +59,7 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 				anchor-scope: --entity-item;
 				display: grid;
 				gap: 0 .6ch;
-				grid-template-columns: auto 1fr;
+				grid-template-columns: 3.6em 1fr;
 				grid-template-rows: auto auto;
 				grid-template-areas:
 					"notch toplane"
@@ -73,6 +75,7 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 				padding: 4px;
 				box-sizing: border-box;
 				position: relative;
+				align-self: stretch;
 
 				& ::slotted(p7t-icon),
 				& p7t-icon {
@@ -152,12 +155,17 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 					border-color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 60%, transparent);
 				}
 			}
+
+			.grid.disabled,
+			.grid.disabled ~ *:not(.extra-action) {
+				opacity: .4;
+			}
 		`
 	}
 
 	protected override get template() {
 		return html`
-			<div class='grid'>
+			<div class='grid ${this.disabled ? 'disabled' : ''}'>
 				<div @click=${async () => await this.notchAction()} class='notch part'>${this.notchTemplate}</div>
 				<div class='toplane'>
 					${this.preTitle}

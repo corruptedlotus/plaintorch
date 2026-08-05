@@ -44,8 +44,8 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		return html`
 			<p7t-value-progress icon='state-polaris' value=${totalElapsed} max=${totalEstimation}
 				.valueTemplate=${(value: number) => html`<p7t-time-unit .value=${value}></p7t-time-unit>`}
+				.maxTemplate=${(max: number) => html`<p7t-time-unit .value=${max}></p7t-time-unit>`}
 			></p7t-value-progress>
-			</p7t-value-progress>
 			<p7t-button @click=${() => this.conclude()}>Conclude</p7t-button>
 		`
 	}
