@@ -82,6 +82,9 @@ export class EditablePlainText extends EditablePart<string> {
 	override readonly spellcheck = false
 
 	protected override updated(_changedProperties: PropertyValues) {
+		// While the field is being edited the caret lives in this text; rewriting it — even to the same string —
+		// would collapse the selection and drop what the reader is typing, so it is synced only when idle.
+		if (this.active) return
 		this.textContent = this.value ?? ''
 	}
 

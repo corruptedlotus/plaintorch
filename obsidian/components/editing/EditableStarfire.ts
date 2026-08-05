@@ -32,6 +32,8 @@ export class EditableStarfire extends EditablePart<number> {
 	}
 
 	protected override updated(_changedProperties: PropertyValues) {
+		// See EditablePlainText: syncing the text mid-edit would collapse the caret, so it waits until idle.
+		if (this.active) return
 		this.textContent = this.value?.toString() ?? ''
 	}
 
@@ -45,7 +47,9 @@ export class EditableStarfire extends EditablePart<number> {
 	protected handleInput(e: KeyboardEvent | unknown) {
 		if (e instanceof KeyboardEvent && !(e.key === 'Enter' && e.ctrlKey)) return
 		this.blur()
-		this.finishEditing(this.textContent ? parseInt(this.textContent) : undefined)
+		// Empty or non-numeric input clears the value rather than settling on NaN — the field may be blanked.
+		const parsed = this.textContent ? parseInt(this.textContent, 10) : Number.NaN
+		this.finishEditing(Number.isNaN(parsed) ? undefined : parsed)
 	}
 
 	protected override get template() {

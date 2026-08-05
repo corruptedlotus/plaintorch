@@ -1,7 +1,7 @@
 import { Component, component, css, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
 import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EntitySubscription } from '@pleiades/sdk'
 import { Notice } from 'obsidian'
-import { core, DerivedRef, getApp, navigateToEntity, type ExpandingAction } from '..'
+import { core, DerivedRef, getApp, navigateToEntity, type ExpandingAction, type IconName } from '..'
 import { addCheckpointToOnrush, addObjectiveToOnrush, createDependency, deleteCheckpoint, deleteDependency, deleteEntity, removeObjectiveFromOnrush, reshapeDependency, saveGraphLayout } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
 import { contextModeLabels, onrushContext, type CanvasContextMode, type EndpointResolver } from './graphContext'
@@ -25,6 +25,14 @@ const minimumScale = 0.3
 const maximumScale = 2.5
 /** How far a pointer must travel before it is a drag rather than an unsteady click. */
 const dragThreshold = 3
+/**
+ * How close two clicks on the same node must be to count as a double-click that opens its details.
+ *
+ * Detected here rather than left to the browser's own `dblclick`: the first click is intercepted to bring the
+ * node forward, which changes what the second lands on, and that reliably suppresses the native event for a
+ * mouse (a touch double-tap survives it). Timing the pair ourselves opens the details for either input.
+ */
+const doubleClickWindow = 450
 
 /**
  * The dependency canvas: the backlog as a graph you can draw on.
@@ -72,6 +80,9 @@ export class DependencyCanvas extends Component {
 	private framed = false
 	/** Whether the drag in progress has actually moved, which is what tells a drag from a click. */
 	private dragged = false
+	/** The last node clicked and when, so a quick second click on it is read as a double-click. */
+	private lastClickKey?: string
+	private lastClickAt = 0
 	/** The sprint whose saved layout is currently loaded into {@link overrides}. */
 	private layoutSprintId?: string
 	private layoutSaveTimer?: number
@@ -85,6 +96,9 @@ export class DependencyCanvas extends Component {
 				min-height: 0;
 				font-family: var(--font-interface);
 				--p7t-canvas-node-width: 15em;
+				/* The two edge colours, shared by the line, its arrow, and its midpoint badge so they match. */
+				--p7t-edge-line: color-mix(in srgb, var(--text-normal) 70%, var(--background-primary, #1e1e1e));
+				--p7t-edge-line-satisfied: color-mix(in srgb, var(--text-success, seagreen) 70%, var(--text-normal));
 			}
 
 			.toolbar {
@@ -163,11 +177,14 @@ export class DependencyCanvas extends Component {
 			.edge {
 				fill: none;
 				stroke-width: 2;
-				stroke: color-mix(in srgb, var(--text-normal) 45%, transparent);
+				/* Opaque, so a pending edge reads as a firm line rather than a faint one. */
+				stroke: var(--p7t-edge-line);
 			}
 
+			/* A met dependency recedes: its line keeps the success colour but drops to half strength. */
 			.edge.satisfied {
-				stroke: color-mix(in srgb, var(--text-success, seagreen) 70%, var(--text-normal));
+				stroke: var(--p7t-edge-line-satisfied);
+				opacity: .5;
 			}
 
 			.edge.linking {
@@ -175,17 +192,38 @@ export class DependencyCanvas extends Component {
 				stroke-dasharray: 5 4;
 			}
 
-			.edge-finish-label {
-				fill: color-mix(in srgb, var(--text-normal) 60%, transparent);
-				font-family: var(--font-interface);
-				font-size: 10px;
-				font-weight: 600;
-				letter-spacing: .02em;
-				text-transform: uppercase;
-				/* The line beneath is drawn over by a halo so the word stays legible on top of the edge. */
-				paint-order: stroke;
-				stroke: var(--background-primary, transparent);
-				stroke-width: 3px;
+			/*
+			 * A glyph at the middle of an edge: a done mark on a met dependency, a raced mark on one that gates
+			 * a finish and is not yet met. It rides the surface as an HTML badge rather than living in the SVG,
+			 * so it can be the same themed icon every other surface draws — a foreignObject would strand the
+			 * custom element in the SVG namespace and never upgrade it. Its colour is the connector's own.
+			 */
+			.edge-badge {
+				position: absolute;
+				inset-block-start: 0;
+				inset-inline-start: 0;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				box-sizing: border-box;
+				width: 22px;
+				height: 22px;
+				border-radius: 50%;
+				border: 1.5px solid var(--p7t-edge-line);
+				background: var(--background-primary, #1e1e1e);
+				color: var(--p7t-edge-line);
+				pointer-events: none;
+			}
+
+			.edge-badge.satisfied {
+				border-color: var(--p7t-edge-line-satisfied);
+				color: var(--p7t-edge-line-satisfied);
+				opacity: .5;
+			}
+
+			.edge-badge p7t-icon {
+				width: 14px;
+				height: 14px;
 			}
 
 			/* An invisible fat stroke over each curve, because a 2px line is not a target anyone can hit. */
@@ -433,7 +471,7 @@ export class DependencyCanvas extends Component {
 					<svg class='edges' width=${Math.max(layout.width, 1)} height=${Math.max(layout.height, 1)}>
 						<defs>
 							<marker id='arrow-pending' viewBox='0 0 8 8' refX='7' refY='4' markerWidth='7' markerHeight='7' orient='auto-start-reverse'>
-								<path d='M 0 0 L 8 4 L 0 8 z' fill='color-mix(in srgb, var(--text-normal) 45%, transparent)'></path>
+								<path d='M 0 0 L 8 4 L 0 8 z' fill='color-mix(in srgb, var(--text-normal) 70%, var(--background-primary, #1e1e1e))'></path>
 							</marker>
 							<marker id='arrow-satisfied' viewBox='0 0 8 8' refX='7' refY='4' markerWidth='7' markerHeight='7' orient='auto-start-reverse'>
 								<path d='M 0 0 L 8 4 L 0 8 z' fill='color-mix(in srgb, var(--text-success, seagreen) 70%, var(--text-normal))'></path>
@@ -445,6 +483,7 @@ export class DependencyCanvas extends Component {
 						${repeat(graph.edges, edge => edge.key, edge => this.edgeTemplate(edge, boxes))}
 						${this.linkTemplate(boxes)}
 					</svg>
+					${repeat(graph.edges, edge => `badge:${edge.key}`, edge => this.edgeBadge(edge, boxes))}
 					${repeat(graph.nodes, node => node.key, node => {
 						const box = boxes.get(node.key)
 						return !box ? nothing : html`
@@ -454,7 +493,6 @@ export class DependencyCanvas extends Component {
 								style='transform: translate(${box.x}px, ${box.y}px)'
 								@pointerdown=${(e: PointerEvent) => this.onNodePointerDown(e, node.key, box)}
 								@click=${{ handleEvent: (e: Event) => this.onNodeClick(e), capture: true }}
-								@dblclick=${() => this.openDetails(node)}
 								@contextmenu=${(e: MouseEvent) => this.onNodeContextMenu(e, node.key)}>
 								${this.nodeTemplate(node, locks.get(node.key) ?? 'none')}
 							</div>
@@ -507,6 +545,7 @@ export class DependencyCanvas extends Component {
 					.nodeKey=${shared.nodeKey}
 					.entity=${shared.entity}
 					.kind=${shared.kind}
+					.lock=${this.checkpointLock(node, lock)}
 					?milestone=${node.milestone === true}
 					?selected=${shared.selected}
 					?active=${shared.active}
@@ -544,8 +583,6 @@ export class DependencyCanvas extends Component {
 		// A begin-triggered edge fires on its source *starting*, not finishing, so it wears the same
 		// start-circle tail whatever it gates — the begin-to-begin form generalised to every begin trigger.
 		const beginTriggered = effectiveTrigger(edge.dependency) === DependencyTrigger.OnBegin
-		// A to-finish constraint gates the dependant's finish rather than its begin; the label says which.
-		const toFinish = effectiveConstraint(edge.dependency) === DependencyConstraint.ToFinish
 		return svg`
 			<path
 				class='edge ${satisfied ? 'satisfied' : 'pending'}'
@@ -553,9 +590,61 @@ export class DependencyCanvas extends Component {
 				marker-end='url(#${satisfied ? 'arrow-satisfied' : 'arrow-pending'})'
 				marker-start=${beginTriggered ? 'url(#edge-begin)' : nothing}>
 			</path>
-			${toFinish ? svg`<text class='edge-finish-label' x=${entry.x - 12} y=${entry.y - 9} text-anchor='end'>Finish</text>` : nothing}
 			<path class='edge-hit' d=${path} @click=${(e: MouseEvent) => void this.openMenu(e.clientX, e.clientY, { sort: 'edge', edge })}></path>
 		`
+	}
+
+	/**
+	 * The glyph badge, if any, that rides the middle of an edge (PEP102).
+	 *
+	 * A met dependency carries a done mark; an unmet one that gates a finish carries a raced mark, the softer
+	 * "expected to win" state. Everything else — an ordinary unmet begin-gate — has no badge, the plain line
+	 * says all there is to say. The midpoint of the cubic is the mean of its ends, since both control points
+	 * sit level with their own end.
+	 */
+	private edgeBadge(edge: CanvasEdge, boxes: ReadonlyMap<string, NodeBox>) {
+		const source = boxes.get(edge.source)
+		const target = boxes.get(edge.target)
+		if (!source || !target) {
+			return nothing
+		}
+
+		const satisfied = edge.dependency.satisfied
+		const toFinish = effectiveConstraint(edge.dependency) === DependencyConstraint.ToFinish
+		const icon: IconName | undefined = satisfied ? 'state-done' : toFinish ? 'state-raced' : undefined
+		if (!icon) {
+			return nothing
+		}
+
+		const exit = exitPoint(source)
+		const entry = entryPoint(target)
+		// The badge is 22px square; translating to the midpoint less half its size centres it on the line.
+		const x = (exit.x + entry.x) / 2 - 11
+		const y = (exit.y + entry.y) / 2 - 11
+		return html`
+			<div class='edge-badge ${satisfied ? 'satisfied' : 'pending'}' style='transform: translate(${x}px, ${y}px)'>
+				<p7t-icon icon=${icon}></p7t-icon>
+			</div>
+		`
+	}
+
+	/**
+	 * How a checkpoint is held back, in the same two states an entity node wears (PEP102).
+	 *
+	 * A checkpoint aggregates rather than acts, so its lock is read from what still stands between it and its
+	 * unlock. An unmet incoming dependency is the severe `blocked`; once those are all met, an unpaid toll or an
+	 * unmet external condition is the softer `raced`; nothing owed is `none`. The `??` guards read a toll or a
+	 * condition the core sends as `null` — an absent optional — the same as one that is simply missing.
+	 */
+	private checkpointLock(node: CanvasNode, dependencyLock: NodeLock): NodeLock {
+		if (dependencyLock !== 'none') {
+			return 'blocked'
+		}
+
+		const checkpoint = node.entity as { celestronToll?: number | null, tollPaid?: boolean, externalCondition?: boolean | null }
+		const owesToll = (checkpoint.celestronToll ?? 0) > 0 && checkpoint.tollPaid !== true
+		const owesCondition = (checkpoint.externalCondition ?? undefined) === false
+		return owesToll || owesCondition ? 'raced' : 'none'
 	}
 
 	private linkTemplate(boxes: ReadonlyMap<string, NodeBox>) {
@@ -861,10 +950,11 @@ export class DependencyCanvas extends Component {
 	 * Resolves a click that landed on a node.
 	 *
 	 * A finished drag leaves a click behind — releasing a dragged node over its own title would otherwise
-	 * open the note — so that one is swallowed. Otherwise a clean click on a node that is not yet the active
-	 * one focuses it: the first click brings the node forward and its contents come alive, and only a second
-	 * click, now reaching those live contents, acts on them. Caught in the capture phase, ahead of the
-	 * contents, because until the node is active the click is the canvas's to interpret, not the item's.
+	 * open the note — so that one is swallowed. A quick second click on the same node opens its details,
+	 * wherever it lands. Otherwise a clean click on a node that is not yet the active one focuses it: the
+	 * first click brings the node forward and its contents come alive, and only a second click, now reaching
+	 * those live contents, acts on them. Caught in the capture phase, ahead of the contents, because until the
+	 * node is active the click is the canvas's to interpret, not the item's.
 	 */
 	private onNodeClick(e: Event) {
 		if (this.dragged) {
@@ -875,6 +965,22 @@ export class DependencyCanvas extends Component {
 		}
 
 		const key = (e.currentTarget as HTMLElement | null)?.getAttribute('data-key') ?? undefined
+		const now = Date.now()
+		if (key !== undefined && key === this.lastClickKey && now - this.lastClickAt <= doubleClickWindow) {
+			e.stopPropagation()
+			e.preventDefault()
+			this.lastClickKey = undefined
+			this.lastClickAt = 0
+			const node = this.graph.nodes.find(candidate => candidate.key === key)
+			if (node) {
+				this.openDetails(node)
+			}
+
+			return
+		}
+
+		this.lastClickKey = key
+		this.lastClickAt = now
 		if (key !== undefined && this.activeKey !== key) {
 			e.stopPropagation()
 			e.preventDefault()

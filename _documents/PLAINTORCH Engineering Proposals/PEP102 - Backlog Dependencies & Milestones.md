@@ -4,6 +4,7 @@ patches:
   - Patch102.1 - Dependency Graph Editor
   - Patch102.2 - Dependency Graph Usability
   - Patch102.3 - Milestone Binding and Graph
+  - Patch102.4 - Graph Deep Editability
 assignee: Soraya 🧙‍♀️
 ---
 > [!idea]
@@ -79,3 +80,32 @@ Checkpoints, the milestone included, now appear in the onrush graph through a **
 
 ### Schema
 One migration (`DependencyUniquenessAndOnrushMilestones`) carries both patches: the `Dependencies` compound unique index and `OnrushSprint.GraphLayout` (102.2), and `OnrushSprint.MilestoneCheckpointId` + `Checkpoint.OnrushSprintId` with their `SetNull` foreign keys (102.3).
+
+## Patch102.4 - Graph Deep Editability
+The graph could draw entities and connect them, but not *edit them in place*. This patch makes the entity behind a node editable through its own banner, gives the checkpoint the endpoint its inline edits needed, and adds the state marks on edges and checkpoints that inline editing made worth reading — along with the frictions that inline editing surfaced once the fields were live.
+
+### Editing an entity where it sits
+A node now opens the entity's **own banner in a modal** (`EntityDetailModal`) — the same banner every other surface shows, so an edit made here reaches all of them at once and edits made elsewhere reach it, the banner resolving and observing the canonical instance by its PUCK id. It opens two ways: a **double-click** on the node, or the node's context menu, which grew a **Details** item at its head. The menu also gained **Delete** (routed per kind through `deleteEntity`) and, for an onrush member, **Remove from Onrush**, so the two senses of "take this off the canvas" — unmake it, or unmember it — are both reachable and kept apart. On the canvas the title no longer opens the note, since a title click is now the first half of a double-click; opening the note is the menu's job instead.
+
+### The checkpoint, made editable
+The checkpoint was reachable but frozen — no way to rename it or change its toll or condition once created. This patch closes that:
+- **`PUT /api/checkpoints/{id}`** (`CheckpointUpdate`, `UpdateCheckpointAsync`), the endpoint the checkpoint lacked. The toll and the condition are optional, so each follows the house set-or-clear convention: a value sets it, a paired `Clear…` flag removes it, both unset leaves it. A negative toll is refused, and clearing a toll clears its paid flag with it — a toll that no longer exists cannot stand paid. This is the checkpoint's answer to the dependency edge's still-open "no `PUT`" note (102.1); a checkpoint, unlike an edge, is worth editing in place rather than deleting and remaking.
+- A **`p7t-checkpoint-banner`**, the checkpoint's face wherever banners appear. Its name and its toll are inline edits; its condition is a tri-state control — **Require condition** when there is none, then **Mark met / Mark unmet** and **Remove condition** — and the standing **Pay toll** action remains. Every edit goes through the checkpoints repository, so it syncs to the node and every other surface at once.
+
+### Reading an edge at a glance
+The edge marks were rebuilt around the midpoint, where a mark sits on the line rather than crowding the arrowhead:
+- The **to-finish** constraint's `Finish` text is now a **`state-raced` glyph** at the edge's midpoint, coloured to the connector — the same "raced, expected to win" reading the node badge carries, said on the edge itself.
+- A **pending** connector is now **opaque**, a firm line rather than a faint one. A **satisfied** connector recedes to **half strength** and carries a **`state-done` glyph** at its midpoint — met, and stepping back. One pair of colour variables (`--p7t-edge-line`, `--p7t-edge-line-satisfied`) keeps the line, its arrowhead and its midpoint badge in agreement. The badge rides the HTML surface rather than the SVG, so it is the same themed icon every other surface draws — a `foreignObject` would strand the custom element in the SVG namespace and never upgrade it.
+
+### A checkpoint's own state, in colour
+A checkpoint aggregates rather than acts, but it can still be held back, and now shows it in the same two colours an entity node wears. An unmet incoming dependency is the severe **blocked**; once those are all met, an unpaid toll or an unmet external condition is the softer **raced**; nothing owed is plain. Having no card to tint, it colours its glyph and its label. The toll and condition are read through a nullish guard, so a checkpoint the core sends with a null (absent) toll or condition reads as owing nothing.
+
+### Frictions inline editing surfaced
+Live fields exposed three things that were latent while nothing was typed into them:
+- **Editable fields clobbered their own caret.** Each `p7t-editable-*` rewrote its text on every render — including the render that focusing it triggers — which collapsed the selection and dropped what was being typed. It was why a banner's fields felt un-typeable in the modal. The text is now synced only while the field is idle, never mid-edit.
+- **A toll could not be blanked.** The starfire editor settled on `NaN` for empty or non-numeric input; it now yields `undefined`, so clearing the field clears the toll.
+- **A condition-less checkpoint read as one with an unmet condition.** The core serialises an absent `bool?`/`int?` as `null`, not a missing field, so the banner's `=== undefined` checks misfired — showing "condition required, not met" and the wrong buttons for a checkpoint that had no condition at all. Read through the nullish guard now. Checked against the core while there: nothing seeds a condition — `AttachMilestone` and `CreateCheckpointAsync` both leave it null, and the reconciler only reads it (`ExternalCondition != false`). The phantom condition was the client's null/undefined mismatch, not a stray write.
+
+### Open edges
+- **Double-click is detected by timing, not the native event.** The browser's `dblclick` is unreliable here: the first click is intercepted to bring the node forward, which changes what the second lands on, and that reliably suppresses the native event for a mouse (a touch double-tap survived it). A same-node second click inside a short window opens the details instead. The cost is that a quick second click on an *already active* node's own control can be read as a double-click; the window is short, and the modal is the deeper editor either way.
+- The modal edits through the banner as-is; a checkpoint with no lifecycle shows less than an objective's banner does, which is correct but leaves the checkpoint banner sparse.
