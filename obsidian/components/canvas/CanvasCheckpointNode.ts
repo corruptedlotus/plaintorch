@@ -26,6 +26,19 @@ export class CanvasCheckpointNode extends CanvasNodeItem {
 				background: none;
 			}
 
+			/*
+			 * A checkpoint has no card to tint, so its state colours the glyph and its label instead. Blocked
+			 * borrows the same severe colour a blocked entity wears — unmet incoming dependencies. Raced borrows
+			 * the softer one — dependencies met, but a toll or an external condition still owed.
+			 */
+			:host([lock='blocked']) .grid {
+				color: color-mix(in srgb, var(--text-error, crimson) 80%, var(--text-normal));
+			}
+
+			:host([lock='raced']) .grid {
+				color: color-mix(in srgb, var(--text-warning, goldenrod) 80%, var(--text-normal));
+			}
+
 			.kind {
 				text-transform: uppercase;
 				letter-spacing: .04em;

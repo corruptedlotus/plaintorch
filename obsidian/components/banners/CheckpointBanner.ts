@@ -67,14 +67,19 @@ export class CheckpointBanner extends EntityBanner<Checkpoint> {
 			return html``
 		}
 
+		// The core sends an absent toll or condition as null, not a missing field, so both are read through the
+		// nullish guard: a checkpoint with no condition must read as `none`, not as a condition sitting unmet.
+		const hasToll = (checkpoint.celestronToll ?? 0) > 0
+		const condition = checkpoint.externalCondition ?? undefined
+
 		return html`
 			<div style='display: flex; align-items: center; gap: .3em'>
 				<span>Toll:</span>
 				<p7t-editable-starfire ${this.binder.bind('celestronToll')}></p7t-editable-starfire>
-				${checkpoint.celestronToll && checkpoint.tollPaid ? html`<span style='opacity: .6'>paid</span>` : nothing}
+				${hasToll && checkpoint.tollPaid ? html`<span style='opacity: .6'>paid</span>` : nothing}
 			</div>
 			<div style='display: flex; align-items: center; gap: .3em'>
-				<span>Condition: ${checkpoint.externalCondition === undefined ? 'none' : checkpoint.externalCondition ? 'met' : 'not met'}</span>
+				<span>Condition: ${condition === undefined ? 'none' : condition ? 'met' : 'not met'}</span>
 			</div>
 		`
 	}
@@ -85,19 +90,23 @@ export class CheckpointBanner extends EntityBanner<Checkpoint> {
 			return html``
 		}
 
+		// Read through the nullish guard, as in `info`: a toll of null owes nothing, a condition of null is none.
+		const owesToll = (checkpoint.celestronToll ?? 0) > 0 && !checkpoint.tollPaid
+		const condition = checkpoint.externalCondition ?? undefined
+
 		return html`
-			${checkpoint.celestronToll === undefined || checkpoint.tollPaid ? nothing : html`
+			${!owesToll ? nothing : html`
 				<p7t-button large icon='starfire' @click=${() => this.payToll()}>
 					<span>Pay toll</span>
 				</p7t-button>
 			`}
-			${checkpoint.externalCondition === undefined ? html`
+			${condition === undefined ? html`
 				<p7t-button large icon='state-zero' @click=${() => this.applyUpdate({ externalCondition: false })}>
 					<span>Require condition</span>
 				</p7t-button>
 			` : html`
-				<p7t-button large icon=${checkpoint.externalCondition ? 'state-done' : 'state-zero'} @click=${() => this.applyUpdate({ externalCondition: !checkpoint.externalCondition })}>
-					<span>${checkpoint.externalCondition ? 'Mark unmet' : 'Mark met'}</span>
+				<p7t-button large icon=${condition ? 'state-done' : 'state-zero'} @click=${() => this.applyUpdate({ externalCondition: !condition })}>
+					<span>${condition ? 'Mark unmet' : 'Mark met'}</span>
 				</p7t-button>
 				<p7t-button large icon='lucide:x' @click=${() => this.applyUpdate({ clearExternalCondition: true })}>
 					<span>Remove condition</span>
