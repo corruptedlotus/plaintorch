@@ -131,9 +131,9 @@ export class ExpandingActions extends Component {
 			}
 
 			.choice p7t-icon {
-				width: 1.2em;
-				height: 1.2em;
-				flex: 0 0 1.2em;
+				width: 1.4em;
+				height: 1.4em;
+				flex: 0 0 1.4em;
 			}
 		`
 	}

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 400 400">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        mask: url(#mask);
+      }
+
+      .cls-3 {
+        filter: url(#luminosity-invert-noclip);
+      }
+
+      .cls-4 {
+        fill: none;
+        stroke: #fff;
+        stroke-linecap: round;
+        stroke-miterlimit: 10;
+        stroke-width: 12px;
+      }
+    </style>
+    <filter id="luminosity-invert-noclip" x="109.86" y="109.86" width="180.28" height="180.28" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feColorMatrix result="cm" values="-1 0 0 0 1 0 -1 0 0 1 0 0 -1 0 1 0 0 0 1 0"/>
+      <feFlood flood-color="#fff" result="bg"/>
+      <feBlend in="cm" in2="bg"/>
+    </filter>
+    <mask id="mask" x="109.86" y="109.86" width="180.28" height="180.28" maskUnits="userSpaceOnUse">
+      <g class="cls-3">
+        <g>
+          <path class="cls-1" d="M170.71,211.43l85.84-39.39c3.57-1.64,5.42-5.72,4.13-9.42-1.44-4.14-5.33-7.37-10.33-7.37h-100.71c-8.4,0-13.66,9.1-9.45,16.38l21.29,36.87c1.86,3.22,5.85,4.49,9.23,2.94Z"/>
+          <path class="cls-1" d="M178.45,237.87l12.1,20.96c4.2,7.28,14.71,7.28,18.91,0l33.62-58.24c1.85-3.2-1.74-6.79-4.94-4.94l-57.24,33.05c-3.21,1.85-4.31,5.96-2.46,9.17Z"/>
+        </g>
+      </g>
+    </mask>
+  </defs>
+  <g class="cls-2">
+    <circle class="cls-1" cx="200" cy="200" r="90.14"/>
+  </g>
+  <path class="cls-4" d="M200,58.04c78.4,0,141.96,63.56,141.96,141.96s-63.56,141.96-141.96,141.96c-36.55,0-69.88-13.81-95.04-36.51"/>
+  <path class="cls-4" d="M63.35,238.59c-3.46-12.27-5.31-25.21-5.31-38.59,0-39.2,15.89-74.69,41.58-100.38"/>
+</svg>

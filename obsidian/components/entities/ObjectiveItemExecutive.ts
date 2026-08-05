@@ -47,11 +47,13 @@ export class ObjectiveItemExecutive extends ObjectiveItem {
 			<p7t-icon icon='state-done'></p7t-icon>
 		` : (!this.executive?.estimation ? html`
 				<p7t-icon icon='state-zero'></p7t-icon>
-			` : (this.executive.estimation <= this.executive.elapsed ? html`
+			` : (this.executive.elapsed < this.executive.estimation ? html`
+					<p7t-time-unit .value=${this.executive.estimation - this.executive.elapsed}></p7t-time-unit>
+				` : (this.executive.elapsed < (this.executive.maximum ?? 999999) ? html`
 					<p7t-icon icon='state-active'></p7t-icon>
 				` : html`
-					<p7t-time-unit .value=${this.executive.estimation - this.executive.elapsed}></p7t-time-unit>
-				`
+					<p7t-icon icon='state-warn'></p7t-icon>
+				`)
 			)
 		)
 	}
