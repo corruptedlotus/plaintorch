@@ -257,6 +257,16 @@ public sealed class VaultWatcherSyncService(
 			existingIncentive.ParentIncentiveId = existingEntry.OriginalValues.GetValue<string?>(nameof(Incentive.ParentIncentiveId));
 		}
 
+		if (existing is OnrushSprint existingSprint)
+		{
+			// The milestone binding and the graph layout are database-only state (PEP102), never written to the
+			// sprint's frontmatter, so a frontmatter sync must never clear them the way SetValues otherwise does —
+			// the same reasoning as parenting above. Losing the milestone id detaches a sprint from its milestone
+			// (it then reads as an ordinary checkpoint); losing the layout discards the saved canvas arrangement.
+			existingSprint.MilestoneCheckpointId = existingEntry.OriginalValues.GetValue<string?>(nameof(OnrushSprint.MilestoneCheckpointId));
+			existingSprint.GraphLayout = existingEntry.OriginalValues.GetValue<string?>(nameof(OnrushSprint.GraphLayout));
+		}
+
 		if (existing is Fate or Decree)
 		{
 			await NormalizeIncentiveDirectiveAsync((Incentive)existing, candidate.VaultRelativePath, cancellationToken);
