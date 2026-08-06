@@ -20,8 +20,7 @@ export class EditableStarfire extends EditablePart<number> {
 			}
 
 			p7t-icon {
-				width: 1.8em;
-				height: 1.8em;
+				font-size: 1.2em
 			}
 
 			slot {
@@ -34,7 +33,7 @@ export class EditableStarfire extends EditablePart<number> {
 	protected override updated(_changedProperties: PropertyValues) {
 		// See EditablePlainText: syncing the text mid-edit would collapse the caret, so it waits until idle.
 		if (this.active) return
-		this.textContent = this.value?.toString() ?? ''
+		this.textContent = this.value?.toString() ?? 'x'
 	}
 
 	@eventListener({ type: 'focus', target: this })

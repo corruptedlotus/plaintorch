@@ -54,6 +54,7 @@ export class EditablePart<T> extends Component {
 
 			slot {
 				/*display: inline;*/
+				user-select: auto;
 			}
 
 			@keyframes pulse {

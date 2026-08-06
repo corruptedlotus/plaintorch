@@ -206,24 +206,17 @@ export class DependencyCanvas extends Component {
 				align-items: center;
 				justify-content: center;
 				box-sizing: border-box;
-				width: 22px;
-				height: 22px;
 				border-radius: 50%;
 				border: 1.5px solid var(--p7t-edge-line);
 				background: var(--background-primary, #1e1e1e);
 				color: var(--p7t-edge-line);
 				pointer-events: none;
-			}
 
-			.edge-badge.satisfied {
-				border-color: var(--p7t-edge-line-satisfied);
-				color: var(--p7t-edge-line-satisfied);
-				opacity: .5;
-			}
-
-			.edge-badge p7t-icon {
-				width: 14px;
-				height: 14px;
+				&.satisfied {
+					border-color: var(--p7t-edge-line-satisfied);
+					color: var(--p7t-edge-line-satisfied);
+					opacity: .7;
+				}
 			}
 
 			/* An invisible fat stroke over each curve, because a 2px line is not a target anyone can hit. */

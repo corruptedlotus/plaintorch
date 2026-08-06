@@ -42,11 +42,12 @@ export class EntityDetailModal extends Modal {
 	}
 
 	public override onOpen(): void {
-		this.titleEl.setText(this.entity.title)
+		this.titleEl.setText(`Editing ${this.entity.id}`)
 		this.contentEl.addClass('plaintorch-root')
 
 		const tag = bannerTagByKind[this.kind] ?? 'p7t-entity-banner'
 		const banner = document.createElement(tag) as BannerElement
+		banner.addClass('plaintorch-modal-content')
 		banner.app = this.app
 		// The provided entity shows immediately; the id resolves the canonical instance the banner then edits.
 		banner.entity = this.entity

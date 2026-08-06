@@ -1,6 +1,7 @@
 import { component, css, html, property } from '@a11d/lit'
 import { IconName } from '..'
 import { CanvasNodeItem } from './CanvasNodeItem'
+import { Checkpoint } from '@pleiades/sdk'
 
 /**
  * A checkpoint on the dependency canvas (PEP102).
@@ -52,7 +53,7 @@ export class CanvasCheckpointNode extends CanvasNodeItem {
 				gap: .2em;
 				text-align: center;
 
-				p7t-icon {
+				.notch p7t-icon {
 					width: 3.6em;
 					height: 3.6em;
 				}
@@ -70,6 +71,34 @@ export class CanvasCheckpointNode extends CanvasNodeItem {
 				font-size: 1.1em;
 				line-height: 1.1em;
 			}
+
+			.toplane {
+				position: absolute;
+				top: -1.6em;
+				font-size: .8em;
+				
+				&:has(.celestron) {
+					border-radius: 4em;
+					padding: .16em .4em;
+					background-color: color-mix(in srgb, currentColor 80%, transparent);
+				}
+
+				&:has(.celestron.paid) {
+					background-color: color-mix(in srgb, var(--background-modifier-message) 20%, transparent);
+				}
+			}
+
+			.celestron {
+				display: flex;
+				align-items: center;
+				gap: .1em;
+				color: var(--background-modifier-message);
+
+				&.paid {
+					color: var(--text-normal);
+					opacity: .3;
+				}
+			}
 		`
 	}
 
@@ -78,7 +107,13 @@ export class CanvasCheckpointNode extends CanvasNodeItem {
 	}
 
 	protected override get preTitle() {
-		return html``
+		const checkpoint = this.entity as Checkpoint
+		return !checkpoint.celestronToll ? html`` : html`
+			<span class='celestron ${!checkpoint.tollPaid ? '' : 'paid'}'>
+				<p7t-icon icon='${!checkpoint.tollPaid ? 'starfire' : 'state-done'}'></p7t-icon>
+				${checkpoint.celestronToll}
+			</span>
+		`
 	}
 
 	/** A checkpoint carries no dependency lock badge of its own — it only aggregates, it is not gated. */

@@ -123,6 +123,15 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 				align-items: stretch;
 			}
 
+			:host(.plaintorch-modal-content) {
+				padding: 0;
+				background: none;
+				border: none;
+				margin-inline: -.5rem;
+				margin-bottom: 0;
+				user-select: auto;
+			}
+
 			:host::part(header) {
 				grid-area: header;
 			}

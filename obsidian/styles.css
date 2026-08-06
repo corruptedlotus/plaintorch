@@ -30,7 +30,7 @@
 	overflow: hidden !important;
 }
 
-.plaintorch-canvas-view>p7t-dependency-canvas {
+.plaintorch-canvas-view > p7t-dependency-canvas {
 	flex: 1;
 	min-height: 0;
 }
