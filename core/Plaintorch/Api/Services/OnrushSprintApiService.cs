@@ -175,6 +175,68 @@ public sealed class OnrushSprintApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task DeleteAsync(string onrushSprintId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
+		var sprint = await context.OnrushSprints
+			.Include(item => item.Objectives)
+			.Include(item => item.ExecutiveOrders)
+			.Include(item => item.MilestoneCheckpoint)
+			.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
+			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
+
+		// Executive orders belong to the sprint outright, so they go with it — markdown and all.
+		foreach (var order in sprint.ExecutiveOrders.ToList())
+		{
+			await temporalDataService.ArchiveEntityAsync(order, "api-delete", Environment.UserName, cancellationToken);
+			context.ExecutiveOrders.Remove(order);
+			await markdownFileService.DeleteExecutiveOrderAsync(order, cancellationToken);
+		}
+
+		// The milestone is the sprint's own — the one deletion the checkpoint service refuses on its own terms
+		// is exactly this one, done because the sprint is going. The sprint and its milestone point at each
+		// other, so the cycle is broken and the milestone removed in this first save, before the sprint itself
+		// is deleted below; deleting both ends of the cycle in one save leaves EF unable to order the commands.
+		if (sprint.MilestoneCheckpoint is { } milestone)
+		{
+			sprint.MilestoneCheckpointId = null;
+			sprint.MilestoneCheckpoint = null;
+			milestone.OnrushSprintId = null;
+			milestone.OnrushSprint = null;
+			context.Checkpoints.Remove(milestone);
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+
+		// The sprint no longer names a milestone, so it can go. Its SetNull foreign keys free the objectives and
+		// any other checkpoints it merely tracked — they live on, detached — and EF drops the reference on each
+		// tracked one, which is what the markdown re-save below then records.
+		var detached = sprint.Objectives.ToList();
+		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(sprint, "api-delete", Environment.UserName, cancellationToken);
+		context.OnrushSprints.Remove(sprint);
+		await context.SaveChangesAsync(cancellationToken);
+
+		foreach (var objective in detached)
+		{
+			await markdownFileService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
+		}
+
+		await markdownFileService.DeleteOnrushSprintAsync(sprint, cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"onrush.delete",
+			subjectType: nameof(OnrushSprint),
+			subjectId: sprint.Id,
+			subjectTitle: sprint.Title,
+			temporalKind: "database",
+			temporalEntryKey: graveyardEntry.EntryKey,
+			temporalEntityType: graveyardEntry.EntityType,
+			temporalEntityId: graveyardEntry.EntityId,
+			temporalEntityTitle: graveyardEntry.EntityTitle,
+			cancellationToken: cancellationToken);
+	}
+
+	/// <inheritdoc />
 	public async Task<OnrushSprint?> GetAsync(string? onrushSprintId = null, CancellationToken cancellationToken = default)
 	{
 		if (!string.IsNullOrWhiteSpace(onrushSprintId))

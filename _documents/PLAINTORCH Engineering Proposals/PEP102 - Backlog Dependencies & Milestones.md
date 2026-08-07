@@ -5,6 +5,7 @@ patches:
   - Patch102.2 - Dependency Graph Usability
   - Patch102.3 - Milestone Binding and Graph
   - Patch102.4 - Graph Deep Editability
+  - Patch102.5 - Onrush Management UI
 assignee: Soraya 🧙‍♀️
 ---
 > [!idea]
@@ -109,3 +110,21 @@ Live fields exposed three things that were latent while nothing was typed into t
 ### Open edges
 - **Double-click is detected by timing, not the native event.** The browser's `dblclick` is unreliable here: the first click is intercepted to bring the node forward, which changes what the second lands on, and that reliably suppresses the native event for a mouse (a touch double-tap survived it). A same-node second click inside a short window opens the details instead. The cost is that a quick second click on an *already active* node's own control can be read as a double-click; the window is short, and the modal is the deeper editor either way.
 - The modal edits through the banner as-is; a checkpoint with no lifecycle shows less than an objective's banner does, which is correct but leaves the checkpoint banner sparse.
+
+## Patch102.5 - Onrush Management UI
+The graph could plan and run an onrush but not *manage* one: there was no way to start, create, activate, conclude or delete a sprint from the canvas, and no way to reach the sprint itself. This patch adds the two surfaces that close that — an offer where a graph is empty, and a management tray where a sprint is present — and the one endpoint the delete needed.
+
+### The empty offer
+An empty graph now says what can be done about it rather than only that it is empty. The **active** graph, with no active onrush, offers **Start now** (a `state-onrush` glyph — the core starts and auto-titles a fresh active sprint) and **Go to planning** (which turns the same canvas to the planning graph). The **planning** graph, with none in planning, offers **Create new** (a lucide star — a plan under a title the reader gives it). A sprint that merely holds nothing keeps its old nudge to add a member. The buttons live inside the mid-screen notice, which waives pointer events, so they sit in a layer that takes them back.
+
+### The management tray
+While a sprint is on screen, a tray sits bottom-left, mirroring the add-FAB across the viewport. Above it, three tallies read left to right — **objectives, checkpoints (the milestone among them), executive orders** — off the sprint's own collections. The tray itself is two controls:
+- **Details** (a pen) opens the sprint's own window: its `p7t-onrush-banner` — the same banner every surface edits its name through — above a grid of its **executive orders**, in the spirit of the directive tab's grid but for one sprint's orders alone. Each order edits its name and its effective window in place and can be removed; a new one is added blank and named inline (`p7t-onrush-orders`, its list fetched and re-read around each write since orders are not a tracked repository).
+- A vertical **three-dot** menu whose actions differ by mode. **Planning** offers **Activate** — refused when an onrush is already active, since only one runs at a time; on success the canvas turns to the active graph the plan has become — and **Delete**. **Active** offers **Conclude**, which sets the sprint's end date.
+
+### Deleting a sprint
+Delete is the one action with no endpoint behind it, so this patch adds **`DELETE /api/onrush/{id}`** (`DeleteAsync`). A sprint owns its milestone and its executive orders, so they go with it — the milestone is the very deletion the checkpoint service refuses on its own terms, done here because the sprint is going. Its objectives and any other checkpoints it merely tracked are **freed, not deleted**: they are independent entities, so their onrush membership is dropped (the objectives' notes re-saved to match) and they live on. The sprint and its milestone point at each other through two foreign keys, so the cycle is broken and the milestone removed in one save before the sprint itself is deleted in the next — deleting both ends of the cycle at once leaves EF unable to order the commands.
+
+### Open edges
+- Delete is offered only for a planning sprint, which is always the placeholder identity, so that is the path exercised. Deleting an *active* sprint through the API alone hits an ordering wrinkle in the same two-save flow and is left for when a surface actually calls for it.
+- Activation reads the active sprint once to refuse a second; between that read and the begin, a sprint started elsewhere would still be caught by the core, which is the authority.

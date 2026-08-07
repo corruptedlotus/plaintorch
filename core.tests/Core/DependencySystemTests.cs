@@ -281,6 +281,30 @@ public sealed class DependencySystemTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task Deleting_an_onrush_takes_its_milestone_and_orders_but_frees_its_members(/* PEP102.5 */)
+	{
+		var sprint = await Onrush(api => api.PlanAsync(new OnrushSprintPlan("Doomed"), Ct));
+		var milestoneId = sprint.MilestoneCheckpointId!;
+		var objective = await Objective(api => api.CreateStandaloneAsync("Keep me", cancellationToken: Ct));
+		await Objective(api => api.AddToOnrushAsync(objective.Id, sprint.Id, Ct));
+		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Gate", onrushSprintId: sprint.Id, cancellationToken: Ct));
+
+		await Onrush(api => api.DeleteAsync(sprint.Id, Ct));
+
+		// The sprint and its milestone are gone (the two-FK cycle between sprint and milestone and all).
+		Assert.Null(await Onrush(api => api.GetAsync(sprint.Id, Ct)));
+		Assert.Null(await Deps(api => api.GetCheckpointAsync(milestoneId, Ct)));
+
+		// Its members survive as independent entities, merely detached from the onrush.
+		var freedObjective = await Objective(api => api.GetAsync(objective.Id, Ct));
+		Assert.NotNull(freedObjective);
+		Assert.Null(freedObjective!.OnrushSprintId);
+		var freedCheckpoint = await Deps(api => api.GetCheckpointAsync(checkpoint.Id, Ct));
+		Assert.NotNull(freedCheckpoint);
+		Assert.Null(freedCheckpoint!.OnrushSprintId);
+	}
+
+	[Fact]
 	public async Task Planning_an_onrush_creates_its_milestone_which_cannot_be_deleted_alone(/* PEP102 */)
 	{
 		var sprint = await Onrush(api => api.PlanAsync(new OnrushSprintPlan("Sprint One"), Ct));
