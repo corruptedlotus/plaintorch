@@ -220,6 +220,91 @@ export async function deleteCheckpoint(checkpointId: string): Promise<boolean> {
 	return true
 }
 
+/**
+ * Onrush lifecycle, driven from the canvas's own management tray and empty states (PEP102.5).
+ *
+ * Each reports its own outcome and re-reads both sprints on success, since starting, activating, concluding or
+ * deleting one changes which sprint each mode resolves. The navigation that follows some of these — showing the
+ * active graph after an activation, say — is the canvas's to do, since only it holds the mode.
+ */
+
+/** Starts a brand-new active onrush, auto-titled by the core. */
+export async function startActiveOnrush(): Promise<boolean> {
+	const started = await core.onrush.startNew()
+	if (!started) {
+		new Notice('PLAINTORCH could not start a new Onrush.')
+		return false
+	}
+
+	await refreshOnrush()
+	return true
+}
+
+/** Creates a new planning onrush under a title the reader gives it. A dismissed prompt does nothing. */
+export async function createPlanningOnrush(): Promise<boolean> {
+	let title: string | undefined
+	try {
+		title = await PromptTextModal.prompt('New Onrush', 'Title')
+	}
+	catch {
+		return false
+	}
+
+	if (!title) {
+		return false
+	}
+
+	const planned = await core.onrush.plan({ title })
+	if (!planned) {
+		new Notice('PLAINTORCH could not create that Onrush.')
+		return false
+	}
+
+	await refreshOnrush()
+	return true
+}
+
+/** Activates a planning onrush, refusing when one is already active — only one runs at a time. */
+export async function activatePlanningOnrush(sprintId: string): Promise<boolean> {
+	if (await core.onrush.getCurrent()) {
+		new Notice('There is already an active Onrush; conclude it first.')
+		return false
+	}
+
+	const begun = await core.onrush.begin(sprintId)
+	if (!begun) {
+		new Notice('PLAINTORCH could not activate that Onrush.')
+		return false
+	}
+
+	await refreshOnrush()
+	return true
+}
+
+/** Deletes a planning onrush — its milestone and orders go with it, its objectives are freed. */
+export async function deletePlanningOnrush(sprintId: string): Promise<boolean> {
+	const deleted = await core.onrush.delete(sprintId)
+	if (!deleted) {
+		new Notice('PLAINTORCH could not delete that Onrush.')
+		return false
+	}
+
+	await refreshOnrush()
+	return true
+}
+
+/** Concludes the active onrush, setting its end date. */
+export async function concludeOnrush(sprintId: string): Promise<boolean> {
+	const ended = await core.onrush.end(sprintId)
+	if (!ended) {
+		new Notice('PLAINTORCH could not conclude that Onrush.')
+		return false
+	}
+
+	await refreshOnrush()
+	return true
+}
+
 /** Re-reads the edges after a write to them. */
 export async function refreshGraph(): Promise<void> {
 	await core.repos.dependencyList.refresh()

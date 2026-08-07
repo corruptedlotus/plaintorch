@@ -52,6 +52,11 @@ export class PlaintorchOnrushSdk {
 		return await this.client.postForJson<OnrushSprint>(`/api/onrush/${encodeURIComponent(onrushId)}/end`, request)
 	}
 
+	/** Deletes an onrush sprint (its milestone and orders with it; objectives are detached, not deleted). */
+	public async delete(onrushId: string): Promise<boolean> {
+		return await this.client.delete(`/api/onrush/${encodeURIComponent(onrushId)}`)
+	}
+
 	public async update(onrushId: string, update: OnrushSprintUpdate): Promise<OnrushSprint | undefined> {
 		return await this.client.putForJson<OnrushSprint>(`/api/onrush/${encodeURIComponent(onrushId)}`, update)
 	}

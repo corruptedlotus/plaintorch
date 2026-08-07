@@ -29,6 +29,13 @@ public interface IOnrushSprintApi
 	Task<OnrushSprint> EndAsync(string onrushSprintId, DateOnly? endDate = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Deletes an onrush sprint outright: its milestone checkpoint and executive orders go with it, its
+	/// tracked objectives and other checkpoints are detached (they survive on their own), and its note is
+	/// removed.
+	/// </summary>
+	Task DeleteAsync(string onrushSprintId, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Gets an onrush sprint by identifier, or the active sprint when no identifier is supplied.
 	/// </summary>
 	Task<OnrushSprint?> GetAsync(string? onrushSprintId = null, CancellationToken cancellationToken = default);

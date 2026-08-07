@@ -2,8 +2,9 @@ import { Component, component, css, eventListener, html, nothing, property, quer
 import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EntitySubscription } from '@pleiades/sdk'
 import { Notice } from 'obsidian'
 import { core, DerivedRef, getApp, navigateToEntity, type ExpandingAction, type IconName } from '..'
-import { addCheckpointToOnrush, addObjectiveToOnrush, createDependency, deleteCheckpoint, deleteDependency, deleteEntity, removeObjectiveFromOnrush, reshapeDependency, saveGraphLayout } from './canvasActions'
+import { activatePlanningOnrush, addCheckpointToOnrush, addObjectiveToOnrush, concludeOnrush, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGraphLayout, startActiveOnrush } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
+import { OnrushDetailModal } from './OnrushDetailModal'
 import { contextModeLabels, onrushContext, type CanvasContextMode, type EndpointResolver } from './graphContext'
 import { edgeCurve, entryPoint, exitPoint, layoutGraph, parsePositions, serializePositions, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
 import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpointTypeName, targetRef, wouldCycle, type CanvasEdge, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
@@ -254,6 +255,94 @@ export class DependencyCanvas extends Component {
 				z-index: 5;
 			}
 
+			/* The empty-state offer: buttons live in the notice, so their layer takes clicks the notice waives. */
+			.empty-state {
+				flex-direction: column;
+				gap: 1em;
+			}
+
+			.empty-actions {
+				display: flex;
+				flex-wrap: wrap;
+				justify-content: center;
+				gap: .8em;
+				pointer-events: auto;
+			}
+
+			/*
+			 * The management tray, bottom-left: the sprint's tallies above, then its details and its lifecycle
+			 * actions. It mirrors the add-FAB across the viewport, and stands only while a sprint is on screen.
+			 */
+			.tray {
+				position: absolute;
+				inset-block-end: 1em;
+				inset-inline-start: 1em;
+				z-index: 5;
+				display: flex;
+				flex-direction: column;
+				align-items: flex-start;
+				gap: .5em;
+			}
+
+			.counts {
+				display: flex;
+				align-items: center;
+				gap: .9em;
+				padding: .3em .7em;
+				border-radius: 10px;
+				border: 1px solid color-mix(in srgb, var(--text-normal) 12%, transparent);
+				background-color: color-mix(in srgb, var(--background-secondary, #2b2b2b) 88%, transparent);
+				font-variant-numeric: tabular-nums;
+			}
+
+			.count {
+				display: flex;
+				align-items: center;
+				gap: .3em;
+				font-size: .9em;
+				opacity: .8;
+
+				& p7t-icon {
+					width: 1.2em;
+					height: 1.2em;
+				}
+			}
+
+			.tray-actions {
+				display: flex;
+				align-items: center;
+				gap: .3em;
+				padding: .25em;
+				border-radius: 12px;
+				border: 1px solid color-mix(in srgb, var(--text-normal) 12%, transparent);
+				background-color: var(--background-secondary, #2b2b2b);
+				box-shadow: 0 4px 14px rgb(0 0 0 / .25);
+			}
+
+			.tray-btn {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				min-width: 2.2em;
+				min-height: 2.2em;
+				padding: .25em;
+				border: none;
+				border-radius: 8px;
+				background: transparent;
+				color: inherit;
+				cursor: pointer;
+				transition: background-color .2s ease;
+
+				& p7t-icon {
+					width: 1.3em;
+					height: 1.3em;
+				}
+
+				&:hover {
+					background-color: color-mix(in srgb, var(--text-normal) 12%, transparent);
+				}
+			}
+
 			/*
 			 * A popover, so the menu renders in the top layer and is not clipped by the viewport it was
 			 * opened inside. Light dismissal comes with it.
@@ -492,15 +581,16 @@ export class DependencyCanvas extends Component {
 						`
 					})}
 				</div>
-				${graph.nodes.length > 0 ? nothing : html`
-					<div class='notice'>${this.loading ? 'Loading…' : this.emptyMessage}</div>
-				`}
-				<p7t-expanding-actions
-					class='fab'
-					large
-					actionLabel='Add to the canvas'
-					.actions=${this.additions}>
-				</p7t-expanding-actions>
+				${graph.nodes.length > 0 ? nothing : this.emptyOverlay}
+					${!this.sprint ? nothing : this.trayTemplate}
+					${!this.sprint ? nothing : html`
+						<p7t-expanding-actions
+							class='fab'
+							large
+							actionLabel='Add to the canvas'
+							.actions=${this.additions}>
+						</p7t-expanding-actions>
+					`}
 			</div>
 			<div class='menu' popover='auto' @beforetoggle=${(e: Event) => this.onMenuToggle(e)}>
 				${this.menuTemplate}
@@ -508,10 +598,131 @@ export class DependencyCanvas extends Component {
 		`
 	}
 
-	private get emptyMessage() {
-		return this.sprint
-			? 'Nothing in this Onrush yet — add an objective to begin.'
-			: `There is no ${contextModeLabels[this.mode].toLowerCase()}.`
+	/**
+	 * What the mid-screen shows when the graph is empty (PEP102.5).
+	 *
+	 * A sprint with nothing in it is only missing members, so it is nudged to add one. No sprint at all is a
+	 * different offer: an active graph can start one now or step over to planning; a planning graph can create
+	 * one. The notice waives pointer events, so its buttons live in a layer that takes them back.
+	 */
+	private get emptyOverlay() {
+		if (this.loading) {
+			return html`<div class='notice'>Loading…</div>`
+		}
+
+		if (this.sprint) {
+			return html`<div class='notice'>Nothing in this Onrush yet — add an objective to begin.</div>`
+		}
+
+		return html`
+			<div class='notice empty-state'>
+				<span>There is no ${contextModeLabels[this.mode].toLowerCase()}.</span>
+				<div class='empty-actions'>
+					${this.mode === 'onrush-active' ? html`
+						<p7t-button emphasis icon='state-onrush' @click=${() => void this.onStartNow()}>
+							<span>Start now</span>
+						</p7t-button>
+						<p7t-button icon='lucide:arrow-right' @click=${() => this.setMode('onrush-planning')}>
+							<span>Go to planning</span>
+						</p7t-button>
+					` : html`
+						<p7t-button emphasis icon='lucide:star' @click=${() => void this.onCreatePlanning()}>
+							<span>Create new</span>
+						</p7t-button>
+					`}
+				</div>
+			</div>
+		`
+	}
+
+	/**
+	 * The management tray, shown whenever a sprint is on screen (PEP102.5).
+	 *
+	 * Three tallies — objectives, checkpoints (the milestone among them), executive orders — sit above a row
+	 * that opens the sprint's own detail window and offers the lifecycle actions its mode admits.
+	 */
+	private get trayTemplate() {
+		const sprint = this.sprint
+		if (!sprint) {
+			return nothing
+		}
+
+		return html`
+			<div class='tray'>
+				<div class='counts'>
+					<span class='count'><p7t-icon icon='objective'></p7t-icon>${sprint.objectives?.length ?? 0}</span>
+					<span class='count'><p7t-icon icon='checkpoint'></p7t-icon>${sprint.checkpoints?.length ?? 0}</span>
+					<span class='count'><p7t-icon icon='exec-order'></p7t-icon>${sprint.executiveOrders?.length ?? 0}</span>
+				</div>
+				<div class='tray-actions'>
+					<button class='tray-btn' aria-label='Onrush details' @click=${() => this.openOnrushDetails()}>
+						<p7t-icon icon='lucide:pen'></p7t-icon>
+					</button>
+					<p7t-expanding-actions
+						icon='lucide:ellipsis-vertical'
+						actionLabel='Onrush actions'
+						.actions=${this.onrushActions}>
+					</p7t-expanding-actions>
+				</div>
+			</div>
+		`
+	}
+
+	/** The lifecycle actions the tray's menu offers, which differ by mode. */
+	private get onrushActions(): ExpandingAction[] {
+		if (this.mode === 'onrush-planning') {
+			return [
+				{ key: 'activate', icon: 'state-onrush', label: 'Activate', run: () => this.onActivate() },
+				{ key: 'delete', icon: 'lucide:trash-2', label: 'Delete', run: () => this.onDelete() }
+			]
+		}
+
+		return [
+			{ key: 'conclude', icon: 'state-archived', label: 'Conclude', run: () => this.onConclude() }
+		]
+	}
+
+	/** Opens the sprint's own detail window — its banner and its executive orders. */
+	private openOnrushDetails() {
+		const sprint = this.sprint
+		if (sprint) {
+			new OnrushDetailModal(getApp(), sprint).open()
+		}
+	}
+
+	private async onStartNow() {
+		if (await startActiveOnrush()) {
+			// A new graph to frame; the active mode is already the one on screen.
+			this.framed = false
+		}
+	}
+
+	private async onCreatePlanning() {
+		if (await createPlanningOnrush()) {
+			this.framed = false
+		}
+	}
+
+	/** Activates this planning sprint and, on success, shows the active graph it has become. */
+	private async onActivate() {
+		const sprint = this.sprint
+		if (sprint && await activatePlanningOnrush(sprint.id)) {
+			this.setMode('onrush-active')
+		}
+	}
+
+	private async onDelete() {
+		const sprint = this.sprint
+		if (sprint) {
+			await deletePlanningOnrush(sprint.id)
+		}
+	}
+
+	private async onConclude() {
+		const sprint = this.sprint
+		if (sprint) {
+			await concludeOnrush(sprint.id)
+		}
 	}
 
 	/**
