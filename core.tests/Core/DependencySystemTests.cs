@@ -225,6 +225,47 @@ public sealed class DependencySystemTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task A_markdown_sync_keeps_the_sprints_milestone_and_layout(/* PEP102 */)
+	{
+		const string title = "MilestoneReproSprint";
+		var planning = await Onrush(api => api.PlanAsync(new OnrushSprintPlan(title), Ct));
+		var begun = await Onrush(api => api.BeginAsync(planning.Id, cancellationToken: Ct));
+		var milestoneId = begun.MilestoneCheckpointId!;
+		Assert.False(string.IsNullOrWhiteSpace(milestoneId));
+
+		// A saved layout is the other database-only field a frontmatter sync would otherwise wipe.
+		await Onrush(api => api.SetGraphLayoutAsync(begun.Id, "{\"n\":{\"x\":3,\"y\":4}}", Ct));
+
+		// Re-sync the sprint's note exactly as the vault watcher would on a file change. Its frontmatter carries
+		// neither the milestone id nor the layout, so a naive SetValues would clear both.
+		var sprintFile = Vault.MarkdownFilesUnder(Vault.AbsolutePath("")).First(file => file.Contains(title, StringComparison.OrdinalIgnoreCase));
+		await Vault.ReconcileAsync(sprintFile);
+
+		var reloaded = await Onrush(api => api.GetAsync(begun.Id, Ct));
+		Assert.Equal(milestoneId, reloaded!.MilestoneCheckpointId);
+		Assert.Equal("{\"n\":{\"x\":3,\"y\":4}}", reloaded.GraphLayout);
+	}
+
+	[Fact]
+	public async Task A_sprints_milestone_checkpoint_can_be_edited_and_stays_the_milestone(/* PEP102 */)
+	{
+		var sprint = await Onrush(api => api.PlanAsync(new OnrushSprintPlan("Sprint"), Ct));
+		var milestoneId = sprint.MilestoneCheckpointId!;
+		Assert.False(string.IsNullOrWhiteSpace(milestoneId));
+
+		// Editing the milestone is allowed — it is only its deletion that the service refuses.
+		var updated = await Deps(api => api.UpdateCheckpointAsync(milestoneId, new CheckpointUpdate(Title: "Grand Finale", CelestronToll: 5), Ct));
+		Assert.Equal("Grand Finale", updated.Title);
+		Assert.Equal(5, updated.CelestronToll);
+		// The edit leaves the two-way binding to its sprint intact: it is still tracked, and still the milestone.
+		Assert.Equal(sprint.Id, updated.OnrushSprintId);
+
+		var reloaded = await Onrush(api => api.GetPlanningAsync(Ct));
+		Assert.Equal(milestoneId, reloaded!.MilestoneCheckpointId);
+		Assert.Contains(reloaded.Checkpoints, checkpoint => checkpoint.Id == milestoneId);
+	}
+
+	[Fact]
 	public async Task Saving_the_graph_layout_keeps_the_sprints_checkpoints(/* PEP102 */)
 	{
 		var sprint = await Onrush(api => api.PlanAsync(new OnrushSprintPlan("Sprint"), Ct));
