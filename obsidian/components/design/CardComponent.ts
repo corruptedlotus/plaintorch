@@ -26,8 +26,14 @@ export class CardComponent extends Component {
 				gap: .5rem;
 			}
 
+			.head-wrapper {
+				display: flex;
+				justify-content: space-between;
+				align-items: flex-start;
+				gap: .3em;
+			}
+
 			.collapse-chevron {
-				position: absolute;
 				top: 0.9rem;
 				inset-inline-end: 0.9rem;
 				z-index: 10;
@@ -40,20 +46,21 @@ export class CardComponent extends Component {
 				cursor: pointer;
 				color: color-mix(in srgb, var(--text-normal) 55%, transparent);
 				transition: color .3s ease;
-			}
-
-			.collapse-chevron:hover {
-				color: var(--text-normal);
-			}
-
-			.collapse-chevron p7t-icon {
-				width: 1.4em;
-				height: 1.4em;
-				transition: transform .3s ease;
-			}
-
-			.collapse-chevron.collapsed p7t-icon {
-				transform: rotate(-90deg);
+				grid-column: 2;
+				
+				&:hover {
+					color: var(--text-normal);
+				}
+	
+				& p7t-icon {
+					width: 1.4em;
+					height: 1.4em;
+					transition: transform .3s ease;
+				}
+	
+				&.collapsed p7t-icon {
+					transform: rotate(-90deg);
+				}
 			}
 
 			:host::part(header) {
@@ -107,8 +114,10 @@ export class CardComponent extends Component {
 
 	protected override get template() {
 		return html`
-			${!this.collapsible ? nothing : this.collapseToggleTemplate}
-			${this.headerTemplate}
+			<div class='head-wrapper'>
+				${this.headerTemplate}
+				${!this.collapsible ? nothing : this.collapseToggleTemplate}
+			</div>
 			${this.collapsed ? nothing : html`
 				<div part='content'>
 					<slot>${this.content}</slot>

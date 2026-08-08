@@ -19,6 +19,12 @@ export class BriefingCardAgenda extends CardComponent {
 		return css`
 			${super.styles}
 
+			:host {
+				background: none;
+				border: none;
+				padding-block: .2em;
+			}
+
 			.section {
 				display: flex;
 				flex-direction: column;
