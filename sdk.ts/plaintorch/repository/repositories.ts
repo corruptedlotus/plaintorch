@@ -3,7 +3,7 @@ import type { Objective } from "../objectives/models"
 import type { Directive } from "../directives/models"
 import type { Decree, Fate } from "../declaratives/models"
 import type { OnrushSprint } from "../onrush/models"
-import type { PolarisCycle } from "../polaris/models"
+import type { PolarisAgenda, PolarisCycle } from "../polaris/models"
 import type { LorePage } from "../lore/models"
 import type { Checkpoint, Dependency } from "../dependencies/models"
 import type { EntityExistence, SystemBriefing } from "../system/models"
@@ -81,6 +81,14 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	public readonly onrushCurrent: DerivedRepository<OnrushSprint>
 	public readonly onrushPlanning: DerivedRepository<OnrushSprint>
 
+	/**
+	 * The day-level agenda: unbound attentives requiring attention and upcoming eventives (PEP100).
+	 *
+	 * Kept as a derived record rather than reached by identity — it is computed relative to today, not owned
+	 * by any entity — so a surface can observe it and let it revalidate on the feed like the briefing.
+	 */
+	public readonly agenda: DerivedRepository<PolarisAgenda>
+
 	/** The system briefing, cached under {@link briefingRecordKey}. */
 	public readonly briefing: DerivedRepository<SystemBriefing>
 	/** Note-to-entity resolutions, keyed by vault-relative path. */
@@ -115,6 +123,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		this.checkpointList = new DerivedRepository(async () => await client.dependencies.listCheckpoints())
 		this.onrushCurrent = new DerivedRepository(async () => await client.onrush.getCurrent())
 		this.onrushPlanning = new DerivedRepository(async () => await client.onrush.getPlanning())
+		this.agenda = new DerivedRepository(async () => await client.polaris.getAgenda())
 
 		const resolution = { freshnessMs: options.resolutionFreshnessMs }
 		this.briefing = new DerivedRepository(async () => await client.system.getBriefing())
@@ -170,7 +179,8 @@ export class PlaintorchRepositories implements InvalidationTarget {
 			this.dependencyList as DerivedRepository<unknown>,
 			this.checkpointList as DerivedRepository<unknown>,
 			this.onrushCurrent as DerivedRepository<unknown>,
-			this.onrushPlanning as DerivedRepository<unknown>
+			this.onrushPlanning as DerivedRepository<unknown>,
+			this.agenda as DerivedRepository<unknown>
 		]
 	}
 

@@ -13,8 +13,26 @@ export class ThroneView extends Component {
 				flex-wrap: wrap;
 			}
 
-			* {
+			:host > * {
 				flex: 1 0 24em;
+			}
+
+			/* The agenda stacks above the Polaris cycle in the right-hand column: the agenda takes its natural
+			   height and the cycle fills the rest, scrolling its own body. */
+			.polaris-column {
+				display: flex;
+				flex-direction: column;
+				align-items: stretch;
+				min-height: 0;
+			}
+
+			.polaris-column > p7t-briefing-agenda {
+				flex: 0 0 auto;
+			}
+
+			.polaris-column > p7t-briefing-polaris {
+				flex: 1 1 auto;
+				min-height: 0;
 			}
 		`
 	}
@@ -22,7 +40,10 @@ export class ThroneView extends Component {
 	override get template() {
 		return html`
 			<p7t-briefing-onrush .data=${this.data?.currentOnrush}></p7t-briefing-onrush>
-			<p7t-briefing-polaris .data=${this.data?.currentPolaris}></p7t-briefing-polaris>
+			<div class='polaris-column'>
+				<p7t-briefing-agenda></p7t-briefing-agenda>
+				<p7t-briefing-polaris .data=${this.data?.currentPolaris}></p7t-briefing-polaris>
+			</div>
 		`
 	}
 }

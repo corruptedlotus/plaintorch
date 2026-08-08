@@ -1,4 +1,4 @@
-import { Component, component, css, html, property } from "@a11d/lit";
+import { Component, component, css, html, nothing, property, state } from "@a11d/lit";
 
 @component('p7t-card')
 export class CardComponent extends Component {
@@ -17,13 +17,55 @@ export class CardComponent extends Component {
 					color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 50%, transparent) -30%,
 					color-mix(in srgb, black 80%, transparent) 80%
 				);
-				
+
 				color: var(--text-normal);
 				font-weight: 700;
 				margin-bottom: .5rem;
 				position: relative;
 				box-sizing: border-box;
 				gap: .5rem;
+			}
+
+			.collapse-switch {
+				position: absolute;
+				top: 0.9rem;
+				inset-inline-end: 0.9rem;
+				z-index: 10;
+				display: inline-flex;
+				align-items: center;
+				background: none;
+				border: none;
+				padding: 0;
+				cursor: pointer;
+			}
+
+			.collapse-switch .track {
+				box-sizing: border-box;
+				display: inline-flex;
+				align-items: center;
+				width: 2.4em;
+				height: 1.3em;
+				padding: .15em;
+				border-radius: 1em;
+				background-color: color-mix(in srgb, var(--text-normal) 20%, transparent);
+				transition: background-color .3s ease;
+			}
+
+			.collapse-switch:not(.collapsed) .track {
+				background-color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 70%, transparent);
+			}
+
+			.collapse-switch .thumb {
+				width: 1em;
+				height: 1em;
+				border-radius: 50%;
+				background-color: var(--text-normal);
+				transition: transform .3s ease;
+				transform: translateX(1.1em);
+			}
+
+			.collapse-switch.collapsed .thumb {
+				transform: translateX(0);
 			}
 
 			:host::part(header) {
@@ -66,15 +108,36 @@ export class CardComponent extends Component {
 	@property() heading = ''
 	@property() subHeading = ''
 
+	/** Opt-in: renders a switch in the corner that collapses the card body. Off leaves existing cards untouched. */
+	@property({ type: Boolean }) collapsible = false
+	@state() collapsed = false
+
 	protected override get template() {
 		return html`
+			${!this.collapsible ? nothing : this.collapseSwitchTemplate}
 			${this.headerTemplate}
-			<div part='content'>
-				<slot>${this.content}</slot>
-			</div>
-			<div part='footer'>
-				<slot name='footer'>${this.footer}</slot>
-			</div>
+			${this.collapsed ? nothing : html`
+				<div part='content'>
+					<slot>${this.content}</slot>
+				</div>
+				<div part='footer'>
+					<slot name='footer'>${this.footer}</slot>
+				</div>
+			`}
+		`
+	}
+
+	protected get collapseSwitchTemplate() {
+		return html`
+			<button
+				class='collapse-switch ${this.collapsed ? 'collapsed' : ''}'
+				part='collapse-switch'
+				role='switch'
+				aria-label='Collapse card'
+				aria-checked=${!this.collapsed}
+				@click=${() => { this.collapsed = !this.collapsed }}>
+				<span class='track'><span class='thumb'></span></span>
+			</button>
 		`
 	}
 

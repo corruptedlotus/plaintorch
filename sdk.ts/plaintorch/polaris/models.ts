@@ -1,4 +1,4 @@
-import type { Attentive, Eventive } from "../declaratives/models"
+import type { Attentive, Decree, Eventive } from "../declaratives/models"
 import type { Objective, ObjectiveCollege } from "../objectives/models"
 export enum PolarisExecutivePlanningMode {
 	OneShot = 0,
@@ -32,6 +32,15 @@ export interface PolarisCycle {
 export interface PolarisCycleInclusions {
 	eventives: Eventive[]
 	attentives: Attentive[]
+}
+
+/**
+ * The day-level agenda relative to today: unbound attentives requiring attention (same-day/24h and
+ * previous unattended) and upcoming eventives within a short horizon (PEP100).
+ */
+export interface PolarisAgenda {
+	attentives: Attentive[]
+	eventives: Eventive[]
 }
 
 /** Manually adds a decree to a Polaris cycle, creating a Polaris-bound attentive (PEP100). */
@@ -74,6 +83,8 @@ export interface Reflective {
 	time: string | undefined
 	/** Originating decree when generated through lunar reflection (PEP100). */
 	decreeId: string | undefined
+	/** Originating decree, carrying the relevant lunar directive when served. Absent for manual/drawn reflectives. */
+	decree?: Decree | undefined
 }
 
 export interface PolarisExecutivePlan {

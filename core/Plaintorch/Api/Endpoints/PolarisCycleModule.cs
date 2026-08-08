@@ -71,6 +71,9 @@ public sealed class PolarisCycleModule : Module
 		cycles.MapPost("/current/executives/plan", async (PolarisExecutivePlan request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.PlanExecutiveAsync(request, null, cancellationToken)));
 
+		cycles.MapGet("/agenda", async (IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.GetAgendaAsync(cancellationToken)));
+
 		cycles.MapGet("/current/inclusions", async (IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.GetInclusionsAsync(null, cancellationToken)));
 
