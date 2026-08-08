@@ -510,6 +510,10 @@ public sealed class SystemApiService(
 			.AsNoTracking()
 			.Include(item => item.Executives)
 				.ThenInclude(item => item.Objective)
+			.Include(item => item.Reflectives)
+				.ThenInclude(item => item.Decree)
+			.Include(item => item.Attentives)
+				.ThenInclude(item => item.Decree)
 			.FirstOrDefaultAsync(item => item.Id == cycleId, cancellationToken);
 
 		return cycle;

@@ -460,6 +460,15 @@ public sealed record PolarisCycleInclusions(
 	IReadOnlyList<Attentive> Attentives);
 
 /// <summary>
+/// Represents the day-level agenda: unbound attentives requiring attention (same-day/24h and previous
+/// unattended) and upcoming eventives within a short horizon. Computed relative to today, independent of
+/// any Polaris cycle (PEP100).
+/// </summary>
+public sealed record PolarisAgenda(
+	IReadOnlyList<Attentive> Attentives,
+	IReadOnlyList<Eventive> Eventives);
+
+/// <summary>
 /// Represents the data required to define a directive-level timeframe (PEP100).
 /// </summary>
 public sealed record TimeframePlan(

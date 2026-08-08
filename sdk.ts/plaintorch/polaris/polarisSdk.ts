@@ -3,6 +3,7 @@ import type { Attentive } from "../declaratives/models"
 import type {
 	Executive,
 	ExecutiveUpdate,
+	PolarisAgenda,
 	PolarisAttentiveAdd,
 	PolarisCycle,
 	PolarisCycleInclusions,
@@ -106,6 +107,10 @@ export class PlaintorchPolarisSdk {
 				request
 			)) ?? []
 		)
+	}
+
+	public async getAgenda(): Promise<PolarisAgenda | undefined> {
+		return await this.client.getJson<PolarisAgenda>("/api/polaris/agenda")
 	}
 
 	public async getInclusions(): Promise<PolarisCycleInclusions | undefined> {

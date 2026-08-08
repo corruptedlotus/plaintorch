@@ -123,6 +123,10 @@ public sealed class PolarisCycleApiService(
 				.AsNoTracking()
 				.Include(cycle => cycle.Executives)
 					.ThenInclude(executive => executive.Objective)
+				.Include(cycle => cycle.Reflectives)
+					.ThenInclude(reflective => reflective.Decree)
+				.Include(cycle => cycle.Attentives)
+					.ThenInclude(attentive => attentive.Decree)
 				.FirstOrDefaultAsync(cycle => cycle.Id == polarisCycleId, cancellationToken);
 		}
 
@@ -136,6 +140,10 @@ public sealed class PolarisCycleApiService(
 			.AsNoTracking()
 			.Include(cycle => cycle.Executives)
 				.ThenInclude(executive => executive.Objective)
+			.Include(cycle => cycle.Reflectives)
+				.ThenInclude(reflective => reflective.Decree)
+			.Include(cycle => cycle.Attentives)
+				.ThenInclude(attentive => attentive.Decree)
 			.FirstOrDefaultAsync(cycle => cycle.Id == activeCycle.Id, cancellationToken);
 	}
 
@@ -354,6 +362,41 @@ public sealed class PolarisCycleApiService(
 		return new PolarisCycleInclusions(
 			eventives.Where(item => IntersectsWindow(item.Date, item.StartTime, item.EndTime, windowStart, windowEnd)).ToList(),
 			attentives.Where(item => AttentiveIntersectsWindow(item, windowStart, windowEnd)).ToList());
+	}
+
+	/// <inheritdoc />
+	public async Task<PolarisAgenda> GetAgendaAsync(CancellationToken cancellationToken = default)
+	{
+		var today = DateOnly.FromDateTime(DateTime.Today);
+		var horizon = today.AddDays(7);
+
+		// Requiring attention: unbound, still pending, and due today or overdue (same-day/24h and previous
+		// unattended). Including the decree pulls its directive through the auto-include, so each item can
+		// show its relevant lunar directive.
+		var attentives = await context.Attentives
+			.AsNoTracking()
+			.Include(item => item.Decree)
+			.Where(item => item.PolarisCycleId == null
+				&& item.Resolution == AttentiveResolution.Pending
+				&& item.Date <= today)
+			.OrderBy(item => item.Date)
+			.ThenBy(item => item.Time)
+			.ToListAsync(cancellationToken);
+
+		// Upcoming eventives within the horizon that have not yet resolved. Fate and objective are included so
+		// the occurrence can name its owner and surface that owner's directive.
+		var eventives = await context.Eventives
+			.AsNoTracking()
+			.Include(item => item.Fate)
+			.Include(item => item.Objective)
+			.Where(item => item.Resolution == EventiveResolution.Pending
+				&& item.Date >= today
+				&& item.Date <= horizon)
+			.OrderBy(item => item.Date)
+			.ThenBy(item => item.StartTime)
+			.ToListAsync(cancellationToken);
+
+		return new PolarisAgenda(attentives, eventives);
 	}
 
 	/// <inheritdoc />

@@ -5,3 +5,4 @@ export * from "./Briefing"
 export * from './BriefingCard'
 export * from './BriefingCardOnrush'
 export * from './BriefingCardPolaris'
+export * from './BriefingCardAgenda'

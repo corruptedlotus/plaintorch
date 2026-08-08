@@ -1,4 +1,4 @@
-import { Component, component, css, html, property } from "@a11d/lit";
+import { Component, component, css, html, nothing, property } from "@a11d/lit";
 
 @component('p7t-card')
 export class CardComponent extends Component {
@@ -17,13 +17,43 @@ export class CardComponent extends Component {
 					color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 50%, transparent) -30%,
 					color-mix(in srgb, black 80%, transparent) 80%
 				);
-				
+
 				color: var(--text-normal);
 				font-weight: 700;
 				margin-bottom: .5rem;
 				position: relative;
 				box-sizing: border-box;
 				gap: .5rem;
+			}
+
+			.collapse-chevron {
+				position: absolute;
+				top: 0.9rem;
+				inset-inline-end: 0.9rem;
+				z-index: 10;
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				background: none;
+				border: none;
+				padding: .2em;
+				cursor: pointer;
+				color: color-mix(in srgb, var(--text-normal) 55%, transparent);
+				transition: color .3s ease;
+			}
+
+			.collapse-chevron:hover {
+				color: var(--text-normal);
+			}
+
+			.collapse-chevron p7t-icon {
+				width: 1.4em;
+				height: 1.4em;
+				transition: transform .3s ease;
+			}
+
+			.collapse-chevron.collapsed p7t-icon {
+				transform: rotate(-90deg);
 			}
 
 			:host::part(header) {
@@ -66,15 +96,40 @@ export class CardComponent extends Component {
 	@property() heading = ''
 	@property() subHeading = ''
 
+	/** Opt-in: renders a collapse chevron. Off leaves existing cards untouched. */
+	@property({ type: Boolean }) collapsible = false
+	/**
+	 * Whether the body is collapsed. Controlled by the parent — the chevron only announces a `collapsetoggle`;
+	 * it never flips this itself — so cards can be linked into a mutually-exclusive pair. Reflected so a parent
+	 * stylesheet can size the collapsed card differently from the expanded one.
+	 */
+	@property({ type: Boolean, reflect: true }) collapsed = false
+
 	protected override get template() {
 		return html`
+			${!this.collapsible ? nothing : this.collapseToggleTemplate}
 			${this.headerTemplate}
-			<div part='content'>
-				<slot>${this.content}</slot>
-			</div>
-			<div part='footer'>
-				<slot name='footer'>${this.footer}</slot>
-			</div>
+			${this.collapsed ? nothing : html`
+				<div part='content'>
+					<slot>${this.content}</slot>
+				</div>
+				<div part='footer'>
+					<slot name='footer'>${this.footer}</slot>
+				</div>
+			`}
+		`
+	}
+
+	protected get collapseToggleTemplate() {
+		return html`
+			<button
+				class='collapse-chevron ${this.collapsed ? 'collapsed' : ''}'
+				part='collapse-toggle'
+				aria-label=${this.collapsed ? 'Expand card' : 'Collapse card'}
+				aria-expanded=${!this.collapsed}
+				@click=${() => this.dispatchEvent(new CustomEvent('collapsetoggle', { bubbles: true, composed: true }))}>
+				<p7t-icon icon='lucide:chevron-down'></p7t-icon>
+			</button>
 		`
 	}
 
