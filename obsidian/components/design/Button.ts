@@ -44,12 +44,10 @@ export class Button extends Component {
 				}
 
 				& p7t-icon {
-					width: 2em;
-					height: 2em;
+					font-size: 1.4em;
 
 					:host([large]) & {
-						width: 2.4em;
-						height: 2.4em;
+						font-size: 1.8em;
 					}
 				}
 

@@ -33,6 +33,8 @@ export class PleiadesIcon extends Component {
 			}
 
 			svg {
+				padding: 6%;
+				box-sizing: border-box;
 				width: 100%;
 				height: 100%;
 				align-self: center;

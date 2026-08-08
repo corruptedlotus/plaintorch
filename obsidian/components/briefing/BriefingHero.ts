@@ -124,21 +124,24 @@ export class BriefingHero extends CardComponent {
 				flex-direction: column;
 				align-items: stretch;
 				gap: 3px;
-				background-color: color-mix(in srgb, var(--text-normal) 5%, transparent);
+				background-color: color-mix(in srgb, var(--text-normal) 8%, transparent);
 				border-radius: 8px;
 				padding: .35em .6em;
 				color: #ffd23f;
 				max-width: 24em;
+				position: relative;
+				z-index: 2;
+				font-weight: 500;
 			}
 
 			.exec-order {
 				display: flex;
-				align-items: flex-start;
+				align-items: center;
 				gap: 6px;
 				font-size: .82em;
 				font-weight: 400;
 				font-family: var(--font-text);
-				line-height: 1.25;
+				line-height: .9;
 
 				& p7t-icon {
 					width: 18px;
@@ -150,6 +153,7 @@ export class BriefingHero extends CardComponent {
 
 			.mask {
 				position: absolute;
+				z-index: 0;
 				height: 90%;
 				width: auto;
 				top: 10%;
@@ -238,10 +242,11 @@ export class BriefingHero extends CardComponent {
 					</div>
 					${this.activeExecutiveOrders.length === 0 ? nothing : html`
 						<div class='exec-orders'>
+							Executive Orders in Effect
 							${this.activeExecutiveOrders.map(order => html`
 								<div class='exec-order'>
 									<p7t-icon icon='exec-order'></p7t-icon>
-									<span>Executive Order ${order.id}: ${order.summary}</span>
+									<span>${order.id}: ${order.title}</span>
 								</div>
 							`)}
 						</div>

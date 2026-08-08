@@ -15,22 +15,22 @@
 
       .cls-2 {
         stroke-linejoin: round;
-        stroke-width: 11px;
+        stroke-width: 12px;
       }
     </style>
   </defs>
-  <line class="cls-1" x1="200" y1="127.19" x2="200" y2="215.24"/>
-  <line class="cls-1" x1="263.05" y1="163.6" x2="242.6" y2="175.41"/>
-  <line class="cls-1" x1="263.05" y1="236.4" x2="242.6" y2="224.59"/>
-  <line class="cls-1" x1="200" y1="272.8" x2="200" y2="260.99"/>
-  <line class="cls-1" x1="136.95" y1="236.4" x2="157.4" y2="224.59"/>
-  <line class="cls-1" x1="136.95" y1="163.6" x2="157.4" y2="175.41"/>
+  <line class="cls-1" x1="200" y1="119.78" x2="200" y2="216.79"/>
+  <line class="cls-1" x1="269.47" y1="159.89" x2="246.93" y2="172.91"/>
+  <line class="cls-1" x1="269.47" y1="240.11" x2="246.93" y2="227.1"/>
+  <line class="cls-1" x1="200" y1="280.21" x2="200" y2="267.2"/>
+  <line class="cls-1" x1="130.53" y1="240.11" x2="153.07" y2="227.09"/>
+  <line class="cls-1" x1="130.53" y1="159.89" x2="153.07" y2="172.9"/>
   <g>
-    <polyline class="cls-2" points="238.97 69.72 200 47.22 161.03 69.72"/>
-    <polyline class="cls-2" points="106.66 101.11 67.69 123.61 67.69 168.61"/>
-    <polyline class="cls-2" points="67.69 231.39 67.69 276.39 106.66 298.89"/>
-    <polyline class="cls-2" points="161.03 330.28 200 352.78 238.97 330.28"/>
-    <polyline class="cls-2" points="293.34 298.89 332.31 276.39 332.31 231.39"/>
-    <polyline class="cls-2" points="332.31 168.61 332.31 123.61 293.34 101.11"/>
+    <polyline class="cls-2" points="238.97 57.48 200 34.98 161.03 57.48"/>
+    <polyline class="cls-2" points="96.06 94.99 57.09 117.49 57.09 162.49"/>
+    <polyline class="cls-2" points="57.09 237.51 57.09 282.51 96.06 305.01"/>
+    <polyline class="cls-2" points="161.03 342.52 200 365.02 238.97 342.52"/>
+    <polyline class="cls-2" points="303.94 305.01 342.91 282.51 342.91 237.51"/>
+    <polyline class="cls-2" points="342.91 162.49 342.91 117.49 303.94 94.99"/>
   </g>
 </svg>

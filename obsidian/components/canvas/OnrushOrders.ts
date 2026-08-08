@@ -49,9 +49,9 @@ export class OnrushOrders extends Component {
 
 			.rows {
 				display: grid;
-				grid-template-columns: minmax(6em, 1fr) auto auto auto;
+				grid-template-columns: minmax(6em, 1fr) auto auto;
 				align-items: center;
-				gap: .1em .8em;
+				gap: .3em .8em;
 			}
 
 			.notice {
@@ -62,6 +62,8 @@ export class OnrushOrders extends Component {
 			}
 
 			.title {
+				text-align: start;
+				justify-content: flex-start;
 				font-weight: 400;
 				padding-block: .3em;
 			}
@@ -105,6 +107,23 @@ export class OnrushOrders extends Component {
 			.add {
 				align-self: flex-start;
 				margin-top: .8em;
+			}
+
+			.exec-row {
+				display: grid;
+				grid-column: 1 / -1;
+				grid-template-columns: subgrid;
+				background-color: color-mix(in srgb, var(--text-normal) 5%, transparent);
+				border-radius: 6px;
+				padding: .3em .6em;
+				margin-inline: -.6em;
+				align-items: center;
+			}
+
+			.summary {
+				grid-column: 1 / -1;
+				justify-content: flex-start;
+				text-align: start;
 			}
 		`
 	}
@@ -150,25 +169,32 @@ export class OnrushOrders extends Component {
 
 	private rowTemplate(order: ExecutiveOrder) {
 		return html`
-			<p7t-editable-plaintext
-				class='title'
-				.value=${order.title}
-				@change=${(e: Event) => this.saveOrder(order.id, { title: (e.target as EditablePart<string>).value ?? '' })}>
-			</p7t-editable-plaintext>
-			<div class='window'>
-				<p7t-editable-date
-					.value=${order.effectiveFrom}
-					@change=${(e: Event) => this.saveOrder(order.id, { effectiveFrom: (e.target as EditablePart<string>).value })}>
-				</p7t-editable-date>
-				<p7t-icon icon='lucide:arrow-right'></p7t-icon>
-				<p7t-editable-date
-					.value=${order.effectiveUntil}
-					@change=${(e: Event) => this.saveOrder(order.id, { effectiveUntil: (e.target as EditablePart<string>).value })}>
-				</p7t-editable-date>
+			<div class='exec-row'>
+				<p7t-editable-plaintext
+					class='title'
+					.value=${order.title}
+					@change=${(e: Event) => this.saveOrder(order.id, { title: (e.target as EditablePart<string>).value ?? '' })}>
+				</p7t-editable-plaintext>
+				<div class='window'>
+					<p7t-editable-date
+						.value=${order.effectiveFrom}
+						@change=${(e: Event) => this.saveOrder(order.id, { effectiveFrom: (e.target as EditablePart<string>).value })}>
+					</p7t-editable-date>
+					<p7t-icon icon='lucide:arrow-right'></p7t-icon>
+					<p7t-editable-date
+						.value=${order.effectiveUntil}
+						@change=${(e: Event) => this.saveOrder(order.id, { effectiveUntil: (e.target as EditablePart<string>).value })}>
+					</p7t-editable-date>
+				</div>
+				<button class='remove' aria-label='Remove order' @click=${() => this.removeOrder(order)}>
+					<p7t-icon icon='lucide:trash-2'></p7t-icon>
+				</button>
+				<p7t-editable-plaintext
+					class='summary'
+					.value=${order.summary}
+					@change=${(e: Event) => this.saveOrder(order.id, { summary: (e.target as EditablePart<string>).value ?? '' })}>
+				</p7t-editable-plaintext>
 			</div>
-			<button class='remove' aria-label='Remove order' @click=${() => this.removeOrder(order)}>
-				<p7t-icon icon='lucide:trash-2'></p7t-icon>
-			</button>
 		`
 	}
 
