@@ -11,11 +11,6 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 
 	@state() private reflectivesExpanded = false
 
-	constructor() {
-		super()
-		this.collapsible = true
-	}
-
 	static override get styles() {
 		return css`
 			${super.styles}

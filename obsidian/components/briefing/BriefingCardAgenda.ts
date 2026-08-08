@@ -11,11 +11,6 @@ import { core, DerivedRef } from ".."
 export class BriefingCardAgenda extends CardComponent {
 	private readonly agendaRef = new DerivedRef(this, core.repos.agenda)
 
-	constructor() {
-		super()
-		this.collapsible = true
-	}
-
 	private get agenda() {
 		return this.agendaRef.value
 	}

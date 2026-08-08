@@ -1,4 +1,4 @@
-import { Component, component, css, html, nothing, property, state } from "@a11d/lit";
+import { Component, component, css, html, nothing, property } from "@a11d/lit";
 
 @component('p7t-card')
 export class CardComponent extends Component {
@@ -26,46 +26,34 @@ export class CardComponent extends Component {
 				gap: .5rem;
 			}
 
-			.collapse-switch {
+			.collapse-chevron {
 				position: absolute;
 				top: 0.9rem;
 				inset-inline-end: 0.9rem;
 				z-index: 10;
 				display: inline-flex;
 				align-items: center;
+				justify-content: center;
 				background: none;
 				border: none;
-				padding: 0;
+				padding: .2em;
 				cursor: pointer;
+				color: color-mix(in srgb, var(--text-normal) 55%, transparent);
+				transition: color .3s ease;
 			}
 
-			.collapse-switch .track {
-				box-sizing: border-box;
-				display: inline-flex;
-				align-items: center;
-				width: 2.4em;
-				height: 1.3em;
-				padding: .15em;
-				border-radius: 1em;
-				background-color: color-mix(in srgb, var(--text-normal) 20%, transparent);
-				transition: background-color .3s ease;
+			.collapse-chevron:hover {
+				color: var(--text-normal);
 			}
 
-			.collapse-switch:not(.collapsed) .track {
-				background-color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 70%, transparent);
-			}
-
-			.collapse-switch .thumb {
-				width: 1em;
-				height: 1em;
-				border-radius: 50%;
-				background-color: var(--text-normal);
+			.collapse-chevron p7t-icon {
+				width: 1.4em;
+				height: 1.4em;
 				transition: transform .3s ease;
-				transform: translateX(1.1em);
 			}
 
-			.collapse-switch.collapsed .thumb {
-				transform: translateX(0);
+			.collapse-chevron.collapsed p7t-icon {
+				transform: rotate(-90deg);
 			}
 
 			:host::part(header) {
@@ -108,13 +96,18 @@ export class CardComponent extends Component {
 	@property() heading = ''
 	@property() subHeading = ''
 
-	/** Opt-in: renders a switch in the corner that collapses the card body. Off leaves existing cards untouched. */
+	/** Opt-in: renders a collapse chevron. Off leaves existing cards untouched. */
 	@property({ type: Boolean }) collapsible = false
-	@state() collapsed = false
+	/**
+	 * Whether the body is collapsed. Controlled by the parent — the chevron only announces a `collapsetoggle`;
+	 * it never flips this itself — so cards can be linked into a mutually-exclusive pair. Reflected so a parent
+	 * stylesheet can size the collapsed card differently from the expanded one.
+	 */
+	@property({ type: Boolean, reflect: true }) collapsed = false
 
 	protected override get template() {
 		return html`
-			${!this.collapsible ? nothing : this.collapseSwitchTemplate}
+			${!this.collapsible ? nothing : this.collapseToggleTemplate}
 			${this.headerTemplate}
 			${this.collapsed ? nothing : html`
 				<div part='content'>
@@ -127,16 +120,15 @@ export class CardComponent extends Component {
 		`
 	}
 
-	protected get collapseSwitchTemplate() {
+	protected get collapseToggleTemplate() {
 		return html`
 			<button
-				class='collapse-switch ${this.collapsed ? 'collapsed' : ''}'
-				part='collapse-switch'
-				role='switch'
-				aria-label='Collapse card'
-				aria-checked=${!this.collapsed}
-				@click=${() => { this.collapsed = !this.collapsed }}>
-				<span class='track'><span class='thumb'></span></span>
+				class='collapse-chevron ${this.collapsed ? 'collapsed' : ''}'
+				part='collapse-toggle'
+				aria-label=${this.collapsed ? 'Expand card' : 'Collapse card'}
+				aria-expanded=${!this.collapsed}
+				@click=${() => this.dispatchEvent(new CustomEvent('collapsetoggle', { bubbles: true, composed: true }))}>
+				<p7t-icon icon='lucide:chevron-down'></p7t-icon>
 			</button>
 		`
 	}
