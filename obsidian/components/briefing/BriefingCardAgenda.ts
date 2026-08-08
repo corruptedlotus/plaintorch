@@ -73,7 +73,7 @@ export class BriefingCardAgenda extends CardComponent {
 	}
 
 	protected override get preHeadingTemplate() {
-		return nothing
+		return html``
 	}
 
 	override get headingTemplate() {
