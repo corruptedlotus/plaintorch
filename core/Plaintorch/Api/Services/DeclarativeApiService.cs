@@ -5,6 +5,7 @@ using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
+using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 
@@ -28,8 +29,38 @@ public sealed class DeclarativeApiService(
 	PlaintorchOrbitService orbitService,
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
-	VaultAuditLogService auditLogService) : IDeclarativeApi
+	ProximityMaterializationService materializationService,
+	VaultAuditLogService auditLogService,
+	ILogger<DeclarativeApiService> logger) : IDeclarativeApi
 {
+	/// <summary>
+	/// Re-runs the day's materialization after a declarative changed, so a new or changed orbit's due
+	/// instances (attentives today, eventives across the horizon) appear immediately rather than only on the
+	/// next daily pass. Best-effort: the declarative is already committed and the daily pass is the backstop,
+	/// so a materialization hiccup must not fail the create/update.
+	/// </summary>
+	private async Task RecheckMaterializationAsync(CancellationToken cancellationToken)
+	{
+		try
+		{
+			// Catch up today's due instances only. The recheck is about immediacy — a decree's attentive or a
+			// fate's eventive appearing the moment its orbit is set — while filling the upcoming eventive horizon
+			// stays the daily background pass's remit, so an edit does not front-run a week of occurrences.
+			await materializationService.MaterializeForDayAsync(
+				DateOnly.FromDateTime(DateTime.Today),
+				eventiveHorizonDays: 0,
+				cancellationToken);
+		}
+		catch (OperationCanceledException)
+		{
+			throw;
+		}
+		catch (Exception exception)
+		{
+			logger.LogWarning(exception, "Materialization recheck after a declarative change failed; the daily pass will retry.");
+		}
+	}
+
 	/// <inheritdoc />
 	public Task<Fate?> GetFateAsync(string fateId, CancellationToken cancellationToken = default)
 	{
@@ -79,6 +110,7 @@ public sealed class DeclarativeApiService(
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveFateAsync(fate, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "fate.create", subject: fate, cancellationToken: cancellationToken);
+		await RecheckMaterializationAsync(cancellationToken);
 		return fate;
 	}
 
@@ -156,6 +188,7 @@ public sealed class DeclarativeApiService(
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveFateAsync(fate, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "fate.update", subject: fate, cancellationToken: cancellationToken);
+		await RecheckMaterializationAsync(cancellationToken);
 		return fate;
 	}
 
@@ -245,6 +278,7 @@ public sealed class DeclarativeApiService(
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveDecreeAsync(decree, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "decree.create", subject: decree, cancellationToken: cancellationToken);
+		await RecheckMaterializationAsync(cancellationToken);
 		return decree;
 	}
 
@@ -306,6 +340,7 @@ public sealed class DeclarativeApiService(
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveDecreeAsync(decree, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "decree.update", subject: decree, cancellationToken: cancellationToken);
+		await RecheckMaterializationAsync(cancellationToken);
 		return decree;
 	}
 

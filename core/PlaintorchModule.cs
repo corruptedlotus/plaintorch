@@ -4,6 +4,7 @@ using Pleiades.Orchestration;
 using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Changes;
+using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
@@ -96,8 +97,10 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<VaultMigrationRunner>();
 		services.AddScoped<IVaultMigration, ObjectiveQuietCanonicalizationMigration>();
 		services.AddScoped<PlaintorchEngine>();
+		services.AddScoped<ProximityMaterializationService>();
 		services.AddHostedService<PlaintorchCoreService>();
 		services.AddHostedService<VaultWatcherService>();
+		services.AddHostedService<DailyMaterializationService>();
 	}
 
 	/// <inheritdoc />

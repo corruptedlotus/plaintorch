@@ -19,6 +19,12 @@ export class BriefingCardAgenda extends CardComponent {
 		return css`
 			${super.styles}
 
+			:host {
+				border: none;
+				padding-block: .2em;
+				background: none;
+			}
+
 			.section {
 				display: flex;
 				flex-direction: column;
@@ -67,7 +73,7 @@ export class BriefingCardAgenda extends CardComponent {
 	}
 
 	protected override get preHeadingTemplate() {
-		return nothing
+		return html``
 	}
 
 	override get headingTemplate() {
