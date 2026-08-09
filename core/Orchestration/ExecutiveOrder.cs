@@ -53,4 +53,31 @@ public sealed class ExecutiveOrder : PuckNamedEntity
 	/// </summary>
 	[MarkdownField("effectiveUntil")]
 	public DateOnly? EffectiveUntil { get; set; }
+
+	/// <summary>
+	/// Gets a value indicating whether the order carries no explicit window and is therefore Onrush-bound:
+	/// its effective span is its parent onrush's, so it is in effect only while the onrush runs.
+	/// </summary>
+	[NotMapped]
+	public bool IsOnrushBound => EffectiveFrom is null && EffectiveUntil is null;
+
+	/// <summary>
+	/// Determines whether the order is in effect on <paramref name="date"/>. Each unset bound falls back to the
+	/// owning onrush's window (<see cref="OnrushSprint.StartDate"/>/<see cref="OnrushSprint.EndDate"/>), so a
+	/// timeless order is Onrush-bound. Requires <see cref="OnrushSprint"/> to be loaded for the fallback to
+	/// resolve; an unloaded onrush leaves the corresponding bound unbounded.
+	/// </summary>
+	public bool IsEffectiveOn(DateOnly date)
+	{
+		var from = EffectiveFrom ?? OnrushSprint?.StartDate;
+		var until = EffectiveUntil ?? OnrushSprint?.EndDate;
+		return (from is null || from <= date) && (until is null || until >= date);
+	}
+
+	/// <summary>
+	/// Gets a value indicating whether the order is in effect today, resolving its window against the owning
+	/// onrush (see <see cref="IsEffectiveOn"/>).
+	/// </summary>
+	[NotMapped]
+	public bool IsActive => IsEffectiveOn(DateOnly.FromDateTime(DateTime.Today));
 }

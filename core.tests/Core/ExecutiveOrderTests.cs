@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Tests.Harness;
+using Pleiades.Vault.Database;
 using Xunit;
 
 namespace Pleiades.Tests.Core;
@@ -121,5 +123,44 @@ public sealed class ExecutiveOrderTests : VaultTestBase
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Vault.WithScopeAsync(services => services
 			.GetRequiredService<IOnrushSprintApi>()
 			.IssueExecutiveOrderAsync("0", new ExecutiveOrderPlan("Too Early"), cancellationToken)));
+	}
+
+	[Fact]
+	public async Task Loaded_order_resolves_activeness_against_its_onrush_window()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+		var today = DateOnly.FromDateTime(DateTime.Today);
+
+		await Vault.WithScopeAsync(async services =>
+		{
+			var context = services.GetRequiredService<PlainfraContext>();
+			context.OnrushSprints.Add(new OnrushSprint
+			{
+				Id = "x0100",
+				Title = "Windowed Sprint",
+				StartDate = today.AddDays(-1),
+				EndDate = today.AddDays(1),
+			});
+			context.ExecutiveOrders.Add(new ExecutiveOrder { Id = "x100-o01", Title = "Timeless", OnrushSprintId = "x0100" });
+			context.ExecutiveOrders.Add(new ExecutiveOrder { Id = "x100-o02", Title = "Future", OnrushSprintId = "x0100", EffectiveFrom = today.AddDays(5) });
+			await context.SaveChangesAsync(cancellationToken);
+		});
+
+		var loaded = await Vault.QueryAsync(context => context.OnrushSprints
+			.AsNoTracking()
+			.Include(sprint => sprint.ExecutiveOrders)
+			.SingleAsync(sprint => sprint.Id == "x0100", cancellationToken));
+
+		// The timeless order carries no window of its own, so it is Onrush-bound: including the orders wires
+		// the back-reference the rule resolves against, and today falls inside the onrush's window.
+		var timeless = loaded.ExecutiveOrders.Single(order => order.Id == "x100-o01");
+		Assert.NotNull(timeless.OnrushSprint);
+		Assert.True(timeless.IsOnrushBound);
+		Assert.True(timeless.IsActive);
+
+		// A future-dated order uses its own window and is not yet active.
+		var future = loaded.ExecutiveOrders.Single(order => order.Id == "x100-o02");
+		Assert.False(future.IsOnrushBound);
+		Assert.False(future.IsActive);
 	}
 }
