@@ -134,6 +134,11 @@ export class BriefingHero extends CardComponent {
 				font-weight: 500;
 			}
 
+			.exec-orders p7t-tooltip {
+				display: block;
+				cursor: help;
+			}
+
 			.exec-order {
 				display: flex;
 				align-items: center;
@@ -149,6 +154,52 @@ export class BriefingHero extends CardComponent {
 					flex: 0 0 18px;
 					margin-top: .1em;
 				}
+			}
+
+			/* Slotted into p7t-tooltip's overlay, but styled here where the markup lives. */
+			.eo-tip {
+				display: flex;
+				flex-direction: column;
+				gap: .25em;
+			}
+
+			.eo-tip-head {
+				display: flex;
+				align-items: center;
+				gap: .45ch;
+				color: #ffd23f;
+
+				& p7t-icon {
+					width: 18px;
+					height: 18px;
+				}
+			}
+
+			.eo-tip-id {
+				font-size: .78em;
+				font-weight: 600;
+				text-transform: uppercase;
+				letter-spacing: .04em;
+			}
+
+			.eo-tip-title {
+				font-size: 1.05em;
+				font-weight: 500;
+				line-height: 1.15;
+			}
+
+			.eo-tip-window {
+				font-size: .8em;
+				font-weight: 500;
+				opacity: .7;
+			}
+
+			.eo-tip-summary {
+				margin-top: .15em;
+				font-size: .9em;
+				font-weight: 400;
+				line-height: 1.35;
+				opacity: .85;
 			}
 
 			.mask {
@@ -244,10 +295,21 @@ export class BriefingHero extends CardComponent {
 						<div class='exec-orders'>
 							Executive Orders in Effect
 							${this.activeExecutiveOrders.map(order => html`
-								<div class='exec-order'>
-									<p7t-icon icon='exec-order'></p7t-icon>
-									<span>${order.id}: ${order.title}</span>
-								</div>
+								<p7t-tooltip>
+									<div slot='tooltip' class='eo-tip'>
+										<div class='eo-tip-head'>
+											<p7t-icon icon='exec-order'></p7t-icon>
+											<span class='eo-tip-id'>Executive Order ${order.id}</span>
+										</div>
+										<div class='eo-tip-title'>${order.title}</div>
+										<div class='eo-tip-window'>${effectiveWindowLabel(order)}</div>
+										${!order.summary ? nothing : html`<div class='eo-tip-summary'>${order.summary}</div>`}
+									</div>
+									<div class='exec-order'>
+										<p7t-icon icon='exec-order'></p7t-icon>
+										<span>${order.id}: ${order.title}</span>
+									</div>
+								</p7t-tooltip>
 							`)}
 						</div>
 					`}
@@ -268,6 +330,41 @@ function todayKey(): string {
 	const now = new Date()
 	const pad = (value: number) => value.toString().padStart(2, '0')
 	return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
+/** A compact "when it started / when it ends" line for an executive order's effective window. */
+function effectiveWindowLabel(order: ExecutiveOrder): string {
+	const parts: string[] = []
+	if (order.effectiveFrom) {
+		parts.push(`Since ${formatShortDate(order.effectiveFrom)}`)
+	}
+
+	if (order.effectiveUntil) {
+		const days = daysFromToday(order.effectiveUntil)
+		parts.push(days < 0
+			? `Ended ${formatShortDate(order.effectiveUntil)}`
+			: days === 0 ? 'Ends today' : `Ends in ${days}d`)
+	}
+	else {
+		parts.push(order.effectiveFrom ? 'Open-ended' : 'Always in effect')
+	}
+
+	return parts.join(' · ')
+}
+
+/** 'YYYY-MM-DD' → a short 'Aug 12' label, parsed as local time so the day never shifts across a timezone. */
+function formatShortDate(date: string): string {
+	const parsed = new Date(`${date}T00:00:00`)
+	return Number.isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+/** Whole days from local midnight today to the given 'YYYY-MM-DD' date (negative when past). */
+function daysFromToday(date: string): number {
+	const target = new Date(`${date}T00:00:00`)
+	if (Number.isNaN(target.getTime())) return 0
+	const now = new Date()
+	const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+	return Math.round((target.getTime() - startOfToday.getTime()) / 86_400_000)
 }
 
 declare global {

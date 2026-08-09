@@ -13,11 +13,11 @@ namespace Pleiades.Plaintorch.Materialization;
 /// </summary>
 /// <remarks>
 /// One materializer serves two triggers. <see cref="MaterializeForCycleAsync"/> runs when a Polaris cycle
-/// begins, anchored on the cycle's 24h window and generating its bound reflectives. <see cref="MaterializeForDayAsync"/>
-/// runs on the daily background pass, anchored on today and independent of any cycle, so the agenda's
-/// attentives and upcoming eventives exist as rows without waiting for a cycle to be begun. Orbit resolution
-/// SEEKS (advances the persisted schedule state); instance identity is the occurrence date/time, so already
-/// interacted instances are recognized rather than duplicated.
+/// begins, anchored on the cycle's 24h window and generating its bound reflectives. <see cref="MaterializeForNowAsync"/>
+/// runs on the hourly rolling pass (and on a declarative change), anchored on now and independent of any
+/// cycle, so the agenda's attentives and upcoming eventives exist as rows without waiting for a cycle to be
+/// begun. Orbit resolution SEEKS (advances the persisted schedule state); instance identity is the occurrence
+/// date/time, so already interacted instances are recognized rather than duplicated.
 /// </remarks>
 public sealed class ProximityMaterializationService(
 	PlainfraContext context,
@@ -26,9 +26,9 @@ public sealed class ProximityMaterializationService(
 	VaultAuditLogService auditLogService)
 {
 	/// <summary>
-	/// How many days ahead the daily/recheck pass fills fate and objective eventives, so the agenda's
-	/// upcoming list has rows to read. Decree attentives are never pre-created past today (see
-	/// <see cref="MaterializeForDayAsync"/>).
+	/// How many days ahead the rolling pass fills fate and objective eventives, so the agenda's upcoming list
+	/// has rows to read. Decree attentives are never pre-created past the next 24h (see
+	/// <see cref="MaterializeForNowAsync"/>).
 	/// </summary>
 	public const int DefaultEventiveHorizonDays = 7;
 
@@ -71,24 +71,33 @@ public sealed class ProximityMaterializationService(
 	}
 
 	/// <summary>
-	/// Materializes the day's due instances independently of any cycle: unbound decree attentives caught up
-	/// through today, and fate/objective eventives across the upcoming horizon so the agenda can list them.
-	/// Reflect-decrees are left untouched — their reflectives are cycle-bound and belong to cycle begin.
-	/// Returns the number of instances created.
+	/// Materializes the due instances relative to <paramref name="now"/>, independently of any cycle: unbound
+	/// decree attentives across the next 24 hours, and fate/objective eventives across the upcoming horizon so
+	/// the agenda can list them. Reflect-decrees are left untouched — their reflectives are cycle-bound and
+	/// belong to cycle begin. Returns the number of instances created.
 	/// </summary>
-	public async Task<int> MaterializeForDayAsync(DateOnly today, int eventiveHorizonDays, CancellationToken cancellationToken = default)
+	/// <remarks>
+	/// "Due" means the next 24h, not the calendar day: run hourly, this rolling window keeps today's remaining
+	/// occurrences and any that fall in the coming hours materialized without pinning to midnight. Decrees are
+	/// never seeked past the 24h window, so future routine instances are not pre-created (a later orbit change
+	/// would otherwise strand them); only fate/objective eventives look further ahead to fill the horizon.
+	/// </remarks>
+	public async Task<int> MaterializeForNowAsync(DateTimeOffset now, int eventiveHorizonDays, CancellationToken cancellationToken = default)
 	{
-		var windowStart = today.ToDateTime(TimeOnly.MinValue);
-		var windowEnd = today.AddDays(eventiveHorizonDays).ToDateTime(new TimeOnly(23, 59, 59));
+		var start = now.LocalDateTime;
+		var startDay = DateOnly.FromDateTime(start);
+
+		var attentiveEnd = start.AddHours(24);
+		var decreeSeekThroughExclusive = DateOnly.FromDateTime(attentiveEnd).AddDays(attentiveEnd.TimeOfDay > TimeSpan.Zero ? 1 : 0);
+
+		var eventiveWindowEnd = startDay.AddDays(eventiveHorizonDays).ToDateTime(new TimeOnly(23, 59, 59));
+		var fateSeekThroughExclusive = startDay.AddDays(eventiveHorizonDays + 1);
 
 		var created = await MaterializeCoreAsync(
-			windowStart,
-			windowEnd,
-			// Fates and due objectives look ahead to fill the agenda's upcoming list; decree attentives only
-			// catch up to today, so future routine instances are not pre-created (a later orbit change would
-			// otherwise strand them).
-			fateSeekThroughExclusive: today.AddDays(eventiveHorizonDays + 1),
-			decreeSeekThroughExclusive: today.AddDays(1),
+			start,
+			eventiveWindowEnd,
+			fateSeekThroughExclusive: fateSeekThroughExclusive,
+			decreeSeekThroughExclusive: decreeSeekThroughExclusive,
 			cycle: null,
 			cancellationToken);
 
@@ -96,9 +105,9 @@ public sealed class ProximityMaterializationService(
 		{
 			await auditLogService.WriteAsync(
 				"daemon",
-				"daily.materialize",
+				"rolling.materialize",
 				subjectType: nameof(PolarisCycle),
-				details: new { created, date = today.ToString("yyyy-MM-dd") },
+				details: new { created, from = start.ToString("yyyy-MM-dd HH:mm") },
 				cancellationToken: cancellationToken);
 		}
 
@@ -107,13 +116,13 @@ public sealed class ProximityMaterializationService(
 
 	private async Task<int> MaterializeCoreAsync(
 		DateTime windowStart,
-		DateTime windowEnd,
+		DateTime eventiveWindowEnd,
 		DateOnly fateSeekThroughExclusive,
 		DateOnly decreeSeekThroughExclusive,
 		PolarisCycle? cycle,
 		CancellationToken cancellationToken)
 	{
-		var candidateDates = InclusionWindow.EnumerateDates(windowStart, windowEnd);
+		var candidateDates = InclusionWindow.EnumerateDates(windowStart, eventiveWindowEnd);
 		var startDay = DateOnly.FromDateTime(windowStart);
 		var created = 0;
 
@@ -126,7 +135,7 @@ public sealed class ProximityMaterializationService(
 
 		foreach (var fate in datedFates)
 		{
-			if (!InclusionWindow.Intersects(fate.Date!.Value, fate.StartTime, fate.EndTime, windowStart, windowEnd))
+			if (!InclusionWindow.Intersects(fate.Date!.Value, fate.StartTime, fate.EndTime, windowStart, eventiveWindowEnd))
 			{
 				continue;
 			}

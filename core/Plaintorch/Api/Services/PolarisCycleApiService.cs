@@ -369,16 +369,19 @@ public sealed class PolarisCycleApiService(
 	{
 		var today = DateOnly.FromDateTime(DateTime.Today);
 		var horizon = today.AddDays(7);
+		// "Requiring attention" spans the next 24h, so at day granularity that is today plus tomorrow, alongside
+		// anything overdue. This mirrors what the rolling materialization pass writes for the same window.
+		var attentiveThrough = today.AddDays(1);
 
-		// Requiring attention: unbound, still pending, and due today or overdue (same-day/24h and previous
-		// unattended). Including the decree pulls its directive through the auto-include, so each item can
-		// show its relevant lunar directive.
+		// Requiring attention: unbound, still pending, and due within the next 24h or overdue (same-day/24h and
+		// previous unattended). Including the decree pulls its directive through the auto-include, so each item
+		// can show its relevant lunar directive.
 		var attentives = await context.Attentives
 			.AsNoTracking()
 			.Include(item => item.Decree)
 			.Where(item => item.PolarisCycleId == null
 				&& item.Resolution == AttentiveResolution.Pending
-				&& item.Date <= today)
+				&& item.Date <= attentiveThrough)
 			.OrderBy(item => item.Date)
 			.ThenBy(item => item.Time)
 			.ToListAsync(cancellationToken);

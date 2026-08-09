@@ -100,7 +100,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<ProximityMaterializationService>();
 		services.AddHostedService<PlaintorchCoreService>();
 		services.AddHostedService<VaultWatcherService>();
-		services.AddHostedService<DailyMaterializationService>();
+		services.AddHostedService<RollingMaterializationService>();
 	}
 
 	/// <inheritdoc />

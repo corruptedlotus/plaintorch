@@ -10,16 +10,17 @@ using Xunit;
 namespace Pleiades.Tests.Core;
 
 /// <summary>
-/// Covers the daily, cycle-independent materialization pass that backs the agenda: an orbit decree's
-/// attentive is materialized (and reaches the agenda) without any Polaris cycle being begun, reflect-decrees
-/// are left for cycle begin, and fate eventives fill the upcoming horizon.
+/// Covers the rolling, cycle-independent materialization pass that backs the agenda: an orbit decree's
+/// attentive is materialized (and reaches the agenda) without any Polaris cycle being begun, creating or
+/// changing an orbit rechecks immediately, reflect-decrees are left for cycle begin, and fate eventives fill
+/// the upcoming horizon. "Due" is the next 24h, not the calendar day.
 /// </summary>
-public sealed class DailyMaterializationTests : VaultTestBase
+public sealed class RollingMaterializationTests : VaultTestBase
 {
-	private Task<int> MaterializeDayAsync(DateOnly today, int horizonDays = 7)
+	private Task<int> MaterializeNowAsync(int horizonDays = 7)
 		=> Vault.WithScopeAsync(services => services
 			.GetRequiredService<ProximityMaterializationService>()
-			.MaterializeForDayAsync(today, horizonDays));
+			.MaterializeForNowAsync(DateTimeOffset.Now, horizonDays));
 
 	[Fact]
 	public async Task Creating_an_orbit_decree_materializes_todays_attentive_and_reaches_the_agenda_without_a_cycle()
@@ -67,7 +68,7 @@ public sealed class DailyMaterializationTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Daily_pass_is_idempotent_and_does_not_duplicate_attentives()
+	public async Task Rolling_pass_is_idempotent_and_does_not_duplicate_attentives()
 	{
 		var ct = TestContext.Current.CancellationToken;
 		var today = DateOnly.FromDateTime(DateTime.Today);
@@ -75,8 +76,8 @@ public sealed class DailyMaterializationTests : VaultTestBase
 		var decree = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
 			.CreateDecreeAsync(new DecreePlan("Hydrate", Orbit: "d", DefaultLength: 5), ct));
 
-		await MaterializeDayAsync(today);
-		await MaterializeDayAsync(today);
+		await MaterializeNowAsync();
+		await MaterializeNowAsync();
 
 		var count = await Vault.QueryAsync(context => context.Attentives
 			.CountAsync(item => item.DecreeId == decree.Id && item.Date == today, ct));
@@ -84,19 +85,18 @@ public sealed class DailyMaterializationTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Daily_pass_leaves_reflect_lunar_decrees_for_cycle_begin()
+	public async Task Rolling_pass_leaves_reflect_lunar_decrees_for_cycle_begin()
 	{
 		var ct = TestContext.Current.CancellationToken;
-		var today = DateOnly.FromDateTime(DateTime.Today);
 
 		var lunar = await Vault.WithScopeAsync(s => s.GetRequiredService<IDirectiveApi>()
 			.CreateLunarAsync("Moon Law", cancellationToken: ct));
 		var reflectDecree = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
 			.CreateDecreeAsync(new DecreePlan("Evening reflection", DirectiveId: lunar.Id, Orbit: "d", Reflect: true), ct));
 
-		await MaterializeDayAsync(today);
+		await MaterializeNowAsync();
 
-		// A reflect-decree in a lunar hierarchy produces neither an attentive nor a reflective on the daily
+		// A reflect-decree in a lunar hierarchy produces neither an attentive nor a reflective on the rolling
 		// pass — its reflective is cycle-bound and belongs to cycle begin.
 		var attentiveCount = await Vault.QueryAsync(context => context.Attentives
 			.CountAsync(item => item.DecreeId == reflectDecree.Id, ct));
@@ -107,7 +107,7 @@ public sealed class DailyMaterializationTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Daily_pass_fills_the_upcoming_eventive_horizon()
+	public async Task Rolling_pass_fills_the_upcoming_eventive_horizon()
 	{
 		var ct = TestContext.Current.CancellationToken;
 		var today = DateOnly.FromDateTime(DateTime.Today);
@@ -115,7 +115,7 @@ public sealed class DailyMaterializationTests : VaultTestBase
 		await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
 			.CreateFateAsync(new FatePlan("Daily standup", Orbit: "d", EventDuration: 30), ct));
 
-		await MaterializeDayAsync(today, horizonDays: 7);
+		await MaterializeNowAsync(horizonDays: 7);
 
 		var agenda = await Vault.WithScopeAsync(s => s.GetRequiredService<IPolarisCycleApi>().GetAgendaAsync(ct));
 		Assert.NotEmpty(agenda.Eventives);
