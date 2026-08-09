@@ -27,8 +27,7 @@ export class ValueProgress extends Component {
 				gap: .3ch;
 				
 				& p7t-icon {
-					width: 2em;
-					height: 2em;
+					font-size: 1.3em;
 				}
 
 				& > span {
@@ -61,7 +60,7 @@ export class ValueProgress extends Component {
 				position: relative;
 				display: flex;
 				align-items: stretch;
-				height: .5em;
+				height: .3em;
 				border-radius: .5em;
 				background-color: color-mix(in srgb, var(--text-normal) 10%, transparent);
 				overflow: clip;

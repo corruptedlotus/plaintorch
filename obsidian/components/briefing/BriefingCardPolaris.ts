@@ -94,13 +94,12 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 	}
 
 	protected override get listContent() {
-		const attentives = this.data!.attentives ?? []
 		return html`
 			${this.reflectivesGroup}
 			${this.data!.executives.map(executive => html`
 				<p7t-objective-item-exec interactive .entity=${executive.objective} .executive=${executive}></p7t-objective-item-exec>
 			`)}
-			${attentives.map(attentive => html`
+			${(this.data!.attentives ?? []).map(attentive => html`
 				<p7t-attentive-item interactive .attentive=${attentive}></p7t-attentive-item>
 			`)}
 			<p7t-button @click=${() => this.addObjective()} icon='lucide:plus' class='add-button'>Add Objective</p7t-button>

@@ -5,7 +5,7 @@
 
 .plaintorch-root {
 	--p7t-accent-polaris: #038899;
-	--p7t-accent-onrush: #9d2818;
+	--p7t-accent-onrush: #d4227b;
 }
 
 .view-content:has(p7t-note-banner:not([invalid])) .metadata-container,

@@ -25,6 +25,7 @@ export class LiveElapsedView extends Component {
 	static override get styles() {
 		return css`
 			:host {
+				font-variant-numeric: tabular-nums;
 			}
 
 			small {
@@ -39,9 +40,9 @@ export class LiveElapsedView extends Component {
 		const elapsedHours = Math.floor(elapsedMinutes / 60)
 
 		return html`
-			<span>${elapsedHours}<small>h</small></span>
-			<span>${elapsedMinutes % 60}'</span>
-			<small>${elapsedSeconds % 60}<small>s</small></small>
+			<span>${elapsedHours.toString().padStart(2, '0')}<small>h</small></span>
+			<span>${(elapsedMinutes % 60).toString().padStart(2, '0')}'</span>
+			<small>${(elapsedSeconds % 60).toString().padStart(2, '0')}<small>s</small></small>
 		`
 	}
 }

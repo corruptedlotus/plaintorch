@@ -21,6 +21,7 @@
 	"dependencies": {
 		"@a11d/lit": "^0.11.1",
 		"@dagrejs/dagre": "^1.1.4",
+		"@js-temporal/polyfill": "^0.5.1",
 		"@open-draft/deferred-promise": "^3.0.0",
 		"@pleiades/sdk": "file:../sdk.ts"
 	}

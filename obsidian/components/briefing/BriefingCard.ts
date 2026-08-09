@@ -41,13 +41,18 @@ export class BriefingCard<T extends { id: string }> extends CardComponent {
 				inset-inline: 1%;
 				top: 0;
 				width: 98%;
-				height: calc(10em + 20%);
+				height: min(100% + 2em, 10em + 20%);
 				color: var(--background-primary);
 				overflow: clip;
+				pointer-events: none;
 
 				&::part(icon-frame) {
 					margin-top: -2.5em;
 					mask-position: right;
+				}
+
+				:host([collapsed]) &::part(icon-frame) {
+					margin-top: -1em;
 				}
 			}
 

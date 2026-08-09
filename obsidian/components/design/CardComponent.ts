@@ -96,6 +96,16 @@ export class CardComponent extends Component {
 			:host::part(content) {
 				flex: 1;
 			}
+
+			:host([collapsed]) {
+				&::part(content) {
+					display: none;
+				}
+
+				&::part(footer) {
+					display: none;
+				}
+			}
 		`
 	}
 
@@ -118,14 +128,12 @@ export class CardComponent extends Component {
 				${this.headerTemplate}
 				${!this.collapsible ? nothing : this.collapseToggleTemplate}
 			</div>
-			${this.collapsed ? nothing : html`
-				<div part='content'>
-					<slot>${this.content}</slot>
-				</div>
-				<div part='footer'>
-					<slot name='footer'>${this.footer}</slot>
-				</div>
-			`}
+			<div part='content'>
+				${this.content}
+			</div>
+			<div part='footer'>
+				${this.footer}
+			</div>
 		`
 	}
 
@@ -172,8 +180,13 @@ export class CardComponent extends Component {
 		`
 	}
 
-	protected get content() { return html`` }
-	protected get footer() { return html`` }
+	protected get content() {
+		return html`<slot></slot>`
+	}
+
+	protected get footer() {
+		return html`<slot name='footer'></slot>`
+	}
 }
 
 declare global {

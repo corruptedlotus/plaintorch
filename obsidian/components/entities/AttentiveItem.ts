@@ -1,8 +1,9 @@
-import { component, html, property } from "@a11d/lit"
+import { component, css, html, property } from "@a11d/lit"
 import { Attentive, AttentiveResolution } from "@pleiades/sdk"
 import { Notice } from "obsidian"
 import { OccurrenceItem } from "./OccurrenceItem"
 import { core } from ".."
+import { Temporal } from "@js-temporal/polyfill"
 
 /**
  * A single attentive occurrence of a decree. Its notch quick-switches between undone (Pending) and done;
@@ -14,6 +15,27 @@ import { core } from ".."
 @component('p7t-attentive-item')
 export class AttentiveItem extends OccurrenceItem {
 	@property({ type: Object }) attentive?: Attentive
+
+	static override get styles() {
+		return css`
+			${super.styles}
+
+			.timer {
+				font-weight: 400;
+				display: inline-flex;
+				align-items: center;
+				gap: .4ch;
+
+				&.past {
+					color: var(--text-error);
+				}
+
+				&.future {
+					opacity: .6;
+				}
+			}
+		`
+	}
 
 	private get done() {
 		return this.attentive?.resolution === AttentiveResolution.Done
@@ -46,6 +68,19 @@ export class AttentiveItem extends OccurrenceItem {
 		const merged: Attentive = { ...attentive, ...updated, decree: updated.decree ?? attentive.decree }
 		this.attentive = merged
 		this.dispatchEvent(new CustomEvent<Attentive>('attentivechange', { detail: merged, bubbles: true, composed: true }))
+	}
+
+	override get info() {
+		const epoch = Temporal.PlainDateTime.from(`${this.attentive?.date ?? ''}T${this.attentive?.time ?? ''}`)
+		const past = epoch.since(Temporal.Now.plainDateTimeISO()).sign === -1
+
+		return html`
+			<span class='timer ${past ? 'past' : 'future'}'>
+				${past ? html`` : html`in`}
+				<p7t-elapsed-view .epoch=${epoch.toString()}></p7t-elapsed-view>
+				${past ? html`<p7t-icon icon='lucide:clock-alert'></p7t-icon>` : html``}
+			</span>
+		`
 	}
 }
 
