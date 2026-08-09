@@ -43,11 +43,12 @@ public sealed class DeclarativeApiService(
 	{
 		try
 		{
-			// Catch up today's due instances only. The recheck is about immediacy — a decree's attentive or a
-			// fate's eventive appearing the moment its orbit is set — while filling the upcoming eventive horizon
-			// stays the daily background pass's remit, so an edit does not front-run a week of occurrences.
-			await materializationService.MaterializeForDayAsync(
-				DateOnly.FromDateTime(DateTime.Today),
+			// Catch up the next 24h's due instances only. The recheck is about immediacy — a decree's attentive
+			// or a fate's imminent eventive appearing the moment its orbit is set — while filling the upcoming
+			// eventive horizon stays the rolling background pass's remit, so an edit does not front-run a week of
+			// occurrences.
+			await materializationService.MaterializeForNowAsync(
+				DateTimeOffset.Now,
 				eventiveHorizonDays: 0,
 				cancellationToken);
 		}
