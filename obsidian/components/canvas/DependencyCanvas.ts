@@ -22,6 +22,12 @@ type MenuTarget =
 	| { readonly sort: 'edge', readonly edge: CanvasEdge }
 	| { readonly sort: 'node', readonly nodeKey: string }
 
+/** A node's actual rendered size, measured from its element rather than assumed from the layout. */
+interface NodeSize {
+	readonly width: number
+	readonly height: number
+}
+
 const minimumScale = 0.3
 const maximumScale = 2.5
 /** How far a pointer must travel before it is a drag rather than an unsteady click. */
@@ -61,6 +67,14 @@ export class DependencyCanvas extends Component {
 	@state() private activeKey?: string
 	@state() private gesture?: Gesture
 	@state() private menu?: MenuTarget
+	/**
+	 * Each node's actual rendered size, keyed by node key — what the edges are drawn against.
+	 *
+	 * The layout gives every node the same nominal box, but a checkpoint is a fraction of an objective's width
+	 * and a long title grows one taller, so an edge drawn to the nominal box detaches from the element it was
+	 * meant to touch. Measured from the elements and kept current by a {@link ResizeObserver}.
+	 */
+	@state() private measured: ReadonlyMap<string, NodeSize> = new Map()
 
 	@query('.viewport') private readonly viewportElement!: HTMLElement
 	@query('.menu') private readonly menuElement!: HTMLElement
@@ -77,6 +91,9 @@ export class DependencyCanvas extends Component {
 	private readonly planningSprint = new DerivedRef(this, core.repos.onrushPlanning, () => this.mode === 'onrush-planning' ? '' : undefined)
 
 	private storeSubscription?: EntitySubscription
+	private resizeObserver?: ResizeObserver
+	/** The node set the observer is currently watching, so it is re-pointed only when that set changes. */
+	private observedSignature?: string
 	private layoutCache?: { readonly signature: string, readonly layout: CanvasLayout }
 	private framed = false
 	/** Whether the drag in progress has actually moved, which is what tells a drag from a click. */
@@ -409,11 +426,17 @@ export class DependencyCanvas extends Component {
 		// A node's own state — an objective moving to Done — changes nothing about the listings the graph is
 		// built from, so no listing subscription would report it. The same reasoning as the entity grid.
 		this.storeSubscription = core.store.subscribeAll(() => this.requestUpdate())
+		// A node grows when its title is edited or its content loads, and that is not a canvas render on its own —
+		// the observer is what keeps the edges attached to it through changes the canvas never hears about.
+		this.resizeObserver = new ResizeObserver(entries => this.onNodesResized(entries))
 	}
 
 	protected override disconnected() {
 		this.storeSubscription?.()
 		this.storeSubscription = undefined
+		this.resizeObserver?.disconnect()
+		this.resizeObserver = undefined
+		this.observedSignature = undefined
 		window.clearTimeout(this.layoutSaveTimer)
 	}
 
@@ -474,12 +497,21 @@ export class DependencyCanvas extends Component {
 		return this.layoutCache.layout
 	}
 
-	/** Where a node actually is: what the reader dragged it to, else where it was laid out. */
+	/**
+	 * Where a node actually is, and how big it actually is.
+	 *
+	 * Position is what the reader dragged it to, else where it was laid out. Size is the measured size when there
+	 * is one, so the edges — which read a box's width and height for where to meet it — attach to the element's
+	 * real trailing and leading edges rather than the layout's uniform guess. Until a node is measured its layout
+	 * size stands, which is close enough for the frame or two before the observer reports.
+	 */
 	private boxesFor(layout: CanvasLayout): Map<string, NodeBox> {
 		const boxes = new Map<string, NodeBox>()
 		for (const [key, box] of layout.nodes) {
 			const override = this.overrides.get(key)
-			boxes.set(key, override ? { ...box, x: override.x, y: override.y } : box)
+			const placed = override ? { ...box, x: override.x, y: override.y } : box
+			const size = this.measured.get(key)
+			boxes.set(key, size ? { ...placed, width: size.width, height: size.height } : placed)
 		}
 
 		return boxes
@@ -1328,12 +1360,70 @@ export class DependencyCanvas extends Component {
 
 	protected override updated() {
 		this.adoptSavedLayout()
+		this.syncNodeMeasurement()
 
 		// Framed once, when there is finally something to frame, and never again — refitting on every change
 		// would move the graph out from under someone reading it.
 		if (!this.framed && this.layoutCache && this.layoutCache.layout.nodes.size > 0 && this.viewportElement) {
 			this.framed = true
 			this.frame(this.layoutCache.layout)
+		}
+	}
+
+	/**
+	 * Points the resize observer at the current node elements and takes a first measurement of them.
+	 *
+	 * Re-pointed only when the node set changes — pan, zoom and selection re-render without touching which
+	 * elements exist, so the observer keeps watching the ones already on screen. Measuring here as well as in
+	 * the observer's callback closes the gap on the render a node first appears in, so its edges attach without
+	 * waiting for the asynchronous report.
+	 */
+	private syncNodeMeasurement() {
+		const observer = this.resizeObserver
+		if (!observer) {
+			return
+		}
+
+		const signature = this.layoutCache?.signature
+		if (signature === this.observedSignature) {
+			return
+		}
+
+		this.observedSignature = signature
+		observer.disconnect()
+
+		const measured = new Map<string, NodeSize>()
+		for (const node of Array.from(this.shadowRoot?.querySelectorAll<HTMLElement>('.node') ?? [])) {
+			observer.observe(node)
+			const key = node.getAttribute('data-key')
+			if (key) {
+				measured.set(key, { width: node.offsetWidth, height: node.offsetHeight })
+			}
+		}
+
+		this.measured = measured
+	}
+
+	/** Re-reads any node whose size changed, so the edges follow a title edit or a late-loading content. */
+	private onNodesResized(entries: readonly ResizeObserverEntry[]) {
+		const next = new Map(this.measured)
+		let changed = false
+		for (const entry of entries) {
+			const node = entry.target as HTMLElement
+			const key = node.getAttribute('data-key')
+			if (!key) {
+				continue
+			}
+
+			const previous = next.get(key)
+			if (!previous || previous.width !== node.offsetWidth || previous.height !== node.offsetHeight) {
+				next.set(key, { width: node.offsetWidth, height: node.offsetHeight })
+				changed = true
+			}
+		}
+
+		if (changed) {
+			this.measured = next
 		}
 	}
 
