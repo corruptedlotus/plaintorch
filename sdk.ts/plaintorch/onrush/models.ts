@@ -25,6 +25,10 @@ export interface ExecutiveOrder {
 	summary: string | undefined
 	effectiveFrom: string | undefined
 	effectiveUntil: string | undefined
+	/** Whether the order is in effect today, resolving its window against the owning onrush (PEP102.5). */
+	isActive?: boolean
+	/** Whether the order has no explicit window and is bound to its parent onrush's active span. */
+	isOnrushBound?: boolean
 }
 
 export interface ExecutiveOrderPlan {

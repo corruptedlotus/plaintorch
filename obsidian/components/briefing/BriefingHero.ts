@@ -225,13 +225,39 @@ export class BriefingHero extends CardComponent {
 		`
 	}
 
-	/** Executive orders of the current onrush that are in effect today. */
+	/**
+	 * Executive orders of the current onrush that are in effect today. Effectiveness is resolved by the core
+	 * (a timeless order is Onrush-bound), so this trusts the served `isActive` flag rather than recomputing.
+	 */
 	private get activeExecutiveOrders(): ExecutiveOrder[] {
-		const orders = this.briefing?.currentOnrush?.executiveOrders ?? []
-		const today = todayKey()
-		return orders.filter(order =>
-			(!order.effectiveFrom || order.effectiveFrom <= today)
-			&& (!order.effectiveUntil || order.effectiveUntil >= today))
+		return (this.briefing?.currentOnrush?.executiveOrders ?? []).filter(order => order.isActive)
+	}
+
+	/**
+	 * A compact "when it started / when it ends" line for an order's effective window. A timeless order is
+	 * Onrush-bound, so each unset bound resolves against the current onrush and the line says so.
+	 */
+	private effectiveWindowLabel(order: ExecutiveOrder): string {
+		const onrush = this.briefing?.currentOnrush
+		const from = order.effectiveFrom ?? onrush?.startDate
+		const until = order.effectiveUntil ?? onrush?.endDate
+
+		const parts: string[] = []
+		if (order.isOnrushBound) {
+			parts.push('Onrush-bound')
+		}
+		else if (from) {
+			parts.push(`Since ${formatShortDate(from)}`)
+		}
+
+		if (until) {
+			const days = daysFromToday(until)
+			parts.push(days < 0
+				? `Ended ${formatShortDate(until)}`
+				: days === 0 ? 'Ends today' : `Ends in ${days}d`)
+		}
+
+		return parts.join(' · ')
 	}
 
 	override get template() {
@@ -297,7 +323,7 @@ export class BriefingHero extends CardComponent {
 											<span class='eo-tip-id'>Executive Order ${order.id}</span>
 										</div>
 										<div class='eo-tip-title'>${order.title}</div>
-										<div class='eo-tip-window'>${effectiveWindowLabel(order)}</div>
+										<div class='eo-tip-window'>${this.effectiveWindowLabel(order)}</div>
 										${!order.summary ? nothing : html`<div class='eo-tip-summary'>${order.summary}</div>`}
 									</div>
 									<div class='exec-order'>
@@ -318,33 +344,6 @@ export class BriefingHero extends CardComponent {
 			<p7t-date-view></p7t-date-view>
 		`
 	}
-}
-
-/** Local date as a 'YYYY-MM-DD' key, comparable against serialized DateOnly effective dates. */
-function todayKey(): string {
-	const now = new Date()
-	const pad = (value: number) => value.toString().padStart(2, '0')
-	return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-}
-
-/** A compact "when it started / when it ends" line for an executive order's effective window. */
-function effectiveWindowLabel(order: ExecutiveOrder): string {
-	const parts: string[] = []
-	if (order.effectiveFrom) {
-		parts.push(`Since ${formatShortDate(order.effectiveFrom)}`)
-	}
-
-	if (order.effectiveUntil) {
-		const days = daysFromToday(order.effectiveUntil)
-		parts.push(days < 0
-			? `Ended ${formatShortDate(order.effectiveUntil)}`
-			: days === 0 ? 'Ends today' : `Ends in ${days}d`)
-	}
-	else {
-		parts.push(order.effectiveFrom ? 'Open-ended' : 'Always in effect')
-	}
-
-	return parts.join(' · ')
 }
 
 /** 'YYYY-MM-DD' → a short 'Aug 12' label, parsed as local time so the day never shifts across a timezone. */
