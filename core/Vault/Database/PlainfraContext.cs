@@ -142,10 +142,26 @@ public class PlainfraContext : DbContext
 	/// </summary>
 	public DbSet<VaultMigrationHistory> VaultMigrationHistory => Set<VaultMigrationHistory>();
 
+	/// <summary>
+	/// Gets the durable operation-status transition log (PEP108).
+	/// </summary>
+	public DbSet<OperationStatusEvent> OperationStatusEvents => Set<OperationStatusEvent>();
+
 	/// <inheritdoc />
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
 		base.OnModelCreating(modelBuilder);
+
+		// PEP108: operation-status transition log. Enum columns are stored as readable strings.
+		modelBuilder.Entity<OperationStatusEvent>()
+			.Property(x => x.Transition)
+			.HasConversion<string>();
+		modelBuilder.Entity<OperationStatusEvent>()
+			.Property(x => x.Severity)
+			.HasConversion<string>();
+		modelBuilder.Entity<OperationStatusEvent>()
+			.Property(x => x.PreviousSeverity)
+			.HasConversion<string>();
 
 		var tagsConverter = new ValueConverter<List<string>, string>(
 			value => JsonSerializer.Serialize(value, JsonSerializerOptions.Default),

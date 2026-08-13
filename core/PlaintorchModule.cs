@@ -3,7 +3,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Pleiades.Orchestration;
 using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
+using Pleiades.Diagnostics;
 using Pleiades.Plaintorch.Api.Changes;
+using Pleiades.Plaintorch.Diagnostics;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault;
@@ -75,6 +77,11 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<VaultWatcherPathPolicy>();
 		services.AddSingleton<VaultWatcherIssueRegistry>();
 		services.AddSingleton<VaultWatcherWriteBarrier>();
+		// PEP108 operation-status core: live registry, buffered durable sink, and reporter (watcher is the first consumer).
+		services.AddSingleton<OperationStatusRegistry>();
+		services.AddSingleton<OperationStatusEventBuffer>();
+		services.AddSingleton<IOperationStatusSink>(provider => provider.GetRequiredService<OperationStatusEventBuffer>());
+		services.AddSingleton<OperationStatusReporter>();
 		services.AddSingleton<VaultStorageTopologyValidator>();
 		services.AddSingleton<PlaintorchVaultLockService>();
 		services.AddSingleton<PlaintorchCoreSplashService>();
@@ -101,6 +108,7 @@ public sealed class PlaintorchModule : Module
 		services.AddHostedService<PlaintorchCoreService>();
 		services.AddHostedService<VaultWatcherService>();
 		services.AddHostedService<RollingMaterializationService>();
+		services.AddHostedService<OperationStatusPersistenceWorker>();
 	}
 
 	/// <inheritdoc />

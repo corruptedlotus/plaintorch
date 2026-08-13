@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Pleiades.Vault.Database;
 
@@ -10,9 +11,11 @@ using Pleiades.Vault.Database;
 namespace plaintorch.Vault.Database.Migrations
 {
     [DbContext(typeof(PlainfraContext))]
-    partial class PlainfraContextModelSnapshot : ModelSnapshot
+    [Migration("20260813203414_AddOperationStatusEvents")]
+    partial class AddOperationStatusEvents
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
