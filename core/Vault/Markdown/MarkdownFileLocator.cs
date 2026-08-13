@@ -9,8 +9,10 @@ namespace Pleiades.Vault.Markdown;
 /// <summary>
 /// Resolves canonical markdown file paths for vault-backed entities.
 /// </summary>
-public sealed class MarkdownFileLocator(VaultLayout layout)
+public sealed class MarkdownFileLocator(VaultLayout layout, VaultEntityModelCatalog catalog)
 {
+	private readonly VaultStoragePathComposer _composer = new(layout, catalog);
+
 	/// <summary>
 	/// Determines whether a type has explicit vault file backing.
 	/// </summary>
@@ -35,34 +37,29 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	/// <summary>
 	/// Resolves the markdown file path for a vault-backed entity with an optional resolved parent entity.
 	/// </summary>
+	/// <remarks>
+	/// Path composition is driven entirely by the entity's declared <see cref="VaultStorageAttribute"/> policy through
+	/// per-shape <see cref="IVaultStorageStrategy"/> objects (see <see cref="VaultStoragePathComposer"/>), rather than
+	/// per-type dispatch.
+	/// </remarks>
 	public string GetFilePath(object entity, object? parentEntity)
 	{
 		ArgumentNullException.ThrowIfNull(entity);
-
-		return entity switch
+		if (!HasFileBacking(entity.GetType()))
 		{
-			Directive directive => GetDirectiveFilePath(directive, parentEntity as Directive),
-			Objective objective => GetObjectiveFilePath(objective, parentEntity as Directive),
-			Fate fate => GetIncentiveFilePath(fate, layout.FatesRoot, parentEntity as Directive),
-			Decree decree => GetIncentiveFilePath(decree, layout.DecreesRoot, parentEntity as Directive),
-			OnrushSprint sprint => GetOnrushSprintFilePath(sprint),
-			ExecutiveOrder order => GetExecutiveOrderFilePath(order, parentEntity as OnrushSprint),
-			PolarisCycle cycle => GetPolarisCycleFilePath(cycle),
-			LorePage lorePage => GetLorePageFilePath(lorePage),
-			_ => throw new InvalidOperationException($"Type '{entity.GetType().Name}' is not configured for vault markdown storage."),
-		};
+			throw new InvalidOperationException($"Type '{entity.GetType().Name}' is not configured for vault markdown storage.");
+		}
+
+		return _composer.GetFilePath(entity, parentEntity);
 	}
 
 	/// <summary>
-	/// Resolves the directory path for a directive.
+	/// Resolves the directory path for a directive (its self-named storage folder).
 	/// </summary>
 	public string GetDirectiveDirectoryPath(Directive directive, Directive? parentDirective = null)
 	{
 		ArgumentNullException.ThrowIfNull(directive);
-		var storage = ResolveDirectiveStorage(directive.GetType());
-		var folderName = ResolvePuckFileBaseName(storage, directive.Id, directive.Title);
-		var parentDirectory = ResolveDirectiveParentDirectory(directive, parentDirective);
-		return Path.Combine(parentDirectory, folderName);
+		return _composer.GetOwnDirectory(directive, parentDirective);
 	}
 
 	/// <summary>
@@ -76,15 +73,12 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	}
 
 	/// <summary>
-	/// Resolves the markdown file path for a directive.
+	/// Resolves the markdown file path for a directive with an optional resolved parent directive.
 	/// </summary>
 	public string GetDirectiveFilePath(Directive directive, Directive? parentDirective)
 	{
 		ArgumentNullException.ThrowIfNull(directive);
-		var storage = ResolveDirectiveStorage(directive.GetType());
-		var folderName = ResolvePuckFileBaseName(storage, directive.Id, directive.Title);
-		var directory = GetDirectiveDirectoryPath(directive, parentDirective);
-		return Path.Combine(directory, $"{folderName}.md");
+		return GetFilePath(directive, parentDirective);
 	}
 
 	/// <summary>
@@ -96,36 +90,12 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	}
 
 	/// <summary>
-	/// Resolves the markdown file path for an objective.
+	/// Resolves the markdown file path for an objective with an optional owning directive.
 	/// </summary>
 	public string GetObjectiveFilePath(Objective objective, Directive? owningDirective)
 	{
 		ArgumentNullException.ThrowIfNull(objective);
-		EnsureFileBacking<Objective>();
-		var storage = typeof(Objective).GetCustomAttribute<VaultStorageAttribute>()
-			?? throw new InvalidOperationException($"Type '{typeof(Objective).Name}' is not configured for vault markdown storage.");
-		var fileName = ResolvePuckFileBaseName(storage, objective.Id, objective.Title);
-		var container = owningDirective is null
-			? layout.ObjectivesRoot
-			: ResolvePartitionedParentDirectory(typeof(Objective), GetDirectiveDirectoryPath(owningDirective, owningDirective.ParentDirective));
-
-		return Path.Combine(container, $"{fileName}.md");
-	}
-
-	/// <summary>
-	/// Resolves the markdown file path for a declarative incentive (fate or decree), which follows the
-	/// objective placement policy: its standalone root, or its partition folder inside the owning directive.
-	/// </summary>
-	private string GetIncentiveFilePath(Incentive incentive, string standaloneRoot, Directive? owningDirective)
-	{
-		var storage = incentive.GetType().GetCustomAttribute<VaultStorageAttribute>()
-			?? throw new InvalidOperationException($"Type '{incentive.GetType().Name}' is not configured for vault markdown storage.");
-		var fileName = ResolvePuckFileBaseName(storage, incentive.Id, incentive.Title);
-		var container = owningDirective is null
-			? standaloneRoot
-			: ResolvePartitionedParentDirectory(incentive.GetType(), GetDirectiveDirectoryPath(owningDirective, owningDirective.ParentDirective));
-
-		return Path.Combine(container, $"{fileName}.md");
+		return GetFilePath(objective, owningDirective);
 	}
 
 	/// <summary>
@@ -136,9 +106,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	public string GetOnrushSprintFilePath(OnrushSprint sprint)
 	{
 		ArgumentNullException.ThrowIfNull(sprint);
-		EnsureFileBacking<OnrushSprint>();
-		var folderName = PuckNamedIdentity.FormatFileName(sprint.Id, sprint.Title);
-		return Path.Combine(layout.GetLocationRoot(VaultLocationKeys.Onrush), folderName, $"{folderName}.md");
+		return GetFilePath(sprint, null);
 	}
 
 	/// <summary>
@@ -150,17 +118,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	public string GetExecutiveOrderFilePath(ExecutiveOrder order, OnrushSprint? owningSprint)
 	{
 		ArgumentNullException.ThrowIfNull(order);
-		EnsureFileBacking<ExecutiveOrder>();
-		if (owningSprint is null)
-		{
-			throw new InvalidOperationException($"Executive order '{order.Id}' cannot compose a storage path without its owning onrush sprint '{order.OnrushSprintId}'.");
-		}
-
-		var fileName = PuckNamedIdentity.FormatFileName(order.Id, order.Title);
-		var sprintDirectory = Path.GetDirectoryName(GetOnrushSprintFilePath(owningSprint))
-			?? throw new InvalidOperationException($"Onrush sprint '{owningSprint.Id}' markdown path does not have a valid directory.");
-		var container = ResolvePartitionedParentDirectory(typeof(ExecutiveOrder), sprintDirectory);
-		return Path.Combine(container, $"{fileName}.md");
+		return GetFilePath(order, owningSprint);
 	}
 
 	/// <summary>
@@ -171,9 +129,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	public string GetPolarisCycleFilePath(PolarisCycle cycle)
 	{
 		ArgumentNullException.ThrowIfNull(cycle);
-		EnsureFileBacking<PolarisCycle>();
-		var fileName = PuckNamedIdentity.FormatFileName(cycle.Id, cycle.Title);
-		return Path.Combine(layout.GetLocationRoot(VaultLocationKeys.Journal), $"{fileName}.md");
+		return GetFilePath(cycle, null);
 	}
 
 	/// <summary>
@@ -182,20 +138,7 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 	public string GetLorePageFilePath(LorePage lorePage)
 	{
 		ArgumentNullException.ThrowIfNull(lorePage);
-		EnsureFileBacking<LorePage>();
-
-		if (!string.IsNullOrWhiteSpace(lorePage.RelativePath))
-		{
-			var path = Path.GetFullPath(Path.Combine(layout.VaultRoot, lorePage.RelativePath));
-			var normalizedRoot = layout.VaultRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-			if (path.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
-			{
-				return path;
-			}
-		}
-
-		var folderName = PuckNamedIdentity.FormatFileName(lorePage.EffectiveIdentifier, lorePage.Title);
-		return Path.Combine(layout.SagaRoot, folderName, $"{folderName}.md");
+		return GetFilePath(lorePage, null);
 	}
 
 	/// <summary>
@@ -476,65 +419,6 @@ public sealed class MarkdownFileLocator(VaultLayout layout)
 
 		var directoryName = Path.GetFileName(directoryPath);
 		return File.Exists(Path.Combine(directoryPath, $"{directoryName}.md"));
-	}
-
-	/// <summary>
-	/// Resolves the primary file base name for a PUCK-backed entity according to its declared PUCK storage form.
-	/// Quiet storage yields a title-only name, while Index storage embeds the PUCK token in the filename.
-	/// </summary>
-	private static string ResolvePuckFileBaseName(VaultStorageAttribute storage, string id, string title)
-	{
-		return storage.PuckStorage == VaultPuckStorage.Quiet
-			? PuckNamedIdentity.FormatTitleOnlyFileName(title)
-			: PuckNamedIdentity.FormatFileName(id, title);
-	}
-
-	private static void EnsureFileBacking<T>()
-	{
-		if (!HasFileBacking(typeof(T)))
-		{
-			throw new InvalidOperationException($"Type '{typeof(T).Name}' is not configured for vault markdown storage.");
-		}
-	}
-
-	private string ResolveDirectiveParentDirectory(Directive directive, Directive? parentDirective)
-	{
-		if (parentDirective is not null)
-		{
-			return ResolvePartitionedParentDirectory(directive.GetType(), GetDirectiveDirectoryPath(parentDirective, parentDirective.ParentDirective));
-		}
-
-		// Root directives land in the location declared by their concrete type: stellar under Directives, lunar
-		// under its dedicated Moonlight root (PEP100).
-		return layout.GetLocationRoot(ResolveDirectiveStorage(directive.GetType()).LocationKey);
-	}
-
-	private static VaultStorageAttribute ResolveDirectiveStorage(Type directiveType)
-	{
-		return directiveType.GetCustomAttribute<VaultStorageAttribute>(inherit: true)
-			?? throw new InvalidOperationException($"Type '{directiveType.Name}' is not configured for vault markdown storage.");
-	}
-
-	private string ResolvePartitionedParentDirectory(Type entityType, string parentDirectory)
-	{
-		var storage = entityType.GetCustomAttribute<VaultStorageAttribute>()
-			?? throw new InvalidOperationException($"Type '{entityType.Name}' is not configured for vault markdown storage.");
-
-		if (string.IsNullOrWhiteSpace(storage.PartitionUnder))
-		{
-			return parentDirectory;
-		}
-
-		var partition = storage.PartitionUnder.Trim();
-		if (Path.IsPathRooted(partition)
-			|| partition.Contains(Path.DirectorySeparatorChar)
-			|| partition.Contains(Path.AltDirectorySeparatorChar)
-			|| partition.Contains("..", StringComparison.Ordinal))
-		{
-			throw new InvalidOperationException($"{nameof(VaultStorageAttribute.PartitionUnder)} for '{entityType.Name}' must be a single safe subdirectory name.");
-		}
-
-		return Path.Combine(parentDirectory, partition);
 	}
 
 }

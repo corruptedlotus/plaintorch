@@ -149,4 +149,12 @@ public sealed class VaultStorageAttribute : Attribute
 	/// Gets the optional subdirectory name used when storing this entity beneath a resolved parent directory.
 	/// </summary>
 	public string? PartitionUnder { get; init; }
+
+	/// <summary>
+	/// Gets a value indicating whether a resolved parent entity is mandatory to compose this entity's storage path.
+	/// When <see langword="true"/>, path composition fails fast if no parent is supplied, rather than falling back to
+	/// the declared location root (used by entities whose location is only meaningful beneath their owner, such as
+	/// executive orders under their onrush sprint).
+	/// </summary>
+	public bool RequiresParent { get; init; }
 }

@@ -21,7 +21,8 @@ namespace Pleiades.Orchestration;
 	PuckStorage = VaultPuckStorage.Index,
 	ParentIdProperty = nameof(OnrushSprintId),
 	ParentEntityType = typeof(OnrushSprint),
-	PartitionUnder = "ExecutiveOrders")]
+	PartitionUnder = "ExecutiveOrders",
+	RequiresParent = true)]
 public sealed class ExecutiveOrder : PuckNamedEntity
 {
 	/// <summary>

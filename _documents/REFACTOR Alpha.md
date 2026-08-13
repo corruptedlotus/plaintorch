@@ -8,6 +8,17 @@ way. Phases build on each other but each lands independently green.
 
 **Status legend:** ✅ done · 🚧 in progress · ⏳ planned · 🅿️ parked (has preconditions)
 
+**Progress context (2026-08-10).** Phases 0–1 landed. Phase 2 is underway: its forward path-composition slice
+landed on this date (the `entity switch` in `MarkdownFileLocator` is retired for a declared-policy shape-strategy
+composer); its reverse-composition and candidate-enumeration slices, and phases 3–5, remain. When the later work
+was re-verified against source at this date, the 8 hand-written path-sync models, the `IsDirectiveEntityTypeName`
+name-list, and the scattered `Mode.IsIdentityDriven()` checks were all still present.
+The intervening effort went to frontend and orbit/declarative work (PEP102 dependency-graph editor, PEP106
+frontend repository, Polaris briefing, orbit materialisation, executive-order effective windows), not the
+vault-core refactor — so the phase plan is **parked, not stale**. Two things that landed since do touch it and
+are folded in below: the PEP106 change feed (a new declaration-driven consumer of family/type knowledge) and
+the mode-policy service split (`VaultStorageModePolicyRouter`), which phase 4 now *extends* rather than invents.
+
 ---
 
 ## Guiding principles
@@ -30,7 +41,10 @@ way. Phases build on each other but each lands independently green.
    `VaultEntityModelCatalog.Validate` extends it.
 5. **Genuinely domain-specific logic stays hand-written.** Relationship rules (incentive parenting,
    timeframes-are-lunar-only), workflow legality, materialization flows, and per-entity update/shift payload
-   shapes are the domain — not glue. Do not genericise them.
+   shapes are the domain — not glue. Do not genericise them. The line to hold: storage-policy *onboarding*
+   (Implicit boundary-`begin`, Freeform/Implicit file-`init`) is **not** domain logic — it is mode-mechanical
+   and is generalised in phase 5. "Materialization flows" here means the *domain consequences* of
+   materialization (orbit proximity, state settlement), not the file boundary itself.
 
 ---
 
@@ -40,10 +54,10 @@ way. Phases build on each other but each lands independently green.
 |---|---|---|
 | 0 | `VaultEntityModelCatalog` — declarative entity registry + activation validation | ✅ |
 | 1 | `VaultEntityGateway` — retire `typeof`/DbSet dispatch, generic snapshots, known-id loaders | ✅ |
-| 2 | Storage shape strategies — collapse `MarkdownFileLocator` / path composition per-type code | ⏳ |
+| 2 | Storage shape strategies — collapse `MarkdownFileLocator` / path composition per-type code | 🚧 |
 | 3 | Polymorphic family descriptor — first-class TPH families; registry-generated path-sync models | ⏳ |
 | 4 | Storage-mode policy objects — consolidate Freeform/Implicit/Synced/… conditionals | ⏳ |
-| 5 | API CRUD kit (optional) — generic list/get/find/create/delete plumbing | ⏳ (may be dropped) |
+| 5 | API kit — policy-derived actions (begin-boundary, init-from-file) + optional generic CRUD | ⏳ |
 | P1 | Retire the base `A{S:6}` directive declaration | 🅿️ |
 | P2 | Entity→note association for directives | 🅿️ (folds into phase 2) |
 | P3 | Lunar directive file auto-discovery | 🅿️ (folds into phase 3) |
@@ -93,13 +107,35 @@ carrying the regression load.
 
 ---
 
-## Phase 2 — Storage shape strategies ⏳
+## Phase 2 — Storage shape strategies 🚧
 
-**Problem.** `MarkdownFileLocator` holds 9 per-entity `Get*FilePath` methods, 7 `Apply*CompositionFromPath`
-helpers, and a 10-arm `entity switch` — yet the actual variety is ~3 physical shapes already declared by
+**Landed (2026-08-10) — forward path composition.** `VaultStoragePathComposer` + `IVaultStorageStrategy`
+(`SelfNamedDirectoryStorageStrategy`, `SingleFileStorageStrategy`) now compose canonical paths from declared
+policy (via `VaultEntityModelCatalog`): base name from `PuckStorage`, container from the resolved parent's own
+directory + `PartitionUnder`, else the declared location root. `MarkdownFileLocator`'s `GetFilePath` `entity
+switch` and every per-entity `Get*FilePath` body are gone — the methods are now thin façades over the composer
+(public signatures kept for `PlaintorchEngine` / callers). Two declared-parameter/hook decisions: a new
+`VaultStorageAttribute.RequiresParent` (set on `ExecutiveOrder`) preserves its "no owning sprint ⇒ throw"
+guard instead of falling back to a location root; lore pages keep an explicit per-type strategy
+(`LorePageStorageStrategy`) for their RelativePath-authoritative, `EffectiveIdentifier`-named, parent-ignoring
+placement — a genuine per-model hook, not a switch arm. This also retires the PEP092-noted latent coupling
+(onrush/polaris/lore path methods hardcoding the Index form). Pinned by 15 goldens in `FileLocatorTests`
+(every entity × shape × PuckStorage form × parent nesting × partition), landed green *before* the refactor and
+still green after; full suite 115/115.
+
+**Remaining in phase 2.** Reverse composition (`Apply*CompositionFromPath` + `VaultMarkdownDiscoveryService.
+CreatePathComposedModel`'s type switch → strategy "path→identity composition") and candidate enumeration
+(the `IsCandidatePath` predicates → strategy "candidate enumeration"), the latter unlocking the P2
+note-association flip below. These carry the observable-behaviour change (directive `AssociatedNote` starts
+resolving) and stay a separate, operator-visible slice.
+
+**Problem.** `MarkdownFileLocator` holds ~7 per-entity `Get*FilePath` methods, ~5 `Apply*CompositionFromPath`
+helpers, and an 8-arm `entity switch` — yet the actual variety is ~3 physical shapes already declared by
 `VaultStorage`: **SelfNamedDirectory**, **SingleFile**, and **partitioned-under-parent** placement, crossed
 with the Quiet/Index PUCK-storage forms. `VaultMarkdownDiscoveryService.CreatePathComposedModel` mirrors the
-same dispatch.
+same dispatch. (The fate/decree unification since this plan was drafted already collapsed their per-kind
+methods into `GetIncentiveFilePath` / `ApplyIncentiveCompositionFromPath` — a partial down-payment on the
+shape strategy, and evidence the per-kind methods never carried real per-kind variety.)
 
 **Target.** An `IVaultStorageStrategy` (working name) per *shape*, parameterised entirely by the entity's
 declared policy (via `VaultEntityModelCatalog`): canonical path composition, path→identity composition, and
@@ -117,7 +153,8 @@ association falls out naturally (including lunar directives under `Moonlight`). 
 
 **Test gate (land these first, ~6–8 goldens in `FileLocatorTests` / `PathClassificationTests`):**
 - fate/decree standalone-root paths and directive-partition paths (`Fates/`, `Decrees/` under a directive)
-- executive order composite path inside its owning onrush partition
+- executive order composite path inside its owning onrush partition (the order now also carries a validated
+  `EffectiveFrom`/`EffectiveUntil` window — new fields, *not* a shape change; compose the current model)
 - lore page self-named path under the saga root
 - Index vs Quiet filename forms per shape (polaris/onrush Index; objective/directive Quiet already covered)
 - fate/decree path *classification* (foreign-container rejection between incentive kinds)
@@ -131,7 +168,13 @@ graveyard. Mitigation: goldens first; behaviour-preserving refactor; no policy c
 **Problem.** TPH families (directive: `Directive` ⊃ `StellarDirective`/`LunarDirective`; incentive:
 `Incentive` ⊃ `Objective`/`Fate`/`Decree`) are implicit: family knowledge is re-derived at each consumer
 (the path-sync model's hand-set `ConcreteType`, `IsDirectiveEntityTypeName` in discovery, discriminator
-column disambiguation in `PlainfraContext`, per-sibling location overrides).
+column disambiguation in `PlainfraContext`, per-sibling location overrides, and — new since this plan — the
+PEP106 change feed (`PlaintorchChangeFeedInterceptor`) announcing entities by runtime type name and walking
+`OwnersOf` over EF foreign-key metadata). The change feed already derives family/owner knowledge structurally
+rather than from a name list, so it is mostly *aligned* with the target — but it carries one known-ambiguous
+polymorphic edge: `Directive`/`LunarDirective` owner announcement (documented open edge in
+`core/.DISCUSSION.md`, harmless today because no child record has a directive FK). A first-class family
+descriptor is where that edge gets resolved rather than worked around.
 
 **Target.** The catalog models families first-class: anchor type, concrete members, per-member PUCK
 declaration, per-member storage override, EF discriminator values. Consumers then derive:
@@ -151,38 +194,95 @@ declaration, per-member storage override, EF discriminator values. Consumers the
 **Test gate:** the directive family is already the fully-tested template (storage locations, init
 materialization, per-kind resolution, discriminator migration). Add the incentive-family equivalents:
 classification goldens per kind and a family-resolution matrix (every member declaration resolves to its
-member; anchor spans the family).
+member; anchor spans the family). Keep `EntityTypeNameContractTests` (which pins the concrete PUCK type names
+on the wire) as a regression anchor — see the cross-repo constraint below.
+
+**Cross-repo blast radius.** Concrete type names and discriminators are no longer core-only: the PEP106 SDK
+identity map keys resolutions on `{@type}:{id}` and routes type names → repositories (`@model(...)`), so any
+change here to a concrete type name or discriminator is a two-repo change gated by `EntityTypeNameContractTests`.
+Treat renames as contract changes, not refactors.
 
 **Risk.** Medium. The registry projection must reproduce today's 8 path-sync models byte-for-byte in
 behaviour before adding anything new (assert model-list equivalence in a test during the transition).
 
 ## Phase 4 — Storage-mode policy objects ⏳
 
-**Problem.** `VaultStorageMode` semantics are interpreted by scattered conditionals:
-`Mode.IsIdentityDriven()`, freeform special-cases in discovery and `FreeformVaultStorageModePolicyService`,
-implicit-boundary checks in the watcher and storage service, enforced/synced branches in reconciliation.
+**Problem.** `VaultStorageMode` semantics are interpreted by scattered conditionals: `Mode.IsIdentityDriven()`
+(discovery ×2, `VaultWatcherPathPolicy`), freeform special-cases in discovery, implicit-boundary checks in the
+watcher and storage service, enforced/synced branches in reconciliation. A mode-policy split **already exists**
+(`VaultStorageModePolicyRouter` over `Freeform`/`Enforced`/`Optional`/`Synced`/`FileFirst`/`Implicit` services,
+with a shared `PathBoundVaultStorageModePolicyService` base) — but those services today answer only the
+*watcher-decision* questions (`Decide`, `TryResolveWatchPath`, `BelongsToModelAsync`,
+`ResolveRelocationOldIdFallback`); the *semantic* questions are still asked as scattered enum checks elsewhere.
 
-**Target.** One policy object per mode answering the questions the pipeline actually asks:
-`CanCreateFromFile`, `DeletionIsAuthoritative`, `RequiresFrontmatterIdentity`, `MaterializesOnCreate`,
-`BeginsBoundaryOnFirstFile`, relocation/old-id fallback rules. Pipeline code asks the policy; mode enums stop
-leaking. `FreeformVaultStorageModePolicyService` becomes the Freeform policy object; Implicit boundary
-begins/authority checks become the Implicit policy object.
+**Target.** *Extend the existing router's policy objects* — do not invent a parallel hierarchy — so each mode
+also answers the questions the rest of the pipeline asks: `CanCreateFromFile`, `DeletionIsAuthoritative`,
+`RequiresFrontmatterIdentity`, `MaterializesOnCreate`, `BeginsBoundaryOnFirstFile`. Pipeline code asks the
+policy; mode enums stop leaking. The Freeform and Implicit services (already registered) absorb their
+special-case checks. These same policy objects are what phase 5's `begin`/`init` actions dispatch through, so
+this phase is a hard dependency of phase 5a.
 
 **Test gate:** Implicit is already well covered (`ImplicitBoundaryTests`); Freeform via the directive init
 tests. Add a per-mode behavioural matrix for Synced / Enforced / FileFirst / Optional when their branches are
 touched — before, not after.
 
-**Risk.** Medium. Mostly mechanical extraction, but authority rules (who wins on delete) are load-bearing;
-matrix tests must pin them first.
+**Risk.** Medium. Mostly mechanical extraction into an existing hierarchy, but authority rules (who wins on
+delete) are load-bearing; matrix tests must pin them first.
 
-## Phase 5 — API CRUD kit ⏳ (optional; may be dropped)
+## Phase 5 — API kit: policy-derived actions + generic CRUD ⏳
 
-The 8 × (`IApi` + `ApiService` + `Module`) triplets repeat get/list/find/create/delete plumbing. A generic
-`EntityApiService<TEntity, TUpdate>` + `MapEntityCrud<T>` could remove the mechanical parts, leaving domain
-actions (workflow shifts, parenting, materialization, timeframes) explicit. **Do last or not at all** — this
-is the layer where per-entity code is most legitimately domain-shaped, and the kind-split directive API is a
-reminder that entity surfaces diverge on purpose. Revisit after phases 2–4 show what (if anything) is still
-mechanical.
+The 8 × (`IApi` + `ApiService` + `Module`) triplets (directive, objective, declarative, onrush, polaris, lore,
+dependency, system) mix **three kinds of endpoint**, which must be told apart before anything is genericised:
+
+- **Policy-derived actions** — mechanical consequences of a storage *mode*, currently hand-written per entity.
+  This is the phase's real prize (§5a). Two families exist today:
+  - *Boundary-`begin`* (Implicit): `ObjectiveApiService.BeginBoundaryAsync`,
+    `DeclarativeApiService.BeginFateBoundaryAsync` / `BeginDecreeBoundaryAsync` — three copies of
+    load-by-id → `Save{Type}Async(beginBoundary: true)` → audit `{kind}.begin-boundary`, differing only by type
+    and the audit string.
+  - *File-`init`* (Freeform; wanted for Implicit too): `DirectiveApiService.InitializeFromPathAsync`, directives
+    only today. Its spine (validate path in-root → discovery candidate → `InitializeFromFileAsync` → load
+    created → audit) is generic; the directive-specific parts are the `typeof(Directive)` gate, the
+    `InspectDirectiveInitPathAsync` fallback, and the manual-no-PUCK override (`ShouldTreatAsManualFreeformInit`).
+  Note `OnrushSprint.BeginAsync` / `PolarisCycle.BeginAsync` are *domain* workflow-begins, not file-boundary
+  begins — they are not in scope.
+- **Genuinely-domain actions** — workflow shifts, parenting, timeframes, orbit/proximity materialization. Stay
+  explicit (principle 5). The kind-split directive API is the reminder that entity surfaces diverge on purpose.
+- **Mechanical CRUD** — get/list/find/create/delete plumbing.
+
+### §5a — Policy-derived actions (worth doing regardless of §5b)
+Drive `begin`/`init` off the phase-4 mode policy objects instead of per-entity code. Keep the two actions
+**distinct** — `begin` *adopts a file for an already-created entity*, `init` *creates an entity from an existing
+file*; create-vs-adopt is a real semantic difference — but make both generic across every identity-driven mode:
+
+- one `begin` action for any Implicit entity: the Implicit policy's `BeginsBoundaryOnFirstFile` plus the generic
+  gateway snapshot/save replace the three hand-written copies; the audit string derives from the entity kind.
+  Collapses objective/fate/decree begins into one.
+- one `init` (create-from-file) action for any identity-driven entity — **Freeform *and* Implicit**, gated on the
+  mode policy's `CanCreateFromFile`. This generalises init beyond directives (implicit-incentive init is new
+  behaviour). The directive-only specifics become declared policy: the manual-no-PUCK override and the discovery
+  fallback move onto the mode/entity policy object or an explicit named hook (principle 2), never a `typeof` arm.
+
+Routes generalise to a per-collection shape (`POST /api/{collection}/{id}/begin`, `POST /api/{collection}/init`),
+served only where the entity's mode supports the action.
+
+**Test gate (§5a):** begin-boundary parity across objective/fate/decree through the one generic action (identical
+file materialization + `BoundaryBegin` audit as today); `init` for a freeform directive *and* an implicit
+incentive (the incentive init is new — pin it); the directive manual-no-PUCK override preserved through the
+generic path; per-kind audit action strings unchanged.
+
+**Risk (§5a).** Medium — `begin`/`init` feed real file materialization and the implicit boundary. Behaviour-preserve
+the three begins and the directive init byte-for-byte *before* extending `init` to incentives.
+
+### §5b — Generic CRUD kit (still optional; may be dropped)
+A generic `EntityApiService<TEntity, TUpdate>` + `MapEntityCrud<T>` for the mechanical get/list/find/create/delete,
+leaving domain actions explicit. **Do last or not at all** — this is the layer where per-entity code is most
+legitimately domain-shaped. Revisit after §5a and phases 2–4 show what is still mechanical. Caveat for the kit:
+`Dependency` and `Checkpoint` are DB-only and (for dependencies) not `IPuckNamedEntity`, so they do **not** fit
+the entity-catalog/gateway shape the kit would assume — exclude or special-case them.
+
+**Depends on** phase 4 (the mode policy objects own `BeginsBoundaryOnFirstFile` / `CanCreateFromFile` /
+`MaterializesOnCreate`, which §5a dispatches through).
 
 ---
 
@@ -224,12 +324,18 @@ Identity-driven: concrete-type selection by `LUNA` declaration, never by directo
 | D4 | Base-declaration lookups query the whole family; the defensive stellar-only filter was dropped — PUCK tokenization + the ambiguity guard carry the discipline; no resolution-scope hook until a real special behaviour needs one | phase 1 |
 | D5 | Previous-state snapshots cover **all** mapped scalars + owned references, replacing hand-picked field lists | phase 1 |
 | D6 | Init-from-path mints ids from the composed **instantiation type**, not the family anchor (`A{S:8}`, matching API creation) | phase 1 prep |
-| D7 | PEP101's begin/finish uses the same declarative-attribute approach this plan endorses (`[LifecyclePhase]`/`[LifecycleStatus]` + `EntityLifecycleResolver`, with an `ILifecyclePhaseSource` hook for temporal kinds) — a concrete instance of the "declarations drive; hooks stay available" principle | PEP101 (dependency system) |
+| D7 | The "declarations drive" principle now has a shipped instance *outside* the vault layer: the PEP106 change feed derives owners from EF foreign-key metadata (`OwnersOf`) and announces by runtime type name, not a hand-kept list. (Supersedes an earlier speculative D7 that attributed an `[LifecyclePhase]`/`EntityLifecycleResolver` design to "PEP101"; that design was never built — PEP101 is still an idea, and the dependency system that *did* ship is PEP102, with flat enum-typed endpoints and a recursive-CTE temporal-cycle probe.) | phase 1 / PEP106 |
+| D8 | "Stealth" is the operator's informal name for the Implicit storage mode (Quiet frontmatter PUCK, no file on create, boundary-begun); the plan keeps the code identifier `Implicit` as canonical so it stays greppable against source | phase 5 scoping |
+| D9 | Policy-derived onboarding endpoints (Implicit boundary-`begin`, Freeform/Implicit file-`init`) are mode-mechanical, not domain, and fold into phase 5 (§5a) dispatched through the phase-4 mode policy objects. `begin` (adopt a file for an existing entity) and `init` (create an entity from a file) stay **distinct** actions but both go generic across identity-driven modes; `init` generalises beyond directives to implicit incentives (new behaviour) | phase 5 scoping |
 
 ## Standing constraints
 
 - Every phase lands with the full suite green (`dotnet test core.tests`); delicate-pipeline phases land their
   golden tests in a preceding commit.
 - No phase changes observable storage policy behaviour; policy changes are their own proposals (PEP), not
-  refactor side-effects.
+  refactor side-effects. (The one deliberate *addition* is phase 5a's `init` for implicit incentives — a new
+  surface, not a change to existing policy — pinned by its own test.)
+- Concrete PUCK type names and discriminators are a cross-repository contract: the PEP106 SDK identity map keys
+  on `{@type}:{id}` and routes type names → repositories, so phases 3 and 5 that touch type names or API shapes
+  are two-repo changes gated by `EntityTypeNameContractTests`.
 - Keep `core/Vault/.GENESIS.md`, `core/.DISCUSSION.md`, and this document updated as phases land.
