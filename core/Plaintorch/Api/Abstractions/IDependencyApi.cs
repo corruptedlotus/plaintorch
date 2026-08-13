@@ -23,6 +23,13 @@ public interface IDependencyApi
 	Task<IReadOnlyList<Dependency>> ListAsync(string? entityId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Searches the entities that may be a dependency endpoint — stellar directives, objectives, and fates —
+	/// by id or title, kind-tagged for a picker (PEP102). An empty query returns a bounded slice across the
+	/// kinds. Lunar directives, decrees, and Polaris-level records are never returned.
+	/// </summary>
+	Task<IReadOnlyList<EndpointHit>> SearchEndpointsAsync(SearchRequest search, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Deletes a dependency edge.
 	/// </summary>
 	Task DeleteAsync(long dependencyId, CancellationToken cancellationToken = default);

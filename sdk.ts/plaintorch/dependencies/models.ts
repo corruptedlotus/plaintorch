@@ -88,6 +88,17 @@ export interface DependencyLockView {
 	unsatisfied: Dependency[]
 }
 
+/**
+ * A candidate endpoint for a dependency, kind-tagged so a picker can tell one from another (PEP102). Returned
+ * by the endpoint search over the kinds that may take part in a dependency: stellar directives, objectives,
+ * and fates. Lunar directives, decrees, and Polaris-level records never appear.
+ */
+export interface EndpointHit {
+	kind: DependencyEndpointKind
+	id: string
+	title: string
+}
+
 /** One endpoint of a dependency in a create request (PEP101). */
 export interface DependencyEndpointRequest {
 	kind: DependencyEndpointKind

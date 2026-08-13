@@ -6,6 +6,7 @@ patches:
   - Patch102.3 - Milestone Binding and Graph
   - Patch102.4 - Graph Deep Editability
   - Patch102.5 - Onrush Management UI
+  - Patch102.6 - Global Planning Mode
 assignee: Soraya 🧙‍♀️
 ---
 > [!idea]
@@ -128,3 +129,24 @@ Delete is the one action with no endpoint behind it, so this patch adds **`DELET
 ### Open edges
 - Delete is offered only for a planning sprint, which is always the placeholder identity, so that is the path exercised. Deleting an *active* sprint through the API alone hits an ordering wrinkle in the same two-save flow and is left for when a surface actually calls for it.
 - Activation reads the active sprint once to refuse a second; between that read and the begin, a sprint started elsewhere would still be caught by the core, which is the authority.
+
+## Patch102.6 - Global Planning Mode
+The freeform phase (PEP102 phase 3). The canvas had two *sprint-scoped* contexts — active and planning onrush — where the node set is a sprint's membership and adding or removing a node changes that membership. **Global Planning Mode** is a third context that is not sprint-scoped: a **user-curated set of arbitrary entities**, drawn with the dependency edges between them, where add and remove are **show and hide only**. A hidden node's edge is never touched, so it persists and reappears when the node is pinned again. It is independent of the deferred phase 2 (directive focus) and needs no PEP103, since it mutates no entity state.
+
+### What a node is here
+A global node is only *shown*, so the mix of kinds must read apart at a glance: every node wears its **type icon**, not the objective status the onrush contexts show (a `typed` flag on `p7t-canvas-node`; checkpoints already carry a type glyph). The set is built by `globalContext(pinned, dependencies, resolve)`, which draws exactly the pins plus every dependency running between two of them. Drawing, reshaping and deleting edges work as in any context — only node membership is show/hide.
+
+### Finding a node to add
+A global context draws from anywhere in the backlog, so adding one needs a cross-kind search rather than a single listing. **`GET /api/dependencies/endpoints?q=&take=`** returns a kind-tagged `EndpointHit { kind, id, title }` over the entity kinds that may be a dependency endpoint — **stellar directives, objectives, and fates**. Lunar directives, decrees, and Polaris-level records are never returned, because they cannot take part in a dependency. An eventive is an occurrence of a fate, so the search returns the *fate*; pinning a specific occurrence follows the dependency system's fate-per-instance recurrence and is a follow-up. The picker (`SelectEndpointModal`) shows each hit under its type icon. Adding may optionally pull in the new node's one-hop dependency neighbours; removing may optionally take the whole connected group of pins with it.
+
+### Where a global context lives
+Unlike an onrush, a global context has **no database home** — an onrush stores its arrangement in a `GraphLayout` column, but a global context is either scratch or a file:
+- a **scratch tab** — a third *Global Planning* button beside the onrush tabs — held in the canvas's own state and lost on close unless saved; and
+- a **`.p7tpx` file** in the vault: JSON of `{ version, pinned: EndpointHit[], layout }`, opened in its own leaf.
+
+The canvas emits a `contextChanged` snapshot (pins + positions) on every change. In the scratch tab nobody listens; a `.p7tpx` file is hosted by `PlaintorchGlobalFileView` (a `TextFileView` bound to the extension via `registerExtensions`), which persists the snapshot back to the file. **Save to file…** in the scratch tab's toolbar graduates it into a `.p7tpx` and opens it; the **New global planning** command opens a fresh scratch context in a new leaf; opening any `.p7tpx` (file explorer, link, anywhere) routes to its view automatically.
+
+### Open edges
+- **Eventive occurrence nodes** are deferred — the search returns whole fates; pinning a specific `RECURRENCE-ID` occurrence is a follow-up over the same recurrence mechanism dependency edges already use.
+- The endpoint search is a bounded three-table title match, not a real global search index; a proper search service is later work, and a better picker UI can sit on top of it.
+- A ghostly-blocker overlay (as the onrush contexts draw) is not applied here — a global context is an explicit set, so nothing is pulled in uninvited beyond the optional add-with-dependencies.

@@ -72,6 +72,48 @@ public sealed class DependencyApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task<IReadOnlyList<EndpointHit>> SearchEndpointsAsync(SearchRequest search, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(search);
+
+		// The same title/id substring match the objective and directive finders use, run over each endpoint
+		// kind and unioned. An empty query returns a bounded slice rather than everything, so the picker opens
+		// usefully before anything is typed. Only stellar directives take part — the OfType filter is what
+		// excludes lunar directives — and decrees and Polaris-level records are simply never queried.
+		var query = search.Query?.Trim();
+		var hasQuery = !string.IsNullOrWhiteSpace(query);
+		var perKind = search.Take is > 0 ? search.Take.Value : hasQuery ? 50 : 20;
+
+		var directives = context.Directives
+			.OfType<StellarDirective>()
+			.AsNoTracking()
+			.Where(directive => !hasQuery || directive.Id.Contains(query!) || directive.Title.Contains(query!))
+			.OrderBy(directive => directive.Title)
+			.Take(perKind)
+			.Select(directive => new EndpointHit(DependencyEndpointKind.Directive, directive.Id, directive.Title));
+
+		var objectives = context.Objectives
+			.AsNoTracking()
+			.Where(objective => !hasQuery || objective.Id.Contains(query!) || objective.Title.Contains(query!))
+			.OrderBy(objective => objective.Title)
+			.Take(perKind)
+			.Select(objective => new EndpointHit(DependencyEndpointKind.Objective, objective.Id, objective.Title));
+
+		var fates = context.Fates
+			.AsNoTracking()
+			.Where(fate => !hasQuery || fate.Id.Contains(query!) || fate.Title.Contains(query!))
+			.OrderBy(fate => fate.Title)
+			.Take(perKind)
+			.Select(fate => new EndpointHit(DependencyEndpointKind.Fate, fate.Id, fate.Title));
+
+		var hits = new List<EndpointHit>();
+		hits.AddRange(await directives.ToListAsync(cancellationToken));
+		hits.AddRange(await objectives.ToListAsync(cancellationToken));
+		hits.AddRange(await fates.ToListAsync(cancellationToken));
+		return hits;
+	}
+
+	/// <inheritdoc />
 	public async Task DeleteAsync(long dependencyId, CancellationToken cancellationToken = default)
 	{
 		var dependency = await context.Dependencies.FirstOrDefaultAsync(item => item.Id == dependencyId, cancellationToken)

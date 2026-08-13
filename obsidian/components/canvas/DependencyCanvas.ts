@@ -1,15 +1,22 @@
-import { Component, component, css, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
-import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EntitySubscription } from '@pleiades/sdk'
+import { Component, component, css, event, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
+import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
 import { Notice } from 'obsidian'
 import { core, DerivedRef, getApp, navigateToEntity, type ExpandingAction, type IconName } from '..'
-import { activatePlanningOnrush, addCheckpointToOnrush, addObjectiveToOnrush, concludeOnrush, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGraphLayout, startActiveOnrush } from './canvasActions'
+import { activatePlanningOnrush, addCheckpointToOnrush, addObjectiveToOnrush, concludeOnrush, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
 import { OnrushDetailModal } from './OnrushDetailModal'
-import { contextModeLabels, onrushContext, type CanvasContextMode, type EndpointResolver } from './graphContext'
+import { contextModeLabels, edgeEndpoints, globalContext, onrushContext, type CanvasContextMode, type EndpointResolver } from './graphContext'
 import { edgeCurve, entryPoint, exitPoint, layoutGraph, parsePositions, serializePositions, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
-import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpointTypeName, targetRef, wouldCycle, type CanvasEdge, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
+import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpointTypeName, sourceRef, targetRef, wouldCycle, type CanvasEdge, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
 import { SelectObjectiveModal } from './SelectObjectiveModal'
+import { SelectEndpointModal } from './SelectEndpointModal'
 import type { CanvasNodePointer, NodeLock } from './CanvasNodeItem'
+
+/** A global planning context's persistable state — its pinned set and the positions they were dragged to. */
+export interface GlobalContextSnapshot {
+	readonly pinned: readonly EndpointHit[]
+	readonly layout: string | undefined
+}
 
 /** Which gesture a pointer is currently carrying out. */
 type Gesture =
@@ -57,6 +64,29 @@ const doubleClickWindow = 450
 export class DependencyCanvas extends Component {
 	@property() mode: CanvasContextMode = 'onrush-active'
 
+	/**
+	 * The curated node set of a global context (PEP102). Each pin carries its own title so the graph draws
+	 * before anything is fetched — a context restored from a `.p7tpx` file is legible immediately. Ignored
+	 * outside global mode. Driven by the host: the main canvas keeps it as scratch state, the file view
+	 * feeds it from the file.
+	 */
+	@property({ attribute: false }) pinned: readonly EndpointHit[] = []
+
+	/**
+	 * A global context's saved node positions (a `serializePositions` blob), adopted once when it loads.
+	 * Set by the file view from the file; the scratch tab leaves it undefined.
+	 */
+	@property({ attribute: false }) savedLayout?: string
+
+	/**
+	 * Whether this canvas *is* a global context rather than hosting the onrush tabs. The file view sets it, so
+	 * a `.p7tpx` leaf shows only its one context, no mode switcher.
+	 */
+	@property({ type: Boolean, reflect: true }) fileBacked = false
+
+	/** Announces a global context change (pins or layout) so a file-backed host can persist it. */
+	@event({ bubbles: true, composed: true }) contextChanged!: EventDispatcher<GlobalContextSnapshot>
+
 	/** Named for what it is rather than `translate`, which is an element property of its own. */
 	@state() private pan: Point = { x: 0, y: 0 }
 	@state() private scale = 1
@@ -103,6 +133,8 @@ export class DependencyCanvas extends Component {
 	private lastClickAt = 0
 	/** The sprint whose saved layout is currently loaded into {@link overrides}. */
 	private layoutSprintId?: string
+	/** Whether the global {@link savedLayout} has been adopted into overrides yet, so it is taken once. */
+	private globalLayoutAdopted = false
 	private layoutSaveTimer?: number
 
 	static override get styles() {
@@ -446,7 +478,9 @@ export class DependencyCanvas extends Component {
 	}
 
 	private get graph(): CanvasGraph {
-		return onrushContext(this.sprint, this.dependencies.value ?? [], this.resolveEndpoint)
+		return this.mode === 'global'
+			? globalContext(this.pinned, this.dependencies.value ?? [], this.resolveEndpoint)
+			: onrushContext(this.sprint, this.dependencies.value ?? [], this.resolveEndpoint)
 	}
 
 	/**
@@ -479,7 +513,8 @@ export class DependencyCanvas extends Component {
 	}
 
 	private get loading() {
-		return this.dependencies.value === undefined && this.sprint === undefined
+		// A global context has no sprint to wait on — it is its pins, empty or not.
+		return this.mode !== 'global' && this.dependencies.value === undefined && this.sprint === undefined
 	}
 
 	/**
@@ -561,7 +596,7 @@ export class DependencyCanvas extends Component {
 
 		return html`
 			<div class='toolbar'>
-				${(['onrush-active', 'onrush-planning'] as const).map(mode => html`
+				${this.fileBacked ? nothing : (['onrush-active', 'onrush-planning', 'global'] as const).map(mode => html`
 					<button
 						class='mode'
 						aria-pressed=${this.mode === mode}
@@ -570,6 +605,9 @@ export class DependencyCanvas extends Component {
 					</button>
 				`)}
 				<button class='mode' @click=${() => this.reset(layout)}>Reset layout</button>
+				${this.mode === 'global' && !this.fileBacked ? html`
+					<button class='mode' @click=${() => void this.onSaveToFile()}>Save to file…</button>
+				` : nothing}
 				<div class='spacer'></div>
 				<span class='readout'>${graph.nodes.length} nodes · ${graph.edges.length} edges · ${Math.round(this.scale * 100)}%</span>
 			</div>
@@ -615,14 +653,14 @@ export class DependencyCanvas extends Component {
 				</div>
 				${graph.nodes.length > 0 ? nothing : this.emptyOverlay}
 					${!this.sprint ? nothing : this.trayTemplate}
-					${!this.sprint ? nothing : html`
+					${this.sprint || this.mode === 'global' ? html`
 						<p7t-expanding-actions
 							class='fab'
 							large
 							actionLabel='Add to the canvas'
 							.actions=${this.additions}>
 						</p7t-expanding-actions>
-					`}
+					` : nothing}
 			</div>
 			<div class='menu' popover='auto' @beforetoggle=${(e: Event) => this.onMenuToggle(e)}>
 				${this.menuTemplate}
@@ -640,6 +678,19 @@ export class DependencyCanvas extends Component {
 	private get emptyOverlay() {
 		if (this.loading) {
 			return html`<div class='notice'>Loading…</div>`
+		}
+
+		if (this.mode === 'global') {
+			return html`
+				<div class='notice empty-state'>
+					<span>Nothing here yet — add directives, objectives or fates to plan across the whole backlog.</span>
+					<div class='empty-actions'>
+						<p7t-button emphasis icon='lucide:plus' @click=${() => void this.addEndpoint()}>
+							<span>Add a node</span>
+						</p7t-button>
+					</div>
+				</div>
+			`
 		}
 
 		if (this.sprint) {
@@ -798,6 +849,7 @@ export class DependencyCanvas extends Component {
 				.entity=${shared.entity}
 				.kind=${shared.kind}
 				.lock=${lock}
+				?typed=${this.mode === 'global'}
 				?selected=${shared.selected}
 				?active=${shared.active}
 				?ghostly=${shared.ghostly}
@@ -953,7 +1005,33 @@ export class DependencyCanvas extends Component {
 			<button class='menu-item' @click=${() => void this.run(async () => this.openDetails(node))}>
 				Details
 			</button>
-			${isCheckpoint ? this.checkpointMenu(node) : this.entityMenu(node)}
+			${this.mode === 'global' ? this.globalNodeMenu(node) : isCheckpoint ? this.checkpointMenu(node) : this.entityMenu(node)}
+		`
+	}
+
+	/**
+	 * A global node's menu: removing only *hides* it, whichever kind it is.
+	 *
+	 * The edge it carried is untouched and reappears when the node is pinned again — that is the whole of what
+	 * global add and remove do. Deleting the entity is a separate, destructive step kept behind a separator.
+	 */
+	private globalNodeMenu(node: CanvasNode) {
+		return html`
+			${node.ref.kind === DependencyEndpointKind.Checkpoint ? nothing : html`
+				<button class='menu-item' @click=${() => void this.run(async () => { await navigateToEntity(node.entity.id) })}>
+					Open note
+				</button>
+			`}
+			<button class='menu-item' @click=${() => this.run(async () => this.removeFromView(node, false))}>
+				Remove from view
+			</button>
+			<button class='menu-item' @click=${() => this.run(async () => this.removeFromView(node, true))}>
+				Remove with connected group
+			</button>
+			<div class='menu-separator'></div>
+			<button class='menu-item' @click=${() => void this.run(async () => await deleteEntity(node))}>
+				Delete
+			</button>
 		`
 	}
 
@@ -996,6 +1074,23 @@ export class DependencyCanvas extends Component {
 	}
 
 	private get additions(): ExpandingAction[] {
+		if (this.mode === 'global') {
+			return [
+				{
+					key: 'endpoint',
+					icon: 'lucide:plus',
+					label: 'Add to view',
+					run: async () => await this.addEndpoint()
+				},
+				{
+					key: 'endpoint-deps',
+					icon: 'lucide:git-fork',
+					label: 'Add with dependencies',
+					run: async () => await this.addEndpoint(true)
+				}
+			]
+		}
+
 		return [
 			{
 				key: 'objective',
@@ -1054,9 +1149,10 @@ export class DependencyCanvas extends Component {
 
 		this.mode = mode
 		// A different context is a different graph; positions from the last one mean nothing in it, and its
-		// saved layout is adopted afresh once the new sprint resolves.
+		// saved layout is adopted afresh once the new sprint (or the global snapshot) resolves.
 		this.overrides = new Map()
 		this.layoutSprintId = undefined
+		this.globalLayoutAdopted = false
 		this.selected = undefined
 		this.activeKey = undefined
 		this.framed = false
@@ -1091,6 +1187,88 @@ export class DependencyCanvas extends Component {
 		}
 
 		await addCheckpointToOnrush(sprint)
+	}
+
+	/**
+	 * Pins a node into the global context, optionally pulling its dependency neighbours in with it.
+	 *
+	 * A pin is a `kind:id` key; the picker excludes what is already pinned. With `withDependencies`, every
+	 * endpoint one hop away along an edge touching the new node is pinned too, resolved to a title from the
+	 * edge itself so it draws before anything is fetched.
+	 */
+	private async addEndpoint(withDependencies = false) {
+		const present = new Set(this.pinned.map(hit => endpointKey({ kind: hit.kind, id: hit.id })))
+		const hit = await SelectEndpointModal.prompt(present)
+		if (!hit) {
+			return
+		}
+
+		const additions = new Map<string, EndpointHit>()
+		additions.set(endpointKey({ kind: hit.kind, id: hit.id }), hit)
+
+		if (withDependencies) {
+			const key = endpointKey({ kind: hit.kind, id: hit.id })
+			for (const dependency of this.dependencies.value ?? []) {
+				const ends = edgeEndpoints(dependency)
+				const sourceKey = endpointKey(sourceRef(dependency))
+				const targetKey = endpointKey(targetRef(dependency))
+				const neighbour = sourceKey === key ? { key: targetKey, hit: ends.target }
+					: targetKey === key ? { key: sourceKey, hit: ends.source }
+						: undefined
+				if (neighbour && !present.has(neighbour.key) && !additions.has(neighbour.key)) {
+					additions.set(neighbour.key, neighbour.hit)
+				}
+			}
+		}
+
+		this.pinned = [...this.pinned, ...additions.values()]
+		this.emitContextChanged()
+	}
+
+	/**
+	 * Hides a node from the global context — a pure removal from the shown set, never a delete.
+	 *
+	 * With `withGroup`, its whole connected group of currently-pinned nodes goes with it, walked over the edges
+	 * between pins. The dependencies themselves are untouched, so re-pinning any of these nodes brings its edges
+	 * back.
+	 */
+	private removeFromView(node: CanvasNode, withGroup: boolean) {
+		const doomed = withGroup ? this.connectedPins(node.key) : new Set([node.key])
+		this.pinned = this.pinned.filter(hit => !doomed.has(endpointKey({ kind: hit.kind, id: hit.id })))
+		this.emitContextChanged()
+	}
+
+	/** The keys of the pinned nodes reachable from a start key over the edges between pins (both directions). */
+	private connectedPins(start: string): Set<string> {
+		const pinnedKeys = new Set(this.pinned.map(hit => endpointKey({ kind: hit.kind, id: hit.id })))
+		const adjacency = new Map<string, string[]>()
+		const link = (a: string, b: string) => adjacency.set(a, [...(adjacency.get(a) ?? []), b])
+		for (const dependency of this.dependencies.value ?? []) {
+			const source = endpointKey(sourceRef(dependency))
+			const target = endpointKey(targetRef(dependency))
+			if (pinnedKeys.has(source) && pinnedKeys.has(target)) {
+				link(source, target)
+				link(target, source)
+			}
+		}
+
+		const group = new Set<string>()
+		const pending = [start]
+		while (pending.length > 0) {
+			const current = pending.pop()!
+			if (!group.add(current)) {
+				continue
+			}
+
+			pending.push(...adjacency.get(current) ?? [])
+		}
+
+		return group
+	}
+
+	/** Graduates a scratch global context into a `.p7tpx` file and opens it. */
+	private async onSaveToFile() {
+		await saveGlobalContextToFile(this.pinned, serializePositions(this.overrides))
 	}
 
 	private async reshape(edge: CanvasEdge, trigger: DependencyTrigger, constraint: DependencyConstraint) {
@@ -1435,6 +1613,17 @@ export class DependencyCanvas extends Component {
 	 * handling — the layout is a hint, never a requirement, and never wiped for a membership change.
 	 */
 	private adoptSavedLayout() {
+		if (this.mode === 'global') {
+			// The file view feeds pins and layout together; adopt the positions once, then leave the reader's
+			// drags to own them. A scratch tab has no saved layout and simply starts from the dagre placement.
+			if (!this.globalLayoutAdopted) {
+				this.globalLayoutAdopted = true
+				this.overrides = parsePositions(this.savedLayout)
+			}
+
+			return
+		}
+
 		const sprint = this.sprint
 		if (!sprint || this.layoutSprintId === sprint.id) {
 			return
@@ -1444,8 +1633,20 @@ export class DependencyCanvas extends Component {
 		this.overrides = parsePositions(sprint.graphLayout)
 	}
 
-	/** Writes the current overrides to the sprint after a short rest, coalescing a run of drags into one save. */
+	/**
+	 * Persists the current arrangement after a short rest, coalescing a run of drags into one write.
+	 *
+	 * An onrush stores its layout in its own column; a global context has no column, so it hands its whole
+	 * snapshot — pins and positions — to whatever host is listening, which is the file view when there is a
+	 * file and nobody when the tab is scratch.
+	 */
 	private scheduleLayoutSave() {
+		if (this.mode === 'global') {
+			window.clearTimeout(this.layoutSaveTimer)
+			this.layoutSaveTimer = window.setTimeout(() => this.emitContextChanged(), 600)
+			return
+		}
+
 		const sprint = this.sprint
 		if (!sprint) {
 			return
@@ -1455,6 +1656,11 @@ export class DependencyCanvas extends Component {
 		const id = sprint.id
 		const payload = serializePositions(this.overrides)
 		this.layoutSaveTimer = window.setTimeout(() => void saveGraphLayout(id, payload), 600)
+	}
+
+	/** Hands the current global snapshot to the host. Fired on a pin change at once, on a drag after a rest. */
+	private emitContextChanged() {
+		this.contextChanged.dispatch({ pinned: this.pinned, layout: serializePositions(this.overrides) })
 	}
 
 	/** Centres the graph and zooms out far enough to hold it, never past life size. */
