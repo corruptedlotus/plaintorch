@@ -108,7 +108,17 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 							})
 					}
 				},
-				(response) => settle(wrapNodeResponse(response))
+				(response) => {
+					// Drain the body before settling, whatever the caller intends to do with it. A keep-alive
+					// socket is not returned to the pool until its response is fully read, so a body left
+					// unconsumed — a boolean write that ignores its result, an error page behind a non-ok
+					// status — pins the connection. Enough pinned connections exhaust `maxSockets`, after which
+					// every request queues with no socket and fails on its timeout until the server's own
+					// keep-alive timeout closes them: the core looks like it hung and then recovered.
+					readNodeResponseText(response)
+						.then((text) => settle(wrapNodeResponse(response.statusCode, text)))
+						.catch(() => settle(undefined))
+				}
 			)
 
 			const timer = setTimeout(() => {
@@ -190,22 +200,15 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 	}
 }
 
-function wrapNodeResponse(response: NodeJS.ReadableStream & { statusCode?: number }): PlaintorchCoreResponse {
-	let cachedText: string | undefined
-	let readPromise: Promise<string> | undefined
+function wrapNodeResponse(status: number | undefined, text: string): PlaintorchCoreResponse {
+	const code = status ?? 0
+	// The body is already read and buffered by the time this is built, which is what guarantees the socket
+	// was drained and released rather than left pinning a slot in the keep-alive pool.
 	return {
-		ok: !!response.statusCode && response.statusCode >= 200 && response.statusCode < 300,
-		status: response.statusCode ?? 0,
+		ok: code >= 200 && code < 300,
+		status: code,
 		async text() {
-			if (cachedText !== undefined) {
-				return cachedText
-			}
-
-			readPromise ??= readNodeResponseText(response).then((value) => {
-				cachedText = value
-				return value
-			})
-			return await readPromise
+			return text
 		}
 	}
 }

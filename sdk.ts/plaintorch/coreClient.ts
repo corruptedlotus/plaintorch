@@ -187,6 +187,12 @@ export class PlaintorchCoreClient {
 	}
 
 	private async sendForSuccess(request: PlaintorchCoreRequest): Promise<boolean> {
-		return (await this.send(request)) !== undefined
+		const response = await this.send(request)
+		// Consume the body even though only success matters here: a transport with a keep-alive pool does not
+		// release a connection until its response is read, so a boolean write that returns a body — a DELETE
+		// answered with 200 and a payload, say — would otherwise pin a socket. The node transport already
+		// drains on its own; this covers any transport that does not.
+		await response?.text()
+		return response !== undefined
 	}
 }
