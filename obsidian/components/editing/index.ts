@@ -2,12 +2,17 @@ import { App } from 'obsidian'
 
 export * from './ReactiveBinder'
 export * from './EditableDataLink'
+export * from './EditableTextPart'
+export * from './EditablePlainText'
+export * from './EditableNumericPart'
+export * from './EditableTemporalPart'
 export * from './SelectCollegeModal'
 export * from './SelectStatusModal'
 export * from './EditableStarfire'
 export * from './EditableTimeUnit'
 export * from './EditableOrbit'
 export * from './EditableDate'
+export * from './EditableTime'
 export * from './PromptTextModal'
 
 export const getApp = () => (window as any).app as App

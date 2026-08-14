@@ -231,7 +231,7 @@ export class GridItem extends Component {
 				</div>
 			</div>
 			<div class='title'>
-				<p7t-editable-plaintext ${this.binder.bind('title')}></p7t-editable-plaintext>
+				<p7t-editable-plaintext required label='Title' placeholder='Untitled' ${this.binder.bind('title')}></p7t-editable-plaintext>
 			</div>
 			${this.leadingCells.map(cell => html`<div class='cell'>${cell}</div>`)}
 			<div class='cell actions'>
