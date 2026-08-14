@@ -23,6 +23,7 @@ public sealed class ProximityMaterializationService(
 	PlainfraContext context,
 	PlaintorchOrbitService orbitService,
 	DependencyGateService dependencyGate,
+	TimeframeAffinityResolver affinityResolver,
 	VaultAuditLogService auditLogService)
 {
 	/// <summary>
@@ -186,12 +187,15 @@ public sealed class ProximityMaterializationService(
 						.AnyAsync(item => item.PolarisCycleId == cycle.Id && item.DecreeId == decree.Id, cancellationToken);
 					if (!reflectiveExists)
 					{
+						// Auto-inclusion: a cycle-bound reflective inherits its affinity from the originating
+						// decree's college (PEP100 patch).
 						context.Add(new Reflective
 						{
 							Description = decree.Title,
 							PolarisCycleId = cycle.Id,
 							DecreeId = decree.Id,
 							Executed = false,
+							AffinityTimeframeId = await affinityResolver.ResolveForCollegeAsync(decree.College, cancellationToken),
 						});
 						created++;
 					}

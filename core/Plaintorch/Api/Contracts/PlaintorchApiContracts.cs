@@ -1,5 +1,6 @@
 using Pleiades.Orchestration;
 using Pleiades.Saga;
+using Pleiades.Vault.Media;
 
 namespace Pleiades.Plaintorch.Api.Contracts;
 
@@ -506,23 +507,34 @@ public sealed record PolarisAgenda(
 	IReadOnlyList<Eventive> Eventives);
 
 /// <summary>
-/// Represents the data required to define a directive-level timeframe (PEP100).
+/// Represents the data required to define a directive-level timeframe (PEP100). <paramref name="Icon"/> and the
+/// auto-inclusion fields are the PEP100 patch additions.
 /// </summary>
 public sealed record TimeframePlan(
 	string Title,
 	TimeOnly StartTime,
 	TimeOnly EndTime,
-	string? Orbit = null);
+	string? Orbit = null,
+	string? Icon = null,
+	TimeframeInclusion AutoInclusion = TimeframeInclusion.None,
+	ObjectiveCollege? AutoInclusionCollege = null);
 
 /// <summary>
-/// Represents the mutable fields of a timeframe definition.
+/// Represents the mutable fields of a timeframe definition. The auto-inclusion and icon fields are PEP100 patch
+/// additions: <paramref name="AutoInclusion"/> and <paramref name="AutoInclusionCollege"/> are applied only when
+/// supplied, while the <c>Clear*</c> flags unset the icon or the college outright.
 /// </summary>
 public sealed record TimeframeUpdate(
 	string? Title = null,
 	TimeOnly? StartTime = null,
 	TimeOnly? EndTime = null,
 	string? Orbit = null,
-	bool ClearOrbit = false);
+	bool ClearOrbit = false,
+	string? Icon = null,
+	bool ClearIcon = false,
+	TimeframeInclusion? AutoInclusion = null,
+	ObjectiveCollege? AutoInclusionCollege = null,
+	bool ClearAutoInclusionCollege = false);
 
 /// <summary>
 /// Represents the emitted dependency lock for an entity (PEP101), computed from its unsatisfied incoming
@@ -551,6 +563,9 @@ public sealed record DependencyLockView(
 /// <param name="StartTime">The start of the flagged portion of the day.</param>
 /// <param name="EndTime">The end of the flagged portion of the day.</param>
 /// <param name="Orbit">The optional Orbit notation scoping the timeframe to particular Polaris cycles.</param>
+/// <param name="Icon">The optional icon key (PEP100 patch).</param>
+/// <param name="AutoInclusion">How the timeframe auto-includes Polaris workitems (PEP100 patch).</param>
+/// <param name="AutoInclusionCollege">The college driving college-based auto-inclusion (PEP100 patch).</param>
 public sealed record DirectiveTimeframeRecord(
 	long Id,
 	string DirectiveId,
@@ -560,4 +575,14 @@ public sealed record DirectiveTimeframeRecord(
 	string Title,
 	TimeOnly StartTime,
 	TimeOnly EndTime,
-	string? Orbit);
+	string? Orbit,
+	string? Icon,
+	TimeframeInclusion AutoInclusion,
+	ObjectiveCollege? AutoInclusionCollege)
+{
+	/// <summary>
+	/// Gets or sets the resolved companion of <see cref="Icon"/>, filled after the record is projected (its LINQ
+	/// projection cannot call the media service). Never persisted.
+	/// </summary>
+	public MediaReference? IconMedia { get; set; }
+}

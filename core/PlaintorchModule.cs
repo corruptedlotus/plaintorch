@@ -99,6 +99,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<VaultMigrationRunner>();
 		services.AddScoped<IVaultMigration, ObjectiveQuietCanonicalizationMigration>();
 		services.AddScoped<PlaintorchEngine>();
+		services.AddScoped<TimeframeAffinityResolver>();
 		services.AddScoped<ProximityMaterializationService>();
 		services.AddHostedService<PlaintorchCoreService>();
 		services.AddHostedService<VaultWatcherService>();

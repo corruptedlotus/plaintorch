@@ -8,6 +8,7 @@ using Pleiades.Plaintorch.Markdown;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
+using Pleiades.Vault.Media;
 
 namespace Pleiades.Plaintorch.Api.Services;
 
@@ -21,6 +22,8 @@ public sealed class PolarisCycleApiService(
 	PlaintorchStateService stateService,
 	PlaintorchMarkdownStorageService markdownFileService,
 	ProximityMaterializationService materializationService,
+	TimeframeAffinityResolver affinityResolver,
+	VaultMediaService mediaService,
 	VaultAuditLogService auditLogService) : IPolarisCycleApi
 {
 	/// <inheritdoc />
@@ -117,34 +120,42 @@ public sealed class PolarisCycleApiService(
 	/// <inheritdoc />
 	public async Task<PolarisCycle?> GetAsync(string? polarisCycleId = null, CancellationToken cancellationToken = default)
 	{
-		if (!string.IsNullOrWhiteSpace(polarisCycleId))
+		string? targetId = polarisCycleId;
+		if (string.IsNullOrWhiteSpace(targetId))
 		{
-			return await context.PolarisCycles
-				.AsNoTracking()
-				.Include(cycle => cycle.Executives)
-					.ThenInclude(executive => executive.Objective)
-				.Include(cycle => cycle.Reflectives)
-					.ThenInclude(reflective => reflective.Decree)
-				.Include(cycle => cycle.Attentives)
-					.ThenInclude(attentive => attentive.Decree)
-				.FirstOrDefaultAsync(cycle => cycle.Id == polarisCycleId, cancellationToken);
+			var activeCycle = await stateService.GetActivePolarisCycleAsync(cancellationToken);
+			if (activeCycle is null)
+			{
+				return null;
+			}
+
+			targetId = activeCycle.Id;
 		}
 
-		var activeCycle = await stateService.GetActivePolarisCycleAsync(cancellationToken);
-		if (activeCycle is null)
-		{
-			return null;
-		}
-
-		return await context.PolarisCycles
+		var cycle = await context.PolarisCycles
 			.AsNoTracking()
-			.Include(cycle => cycle.Executives)
+			.Include(item => item.Executives)
 				.ThenInclude(executive => executive.Objective)
-			.Include(cycle => cycle.Reflectives)
+			.Include(item => item.Executives)
+				.ThenInclude(executive => executive.AffinityTimeframe)
+			.Include(item => item.Reflectives)
 				.ThenInclude(reflective => reflective.Decree)
-			.Include(cycle => cycle.Attentives)
+			.Include(item => item.Attentives)
 				.ThenInclude(attentive => attentive.Decree)
-			.FirstOrDefaultAsync(cycle => cycle.Id == activeCycle.Id, cancellationToken);
+			.FirstOrDefaultAsync(item => item.Id == targetId, cancellationToken);
+
+		if (cycle is not null)
+		{
+			// The affined timeframe carries an icon that stands in for the Celestron value on the client; resolve
+			// its media companion so the client can render it (PEP100 patch). Timeframes keep no self folder, so
+			// only vault and glyph keys resolve.
+			foreach (var timeframe in cycle.Executives.Select(executive => executive.AffinityTimeframe).OfType<Timeframe>())
+			{
+				mediaService.EnrichMedia(timeframe, null);
+			}
+		}
+
+		return cycle;
 	}
 
 	/// <inheritdoc />
@@ -223,6 +234,11 @@ public sealed class PolarisCycleApiService(
 			Estimation = plan.Estimation,
 			Minimum = plan.Minimum,
 			Maximum = plan.Maximum,
+			// Auto-inclusion: an executive built from an objective inherits its affinity from the objective's
+			// college (PEP100 patch). One-shot executives carry no objective and so no auto-affinity.
+			AffinityTimeframeId = objective is null
+				? null
+				: await affinityResolver.ResolveForCollegeAsync(objective.College, cancellationToken),
 		};
 		executive.NormalizeTimeAllocations();
 

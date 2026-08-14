@@ -517,6 +517,9 @@ public sealed class DirectiveApiService(
 			StartTime = plan.StartTime,
 			EndTime = plan.EndTime,
 			Orbit = plan.Orbit,
+			Icon = string.IsNullOrWhiteSpace(plan.Icon) ? null : plan.Icon.Trim(),
+			AutoInclusion = plan.AutoInclusion,
+			AutoInclusionCollege = plan.AutoInclusion == TimeframeInclusion.College ? plan.AutoInclusionCollege : null,
 		};
 
 		context.Timeframes.Add(timeframe);
@@ -529,6 +532,7 @@ public sealed class DirectiveApiService(
 			subjectTitle: timeframe.Title,
 			details: new { lunarDirectiveId },
 			cancellationToken: cancellationToken);
+		mediaService.EnrichMedia(timeframe, null);
 		return timeframe;
 	}
 
@@ -536,18 +540,24 @@ public sealed class DirectiveApiService(
 	public async Task<IReadOnlyList<Timeframe>> ListTimeframesAsync(string lunarDirectiveId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(lunarDirectiveId);
-		return await context.Timeframes
+		var timeframes = await context.Timeframes
 			.AsNoTracking()
 			.Where(item => item.DirectiveId == lunarDirectiveId)
 			.OrderBy(item => item.StartTime)
 			.ToListAsync(cancellationToken);
+		foreach (var timeframe in timeframes)
+		{
+			mediaService.EnrichMedia(timeframe, null);
+		}
+
+		return timeframes;
 	}
 
 	/// <inheritdoc />
 	public async Task<IReadOnlyList<DirectiveTimeframeRecord>> ListAllTimeframesAsync(CancellationToken cancellationToken = default)
 	{
 		// Order on the entity columns before projecting into the record so the query stays SQL-translatable.
-		return await context.Timeframes
+		var records = await context.Timeframes
 			.AsNoTracking()
 			.Join(
 				context.LunarDirectives.AsNoTracking(),
@@ -565,8 +575,20 @@ public sealed class DirectiveApiService(
 				pair.Timeframe.Title,
 				pair.Timeframe.StartTime,
 				pair.Timeframe.EndTime,
-				pair.Timeframe.Orbit))
+				pair.Timeframe.Orbit,
+				pair.Timeframe.Icon,
+				pair.Timeframe.AutoInclusion,
+				pair.Timeframe.AutoInclusionCollege))
 			.ToListAsync(cancellationToken);
+
+		// The projection cannot call the media service, so resolve each icon companion afterwards. Timeframes
+		// keep no self folder, so vault and glyph keys resolve and self keys carry no path.
+		foreach (var record in records)
+		{
+			record.IconMedia = mediaService.ResolveReference(record.Icon, null);
+		}
+
+		return records;
 	}
 
 	/// <inheritdoc />
@@ -603,6 +625,36 @@ public sealed class DirectiveApiService(
 			timeframe.Orbit = null;
 		}
 
+		if (update.Icon is not null)
+		{
+			timeframe.Icon = string.IsNullOrWhiteSpace(update.Icon) ? null : update.Icon.Trim();
+		}
+
+		if (update.ClearIcon)
+		{
+			timeframe.Icon = null;
+		}
+
+		if (update.AutoInclusion is not null)
+		{
+			timeframe.AutoInclusion = update.AutoInclusion.Value;
+			// Dropping to a non-college kind leaves no college behind to match against.
+			if (update.AutoInclusion.Value != TimeframeInclusion.College)
+			{
+				timeframe.AutoInclusionCollege = null;
+			}
+		}
+
+		if (update.AutoInclusionCollege is not null)
+		{
+			timeframe.AutoInclusionCollege = update.AutoInclusionCollege;
+		}
+
+		if (update.ClearAutoInclusionCollege)
+		{
+			timeframe.AutoInclusionCollege = null;
+		}
+
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
@@ -611,6 +663,7 @@ public sealed class DirectiveApiService(
 			subjectId: timeframe.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
 			subjectTitle: timeframe.Title,
 			cancellationToken: cancellationToken);
+		mediaService.EnrichMedia(timeframe, null);
 		return timeframe;
 	}
 

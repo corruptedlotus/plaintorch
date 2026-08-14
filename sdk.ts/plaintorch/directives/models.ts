@@ -1,5 +1,5 @@
 import { model } from "@a11d/api-dotnet"
-import type { Objective } from "../objectives/models"
+import type { Objective, ObjectiveCollege } from "../objectives/models"
 export enum DirectiveStatus {
 	Planned = 0,
 	Committed = 1,
@@ -67,6 +67,15 @@ export class Directive {
 
 model('LunarDirective')(Directive)
 
+/**
+ * How a timeframe auto-includes Polaris workitems (PEP100 patch). Numeric to match the wire form. College is the
+ * only criterion for now; the enum is the extension point for further ones.
+ */
+export enum TimeframeInclusion {
+	None = 0,
+	College = 1
+}
+
 /** Directive-level definition of a portion of the day (PEP100). Belongs to a lunar directive; purely semantic. */
 export interface Timeframe {
 	id: number
@@ -75,6 +84,14 @@ export interface Timeframe {
 	startTime: string
 	endTime: string
 	orbit: string | undefined
+	/** Icon key (PEP100 patch): a glyph/lucide name or a `vault:` shared image. Stands in for Celestron on an affined executive. */
+	icon?: string | undefined
+	/** Resolved companion of {@link icon} (PEP100 patch). */
+	iconMedia?: MediaReference | undefined
+	/** How this timeframe auto-includes workitems (PEP100 patch). */
+	autoInclusion: TimeframeInclusion
+	/** The college driving college-based auto-inclusion (PEP100 patch). */
+	autoInclusionCollege?: ObjectiveCollege | undefined
 }
 
 /** A timeframe paired with a summary of the lunar directive that owns it (global timeframe listing, PEP100). */
@@ -88,6 +105,14 @@ export interface DirectiveTimeframeRecord {
 	startTime: string
 	endTime: string
 	orbit?: string | undefined
+	/** Icon key (PEP100 patch). */
+	icon?: string | undefined
+	/** Resolved companion of {@link icon} (PEP100 patch). */
+	iconMedia?: MediaReference | undefined
+	/** How this timeframe auto-includes workitems (PEP100 patch). */
+	autoInclusion: TimeframeInclusion
+	/** The college driving college-based auto-inclusion (PEP100 patch). */
+	autoInclusionCollege?: ObjectiveCollege | undefined
 }
 
 export interface CreateDirectiveRequest {
@@ -139,6 +164,12 @@ export interface TimeframePlan {
 	startTime: string
 	endTime: string
 	orbit?: string | undefined
+	/** Icon key (PEP100 patch): a glyph/lucide name or a `vault:` shared image. */
+	icon?: string | undefined
+	/** How this timeframe auto-includes workitems (PEP100 patch); defaults to none. */
+	autoInclusion?: TimeframeInclusion
+	/** The college driving college-based auto-inclusion (PEP100 patch). */
+	autoInclusionCollege?: ObjectiveCollege | undefined
 }
 
 export interface TimeframeUpdate {
@@ -147,6 +178,16 @@ export interface TimeframeUpdate {
 	endTime?: string | undefined
 	orbit?: string | undefined
 	clearOrbit?: boolean
+	/** Icon key (PEP100 patch). Leave undefined to keep the current icon. */
+	icon?: string | undefined
+	/** Clears the icon regardless of any provided value (PEP100 patch). */
+	clearIcon?: boolean
+	/** How this timeframe auto-includes workitems (PEP100 patch). Leave undefined to keep the current mechanism. */
+	autoInclusion?: TimeframeInclusion
+	/** The college driving college-based auto-inclusion (PEP100 patch). Leave undefined to keep the current college. */
+	autoInclusionCollege?: ObjectiveCollege | undefined
+	/** Clears the auto-inclusion college regardless of any provided value (PEP100 patch). */
+	clearAutoInclusionCollege?: boolean
 }
 
 /** How a media key resolves (PEP105): a built-in glyph, self/level media, or vault-level shared media. */

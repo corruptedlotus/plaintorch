@@ -55,4 +55,16 @@ public sealed class Reflective
 	/// Gets or sets the originating decree.
 	/// </summary>
 	public Decree? Decree { get; set; }
+
+	/// <summary>
+	/// Gets or sets the optional timeframe this reflective is affined to (PEP100 patch). Seeded automatically from
+	/// the originating decree's college through timeframe auto-inclusion; purely semantic, enforcing nothing.
+	/// </summary>
+	public long? AffinityTimeframeId { get; set; }
+
+	[ForeignKey(nameof(AffinityTimeframeId))]
+	/// <summary>
+	/// Gets or sets the affined timeframe.
+	/// </summary>
+	public Timeframe? AffinityTimeframe { get; set; }
 }

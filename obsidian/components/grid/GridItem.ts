@@ -1,7 +1,7 @@
 import { Component, component, css, event, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
 import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, type Directive } from '@pleiades/sdk'
 import {
-	EntityWatch, ExpandingAction, IconName, ReactiveBinder,
+	EntityWatch, ExpandingAction, getApp, IconName, LunarDirectiveModal, ReactiveBinder,
 	SelectDirectiveStatusModal, SelectLunarDirectiveStatusModal, SelectObjectiveStatusModal
 } from '..'
 import {
@@ -209,6 +209,29 @@ export class GridItem extends Component {
 				width: 1.2em;
 				height: 1.2em;
 			}
+
+			.measure-button {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				min-width: 1.9em;
+				min-height: 1.9em;
+				border: none;
+				border-radius: 8px;
+				background: transparent;
+				color: inherit;
+				cursor: pointer;
+				transition: background-color .2s ease;
+			}
+
+			.measure-button:hover {
+				background-color: color-mix(in srgb, var(--text-normal) 14%, transparent);
+			}
+
+			.measure-button p7t-icon {
+				width: 1.2em;
+				height: 1.2em;
+			}
 		`
 	}
 
@@ -276,9 +299,22 @@ export class GridItem extends Component {
 					: html`<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>`
 			case 'decree':
 				return html`<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>`
+			case 'lunar-directive':
+				// A lunar directive carries no measure of its own, so its otherwise-empty column hosts the button
+				// that opens its editing modal — the one place its timeframes are managed (PEP100 patch).
+				return html`
+					<button class='measure-button' aria-label='Edit timeframes' @click=${() => this.openLunarEditor()}>
+						<p7t-icon icon='lucide:clock'></p7t-icon>
+					</button>
+				`
 			default:
 				return nothing
 		}
+	}
+
+	/** Opens the lunar directive's editing modal, where its timeframes are defined. */
+	protected openLunarEditor() {
+		new LunarDirectiveModal(getApp(), this.row!.entity as Directive).open()
 	}
 
 	/** The workflow state, for the kinds that carry a lifecycle worth shifting from here. */
