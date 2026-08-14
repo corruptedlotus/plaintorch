@@ -3,6 +3,7 @@ using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.State;
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Calendar;
+using Pleiades.Diagnostics;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Saga;
@@ -21,7 +22,7 @@ public sealed class SystemApiService(
 	PlainfraContext context,
 	VaultLayout layout,
 	VaultPathSyncModelCatalog pathSyncModelCatalog,
-	VaultWatcherIssueRegistry watcherIssueRegistry,
+	OperationStatusRegistry statusRegistry,
 	PuckEntityResolutionService puckEntityResolutionService,
 	MarkdownFrontMatterSerializer markdownSerializer,
 	ILogger<SystemApiService> logger) : ISystemApi
@@ -45,9 +46,8 @@ public sealed class SystemApiService(
 			: await LoadPolarisCycleAsync(activePolaris.Id, cancellationToken);
 
 		var activeLorePages = await LoadActiveLorePagesAsync(cancellationToken);
-		var watcherStatus = watcherIssueRegistry.GetStatus().ToString().ToLowerInvariant();
-		var watcherIssues = watcherIssueRegistry.GetIssues();
-		var watcherCriteria = watcherIssueRegistry.GetCriterionSummary();
+		var watcherStatus = MapHealthStatus(statusRegistry.GetHealth());
+		var watcherIssues = statusRegistry.GetActiveStatuses();
 
 		return new SystemBriefing(
 			"ok",
@@ -57,9 +57,9 @@ public sealed class SystemApiService(
 			await stateService.GetCelestronBankedAsync(cancellationToken),
 			watcherStatus,
 			watcherIssues.Count,
-			watcherIssues.Count(static issue => issue.IsCritical),
-			watcherCriteria.Total,
-			watcherCriteria.Failed,
+			watcherIssues.Count(static issue => IsCriticalSeverity(issue.Severity)),
+			watcherIssues.Count,
+			watcherIssues.Count,
 			onrushSelectionMode,
 			briefingOnrush,
 			briefingPolaris,
@@ -183,46 +183,17 @@ public sealed class SystemApiService(
 
 	private WatcherIssueReport BuildWatcherIssueReport(string? scopedAbsolutePath, bool scopedPathIsDirectory)
 	{
-		var allIssues = watcherIssueRegistry.GetIssues();
-		var allCriteria = watcherIssueRegistry.GetCriteriaStates();
+		var allStatuses = statusRegistry.GetActiveStatuses();
 
-		var filteredIssues = scopedAbsolutePath is null
-			? allIssues
-			: allIssues.Where(issue => MatchesScope(issue.Path, scopedAbsolutePath, scopedPathIsDirectory)).ToList();
+		var filtered = scopedAbsolutePath is null
+			? allStatuses
+			: allStatuses.Where(status => MatchesScope(ScopePathOf(status), scopedAbsolutePath, scopedPathIsDirectory)).ToList();
 
-		var filteredCriteria = scopedAbsolutePath is null
-			? allCriteria
-			: allCriteria.Where(criterion => MatchesScope(criterion.Path, scopedAbsolutePath, scopedPathIsDirectory)).ToList();
-
-		var issueRecords = filteredIssues
-			.Select(issue => new WatcherIssueRecord(
-				issue.Key,
-				issue.Type.ToString(),
-				issue.Category,
-				issue.Message,
-				issue.IsCritical,
-				issue.Criterion,
-				issue.ResolutionCriterion,
-				issue.OccurrenceCount,
-				issue.Path,
-				ToVaultRelativePathOrNull(issue.Path),
-				issue.FirstObservedUtc,
-				issue.LastObservedUtc))
-			.ToList();
-
-		var criterionRecords = filteredCriteria
-			.Select(criterion => new WatcherCriterionRecord(
-				criterion.Criterion,
-				criterion.Satisfied,
-				criterion.EvaluatedUtc,
-				criterion.ScopeKey,
-				criterion.Path,
-				ToVaultRelativePathOrNull(criterion.Path),
-				criterion.Detail))
-			.ToList();
+		var issueRecords = filtered.Select(ToWatcherIssueRecord).ToList();
+		var criterionRecords = filtered.Select(ToWatcherCriterionRecord).ToList();
 
 		return new WatcherIssueReport(
-			watcherIssueRegistry.GetStatus().ToString().ToLowerInvariant(),
+			MapHealthStatus(statusRegistry.GetHealth()),
 			issueRecords.Count,
 			issueRecords.Count(static issue => issue.IsCritical),
 			criterionRecords.Count,
@@ -232,6 +203,52 @@ public sealed class SystemApiService(
 			issueRecords,
 			criterionRecords);
 	}
+
+	private WatcherIssueRecord ToWatcherIssueRecord(OperationStatus status)
+	{
+		var descriptor = WatcherOperations.Describe(status.ReasonCode);
+		var originPath = ScopePathOf(status);
+		return new WatcherIssueRecord(
+			$"{status.OperationId}::{status.ReasonCode}::{status.ScopeKey}",
+			status.OperationId,
+			descriptor.Category,
+			status.Detail ?? descriptor.Message,
+			IsCriticalSeverity(status.Severity),
+			status.ReasonCode,
+			$"{status.ReasonCode}-cleared",
+			status.OccurrenceCount,
+			originPath,
+			ToVaultRelativePathOrNull(originPath),
+			status.FirstRaisedUtc,
+			status.LastObservedUtc);
+	}
+
+	private WatcherCriterionRecord ToWatcherCriterionRecord(OperationStatus status)
+	{
+		var originPath = ScopePathOf(status);
+		return new WatcherCriterionRecord(
+			status.ReasonCode,
+			Satisfied: false,
+			status.LastObservedUtc,
+			status.ScopeKey,
+			originPath,
+			ToVaultRelativePathOrNull(originPath),
+			status.Detail);
+	}
+
+	private static string? ScopePathOf(OperationStatus status)
+		=> string.Equals(status.ScopeKey, WatcherOperations.GlobalScope, StringComparison.Ordinal) ? null : status.ScopeKey;
+
+	private static bool IsCriticalSeverity(OperationSeverity severity) => severity >= OperationSeverity.Error;
+
+	private static string MapHealthStatus(OperationHealth health) => health switch
+	{
+		OperationHealth.Ok => "ok",
+		OperationHealth.Suspended => "standby",
+		OperationHealth.Issues => "issues",
+		OperationHealth.Offline => "offline",
+		_ => "ok",
+	};
 
 	private string ResolveScopedAbsolutePath(string scopedPath)
 	{

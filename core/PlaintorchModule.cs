@@ -75,13 +75,13 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<MarkdownFileLocator>();
 		services.AddSingleton<VaultPathSyncModelCatalog>();
 		services.AddSingleton<VaultWatcherPathPolicy>();
-		services.AddSingleton<VaultWatcherIssueRegistry>();
 		services.AddSingleton<VaultWatcherWriteBarrier>();
 		// PEP108 operation-status core: live registry, buffered durable sink, and reporter (watcher is the first consumer).
 		services.AddSingleton<OperationStatusRegistry>();
 		services.AddSingleton<OperationStatusEventBuffer>();
 		services.AddSingleton<IOperationStatusSink>(provider => provider.GetRequiredService<OperationStatusEventBuffer>());
 		services.AddSingleton<OperationStatusReporter>();
+		services.AddSingleton<WatcherStatusReporter>();
 		services.AddSingleton<VaultStorageTopologyValidator>();
 		services.AddSingleton<PlaintorchVaultLockService>();
 		services.AddSingleton<PlaintorchCoreSplashService>();

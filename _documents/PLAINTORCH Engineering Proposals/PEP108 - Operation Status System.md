@@ -106,22 +106,30 @@ is building. None of REFACTOR Alpha *blocks* the core (it is new, additive code)
 - **Phase 2 (path composition)** is independent.
 
 ## Implementation plan
-- **Phase A — Status core (this pass; additive, no behaviour change).** `Pleiades.Diagnostics`: severity, check,
+- **Phase A ✅ — Status core (additive, no behaviour change).** `Pleiades.Diagnostics`: severity, check,
   report, status, transition, health, `OperationStatusRegistry` (diff + rollup + resolved ring), `IOperationStatusSink`,
   `OperationStatusReporter`; durable `OperationStatusEvent` entity + EF migration + a buffered sink and a
   persistence worker. Tested: dedup (op×scope×reason), auto-resolve diff, escalation, rollup incl. suspended,
   durable Raised→Resolved round-trip.
-- **Phase B — Watcher adopts the core (behaviour-preserving swap).** Land goldens pinning today's issues, then
-  replace `VaultWatcherIssue*` and the ~11 `Observe` calls: each stage builds one `OperationReport`; map the old
-  `Ok/Issues/Standby/Offline` onto the new rollup. Sequenced behind REFACTOR Alpha Phase 2 (both touch the
-  watcher pipeline).
+- **Phase B ✅ — Watcher adopts the core.** `VaultWatcherIssue*` (registry, signal, type, issue, criterion,
+  health enum) and the ~11 hand-marked `Observe` calls are gone: a `WatcherOperations` catalog + a
+  `WatcherStatusReporter` build one `OperationReport` per stage, and the system API maps the live registry onto
+  the unchanged `WatcherIssueReport`/`SystemBriefing` wire contract (health `Ok/Suspended/Issues/Offline` →
+  `ok/standby/issues/offline`). One deliberate, PEP-sanctioned behaviour change: a locked file (`file-in-use`)
+  now surfaces as a first-class **suspension** (`standby` health) rather than a non-critical issue that left
+  health `ok`. The exception/candidate classification heuristics are carried over unchanged, to be removed in C/D.
+  The instrumentation is now unit-testable (it was only reachable through the live background service before).
 - **Phase C — Typed failures.** Replace exception-message sniffing with typed outcomes from the discovery/sync
   services; validation issues (`candidate.Issues`) become checks directly.
 - **Phase D — Structured policy outcomes.** Co-lands with REFACTOR Alpha Phase 4: the mode-policy `Decide`
   returns structured checks; the watcher's policy report is built from them.
 - **Phase E — API + frontend.** Generalise `WatcherIssueReport` to an operation-status contract (severity,
   involved files, reason code, resolved timestamp, history), keep the watcher endpoints, add history queries,
-  enrich the SDK/health surface.
+  enrich the SDK/health surface. Frontend deliverable: an **Obsidian status-bar icon** reflecting the rolled-up
+  core/watcher health (`Ok/Suspended/Issues/Offline`), with a **hover tooltip** (reusing the existing tooltip
+  component) listing the active statuses and their severity. The icon reads the health rollup and the tooltip
+  the active-status list; both come from the operation-status contract, so the icon generalises beyond the
+  watcher as other subsystems adopt the core.
 
 ## Core types (`Pleiades.Diagnostics`)
 - `OperationSeverity` — `Info/Warning/Suspended/Error/Critical`.
