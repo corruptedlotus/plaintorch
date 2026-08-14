@@ -153,6 +153,43 @@ public sealed record LunarDirectiveUpdate(
 public sealed record StellarDirectiveWorkflowShift(DirectiveStatus Status);
 
 /// <summary>
+/// Carries an uploaded media file for a directive icon or banner (PEP105). The bytes travel as Base64 because
+/// the loopback transport carries JSON only and has no multipart support.
+/// </summary>
+/// <param name="FileName">The file name to store the asset under, including its image extension.</param>
+/// <param name="ContentBase64">The Base64-encoded file bytes.</param>
+public sealed record MediaUpload(string FileName, string ContentBase64);
+
+/// <summary>
+/// Sets a directive's icon (PEP105). Supply exactly one intent: a raw <paramref name="Reference"/> key (a glyph
+/// name, a <c>media:</c> file, or a <c>vault:</c> file), an <paramref name="Upload"/> of a custom image, or
+/// <paramref name="Clear"/> to remove the icon and fall back to the per-kind default glyph.
+/// </summary>
+/// <param name="Reference">A raw media key to set directly: a glyph/lucide name, <c>media:file</c>, or <c>vault:file</c>.</param>
+/// <param name="Upload">A custom image to store; keyed <c>media:</c> in the directive's own asset folder, or <c>vault:</c> when <paramref name="Vault"/> is set.</param>
+/// <param name="Vault">Stores the upload in the vault root's shared asset folder rather than the directive's own.</param>
+/// <param name="Clear">Removes the icon, archiving any self-stored image.</param>
+public sealed record DirectiveIconRequest(
+	string? Reference = null,
+	MediaUpload? Upload = null,
+	bool Vault = false,
+	bool Clear = false);
+
+/// <summary>
+/// Sets a directive's banner image (PEP105). Supply a raw <paramref name="Reference"/> key, an
+/// <paramref name="Upload"/> to store one, or <paramref name="Clear"/> to remove it.
+/// </summary>
+/// <param name="Reference">A raw media key to set directly: <c>media:file</c> or <c>vault:file</c>.</param>
+/// <param name="Upload">A banner image to store; keyed <c>media:</c> in the directive's own asset folder, or <c>vault:</c> when <paramref name="Vault"/> is set.</param>
+/// <param name="Vault">Stores the upload in the vault root's shared asset folder rather than the directive's own.</param>
+/// <param name="Clear">Removes the banner, archiving any self-stored image.</param>
+public sealed record DirectiveBannerRequest(
+	string? Reference = null,
+	MediaUpload? Upload = null,
+	bool Vault = false,
+	bool Clear = false);
+
+/// <summary>
 /// Represents the mutable fields of an objective for generic update actions.
 /// </summary>
 /// <remarks>

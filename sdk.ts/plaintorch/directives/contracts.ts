@@ -13,6 +13,11 @@ export type {
 	LunarDirectiveWorkflowShift,
 	Timeframe,
 	TimeframePlan,
-	TimeframeUpdate
+	TimeframeUpdate,
+	MediaUpload,
+	MediaReference,
+	MediaReferenceType,
+	DirectiveIconRequest,
+	DirectiveBannerRequest
 } from "./models"
 export type DirectiveSummary = import("./models").Directive

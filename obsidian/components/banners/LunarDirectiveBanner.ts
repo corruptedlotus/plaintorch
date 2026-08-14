@@ -1,5 +1,5 @@
 import { component, css, html } from "@a11d/lit"
-import { EntityBanner } from './EntityBanner'
+import { DirectiveBanner } from './DirectiveBanner'
 import { Directive, LunarDirectiveStatus, LunarDirectiveUpdate } from '@pleiades/sdk'
 import { core, IconName, ReactiveBinder, SelectLunarDirectiveStatusModal } from ".."
 import { App } from "obsidian"
@@ -10,7 +10,7 @@ import { App } from "obsidian"
  * stellar one, and no scheduling dates.
  */
 @component('p7t-ldirective-banner')
-export class LunarDirectiveBanner extends EntityBanner<Directive> {
+export class LunarDirectiveBanner extends DirectiveBanner {
 	override icon: IconName = 'directive-lunar'
 
 	protected override get preHeadingTemplate() {

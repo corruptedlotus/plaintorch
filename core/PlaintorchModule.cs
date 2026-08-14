@@ -9,6 +9,7 @@ using Pleiades.Plaintorch.State;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
+using Pleiades.Vault.Media;
 using Pleiades.Vault.Migration;
 using Pleiades.Vault.Migration.Migrations;
 using Pleiades.Vault.Policy;
@@ -54,6 +55,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<PlaintorchRepository>();
 		services.AddScoped<VaultTemporalDataService>();
 		services.AddScoped<VaultAuditLogService>();
+		services.AddScoped<VaultMediaService>();
 		services.AddScoped<VaultImplicitBoundaryService>();
 		services.AddSingleton<PuckNotationParser>();
 		services.AddSingleton<PuckRuntimeCompilationCatalog>();

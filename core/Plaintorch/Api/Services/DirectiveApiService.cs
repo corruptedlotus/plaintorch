@@ -7,6 +7,7 @@ using Pleiades.Plaintorch.Markdown;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
+using Pleiades.Vault.Media;
 using Pleiades.Vault.Watcher;
 using Pleiades.Vault;
 
@@ -25,15 +26,23 @@ public sealed class DirectiveApiService(
 	VaultTemporalDataService temporalDataService,
 	VaultAuditLogService auditLogService,
 	DependencyGateService dependencyGate,
+	VaultMediaService mediaService,
+	MarkdownFileLocator markdownFileLocator,
 	VaultEntityGateway entityGateway) : IDirectiveApi
 {
 	/// <inheritdoc />
-	public Task<Directive?> GetAsync(string directiveId, CancellationToken cancellationToken = default)
+	public async Task<Directive?> GetAsync(string directiveId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
-		return context.Directives
+		var directive = await context.Directives
 			.AsNoTracking()
-			.FirstOrDefaultAsync(directive => directive.Id == directiveId, cancellationToken);
+			.FirstOrDefaultAsync(item => item.Id == directiveId, cancellationToken);
+		if (directive is not null)
+		{
+			await EnrichMediaAsync(directive, cancellationToken);
+		}
+
+		return directive;
 	}
 
 	/// <inheritdoc />
@@ -47,28 +56,34 @@ public sealed class DirectiveApiService(
 			_ => query,
 		};
 
-		return await query
+		var directives = await query
 			.OrderBy(directive => directive.Title)
 			.ToListAsync(cancellationToken);
+		await EnrichMediaAsync(directives, cancellationToken);
+		return directives;
 	}
 
 	/// <inheritdoc />
 	public async Task<IReadOnlyList<StellarDirective>> ListStellarAsync(CancellationToken cancellationToken = default)
 	{
-		return await context.Directives
+		var directives = await context.Directives
 			.AsNoTracking()
 			.OfType<StellarDirective>()
 			.OrderBy(directive => directive.Title)
 			.ToListAsync(cancellationToken);
+		await EnrichMediaAsync(directives, cancellationToken);
+		return directives;
 	}
 
 	/// <inheritdoc />
 	public async Task<IReadOnlyList<LunarDirective>> ListLunarAsync(CancellationToken cancellationToken = default)
 	{
-		return await context.LunarDirectives
+		var directives = await context.LunarDirectives
 			.AsNoTracking()
 			.OrderBy(directive => directive.Title)
 			.ToListAsync(cancellationToken);
+		await EnrichMediaAsync(directives, cancellationToken);
+		return directives;
 	}
 
 	/// <inheritdoc />
@@ -89,9 +104,11 @@ public sealed class DirectiveApiService(
 			query = query.Take(search.Take.Value);
 		}
 
-		return await query
+		var directives = await query
 			.OrderBy(directive => directive.Title)
 			.ToListAsync(cancellationToken);
+		await EnrichMediaAsync(directives, cancellationToken);
+		return directives;
 	}
 
 	/// <inheritdoc />
@@ -170,6 +187,7 @@ public sealed class DirectiveApiService(
 			subject: stellar,
 			details: new { previousTitle = previous.Title, previousStatus = previous.Status.ToString() },
 			cancellationToken: cancellationToken);
+		await EnrichMediaAsync(stellar, cancellationToken);
 		return stellar;
 	}
 
@@ -215,6 +233,7 @@ public sealed class DirectiveApiService(
 			subject: lunar,
 			details: new { previousTitle = previous.Title, previousStatus = previous.Status.ToString() },
 			cancellationToken: cancellationToken);
+		await EnrichMediaAsync(lunar, cancellationToken);
 		return lunar;
 	}
 
@@ -243,6 +262,7 @@ public sealed class DirectiveApiService(
 			subject: stellar,
 			details: new { from = previousStatus.ToString(), to = stellar.Status.ToString() },
 			cancellationToken: cancellationToken);
+		await EnrichMediaAsync(stellar, cancellationToken);
 		return stellar;
 	}
 
@@ -280,6 +300,54 @@ public sealed class DirectiveApiService(
 			temporalLocation: fileGraveyard?.ArchivedRelativePath,
 			details: new { fileTemporalEntryKey = fileGraveyard?.EntryKey },
 			cancellationToken: cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public async Task<Directive> SetIconAsync(string directiveId, DirectiveIconRequest request, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
+		ArgumentNullException.ThrowIfNull(request);
+
+		var directive = await context.Directives.FirstOrDefaultAsync(item => item.Id == directiveId, cancellationToken)
+			?? throw new InvalidOperationException($"Directive '{directiveId}' was not found.");
+
+		var previous = directive.Icon;
+		await ApplyMediaChangeAsync(directiveId, directive, previous, request.Reference, request.Upload, request.Vault, request.Clear, key => directive.Icon = key, "directive.icon", cancellationToken);
+
+		await context.SaveChangesAsync(cancellationToken);
+		await markdownFileService.SaveDirectiveAsync(directive, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"directive.set-icon",
+			subject: directive,
+			details: new { previous, icon = directive.Icon },
+			cancellationToken: cancellationToken);
+		await EnrichMediaAsync(directive, cancellationToken);
+		return directive;
+	}
+
+	/// <inheritdoc />
+	public async Task<Directive> SetBannerAsync(string directiveId, DirectiveBannerRequest request, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
+		ArgumentNullException.ThrowIfNull(request);
+
+		var directive = await context.Directives.FirstOrDefaultAsync(item => item.Id == directiveId, cancellationToken)
+			?? throw new InvalidOperationException($"Directive '{directiveId}' was not found.");
+
+		var previous = directive.Banner;
+		await ApplyMediaChangeAsync(directiveId, directive, previous, request.Reference, request.Upload, request.Vault, request.Clear, key => directive.Banner = key, "directive.banner", cancellationToken);
+
+		await context.SaveChangesAsync(cancellationToken);
+		await markdownFileService.SaveDirectiveAsync(directive, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"directive.set-banner",
+			subject: directive,
+			details: new { previous, banner = directive.Banner },
+			cancellationToken: cancellationToken);
+		await EnrichMediaAsync(directive, cancellationToken);
+		return directive;
 	}
 
 	/// <inheritdoc />
@@ -585,5 +653,142 @@ public sealed class DirectiveApiService(
 	private Directive Clone(Directive directive)
 	{
 		return (Directive)entityGateway.CloneScalars(directive);
+	}
+
+	/// <summary>
+	/// Fills a directive's <c>[Media]</c> companions (<see cref="Directive.IconMedia"/> /
+	/// <see cref="Directive.BannerMedia"/>) from its stored keys (PEP105), model-agnostically via
+	/// <see cref="VaultMediaService.EnrichMedia"/>. The entity's own asset folder is resolved only when a
+	/// <c>media:</c> (self) key is present, so glyph-only, vault-only, and no-media directives touch neither the
+	/// database nor the filesystem.
+	/// </summary>
+	private async Task EnrichMediaAsync(Directive directive, CancellationToken cancellationToken)
+	{
+		var selfAssetFolder = mediaService.HasSelfMedia(directive)
+			? await ResolveAssetFolderAsync(directive.Id, cancellationToken)
+			: null;
+		mediaService.EnrichMedia(directive, selfAssetFolder);
+	}
+
+	private async Task EnrichMediaAsync(IEnumerable<Directive> directives, CancellationToken cancellationToken)
+	{
+		foreach (var directive in directives)
+		{
+			await EnrichMediaAsync(directive, cancellationToken);
+		}
+	}
+
+	/// <summary>
+	/// Applies a media set/upload/clear to one key (PEP105): stores an upload (self or vault), sets a raw
+	/// reference, or clears — then archives the previously stored self image when it is left orphaned.
+	/// </summary>
+	private async Task ApplyMediaChangeAsync(
+		string directiveId,
+		Directive directive,
+		string? previousKey,
+		string? reference,
+		MediaUpload? upload,
+		bool vault,
+		bool clear,
+		Action<string?> setKey,
+		string reasonPrefix,
+		CancellationToken cancellationToken)
+	{
+		if (upload is not null)
+		{
+			var folder = vault
+				? mediaService.VaultAssetFolder
+				: await ResolveAssetFolderAsync(directiveId, cancellationToken)
+					?? throw new InvalidOperationException($"Directive '{directiveId}' has no folder to attach media to.");
+			var stored = await mediaService.StoreAsync(folder, upload.FileName, DecodeUpload(upload), cancellationToken);
+			var newKey = vault ? VaultMediaService.ToVaultReference(stored) : VaultMediaService.ToSelfReference(stored);
+			setKey(newKey);
+			await ArchiveReplacedSelfMediaAsync(directiveId, previousKey, newKey, directive, $"{reasonPrefix}-replace", cancellationToken);
+		}
+		else if (clear)
+		{
+			setKey(null);
+			await ArchiveReplacedSelfMediaAsync(directiveId, previousKey, null, directive, $"{reasonPrefix}-clear", cancellationToken);
+		}
+		else if (!string.IsNullOrWhiteSpace(reference))
+		{
+			var newKey = reference.Trim();
+			setKey(newKey);
+			await ArchiveReplacedSelfMediaAsync(directiveId, previousKey, newKey, directive, $"{reasonPrefix}-reference", cancellationToken);
+		}
+		else
+		{
+			throw new InvalidOperationException("Media request must supply a reference, an upload, or clear.");
+		}
+	}
+
+	/// <summary>
+	/// Archives the file a replaced/cleared key pointed at, but only when it was <c>media:</c> (self) — self media
+	/// is private to the directive and safe to reclaim, whereas a <c>vault:</c> file is shared and a glyph has no
+	/// file. A key unchanged by the operation is left in place.
+	/// </summary>
+	private async Task ArchiveReplacedSelfMediaAsync(string directiveId, string? previousKey, string? newKey, Directive directive, string reason, CancellationToken cancellationToken)
+	{
+		if (string.Equals(previousKey, newKey, StringComparison.Ordinal))
+		{
+			return;
+		}
+
+		var (kind, file) = VaultMediaService.ParseKey(previousKey);
+		if (kind != MediaKind.Media || string.IsNullOrWhiteSpace(file))
+		{
+			return;
+		}
+
+		var assetFolder = await ResolveAssetFolderAsync(directiveId, cancellationToken);
+		if (assetFolder is not null)
+		{
+			await mediaService.DeleteAsync(assetFolder, file, reason, nameof(Directive), directive.Id, directive.Title, cancellationToken);
+		}
+	}
+
+	/// <summary>
+	/// Resolves a directive's asset folder from its canonical markdown path. Entity→note association is a known
+	/// gap for directives (they are excluded from path-sync scanning), so the folder is composed from the
+	/// canonical location — where the API writes directives — rather than a resolved note path.
+	/// </summary>
+	private async Task<string?> ResolveAssetFolderAsync(string directiveId, CancellationToken cancellationToken)
+	{
+		var directive = await context.Directives.AsNoTracking().FirstOrDefaultAsync(item => item.Id == directiveId, cancellationToken);
+		if (directive is null)
+		{
+			return null;
+		}
+
+		// Walk the nesting chain on detached instances so the locator can compose the nested folder path without
+		// the change tracker treating the linked ancestors as inserts.
+		var current = directive;
+		while (!string.IsNullOrWhiteSpace(current.ParentDirectiveId))
+		{
+			var parent = await context.Directives.AsNoTracking().FirstOrDefaultAsync(item => item.Id == current.ParentDirectiveId, cancellationToken);
+			if (parent is null)
+			{
+				break;
+			}
+
+			current.ParentDirective = parent;
+			current = parent;
+		}
+
+		var markdownPath = markdownFileLocator.GetDirectiveFilePath(directive, directive.ParentDirective);
+		return mediaService.GetAssetFolder(markdownPath, VaultStorageShape.SelfNamedDirectory);
+	}
+
+	private static byte[] DecodeUpload(MediaUpload upload)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(upload.ContentBase64);
+		try
+		{
+			return Convert.FromBase64String(upload.ContentBase64);
+		}
+		catch (FormatException exception)
+		{
+			throw new InvalidOperationException("Media upload content is not valid Base64.", exception);
+		}
 	}
 }

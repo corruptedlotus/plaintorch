@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Pleiades.Puck;
 using Pleiades.Vault;
 using Pleiades.Vault.Markdown;
+using Pleiades.Vault.Media;
 
 namespace Pleiades.Orchestration;
 
@@ -55,6 +56,37 @@ public abstract class Directive : PuckNamedEntity
 	/// </summary>
 	[MarkdownField("tags")]
 	public List<string> Tags { get; set; } = [];
+
+	/// <summary>
+	/// Gets or sets the directive's icon key (PEP105): a built-in glyph or lucide name, a <c>media:</c> image in
+	/// the directive's own asset folder, or a <c>vault:</c> image in the vault root's shared asset folder. When
+	/// absent the banner falls back to the per-kind default glyph.
+	/// </summary>
+	[MarkdownField("icon")]
+	[Media]
+	public string? Icon { get; set; }
+
+	/// <summary>
+	/// Gets or sets the directive's banner image key (PEP105): a <c>media:</c> image in the directive's own asset
+	/// folder or a <c>vault:</c> image in the vault root's shared asset folder, shown as a header image.
+	/// </summary>
+	[MarkdownField("banner")]
+	[Media]
+	public string? Banner { get; set; }
+
+	/// <summary>
+	/// Gets or sets the resolved companion of <see cref="Icon"/> (PEP105) — its kind and, for custom media, its
+	/// vault-relative path. Transient: filled on the way out, never persisted to the database or frontmatter.
+	/// </summary>
+	[NotMapped]
+	public MediaReference? IconMedia { get; set; }
+
+	/// <summary>
+	/// Gets or sets the resolved companion of <see cref="Banner"/> (PEP105). Transient: filled on the way out,
+	/// never persisted to the database or frontmatter.
+	/// </summary>
+	[NotMapped]
+	public MediaReference? BannerMedia { get; set; }
 
 	[InverseProperty(nameof(Incentive.Directive))]
 	/// <summary>

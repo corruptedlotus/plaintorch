@@ -1,5 +1,5 @@
 import { component, css, html } from "@a11d/lit"
-import { EntityBanner } from './EntityBanner'
+import { DirectiveBanner } from './DirectiveBanner'
 import { Directive, DirectiveStatus, StellarDirectiveUpdate } from '@pleiades/sdk'
 import { core, IconName, ReactiveBinder, SelectDirectiveStatusModal } from ".."
 import { App } from "obsidian"
@@ -9,7 +9,7 @@ import { App } from "obsidian"
  * carries the {@link DirectiveStatus} lifecycle and can hold scheduling dates.
  */
 @component('p7t-sdirective-banner')
-export class StellarDirectiveBanner extends EntityBanner<Directive> {
+export class StellarDirectiveBanner extends DirectiveBanner {
 	override icon: IconName = 'directive'
 
 	protected override get preHeadingTemplate() {

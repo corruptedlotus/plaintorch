@@ -47,6 +47,14 @@ export class Directive {
 	endDate?: string | undefined
 	/** Timeframes; only present on lunar directives (PEP100). */
 	timeframes?: Timeframe[]
+	/** Icon key (PEP105): a glyph/lucide name, a `media:` self image, or a `vault:` shared image. */
+	icon?: string | undefined
+	/** Banner image key (PEP105): a `media:` self image or a `vault:` shared image. */
+	banner?: string | undefined
+	/** Resolved companion of {@link icon} (PEP105) — its kind and, for custom media, its vault-relative path. */
+	iconMedia?: MediaReference | undefined
+	/** Resolved companion of {@link banner} (PEP105). */
+	bannerMedia?: MediaReference | undefined
 
 	get isLunar() {
 		return this.$type === 'lunar'
@@ -139,4 +147,41 @@ export interface TimeframeUpdate {
 	endTime?: string | undefined
 	orbit?: string | undefined
 	clearOrbit?: boolean
+}
+
+/** How a media key resolves (PEP105): a built-in glyph, self/level media, or vault-level shared media. */
+export type MediaReferenceType = 'icon' | 'media' | 'vault'
+
+/** The resolved companion an entity carries beside a media key (PEP105). */
+export interface MediaReference {
+	/** The raw stored key, e.g. `media:crest.png`, `vault:logo.png`, or `lucide:star`. */
+	key: string
+	/** How the key resolves. */
+	type: MediaReferenceType
+	/** The vault-relative path for custom media; undefined for a glyph. */
+	path?: string | undefined
+}
+
+/** An uploaded media file for a directive icon or banner (PEP105); the bytes travel as Base64. */
+export interface MediaUpload {
+	fileName: string
+	contentBase64: string
+}
+
+/** Sets a directive's icon (PEP105): supply a raw reference key, an uploaded image, or clear it. */
+export interface DirectiveIconRequest {
+	/** A raw key to set directly: a glyph/lucide name, `media:file`, or `vault:file`. */
+	reference?: string | undefined
+	upload?: MediaUpload | undefined
+	/** Store the upload in the vault root's shared asset folder rather than the directive's own. */
+	vault?: boolean
+	clear?: boolean
+}
+
+/** Sets a directive's banner image (PEP105): supply a raw reference key, an uploaded image, or clear it. */
+export interface DirectiveBannerRequest {
+	reference?: string | undefined
+	upload?: MediaUpload | undefined
+	vault?: boolean
+	clear?: boolean
 }
