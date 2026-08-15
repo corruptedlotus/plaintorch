@@ -1,6 +1,6 @@
 import { Notice } from 'obsidian'
 import { Directive, typeNameOf } from '@pleiades/sdk'
-import { core, ExpandingAction, IconName, PromptTextModal } from '..'
+import { core, ExpandingAction, IconName, PromptTextModal, type ScheduleValue } from '..'
 import type { GridEntity } from './entityTree'
 
 /** What kind of thing a row holds, resolved from the runtime type the core stamped on it. */
@@ -156,6 +156,17 @@ export async function saveEntityField(entity: GridEntity, field: EditableField):
 export function isSingleInstanceFate(entity: GridEntity): boolean {
 	const fate = entity as { orbit?: string, date?: string }
 	return !fate.orbit && !!fate.date
+}
+
+/**
+ * Persists a fate's chosen schedule, clearing whichever shape it is not: an orbit clears the fixed date,
+ * a fixed date clears the orbit (an empty orbit string clears it). This keeps a fate from carrying both and
+ * materializing two schedules at once.
+ */
+export async function saveFateSchedule(entity: GridEntity, schedule: ScheduleValue): Promise<boolean> {
+	return !!await core.repos.fates.mutate(entity.id, async () => await core.declaratives.updateFate(entity.id, schedule.mode === 'orbit'
+		? { orbit: schedule.orbit ?? '', clearDate: true }
+		: { orbit: '', date: schedule.date, startTime: schedule.time }))
 }
 
 /** Opens the note an entity is the authority for, in a new tab. */
