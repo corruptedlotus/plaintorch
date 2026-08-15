@@ -1,17 +1,15 @@
-import { component, css, eventListener, PropertyValues } from "@a11d/lit"
-import { EditablePart } from "./EditableDataLink"
+import { component, css } from "@a11d/lit"
 import { humanizeOrbit } from "orbits"
+import { EditableTextPart } from "./EditableTextPart"
 
 /**
- * Editable specific to Orbit scheduling notation (PEP100). When idle it renders the
- * human-readable definition produced by the vendored @pleiades/orbits humanizer; while
- * editing it swaps to the raw Orbit notation so the user works against the real syntax.
- * An empty value finishes as `undefined`, clearing the schedule.
+ * Editable Orbit scheduling notation (PEP100). Idle shows the humanized definition; editing swaps to the raw
+ * notation so the user works against the real syntax. Unparseable notation warns (delayed) and reverts on
+ * commit; an empty value clears the schedule.
  */
 @component('p7t-editable-orbit')
-export class EditableOrbit extends EditablePart<string> {
-	override readonly contentEditable = 'plaintext-only'
-	override readonly spellcheck = false
+export class EditableOrbit extends EditableTextPart<string> {
+	override label = 'Orbit'
 
 	static override get styles() {
 		return css`
@@ -33,28 +31,29 @@ export class EditableOrbit extends EditablePart<string> {
 		`
 	}
 
-	protected override updated(_changedProperties: PropertyValues) {
-		// Editing shows the raw notation; idle shows the humanized definition.
-		this.textContent = this.active ? (this.value ?? '') : this.displayText
-	}
-
-	private get displayText() {
-		const { text } = humanizeOrbit(this.value)
+	protected override toDisplayText(value: string | undefined): string {
+		const { text } = humanizeOrbit(value)
 		return text || 'No schedule'
 	}
 
-	@eventListener({ type: 'focus', target: this })
-	protected handleFocus() {
-		this.beginManualEditing()
+	protected override toEditableText(value: string | undefined): string {
+		return value ?? ''
 	}
 
-	@eventListener({ type: 'blur', target: this })
-	@eventListener({ type: 'keyup', target: this })
-	protected handleInput(e: KeyboardEvent | unknown) {
-		if (e instanceof KeyboardEvent && !(e.key === 'Enter' && e.ctrlKey)) return
-		this.blur()
-		const raw = (this.textContent ?? '').trim()
-		this.finishEditing(raw.length > 0 ? raw : undefined)
+	protected override parseValue(raw: string): string | undefined {
+		const trimmed = raw.trim()
+		return trimmed.length > 0 ? trimmed : undefined
+	}
+
+	protected override validateContent(trimmed: string): string | undefined {
+		if (trimmed.length === 0) return undefined
+		try {
+			const { text } = humanizeOrbit(trimmed)
+			return text ? undefined : 'Invalid orbit notation.'
+		}
+		catch {
+			return 'Invalid orbit notation.'
+		}
 	}
 }
 

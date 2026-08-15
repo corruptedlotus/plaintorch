@@ -62,7 +62,7 @@ export class DecreeBanner extends EntityBanner<Decree> {
 
 	/** A decree participates in Moonlight reflection only when its directive is lunar (PEP100). */
 	protected get isLunarHierarchy() {
-		return this.entity!.directive?.$type === 'lunar'
+		return this.entity!.directive?.isLunar ?? false
 	}
 
 	protected get isInActivePolaris() {
@@ -209,7 +209,7 @@ export class DecreeBanner extends EntityBanner<Decree> {
 
 	protected override get headingTemplate() {
 		return html`
-			<p7t-editable-plaintext ${this.binder.bind('title')}></p7t-editable-plaintext>
+			<p7t-editable-plaintext required label='Title' placeholder='Untitled' ${this.binder.bind('title')}></p7t-editable-plaintext>
 		`
 	}
 

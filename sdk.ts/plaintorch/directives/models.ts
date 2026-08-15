@@ -1,4 +1,4 @@
-import { model } from "@a11d/api-dotnet"
+import { model, ModelValueConstructor } from "@a11d/api-dotnet"
 import type { Objective, ObjectiveCollege } from "../objectives/models"
 export enum DirectiveStatus {
 	Planned = 0,
@@ -26,8 +26,6 @@ export type DirectiveKind = 'stellar' | 'lunar'
  */
 @model('StellarDirective')
 export class Directive {
-	/** Polymorphic discriminator emitted by the core: "stellar" or "lunar". */
-	$type?: DirectiveKind
 	id!: string
 	title!: string
 	codename: string | undefined
@@ -56,12 +54,13 @@ export class Directive {
 	/** Resolved companion of {@link banner} (PEP105). */
 	bannerMedia?: MediaReference | undefined
 
+	/** The runtime kind, keyed off the `@type` the core stamps (the same discriminator api-dotnet reconstructs by). */
 	get isLunar() {
-		return this.$type === 'lunar'
+		return (this as Record<string, unknown>)[ModelValueConstructor.typeNameKey] === 'LunarDirective'
 	}
 
 	get isStellar() {
-		return this.$type === 'stellar'
+		return (this as Record<string, unknown>)[ModelValueConstructor.typeNameKey] === 'StellarDirective'
 	}
 }
 

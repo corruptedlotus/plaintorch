@@ -63,7 +63,7 @@ export class OccurrenceItem extends Component {
 	protected get preTitle(): HTMLTemplateResult | typeof nothing {
 		const directive = this.directive
 		if (!directive) return nothing
-		const icon = directive.$type === 'lunar' ? 'directive-lunar' : 'directive'
+		const icon = directive.isLunar ? 'directive-lunar' : 'directive'
 		return html`
 			<div class='directive-line'>
 				<p7t-icon icon=${icon}></p7t-icon>

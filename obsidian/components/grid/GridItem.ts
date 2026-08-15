@@ -1,12 +1,12 @@
 import { Component, component, css, event, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
 import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, type Directive } from '@pleiades/sdk'
 import {
-	EntityWatch, ExpandingAction, getApp, IconName, LunarDirectiveModal, ReactiveBinder,
+	EntityWatch, ExpandingAction, getApp, IconName, LunarDirectiveModal, ReactiveBinder, type ScheduleValue,
 	SelectDirectiveStatusModal, SelectLunarDirectiveStatusModal, SelectObjectiveStatusModal
 } from '..'
 import {
-	directiveActions, entityIcon, entityKindOf, isDirectiveKind, isSingleInstanceFate,
-	objectiveActions, openEntityNote, saveEntityField, type EditableField
+	directiveActions, entityIcon, entityKindOf, isDirectiveKind,
+	objectiveActions, openEntityNote, saveEntityField, saveFateSchedule, type EditableField
 } from './entityActions'
 import type { GridRow } from './entityTree'
 
@@ -254,7 +254,7 @@ export class GridItem extends Component {
 				</div>
 			</div>
 			<div class='title'>
-				<p7t-editable-plaintext ${this.binder.bind('title')}></p7t-editable-plaintext>
+				<p7t-editable-plaintext required label='Title' placeholder='Untitled' ${this.binder.bind('title')}></p7t-editable-plaintext>
 			</div>
 			${this.leadingCells.map(cell => html`<div class='cell'>${cell}</div>`)}
 			<div class='cell actions'>
@@ -292,11 +292,17 @@ export class GridItem extends Component {
 		switch (entityKindOf(entity)) {
 			case 'objective':
 				return html`<p7t-editable-starfire ${this.binder.bind('celestronValue')}></p7t-editable-starfire>`
-			case 'fate':
-				// A one-off fate is placed by its date; a recurring one by its Orbit definition.
-				return isSingleInstanceFate(entity)
-					? html`<p7t-editable-date ${this.binder.bind('date')}></p7t-editable-date>`
-					: html`<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>`
+			case 'fate': {
+				// A fate is scheduled either way — a recurring Orbit or a fixed date/time — and the editable
+				// lets the user switch and clears whichever it is not.
+				const fate = entity as { orbit?: string, date?: string, startTime?: string }
+				return html`<p7t-editable-orbit-datetime
+					.orbit=${fate.orbit}
+					.date=${fate.date}
+					.time=${fate.startTime}
+					@schedulechange=${(e: CustomEvent<ScheduleValue>) => saveFateSchedule(entity, e.detail)}>
+				</p7t-editable-orbit-datetime>`
+			}
 			case 'decree':
 				return html`<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>`
 			case 'lunar-directive':

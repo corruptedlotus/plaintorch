@@ -399,6 +399,7 @@ public sealed record FateUpdate(
 	string? ParentIncentiveId = null,
 	bool ClearParentIncentive = false,
 	DateOnly? Date = null,
+	bool ClearDate = false,
 	TimeOnly? StartTime = null,
 	TimeOnly? EndTime = null,
 	string? Orbit = null,
