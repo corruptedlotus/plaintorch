@@ -127,13 +127,14 @@ is building. None of REFACTOR Alpha *blocks* the core (it is new, additive code)
   heuristics remain — they belong to phase D.)
 - **Phase D — Structured policy outcomes.** Co-lands with REFACTOR Alpha Phase 4: the mode-policy `Decide`
   returns structured checks; the watcher's policy report is built from them.
-- **Phase E — API + frontend.** Generalise `WatcherIssueReport` to an operation-status contract (severity,
-  involved files, reason code, resolved timestamp, history), keep the watcher endpoints, add history queries,
-  enrich the SDK/health surface. Frontend deliverable: an **Obsidian status-bar icon** reflecting the rolled-up
-  core/watcher health (`Ok/Suspended/Issues/Offline`), with a **hover tooltip** (reusing the existing tooltip
-  component) listing the active statuses and their severity. The icon reads the health rollup and the tooltip
-  the active-status list; both come from the operation-status contract, so the icon generalises beyond the
-  watcher as other subsystems adopt the core.
+- **Phase E 🚧 — API + frontend.** _Landed:_ `WatcherIssueRecord` gained graded `severity` and involved `files`
+  (C# + SDK), keeping the existing endpoints/contract; and the **Obsidian status-bar indicator**
+  (`p7t-watcher-status`) — a health-colored dot (`ok/standby/issues/offline`) + active-issue count, with a hover
+  tooltip (reusing `p7t-tooltip`) listing the active statuses and their severity badges. It polls
+  `GET /api/system/watcher/issues` and both the dot and tooltip read the operation-status contract, so it
+  generalises beyond the watcher as other subsystems adopt the core. _Deferred:_ resolved-timestamp exposure and
+  a history-query endpoint (the durable `OperationStatusEvent` log already records the raised→resolved timeline;
+  no consumer needs the query yet).
 
 ## Core types (`Pleiades.Diagnostics`)
 - `OperationSeverity` — `Info/Warning/Suspended/Error/Critical`.

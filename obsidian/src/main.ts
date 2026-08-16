@@ -55,6 +55,9 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 			(leaf: WorkspaceLeaf) => new PlaintorchCanvasView(leaf)
 		)
 
+		// Core/watcher health indicator: a status-bar dot + hover tooltip listing active statuses (PEP108).
+		this.addStatusBarItem().appendChild(document.createElement("p7t-watcher-status"))
+
 		this.addRibbonIcon("plaintorch", "PLAINTORCH briefing", () => {
 			void this.activateBriefingView()
 		})

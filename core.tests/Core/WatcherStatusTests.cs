@@ -135,5 +135,7 @@ public sealed class WatcherStatusTests : VaultTestBase
 		Assert.Equal("policy", record.Category);
 		Assert.True(record.IsCritical);
 		Assert.Equal(WatcherOperations.PolicyViolation, record.Criterion);
+		Assert.Equal("error", record.Severity);
+		Assert.Contains(record.Files, file => file.Replace('\\', '/') == "Objectives/Bad.md");
 	}
 }

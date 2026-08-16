@@ -214,6 +214,8 @@ public sealed class SystemApiService(
 			descriptor.Category,
 			status.Detail ?? descriptor.Message,
 			IsCriticalSeverity(status.Severity),
+			status.Severity.ToString().ToLowerInvariant(),
+			status.Files.Select(ToVaultRelativePathOrAbsolute).ToList(),
 			status.ReasonCode,
 			$"{status.ReasonCode}-cleared",
 			status.OccurrenceCount,

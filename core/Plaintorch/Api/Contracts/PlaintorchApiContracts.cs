@@ -50,6 +50,8 @@ public sealed record WatcherIssueRecord(
 	string Category,
 	string Message,
 	bool IsCritical,
+	string Severity,
+	IReadOnlyList<string> Files,
 	string Criterion,
 	string ResolutionCriterion,
 	int OccurrenceCount,

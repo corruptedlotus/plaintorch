@@ -38,6 +38,10 @@ export interface WatcherIssueRecord {
 	category: string
 	message: string
 	isCritical: boolean
+	/** Graded severity: `info` | `warning` | `suspended` | `error` | `critical` (PEP108). */
+	severity: string
+	/** The vault-relative files involved in this status. */
+	files: string[]
 	criterion: string
 	resolutionCriterion: string
 	occurrenceCount: number
