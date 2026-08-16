@@ -1,6 +1,7 @@
 export * from "./coreClient"
 export * from "./repository"
 export * from "./system"
+export * from "./media"
 export * from "./directives"
 export * from "./objectives"
 export * from "./declaratives"

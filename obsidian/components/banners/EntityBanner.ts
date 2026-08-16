@@ -246,11 +246,19 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 		return nothing
 	}
 
+	/**
+	 * The entity's icon, rendered in the identity grid. Defaults to a display-only glyph or image; a banner that
+	 * lets its icon be edited (a directive) overrides this with an editable media control.
+	 */
+	protected get iconTemplate(): unknown {
+		return html`<p7t-icon class='icon' icon='${this.resolvedIcon}'></p7t-icon>`
+	}
+
 	protected override get template() {
 		return !this.entity ? html`` : html`
 			${this.bannerImageTemplate}
 			<div class='render-grid'>
-				<p7t-icon class='icon' icon='${this.resolvedIcon}'></p7t-icon>
+				${this.iconTemplate}
 				${this.headerTemplate}
 
 				<span class='indicator'></span>

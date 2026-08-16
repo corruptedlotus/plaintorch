@@ -202,26 +202,19 @@ export interface MediaReference {
 	path?: string | undefined
 }
 
-/** An uploaded media file for a directive icon or banner (PEP105); the bytes travel as Base64. */
-export interface MediaUpload {
-	fileName: string
-	contentBase64: string
-}
-
-/** Sets a directive's icon (PEP105): supply a raw reference key, an uploaded image, or clear it. */
+/**
+ * Selects a directive's icon (PEP105): a raw `reference` key — a glyph/lucide name, or a `media:`/`vault:` file
+ * already stored through the media domain — or `clear` to remove it. Storing an image is the media domain's job;
+ * a field only ever references a key.
+ */
 export interface DirectiveIconRequest {
 	/** A raw key to set directly: a glyph/lucide name, `media:file`, or `vault:file`. */
 	reference?: string | undefined
-	upload?: MediaUpload | undefined
-	/** Store the upload in the vault root's shared asset folder rather than the directive's own. */
-	vault?: boolean
 	clear?: boolean
 }
 
-/** Sets a directive's banner image (PEP105): supply a raw reference key, an uploaded image, or clear it. */
+/** Selects a directive's banner image (PEP105): a raw `reference` key already stored through the media domain, or `clear`. */
 export interface DirectiveBannerRequest {
 	reference?: string | undefined
-	upload?: MediaUpload | undefined
-	vault?: boolean
 	clear?: boolean
 }

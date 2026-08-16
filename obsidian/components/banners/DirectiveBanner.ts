@@ -1,90 +1,112 @@
-import { html, nothing } from "@a11d/lit"
-import { App } from "obsidian"
+import { css, html, nothing } from "@a11d/lit"
 import { Directive } from "@pleiades/sdk"
 import { EntityBanner } from './EntityBanner'
-import { core, mediaUrl, pickImageFile, resolveMediaIcon } from ".."
+import { core } from ".."
+import type { EditablePart } from "../editing/EditableDataLink"
 
 /**
- * Shared base for the stellar and lunar directive banners (PEP105). Adds the per-directive icon — a custom
- * uploaded image or a chosen glyph, falling back to the kind default carried in {@link icon} — and an optional
- * banner header image, plus the affordances to set, replace, and clear them through the directives SDK.
+ * Shared base for the stellar and lunar directive banners (PEP105). The per-directive icon and the optional header
+ * banner are both edited in place through the {@link EditableMedia} control: clicking either opens the media picker
+ * — an entity or vault asset, an icon, or removal — and the chosen key is written back through the directives SDK.
  *
- * The core owns writing assets into the vault; this banner only picks the file, uploads its bytes, and renders
- * the resolved paths the API returns.
+ * Setting a custom image stays two separate steps (media separation): the picker stores the file through the media
+ * domain and hands back a key, and this banner only references that key onto the icon or banner field. The icon is a
+ * contained square; the banner is a free-form covering image with an "add banner" affordance while it is empty.
  */
 export abstract class DirectiveBanner extends EntityBanner<Directive> {
-	/** The App used to resolve vault resource URLs — the injected one, or the global as the banners already do. */
-	protected get mediaApp(): App | undefined {
-		return this.app ?? (window as any).app as App
-	}
+	static override get styles() {
+		return css`
+			${super.styles}
 
-	protected override get resolvedIcon(): string {
-		return resolveMediaIcon(this.entity?.iconMedia, this.mediaApp, this.icon)
-	}
+			p7t-editable-media.icon {
+				grid-area: icon;
+				align-self: center;
+				width: 48px;
+				height: 48px;
+			}
 
-	protected override get bannerImageTemplate() {
-		const url = mediaUrl(this.entity?.bannerMedia, this.mediaApp)
-		return url
-			? html`<div class='banner-image' style="background-image: url('${url}')"></div>`
-			: nothing
-	}
+			p7t-editable-media.banner {
+				display: flex;
+				width: 100%;
+				height: 132px;
+				border-radius: 8px;
+				margin-bottom: .4em;
+				overflow: hidden;
+				box-sizing: border-box;
+			}
 
-	protected override get actions() {
-		const directive = this.entity
-		if (!directive) {
-			return html``
-		}
-
-		const hasIcon = !!directive.iconMedia
-		const hasBanner = !!directive.bannerMedia
-
-		return html`
-			<p7t-button icon='lucide:image' @click=${() => void this.pickMedia('icon')}>
-				<span>${hasIcon ? 'Change icon' : 'Set icon'}</span>
-			</p7t-button>
-			${!hasIcon ? nothing : html`
-				<p7t-button icon='lucide:x' @click=${() => void this.clearMedia('icon')}>
-					<span>Clear</span>
-				</p7t-button>
-			`}
-			<p7t-button icon='lucide:panel-top' @click=${() => void this.pickMedia('banner')}>
-				<span>${hasBanner ? 'Change banner' : 'Set banner'}</span>
-			</p7t-button>
-			${!hasBanner ? nothing : html`
-				<p7t-button icon='lucide:x' @click=${() => void this.clearMedia('banner')}>
-					<span>Clear</span>
-				</p7t-button>
-			`}
+			/* While empty, the banner reads as an affordance to add one rather than a blank strip. */
+			p7t-editable-media.banner.empty {
+				border: 2px dashed color-mix(in srgb, var(--text-normal) 22%, transparent);
+			}
 		`
 	}
 
-	private async pickMedia(kind: 'icon' | 'banner') {
+	private get mediaEntity() {
+		return { entityType: 'directive', entityId: this.entity?.id ?? '' }
+	}
+
+	protected override get iconTemplate() {
+		const directive = this.entity
+		if (!directive) {
+			return nothing
+		}
+
+		return html`
+			<p7t-editable-media
+				class='icon'
+				icon
+				.media=${directive.iconMedia}
+				.value=${directive.icon ?? ''}
+				.default=${this.icon}
+				.entity=${this.mediaEntity}
+				@change=${(e: Event) => void this.saveIcon(e)}>
+			</p7t-editable-media>
+		`
+	}
+
+	protected override get bannerImageTemplate() {
+		const directive = this.entity
+		if (!directive) {
+			return nothing
+		}
+
+		return html`
+			<p7t-editable-media
+				class='banner ${directive.bannerMedia ? '' : 'empty'}'
+				.media=${directive.bannerMedia}
+				.value=${directive.banner ?? ''}
+				.default=${''}
+				.entity=${this.mediaEntity}
+				@change=${(e: Event) => void this.saveBanner(e)}>
+			</p7t-editable-media>
+		`
+	}
+
+	private async saveIcon(e: Event) {
 		const directive = this.entity
 		if (!directive) {
 			return
 		}
 
-		const picked = await pickImageFile()
-		if (!picked) {
-			return
-		}
-
+		const key = (e.target as EditablePart<string>).value?.trim() ?? ''
 		await this.commitEntityEdit(async () =>
-			kind === 'icon'
-				? await core.directives.uploadIcon(directive.id, picked.fileName, picked.bytes)
-				: await core.directives.uploadBanner(directive.id, picked.fileName, picked.bytes))
+			key
+				? await core.directives.setIconReference(directive.id, key)
+				: await core.directives.clearIcon(directive.id))
 		await this.entityRepository?.refresh(directive.id)
 	}
 
-	private async clearMedia(kind: 'icon' | 'banner') {
+	private async saveBanner(e: Event) {
 		const directive = this.entity
 		if (!directive) {
 			return
 		}
 
+		const key = (e.target as EditablePart<string>).value?.trim() ?? ''
 		await this.commitEntityEdit(async () =>
-			kind === 'icon'
-				? await core.directives.clearIcon(directive.id)
+			key
+				? await core.directives.setBannerReference(directive.id, key)
 				: await core.directives.clearBanner(directive.id))
 		await this.entityRepository?.refresh(directive.id)
 	}

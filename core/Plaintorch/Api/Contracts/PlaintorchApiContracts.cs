@@ -162,32 +162,33 @@ public sealed record StellarDirectiveWorkflowShift(DirectiveStatus Status);
 public sealed record MediaUpload(string FileName, string ContentBase64);
 
 /// <summary>
-/// Sets a directive's icon (PEP105). Supply exactly one intent: a raw <paramref name="Reference"/> key (a glyph
-/// name, a <c>media:</c> file, or a <c>vault:</c> file), an <paramref name="Upload"/> of a custom image, or
-/// <paramref name="Clear"/> to remove the icon and fall back to the per-kind default glyph.
+/// The stored key a media-domain upload returns (PEP105): a <c>media:</c> file for an entity-level upload or a
+/// <c>vault:</c> file for a vault-level one. A field references this key through its own domain's set-reference call
+/// — upload and selection stay separate.
+/// </summary>
+/// <param name="Key">The stored media key.</param>
+public sealed record MediaStoreResult(string Key);
+
+/// <summary>
+/// Selects a directive's icon (PEP105): a raw <paramref name="Reference"/> key — a glyph/lucide name, or a
+/// <c>media:</c>/<c>vault:</c> file already stored through the media domain — or <paramref name="Clear"/> to remove
+/// it and fall back to the per-kind default glyph. Storing a custom image is the media domain's concern, not this
+/// one's; a field only ever references a key.
 /// </summary>
 /// <param name="Reference">A raw media key to set directly: a glyph/lucide name, <c>media:file</c>, or <c>vault:file</c>.</param>
-/// <param name="Upload">A custom image to store; keyed <c>media:</c> in the directive's own asset folder, or <c>vault:</c> when <paramref name="Vault"/> is set.</param>
-/// <param name="Vault">Stores the upload in the vault root's shared asset folder rather than the directive's own.</param>
-/// <param name="Clear">Removes the icon, archiving any self-stored image.</param>
+/// <param name="Clear">Removes the icon, archiving any self-stored image it pointed at.</param>
 public sealed record DirectiveIconRequest(
 	string? Reference = null,
-	MediaUpload? Upload = null,
-	bool Vault = false,
 	bool Clear = false);
 
 /// <summary>
-/// Sets a directive's banner image (PEP105). Supply a raw <paramref name="Reference"/> key, an
-/// <paramref name="Upload"/> to store one, or <paramref name="Clear"/> to remove it.
+/// Selects a directive's banner image (PEP105): a raw <paramref name="Reference"/> key already stored through the
+/// media domain, or <paramref name="Clear"/> to remove it.
 /// </summary>
 /// <param name="Reference">A raw media key to set directly: <c>media:file</c> or <c>vault:file</c>.</param>
-/// <param name="Upload">A banner image to store; keyed <c>media:</c> in the directive's own asset folder, or <c>vault:</c> when <paramref name="Vault"/> is set.</param>
-/// <param name="Vault">Stores the upload in the vault root's shared asset folder rather than the directive's own.</param>
-/// <param name="Clear">Removes the banner, archiving any self-stored image.</param>
+/// <param name="Clear">Removes the banner, archiving any self-stored image it pointed at.</param>
 public sealed record DirectiveBannerRequest(
 	string? Reference = null,
-	MediaUpload? Upload = null,
-	bool Vault = false,
 	bool Clear = false);
 
 /// <summary>

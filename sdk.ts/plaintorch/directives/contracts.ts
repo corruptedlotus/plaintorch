@@ -14,7 +14,6 @@ export type {
 	Timeframe,
 	TimeframePlan,
 	TimeframeUpdate,
-	MediaUpload,
 	MediaReference,
 	MediaReferenceType,
 	DirectiveIconRequest,

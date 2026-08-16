@@ -5,6 +5,7 @@ using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Changes;
 using Pleiades.Plaintorch.Materialization;
+using Pleiades.Plaintorch.Media;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
@@ -56,6 +57,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<VaultTemporalDataService>();
 		services.AddScoped<VaultAuditLogService>();
 		services.AddScoped<VaultMediaService>();
+		services.AddScoped<MediaAssetFolderResolver>();
 		services.AddScoped<VaultImplicitBoundaryService>();
 		services.AddSingleton<PuckNotationParser>();
 		services.AddSingleton<PuckRuntimeCompilationCatalog>();

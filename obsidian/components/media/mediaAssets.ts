@@ -2,6 +2,13 @@ import type { App } from 'obsidian'
 import type { MediaReference } from '@pleiades/sdk'
 
 /**
+ * The shared asset folder name, matching the core (`VaultMediaService.AssetFolderName`). Its leading underscore
+ * keeps it out of markdown discovery, and a `vault:` file resolves to a deterministic path beneath it — which is
+ * what lets a vault image preview without waiting on a resolved companion from the core (PEP105).
+ */
+export const ASSET_FOLDER = '_assets'
+
+/**
  * Resolves a vault-relative media path (as the core serialises for a directive icon or banner, PEP105) to an
  * Obsidian resource URL usable in an `<img src>` or a CSS `background-image`. Returns undefined when the path
  * is empty or the file is not present in the vault.

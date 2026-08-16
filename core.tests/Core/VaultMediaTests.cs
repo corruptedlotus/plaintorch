@@ -11,10 +11,11 @@ using Xunit;
 namespace Pleiades.Tests.Core;
 
 /// <summary>
-/// Directive icons and banners (PEP105) store image files in an <c>_assets</c> folder, record a keyed reference
-/// in frontmatter, and resolve into a <see cref="MediaReference"/> companion — self (<c>media:</c>) media beside
-/// the directive, vault (<c>vault:</c>) media in the vault root — while the underscore folder stays out of
-/// markdown discovery.
+/// Directive icons and banners (PEP105) resolve into a <see cref="MediaReference"/> companion — self
+/// (<c>media:</c>) media beside the directive, vault (<c>vault:</c>) media in the vault root — while the underscore
+/// folder stays out of markdown discovery. Storing the image and selecting it onto a field are separate steps: the
+/// media domain (<see cref="IMediaApi"/>) stores the bytes and returns a key, and the directive only ever
+/// references that key.
 /// </summary>
 public sealed class VaultMediaTests : VaultTestBase
 {
@@ -24,6 +25,16 @@ public sealed class VaultMediaTests : VaultTestBase
 		=> Vault.WithScopeAsync(services => services
 			.GetRequiredService<IDirectiveApi>()
 			.CreateStandaloneAsync("Campaign", cancellationToken: TestContext.Current.CancellationToken));
+
+	private Task<MediaStoreResult> UploadEntityAsync(string entityType, string entityId, MediaUpload upload)
+		=> Vault.WithScopeAsync(services => services
+			.GetRequiredService<IMediaApi>()
+			.UploadEntityAsync(entityType, entityId, upload, TestContext.Current.CancellationToken));
+
+	private Task<MediaStoreResult> UploadVaultAsync(MediaUpload upload)
+		=> Vault.WithScopeAsync(services => services
+			.GetRequiredService<IMediaApi>()
+			.UploadVaultAsync(upload, TestContext.Current.CancellationToken));
 
 	private Task<Directive> SetIconAsync(string directiveId, DirectiveIconRequest request)
 		=> Vault.WithScopeAsync(services => services
@@ -36,18 +47,23 @@ public sealed class VaultMediaTests : VaultTestBase
 			.SetBannerAsync(directiveId, request, TestContext.Current.CancellationToken));
 
 	[Fact]
-	public async Task Uploading_an_icon_stores_self_media_and_resolves_the_companion()
+	public async Task Uploading_an_icon_to_the_entity_then_referencing_it_resolves_the_self_companion()
 	{
 		var directive = await CreateCampaignAsync();
 
-		var updated = await SetIconAsync(directive.Id, new DirectiveIconRequest(Upload: new MediaUpload("crest.png", SampleImage)));
+		// Step one — the media domain stores the image beside the directive and hands back its key.
+		var stored = await UploadEntityAsync("directive", directive.Id, new MediaUpload("crest.png", SampleImage));
+		Assert.Equal("media:crest.png", stored.Key);
+		Assert.True(Vault.VaultFileExists("Directives/Campaign/_assets/crest.png"));
+
+		// Step two — the directive references the stored key; it never stored anything itself.
+		var updated = await SetIconAsync(directive.Id, new DirectiveIconRequest(Reference: stored.Key));
 
 		Assert.Equal("media:crest.png", updated.Icon);
 		Assert.NotNull(updated.IconMedia);
 		Assert.Equal("media:crest.png", updated.IconMedia.Key);
 		Assert.Equal(MediaKind.Media, updated.IconMedia.Type);
 		Assert.Equal("Directives/Campaign/_assets/crest.png", updated.IconMedia.Path);
-		Assert.True(Vault.VaultFileExists("Directives/Campaign/_assets/crest.png"));
 
 		// The reference round-trips through frontmatter (quoted because it contains a colon).
 		var content = Vault.ReadVaultFile("Directives/Campaign/Campaign.md");
@@ -62,11 +78,12 @@ public sealed class VaultMediaTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Uploading_a_banner_stores_self_media_and_resolves_the_companion()
+	public async Task Uploading_a_banner_to_the_entity_then_referencing_it_resolves_the_self_companion()
 	{
 		var directive = await CreateCampaignAsync();
 
-		var updated = await SetBannerAsync(directive.Id, new DirectiveBannerRequest(Upload: new MediaUpload("hero.png", SampleImage)));
+		var stored = await UploadEntityAsync("directive", directive.Id, new MediaUpload("hero.png", SampleImage));
+		var updated = await SetBannerAsync(directive.Id, new DirectiveBannerRequest(Reference: stored.Key));
 
 		Assert.Equal("media:hero.png", updated.Banner);
 		Assert.NotNull(updated.BannerMedia);
@@ -76,11 +93,13 @@ public sealed class VaultMediaTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Uploading_to_vault_stores_shared_media_at_the_root()
+	public async Task Uploading_to_the_vault_then_referencing_it_resolves_the_shared_companion()
 	{
 		var directive = await CreateCampaignAsync();
 
-		var updated = await SetIconAsync(directive.Id, new DirectiveIconRequest(Upload: new MediaUpload("logo.png", SampleImage), Vault: true));
+		var stored = await UploadVaultAsync(new MediaUpload("logo.png", SampleImage));
+		Assert.Equal("vault:logo.png", stored.Key);
+		var updated = await SetIconAsync(directive.Id, new DirectiveIconRequest(Reference: stored.Key));
 
 		Assert.Equal("vault:logo.png", updated.Icon);
 		Assert.NotNull(updated.IconMedia);
@@ -89,6 +108,18 @@ public sealed class VaultMediaTests : VaultTestBase
 		Assert.True(Vault.VaultFileExists("_assets/logo.png"));
 		// It is shared, not filed beside the directive.
 		Assert.False(Vault.VaultFileExists("Directives/Campaign/_assets/logo.png"));
+	}
+
+	[Fact]
+	public async Task The_media_domain_lists_a_stored_vault_asset()
+	{
+		await UploadVaultAsync(new MediaUpload("logo.png", SampleImage));
+
+		var listed = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IMediaApi>()
+			.ListVaultAssetsAsync(TestContext.Current.CancellationToken));
+
+		Assert.Contains("logo.png", listed);
 	}
 
 	[Fact]
@@ -110,7 +141,8 @@ public sealed class VaultMediaTests : VaultTestBase
 	public async Task Clearing_a_self_icon_archives_the_stored_image()
 	{
 		var directive = await CreateCampaignAsync();
-		await SetIconAsync(directive.Id, new DirectiveIconRequest(Upload: new MediaUpload("crest.png", SampleImage)));
+		var stored = await UploadEntityAsync("directive", directive.Id, new MediaUpload("crest.png", SampleImage));
+		await SetIconAsync(directive.Id, new DirectiveIconRequest(Reference: stored.Key));
 		Assert.True(Vault.VaultFileExists("Directives/Campaign/_assets/crest.png"));
 
 		var cleared = await SetIconAsync(directive.Id, new DirectiveIconRequest(Clear: true));

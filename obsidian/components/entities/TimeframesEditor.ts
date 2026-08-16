@@ -1,7 +1,7 @@
 import { Component, component, css, html, nothing, property, PropertyValues, repeat, state } from '@a11d/lit'
 import { ObjectiveCollege, Timeframe, TimeframeInclusion, TimeframeUpdate } from '@pleiades/sdk'
 import { Notice } from 'obsidian'
-import { core, getApp, resolveMediaIcon, SelectCollegeModal } from '..'
+import { core, SelectCollegeModal } from '..'
 import type { EditablePart } from '../editing/EditableDataLink'
 
 /** A time-of-day (TimeOnly) as the core serialises it, trimmed to the `HH:mm` an `<input type="time">` shows. */
@@ -242,11 +242,12 @@ export class TimeframesEditor extends Component {
 					</div>
 					<div class='field'>
 						<span class='caption'>Icon</span>
-						<p7t-icon .icon=${resolveMediaIcon(timeframe.iconMedia, getApp(), 'lucide:image')}></p7t-icon>
-						<p7t-editable-plaintext
+						<p7t-editable-media
+							icon
+							.media=${timeframe.iconMedia}
 							.value=${timeframe.icon ?? ''}
 							@change=${(e: Event) => this.saveIcon(timeframe.id, e)}>
-						</p7t-editable-plaintext>
+						</p7t-editable-media>
 					</div>
 					<div class='field'>
 						<span class='caption'>Auto-include</span>

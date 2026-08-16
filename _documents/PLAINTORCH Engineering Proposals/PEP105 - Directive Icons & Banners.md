@@ -3,6 +3,7 @@ status: implemented
 patches:
   - Patch105.1 - Vault Media Subsystem
   - Patch105.2 - Directive Icons & Banners
+  - Patch105.3 - Editable Media & the Media Domain
 assignee: Soraya 🧙‍♀️
 ---
 # Patches
@@ -40,3 +41,25 @@ A shared `DirectiveBanner` base drives both directive banners: it renders the di
 - **Monofile assets.** `VaultMediaService` composes a self asset folder for both storage shapes, but only the folder-backed directive path is exercised today; the monofile layout awaits its first consumer.
 - **Freeform placement.** A directive may live anywhere (`Freeform`), yet its self asset folder is composed from its canonical location — the same root cause as the unresolved directive→note association. A directive relocated away from canonical would look for its self assets in the wrong place; closing this rides on the registry/shape-strategy refactor.
 - **Transport.** Uploads travel as Base64 over the loopback transport, which carries JSON only; the 8 MB cap keeps that honest until a media surface needs something larger.
+
+## Patch105.3 - Editable Media & the Media Domain
+Patch105.2 gave a directive an icon and a banner, but folded two concerns into one call: the endpoint that *set the field* also *stored the file*. That is a domain violation — an icon or a banner can be anything media supports, so wiring the field straight to an upload endpoint conflates selecting a key with storing bytes. This patch splits them. A **media domain** owns storing and listing assets and hands back a key; every field only ever references a key; and a reusable **editable media control** walks a viewer through both steps as one gesture. It also brings custom media to its first inline editors — a timeframe's icon and the directive banner itself.
+
+### Upload and selection are two calls now
+- **Selection stays with the field.** The directive icon/banner API is reference-or-clear only: `DirectiveIconRequest` / `DirectiveBannerRequest` lose `upload` and `vault`, and `ApplyMediaChangeAsync` no longer stores anything — it sets a key or clears, still archiving an orphaned self (`media:`) image. The SDK's `uploadIcon` / `uploadBanner` are gone; `setIconReference` / `setIconGlyph` / `clearIcon` (and banner peers) remain. A field holds any key media supports — a glyph, a lucide name, a `media:` or `vault:` file — and knows nothing about how that file came to exist.
+- **Storing is the media domain.** `IMediaApi` / `MediaApiService` / `MediaModule` serve `/api/media`: `POST /api/media/vault` and `POST /api/media/entity/{entityType}/{entityId}` decode the upload, store it through the same `VaultMediaService` (write-barrier, graveyard, size and extension guards), and return a `MediaStoreResult` key; the `GET` peers list an asset folder. An entity's self folder resolves through a new shared `MediaAssetFolderResolver` — the composition lifted out of `DirectiveApiService` so the media domain's upload and the directive's own orphan-archival draw on one resolver rather than two copies. On the client a `core.media` SDK (`uploadVault` / `listVault` / `uploadEntity` / `listEntity`) carries the Base64 encoding that moved off the directives SDK.
+
+### The media component
+Three plugin components under `obsidian/components/media`, reusable by any media field:
+- **`p7t-media`** — a display that resolves a `MediaReference` (or a raw key) to a custom image, a glyph, or the caller's default-when-empty. An `icon` flag constrains it to a contained square; without it a custom picture *covers* its frame, which is what a banner wants. A `vault:` key previews instantly off its deterministic `_assets` path, before the core round-trips a resolved companion back.
+- **`SelectMediaModal`** — one suggest box, four modes read off its text. The empty root offers **entity media** (`media:`), **vault media** (`vault:`), an **icon** search, and **remove**; typing a `media:` / `vault:` scheme browses that folder with **upload** always first; anything else searches the Pleiades and lucide icon catalogs, lucide hits keeping their `lucide:` scheme in both results and query. Uploads and listings go through `core.media`. Navigation rows re-drive the box in a new mode *without closing* (an overridden `selectSuggestion`); a terminal row resolves to a key, to `null` to clear, or the modal rejects on dismissal. The catalog is real — Pleiades glyphs from the bundled asset index, and every Obsidian-bundled lucide icon via `getIconIds()`, rewritten from Obsidian's `lucide-` id form to the `lucide:` scheme `p7t-icon` expects.
+- **`p7t-editable-media`** — the media member of the editable family (beside the text, orbit, and time editables): it shows the field through `p7t-media`, opens the modal on click, and emits the chosen key (the empty string for cleared) through the editable `change`, leaving the field's owner to persist it. An optional `entity` ref enables the entity-media option; a field whose entity keeps no self folder simply omits it.
+
+### First editors
+- **Timeframe icon** — the lunar directive editor (PEP100 Patch100.1) edits it through `p7t-editable-media` in place of a raw-key text field. A timeframe keeps no self asset folder, so the picker offers vault media, icons, and removal — most often a bundled glyph.
+- **Directive banner** — `DirectiveBanner`'s icon and header are now `p7t-editable-media`: clicking the icon (a contained square) or the banner (a covering strip, showing a dashed "add banner" affordance while empty) opens the picker, and the chosen key is referenced onto the field — the two-step flow, made inline. A new overridable `iconTemplate` on `EntityBanner` lets a banner swap its display-only icon for an editable one; the old set/change/clear buttons are gone.
+
+### Superseding & still open
+- This supersedes Patch105.2's directive **upload** path: those endpoints and SDK helpers are removed, and its "the core owns every write, including the upload" now reads as a split — the media domain owns the write, the field owns the reference. The migrated `VaultMediaTests` exercise both steps end to end (media upload → directive reference).
+- Entity-level self folders resolve for directives only; another entity gaining `[Media]` self media adds a branch to `MediaAssetFolderResolver`. Timeframes deliberately have none.
+- The picker previews a vault asset inline but a self asset by name, and has no thumbnail grid — a richer browse is a later pass.
