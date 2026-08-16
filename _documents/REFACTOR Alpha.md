@@ -55,7 +55,7 @@ the mode-policy service split (`VaultStorageModePolicyRouter`), which phase 4 no
 | 0 | `VaultEntityModelCatalog` — declarative entity registry + activation validation | ✅ |
 | 1 | `VaultEntityGateway` — retire `typeof`/DbSet dispatch, generic snapshots, known-id loaders | ✅ |
 | 2 | Storage shape strategies — collapse `MarkdownFileLocator` / path composition per-type code | 🚧 |
-| 3 | Polymorphic family descriptor — first-class TPH families; registry-generated path-sync models | ⏳ |
+| 3 | Polymorphic family descriptor — first-class TPH families; registry-generated path-sync models | 🚧 |
 | 4 | Storage-mode policy objects — consolidate Freeform/Implicit/Synced/… conditionals | ⏳ |
 | 5 | API kit — policy-derived actions (begin-boundary, init-from-file) + optional generic CRUD | ⏳ |
 | P1 | Retire the base `A{S:6}` directive declaration | 🅿️ |
@@ -163,7 +163,22 @@ association falls out naturally (including lunar directives under `Moonlight`). 
 **Risk.** Highest of all phases — path composition feeds watcher reconciliation, rename/relocation, and the
 graveyard. Mitigation: goldens first; behaviour-preserving refactor; no policy changes smuggled in.
 
-## Phase 3 — Polymorphic family descriptor ⏳
+## Phase 3 — Polymorphic family descriptor 🚧
+
+**Landed (2026-08-16) — first-class families + family-aware discovery.** `VaultEntityModelCatalog` now models
+TPH families first-class: `VaultEntityFamily` (anchor + concrete members), with `GetFamilies` / `TryGetFamily` /
+`GetFamilyAnchor` / `IsFamilyMember`. Anchors are derived from the concrete members' inheritance (an abstract base
+shared by *some but not all* members), so `Incentive` — which declares no entity attributes of its own and is not
+a catalog model — still anchors its family. First consumer thinned: discovery's hand-kept `IsDirectiveEntityTypeName`
+name-list is gone, replaced by `catalog.IsFamilyMember(typeof(Directive), name)` (behaviour-preserving). Covered by
+`EntityModelCatalogTests` (both families enumerated, anchor round-trip, membership-by-name).
+
+**Note on the phase-2 boundary.** Phase 2's forward path composition (the shape-strategy composer) is the landed
+core. Its *remaining* concerns — path→identity (reverse) composition and candidate enumeration — turned out to be
+entangled with the path-sync catalog (phase 3) and the watcher path policy (phase 4): the reverse `Apply*CompositionFromPath`
+helpers depend on filesystem-scanning `TryGetContaining*Id` resolvers spread across `MarkdownFileLocator`,
+`VaultPathSyncModelCatalog`, and `VaultWatcherPathPolicy`. So rather than force a standalone "phase 2 completion",
+they are addressed here (registry-projected path-sync models) and in phase 4 (path policy), where they belong.
 
 **Problem.** TPH families (directive: `Directive` ⊃ `StellarDirective`/`LunarDirective`; incentive:
 `Incentive` ⊃ `Objective`/`Fate`/`Decree`) are implicit: family knowledge is re-derived at each consumer

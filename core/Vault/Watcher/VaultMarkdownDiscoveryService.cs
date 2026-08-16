@@ -25,7 +25,8 @@ public sealed class VaultMarkdownDiscoveryService(
 	VaultImplicitBoundaryService implicitBoundaryService,
 	VaultSyncDecisionService decisionService,
 	PuckCreationService puckCreationService,
-	PuckEntityResolutionService puckEntityResolutionService)
+	PuckEntityResolutionService puckEntityResolutionService,
+	VaultEntityModelCatalog entityModelCatalog)
 {
 	/// <summary>
 	/// Scans all catalog-backed markdown paths and produces sync candidates.
@@ -291,7 +292,7 @@ public sealed class VaultMarkdownDiscoveryService(
 			if (!string.IsNullOrWhiteSpace(pathId) && !knownIds.Contains(pathId))
 			{
 				var resolved = await puckEntityResolutionService.ResolveAsync(pathId, cancellationToken);
-				if (resolved.Exists && !IsDirectiveEntityTypeName(resolved.EntityType))
+				if (resolved.Exists && !entityModelCatalog.IsFamilyMember(typeof(Directive), resolved.EntityType))
 				{
 					return null;
 				}
@@ -493,17 +494,6 @@ public sealed class VaultMarkdownDiscoveryService(
 
 		return (IReadOnlyList<MarkdownValidationIssue>)(issuesProperty.GetValue(result)
 			?? Array.Empty<MarkdownValidationIssue>());
-	}
-
-	/// <summary>
-	/// Determines whether a resolved entity type name belongs to the directive family (the abstract base or either
-	/// stellar/lunar sibling), used to gate freeform directive identity collisions (PEP100).
-	/// </summary>
-	private static bool IsDirectiveEntityTypeName(string? entityTypeName)
-	{
-		return string.Equals(entityTypeName, nameof(Directive), StringComparison.Ordinal)
-			|| string.Equals(entityTypeName, nameof(StellarDirective), StringComparison.Ordinal)
-			|| string.Equals(entityTypeName, nameof(LunarDirective), StringComparison.Ordinal);
 	}
 
 	/// <summary>

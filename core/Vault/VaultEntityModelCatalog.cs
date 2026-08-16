@@ -28,6 +28,15 @@ public sealed record VaultEntityModel(
 	Type? StorageDeclaringType);
 
 /// <summary>
+/// A discriminated (table-per-hierarchy) entity family: an abstract anchor type and its concrete member entities
+/// (PEP100's directive and incentive families). Modelling families first-class lets consumers derive family
+/// knowledge from the catalog instead of re-encoding it as hand-kept type-name lists or per-consumer switches.
+/// </summary>
+/// <param name="Anchor">The abstract anchor type the family discriminates over.</param>
+/// <param name="Members">The concrete member entities of the family.</param>
+public sealed record VaultEntityFamily(Type Anchor, IReadOnlyList<VaultEntityModel> Members);
+
+/// <summary>
 /// Reflects every application entity that participates in PUCK identity or vault storage into one queryable
 /// catalog, so services resolve model facts from declarations instead of hardcoding per-type knowledge.
 /// </summary>
@@ -40,6 +49,7 @@ public sealed class VaultEntityModelCatalog
 {
 	private readonly Lazy<IReadOnlyList<VaultEntityModel>> _models = new(BuildModels);
 	private readonly Lazy<IReadOnlyDictionary<Type, VaultEntityModel>> _modelsByType;
+	private readonly Lazy<IReadOnlyList<VaultEntityFamily>> _families;
 
 	/// <summary>
 	/// Initializes the catalog.
@@ -48,6 +58,7 @@ public sealed class VaultEntityModelCatalog
 	{
 		_modelsByType = new Lazy<IReadOnlyDictionary<Type, VaultEntityModel>>(
 			() => _models.Value.ToDictionary(model => model.EntityType));
+		_families = new Lazy<IReadOnlyList<VaultEntityFamily>>(BuildFamilies);
 	}
 
 	/// <summary>
@@ -74,6 +85,54 @@ public sealed class VaultEntityModelCatalog
 		return TryGet(entityType, out var model) && model is not null
 			? model
 			: throw new InvalidOperationException($"Type '{entityType.Name}' declares no PUCK identity or vault storage and is not part of the entity model catalog.");
+	}
+
+	/// <summary>
+	/// Gets every declared discriminated entity family (abstract anchor + concrete members).
+	/// </summary>
+	public IReadOnlyList<VaultEntityFamily> GetFamilies() => _families.Value;
+
+	/// <summary>
+	/// Tries to get the family anchored by an abstract type.
+	/// </summary>
+	public bool TryGetFamily(Type anchorType, out VaultEntityFamily? family)
+	{
+		ArgumentNullException.ThrowIfNull(anchorType);
+		family = _families.Value.FirstOrDefault(candidate => candidate.Anchor == anchorType);
+		return family is not null;
+	}
+
+	/// <summary>
+	/// Gets the abstract anchor of the family a concrete member belongs to, or <see langword="null"/> when the type
+	/// is not a concrete member of a declared family.
+	/// </summary>
+	public Type? GetFamilyAnchor(Type memberType)
+	{
+		ArgumentNullException.ThrowIfNull(memberType);
+		return _families.Value
+			.FirstOrDefault(family => family.Members.Any(member => member.EntityType == memberType))
+			?.Anchor;
+	}
+
+	/// <summary>
+	/// Determines whether an entity type name is the anchor or a concrete member of the family anchored by
+	/// <paramref name="anchorType"/>. Replaces hand-kept per-family type-name lists with a catalog query.
+	/// </summary>
+	public bool IsFamilyMember(Type anchorType, string? entityTypeName)
+	{
+		ArgumentNullException.ThrowIfNull(anchorType);
+		if (string.IsNullOrWhiteSpace(entityTypeName))
+		{
+			return false;
+		}
+
+		if (string.Equals(entityTypeName, anchorType.Name, StringComparison.Ordinal))
+		{
+			return true;
+		}
+
+		return TryGetFamily(anchorType, out var family)
+			&& family!.Members.Any(member => string.Equals(member.EntityType.Name, entityTypeName, StringComparison.Ordinal));
 	}
 
 	/// <summary>
@@ -155,6 +214,38 @@ public sealed class VaultEntityModelCatalog
 					declaringType);
 			})
 			.ToArray();
+	}
+
+	private IReadOnlyList<VaultEntityFamily> BuildFamilies()
+	{
+		var concrete = _models.Value.Where(model => !model.IsAbstract).ToList();
+
+		// A family anchor is an abstract base shared by *some but not all* concrete members. Requiring "not all"
+		// drops the common entity root (PuckNamedEntity), leaving the real discriminated hierarchies (Directive,
+		// Incentive) whether or not the anchor itself declares entity attributes — Incentive, for instance, carries
+		// none and so is not a catalog model in its own right.
+		return concrete
+			.SelectMany(member => AbstractBaseTypes(member.EntityType))
+			.Distinct()
+			.Where(anchor =>
+				concrete.Any(member => member.EntityType != anchor && anchor.IsAssignableFrom(member.EntityType))
+				&& !concrete.All(member => anchor.IsAssignableFrom(member.EntityType)))
+			.Select(anchor => new VaultEntityFamily(
+				anchor,
+				concrete.Where(member => anchor.IsAssignableFrom(member.EntityType)).ToList()))
+			.OrderBy(family => family.Anchor.Name, StringComparer.Ordinal)
+			.ToList();
+	}
+
+	private static IEnumerable<Type> AbstractBaseTypes(Type type)
+	{
+		for (var current = type.BaseType; current is not null; current = current.BaseType)
+		{
+			if (current.IsAbstract)
+			{
+				yield return current;
+			}
+		}
 	}
 
 	private static (VaultStorageAttribute? Storage, Type? DeclaringType) ResolveEffectiveStorage(Type entityType)

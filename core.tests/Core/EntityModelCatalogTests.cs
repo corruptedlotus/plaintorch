@@ -59,6 +59,35 @@ public sealed class EntityModelCatalogTests : VaultTestBase
 	}
 
 	[Fact]
+	public void Families_model_the_tph_hierarchies_first_class()
+	{
+		var catalog = Vault.GetSingleton<VaultEntityModelCatalog>();
+
+		Assert.True(catalog.TryGetFamily(typeof(Directive), out var directiveFamily));
+		Assert.Equal(
+			new[] { typeof(LunarDirective), typeof(StellarDirective) },
+			directiveFamily!.Members.Select(member => member.EntityType).OrderBy(type => type.Name).ToArray());
+
+		// Incentive anchors its family even though it declares no entity attributes of its own.
+		Assert.True(catalog.TryGetFamily(typeof(Incentive), out var incentiveFamily));
+		Assert.Equal(
+			new[] { typeof(Decree), typeof(Fate), typeof(Objective) },
+			incentiveFamily!.Members.Select(member => member.EntityType).OrderBy(type => type.Name).ToArray());
+
+		// A concrete member resolves back to its anchor; a standalone entity has none.
+		Assert.Equal(typeof(Directive), catalog.GetFamilyAnchor(typeof(StellarDirective)));
+		Assert.Equal(typeof(Incentive), catalog.GetFamilyAnchor(typeof(Fate)));
+		Assert.Null(catalog.GetFamilyAnchor(typeof(OnrushSprint)));
+
+		// Family membership by name replaces the old hand-kept directive name-list.
+		Assert.True(catalog.IsFamilyMember(typeof(Directive), nameof(Directive)));
+		Assert.True(catalog.IsFamilyMember(typeof(Directive), nameof(StellarDirective)));
+		Assert.True(catalog.IsFamilyMember(typeof(Directive), nameof(LunarDirective)));
+		Assert.False(catalog.IsFamilyMember(typeof(Directive), nameof(Objective)));
+		Assert.False(catalog.IsFamilyMember(typeof(Directive), null));
+	}
+
+	[Fact]
 	public async Task Validation_accepts_the_current_application_model()
 	{
 		var catalog = Vault.GetSingleton<VaultEntityModelCatalog>();
