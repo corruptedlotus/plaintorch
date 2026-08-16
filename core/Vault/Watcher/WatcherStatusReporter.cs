@@ -1,4 +1,5 @@
 using Pleiades.Diagnostics;
+using Pleiades.Vault.Markdown;
 
 namespace Pleiades.Vault.Watcher;
 
@@ -124,42 +125,17 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 
 	private static string ClassifyOperationalFailure(Exception exception, string fallbackReason)
 	{
-		if (exception is UnauthorizedAccessException)
-		{
-			return WatcherOperations.PermissionDenied;
-		}
-
-		if (IsFileInUse(exception))
-		{
-			return WatcherOperations.FileInUse;
-		}
-
-		if (IsMarkdownValidationFailure(exception))
+		if (exception is MarkdownDeserializationException)
 		{
 			return WatcherOperations.MarkdownInvalid;
 		}
 
-		return fallbackReason;
-	}
-
-	private static bool IsFileInUse(Exception exception)
-	{
-		if (exception is not IOException ioException)
+		return VaultFileAccessException.TryClassify(exception) switch
 		{
-			return false;
-		}
-
-		return ioException.Message.Contains("being used by another process", StringComparison.OrdinalIgnoreCase)
-			|| ioException.Message.Contains("process cannot access the file", StringComparison.OrdinalIgnoreCase)
-			|| ioException.Message.Contains("file is being used", StringComparison.OrdinalIgnoreCase);
-	}
-
-	private static bool IsMarkdownValidationFailure(Exception exception)
-	{
-		return exception is InvalidOperationException
-			&& (exception.Message.Contains("deserialize markdown", StringComparison.OrdinalIgnoreCase)
-				|| exception.Message.Contains("frontmatter", StringComparison.OrdinalIgnoreCase)
-				|| exception.Message.Contains("issues", StringComparison.OrdinalIgnoreCase));
+			VaultFileAccessKind.PermissionDenied => WatcherOperations.PermissionDenied,
+			VaultFileAccessKind.InUse => WatcherOperations.FileInUse,
+			_ => fallbackReason,
+		};
 	}
 
 	private static bool HasPuckViolation(VaultSyncCandidate candidate)

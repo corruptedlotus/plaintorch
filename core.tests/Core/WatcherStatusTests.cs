@@ -63,14 +63,43 @@ public sealed class WatcherStatusTests : VaultTestBase
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
+		// A sharing-violation IOException (classified by HResult, not message text).
 		watcher.ReportSyncFailure(
 			Candidate("Objectives/Locked.md"),
-			new IOException("The process cannot access the file because it is being used by another process."));
+			new IOException("locked", unchecked((int)0x80070020)));
 
 		var status = Assert.Single(registry.GetActiveStatuses());
 		Assert.Equal(WatcherOperations.FileInUse, status.ReasonCode);
 		Assert.Equal(OperationSeverity.Suspended, status.Severity);
 		Assert.Equal(OperationHealth.Suspended, registry.GetHealth());
+	}
+
+	[Fact]
+	public void Typed_permission_failure_maps_to_permission_denied()
+	{
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		watcher.ReportInspectFailure(
+			Vault.AbsolutePath("Objectives/Denied.md"),
+			new VaultFileAccessException(VaultFileAccessKind.PermissionDenied, "Objectives/Denied.md", new UnauthorizedAccessException()));
+
+		var status = Assert.Single(registry.GetActiveStatuses());
+		Assert.Equal(WatcherOperations.PermissionDenied, status.ReasonCode);
+		Assert.Equal(OperationSeverity.Error, status.Severity);
+	}
+
+	[Fact]
+	public void Hard_deserialization_failure_maps_to_markdown_invalid_by_type()
+	{
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		watcher.ReportInspectFailure(
+			Vault.AbsolutePath("Objectives/Broken.md"),
+			new MarkdownDeserializationException("Failed to deserialize markdown into 'Objective'."));
+
+		Assert.Equal(WatcherOperations.MarkdownInvalid, Assert.Single(registry.GetActiveStatuses()).ReasonCode);
 	}
 
 	[Fact]

@@ -221,7 +221,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		var fullPath = Path.GetFullPath(resolvedPath);
 		var fileExists = File.Exists(fullPath);
 		var markdown = fileExists
-			? await File.ReadAllTextAsync(fullPath, cancellationToken)
+			? await VaultFileAccess.ReadAllTextAsync(fullPath, cancellationToken)
 			: string.Empty;
 		if (enforceModelBelongingPolicy
 			&& !await policyEngine.BelongsToModelAsync(model, fullPath, markdown, cancellationToken))
@@ -486,10 +486,10 @@ public sealed class VaultMarkdownDiscoveryService(
 
 		var closed = method.MakeGenericMethod(modelType);
 		var result = closed.Invoke(markdownSerializer, [markdown, model])
-			?? throw new InvalidOperationException($"Failed to deserialize markdown into '{modelType.Name}'.");
+			?? throw new MarkdownDeserializationException($"Failed to deserialize markdown into '{modelType.Name}'.");
 
 		var issuesProperty = result.GetType().GetProperty(nameof(MarkdownDeserializationResult<object>.Issues))
-			?? throw new InvalidOperationException($"Deserialization result for '{modelType.Name}' does not expose issues.");
+			?? throw new MarkdownDeserializationException($"Deserialization result for '{modelType.Name}' does not expose issues.");
 
 		return (IReadOnlyList<MarkdownValidationIssue>)(issuesProperty.GetValue(result)
 			?? Array.Empty<MarkdownValidationIssue>());

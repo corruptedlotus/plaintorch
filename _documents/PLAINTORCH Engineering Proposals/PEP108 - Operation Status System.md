@@ -119,8 +119,12 @@ is building. None of REFACTOR Alpha *blocks* the core (it is new, additive code)
   now surfaces as a first-class **suspension** (`standby` health) rather than a non-critical issue that left
   health `ok`. The exception/candidate classification heuristics are carried over unchanged, to be removed in C/D.
   The instrumentation is now unit-testable (it was only reachable through the live background service before).
-- **Phase C — Typed failures.** Replace exception-message sniffing with typed outcomes from the discovery/sync
-  services; validation issues (`candidate.Issues`) become checks directly.
+- **Phase C ✅ — Typed failures.** Exception-message sniffing is gone: a hard markdown failure throws a typed
+  `MarkdownDeserializationException`, and file-access failures are classified structurally by
+  `VaultFileAccessException.TryClassify` (exception type + OS error code / HResult, not English text), with the
+  inspect read routed through `VaultFileAccess.ReadAllTextAsync` so its failures are typed at the boundary.
+  Validation issues (`candidate.Issues`) were already checks directly. (The `SuggestedReason` PUCK/policy
+  heuristics remain — they belong to phase D.)
 - **Phase D — Structured policy outcomes.** Co-lands with REFACTOR Alpha Phase 4: the mode-policy `Decide`
   returns structured checks; the watcher's policy report is built from them.
 - **Phase E — API + frontend.** Generalise `WatcherIssueReport` to an operation-status contract (severity,
