@@ -1,4 +1,5 @@
 using System.Reflection;
+using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Saga;
 
@@ -75,6 +76,57 @@ public sealed class VaultStoragePathComposer
 	{
 		ArgumentNullException.ThrowIfNull(entity);
 		return ResolveStrategy(entity.GetType()).GetOwnDirectory(this, entity, immediateParent);
+	}
+
+	/// <summary>
+	/// Applies path-derived identity and parent relation to a freshly-constructed entity — the reverse of
+	/// <see cref="GetFilePath(object, object?)"/>. Identity is parsed loosely from the path (its filename token, or
+	/// lore-segment composition); the parent relation is set from the entity's declared parent policy, delegating
+	/// the containing-owner resolution to the existing path helpers.
+	/// </summary>
+	/// <remarks>
+	/// The containing-owner resolvers are genuinely per-parent-type filesystem scans (currently triplicated across
+	/// <see cref="MarkdownFileLocator"/>, the path-sync catalog, and the watcher path policy). The composer selects
+	/// one by the declared parent type and stays behaviour-preserving; consolidating them is REFACTOR Alpha phase 4.
+	/// </remarks>
+	public void ApplyCompositionFromPath(object entity, string path)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+		if (entity is LorePage lorePage)
+		{
+			MarkdownFileLocator.ApplyLorePageCompositionFromPath(lorePage, path, Layout.VaultRoot, Layout.SagaRoot);
+			return;
+		}
+
+		if (entity is IPuckNamedEntity named)
+		{
+			MarkdownFileLocator.ApplyLoosePuckIdentityFromPath(named, path);
+			ApplyParentFromPath(entity, path);
+		}
+	}
+
+	private void ApplyParentFromPath(object entity, string path)
+	{
+		var storage = GetStorage(entity.GetType());
+		if (string.IsNullOrWhiteSpace(storage.ParentIdProperty) || storage.ParentEntityType is null)
+		{
+			return;
+		}
+
+		var parentId = storage.ParentEntityType == typeof(OnrushSprint)
+			? MarkdownFileLocator.TryGetContainingOnrushSprintId(path)
+			: storage.ParentEntityType == typeof(Directive)
+				? MarkdownFileLocator.TryGetContainingDirectiveId(path, skipCurrentIfSelfNamed: storage.Shape == VaultStorageShape.SelfNamedDirectory)
+				: null;
+
+		if (!string.IsNullOrWhiteSpace(parentId))
+		{
+			entity.GetType()
+				.GetProperty(storage.ParentIdProperty, BindingFlags.Public | BindingFlags.Instance)
+				?.SetValue(entity, parentId);
+		}
 	}
 
 	/// <summary>

@@ -72,6 +72,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<PuckIdService>();
 		services.AddSingleton<PolarisCycleLifecycle>();
 		services.AddSingleton<MarkdownFrontMatterSerializer>();
+		services.AddSingleton<VaultStoragePathComposer>();
 		services.AddSingleton<MarkdownFileLocator>();
 		services.AddSingleton<VaultPathSyncModelCatalog>();
 		services.AddSingleton<VaultWatcherPathPolicy>();

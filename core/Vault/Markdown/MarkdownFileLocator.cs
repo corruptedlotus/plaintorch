@@ -9,9 +9,9 @@ namespace Pleiades.Vault.Markdown;
 /// <summary>
 /// Resolves canonical markdown file paths for vault-backed entities.
 /// </summary>
-public sealed class MarkdownFileLocator(VaultLayout layout, VaultEntityModelCatalog catalog)
+public sealed class MarkdownFileLocator(VaultStoragePathComposer composer)
 {
-	private readonly VaultStoragePathComposer _composer = new(layout, catalog);
+	private readonly VaultStoragePathComposer _composer = composer;
 
 	/// <summary>
 	/// Determines whether a type has explicit vault file backing.
@@ -199,49 +199,6 @@ public sealed class MarkdownFileLocator(VaultLayout layout, VaultEntityModelCata
 		}
 
 		entity.Title = title;
-	}
-
-	/// <summary>
-	/// Derives directive identity and parent relation from a canonical markdown path.
-	/// </summary>
-	public static void ApplyDirectiveCompositionFromPath(Directive directive, string path)
-	{
-		ArgumentNullException.ThrowIfNull(directive);
-		ApplyLoosePuckIdentityFromPath(directive, path);
-		directive.ParentDirectiveId = TryGetContainingDirectiveId(Path.GetDirectoryName(path), skipCurrentIfSelfNamed: true);
-	}
-
-	/// <summary>
-	/// Derives objective identity and owning directive relation from a canonical markdown path.
-	/// </summary>
-	public static void ApplyObjectiveCompositionFromPath(Objective objective, string path)
-	{
-		ApplyIncentiveCompositionFromPath(objective, path);
-	}
-
-	/// <summary>
-	/// Derives incentive identity and owning directive relation from a canonical markdown path.
-	/// Applies to all incentive kinds: objectives and the fate/decree declaratives (PEP100).
-	/// </summary>
-	public static void ApplyIncentiveCompositionFromPath(Incentive incentive, string path)
-	{
-		ArgumentNullException.ThrowIfNull(incentive);
-		ApplyLoosePuckIdentityFromPath(incentive, path);
-		incentive.DirectiveId = TryGetContainingDirectiveId(path, skipCurrentIfSelfNamed: false);
-	}
-
-	/// <summary>
-	/// Derives executive order identity and owning onrush sprint relation from a canonical markdown path.
-	/// </summary>
-	public static void ApplyExecutiveOrderCompositionFromPath(ExecutiveOrder order, string path)
-	{
-		ArgumentNullException.ThrowIfNull(order);
-		ApplyLoosePuckIdentityFromPath(order, path);
-		var containingSprintId = TryGetContainingOnrushSprintId(path);
-		if (!string.IsNullOrWhiteSpace(containingSprintId))
-		{
-			order.OnrushSprintId = containingSprintId;
-		}
 	}
 
 	/// <summary>

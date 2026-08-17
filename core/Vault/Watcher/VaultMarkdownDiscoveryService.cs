@@ -26,7 +26,8 @@ public sealed class VaultMarkdownDiscoveryService(
 	VaultSyncDecisionService decisionService,
 	PuckCreationService puckCreationService,
 	PuckEntityResolutionService puckEntityResolutionService,
-	VaultEntityModelCatalog entityModelCatalog)
+	VaultEntityModelCatalog entityModelCatalog,
+	VaultStoragePathComposer pathComposer)
 {
 	/// <summary>
 	/// Scans all catalog-backed markdown paths and produces sync candidates.
@@ -507,25 +508,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		var model = Activator.CreateInstance(entityType)
 			?? throw new InvalidOperationException($"Could not construct path-backed model '{entityType.Name}'.");
 
-		switch (model)
-		{
-			case Directive directive:
-				MarkdownFileLocator.ApplyDirectiveCompositionFromPath(directive, path);
-				break;
-			case Incentive incentive:
-				MarkdownFileLocator.ApplyIncentiveCompositionFromPath(incentive, path);
-				break;
-			case ExecutiveOrder order:
-				MarkdownFileLocator.ApplyExecutiveOrderCompositionFromPath(order, path);
-				break;
-			case LorePage lorePage:
-				MarkdownFileLocator.ApplyLorePageCompositionFromPath(lorePage, path, layout.VaultRoot, layout.SagaRoot);
-				break;
-			case IPuckNamedEntity namedEntity:
-				MarkdownFileLocator.ApplyLoosePuckIdentityFromPath(namedEntity, path);
-				break;
-		}
-
+		pathComposer.ApplyCompositionFromPath(model, path);
 		return model;
 	}
 
