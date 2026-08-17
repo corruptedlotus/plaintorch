@@ -553,6 +553,20 @@ public sealed record DependencyLockView(
 	IReadOnlyList<Dependency> Unsatisfied);
 
 /// <summary>
+/// A candidate endpoint for a dependency, kind-tagged so a picker can tell one from another (PEP102). A
+/// lightweight projection — id, title, and kind — over the entity kinds that may participate in a dependency:
+/// stellar directives, objectives, and fates. Lunar directives, decrees, and Polaris-level records are not
+/// endpoints and never appear here.
+/// </summary>
+/// <param name="Kind">Which endpoint kind this candidate is.</param>
+/// <param name="Id">The candidate's PUCK id.</param>
+/// <param name="Title">The candidate's title.</param>
+public sealed record EndpointHit(
+	DependencyEndpointKind Kind,
+	string Id,
+	string Title);
+
+/// <summary>
 /// Represents a timeframe together with a summary of the lunar directive that defines it, used by the global
 /// timeframe listing that spans every lunar directive (PEP100).
 /// </summary>

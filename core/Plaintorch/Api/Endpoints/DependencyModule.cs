@@ -30,6 +30,9 @@ public sealed class DependencyModule : Module
 		dependencies.MapGet("/", async (string? entityId, IDependencyApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListAsync(entityId, cancellationToken)));
 
+		dependencies.MapGet("/endpoints", async (string? q, int? take, IDependencyApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.SearchEndpointsAsync(new SearchRequest(q ?? string.Empty, take), cancellationToken)));
+
 		dependencies.MapPost("/", async (CreateDependencyRequest request, IDependencyApi api, CancellationToken cancellationToken) =>
 		{
 			var dependency = await api.CreateAsync(ToRef(request.Source), ToRef(request.Target), request.Trigger, request.Constraint, cancellationToken);

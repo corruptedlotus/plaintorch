@@ -1,4 +1,5 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian"
+import type { CanvasContextMode, DependencyCanvas } from "components"
 
 export const PLAINTORCH_CANVAS_VIEW_TYPE = "plaintorch-dependency-canvas"
 
@@ -10,6 +11,8 @@ export const PLAINTORCH_CANVAS_VIEW_TYPE = "plaintorch-dependency-canvas"
  * view is a shell — two classes and one element — because everything it shows belongs to the component.
  */
 export class PlaintorchCanvasView extends ItemView {
+	private canvas?: DependencyCanvas
+
 	public constructor(leaf: WorkspaceLeaf) {
 		super(leaf)
 	}
@@ -31,10 +34,18 @@ export class PlaintorchCanvasView extends ItemView {
 		// The plugin's own tokens are declared on this class, and inherit from here into every shadow tree.
 		this.contentEl.addClass("plaintorch-root")
 		this.contentEl.addClass("plaintorch-canvas-view")
-		this.contentEl.createEl("p7t-dependency-canvas")
+		this.canvas = this.contentEl.createEl("p7t-dependency-canvas") as DependencyCanvas
+	}
+
+	/** Switches the hosted canvas to a context mode — how the "new global planning" command opens on global. */
+	public setMode(mode: CanvasContextMode): void {
+		if (this.canvas) {
+			this.canvas.mode = mode
+		}
 	}
 
 	public override async onClose(): Promise<void> {
+		this.canvas = undefined
 		this.contentEl.empty()
 	}
 }

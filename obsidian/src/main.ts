@@ -1,9 +1,11 @@
 import { addIcon, Notice, Plugin, type WorkspaceLeaf } from "obsidian"
 import { PlaintorchBriefingView, PLAINTORCH_BRIEFING_VIEW_TYPE } from "./briefing/PlaintorchBriefingView"
 import { PlaintorchCanvasView, PLAINTORCH_CANVAS_VIEW_TYPE } from "./canvas/PlaintorchCanvasView"
+import { PlaintorchGlobalFileView, PLAINTORCH_GLOBAL_VIEW_TYPE } from "./canvas/PlaintorchGlobalFileView"
 import { PageBannerRenderer } from "./banner/PageBannerRenderer"
 
 import 'components'
+import { GLOBAL_CONTEXT_EXTENSION } from "components"
 
 type PlaintorchNodeCoreClient = typeof import("@pleiades/sdk/plaintorch/node").plaintorchNodeCoreClient
 
@@ -55,6 +57,14 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 			(leaf: WorkspaceLeaf) => new PlaintorchCanvasView(leaf)
 		)
 
+		// A saved global planning context is a `.p7tpx` file; binding the extension to its view is what makes
+		// opening one — from the file explorer, a link, anywhere — open it in the canvas.
+		this.registerView(
+			PLAINTORCH_GLOBAL_VIEW_TYPE,
+			(leaf: WorkspaceLeaf) => new PlaintorchGlobalFileView(leaf)
+		)
+		this.registerExtensions([GLOBAL_CONTEXT_EXTENSION], PLAINTORCH_GLOBAL_VIEW_TYPE)
+
 		this.addRibbonIcon("plaintorch", "PLAINTORCH briefing", () => {
 			void this.activateBriefingView()
 		})
@@ -72,6 +82,14 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 			name: "Open PLAINTORCH dependency canvas",
 			callback: () => {
 				void this.activateCanvasView()
+			}
+		})
+
+		this.addCommand({
+			id: "open-plaintorch-global-planning",
+			name: "New global planning (new leaf)",
+			callback: () => {
+				void this.openGlobalPlanning()
 			}
 		})
 
@@ -139,6 +157,29 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 				type: PLAINTORCH_CANVAS_VIEW_TYPE,
 				active: true
 			})
+		}
+
+		workspace.revealLeaf(leaf)
+	}
+
+	/**
+	 * Opens a fresh scratch global planning context in a new leaf.
+	 *
+	 * Always a new leaf, never reused: unlike a saved `.p7tpx`, a scratch context has no identity, so opening
+	 * one is always opening a blank one. It starts unsaved; the canvas's own "Save to file" is how it becomes
+	 * durable.
+	 */
+	private async openGlobalPlanning(): Promise<void> {
+		const workspace = this.app.workspace
+		const leaf = workspace.getLeaf(true)
+		await leaf.setViewState({
+			type: PLAINTORCH_CANVAS_VIEW_TYPE,
+			active: true
+		})
+
+		const view = leaf.view
+		if (view instanceof PlaintorchCanvasView) {
+			view.setMode("global")
 		}
 
 		workspace.revealLeaf(leaf)

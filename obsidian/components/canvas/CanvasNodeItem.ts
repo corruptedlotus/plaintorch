@@ -67,6 +67,12 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 	/** Whether this is a pulled-in blocker rather than a member — drawn faintly, and not removable. */
 	@property({ type: Boolean, reflect: true }) ghostly = false
 
+	/**
+	 * Whether the notch shows the node's *type* icon rather than its status. A global context mixes kinds, so
+	 * telling a directive from an objective from a fate at a glance matters more there than a workflow state.
+	 */
+	@property({ type: Boolean, reflect: true }) typed = false
+
 	/** Whether an edge is being drawn somewhere on the canvas, which is when a node becomes a drop target. */
 	@property({ type: Boolean, reflect: true }) linking = false
 
@@ -253,13 +259,14 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 	}
 
 	/**
-	 * The status icon for an objective, the kind icon for anything else.
+	 * The status icon for an objective, the kind icon for anything else — unless {@link typed}, when every node
+	 * wears its kind icon so the mix of kinds a global context holds reads apart at a glance.
 	 *
 	 * Only an objective carries a workflow the canvas can read off the entity behind an endpoint; a
 	 * checkpoint has no lifecycle at all, and the rest are told apart by what they are.
 	 */
 	protected get notchIcon(): IconName {
-		if (this.kind === DependencyEndpointKind.Objective) {
+		if (!this.typed && this.kind === DependencyEndpointKind.Objective) {
 			const status = (this.entity as { status?: ObjectiveStatus }).status
 			const name = status === undefined ? undefined : ObjectiveStatus[status] as keyof typeof statusDescriptors
 			const icon = name === undefined ? undefined : statusDescriptors[name]?.icon
