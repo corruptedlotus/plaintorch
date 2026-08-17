@@ -20,6 +20,8 @@ views:
       - status
       - assignee
     sort:
+      - property: file.name
+        direction: ASC
       - property: patches
         direction: ASC
     summaries:
