@@ -56,10 +56,10 @@ public sealed class DirectiveInitAndResolutionTests : VaultTestBase
 		Assert.Equal(nameof(StellarDirective), stellarExistence.EntityType);
 		Assert.Equal("stellar-directive", stellarExistence.EntityKind);
 
-		// Known gap (pre-dates the sibling split): entity->note association for directives enumerates through the
-		// path-sync candidate predicate, which deliberately excludes directives from watcher scanning — so no
-		// associated note resolves. Slated for the registry/shape-strategy refactor.
-		Assert.Null(stellarExistence.AssociatedNote);
+		// Freeform directive note association now resolves (REFACTOR Alpha phase 2): the file is located by
+		// enumerating self-named markdown and matched by its frontmatter PUCK, not by path shape — an
+		// identity-driven, non-path-composition interaction.
+		Assert.Equal("Directives/Campaign/Campaign.md", stellarExistence.AssociatedNote);
 
 		var lunarExistence = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<PuckEntityResolutionService>()
@@ -67,6 +67,9 @@ public sealed class DirectiveInitAndResolutionTests : VaultTestBase
 		Assert.True(lunarExistence.Exists);
 		Assert.Equal(nameof(LunarDirective), lunarExistence.EntityType);
 		Assert.Equal("lunar-directive", lunarExistence.EntityKind);
+
+		// The family-anchored directive model resolves lunar notes under Moonlight too.
+		Assert.Equal("Moonlight/Sleep Law/Sleep Law.md", lunarExistence.AssociatedNote);
 	}
 
 	[Fact]

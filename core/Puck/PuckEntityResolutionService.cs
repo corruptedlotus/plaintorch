@@ -17,7 +17,8 @@ public sealed class PuckEntityResolutionService(
 	PuckRuntimeCompilationCatalog compilationCatalog,
 	PuckTokenizer puckTokenizer,
 	VaultPathSyncModelCatalog pathSyncModelCatalog,
-	VaultEntityGateway entityGateway)
+	VaultEntityGateway entityGateway,
+	MarkdownFrontMatterSerializer markdownSerializer)
 {
 	/// <summary>
 	/// Resolves a PUCK identifier into its concrete entity and note association when available.
@@ -105,15 +106,18 @@ public sealed class PuckEntityResolutionService(
 	private string? ResolveAssociatedNotePath(Type entityType, string id)
 	{
 		// A path-sync model may anchor a polymorphic family under an abstract base while composing a concrete
-		// subtype (e.g. the directive model composes StellarDirective), so match either identity.
+		// subtype (e.g. the directive model anchors Directive and composes StellarDirective), so match the concrete
+		// type, the composed instantiation type, or the family anchor — the last resolves lunar directives too.
 		var model = pathSyncModelCatalog.GetModels()
-			.FirstOrDefault(item => item.EntityType == entityType || item.InstantiationType == entityType);
+			.FirstOrDefault(item => item.EntityType == entityType
+				|| item.InstantiationType == entityType
+				|| item.EntityType.IsAssignableFrom(entityType));
 		if (model is null)
 		{
 			return null;
 		}
 
-		foreach (var path in pathSyncModelCatalog.EnumerateCandidateMarkdownPaths(model))
+		foreach (var path in EnumerateResolutionCandidatePaths(model))
 		{
 			if (!PathMatchesIdentity(entityType, path, id))
 			{
@@ -124,6 +128,26 @@ public sealed class PuckEntityResolutionService(
 		}
 
 		return null;
+	}
+
+	/// <summary>
+	/// Enumerates the markdown files a stored entity of this model could occupy, for identity resolution. Freeform
+	/// entities are identity-driven and deliberately excluded from the path-shape scan (their <c>IsCandidatePath</c>
+	/// is <see langword="false"/>), so they are located by enumerating self-named markdown files under the model's
+	/// roots and matching frontmatter identity — a non-path-composition interaction, by design.
+	/// </summary>
+	private IEnumerable<string> EnumerateResolutionCandidatePaths(VaultPathSyncModel model)
+	{
+		if (model.Mode != VaultStorageMode.Freeform)
+		{
+			return pathSyncModelCatalog.EnumerateCandidateMarkdownPaths(model);
+		}
+
+		return model.ScanRoots
+			.Where(Directory.Exists)
+			.SelectMany(root => Directory.EnumerateFiles(root, "*.md", SearchOption.AllDirectories))
+			.Where(MarkdownFileLocator.IsPrimarySelfNamedFile)
+			.Distinct(StringComparer.OrdinalIgnoreCase);
 	}
 
 	private bool PathMatchesIdentity(Type entityType, string path, string id)
@@ -140,7 +164,27 @@ public sealed class PuckEntityResolutionService(
 				&& string.Equals(candidate.Id, id, StringComparison.OrdinalIgnoreCase);
 		}
 
+		// Index storage keeps the PUCK in the filename.
 		var parsed = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(path);
-		return string.Equals(parsed.Id, id, StringComparison.OrdinalIgnoreCase);
+		if (!string.IsNullOrWhiteSpace(parsed.Id) && string.Equals(parsed.Id, id, StringComparison.OrdinalIgnoreCase))
+		{
+			return true;
+		}
+
+		// Quiet/freeform storage keeps the PUCK in frontmatter, not the filename.
+		return FrontMatterPuckMatches(path, id);
+	}
+
+	private bool FrontMatterPuckMatches(string path, string id)
+	{
+		if (!File.Exists(path))
+		{
+			return false;
+		}
+
+		var frontMatter = markdownSerializer.ParseFrontMatter(File.ReadAllText(path));
+		return frontMatter.TryGetValue("puck", out var rawPuck)
+			&& !string.IsNullOrWhiteSpace(rawPuck)
+			&& string.Equals(rawPuck.Trim().Trim('"'), id, StringComparison.OrdinalIgnoreCase);
 	}
 }

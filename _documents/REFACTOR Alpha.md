@@ -54,12 +54,12 @@ the mode-policy service split (`VaultStorageModePolicyRouter`), which phase 4 no
 |---|---|---|
 | 0 | `VaultEntityModelCatalog` — declarative entity registry + activation validation | ✅ |
 | 1 | `VaultEntityGateway` — retire `typeof`/DbSet dispatch, generic snapshots, known-id loaders | ✅ |
-| 2 | Storage shape strategies — collapse `MarkdownFileLocator` / path composition per-type code | 🚧 |
+| 2 | Storage shape strategies — collapse `MarkdownFileLocator` / path composition per-type code | ✅ (candidate-enumeration folds into 3) |
 | 3 | Polymorphic family descriptor — first-class TPH families; registry-generated path-sync models | 🚧 |
 | 4 | Storage-mode policy objects — consolidate Freeform/Implicit/Synced/… conditionals | ⏳ |
 | 5 | API kit — policy-derived actions (begin-boundary, init-from-file) + optional generic CRUD | ⏳ |
 | P1 | Retire the base `A{S:6}` directive declaration | 🅿️ |
-| P2 | Entity→note association for directives | 🅿️ (folds into phase 2) |
+| P2 | Entity→note association for directives | ✅ (phase 2) |
 | P3 | Lunar directive file auto-discovery | 🅿️ (folds into phase 3) |
 
 ---
@@ -107,7 +107,7 @@ carrying the regression load.
 
 ---
 
-## Phase 2 — Storage shape strategies 🚧
+## Phase 2 — Storage shape strategies ✅
 
 **Landed (2026-08-10) — forward path composition.** `VaultStoragePathComposer` + `IVaultStorageStrategy`
 (`SelfNamedDirectoryStorageStrategy`, `SingleFileStorageStrategy`) now compose canonical paths from declared
@@ -123,11 +123,23 @@ placement — a genuine per-model hook, not a switch arm. This also retires the 
 (every entity × shape × PuckStorage form × parent nesting × partition), landed green *before* the refactor and
 still green after; full suite 115/115.
 
-**Remaining in phase 2.** Reverse composition (`Apply*CompositionFromPath` + `VaultMarkdownDiscoveryService.
-CreatePathComposedModel`'s type switch → strategy "path→identity composition") and candidate enumeration
-(the `IsCandidatePath` predicates → strategy "candidate enumeration"), the latter unlocking the P2
-note-association flip below. These carry the observable-behaviour change (directive `AssociatedNote` starts
-resolving) and stay a separate, operator-visible slice.
+**Landed (2026-08-16) — reverse composition + P2 note-association.** The `Apply*CompositionFromPath` helpers and
+`VaultMarkdownDiscoveryService.CreatePathComposedModel`'s type switch are gone: the composer owns
+`ApplyCompositionFromPath(entity, path)` (loose identity from the filename / lore segments; parent relation from
+the declared `ParentEntityType`). Per the operator's call, the containing-owner resolution *delegates* to the
+existing `MarkdownFileLocator.TryGetContaining*Id` helpers — consolidating the three duplicate resolvers
+(`MarkdownFileLocator` / catalog / `VaultWatcherPathPolicy`) is phase 4. The composer is now a DI singleton
+shared by `MarkdownFileLocator` and discovery. **P2 note-association is fixed**: it was broken for *all* Quiet
+entities (the matcher read the filename PUCK, but Quiet/freeform keep it in frontmatter), and freeform directives
+were additionally not enumerable. `PuckEntityResolutionService` now matches by frontmatter PUCK, anchors the
+family model (lunar notes resolve too), and — per the operator's "derive from mode" call — enumerates freeform
+entities by scanning self-named files (identity-driven, contained to the resolver so the shared `IsCandidatePath`
+/ scan behaviour is untouched). The `DirectiveInitAndResolutionTests` pin flipped from `Assert.Null` to positive
+(stellar *and* lunar). Pinned by `PathCompositionReverseTests`; full suite green (bar a pre-existing wall-clock
+flake).
+
+**Deferred to phase 3.** Turning the `IsCandidatePath` predicates themselves into strategy-owned *candidate
+enumeration* rides the registry-projected path-sync models (phase 3), where that catalog is reorganised.
 
 **Problem.** `MarkdownFileLocator` holds ~7 per-entity `Get*FilePath` methods, ~5 `Apply*CompositionFromPath`
 helpers, and an 8-arm `entity switch` — yet the actual variety is ~3 physical shapes already declared by
