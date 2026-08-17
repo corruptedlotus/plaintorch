@@ -1,5 +1,6 @@
 using Pleiades.Orchestration;
 using Pleiades.Saga;
+using Pleiades.Vault.Media;
 
 namespace Pleiades.Plaintorch.Api.Contracts;
 
@@ -151,6 +152,44 @@ public sealed record LunarDirectiveUpdate(
 /// </summary>
 /// <param name="Status">The new stellar directive status.</param>
 public sealed record StellarDirectiveWorkflowShift(DirectiveStatus Status);
+
+/// <summary>
+/// Carries an uploaded media file for a directive icon or banner (PEP105). The bytes travel as Base64 because
+/// the loopback transport carries JSON only and has no multipart support.
+/// </summary>
+/// <param name="FileName">The file name to store the asset under, including its image extension.</param>
+/// <param name="ContentBase64">The Base64-encoded file bytes.</param>
+public sealed record MediaUpload(string FileName, string ContentBase64);
+
+/// <summary>
+/// The stored key a media-domain upload returns (PEP105): a <c>media:</c> file for an entity-level upload or a
+/// <c>vault:</c> file for a vault-level one. A field references this key through its own domain's set-reference call
+/// — upload and selection stay separate.
+/// </summary>
+/// <param name="Key">The stored media key.</param>
+public sealed record MediaStoreResult(string Key);
+
+/// <summary>
+/// Selects a directive's icon (PEP105): a raw <paramref name="Reference"/> key — a glyph/lucide name, or a
+/// <c>media:</c>/<c>vault:</c> file already stored through the media domain — or <paramref name="Clear"/> to remove
+/// it and fall back to the per-kind default glyph. Storing a custom image is the media domain's concern, not this
+/// one's; a field only ever references a key.
+/// </summary>
+/// <param name="Reference">A raw media key to set directly: a glyph/lucide name, <c>media:file</c>, or <c>vault:file</c>.</param>
+/// <param name="Clear">Removes the icon, archiving any self-stored image it pointed at.</param>
+public sealed record DirectiveIconRequest(
+	string? Reference = null,
+	bool Clear = false);
+
+/// <summary>
+/// Selects a directive's banner image (PEP105): a raw <paramref name="Reference"/> key already stored through the
+/// media domain, or <paramref name="Clear"/> to remove it.
+/// </summary>
+/// <param name="Reference">A raw media key to set directly: <c>media:file</c> or <c>vault:file</c>.</param>
+/// <param name="Clear">Removes the banner, archiving any self-stored image it pointed at.</param>
+public sealed record DirectiveBannerRequest(
+	string? Reference = null,
+	bool Clear = false);
 
 /// <summary>
 /// Represents the mutable fields of an objective for generic update actions.
@@ -361,6 +400,7 @@ public sealed record FateUpdate(
 	string? ParentIncentiveId = null,
 	bool ClearParentIncentive = false,
 	DateOnly? Date = null,
+	bool ClearDate = false,
 	TimeOnly? StartTime = null,
 	TimeOnly? EndTime = null,
 	string? Orbit = null,
@@ -469,23 +509,34 @@ public sealed record PolarisAgenda(
 	IReadOnlyList<Eventive> Eventives);
 
 /// <summary>
-/// Represents the data required to define a directive-level timeframe (PEP100).
+/// Represents the data required to define a directive-level timeframe (PEP100). <paramref name="Icon"/> and the
+/// auto-inclusion fields are the PEP100 patch additions.
 /// </summary>
 public sealed record TimeframePlan(
 	string Title,
 	TimeOnly StartTime,
 	TimeOnly EndTime,
-	string? Orbit = null);
+	string? Orbit = null,
+	string? Icon = null,
+	TimeframeInclusion AutoInclusion = TimeframeInclusion.None,
+	ObjectiveCollege? AutoInclusionCollege = null);
 
 /// <summary>
-/// Represents the mutable fields of a timeframe definition.
+/// Represents the mutable fields of a timeframe definition. The auto-inclusion and icon fields are PEP100 patch
+/// additions: <paramref name="AutoInclusion"/> and <paramref name="AutoInclusionCollege"/> are applied only when
+/// supplied, while the <c>Clear*</c> flags unset the icon or the college outright.
 /// </summary>
 public sealed record TimeframeUpdate(
 	string? Title = null,
 	TimeOnly? StartTime = null,
 	TimeOnly? EndTime = null,
 	string? Orbit = null,
-	bool ClearOrbit = false);
+	bool ClearOrbit = false,
+	string? Icon = null,
+	bool ClearIcon = false,
+	TimeframeInclusion? AutoInclusion = null,
+	ObjectiveCollege? AutoInclusionCollege = null,
+	bool ClearAutoInclusionCollege = false);
 
 /// <summary>
 /// Represents the emitted dependency lock for an entity (PEP101), computed from its unsatisfied incoming
@@ -514,6 +565,9 @@ public sealed record DependencyLockView(
 /// <param name="StartTime">The start of the flagged portion of the day.</param>
 /// <param name="EndTime">The end of the flagged portion of the day.</param>
 /// <param name="Orbit">The optional Orbit notation scoping the timeframe to particular Polaris cycles.</param>
+/// <param name="Icon">The optional icon key (PEP100 patch).</param>
+/// <param name="AutoInclusion">How the timeframe auto-includes Polaris workitems (PEP100 patch).</param>
+/// <param name="AutoInclusionCollege">The college driving college-based auto-inclusion (PEP100 patch).</param>
 public sealed record DirectiveTimeframeRecord(
 	long Id,
 	string DirectiveId,
@@ -523,4 +577,14 @@ public sealed record DirectiveTimeframeRecord(
 	string Title,
 	TimeOnly StartTime,
 	TimeOnly EndTime,
-	string? Orbit);
+	string? Orbit,
+	string? Icon,
+	TimeframeInclusion AutoInclusion,
+	ObjectiveCollege? AutoInclusionCollege)
+{
+	/// <summary>
+	/// Gets or sets the resolved companion of <see cref="Icon"/>, filled after the record is projected (its LINQ
+	/// projection cannot call the media service). Never persisted.
+	/// </summary>
+	public MediaReference? IconMedia { get; set; }
+}

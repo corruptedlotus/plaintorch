@@ -1,7 +1,7 @@
 import { Component, component, css, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
 import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EntitySubscription } from '@pleiades/sdk'
 import { Notice } from 'obsidian'
-import { core, DerivedRef, getApp, navigateToEntity, type ExpandingAction, type IconName } from '..'
+import { ContextMenu, core, DerivedRef, getApp, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
 import { activatePlanningOnrush, addCheckpointToOnrush, addObjectiveToOnrush, concludeOnrush, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGraphLayout, startActiveOnrush } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
 import { OnrushDetailModal } from './OnrushDetailModal'
@@ -16,11 +16,6 @@ type Gesture =
 	| { readonly sort: 'pan', readonly pointerId: number, readonly originX: number, readonly originY: number, readonly fromX: number, readonly fromY: number }
 	| { readonly sort: 'drag', readonly pointerId: number, readonly nodeKey: string, readonly offsetX: number, readonly offsetY: number, readonly originX: number, readonly originY: number }
 	| { readonly sort: 'link', readonly pointerId: number, readonly nodeKey: string, readonly at: Point }
-
-/** What the popover is showing, when it is showing anything. */
-type MenuTarget =
-	| { readonly sort: 'edge', readonly edge: CanvasEdge }
-	| { readonly sort: 'node', readonly nodeKey: string }
 
 /** A node's actual rendered size, measured from its element rather than assumed from the layout. */
 interface NodeSize {
@@ -66,7 +61,6 @@ export class DependencyCanvas extends Component {
 	/** The node clicked into, whose own contents take their clicks. At most one at a time. */
 	@state() private activeKey?: string
 	@state() private gesture?: Gesture
-	@state() private menu?: MenuTarget
 	/**
 	 * Each node's actual rendered size, keyed by node key — what the edges are drawn against.
 	 *
@@ -77,7 +71,6 @@ export class DependencyCanvas extends Component {
 	@state() private measured: ReadonlyMap<string, NodeSize> = new Map()
 
 	@query('.viewport') private readonly viewportElement!: HTMLElement
-	@query('.menu') private readonly menuElement!: HTMLElement
 
 	private readonly dependencies = new DerivedRef(this, core.repos.dependencyList)
 	// Observed so their entities are in the store for resolving a ghostly blocker's title — an objective or
@@ -360,65 +353,6 @@ export class DependencyCanvas extends Component {
 				}
 			}
 
-			/*
-			 * A popover, so the menu renders in the top layer and is not clipped by the viewport it was
-			 * opened inside. Light dismissal comes with it.
-			 */
-			.menu {
-				position: fixed;
-				margin: 0;
-				padding: .3em;
-				border-radius: 10px;
-				border: 1px solid var(--background-modifier-border, color-mix(in srgb, var(--text-normal) 20%, transparent));
-				background-color: var(--background-secondary, #2b2b2b);
-				color: var(--text-normal);
-				box-shadow: 0 6px 24px rgb(0 0 0 / .28);
-				font-family: var(--font-interface);
-				min-width: 13em;
-			}
-
-			.menu-title {
-				padding: .35em .6em;
-				opacity: .55;
-				font-size: .8em;
-			}
-
-			.menu-item {
-				display: flex;
-				align-items: center;
-				gap: .5em;
-				width: 100%;
-				padding: .4em .6em;
-				border: none;
-				border-radius: 7px;
-				background: transparent;
-				color: inherit;
-				font-family: inherit;
-				font-size: .95em;
-				text-align: start;
-				cursor: pointer;
-			}
-
-			.menu-item:hover {
-				background-color: color-mix(in srgb, var(--text-normal) 10%, transparent);
-			}
-
-			.menu-item[aria-pressed='true'] {
-				color: var(--p7t-flare-accent, var(--interactive-accent));
-			}
-
-			.menu-separator {
-				height: 1px;
-				margin: .25em .3em;
-				background-color: color-mix(in srgb, var(--text-normal) 12%, transparent);
-			}
-
-			.menu-note {
-				padding: .4em .6em;
-				opacity: .6;
-				font-size: .85em;
-				line-height: 1.25;
-			}
 		`
 	}
 
@@ -624,9 +558,6 @@ export class DependencyCanvas extends Component {
 						</p7t-expanding-actions>
 					`}
 			</div>
-			<div class='menu' popover='auto' @beforetoggle=${(e: Event) => this.onMenuToggle(e)}>
-				${this.menuTemplate}
-			</div>
 		`
 	}
 
@@ -826,7 +757,7 @@ export class DependencyCanvas extends Component {
 				marker-end='url(#${satisfied ? 'arrow-satisfied' : 'arrow-pending'})'
 				marker-start=${beginTriggered ? 'url(#edge-begin)' : nothing}>
 			</path>
-			<path class='edge-hit' d=${path} @click=${(e: MouseEvent) => void this.openMenu(e.clientX, e.clientY, { sort: 'edge', edge })}></path>
+			<path class='edge-hit' d=${path} @click=${(e: MouseEvent) => ContextMenu.open(e.clientX, e.clientY, this.edgeMenuSpec(edge))}></path>
 		`
 	}
 
@@ -895,104 +826,76 @@ export class DependencyCanvas extends Component {
 		`
 	}
 
-	private get menuTemplate() {
-		const menu = this.menu
-		if (!menu) {
-			return nothing
-		}
-
-		return menu.sort === 'edge' ? this.edgeMenuTemplate(menu.edge) : this.nodeMenuTemplate(menu.nodeKey)
-	}
-
-	private edgeMenuTemplate(edge: CanvasEdge) {
+	private edgeMenuSpec(edge: CanvasEdge): ContextMenuSpec {
 		const trigger = effectiveTrigger(edge.dependency)
 		const constraint = effectiveConstraint(edge.dependency)
 		// A checkpoint has no begin or finish, so it offers no trigger on its source side and no constraint on
 		// its target side — those are empty by rule, not a choice, so the menu withholds them entirely.
 		const sourceIsCheckpoint = edge.dependency.sourceKind === DependencyEndpointKind.Checkpoint
 		const targetIsCheckpoint = edge.dependency.targetKind === DependencyEndpointKind.Checkpoint
-		return html`
-			<div class='menu-title'>This ${describeEdge(edge.dependency)}</div>
-			${sourceIsCheckpoint ? nothing : html`
-				<button class='menu-item' aria-pressed=${trigger === DependencyTrigger.OnFinish}
-					@click=${() => void this.reshape(edge, DependencyTrigger.OnFinish, constraint)}>
-					Satisfied when it finishes
-				</button>
-				<button class='menu-item' aria-pressed=${trigger === DependencyTrigger.OnBegin}
-					@click=${() => void this.reshape(edge, DependencyTrigger.OnBegin, constraint)}>
-					Satisfied when it begins
-				</button>
-			`}
-			${sourceIsCheckpoint || targetIsCheckpoint ? nothing : html`<div class='menu-separator'></div>`}
-			${targetIsCheckpoint ? nothing : html`
-				<button class='menu-item' aria-pressed=${constraint === DependencyConstraint.ToBegin}
-					@click=${() => void this.reshape(edge, trigger, DependencyConstraint.ToBegin)}>
-					Gates the dependant's begin
-				</button>
-				<button class='menu-item' aria-pressed=${constraint === DependencyConstraint.ToFinish}
-					@click=${() => void this.reshape(edge, trigger, DependencyConstraint.ToFinish)}>
-					Gates the dependant's finish
-				</button>
-			`}
-			<div class='menu-separator'></div>
-			<button class='menu-item' @click=${() => void this.run(async () => await deleteDependency(edge))}>
-				Remove dependency
-			</button>
-		`
+		const entries: ContextMenuEntry[] = []
+		if (!sourceIsCheckpoint) {
+			entries.push(
+				{ label: 'Satisfied when it finishes', pressed: trigger === DependencyTrigger.OnFinish, run: () => this.reshape(edge, DependencyTrigger.OnFinish, constraint) },
+				{ label: 'Satisfied when it begins', pressed: trigger === DependencyTrigger.OnBegin, run: () => this.reshape(edge, DependencyTrigger.OnBegin, constraint) })
+		}
+
+		if (!sourceIsCheckpoint && !targetIsCheckpoint) {
+			entries.push({ separator: true })
+		}
+
+		if (!targetIsCheckpoint) {
+			entries.push(
+				{ label: "Gates the dependant's begin", pressed: constraint === DependencyConstraint.ToBegin, run: () => this.reshape(edge, trigger, DependencyConstraint.ToBegin) },
+				{ label: "Gates the dependant's finish", pressed: constraint === DependencyConstraint.ToFinish, run: () => this.reshape(edge, trigger, DependencyConstraint.ToFinish) })
+		}
+
+		entries.push({ separator: true }, { label: 'Remove dependency', danger: true, run: () => deleteDependency(edge) })
+		return { title: `This ${describeEdge(edge.dependency)}`, entries }
 	}
 
-	private nodeMenuTemplate(nodeKey: string) {
+	private nodeMenuSpec(nodeKey: string): ContextMenuSpec | undefined {
 		const node = this.graph.nodes.find(candidate => candidate.key === nodeKey)
 		if (!node) {
-			return nothing
+			return undefined
 		}
 
 		const isCheckpoint = node.ref.kind === DependencyEndpointKind.Checkpoint
-		return html`
-			<div class='menu-title'>${node.entity.title}</div>
-			<button class='menu-item' @click=${() => void this.run(async () => this.openDetails(node))}>
-				Details
-			</button>
-			${isCheckpoint ? this.checkpointMenu(node) : this.entityMenu(node)}
-		`
+		return {
+			title: node.entity.title,
+			entries: [
+				{ label: 'Details', run: () => this.openDetails(node) },
+				...(isCheckpoint ? this.checkpointMenuEntries(node) : this.entityMenuEntries(node))
+			]
+		}
 	}
 
-	private entityMenu(node: CanvasNode) {
-		return html`
-			<button class='menu-item' @click=${() => void this.run(async () => { await navigateToEntity(node.entity.id) })}>
-				Open note
-			</button>
-			${node.ghostly ? html`
-				<div class='menu-note'>A prerequisite outside this Onrush. It goes when the block is resolved.</div>
-			` : html`
-				<button class='menu-item' @click=${() => void this.run(async () => await removeObjectiveFromOnrush(node.entity.id))}>
-					Remove from Onrush
-				</button>
-			`}
-			<div class='menu-separator'></div>
-			<button class='menu-item' @click=${() => void this.run(async () => await deleteEntity(node))}>
-				Delete
-			</button>
-		`
+	private entityMenuEntries(node: CanvasNode): ContextMenuEntry[] {
+		return [
+			{ label: 'Open note', run: () => navigateToEntity(node.entity.id) },
+			node.ghostly
+				? { note: 'A prerequisite outside this Onrush. It goes when the block is resolved.' }
+				: { label: 'Remove from Onrush', run: () => removeObjectiveFromOnrush(node.entity.id) },
+			{ separator: true },
+			{ label: 'Delete', danger: true, run: () => deleteEntity(node) }
+		]
 	}
 
-	private checkpointMenu(node: CanvasNode) {
+	private checkpointMenuEntries(node: CanvasNode): ContextMenuEntry[] {
 		// A milestone stands for the sprint's completion and is bound to it; it offers nothing to remove — only
 		// its details. A ghostly checkpoint is context, not a member. Everything else the sprint tracks.
 		if (node.milestone) {
-			return html`<div class='menu-note'>The sprint's milestone — it stays for the sprint's life.</div>`
+			return [{ note: "The sprint's milestone — it stays for the sprint's life." }]
 		}
 
 		if (node.ghostly) {
-			return html`<div class='menu-note'>A checkpoint outside this Onrush, shown because it blocks a member.</div>`
+			return [{ note: 'A checkpoint outside this Onrush, shown because it blocks a member.' }]
 		}
 
-		return html`
-			<div class='menu-separator'></div>
-			<button class='menu-item' @click=${() => void this.run(async () => await deleteCheckpoint(node.entity.id))}>
-				Delete checkpoint
-			</button>
-		`
+		return [
+			{ separator: true },
+			{ label: 'Delete checkpoint', danger: true, run: () => deleteCheckpoint(node.entity.id) }
+		]
 	}
 
 	private get additions(): ExpandingAction[] {
@@ -1029,9 +932,14 @@ export class DependencyCanvas extends Component {
 	@eventListener('requestNodeMenu')
 	protected onRequestNodeMenu(e: CustomEvent<CanvasNodePointer>) {
 		e.stopPropagation()
+		const spec = this.nodeMenuSpec(e.detail.nodeKey)
+		if (!spec) {
+			return
+		}
+
 		const element = this.shadowRoot?.querySelector(`.node[data-key="${CSS.escape(e.detail.nodeKey)}"]`)
 		const anchor = element?.getBoundingClientRect()
-		void this.openMenu(anchor?.left ?? 0, anchor?.bottom ?? 0, { sort: 'node', nodeKey: e.detail.nodeKey })
+		ContextMenu.open(anchor?.left ?? 0, anchor?.bottom ?? 0, spec)
 	}
 
 	/** Opens the node's context menu at the pointer, the right-click way in rather than through the notch. */
@@ -1039,7 +947,10 @@ export class DependencyCanvas extends Component {
 		e.preventDefault()
 		e.stopPropagation()
 		this.selected = nodeKey
-		void this.openMenu(e.clientX, e.clientY, { sort: 'node', nodeKey })
+		const spec = this.nodeMenuSpec(nodeKey)
+		if (spec) {
+			ContextMenu.open(e.clientX, e.clientY, spec)
+		}
 	}
 
 	/** Opens the entity behind a node in its banner, to view or edit. */
@@ -1094,33 +1005,7 @@ export class DependencyCanvas extends Component {
 	}
 
 	private async reshape(edge: CanvasEdge, trigger: DependencyTrigger, constraint: DependencyConstraint) {
-		await this.run(async () => await reshapeDependency(edge, trigger, constraint))
-	}
-
-	/** Runs a menu action and closes the menu, whatever the outcome. */
-	private async run(operation: () => Promise<unknown>) {
-		this.menuElement.hidePopover()
-		await operation()
-	}
-
-	private async openMenu(clientX: number, clientY: number, target: MenuTarget) {
-		this.menu = target
-		// The size to place against is the size of the content just assigned, which is not in the DOM until
-		// the update it triggered has run.
-		await this.updateComplete
-		const panel = this.menuElement
-		panel.showPopover()
-		const margin = 8
-		const width = panel.offsetWidth
-		const height = panel.offsetHeight
-		panel.style.left = `${Math.max(margin, Math.min(clientX, window.innerWidth - width - margin))}px`
-		panel.style.top = `${clientY + height + margin > window.innerHeight ? Math.max(margin, clientY - height - margin) : clientY + margin}px`
-	}
-
-	private onMenuToggle(e: Event) {
-		if ((e as Event & { newState?: string }).newState === 'closed') {
-			this.menu = undefined
-		}
+		await reshapeDependency(edge, trigger, constraint)
 	}
 
 	private onPointerDown(e: PointerEvent) {

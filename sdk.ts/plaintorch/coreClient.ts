@@ -13,6 +13,7 @@ import { PlaintorchPolarisSdk } from "./polaris/polarisSdk"
 import { PlaintorchLoreSdk } from "./lore/loreSdk"
 import { PlaintorchDependenciesSdk } from "./dependencies/dependenciesSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
+import { PlaintorchMediaSdk } from "./media/mediaSdk"
 import { createAbsorbingReviver, EntityStore, PlaintorchRepositories, type AbsorptionContext } from "./repository"
 
 
@@ -42,6 +43,7 @@ export class PlaintorchCoreClient {
 	 */
 	public readonly repos: PlaintorchRepositories
 	public readonly system: PlaintorchSystemSdk
+	public readonly media: PlaintorchMediaSdk
 	public readonly directives: PlaintorchDirectivesSdk
 	public readonly objectives: PlaintorchObjectivesSdk
 	public readonly declaratives: PlaintorchDeclarativesSdk
@@ -62,6 +64,7 @@ export class PlaintorchCoreClient {
 		]
 		this.store = new EntityStore()
 		this.system = new PlaintorchSystemSdk(this)
+		this.media = new PlaintorchMediaSdk(this)
 		this.directives = new PlaintorchDirectivesSdk(this)
 		this.objectives = new PlaintorchObjectivesSdk(this)
 		this.declaratives = new PlaintorchDeclarativesSdk(this)

@@ -1,8 +1,9 @@
-import { Component, component, css, CSSResult, html, property } from "@a11d/lit"
+import { component, css, CSSResult, html, nothing, property } from "@a11d/lit"
 import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus } from "@pleiades/sdk"
 import { IconName } from "components"
+import { InfoItem } from "../design/InfoItem"
 
-type Status =
+export type Status =
 	| keyof typeof DirectiveStatus
 	| keyof typeof ObjectiveStatus
 	| keyof typeof LunarDirectiveStatus
@@ -39,19 +40,36 @@ export const statusDescriptors: Record<Status, StatusDescriptor> = {
 }
 
 @component('p7t-status-item')
-export class StatusItem extends Component {
+export class StatusItem extends InfoItem {
 
 	@property() status: Status = 'Standby'
+	/**
+	 * Draws the state glyph alone (its label becomes the tooltip) — the form a notch/knock wants. The attribute is
+	 * spelled out because Lit lowercases a property name into its attribute by default (`icononly`), which neither
+	 * the `icon-only` attribute set on the tag nor the `:host([icon-only])` style would then match.
+	 */
+	@property({ type: Boolean, reflect: true, attribute: 'icon-only' }) iconOnly = false
 
 	static override get styles() {
 		return css`
-			:host {
-				display: grid;
+			${super.styles}
+
+			.status {
+				display: inline-grid;
 				grid-template-columns: 2em auto;
 				align-items: center;
 				gap: .6ch;
 				user-select: none;
 				margin-inline-end: .4ch;
+			}
+
+			:host([icon-only]) .status {
+				grid-template-columns: 2em;
+				margin-inline-end: 0;
+			}
+
+			:host([icon-only]) .label {
+				display: none;
 			}
 
 			p7t-icon {
@@ -61,11 +79,23 @@ export class StatusItem extends Component {
 		`
 	}
 
-	protected override get template() {
+	private get descriptor() {
+		return statusDescriptors[this.status]
+	}
+
+	protected override get content() {
+		const descriptor = this.descriptor
 		return html`
-			<p7t-icon part='icon' icon="${statusDescriptors[this.status]?.icon ?? 'exec-order'}"></p7t-icon>
-			<span>${statusDescriptors[this.status]?.label ?? this.status}</span>
+			<span class='status'>
+				<p7t-icon part='icon' icon="${descriptor?.icon ?? 'exec-order'}"></p7t-icon>
+				<span class='label'>${descriptor?.label ?? this.status}</span>
+			</span>
 		`
+	}
+
+	protected override get tooltip() {
+		// The label is already on screen unless it is hidden, so only the icon-only form needs a tooltip to name it.
+		return this.iconOnly ? (this.descriptor?.label ?? this.status) : nothing
 	}
 }
 

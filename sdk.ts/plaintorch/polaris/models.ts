@@ -1,5 +1,6 @@
 import type { Attentive, Decree, Eventive } from "../declaratives/models"
 import type { Objective, ObjectiveCollege } from "../objectives/models"
+import type { Timeframe } from "../directives/models"
 export enum PolarisExecutivePlanningMode {
 	OneShot = 0,
 	Standalone = 1,
@@ -71,6 +72,11 @@ export interface Executive {
 	elapsed: number
 	/** Preferred timeframe for execution (affinity, PEP100). Purely semantic. */
 	affinityTimeframeId: number | undefined
+	/**
+	 * The affined timeframe, resolved when the executive is served inside a cycle (PEP100 patch). Its icon stands
+	 * in for the Celestron value on the executive item.
+	 */
+	affinityTimeframe?: Timeframe | undefined
 }
 
 export interface Reflective {
@@ -85,6 +91,8 @@ export interface Reflective {
 	decreeId: string | undefined
 	/** Originating decree, carrying the relevant lunar directive when served. Absent for manual/drawn reflectives. */
 	decree?: Decree | undefined
+	/** Preferred timeframe for this reflective (affinity, PEP100 patch). Seeded from the decree's college via auto-inclusion. */
+	affinityTimeframeId?: number | undefined
 }
 
 export interface PolarisExecutivePlan {

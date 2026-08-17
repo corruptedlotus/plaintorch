@@ -153,7 +153,13 @@ public sealed class DeclarativeApiService(
 			fate.ParentIncentiveId = null;
 		}
 
-		if (update.Date is not null)
+		if (update.ClearDate)
+		{
+			// Switching a one-off fate onto a recurring orbit drops its fixed date, so it no longer
+			// materializes a standalone eventive alongside the orbit's occurrences.
+			fate.Date = null;
+		}
+		else if (update.Date is not null)
 		{
 			fate.Date = update.Date;
 		}

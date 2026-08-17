@@ -172,6 +172,9 @@ export class OnrushOrders extends Component {
 			<div class='exec-row'>
 				<p7t-editable-plaintext
 					class='title'
+					required
+					label='Order title'
+					placeholder='Untitled'
 					.value=${order.title}
 					@change=${(e: Event) => this.saveOrder(order.id, { title: (e.target as EditablePart<string>).value ?? '' })}>
 				</p7t-editable-plaintext>
@@ -191,6 +194,8 @@ export class OnrushOrders extends Component {
 				</button>
 				<p7t-editable-plaintext
 					class='summary'
+					multiline
+					placeholder='No summary'
 					.value=${order.summary}
 					@change=${(e: Event) => this.saveOrder(order.id, { summary: (e.target as EditablePart<string>).value ?? '' })}>
 				</p7t-editable-plaintext>

@@ -1,12 +1,12 @@
 import { Component, component, css, event, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
 import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, type Directive } from '@pleiades/sdk'
 import {
-	EntityWatch, ExpandingAction, IconName, ReactiveBinder,
+	ContextMenuController, entityContextMenu, EntityWatch, ExpandingAction, getApp, IconName, LunarDirectiveModal, ReactiveBinder, type ScheduleValue,
 	SelectDirectiveStatusModal, SelectLunarDirectiveStatusModal, SelectObjectiveStatusModal
 } from '..'
 import {
-	directiveActions, entityIcon, entityKindOf, isDirectiveKind, isSingleInstanceFate,
-	objectiveActions, openEntityNote, saveEntityField, type EditableField
+	directiveActions, entityIcon, entityKindOf, isDirectiveKind,
+	objectiveActions, openEntityNote, saveEntityField, saveFateSchedule, type EditableField
 } from './entityActions'
 import type { GridRow } from './entityTree'
 
@@ -48,6 +48,14 @@ export class GridItem extends Component {
 	protected get boundEntity() {
 		return this.row?.entity
 	}
+
+	/**
+	 * Raises the row's entity context menu on right-click — deletion, editing, opening its note, and more per kind.
+	 * The grid's per-kind operations that would otherwise crowd the columns live here instead; as a controller it
+	 * needs no template handler and withholds the menu on an empty row.
+	 */
+	protected readonly contextMenu = new ContextMenuController(this, () =>
+		this.row?.entity ? entityContextMenu(this.row.entity) : undefined)
 
 	static override get styles() {
 		return css`
@@ -209,6 +217,29 @@ export class GridItem extends Component {
 				width: 1.2em;
 				height: 1.2em;
 			}
+
+			.measure-button {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				min-width: 1.9em;
+				min-height: 1.9em;
+				border: none;
+				border-radius: 8px;
+				background: transparent;
+				color: inherit;
+				cursor: pointer;
+				transition: background-color .2s ease;
+			}
+
+			.measure-button:hover {
+				background-color: color-mix(in srgb, var(--text-normal) 14%, transparent);
+			}
+
+			.measure-button p7t-icon {
+				width: 1.2em;
+				height: 1.2em;
+			}
 		`
 	}
 
@@ -231,7 +262,7 @@ export class GridItem extends Component {
 				</div>
 			</div>
 			<div class='title'>
-				<p7t-editable-plaintext ${this.binder.bind('title')}></p7t-editable-plaintext>
+				<p7t-editable-plaintext required label='Title' placeholder='Untitled' ${this.binder.bind('title')}></p7t-editable-plaintext>
 			</div>
 			${this.leadingCells.map(cell => html`<div class='cell'>${cell}</div>`)}
 			<div class='cell actions'>
@@ -269,16 +300,35 @@ export class GridItem extends Component {
 		switch (entityKindOf(entity)) {
 			case 'objective':
 				return html`<p7t-editable-starfire ${this.binder.bind('celestronValue')}></p7t-editable-starfire>`
-			case 'fate':
-				// A one-off fate is placed by its date; a recurring one by its Orbit definition.
-				return isSingleInstanceFate(entity)
-					? html`<p7t-editable-date ${this.binder.bind('date')}></p7t-editable-date>`
-					: html`<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>`
+			case 'fate': {
+				// A fate is scheduled either way — a recurring Orbit or a fixed date/time — and the editable
+				// lets the user switch and clears whichever it is not.
+				const fate = entity as { orbit?: string, date?: string, startTime?: string }
+				return html`<p7t-editable-orbit-datetime
+					.orbit=${fate.orbit}
+					.date=${fate.date}
+					.time=${fate.startTime}
+					@schedulechange=${(e: CustomEvent<ScheduleValue>) => saveFateSchedule(entity, e.detail)}>
+				</p7t-editable-orbit-datetime>`
+			}
 			case 'decree':
 				return html`<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>`
+			case 'lunar-directive':
+				// A lunar directive carries no measure of its own, so its otherwise-empty column hosts the button
+				// that opens its editing modal — the one place its timeframes are managed (PEP100 patch).
+				return html`
+					<button class='measure-button' aria-label='Edit timeframes' @click=${() => this.openLunarEditor()}>
+						<p7t-icon icon='lucide:clock'></p7t-icon>
+					</button>
+				`
 			default:
 				return nothing
 		}
+	}
+
+	/** Opens the lunar directive's editing modal, where its timeframes are defined. */
+	protected openLunarEditor() {
+		new LunarDirectiveModal(getApp(), this.row!.entity as Directive).open()
 	}
 
 	/** The workflow state, for the kinds that carry a lifecycle worth shifting from here. */

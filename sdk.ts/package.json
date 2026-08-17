@@ -10,12 +10,12 @@
     ".": "./index.ts",
     "./plaintorch": "./plaintorch/index.ts",
     "./plaintorch/node": "./plaintorch/node.ts",
-	"./helpers": "./helpers/index.ts"
+    "./helpers": "./helpers/index.ts"
   },
   "devDependencies": {
-	"@typescript-eslint/parser": "^8.46.3",
     "@types/node": "^22.15.17",
-	"eslint": "^9.38.0",
+    "@typescript-eslint/parser": "^8.46.3",
+    "eslint": "^9.38.0",
     "tslib": "^2.8.1",
     "typescript": "^5.8.3"
   },

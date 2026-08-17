@@ -1,5 +1,7 @@
 ---
 status: implemented
+patches:
+  - Patch100.1 - Timeframe Auto-Inclusion, Icons & Affinity Surfaces
 assignee: Copilot 🤖
 ---
 # Directives
@@ -95,3 +97,33 @@ Timeframes are directive-level definitions of portions of time within a Polaris 
 Affinity is purely semantic and demands nothing engineering-wise. Executives can define a timeframe as their affinity, meaning that timeframe is preferred for their execution.
 # Hierarchy Map
 ![[PEP100 - Moonlight Directives, The Declarative Ecosystem & Timeframes 2026-07-14 17.37.02.excalidraw]]
+# Patches
+## Patch100.1 - Timeframe Auto-Inclusion, Icons & Affinity Surfaces
+Timeframes stay exactly what this PEP made them — inert, lunar-owned markers of a purely semantic affinity that enforces nothing. This patch does not change that; it adds ways for a timeframe to be *attached to*, and ways for it to be *seen and edited*. Three things: auto-inclusion, affinity on reflectives, and icons with the surfaces to manage them.
+
+### Auto-inclusion
+Until now affinity was set by hand, one executive at a time. A timeframe can now **auto-include** the workitems that flow into a Polaris cycle: when a matching workitem is created, it is affined to that timeframe on creation, with no manual step. Two creation paths are wired — an **executive built from an objective** (any planning mode carrying an objective; a title-only one-shot executive has no objective and so no auto-affinity), and a **reflective materialized from a decree** and bound to a cycle (the lunar-reflection path that runs at cycle begin, ref. [[#Reflectives]]).
+
+The criterion, for now, is the **College**: a timeframe set to include a college affines every executive or reflective whose owning incentive — the objective behind the executive, the decree behind the reflective — carries that college. It is modelled as a deliberate extension point rather than a hardcoded rule. A timeframe stores an *inclusion kind* (`None` | `College`) beside its parameter; College is the first kind, and a further single-value criterion (a directive, a tag) slots in as a new kind paired with the column it reads, resolved by a new branch in the resolver rather than a new mechanism.
+
+Affinity is single-valued — a workitem points at one timeframe — so when several timeframes include the same college the **lowest-id match wins**, deterministically. Auto-inclusion only ever *seeds* affinity at creation; a later manual change is never overridden by it. The resolution lives in one place (`TimeframeAffinityResolver`) that both the executive-planning and reflective-materialization paths go through, so the two stay in step.
+
+### Affinity reaches reflectives
+Affinity was an executive-only property. For auto-inclusion to reach both kinds of Polaris-level workitem, reflectives gain `AffinityTimeframeId` (+ navigation), mirroring the executive's existing affinity foreign key: removing a timeframe sets the reference back to null rather than cascading, since affinity is a soft pointer and losing the timeframe just un-affines the workitem.
+
+### Icons
+A timeframe can carry an **icon**, through the same media companion the directive icons use (ref. [[PEP105 - Directive Icons & Banners]]). Timeframes keep no asset folder of their own, so a glyph or lucide name and a vault-level (`vault:`) image resolve, while a `media:` self key has nowhere to live. The icon stands in for the **Celestron value**: on an executive affined to a timeframe, its objective item shows the timeframe's icon where the objective's Celestron reading would be. With no affinity the Celestron reading is kept, so nothing is lost when a timeframe is not in play.
+
+### Affinity surfaces
+- **Executive affinity selector.** The executive time-allocation modal gains a simple affinity selector beside the existing status selectors — the same edit-in-place control, showing the current timeframe's icon and title (or a muted "no affinity") and opening a picker over every lunar directive's timeframes, led by a "no affinity" choice so an executive is un-affined the same way it is affined. Auto-inclusion sets the initial value; this is how it is changed by hand.
+- **Lunar directive editing modal.** Lunar directives get a dedicated editing modal, modelled on the onrush detail window (ref. [[PEP102 - Backlog Dependencies & Milestones|Patch102.5]]): the directive's own banner at the top — so a rename or moonlight-state shift reaches every other surface at once — with its timeframes listed and edited beneath, each row editing title, window, Orbit scoping, icon key, and the college it auto-includes, addable and removable. A lunar directive carries no measure of its own, so its otherwise-empty measure column in the entity grid hosts the button that opens the modal — the single place a lunar directive's timeframes are managed.
+
+### Data model
+- `Timeframe` gains `Icon` (`[Media]`-enriched to `IconMedia`), `AutoInclusion` (the inclusion kind, default `None`), and `AutoInclusionCollege` (read only when the kind is `College`).
+- `Reflective` gains `AffinityTimeframeId` (+ set-null foreign key).
+- A schema migration adds the three timeframe columns and the reflective affinity column, index, and foreign key.
+
+### Held over
+- **Abstract (clockless) timeframes** — a timeframe still carries a wall-clock window; the question of clockless, sprint-scoped timeframes is held separately.
+- **Enforcement** — affinity stays purely semantic. Auto-inclusion decides *what a timeframe is attached to*, never *what the schedule does*.
+- **Richer reflective UI** — reflective affinity is seeded and stored but has no dedicated editing surface here; the fuller reflective experience belongs to [[PEP104 - Reflective Generation Engine]].

@@ -75,7 +75,7 @@ export class Tooltip extends Component {
 		`
 	}
 
-	private get popover(): HTMLElement | null {
+	private get overlay(): HTMLElement | null {
 		return this.renderRoot.querySelector<HTMLElement>('.tooltip')
 	}
 
@@ -114,7 +114,7 @@ export class Tooltip extends Component {
 	private reveal() {
 		clearTimeout(this.showTimer)
 		if (this.open || this.disabled || this.isEmpty) return
-		const popover = this.popover
+		const popover = this.overlay
 		if (!popover) return
 
 		this.open = true
@@ -137,7 +137,7 @@ export class Tooltip extends Component {
 		if (!this.open) return
 
 		this.open = false
-		const popover = this.popover
+		const popover = this.overlay
 		if (popover) {
 			try {
 				popover.hidePopover()
@@ -150,7 +150,7 @@ export class Tooltip extends Component {
 
 	/** Places the overlay above the trigger, flipping below when there is no room, clamped to the viewport. */
 	private readonly reposition = () => {
-		const popover = this.popover
+		const popover = this.overlay
 		if (!popover || !this.open) return
 
 		const trigger = this.getBoundingClientRect()

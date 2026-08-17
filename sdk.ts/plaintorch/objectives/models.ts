@@ -23,8 +23,6 @@ export enum ObjectiveCollege {
 
 @model('Objective')
 export class Objective {
-	/** Polymorphic incentive discriminator emitted by the core: "objective", "fate", or "decree". */
-	$type?: string
 	id: string = ''
 	title: string = ''
 	directiveId: string | undefined

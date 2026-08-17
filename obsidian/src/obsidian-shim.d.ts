@@ -40,9 +40,11 @@ declare module "obsidian" {
 
   export class Vault {
     public getAbstractFileByPath(path: string): TAbstractFile | null
+    public getFileByPath(path: string): TFile | null
     public getMarkdownFiles(): TFile[]
     public read(file: TFile): Promise<string>
     public modify(file: TFile, content: string): Promise<void>
+    public getResourcePath(file: TFile): string
   }
 
   export class MetadataCache {

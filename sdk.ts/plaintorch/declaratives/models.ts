@@ -27,7 +27,6 @@ export enum AttentiveResolution {
 
 /** Fate declarative (PEP100): an event-like incentive that happens rather than gets done. */
 export interface Fate {
-	$type?: string
 	id: string
 	title: string
 	directiveId: string | undefined
@@ -45,7 +44,6 @@ export interface Fate {
 
 /** Decree declarative (PEP100): an enduring routine/law controller. Exempt from the parent system. */
 export interface Decree {
-	$type?: string
 	id: string
 	title: string
 	directiveId: string | undefined
@@ -118,6 +116,8 @@ export interface FateUpdate {
 	parentIncentiveId?: string | undefined
 	clearParentIncentive?: boolean
 	date?: string | undefined
+	/** Drops the fixed date (used when switching a one-off fate onto a recurring orbit). */
+	clearDate?: boolean
 	startTime?: string | undefined
 	endTime?: string | undefined
 	orbit?: string | undefined
