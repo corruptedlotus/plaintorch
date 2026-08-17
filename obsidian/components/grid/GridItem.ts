@@ -1,7 +1,7 @@
 import { Component, component, css, event, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
 import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, type Directive } from '@pleiades/sdk'
 import {
-	EntityWatch, ExpandingAction, getApp, IconName, LunarDirectiveModal, ReactiveBinder, type ScheduleValue,
+	ContextMenuController, entityContextMenu, EntityWatch, ExpandingAction, getApp, IconName, LunarDirectiveModal, ReactiveBinder, type ScheduleValue,
 	SelectDirectiveStatusModal, SelectLunarDirectiveStatusModal, SelectObjectiveStatusModal
 } from '..'
 import {
@@ -48,6 +48,14 @@ export class GridItem extends Component {
 	protected get boundEntity() {
 		return this.row?.entity
 	}
+
+	/**
+	 * Raises the row's entity context menu on right-click — deletion, editing, opening its note, and more per kind.
+	 * The grid's per-kind operations that would otherwise crowd the columns live here instead; as a controller it
+	 * needs no template handler and withholds the menu on an empty row.
+	 */
+	protected readonly contextMenu = new ContextMenuController(this, () =>
+		this.row?.entity ? entityContextMenu(this.row.entity) : undefined)
 
 	static override get styles() {
 		return css`

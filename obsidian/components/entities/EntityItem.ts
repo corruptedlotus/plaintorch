@@ -1,5 +1,6 @@
 import { component, Component, css, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
-import { EntityWatch, navigateToEntity } from '..'
+import { ContextMenuController, EntityWatch, navigateToEntity } from '..'
+import { entityContextMenu } from './entityMenu'
 import { itemLayoutStyles } from './itemStyles'
 
 @component('p7t-entity-item')
@@ -14,6 +15,14 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 	 * canonical. Observing it is what makes a list row follow an edit made in a banner elsewhere.
 	 */
 	protected readonly watch = new EntityWatch(this, () => this.entity)
+
+	/**
+	 * Raises the entity's context menu on right-click — deletion, editing, opening its note, and more per kind. As a
+	 * controller it needs no handler in the template; it withholds the menu (passing the event through) whenever the
+	 * item is non-interactive or has no entity yet.
+	 */
+	protected readonly contextMenu = new ContextMenuController(this, () =>
+		this.interactive && this.entity ? entityContextMenu(this.entity) : undefined)
 
 	protected async navigateToEntity() {
 		if (!this.interactive) return

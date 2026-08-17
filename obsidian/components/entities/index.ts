@@ -1,4 +1,6 @@
 export * from './ChangeStateModal'
+export * from './EntityEditModal'
+export * from './entityMenu'
 export * from './EntityItem'
 export * from './ExecutedItem'
 export * from './ExecutiveModal'
