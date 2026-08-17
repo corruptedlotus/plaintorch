@@ -43,8 +43,12 @@ export const statusDescriptors: Record<Status, StatusDescriptor> = {
 export class StatusItem extends InfoItem {
 
 	@property() status: Status = 'Standby'
-	/** Draws the state glyph alone (its label becomes the tooltip) — the form a notch/knock wants. */
-	@property({ type: Boolean, reflect: true }) iconOnly = false
+	/**
+	 * Draws the state glyph alone (its label becomes the tooltip) — the form a notch/knock wants. The attribute is
+	 * spelled out because Lit lowercases a property name into its attribute by default (`icononly`), which neither
+	 * the `icon-only` attribute set on the tag nor the `:host([icon-only])` style would then match.
+	 */
+	@property({ type: Boolean, reflect: true, attribute: 'icon-only' }) iconOnly = false
 
 	static override get styles() {
 		return css`
