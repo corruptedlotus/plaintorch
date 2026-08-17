@@ -20,21 +20,6 @@ export class OccurrenceItem extends Component {
 	static override get styles() {
 		return css`
 			${itemLayoutStyles}
-
-			.directive-line {
-				display: flex;
-				align-items: center;
-				gap: 4px;
-				opacity: .6;
-				font-weight: 400;
-				font-size: .9em;
-				line-height: .9;
-
-				& p7t-icon {
-					width: 20px;
-					height: 20px;
-				}
-			}
 		`
 	}
 
@@ -62,14 +47,9 @@ export class OccurrenceItem extends Component {
 
 	protected get preTitle(): HTMLTemplateResult | typeof nothing {
 		const directive = this.directive
+		// An occurrence with no directive shows nothing here (not the objective's "World Quest" placeholder).
 		if (!directive) return nothing
-		const icon = directive.isLunar ? 'directive-lunar' : 'directive'
-		return html`
-			<div class='directive-line'>
-				<p7t-icon icon=${icon}></p7t-icon>
-				<span>${directive.title}</span>
-			</div>
-		`
+		return html`<p7t-directive-item .directive=${directive}></p7t-directive-item>`
 	}
 
 	protected get info(): HTMLTemplateResult | typeof nothing { return nothing }
