@@ -538,10 +538,6 @@ export class DependencyCanvas extends Component {
 						${contextModeLabels[mode]}
 					</button>
 				`)}
-				<button class='mode' @click=${() => this.reset(layout)}>Reset layout</button>
-				${this.mode === 'global' && !this.fileBacked ? html`
-					<button class='mode' @click=${() => void this.onSaveToFile()}>Save to file…</button>
-				` : nothing}
 				<div class='spacer'></div>
 				<span class='readout'>${graph.nodes.length} nodes · ${graph.edges.length} edges · ${Math.round(this.scale * 100)}%</span>
 			</div>
@@ -578,15 +574,14 @@ export class DependencyCanvas extends Component {
 								data-key=${node.key}
 								style='transform: translate(${box.x}px, ${box.y}px)'
 								@pointerdown=${(e: PointerEvent) => this.onNodePointerDown(e, node.key, box)}
-								@click=${{ handleEvent: (e: Event) => this.onNodeClick(e), capture: true }}
-								@contextmenu=${(e: MouseEvent) => this.onNodeContextMenu(e, node.key)}>
+								@click=${{ handleEvent: (e: Event) => this.onNodeClick(e), capture: true }}>
 								${this.nodeTemplate(node, locks.get(node.key) ?? 'none')}
 							</div>
 						`
 					})}
 				</div>
 				${graph.nodes.length > 0 ? nothing : this.emptyOverlay}
-					${!this.sprint ? nothing : this.trayTemplate}
+					${this.sprint || this.mode === 'global' ? this.trayTemplate : nothing}
 					${this.sprint || this.mode === 'global' ? html`
 						<p7t-expanding-actions
 							class='fab'
@@ -657,43 +652,60 @@ export class DependencyCanvas extends Component {
 	 */
 	private get trayTemplate() {
 		const sprint = this.sprint
-		if (!sprint) {
-			return nothing
-		}
-
 		return html`
 			<div class='tray'>
-				<div class='counts'>
-					<span class='count'><p7t-icon icon='objective'></p7t-icon>${sprint.objectives?.length ?? 0}</span>
-					<span class='count'><p7t-icon icon='checkpoint'></p7t-icon>${sprint.checkpoints?.length ?? 0}</span>
-					<span class='count'><p7t-icon icon='exec-order'></p7t-icon>${sprint.executiveOrders?.length ?? 0}</span>
-				</div>
+				${!sprint ? nothing : html`
+					<div class='counts'>
+						<span class='count'><p7t-icon icon='objective'></p7t-icon>${sprint.objectives?.length ?? 0}</span>
+						<span class='count'><p7t-icon icon='checkpoint'></p7t-icon>${sprint.checkpoints?.length ?? 0}</span>
+						<span class='count'><p7t-icon icon='exec-order'></p7t-icon>${sprint.executiveOrders?.length ?? 0}</span>
+					</div>
+				`}
 				<div class='tray-actions'>
-					<button class='tray-btn' aria-label='Onrush details' @click=${() => this.openOnrushDetails()}>
-						<p7t-icon icon='lucide:pen'></p7t-icon>
+					${!sprint ? nothing : html`
+						<button class='tray-btn' aria-label='Onrush details' @click=${() => this.openOnrushDetails()}>
+							<p7t-icon icon='lucide:pen'></p7t-icon>
+						</button>
+					`}
+					<button class='tray-btn' aria-label='Reset layout' @click=${() => this.resetLayout()}>
+						<p7t-icon icon='lucide:rotate-ccw'></p7t-icon>
 					</button>
-					<p7t-expanding-actions
-						icon='lucide:ellipsis-vertical'
-						actionLabel='Onrush actions'
-						.actions=${this.onrushActions}>
-					</p7t-expanding-actions>
+					${this.mode === 'global' && !this.fileBacked ? html`
+						<button class='tray-btn' aria-label='Save to file' @click=${() => void this.onSaveToFile()}>
+							<p7t-icon icon='lucide:save'></p7t-icon>
+						</button>
+					` : nothing}
+					${this.lifecycleActions.length === 0 ? nothing : html`
+						<p7t-expanding-actions
+							icon='lucide:ellipsis-vertical'
+							actionLabel='Onrush actions'
+							.actions=${this.lifecycleActions}>
+						</p7t-expanding-actions>
+					`}
 				</div>
 			</div>
 		`
 	}
 
-	/** The lifecycle actions the tray's menu offers, which differ by mode. */
-	private get onrushActions(): ExpandingAction[] {
-		if (this.mode === 'onrush-planning') {
+	/** The sprint-lifecycle actions the tray's menu offers, which differ by mode; empty in a global context. */
+	private get lifecycleActions(): ExpandingAction[] {
+		if (this.mode === 'onrush-planning' && this.sprint) {
 			return [
 				{ key: 'activate', icon: 'state-onrush', label: 'Activate', run: () => this.onActivate() },
 				{ key: 'delete', icon: 'lucide:trash-2', label: 'Delete', run: () => this.onDelete() }
 			]
 		}
 
-		return [
-			{ key: 'conclude', icon: 'state-archived', label: 'Conclude', run: () => this.onConclude() }
-		]
+		if (this.sprint) {
+			return [{ key: 'conclude', icon: 'state-archived', label: 'Conclude', run: () => this.onConclude() }]
+		}
+
+		return []
+	}
+
+	/** Puts every node back to its computed position and forgets the saved arrangement. */
+	private resetLayout() {
+		this.reset(this.layoutFor(this.graph))
 	}
 
 	/** Opens the sprint's own detail window — its banner and its executive orders. */
@@ -760,6 +772,7 @@ export class DependencyCanvas extends Component {
 			return html`
 				<p7t-canvas-checkpoint
 					interactive
+					.menu=${this.nodeMenuSpecFor(node)}
 					.nodeKey=${shared.nodeKey}
 					.entity=${shared.entity}
 					.kind=${shared.kind}
@@ -776,6 +789,7 @@ export class DependencyCanvas extends Component {
 		return html`
 			<p7t-canvas-node
 				interactive
+				.menu=${this.nodeMenuSpecFor(node)}
 				.nodeKey=${shared.nodeKey}
 				.entity=${shared.entity}
 				.kind=${shared.kind}
@@ -888,8 +902,8 @@ export class DependencyCanvas extends Component {
 		const entries: ContextMenuEntry[] = []
 		if (!sourceIsCheckpoint) {
 			entries.push(
-				{ label: 'Satisfied when it finishes', pressed: trigger === DependencyTrigger.OnFinish, run: () => this.reshape(edge, DependencyTrigger.OnFinish, constraint) },
-				{ label: 'Satisfied when it begins', pressed: trigger === DependencyTrigger.OnBegin, run: () => this.reshape(edge, DependencyTrigger.OnBegin, constraint) })
+				{ label: 'Satisfied when it finishes', icon: 'lucide:flag', pressed: trigger === DependencyTrigger.OnFinish, run: () => this.reshape(edge, DependencyTrigger.OnFinish, constraint) },
+				{ label: 'Satisfied when it begins', icon: 'lucide:play', pressed: trigger === DependencyTrigger.OnBegin, run: () => this.reshape(edge, DependencyTrigger.OnBegin, constraint) })
 		}
 
 		if (!sourceIsCheckpoint && !targetIsCheckpoint) {
@@ -898,25 +912,25 @@ export class DependencyCanvas extends Component {
 
 		if (!targetIsCheckpoint) {
 			entries.push(
-				{ label: "Gates the dependant's begin", pressed: constraint === DependencyConstraint.ToBegin, run: () => this.reshape(edge, trigger, DependencyConstraint.ToBegin) },
-				{ label: "Gates the dependant's finish", pressed: constraint === DependencyConstraint.ToFinish, run: () => this.reshape(edge, trigger, DependencyConstraint.ToFinish) })
+				{ label: "Gates the dependant's begin", icon: 'lucide:play', pressed: constraint === DependencyConstraint.ToBegin, run: () => this.reshape(edge, trigger, DependencyConstraint.ToBegin) },
+				{ label: "Gates the dependant's finish", icon: 'lucide:flag', pressed: constraint === DependencyConstraint.ToFinish, run: () => this.reshape(edge, trigger, DependencyConstraint.ToFinish) })
 		}
 
-		entries.push({ separator: true }, { label: 'Remove dependency', danger: true, run: () => deleteDependency(edge) })
+		entries.push({ separator: true }, { label: 'Remove dependency', icon: 'lucide:unlink', danger: true, run: () => deleteDependency(edge) })
 		return { title: `This ${describeEdge(edge.dependency)}`, entries }
 	}
 
-	private nodeMenuSpec(nodeKey: string): ContextMenuSpec | undefined {
-		const node = this.graph.nodes.find(candidate => candidate.key === nodeKey)
-		if (!node) {
-			return undefined
-		}
-
+	/**
+	 * The context menu for a node, built from the canvas state it needs (the mode, the node's role). Set as each
+	 * node's `menu` so its own inherited controller raises it on a right-click — the canvas parametrizes the node's
+	 * menu rather than intercepting the event with a handler of its own.
+	 */
+	private nodeMenuSpecFor(node: CanvasNode): ContextMenuSpec {
 		const isCheckpoint = node.ref.kind === DependencyEndpointKind.Checkpoint
 		return {
 			title: node.entity.title,
 			entries: [
-				{ label: 'Details', run: () => this.openDetails(node) },
+				{ label: 'Details', icon: 'lucide:pen', run: () => this.openDetails(node) },
 				...(this.mode === 'global'
 					? this.globalMenuEntries(node)
 					: isCheckpoint
@@ -935,26 +949,26 @@ export class DependencyCanvas extends Component {
 	private globalMenuEntries(node: CanvasNode): ContextMenuEntry[] {
 		const entries: ContextMenuEntry[] = []
 		if (node.ref.kind !== DependencyEndpointKind.Checkpoint) {
-			entries.push({ label: 'Open note', run: () => navigateToEntity(node.entity.id) })
+			entries.push({ label: 'Open note', icon: 'lucide:file-text', run: () => navigateToEntity(node.entity.id) })
 		}
 
 		entries.push(
-			{ label: 'Remove from view', run: () => this.removeFromView(node, false) },
-			{ label: 'Remove with connected group', run: () => this.removeFromView(node, true) },
+			{ label: 'Remove from view', icon: 'lucide:eye-off', run: () => this.removeFromView(node, false) },
+			{ label: 'Remove with connected group', icon: 'lucide:git-fork', run: () => this.removeFromView(node, true) },
 			{ separator: true },
-			{ label: 'Delete', danger: true, run: () => deleteEntity(node) }
+			{ label: 'Delete', icon: 'lucide:trash-2', danger: true, run: () => deleteEntity(node) }
 		)
 		return entries
 	}
 
 	private entityMenuEntries(node: CanvasNode): ContextMenuEntry[] {
 		return [
-			{ label: 'Open note', run: () => navigateToEntity(node.entity.id) },
+			{ label: 'Open note', icon: 'lucide:file-text', run: () => navigateToEntity(node.entity.id) },
 			node.ghostly
 				? { note: 'A prerequisite outside this Onrush. It goes when the block is resolved.' }
-				: { label: 'Remove from Onrush', run: () => removeObjectiveFromOnrush(node.entity.id) },
+				: { label: 'Remove from Onrush', icon: 'onrush', run: () => removeObjectiveFromOnrush(node.entity.id) },
 			{ separator: true },
-			{ label: 'Delete', danger: true, run: () => deleteEntity(node) }
+			{ label: 'Delete', icon: 'lucide:trash-2', danger: true, run: () => deleteEntity(node) }
 		]
 	}
 
@@ -971,7 +985,7 @@ export class DependencyCanvas extends Component {
 
 		return [
 			{ separator: true },
-			{ label: 'Delete checkpoint', danger: true, run: () => deleteCheckpoint(node.entity.id) }
+			{ label: 'Delete checkpoint', icon: 'lucide:trash-2', danger: true, run: () => deleteCheckpoint(node.entity.id) }
 		]
 	}
 
@@ -1023,28 +1037,18 @@ export class DependencyCanvas extends Component {
 		this.capture(detail.pointerId)
 	}
 
+	/** The notch's way in: open the node's menu anchored to it. Right-click is the node's own controller's job. */
 	@eventListener('requestNodeMenu')
 	protected onRequestNodeMenu(e: CustomEvent<CanvasNodePointer>) {
 		e.stopPropagation()
-		const spec = this.nodeMenuSpec(e.detail.nodeKey)
-		if (!spec) {
+		const node = this.graph.nodes.find(candidate => candidate.key === e.detail.nodeKey)
+		if (!node) {
 			return
 		}
 
 		const element = this.shadowRoot?.querySelector(`.node[data-key="${CSS.escape(e.detail.nodeKey)}"]`)
 		const anchor = element?.getBoundingClientRect()
-		ContextMenu.open(anchor?.left ?? 0, anchor?.bottom ?? 0, spec)
-	}
-
-	/** Opens the node's context menu at the pointer, the right-click way in rather than through the notch. */
-	private onNodeContextMenu(e: MouseEvent, nodeKey: string) {
-		e.preventDefault()
-		e.stopPropagation()
-		this.selected = nodeKey
-		const spec = this.nodeMenuSpec(nodeKey)
-		if (spec) {
-			ContextMenu.open(e.clientX, e.clientY, spec)
-		}
+		ContextMenu.open(anchor?.left ?? 0, anchor?.bottom ?? 0, this.nodeMenuSpecFor(node))
 	}
 
 	/** Opens the entity behind a node in its banner, to view or edit. */

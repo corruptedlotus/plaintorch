@@ -300,13 +300,13 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 	}
 
 	/**
-	 * On the canvas the title does not open the note.
+	 * On the canvas the title does not open an editor.
 	 *
-	 * The base item navigates on a title click, but here a click selects the node and a double-click opens its
-	 * details — so a click on the title would otherwise fire the note open as the second half of that
-	 * double-click. Opening the note is the menu's job instead.
+	 * The base item opens the entity's edit modal on a title click, but here a click selects the node and a
+	 * double-click opens its details — so a title click would otherwise fire as the second half of that
+	 * double-click. Editing is the details window's job instead.
 	 */
-	protected override async navigateToEntity() {
+	protected override async titleAction() {
 	}
 }
 

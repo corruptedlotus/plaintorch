@@ -1,5 +1,6 @@
-import { Component, component, css, event, html, property, state } from "@a11d/lit"
+import { Component, component, css, event, eventListener, html, property, state } from "@a11d/lit"
 import { EditablePart } from "./EditableDataLink"
+import "../entities/ScheduleItem"
 
 export type ScheduleMode = 'orbit' | 'datetime'
 
@@ -27,6 +28,9 @@ export class EditableOrbitDatetime extends Component {
 
 	/** The chosen mode; falls back to whichever shape the values already describe (orbit takes precedence). */
 	@state() private chosenMode?: ScheduleMode
+
+	/** Whether the editor is showing its fields; idle it shows the read-only {@link ScheduleItem} face. */
+	@state() private editing = false
 
 	private get mode(): ScheduleMode {
 		return this.chosenMode ?? (this.orbit ? 'orbit' : this.date ? 'datetime' : 'orbit')
@@ -68,6 +72,10 @@ export class EditableOrbitDatetime extends Component {
 				align-items: center;
 				gap: .5ch;
 			}
+
+			.display {
+				cursor: pointer;
+			}
 		`
 	}
 
@@ -81,24 +89,52 @@ export class EditableOrbitDatetime extends Component {
 				@click=${() => this.switchMode()}>
 				<p7t-icon icon=${mode === 'orbit' ? 'lucide:repeat' : 'lucide:calendar-clock'}></p7t-icon>
 			</button>
-			<div class='fields'>
-				${mode === 'orbit' ? html`
-					<p7t-editable-orbit
-						.value=${this.orbit}
-						@change=${(e: Event) => this.commit('orbit', (e.target as EditablePart<string>).value)}>
-					</p7t-editable-orbit>
-				` : html`
-					<p7t-editable-date
-						.value=${this.date}
-						@change=${(e: Event) => this.commit('date', (e.target as EditablePart<string>).value)}>
-					</p7t-editable-date>
-					<p7t-editable-time
-						.value=${this.time}
-						@change=${(e: Event) => this.commit('time', (e.target as EditablePart<string>).value)}>
-					</p7t-editable-time>
-				`}
-			</div>
+			${this.editing ? html`
+				<div class='fields'>
+					${mode === 'orbit' ? html`
+						<p7t-editable-orbit
+							.value=${this.orbit}
+							@change=${(e: Event) => this.commit('orbit', (e.target as EditablePart<string>).value)}>
+						</p7t-editable-orbit>
+					` : html`
+						<p7t-editable-date
+							.value=${this.date}
+							@change=${(e: Event) => this.commit('date', (e.target as EditablePart<string>).value)}>
+						</p7t-editable-date>
+						<p7t-editable-time
+							.value=${this.time}
+							@change=${(e: Event) => this.commit('time', (e.target as EditablePart<string>).value)}>
+						</p7t-editable-time>
+					`}
+				</div>
+			` : html`
+				<p7t-schedule-item
+					class='display'
+					.orbit=${this.orbit}
+					.date=${this.date}
+					.time=${this.time}
+					@click=${() => this.enterEditing()}>
+				</p7t-schedule-item>
+			`}
 		`
+	}
+
+	/** Reveals the fields and lands the caret in the first one, so a single click on the face begins editing. */
+	private enterEditing() {
+		this.editing = true
+		void this.updateComplete.then(() => {
+			this.renderRoot.querySelector<HTMLElement>('.fields > *')?.focus()
+		})
+	}
+
+	/** Returns to the read-only face once focus has actually left the whole control, not merely moved between fields. */
+	@eventListener({ type: 'focusout', target: this })
+	protected onFocusOut() {
+		window.setTimeout(() => {
+			if (!this.matches(':focus-within')) {
+				this.editing = false
+			}
+		}, 0)
 	}
 
 	private switchMode() {

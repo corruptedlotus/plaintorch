@@ -360,8 +360,14 @@ export class ExecutiveEditor extends Component {
 			return
 		}
 
-		// The update response carries no navigation properties, so the known objective is kept.
-		this.executive = { ...executive, ...updated, objective: updated.objective ?? executive.objective }
+		// The update response carries no navigation properties, so the known objective and affinity timeframe are
+		// kept — otherwise a plain allocation edit would spread `undefined` over them and drop the affinity display.
+		this.executive = {
+			...executive,
+			...updated,
+			objective: updated.objective ?? executive.objective,
+			affinityTimeframe: updated.affinityTimeframe ?? executive.affinityTimeframe,
+		}
 		this.notifyChange()
 	}
 

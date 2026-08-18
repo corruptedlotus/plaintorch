@@ -1,32 +1,16 @@
-import { component, css, html, property } from "@a11d/lit"
+import { component, html, property } from "@a11d/lit"
 import { ObjectiveItem } from "./ObjectiveItem"
 import { Executive } from "@pleiades/sdk"
-import { ExecutiveModal, getApp, resolveMediaIcon } from ".."
+import { ExecutiveModal, getApp } from ".."
 
 @component('p7t-objective-item-exec')
 export class ObjectiveItemExecutive extends ObjectiveItem {
-	
+
 	@property({
 		updated(this: ObjectiveItemExecutive, value: Executive | undefined) {
 			this.entity = value?.objective
 		}
 	}) executive?: Executive
-
-	static override get styles() {
-		return css`
-			${super.styles}
-
-			.affinity-info {
-				display: flex;
-				align-items: center;
-
-				& p7t-icon {
-					width: 20px;
-					height: 20px;
-				}
-			}
-		`
-	}
 
 	override get disabled() {
 		return !!this.executive?.executed
@@ -43,12 +27,7 @@ export class ObjectiveItemExecutive extends ObjectiveItem {
 			return super.info
 		}
 
-		const icon = resolveMediaIcon(timeframe.iconMedia, getApp(), 'lucide:clock')
-		return html`
-			<div class='affinity-info' title=${timeframe.title}>
-				<p7t-icon .icon=${icon}></p7t-icon>
-			</div>
-		`
+		return html`<p7t-timeframe-item mode='icon' .timeframe=${timeframe}></p7t-timeframe-item>`
 	}
 
 	protected override get extraActionTemplate() {
