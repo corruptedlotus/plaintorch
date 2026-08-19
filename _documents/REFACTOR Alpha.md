@@ -8,16 +8,35 @@ way. Phases build on each other but each lands independently green.
 
 **Status legend:** ✅ done · 🚧 in progress · ⏳ planned · 🅿️ parked (has preconditions)
 
-**Progress context (2026-08-10).** Phases 0–1 landed. Phase 2 is underway: its forward path-composition slice
-landed on this date (the `entity switch` in `MarkdownFileLocator` is retired for a declared-policy shape-strategy
-composer); its reverse-composition and candidate-enumeration slices, and phases 3–5, remain. When the later work
-was re-verified against source at this date, the 8 hand-written path-sync models, the `IsDirectiveEntityTypeName`
-name-list, and the scattered `Mode.IsIdentityDriven()` checks were all still present.
-The intervening effort went to frontend and orbit/declarative work (PEP102 dependency-graph editor, PEP106
-frontend repository, Polaris briefing, orbit materialisation, executive-order effective windows), not the
-vault-core refactor — so the phase plan is **parked, not stale**. Two things that landed since do touch it and
-are folded in below: the PEP106 change feed (a new declaration-driven consumer of family/type knowledge) and
-the mode-policy service split (`VaultStorageModePolicyRouter`), which phase 4 now *extends* rather than invents.
+**Progress context (2026-08-16).** Phases **0–2 are ✅** — the entity catalog, the generic gateway, and the full
+shape-strategy composer (forward *and* reverse path composition), including the P2 freeform note-association fix.
+Phase **3 is 🚧**: first-class families + family-aware discovery landed; the registry-projected path-sync models
+remain. Phases **4–5 are ⏳**.
+
+**Where the work lives (onboarding).** The refactor and the PEP108 operation-status system have been *waterfalled*
+onto one branch, **`claude/refactor-alpha-continued`**, in this order: `0362720` (phase 2 forward) → PEP108 A/B/C/E
+→ `99b82ed` (phase 3 families) → `d2f2053` (phase 2 reverse) → `ff0b9f2` (phase 2 P2). Each commit lands the suite
+green save one **wall-clock-flaky** test (`DeclarativeEcosystemTests.Cycle_begin_materializes_proximity_eventives`
+— a fate at 23:00 + a 24h window; pre-existing, being fixed separately). PEP108 is a *sibling* system with its own
+document (`PEP108 - Operation Status System.md`); it depends on this refactor's phase 4 for its own phase D.
+
+**Onboarding keypoints — the non-obvious load-bearing facts:**
+- **The lifecycle system already exists.** PEP101's begin/finish is a *built*, declarative mechanism —
+  `[LifecyclePhase]`/`[LifecycleStatus]` + `EntityLifecycleResolver` (+ an `ILifecyclePhaseSource` hook for
+  temporal kinds like eventives) under `core/Orchestration/Lifecycle/`, consumed by PEP102's `DependencyGateService`.
+  Don't reinvent it. (The PEP101 *document* is still `status: idea` even though the code shipped — a doc/impl gap,
+  see D7.)
+- **Path composition is compose-then-correct.** The composer derives a *naive* parent id from the path (for a
+  partitioned incentive it even reads the incentive's own file); `VaultMarkdownDiscoveryService.ApplyPathAuthorities`
+  then **corrects** it via the partition-aware path policy. Phase 4's resolver consolidation must preserve *both*
+  steps (D10).
+- **Freeform/Implicit are identity-driven, not path-driven.** Belonging is by frontmatter PUCK, and the location is
+  only a write-time default. Freeform note-association enumerates self-named files and matches frontmatter identity,
+  contained to the resolver (D11). Getting freeform "clean" is largely phase 4's job — the Freeform policy object
+  must own the *full* question set, not the five sampled below.
+- **The mode-policy split already exists** (`VaultStorageModePolicyRouter`); phase 4 *extends* it, never invents.
+- **Type names + discriminators are a cross-repo contract** (the PEP106 SDK identity map keys on `{@type}:{id}`),
+  gated by `EntityTypeNameContractTests` — treat renames as contract changes.
 
 ---
 
@@ -149,31 +168,13 @@ same dispatch. (The fate/decree unification since this plan was drafted already 
 methods into `GetIncentiveFilePath` / `ApplyIncentiveCompositionFromPath` — a partial down-payment on the
 shape strategy, and evidence the per-kind methods never carried real per-kind variety.)
 
-**Target.** An `IVaultStorageStrategy` (working name) per *shape*, parameterised entirely by the entity's
-declared policy (via `VaultEntityModelCatalog`): canonical path composition, path→identity composition, and
-candidate enumeration. `MarkdownFileLocator` becomes a thin façade that resolves the strategy for
-`entity.GetType()`'s effective policy. Special placements that are genuinely per-model (executive orders
-composing inside their owning onrush partition via composite PUCK `x{?}-o{I:2:1}`) become declared strategy
-*parameters* or an explicit per-model hook — not a new switch arm.
-
-**Untangles along the way (P2 parked item).** Entity→note association (`AssociatedNote`) never resolves for
-directives because candidate enumeration is gated by the path-sync `IsCandidatePath` predicate, whose
-directive instance is deliberately `false` to keep directives out of the generic watcher scan. The predicate
-conflates *scan gating* with *path enumeration*; shape strategies separate the two concerns, and note
-association falls out naturally (including lunar directives under `Moonlight`). The pinning test in
-`DirectiveInitAndResolutionTests` flips from `Assert.Null` to a positive assertion then.
-
-**Test gate (land these first, ~6–8 goldens in `FileLocatorTests` / `PathClassificationTests`):**
-- fate/decree standalone-root paths and directive-partition paths (`Fates/`, `Decrees/` under a directive)
-- executive order composite path inside its owning onrush partition (the order now also carries a validated
-  `EffectiveFrom`/`EffectiveUntil` window — new fields, *not* a shape change; compose the current model)
-- lore page self-named path under the saga root
-- Index vs Quiet filename forms per shape (polaris/onrush Index; objective/directive Quiet already covered)
-- fate/decree path *classification* (foreign-container rejection between incentive kinds)
-- nested directive composition already covered (`DirectiveStorageTests`); keep as regression anchors
-
-**Risk.** Highest of all phases — path composition feeds watcher reconciliation, rename/relocation, and the
-graveyard. Mitigation: goldens first; behaviour-preserving refactor; no policy changes smuggled in.
+*(The original plan for this phase — the `IVaultStorageStrategy`-per-shape target, the P2 note-association
+untangle, and the goldens-first test gate — is realized in the two **Landed** notes above and in decisions
+D10–D11. The shape composer owns forward *and* reverse composition; the P2 flip shipped. The one piece that
+moved out — turning the `IsCandidatePath` predicates into strategy-owned candidate enumeration — rides phase 3's
+registry projection. Risk called out at the time, and honoured: path composition feeds watcher reconciliation,
+rename/relocation, and the graveyard, so both slices were behaviour-preserving with goldens, no policy changes
+smuggled in.)*
 
 ## Phase 3 — Polymorphic family descriptor 🚧
 
@@ -330,10 +331,11 @@ loadable and file-synced. Preconditions:
 3. Update the two pinning tests that intentionally encode today's behaviour (legacy-id resolution in
    `DirectiveInitAndResolutionTests`, anchor-kind assertion in `EntityModelCatalogTests`).
 
-### P2 · Directive entity→note association 🅿️
-Pre-existing gap, pinned by test, documented in `core/.DISCUSSION.md`. Resolved by phase 2's separation of
-scan gating from path enumeration. Do not fix piecemeal before then — the current code is the refactor's
-subject.
+### P2 · Directive entity→note association ✅ (phase 2)
+Resolved (see phase 2's second Landed note and D11). The fix was broader than expected — it was broken for *all*
+Quiet entities, and `PuckEntityResolutionService` now matches by frontmatter PUCK, anchors the family model, and
+enumerates freeform entities by self-named-file scan (contained to the resolver). The `DirectiveInitAndResolutionTests`
+pin is now a positive assertion for stellar *and* lunar.
 
 ### P3 · Lunar directive file auto-discovery 🅿️
 Deliberately bounded out of the sibling split. Lands (if wanted) as a phase 3 registry-projected model.
@@ -351,9 +353,13 @@ Identity-driven: concrete-type selection by `LUNA` declaration, never by directo
 | D4 | Base-declaration lookups query the whole family; the defensive stellar-only filter was dropped — PUCK tokenization + the ambiguity guard carry the discipline; no resolution-scope hook until a real special behaviour needs one | phase 1 |
 | D5 | Previous-state snapshots cover **all** mapped scalars + owned references, replacing hand-picked field lists | phase 1 |
 | D6 | Init-from-path mints ids from the composed **instantiation type**, not the family anchor (`A{S:8}`, matching API creation) | phase 1 prep |
-| D7 | The "declarations drive" principle now has a shipped instance *outside* the vault layer: the PEP106 change feed derives owners from EF foreign-key metadata (`OwnersOf`) and announces by runtime type name, not a hand-kept list. (Supersedes an earlier speculative D7 that attributed an `[LifecyclePhase]`/`EntityLifecycleResolver` design to "PEP101"; that design was never built — PEP101 is still an idea, and the dependency system that *did* ship is PEP102, with flat enum-typed endpoints and a recursive-CTE temporal-cycle probe.) | phase 1 / PEP106 |
+| D7 | The "declarations drive; hooks stay available" principle already has **built** instances. **PEP101's begin/finish lifecycle is real, declarative code** — `[LifecyclePhase]`/`[LifecycleStatus]` + `EntityLifecycleResolver`, plus an `ILifecyclePhaseSource` hook for temporal kinds (eventives, whose "passing" is temporal not stateful) — under `core/Orchestration/Lifecycle/`, consumed by PEP102's `DependencyGateService`. **NB: the PEP101 *document* is still `status: idea` even though the mechanism shipped** (a doc/impl gap — don't reinvent the lifecycle system). A second instance sits outside the vault layer: the PEP106 change feed derives owners from EF FK metadata (`OwnersOf`) and announces by runtime type name, not a hand-kept list. *(Corrects an earlier D7 that wrongly claimed the lifecycle design was never built.)* | phase 1 / PEP101 / PEP106 |
 | D8 | "Stealth" is the operator's informal name for the Implicit storage mode (Quiet frontmatter PUCK, no file on create, boundary-begun); the plan keeps the code identifier `Implicit` as canonical so it stays greppable against source | phase 5 scoping |
 | D9 | Policy-derived onboarding endpoints (Implicit boundary-`begin`, Freeform/Implicit file-`init`) are mode-mechanical, not domain, and fold into phase 5 (§5a) dispatched through the phase-4 mode policy objects. `begin` (adopt a file for an existing entity) and `init` (create an entity from a file) stay **distinct** actions but both go generic across identity-driven modes; `init` generalises beyond directives to implicit incentives (new behaviour) | phase 5 scoping |
+| D10 | Phase 2 reverse composition: the composer owns `ApplyCompositionFromPath` (identity + parent from the declared `ParentEntityType`) but **delegates** containing-owner resolution to the existing `TryGetContaining*Id` helpers rather than unifying the three duplicates now — that consolidation is phase 4. **Keypoint:** the composer's incentive `DirectiveId` is deliberately *naive* and is **corrected downstream** by `ApplyPathAuthorities` via the partition-aware path policy; phase 4 must preserve this compose-then-correct two-step | phase 2 (operator call) |
+| D11 | Phase 2 note-association (P2) was broken for **all Quiet entities**, not just directives (the matcher read the filename PUCK; Quiet/freeform keep it in frontmatter). Fixed in `PuckEntityResolutionService` by frontmatter-PUCK matching + a family-anchored model lookup (lunar resolves too) + — per the operator's **"derive from mode"** call — enumerating freeform entities by scanning self-named files. Kept **contained to the resolver** so the shared `IsCandidatePath`/scan/storage/migration behaviour is untouched; turning `IsCandidatePath` itself into strategy-owned candidate enumeration is deferred to phase 3 | phase 2 (operator call) |
+| D12 | Phase 3 families are derived from the concrete members' **inheritance** (an abstract base shared by *some but not all* members), not from catalog membership — so `Incentive`, which declares no entity attributes of its own and is not a catalog model, still anchors its `{Objective, Fate, Decree}` family | phase 3 |
+| D13 | Phase 2's leftover reverse/candidate-enumeration work was **not** forced into a standalone "phase 2 completion": the reverse `Apply*` helpers entangle with the path-sync catalog (phase 3) and the triplicated containing-owner resolvers in the path policy (phase 4), so they land there. Phase 2 is ✅ for the shape composer; phase 3's registry projection clears the rest | phase 2/3 boundary |
 
 ## Standing constraints
 
