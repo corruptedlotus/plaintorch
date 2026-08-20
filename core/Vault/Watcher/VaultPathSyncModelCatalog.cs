@@ -20,8 +20,10 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	private readonly IReadOnlyList<VaultPathSyncModel> _models =
 	[
 		// The directive family is polymorphic: the abstract Directive anchors identity/known-id lookups (spanning
-		// the whole discriminated family), while path composition materializes a concrete StellarDirective (lunar
-		// directives are authored through the API).
+		// the whole discriminated family), while path composition materializes the concrete member the file's own
+		// identity selects — A… → stellar, LUNA… → lunar — via VaultFamilyInstantiationResolver. The declared
+		// concreteType is only the fallback for a brand-new file with no resolvable identity yet (keeping today's
+		// stellar default), never a hard-coded collapse of the family to one member.
 		CreateModel<Directive>(layout, [layout.VaultRoot], VaultStorageShape.SelfNamedDirectory, static _ => false,
 			concreteType: typeof(StellarDirective)),
 

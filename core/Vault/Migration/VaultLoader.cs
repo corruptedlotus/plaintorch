@@ -17,6 +17,7 @@ namespace Pleiades.Vault.Migration;
 public sealed class VaultLoader(
 	VaultLayout layout,
 	VaultPathSyncModelCatalog modelCatalog,
+	VaultFamilyInstantiationResolver familyInstantiationResolver,
 	MarkdownFrontMatterSerializer markdownSerializer)
 {
 	/// <summary>
@@ -80,9 +81,10 @@ public sealed class VaultLoader(
 			return null;
 		}
 
-		var entity = Activator.CreateInstance(model.InstantiationType)
-			?? throw new InvalidOperationException($"Could not construct entity '{model.InstantiationType.Name}' during vault load.");
-		HydrateFields(entity, model.InstantiationType, markdown);
+		var instantiationType = familyInstantiationResolver.ResolveInstantiationType(model, id);
+		var entity = Activator.CreateInstance(instantiationType)
+			?? throw new InvalidOperationException($"Could not construct entity '{instantiationType.Name}' during vault load.");
+		HydrateFields(entity, instantiationType, markdown);
 		if (entity is IPuckNamedEntity namedEntity)
 		{
 			namedEntity.Id = id;

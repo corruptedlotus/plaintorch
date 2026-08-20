@@ -4,6 +4,7 @@ using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Puck;
 using Pleiades.Tests.Harness;
+using Pleiades.Vault.Watcher;
 using Xunit;
 
 namespace Pleiades.Tests.Core;
@@ -37,6 +38,26 @@ public sealed class DirectiveInitAndResolutionTests : VaultTestBase
 		var content = Vault.ReadVaultFile("Directives/Campaign/Campaign.md");
 		Assert.Contains($"puck: {stellar.Id}", content);
 		Assert.Contains("Freeform authored body.", content);
+	}
+
+	[Fact]
+	public async Task Init_path_composes_a_lunar_identity_to_the_lunar_member()
+	{
+		// Author a lunar directive so its on-disk file carries a real LUNA identity in frontmatter.
+		await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.CreateLunarAsync("Sleep Law", cancellationToken: TestContext.Current.CancellationToken));
+
+		// Re-inspecting that file through the directive init path must path-compose to the lunar member: the file's
+		// own identity selects it, where before this refactor the family collapsed to its stellar fallback regardless
+		// of identity (REFACTOR Alpha phase 3: identity-driven concrete-type resolution).
+		var absolutePath = Path.Combine(Vault.VaultRoot, "Moonlight", "Sleep Law", "Sleep Law.md");
+		var candidate = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<VaultMarkdownDiscoveryService>()
+			.InspectDirectiveInitPathAsync(absolutePath, "test", TestContext.Current.CancellationToken));
+
+		Assert.NotNull(candidate);
+		Assert.IsType<LunarDirective>(candidate!.ParsedModel);
 	}
 
 	[Fact]

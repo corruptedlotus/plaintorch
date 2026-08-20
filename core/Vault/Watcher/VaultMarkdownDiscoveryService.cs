@@ -27,6 +27,7 @@ public sealed class VaultMarkdownDiscoveryService(
 	PuckCreationService puckCreationService,
 	PuckEntityResolutionService puckEntityResolutionService,
 	VaultEntityModelCatalog entityModelCatalog,
+	VaultFamilyInstantiationResolver familyInstantiationResolver,
 	VaultStoragePathComposer pathComposer)
 {
 	/// <summary>
@@ -234,7 +235,10 @@ public sealed class VaultMarkdownDiscoveryService(
 		var (pathId, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(fullPath);
 		var pathDerivedId = pathId;
 		var pathDerivedTitle = pathTitle;
-		var parsedModel = CreatePathComposedModel(model.InstantiationType, fullPath);
+		var instantiationType = familyInstantiationResolver.ResolveInstantiationType(
+			model,
+			ResolveComposedIdentity(markdown, pathId));
+		var parsedModel = CreatePathComposedModel(instantiationType, fullPath);
 		if (parsedModel is IPuckNamedEntity namedEntity)
 		{
 			if (!string.IsNullOrWhiteSpace(namedEntity.Id))
@@ -254,7 +258,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		var isNewEntity = string.IsNullOrWhiteSpace(pathId) || !knownIds.Contains(pathId);
 		var preserveDefaultsForMissingFields = isNewEntity
 			|| (!model.Mode.IsIdentityDriven() && typeof(IPuckNamedEntity).IsAssignableFrom(model.EntityType));
-		var issues = DeserializeInto(parsedModel, model.InstantiationType, markdown, preserveDefaultsForMissingFields: preserveDefaultsForMissingFields)
+		var issues = DeserializeInto(parsedModel, instantiationType, markdown, preserveDefaultsForMissingFields: preserveDefaultsForMissingFields)
 			.Select(issue => issue)
 			.ToList();
 		ApplyPathAuthorities(parsedModel, fullPath, issues);
@@ -304,7 +308,7 @@ public sealed class VaultMarkdownDiscoveryService(
 
 		await ApplyDomainValidationsAsync(parsedModel, issues, cancellationToken);
 
-		if (string.IsNullOrWhiteSpace(pathId) && puckCreationService.RequiresCallerInputFor(model.InstantiationType))
+		if (string.IsNullOrWhiteSpace(pathId) && puckCreationService.RequiresCallerInputFor(instantiationType))
 		{
 			issues.Add(new MarkdownValidationIssue("id", "Path identity is missing required caller-provided PUCK input."));
 		}
@@ -510,6 +514,28 @@ public sealed class VaultMarkdownDiscoveryService(
 
 		pathComposer.ApplyCompositionFromPath(model, path);
 		return model;
+	}
+
+	/// <summary>
+	/// Resolves the identity that selects a polymorphic family's concrete member before composition.
+	/// </summary>
+	/// <param name="markdown">The file's raw markdown, when it exists.</param>
+	/// <param name="pathId">The loose identity already parsed from the path.</param>
+	/// <returns>The frontmatter PUCK when present; otherwise the path-derived identity.</returns>
+	private string? ResolveComposedIdentity(string markdown, string? pathId)
+	{
+		// A Quiet or freeform file keeps its PUCK in frontmatter, not in a title-named path, so prefer it; fall back
+		// to the loose path identity for index-stored files that carry the PUCK in the filename.
+		if (!string.IsNullOrWhiteSpace(markdown))
+		{
+			var frontMatter = markdownSerializer.ParseFrontMatter(markdown);
+			if (frontMatter.TryGetValue("puck", out var rawPuck) && !string.IsNullOrWhiteSpace(rawPuck))
+			{
+				return rawPuck.Trim().Trim('"');
+			}
+		}
+
+		return pathId;
 	}
 
 	/// <summary>

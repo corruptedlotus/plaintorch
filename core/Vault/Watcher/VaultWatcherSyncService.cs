@@ -146,16 +146,18 @@ public sealed class VaultWatcherSyncService(
 		}
 
 		// Identity is declared per concrete type (a polymorphic family's siblings may carry different PUCK
-		// declarations), so id creation keys on the composed instantiation type rather than the anchor type.
+		// declarations), so id creation keys on the actual composed type — a lunar directive discovery materialized
+		// mints a LUNA… id, not the family's stellar fallback — rather than the model's anchor or default type.
+		var composedType = namedEntity.GetType();
 		var ignoredPathId = default(string);
-		if (!puckCreationService.RequiresCallerInputFor(candidate.Model.InstantiationType))
+		if (!puckCreationService.RequiresCallerInputFor(composedType))
 		{
 			ignoredPathId = string.IsNullOrWhiteSpace(candidate.PathId) ? null : candidate.PathId;
-			namedEntity.Id = puckCreationService.CreateIdFor(candidate.Model.InstantiationType);
+			namedEntity.Id = puckCreationService.CreateIdFor(composedType);
 		}
 		else if (string.IsNullOrWhiteSpace(namedEntity.Id))
 		{
-			namedEntity.Id = puckCreationService.CreateIdFor(candidate.Model.InstantiationType);
+			namedEntity.Id = puckCreationService.CreateIdFor(composedType);
 		}
 
 		context.Add(model);
