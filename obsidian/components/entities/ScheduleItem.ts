@@ -40,6 +40,12 @@ export class ScheduleItem extends InfoItem {
 	 */
 	@property({ type: Number }) max = 0
 
+	/**
+	 * Draws the orbit in its terse reading ("Every 3 Wed @12:00") rather than the full one. Off by default, so
+	 * roomy surfaces keep the long phrase; the tooltip always carries the full reading regardless.
+	 */
+	@property({ type: Boolean }) short = false
+
 	static override get styles() {
 		return css`
 			${super.styles}
@@ -96,7 +102,7 @@ export class ScheduleItem extends InfoItem {
 		const labelStyle = clip ? `max-width:${this.max}ch` : nothing
 
 		if (this.mode === 'orbit') {
-			const { text } = humanizeOrbit(this.orbit)
+			const { text } = humanizeOrbit(this.orbit, this.short)
 			return html`
 				<span class='schedule'>
 					<p7t-icon icon='lucide:repeat'></p7t-icon>

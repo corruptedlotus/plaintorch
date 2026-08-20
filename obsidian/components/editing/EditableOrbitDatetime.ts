@@ -123,6 +123,7 @@ export class EditableOrbitDatetime extends Component {
 			return html`
 				<p7t-schedule-item
 					class='display'
+					short
 					.orbit=${this.orbit}
 					.date=${this.date}
 					.time=${this.time}
