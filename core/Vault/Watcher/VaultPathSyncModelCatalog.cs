@@ -55,6 +55,53 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	public IReadOnlyList<VaultPathSyncModel> GetModels() => _models;
 
 	/// <summary>
+	/// Validates that the declared path-sync models are coherent with, and fully cover, the entity model catalog:
+	/// every model targets a vault-stored catalog entity of the declared shape, and every concrete vault-stored
+	/// entity is discoverable through a model — directly, or via a family anchor spanning its members. This keeps the
+	/// path-sync list a faithful projection of the catalog rather than a parallel source of truth, failing vault
+	/// activation fast on drift such as a new vault-stored entity added without a model (which would otherwise be
+	/// silently undiscoverable) or a shape that disagrees with its declaration.
+	/// </summary>
+	/// <param name="entityModelCatalog">The declarative entity model catalog the path-sync list projects from.</param>
+	public void ValidateAgainstCatalog(VaultEntityModelCatalog entityModelCatalog)
+	{
+		ArgumentNullException.ThrowIfNull(entityModelCatalog);
+
+		foreach (var model in _models)
+		{
+			var declared = entityModelCatalog.GetRequired(model.EntityType);
+			if (declared.Storage is null)
+			{
+				throw new InvalidOperationException(
+					$"Path-sync model '{model.EntityName}' targets an entity that declares no vault storage.");
+			}
+
+			if (declared.Storage.Shape != model.Shape)
+			{
+				throw new InvalidOperationException(
+					$"Path-sync model '{model.EntityName}' declares shape '{model.Shape}', but entity storage declares '{declared.Storage.Shape}'.");
+			}
+		}
+
+		foreach (var declared in entityModelCatalog.GetModels())
+		{
+			if (declared.IsAbstract || declared.Storage is null)
+			{
+				continue;
+			}
+
+			var covered = _models.Any(model =>
+				model.EntityType == declared.EntityType
+				|| model.EntityType.IsAssignableFrom(declared.EntityType));
+			if (!covered)
+			{
+				throw new InvalidOperationException(
+					$"Vault-stored entity '{declared.EntityType.Name}' has no path-sync model and would be undiscoverable; declare a model, or a family anchor that spans it.");
+			}
+		}
+	}
+
+	/// <summary>
 	/// Gets all distinct scan roots ordered by specificity.
 	/// </summary>
 	public IReadOnlyList<string> GetScanRoots()
