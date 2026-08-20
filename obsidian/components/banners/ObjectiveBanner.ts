@@ -134,7 +134,7 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 
 	protected override get headingTemplate() {
 		return html`
-			<p7t-editable-plaintext ${this.binder.bind('title')}></p7t-editable-plaintext>
+			<p7t-editable-plaintext required label='Title' placeholder='Untitled' ${this.binder.bind('title')}></p7t-editable-plaintext>
 		`
 	}
 	

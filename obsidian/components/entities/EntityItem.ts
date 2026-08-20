@@ -1,11 +1,20 @@
 import { component, Component, css, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
-import { EntityWatch, navigateToEntity } from '..'
+import { ContextMenuController, EntityWatch, type ContextMenuSpec } from '..'
+import { entityContextMenu, openEntityEditor } from './entityMenu'
 import { itemLayoutStyles } from './itemStyles'
 
 @component('p7t-entity-item')
 export class EntityItem<T extends { id: string, title: string }> extends Component {
 	@property({ type: Object }) entity?: T
 	@property({ type: Boolean, reflect: true }) interactive = false
+
+	/**
+	 * A context menu supplied by a host that owns it — the dependency canvas sets each node's menu, so its single
+	 * inherited controller raises the canvas's own per-mode menu rather than the generic entity one. Left unset
+	 * everywhere else, where the entity default applies. Plain (non-reactive) so a host re-supplying it every render
+	 * never provokes a re-render; the controller only reads it on a right-click.
+	 */
+	menu?: ContextMenuSpec
 
 	get disabled() { return false }
 
@@ -15,9 +24,26 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 	 */
 	protected readonly watch = new EntityWatch(this, () => this.entity)
 
-	protected async navigateToEntity() {
-		if (!this.interactive) return
-		navigateToEntity(this.entity!.id)
+	/**
+	 * Raises the entity's context menu on right-click — deletion, editing, opening its note, and more per kind. As a
+	 * controller it needs no handler in the template; it withholds the menu (passing the event through) whenever
+	 * {@link contextMenuSpec} returns nothing.
+	 */
+	protected readonly contextMenu = new ContextMenuController(this, () => this.contextMenuSpec())
+
+	/**
+	 * The context menu this item raises: a host-supplied {@link menu} when set, otherwise the entity's own menu.
+	 * The single inherited controller reads this, so a host parametrizes the menu by setting {@link menu} rather
+	 * than shadowing the controller with a second handler.
+	 */
+	protected contextMenuSpec(): ContextMenuSpec | undefined {
+		return this.menu ?? (this.interactive && this.entity ? entityContextMenu(this.entity) : undefined)
+	}
+
+	/** The title click opens the entity's editing modal (its banner). Overridable — the canvas selects instead. */
+	protected async titleAction() {
+		if (!this.interactive || !this.entity) return
+		openEntityEditor(this.entity)
 	}
 
 	static override get styles() {
@@ -73,7 +99,7 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 					${this.info}
 				</div>
 				<div class='title'>
-					<span @click=${() => this.navigateToEntity()}>${this.entity?.title}</span>
+					<span @click=${() => this.titleAction()}>${this.entity?.title}</span>
 				</div>
 			</div>
 			${this.highlightInfo}

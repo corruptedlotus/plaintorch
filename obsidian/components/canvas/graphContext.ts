@@ -1,19 +1,22 @@
-import { DependencyEndpointKind, type Checkpoint, type Dependency, type Objective, type OnrushSprint } from '@pleiades/sdk'
+import { DependencyEndpointKind, type Checkpoint, type Dependency, type EndpointHit, type Objective, type OnrushSprint } from '@pleiades/sdk'
 import { endpointKey, resolveEdges, sourceRef, targetRef, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
 
 /**
  * Which slice of the backlog the canvas is showing.
  *
  * The mode is not only a filter: it decides what adding or removing a node *means*. In an onrush context a
- * node is a membership of that sprint, so putting one on the canvas puts it in the sprint — which is why the
- * modes are named here, next to the functions that resolve them, rather than left to the surface.
+ * node is a membership of that sprint, so putting one on the canvas puts it in the sprint. In the global
+ * context a node is only *shown*: adding and removing hide and reveal, and never touch the edges themselves —
+ * which is why the modes are named here, next to the functions that resolve them, rather than left to the
+ * surface.
  */
-export type CanvasContextMode = 'onrush-active' | 'onrush-planning'
+export type CanvasContextMode = 'onrush-active' | 'onrush-planning' | 'global'
 
 /** What each mode is called where a person has to choose one. */
 export const contextModeLabels: Record<CanvasContextMode, string> = {
 	'onrush-active': 'Active Onrush',
-	'onrush-planning': 'Planning Onrush'
+	'onrush-planning': 'Planning Onrush',
+	'global': 'Global Planning'
 }
 
 /** Resolves an out-of-context endpoint to the entity behind it, for drawing a ghostly blocker. */
@@ -99,4 +102,44 @@ export function objectiveNode(objective: Objective): CanvasNode {
 export function checkpointNode(checkpoint: Checkpoint, milestone: boolean): CanvasNode {
 	const ref = { kind: DependencyEndpointKind.Checkpoint, id: checkpoint.id }
 	return { key: endpointKey(ref), ref, entity: checkpoint, milestone }
+}
+
+/**
+ * Resolves the graph of a global planning context (PEP102 — the freeform phase).
+ *
+ * The nodes are exactly what the reader has pinned, in whatever mix of kinds; the edges are every dependency
+ * running between two of them. Unlike an onrush this holds no membership — a node is here because it was
+ * *shown*, so removing it only hides it and the edge it carried survives, ready to reappear when it is pinned
+ * again. Each pin carries its own title, so a context restored from a file draws before anything is fetched;
+ * a live entity is preferred when the resolver has one, for its current fields.
+ */
+export function globalContext(
+	pinned: readonly EndpointHit[],
+	dependencies: readonly Dependency[],
+	resolve: EndpointResolver = () => undefined
+): CanvasGraph {
+	const nodes: CanvasNode[] = []
+	const seen = new Set<string>()
+	for (const hit of pinned) {
+		const ref = { kind: hit.kind, id: hit.id }
+		const key = endpointKey(ref)
+		if (seen.has(key)) {
+			continue
+		}
+
+		seen.add(key)
+		nodes.push({ key, ref, entity: resolve(hit.kind, hit.id) ?? { id: hit.id, title: hit.title } })
+	}
+
+	return { nodes, edges: resolveEdges(dependencies, seen) }
+}
+
+/** The endpoints a dependency joins, as the pins a global context would need to show that edge. */
+export function edgeEndpoints(dependency: Dependency): { source: EndpointHit, target: EndpointHit } {
+	const source = sourceRef(dependency)
+	const target = targetRef(dependency)
+	return {
+		source: { kind: source.kind, id: source.id, title: source.id },
+		target: { kind: target.kind, id: target.id, title: target.id }
+	}
 }

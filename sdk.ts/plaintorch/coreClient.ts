@@ -13,6 +13,7 @@ import { PlaintorchPolarisSdk } from "./polaris/polarisSdk"
 import { PlaintorchLoreSdk } from "./lore/loreSdk"
 import { PlaintorchDependenciesSdk } from "./dependencies/dependenciesSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
+import { PlaintorchMediaSdk } from "./media/mediaSdk"
 import { createAbsorbingReviver, EntityStore, PlaintorchRepositories, type AbsorptionContext } from "./repository"
 
 
@@ -42,6 +43,7 @@ export class PlaintorchCoreClient {
 	 */
 	public readonly repos: PlaintorchRepositories
 	public readonly system: PlaintorchSystemSdk
+	public readonly media: PlaintorchMediaSdk
 	public readonly directives: PlaintorchDirectivesSdk
 	public readonly objectives: PlaintorchObjectivesSdk
 	public readonly declaratives: PlaintorchDeclarativesSdk
@@ -62,6 +64,7 @@ export class PlaintorchCoreClient {
 		]
 		this.store = new EntityStore()
 		this.system = new PlaintorchSystemSdk(this)
+		this.media = new PlaintorchMediaSdk(this)
 		this.directives = new PlaintorchDirectivesSdk(this)
 		this.objectives = new PlaintorchObjectivesSdk(this)
 		this.declaratives = new PlaintorchDeclarativesSdk(this)
@@ -187,6 +190,12 @@ export class PlaintorchCoreClient {
 	}
 
 	private async sendForSuccess(request: PlaintorchCoreRequest): Promise<boolean> {
-		return (await this.send(request)) !== undefined
+		const response = await this.send(request)
+		// Consume the body even though only success matters here: a transport with a keep-alive pool does not
+		// release a connection until its response is read, so a boolean write that returns a body — a DELETE
+		// answered with 200 and a payload, say — would otherwise pin a socket. The node transport already
+		// drains on its own; this covers any transport that does not.
+		await response?.text()
+		return response !== undefined
 	}
 }

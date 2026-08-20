@@ -175,12 +175,18 @@ namespace plaintorch.Vault.Database.Migrations
                     b.Property<string>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Banner")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Codename")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Discriminator")
                         .IsRequired()
                         .HasMaxLength(21)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Icon")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ParentDirectiveId")
@@ -432,6 +438,9 @@ namespace plaintorch.Vault.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<long?>("AffinityTimeframeId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("DecreeId")
                         .HasColumnType("TEXT");
 
@@ -450,6 +459,8 @@ namespace plaintorch.Vault.Database.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AffinityTimeframeId");
 
                     b.HasIndex("DecreeId");
 
@@ -485,11 +496,20 @@ namespace plaintorch.Vault.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("AutoInclusion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("AutoInclusionCollege")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("DirectiveId")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Icon")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Orbit")
@@ -1118,6 +1138,11 @@ namespace plaintorch.Vault.Database.Migrations
 
             modelBuilder.Entity("Pleiades.Orchestration.Reflective", b =>
                 {
+                    b.HasOne("Pleiades.Orchestration.Timeframe", "AffinityTimeframe")
+                        .WithMany()
+                        .HasForeignKey("AffinityTimeframeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Pleiades.Orchestration.Decree", "Decree")
                         .WithMany("Reflectives")
                         .HasForeignKey("DecreeId");
@@ -1127,6 +1152,8 @@ namespace plaintorch.Vault.Database.Migrations
                         .HasForeignKey("PolarisCycleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("AffinityTimeframe");
 
                     b.Navigation("Decree");
 

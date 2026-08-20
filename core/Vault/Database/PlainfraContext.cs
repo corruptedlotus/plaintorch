@@ -303,8 +303,13 @@ public class PlainfraContext : DbContext
 			.WithMany(x => x.Eventives)
 			.OnDelete(DeleteBehavior.Cascade);
 
-		// Removing a timeframe definition only clears executive affinity references.
+		// Removing a timeframe definition only clears the affinity references pointing at it.
 		modelBuilder.Entity<Executive>()
+			.HasOne(x => x.AffinityTimeframe)
+			.WithMany()
+			.OnDelete(DeleteBehavior.SetNull);
+
+		modelBuilder.Entity<Reflective>()
 			.HasOne(x => x.AffinityTimeframe)
 			.WithMany()
 			.OnDelete(DeleteBehavior.SetNull);

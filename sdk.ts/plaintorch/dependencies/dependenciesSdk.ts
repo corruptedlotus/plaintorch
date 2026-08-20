@@ -5,7 +5,8 @@ import type {
 	CreateCheckpointRequest,
 	CreateDependencyRequest,
 	Dependency,
-	DependencyLockView
+	DependencyLockView,
+	EndpointHit
 } from "./contracts"
 
 export class PlaintorchDependenciesSdk {
@@ -15,6 +16,24 @@ export class PlaintorchDependenciesSdk {
 	public async list(entityId?: string): Promise<Dependency[]> {
 		const query = entityId ? `?entityId=${encodeURIComponent(entityId)}` : ""
 		return (await this.client.getJson<Dependency[]>(`/api/dependencies${query}`)) ?? []
+	}
+
+	/**
+	 * Searches the entities that may be a dependency endpoint — stellar directives, objectives, fates —
+	 * kind-tagged for a picker (PEP102). An empty query returns a bounded slice across the kinds.
+	 */
+	public async searchEndpoints(query?: string, take?: number): Promise<EndpointHit[]> {
+		const params = new URLSearchParams()
+		if (query) {
+			params.set("q", query)
+		}
+
+		if (take !== undefined) {
+			params.set("take", String(take))
+		}
+
+		const suffix = params.toString()
+		return (await this.client.getJson<EndpointHit[]>(`/api/dependencies/endpoints${suffix ? `?${suffix}` : ""}`)) ?? []
 	}
 
 	/** Creates a dependency edge (source blocks target). */

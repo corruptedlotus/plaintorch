@@ -1,4 +1,4 @@
-import { bindingDefaultProperty, Component, component, css, event, eventListener, html, property, PropertyValues } from "@a11d/lit"
+import { bindingDefaultProperty, Component, component, css, event, eventListener, html, property } from "@a11d/lit"
 
 @component('p7t-editable')
 export class EditablePart<T> extends Component {
@@ -77,35 +77,8 @@ export class EditablePart<T> extends Component {
 	}
 }
 
-@component('p7t-editable-plaintext')
-export class EditablePlainText extends EditablePart<string> {
-	override readonly contentEditable = 'plaintext-only'
-	override readonly spellcheck = false
-
-	protected override updated(_changedProperties: PropertyValues) {
-		// While the field is being edited the caret lives in this text; rewriting it — even to the same string —
-		// would collapse the selection and drop what the reader is typing, so it is synced only when idle.
-		if (this.active) return
-		this.textContent = this.value ?? ''
-	}
-
-	@eventListener({ type: 'focus', target: this })
-	protected handleFocus() {
-		this.beginManualEditing()
-	}
-
-	@eventListener({ type: 'blur', target: this })
-	@eventListener({ type: 'keyup', target: this })
-	protected handleInput(e: KeyboardEvent | unknown) {
-		if (e instanceof KeyboardEvent && !(e.key === 'Enter' && e.ctrlKey)) return
-		this.blur()
-		this.finishEditing(this.textContent ?? '')
-	}
-}
-
 declare global {
 	interface HTMLElementTagNameMap {
-		'p7t-editable': EditablePart<unknown>,
-		'p7t-editable-plaintext': EditablePlainText
+		'p7t-editable': EditablePart<unknown>
 	}
 }

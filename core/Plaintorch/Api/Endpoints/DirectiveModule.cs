@@ -65,6 +65,13 @@ public sealed class DirectiveModule : Module
 			return Results.NoContent();
 		});
 
+		// Media (PEP105) spans both kinds: a directive icon or banner is set through its shared base fields.
+		group.MapPut("/{directiveId}/icon", async (string directiveId, DirectiveIconRequest request, IDirectiveApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.SetIconAsync(directiveId, request, cancellationToken)));
+
+		group.MapPut("/{directiveId}/banner", async (string directiveId, DirectiveBannerRequest request, IDirectiveApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.SetBannerAsync(directiveId, request, cancellationToken)));
+
 		// Stellar-only surface.
 		var stellar = group.MapGroup("/stellar");
 

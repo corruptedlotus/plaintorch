@@ -1,61 +1,46 @@
-import { component, css, eventListener, html, PropertyValues } from "@a11d/lit"
-import { EditablePart } from "./EditableDataLink";
+import { component, css, html } from "@a11d/lit"
+import { EditableNumericPart } from "./EditableNumericPart"
 
+/**
+ * Editable Celestron (starfire) value: a non-negative whole number.
+ *
+ * Like the time-unit, it edits by focus — arrow up/down step by one, typed digits set the number directly,
+ * Enter finishes, Escape reverts, Backspace clears to zero.
+ */
 @component('p7t-editable-starfire')
-export class EditableStarfire extends EditablePart<number> {
-	override readonly contentEditable = 'plaintext-only'
-	override readonly spellcheck = false
+export class EditableStarfire extends EditableNumericPart {
+	override digitLimit = 6
 
 	static override get styles() {
 		return css`
 			${super.styles}
 
 			:host {
-				display: flex;
-				align-items: center;
-				align-self: center;
 				gap: .5ch;
 				font-weight: 300;
 				margin: .2em;
 			}
 
 			p7t-icon {
-				font-size: 1.2em
+				font-size: 1.2em;
 			}
 
-			slot {
-				display: inline;
+			.value {
 				margin-inline-end: .4ch;
 			}
 		`
 	}
 
-	protected override updated(_changedProperties: PropertyValues) {
-		// See EditablePlainText: syncing the text mid-edit would collapse the caret, so it waits until idle.
-		if (this.active) return
-		this.textContent = this.value?.toString() ?? 'x'
-	}
-
-	@eventListener({ type: 'focus', target: this })
-	protected handleFocus() {
-		this.beginManualEditing()
-	}
-
-	@eventListener({ type: 'blur', target: this })
-	@eventListener({ type: 'keyup', target: this })
-	protected handleInput(e: KeyboardEvent | unknown) {
-		if (e instanceof KeyboardEvent && !(e.key === 'Enter' && e.ctrlKey)) return
-		this.blur()
-		// Empty or non-numeric input clears the value rather than settling on NaN — the field may be blanked.
-		const parsed = this.textContent ? parseInt(this.textContent, 10) : Number.NaN
-		this.finishEditing(Number.isNaN(parsed) ? undefined : parsed)
-	}
-
 	protected override get template() {
 		return html`
 			<p7t-icon icon='starfire'></p7t-icon>
-			<slot class='text'>${this.value}</slot>
+			<span class='value'>${this.value ?? 'x'}</span>
+			${this.stepperTemplate()}
 		`
+	}
+
+	protected override applyDigits(buffer: string): number {
+		return Number(buffer)
 	}
 }
 

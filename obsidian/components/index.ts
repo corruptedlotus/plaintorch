@@ -6,6 +6,7 @@
 export { plaintorchNodeCoreClient as core } from '@pleiades/sdk/plaintorch/node'
 
 export * from './data'
+export * from './media'
 export * from './PleiadesIcon'
 export * from './design'
 export * from './editing'

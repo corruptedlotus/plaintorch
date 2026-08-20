@@ -1,6 +1,6 @@
 import { Notice } from 'obsidian'
-import { Directive } from '@pleiades/sdk'
-import { core, ExpandingAction, IconName, PromptTextModal } from '..'
+import { Directive, typeNameOf } from '@pleiades/sdk'
+import { core, ExpandingAction, IconName, PromptTextModal, type ScheduleValue } from '..'
 import type { GridEntity } from './entityTree'
 
 /** What kind of thing a row holds, resolved from the runtime type the core stamped on it. */
@@ -11,7 +11,8 @@ const kindIcons: Record<EntityKind, IconName> = {
 	'stellar-directive': 'directive',
 	'lunar-directive': 'directive-lunar',
 	'objective': 'objective',
-	// No dedicated fate or decree icon exists yet; these stand in, as they do on the banners.
+	// Fate and decree stand in with these to match their banners (which set the same icons); dedicated
+	// 'fate'/'decree' icons now exist but are not adopted here yet, to keep the grid and banners aligned.
 	'fate': 'eventive',
 	'decree': 'everglow'
 }
@@ -27,16 +28,18 @@ const kindLabels: Record<EntityKind, string> = {
 /**
  * Resolves what an entity is.
  *
- * Directives are told apart by the discriminator the core emits rather than by the presence of fields,
- * since a stellar and a lunar directive share one model.
+ * Told apart by the runtime type the core stamps as `@type` (read through the SDK's {@link typeNameOf})
+ * rather than by the presence of fields, since a stellar and a lunar directive share one model. The earlier
+ * check read the polymorphic `$type` discriminator, which the core only emits for the base-typed directive
+ * listing — fates and decrees are listed by their concrete type and carry no `$type`, so they fell through to
+ * the objective default and rendered with its icon and columns.
  */
 export function entityKindOf(entity: GridEntity): EntityKind {
-	const type = (entity as { $type?: string }).$type
-	switch (type) {
-		case 'lunar': return 'lunar-directive'
-		case 'stellar': return 'stellar-directive'
-		case 'fate': return 'fate'
-		case 'decree': return 'decree'
+	switch (typeNameOf(entity)) {
+		case 'LunarDirective': return 'lunar-directive'
+		case 'StellarDirective': return 'stellar-directive'
+		case 'Fate': return 'fate'
+		case 'Decree': return 'decree'
 		default: return 'objective'
 	}
 }
@@ -153,6 +156,17 @@ export async function saveEntityField(entity: GridEntity, field: EditableField):
 export function isSingleInstanceFate(entity: GridEntity): boolean {
 	const fate = entity as { orbit?: string, date?: string }
 	return !fate.orbit && !!fate.date
+}
+
+/**
+ * Persists a fate's chosen schedule, clearing whichever shape it is not: an orbit clears the fixed date,
+ * a fixed date clears the orbit (an empty orbit string clears it). This keeps a fate from carrying both and
+ * materializing two schedules at once.
+ */
+export async function saveFateSchedule(entity: GridEntity, schedule: ScheduleValue): Promise<boolean> {
+	return !!await core.repos.fates.mutate(entity.id, async () => await core.declaratives.updateFate(entity.id, schedule.mode === 'orbit'
+		? { orbit: schedule.orbit ?? '', clearDate: true }
+		: { orbit: '', date: schedule.date, startTime: schedule.time }))
 }
 
 /** Opens the note an entity is the authority for, in a new tab. */

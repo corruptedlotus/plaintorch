@@ -1,7 +1,8 @@
 import { Component, component, css, html, nothing, property, state } from "@a11d/lit"
-import { Executive, ExecutiveUpdate, ObjectiveStatus } from "@pleiades/sdk"
+import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
 import { App, Modal, Notice } from "obsidian"
-import { core, SelectObjectiveStatusModal } from ".."
+import { core, getApp, resolveMediaIcon, SelectObjectiveStatusModal, SelectTimeframeModal } from ".."
+import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 import type { EditablePart } from "../editing/EditableDataLink"
 import type { EditableTimeUnit } from "../editing/EditableTimeUnit"
 
@@ -115,6 +116,21 @@ export class ExecutiveEditor extends Component {
 				align-self: stretch;
 			}
 
+			.affinity {
+				display: flex;
+				align-items: center;
+				gap: .4em;
+
+				& p7t-icon {
+					width: 1.4em;
+					height: 1.4em;
+				}
+
+				&.muted {
+					opacity: .5;
+				}
+			}
+
 			.allocations {
 				display: grid;
 				font-size: 1.2em;
@@ -202,6 +218,13 @@ export class ExecutiveEditor extends Component {
 							</p7t-status-item>
 						</p7t-editable>
 					`}
+
+					<p7t-editable
+						.value=${executive.affinityTimeframe}
+						.doEdit=${SelectTimeframeModal.prompt}
+						@change=${(e: Event) => this.commitAffinity(e)}>
+						${this.affinityTemplate(executive.affinityTimeframe)}
+					</p7t-editable>
 				</div>
 			</div>
 
@@ -251,6 +274,67 @@ export class ExecutiveEditor extends Component {
 		this.applyUpdate({ executed })
 	}
 
+	/** The display shown inside the affinity selector: the affined timeframe's icon and title, or a muted placeholder. */
+	private affinityTemplate(timeframe: Timeframe | undefined) {
+		if (!timeframe) {
+			return html`
+				<span class='affinity muted'>
+					<p7t-icon icon='lucide:clock'></p7t-icon>
+					<span>No affinity</span>
+				</span>
+			`
+		}
+
+		const icon = resolveMediaIcon(timeframe.iconMedia, getApp(), 'lucide:clock')
+		return html`
+			<span class='affinity'>
+				<p7t-icon .icon=${icon}></p7t-icon>
+				<span>${timeframe.title}</span>
+			</span>
+		`
+	}
+
+	private async commitAffinity(e: Event) {
+		const choice = (e.target as EditablePart<TimeframeChoice>).value
+		// A cancelled pick fires no change; a resolved one is a record (affine) or null (clear).
+		if (choice === undefined) return
+
+		const update: ExecutiveUpdate = choice === null
+			? { clearAffinityTimeframe: true }
+			: { affinityTimeframeId: choice.id }
+
+		const updated = await core.polaris.updateExecutive(this.executive!.id, update)
+		if (!updated) {
+			new Notice('Failed to update executive affinity.')
+			return
+		}
+
+		// The update response carries no navigation properties, so fold the picked timeframe in for display.
+		this.executive = {
+			...this.executive!,
+			...updated,
+			objective: updated.objective ?? this.executive!.objective,
+			affinityTimeframe: choice ? ExecutiveEditor.recordToTimeframe(choice) : undefined,
+		}
+		this.notifyChange()
+	}
+
+	/** Maps a global timeframe record to the {@link Timeframe} shape the executive carries, for immediate display. */
+	private static recordToTimeframe(record: DirectiveTimeframeRecord): Timeframe {
+		return {
+			id: record.id,
+			directiveId: record.directiveId,
+			title: record.title,
+			startTime: record.startTime,
+			endTime: record.endTime,
+			orbit: record.orbit,
+			icon: record.icon,
+			iconMedia: record.iconMedia,
+			autoInclusion: record.autoInclusion,
+			autoInclusionCollege: record.autoInclusionCollege,
+		}
+	}
+
 	private async commitStatus(e: Event) {
 		const status = (e.target as EditablePart<ObjectiveStatus>).value
 		const objective = this.executive?.objective
@@ -276,8 +360,14 @@ export class ExecutiveEditor extends Component {
 			return
 		}
 
-		// The update response carries no navigation properties, so the known objective is kept.
-		this.executive = { ...executive, ...updated, objective: updated.objective ?? executive.objective }
+		// The update response carries no navigation properties, so the known objective and affinity timeframe are
+		// kept — otherwise a plain allocation edit would spread `undefined` over them and drop the affinity display.
+		this.executive = {
+			...executive,
+			...updated,
+			objective: updated.objective ?? executive.objective,
+			affinityTimeframe: updated.affinityTimeframe ?? executive.affinityTimeframe,
+		}
 		this.notifyChange()
 	}
 

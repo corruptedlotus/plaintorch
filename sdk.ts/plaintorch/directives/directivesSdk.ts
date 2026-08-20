@@ -13,8 +13,11 @@ import type {
 	LunarDirectiveWorkflowShift,
 	Timeframe,
 	TimeframePlan,
-	TimeframeUpdate
+	TimeframeUpdate,
+	DirectiveIconRequest,
+	DirectiveBannerRequest
 } from "./contracts"
+
 export class PlaintorchDirectivesSdk {
 	public constructor(private readonly client: PlaintorchCoreClient) { }
 
@@ -76,6 +79,41 @@ export class PlaintorchDirectivesSdk {
 
 	public async delete(directiveId: string): Promise<boolean> {
 		return await this.client.delete(`/api/directives/${encodeURIComponent(directiveId)}`)
+	}
+
+	/** Selects or clears a directive's icon (PEP105): a raw reference key, or cleared. Uploading is `core.media`'s job. */
+	public async setIcon(directiveId: string, request: DirectiveIconRequest): Promise<Directive | undefined> {
+		return await this.client.putForJson<Directive>(`/api/directives/${encodeURIComponent(directiveId)}/icon`, request)
+	}
+
+	/** Selects or clears a directive's banner image (PEP105). */
+	public async setBanner(directiveId: string, request: DirectiveBannerRequest): Promise<Directive | undefined> {
+		return await this.client.putForJson<Directive>(`/api/directives/${encodeURIComponent(directiveId)}/banner`, request)
+	}
+
+	/** Sets a directive's icon to a raw key: a glyph/lucide name, a `media:` file, or a `vault:` file (PEP105). */
+	public async setIconReference(directiveId: string, reference: string): Promise<Directive | undefined> {
+		return await this.setIcon(directiveId, { reference })
+	}
+
+	/** Sets a directive's icon to a built-in glyph or lucide name (PEP105). */
+	public async setIconGlyph(directiveId: string, glyph: string): Promise<Directive | undefined> {
+		return await this.setIconReference(directiveId, glyph)
+	}
+
+	/** Clears a directive's icon, falling back to the per-kind default glyph (PEP105). */
+	public async clearIcon(directiveId: string): Promise<Directive | undefined> {
+		return await this.setIcon(directiveId, { clear: true })
+	}
+
+	/** Sets a directive's banner to a raw key: a `media:` file or a `vault:` file (PEP105). */
+	public async setBannerReference(directiveId: string, reference: string): Promise<Directive | undefined> {
+		return await this.setBanner(directiveId, { reference })
+	}
+
+	/** Clears a directive's banner image (PEP105). */
+	public async clearBanner(directiveId: string): Promise<Directive | undefined> {
+		return await this.setBanner(directiveId, { clear: true })
 	}
 
 	public async createLunar(request: CreateLunarDirectiveRequest): Promise<Directive | undefined> {

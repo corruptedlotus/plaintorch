@@ -132,6 +132,15 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 				user-select: auto;
 			}
 
+			.banner-image {
+				width: 100%;
+				height: 132px;
+				background-size: cover;
+				background-position: center;
+				border-radius: 8px;
+				margin-bottom: .4em;
+			}
+
 			:host::part(header) {
 				grid-area: header;
 			}
@@ -229,10 +238,27 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 		`
 	}
 
+	/**
+	 * An optional full-width header image rendered above the identity grid (PEP105). Defaults to none; a banner
+	 * whose entity carries a banner image (a directive with a banner asset) overrides this.
+	 */
+	protected get bannerImageTemplate(): unknown {
+		return nothing
+	}
+
+	/**
+	 * The entity's icon, rendered in the identity grid. Defaults to a display-only glyph or image; a banner that
+	 * lets its icon be edited (a directive) overrides this with an editable media control.
+	 */
+	protected get iconTemplate(): unknown {
+		return html`<p7t-icon class='icon' icon='${this.resolvedIcon}'></p7t-icon>`
+	}
+
 	protected override get template() {
 		return !this.entity ? html`` : html`
+			${this.bannerImageTemplate}
 			<div class='render-grid'>
-				<p7t-icon class='icon' icon='${this.resolvedIcon}'></p7t-icon>
+				${this.iconTemplate}
 				${this.headerTemplate}
 
 				<span class='indicator'></span>

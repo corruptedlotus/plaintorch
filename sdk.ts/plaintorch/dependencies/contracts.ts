@@ -5,6 +5,7 @@ export type {
 	DependencyEndpointKind,
 	EndpointRef,
 	DependencyLockView,
+	EndpointHit,
 	DependencyEndpointRequest,
 	CreateDependencyRequest,
 	Checkpoint,

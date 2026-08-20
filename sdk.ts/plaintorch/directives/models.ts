@@ -1,5 +1,5 @@
-import { model } from "@a11d/api-dotnet"
-import type { Objective } from "../objectives/models"
+import { model, ModelValueConstructor } from "@a11d/api-dotnet"
+import type { Objective, ObjectiveCollege } from "../objectives/models"
 export enum DirectiveStatus {
 	Planned = 0,
 	Committed = 1,
@@ -26,8 +26,6 @@ export type DirectiveKind = 'stellar' | 'lunar'
  */
 @model('StellarDirective')
 export class Directive {
-	/** Polymorphic discriminator emitted by the core: "stellar" or "lunar". */
-	$type?: DirectiveKind
 	id!: string
 	title!: string
 	codename: string | undefined
@@ -47,17 +45,35 @@ export class Directive {
 	endDate?: string | undefined
 	/** Timeframes; only present on lunar directives (PEP100). */
 	timeframes?: Timeframe[]
+	/** Icon key (PEP105): a glyph/lucide name, a `media:` self image, or a `vault:` shared image. */
+	icon?: string | undefined
+	/** Banner image key (PEP105): a `media:` self image or a `vault:` shared image. */
+	banner?: string | undefined
+	/** Resolved companion of {@link icon} (PEP105) — its kind and, for custom media, its vault-relative path. */
+	iconMedia?: MediaReference | undefined
+	/** Resolved companion of {@link banner} (PEP105). */
+	bannerMedia?: MediaReference | undefined
 
+	/** The runtime kind, keyed off the `@type` the core stamps (the same discriminator api-dotnet reconstructs by). */
 	get isLunar() {
-		return this.$type === 'lunar'
+		return (this as Record<string, unknown>)[ModelValueConstructor.typeNameKey] === 'LunarDirective'
 	}
 
 	get isStellar() {
-		return this.$type === 'stellar'
+		return (this as Record<string, unknown>)[ModelValueConstructor.typeNameKey] === 'StellarDirective'
 	}
 }
 
 model('LunarDirective')(Directive)
+
+/**
+ * How a timeframe auto-includes Polaris workitems (PEP100 patch). Numeric to match the wire form. College is the
+ * only criterion for now; the enum is the extension point for further ones.
+ */
+export enum TimeframeInclusion {
+	None = 0,
+	College = 1
+}
 
 /** Directive-level definition of a portion of the day (PEP100). Belongs to a lunar directive; purely semantic. */
 export interface Timeframe {
@@ -67,6 +83,14 @@ export interface Timeframe {
 	startTime: string
 	endTime: string
 	orbit: string | undefined
+	/** Icon key (PEP100 patch): a glyph/lucide name or a `vault:` shared image. Stands in for Celestron on an affined executive. */
+	icon?: string | undefined
+	/** Resolved companion of {@link icon} (PEP100 patch). */
+	iconMedia?: MediaReference | undefined
+	/** How this timeframe auto-includes workitems (PEP100 patch). */
+	autoInclusion: TimeframeInclusion
+	/** The college driving college-based auto-inclusion (PEP100 patch). */
+	autoInclusionCollege?: ObjectiveCollege | undefined
 }
 
 /** A timeframe paired with a summary of the lunar directive that owns it (global timeframe listing, PEP100). */
@@ -80,6 +104,14 @@ export interface DirectiveTimeframeRecord {
 	startTime: string
 	endTime: string
 	orbit?: string | undefined
+	/** Icon key (PEP100 patch). */
+	icon?: string | undefined
+	/** Resolved companion of {@link icon} (PEP100 patch). */
+	iconMedia?: MediaReference | undefined
+	/** How this timeframe auto-includes workitems (PEP100 patch). */
+	autoInclusion: TimeframeInclusion
+	/** The college driving college-based auto-inclusion (PEP100 patch). */
+	autoInclusionCollege?: ObjectiveCollege | undefined
 }
 
 export interface CreateDirectiveRequest {
@@ -131,6 +163,12 @@ export interface TimeframePlan {
 	startTime: string
 	endTime: string
 	orbit?: string | undefined
+	/** Icon key (PEP100 patch): a glyph/lucide name or a `vault:` shared image. */
+	icon?: string | undefined
+	/** How this timeframe auto-includes workitems (PEP100 patch); defaults to none. */
+	autoInclusion?: TimeframeInclusion
+	/** The college driving college-based auto-inclusion (PEP100 patch). */
+	autoInclusionCollege?: ObjectiveCollege | undefined
 }
 
 export interface TimeframeUpdate {
@@ -139,4 +177,44 @@ export interface TimeframeUpdate {
 	endTime?: string | undefined
 	orbit?: string | undefined
 	clearOrbit?: boolean
+	/** Icon key (PEP100 patch). Leave undefined to keep the current icon. */
+	icon?: string | undefined
+	/** Clears the icon regardless of any provided value (PEP100 patch). */
+	clearIcon?: boolean
+	/** How this timeframe auto-includes workitems (PEP100 patch). Leave undefined to keep the current mechanism. */
+	autoInclusion?: TimeframeInclusion
+	/** The college driving college-based auto-inclusion (PEP100 patch). Leave undefined to keep the current college. */
+	autoInclusionCollege?: ObjectiveCollege | undefined
+	/** Clears the auto-inclusion college regardless of any provided value (PEP100 patch). */
+	clearAutoInclusionCollege?: boolean
+}
+
+/** How a media key resolves (PEP105): a built-in glyph, self/level media, or vault-level shared media. */
+export type MediaReferenceType = 'icon' | 'media' | 'vault'
+
+/** The resolved companion an entity carries beside a media key (PEP105). */
+export interface MediaReference {
+	/** The raw stored key, e.g. `media:crest.png`, `vault:logo.png`, or `lucide:star`. */
+	key: string
+	/** How the key resolves. */
+	type: MediaReferenceType
+	/** The vault-relative path for custom media; undefined for a glyph. */
+	path?: string | undefined
+}
+
+/**
+ * Selects a directive's icon (PEP105): a raw `reference` key — a glyph/lucide name, or a `media:`/`vault:` file
+ * already stored through the media domain — or `clear` to remove it. Storing an image is the media domain's job;
+ * a field only ever references a key.
+ */
+export interface DirectiveIconRequest {
+	/** A raw key to set directly: a glyph/lucide name, `media:file`, or `vault:file`. */
+	reference?: string | undefined
+	clear?: boolean
+}
+
+/** Selects a directive's banner image (PEP105): a raw `reference` key already stored through the media domain, or `clear`. */
+export interface DirectiveBannerRequest {
+	reference?: string | undefined
+	clear?: boolean
 }

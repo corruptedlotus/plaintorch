@@ -3,13 +3,15 @@ import {
 	DependencyEndpointKind,
 	DependencyTrigger,
 	type DependencyEndpointRequest,
+	type EndpointHit,
 	type EndpointRef,
 	type OnrushSprint
 } from '@pleiades/sdk'
-import { Notice } from 'obsidian'
-import { core, PromptTextModal } from '..'
+import { Notice, normalizePath } from 'obsidian'
+import { core, getApp, PromptTextModal } from '..'
 import { effectiveConstraint, effectiveTrigger, sourceRef, targetRef, type CanvasEdge, type CanvasNode } from './graphModel'
 import type { CanvasContextMode } from './graphContext'
+import { GLOBAL_CONTEXT_EXTENSION, serializeGlobalContext } from './globalContextFile'
 
 /**
  * The canvas's writes.
@@ -323,6 +325,38 @@ export async function refreshOnrush(): Promise<void> {
 /** Persists the sprint's canvas layout — best effort, since a lost layout only costs a re-placement. */
 export async function saveGraphLayout(sprintId: string, layout: string | undefined): Promise<void> {
 	await core.onrush.setGraphLayout(sprintId, layout)
+}
+
+/**
+ * Writes a scratch global context to a new `.p7tpx` file and opens it, graduating it into something durable.
+ *
+ * The file's own view takes over from there — this is a one-time hand-off, not the ongoing save, which the
+ * file view does as the context is edited. A dismissed name prompt does nothing; a name already taken is
+ * refused rather than overwritten.
+ */
+export async function saveGlobalContextToFile(pinned: readonly EndpointHit[], layout: string | undefined): Promise<void> {
+	let name: string | undefined
+	try {
+		name = await PromptTextModal.prompt('Save global context', 'File name')
+	}
+	catch {
+		return
+	}
+
+	if (!name) {
+		return
+	}
+
+	const app = getApp()
+	const path = normalizePath(`${name.replace(/[\\/:*?"<>|]/g, '').trim()}.${GLOBAL_CONTEXT_EXTENSION}`)
+	if (app.vault.getAbstractFileByPath(path)) {
+		new Notice(`A file named "${path}" already exists.`)
+		return
+	}
+
+	const file = await app.vault.create(path, serializeGlobalContext(pinned, layout))
+	await app.workspace.getLeaf(true).openFile(file)
+	new Notice(`Saved global context to ${path}.`)
 }
 
 /** Which repository record a mode reads its sprint from. */

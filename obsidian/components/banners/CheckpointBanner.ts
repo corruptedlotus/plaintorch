@@ -49,7 +49,7 @@ export class CheckpointBanner extends EntityBanner<Checkpoint> {
 	}
 
 	protected override get headingTemplate() {
-		return html`<p7t-editable-plaintext ${this.binder.bind('title')}></p7t-editable-plaintext>`
+		return html`<p7t-editable-plaintext required label='Title' placeholder='Untitled' ${this.binder.bind('title')}></p7t-editable-plaintext>`
 	}
 
 	protected override get secondary() {

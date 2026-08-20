@@ -80,6 +80,17 @@ public interface IDirectiveApi
 	Task DeleteAsync(string directiveId, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Sets or clears a directive's icon (PEP105): a built-in glyph name, an uploaded image, or cleared to the
+	/// per-kind default. Applies to either kind.
+	/// </summary>
+	Task<Directive> SetIconAsync(string directiveId, DirectiveIconRequest request, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Sets or clears a directive's banner image (PEP105). Applies to either kind.
+	/// </summary>
+	Task<Directive> SetBannerAsync(string directiveId, DirectiveBannerRequest request, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Initializes a stellar directive from an existing vault markdown path using watcher creation policy.
 	/// </summary>
 	Task<Directive> InitializeFromPathAsync(string vaultRelativePath, CancellationToken cancellationToken = default);
