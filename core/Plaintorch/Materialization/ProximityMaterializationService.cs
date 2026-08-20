@@ -12,12 +12,20 @@ namespace Pleiades.Plaintorch.Materialization;
 /// attentives, and lunar-hierarchy reflect-decrees generate cycle-bound reflectives.
 /// </summary>
 /// <remarks>
+/// <para>
 /// One materializer serves two triggers. <see cref="MaterializeForCycleAsync"/> runs when a Polaris cycle
 /// begins, anchored on the cycle's 24h window and generating its bound reflectives. <see cref="MaterializeForNowAsync"/>
 /// runs on the hourly rolling pass (and on a declarative change), anchored on now and independent of any
 /// cycle, so the agenda's attentives and upcoming eventives exist as rows without waiting for a cycle to be
 /// begun. Orbit resolution SEEKS (advances the persisted schedule state); instance identity is the occurrence
 /// date/time, so already interacted instances are recognized rather than duplicated.
+/// </para>
+/// <para>
+/// Dated fates and due objectives are the exception to both windows: a single fixed occurrence has no seek
+/// cursor marking what has been consumed, so it materializes unconditionally — past occurrences included — and
+/// is never stranded for having fallen behind now. Only the forward horizon still bounds how far ahead a
+/// future-dated instance is pre-created.
+/// </para>
 /// </remarks>
 public sealed class ProximityMaterializationService(
 	PlainfraContext context,
@@ -123,25 +131,30 @@ public sealed class ProximityMaterializationService(
 		PolarisCycle? cycle,
 		CancellationToken cancellationToken)
 	{
-		var candidateDates = InclusionWindow.EnumerateDates(windowStart, eventiveWindowEnd);
+		var eventiveWindowEndDay = DateOnly.FromDateTime(eventiveWindowEnd);
 		var startDay = DateOnly.FromDateTime(windowStart);
 		var created = 0;
 
-		// Dated fates: collide by their explicit time specification.
+		// Dated fates materialize their single eventive unconditionally, past occurrences included. A dated
+		// instance is a fixed one-shot with no schedule to seek: there is no cursor marking what has been
+		// consumed (as an orbit stream has), so a past occurrence dropped here would be stranded forever.
+		// The forward horizon still bounds pre-creation of future-dated fates. Only fates still missing their
+		// eventive are loaded, keeping the scan bounded; EnsureFateEventiveAsync remains the dedup authority.
 		var datedFates = await context.Fates
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
-			.Where(fate => fate.Status == FateStatus.Active && fate.Date != null && candidateDates.Contains(fate.Date.Value))
+			.Where(fate => fate.Status == FateStatus.Active
+				&& fate.Date != null
+				&& fate.Date <= eventiveWindowEndDay
+				&& !context.Eventives.Any(eventive =>
+					eventive.FateId == fate.Id
+					&& eventive.RecurrenceDate == fate.Date
+					&& eventive.RecurrenceTime == fate.StartTime))
 			.ToListAsync(cancellationToken);
 
 		foreach (var fate in datedFates)
 		{
-			if (!InclusionWindow.Intersects(fate.Date!.Value, fate.StartTime, fate.EndTime, windowStart, eventiveWindowEnd))
-			{
-				continue;
-			}
-
-			created += await EnsureFateEventiveAsync(fate, fate.Date.Value, cancellationToken) ? 1 : 0;
+			created += await EnsureFateEventiveAsync(fate, fate.Date!.Value, cancellationToken) ? 1 : 0;
 		}
 
 		// Orbit-scheduled fates: seek their (Gregorian-calendar) schedules through the window end, catching up
@@ -233,24 +246,21 @@ public sealed class ProximityMaterializationService(
 			}
 		}
 
+		// Due objectives materialize unconditionally too, overdue dates included — bounded above by the
+		// horizon and filtered to those still missing their eventive.
 		var dueObjectives = await context.Objectives
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
 			.Where(objective => objective.Due != null
-				&& candidateDates.Contains(objective.Due.Value)
+				&& objective.Due <= eventiveWindowEndDay
 				&& objective.Status != ObjectiveStatus.Done
 				&& objective.Status != ObjectiveStatus.Archived
-				&& objective.Status != ObjectiveStatus.Failed)
+				&& objective.Status != ObjectiveStatus.Failed
+				&& !context.Eventives.Any(eventive => eventive.ObjectiveId == objective.Id && eventive.RecurrenceDate == objective.Due))
 			.ToListAsync(cancellationToken);
 
 		foreach (var objective in dueObjectives)
 		{
-			var exists = await context.Eventives.AnyAsync(item => item.ObjectiveId == objective.Id && item.RecurrenceDate == objective.Due!.Value, cancellationToken);
-			if (exists)
-			{
-				continue;
-			}
-
 			context.Eventives.Add(new Eventive
 			{
 				ObjectiveId = objective.Id,

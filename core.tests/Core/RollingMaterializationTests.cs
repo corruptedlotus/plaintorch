@@ -121,4 +121,43 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		Assert.NotEmpty(agenda.Eventives);
 		Assert.All(agenda.Eventives, eventive => Assert.True(eventive.Date >= today && eventive.Date <= today.AddDays(7)));
 	}
+
+	[Fact]
+	public async Task A_past_dated_fate_materializes_its_eventive_and_is_not_duplicated()
+	{
+		var ct = TestContext.Current.CancellationToken;
+		var pastDay = DateOnly.FromDateTime(DateTime.Today).AddDays(-5);
+
+		// A dated fate is a fixed one-shot: its eventive must exist even when the occurrence is already in the
+		// past at every moment the materializer runs — it is never inside the forward window.
+		var fate = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
+			.CreateFateAsync(new FatePlan("Backdated", Date: pastDay, StartTime: new TimeOnly(9, 0), EventDuration: 30), ct));
+
+		// A further pass must not create a second one — the missing-only scan plus the per-occurrence guard
+		// keep it idempotent.
+		await MaterializeNowAsync();
+
+		var eventive = await Vault.QueryAsync(context => context.Eventives
+			.SingleAsync(item => item.FateId == fate.Id && item.RecurrenceDate == pastDay, ct));
+		Assert.Equal(30, eventive.Estimation);
+	}
+
+	[Fact]
+	public async Task An_overdue_objective_materializes_its_eventive_on_the_rolling_pass()
+	{
+		var ct = TestContext.Current.CancellationToken;
+		var pastDue = DateOnly.FromDateTime(DateTime.Today).AddDays(-5);
+
+		var objective = await Vault.WithScopeAsync(s => s.GetRequiredService<IObjectiveApi>()
+			.CreateStandaloneAsync("Overdue deliverable", cancellationToken: ct));
+		await Vault.WithScopeAsync(s => s.GetRequiredService<IObjectiveApi>()
+			.UpdateAsync(objective.Id, new ObjectiveUpdate(Due: pastDue), ct));
+
+		// Objectives have no eager materialization on due-set, so the pass is what must pick up the overdue one.
+		await MaterializeNowAsync();
+
+		var eventive = await Vault.QueryAsync(context => context.Eventives
+			.SingleAsync(item => item.ObjectiveId == objective.Id && item.RecurrenceDate == pastDue, ct));
+		Assert.Equal(pastDue, eventive.Date);
+	}
 }

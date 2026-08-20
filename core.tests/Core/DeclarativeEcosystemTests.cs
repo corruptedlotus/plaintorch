@@ -352,9 +352,13 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		var decree = await WithApi(api => api.CreateDecreeAsync(new DecreePlan("Sweep"), cancellationToken));
 		await WithApi(api => api.MaterializeAttentiveAsync(decree.Id, new AttentiveMaterialization(Date: today), cancellationToken));
 
+		// Anchor cycle begin at the local start of `today` so the forward 24h proximity window always covers the
+		// 23:00 fate. Left to default (DateTimeOffset.UtcNow), the window is [now, now+24h] and the 23:00 fate
+		// falls outside it whenever the test runs after 23:00 local — a wall-clock-dependent flake.
+		var cycleStart = new DateTimeOffset(today.ToDateTime(TimeOnly.MinValue));
 		await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
-			.StartNewAsync(cancellationToken: cancellationToken));
+			.StartNewAsync(startTime: cycleStart, cancellationToken: cancellationToken));
 
 		var eventives = await Vault.QueryAsync(context => context.Eventives.ToListAsync(cancellationToken));
 		Assert.Contains(eventives, item => item.FateId == fate.Id && item.Estimation == 30);
