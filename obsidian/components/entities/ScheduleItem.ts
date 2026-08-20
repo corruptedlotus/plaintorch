@@ -8,19 +8,37 @@ function formatDate(date: string): string {
 	return Number.isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })
 }
 
+/** 'YYYY-MM-DD' → a full 'Monday, 12 August 2025' label, for the tooltip. */
+function formatDateLong(date: string): string {
+	const parsed = new Date(`${date}T00:00:00`)
+	return Number.isNaN(parsed.getTime())
+		? date
+		: parsed.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+}
+
 /** 'HH:MM[:SS]' → 'HH:MM'. */
 const formatTime = (time: string): string => time.slice(0, 5)
 
 /**
  * The schedule a fate-like entity carries (PEP100) — a recurring **orbit** or a fixed **date/time**, never both —
  * drawn read-only, the display counterpart of {@link EditableOrbitDatetime}. It prefers the orbit when both are
- * present, humanizes the orbit notation for the face, and keeps the raw notation (or the full date) as the tooltip.
+ * present and humanizes the orbit notation for the face.
+ *
+ * A humanized orbit can run long ("Wednesdays of every 3 weeks at 12:00"), so the face is length-aware: set
+ * {@link max} to cap its width and it tails an ellipsis, keeping the chip a chip. The full phrase is always in the
+ * tooltip — the humanized reading over the raw notation — so nothing is lost to the truncation.
  */
 @component('p7t-schedule-item')
 export class ScheduleItem extends InfoItem {
 	@property() orbit?: string
 	@property() date?: string
 	@property() time?: string
+
+	/**
+	 * Caps the label at this many characters' width, tailing an ellipsis past it (the full phrase stays in the
+	 * tooltip). `0`, the default, never truncates — the face grows to the whole reading.
+	 */
+	@property({ type: Number }) max = 0
 
 	static override get styles() {
 		return css`
@@ -31,6 +49,17 @@ export class ScheduleItem extends InfoItem {
 				align-items: center;
 				gap: .4ch;
 				font-weight: 300;
+				min-width: 0;
+			}
+
+			.label {
+				min-width: 0;
+			}
+
+			.label.clip {
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
 			}
 
 			.none {
@@ -41,6 +70,19 @@ export class ScheduleItem extends InfoItem {
 				width: 1.1em;
 				height: 1.1em;
 				opacity: .7;
+				flex: 0 0 auto;
+			}
+
+			.tip-phrase {
+				font-weight: 400;
+			}
+
+			.tip-raw {
+				display: block;
+				margin-block-start: .35em;
+				font-family: var(--font-monospace);
+				font-size: .9em;
+				opacity: .6;
 			}
 		`
 	}
@@ -50,12 +92,15 @@ export class ScheduleItem extends InfoItem {
 	}
 
 	protected override get content() {
+		const clip = this.max > 0
+		const labelStyle = clip ? `max-width:${this.max}ch` : nothing
+
 		if (this.mode === 'orbit') {
 			const { text } = humanizeOrbit(this.orbit)
 			return html`
 				<span class='schedule'>
 					<p7t-icon icon='lucide:repeat'></p7t-icon>
-					<span>${text || this.orbit}</span>
+					<span class='label ${clip ? 'clip' : ''}' style=${labelStyle}>${text || this.orbit}</span>
 				</span>
 			`
 		}
@@ -64,7 +109,7 @@ export class ScheduleItem extends InfoItem {
 			return html`
 				<span class='schedule'>
 					<p7t-icon icon='lucide:calendar-clock'></p7t-icon>
-					<span>${formatDate(this.date!)}${!this.time ? '' : ` · ${formatTime(this.time)}`}</span>
+					<span class='label ${clip ? 'clip' : ''}' style=${labelStyle}>${formatDate(this.date!)}${!this.time ? '' : ` · ${formatTime(this.time)}`}</span>
 				</span>
 			`
 		}
@@ -74,11 +119,18 @@ export class ScheduleItem extends InfoItem {
 
 	protected override get tooltip() {
 		if (this.mode === 'orbit') {
-			return this.orbit
+			// The full humanized reading (never truncated) over the raw notation it stands for.
+			const { text, invalid } = humanizeOrbit(this.orbit)
+			return html`
+				<div>
+					${!text || invalid ? nothing : html`<div class='tip-phrase'>${text}</div>`}
+					<code class='tip-raw'>${this.orbit}</code>
+				</div>
+			`
 		}
 
 		if (this.mode === 'datetime') {
-			return `${this.date}${!this.time ? '' : ` ${this.time}`}`
+			return `${formatDateLong(this.date!)}${!this.time ? '' : ` · ${formatTime(this.time)}`}`
 		}
 
 		return nothing

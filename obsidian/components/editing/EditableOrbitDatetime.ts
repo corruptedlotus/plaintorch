@@ -32,6 +32,27 @@ export class EditableOrbitDatetime extends Component {
 	/** Whether the editor is showing its fields; idle it shows the read-only {@link ScheduleItem} face. */
 	@state() private editing = false
 
+	override connectedCallback() {
+		super.connectedCallback()
+		// A pointer down anywhere outside the control ends editing. Focusout alone is unreliable here: the
+		// date/time fields mount their native input only once clicked and drop it on commit, so focus is often
+		// never held by the control — a click elsewhere would then never fire a focusout to close it.
+		document.addEventListener('pointerdown', this.onDocumentPointerDown, true)
+	}
+
+	override disconnectedCallback() {
+		super.disconnectedCallback()
+		document.removeEventListener('pointerdown', this.onDocumentPointerDown, true)
+	}
+
+	private readonly onDocumentPointerDown = (e: PointerEvent) => {
+		if (!this.editing || e.composedPath().includes(this)) return
+		// A field still holding focus commits on blur, so blur it first — otherwise collapsing the editor out from
+		// under it could drop the in-progress edit.
+		;((this.renderRoot as ShadowRoot).activeElement as HTMLElement | null)?.blur()
+		this.editing = false
+	}
+
 	private get mode(): ScheduleMode {
 		return this.chosenMode ?? (this.orbit ? 'orbit' : this.date ? 'datetime' : 'orbit')
 	}
@@ -73,14 +94,43 @@ export class EditableOrbitDatetime extends Component {
 				gap: .5ch;
 			}
 
+			/*
+			 * Idle the face carries the same editability outline every other editable shows on hover, so it reads
+			 * as a thing you can click into — matching {@link EditablePart}'s treatment, which this control does not
+			 * inherit since it wraps the read-only chip rather than being an editable itself.
+			 */
 			.display {
 				cursor: pointer;
+				outline: 1px solid transparent;
+				outline-offset: .16rem;
+				border-radius: 4px;
+				transition: .3s ease;
+			}
+
+			.display:hover {
+				outline-color: var(--p7t-flare-accent, var(--interactive-accent));
 			}
 		`
 	}
 
 	protected override get template() {
 		const mode = this.mode
+
+		// Idle shows only the read-only chip — which already carries the type icon, so the switch (which repeats
+		// that icon) is withheld until editing, when flipping the type is actually on offer. This is what kept the
+		// icon from appearing twice on the idle face.
+		if (!this.editing) {
+			return html`
+				<p7t-schedule-item
+					class='display'
+					.orbit=${this.orbit}
+					.date=${this.date}
+					.time=${this.time}
+					@click=${() => this.enterEditing()}>
+				</p7t-schedule-item>
+			`
+		}
+
 		return html`
 			<button
 				class='switch'
@@ -89,33 +139,23 @@ export class EditableOrbitDatetime extends Component {
 				@click=${() => this.switchMode()}>
 				<p7t-icon icon=${mode === 'orbit' ? 'lucide:repeat' : 'lucide:calendar-clock'}></p7t-icon>
 			</button>
-			${this.editing ? html`
-				<div class='fields'>
-					${mode === 'orbit' ? html`
-						<p7t-editable-orbit
-							.value=${this.orbit}
-							@change=${(e: Event) => this.commit('orbit', (e.target as EditablePart<string>).value)}>
-						</p7t-editable-orbit>
-					` : html`
-						<p7t-editable-date
-							.value=${this.date}
-							@change=${(e: Event) => this.commit('date', (e.target as EditablePart<string>).value)}>
-						</p7t-editable-date>
-						<p7t-editable-time
-							.value=${this.time}
-							@change=${(e: Event) => this.commit('time', (e.target as EditablePart<string>).value)}>
-						</p7t-editable-time>
-					`}
-				</div>
-			` : html`
-				<p7t-schedule-item
-					class='display'
-					.orbit=${this.orbit}
-					.date=${this.date}
-					.time=${this.time}
-					@click=${() => this.enterEditing()}>
-				</p7t-schedule-item>
-			`}
+			<div class='fields'>
+				${mode === 'orbit' ? html`
+					<p7t-editable-orbit
+						.value=${this.orbit}
+						@change=${(e: Event) => this.commit('orbit', (e.target as EditablePart<string>).value)}>
+					</p7t-editable-orbit>
+				` : html`
+					<p7t-editable-date
+						.value=${this.date}
+						@change=${(e: Event) => this.commit('date', (e.target as EditablePart<string>).value)}>
+					</p7t-editable-date>
+					<p7t-editable-time
+						.value=${this.time}
+						@change=${(e: Event) => this.commit('time', (e.target as EditablePart<string>).value)}>
+					</p7t-editable-time>
+				`}
+			</div>
 		`
 	}
 
