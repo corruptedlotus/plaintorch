@@ -8,17 +8,21 @@ way. Phases build on each other but each lands independently green.
 
 **Status legend:** ✅ done · 🚧 in progress · ⏳ planned · 🅿️ parked (has preconditions)
 
-**Progress context (2026-08-16).** Phases **0–2 are ✅** — the entity catalog, the generic gateway, and the full
-shape-strategy composer (forward *and* reverse path composition), including the P2 freeform note-association fix.
-Phase **3 is 🚧**: first-class families + family-aware discovery landed; the registry-projected path-sync models
-remain. Phases **4–5 are ⏳**.
+**Progress context (2026-08-20).** Phases **0–3 are ✅** — the entity catalog, the generic gateway, the full
+shape-strategy composer (forward *and* reverse path composition, including the P2 freeform note-association fix),
+and the polymorphic family descriptor: first-class families, family-aware discovery, **identity-driven concrete-type
+resolution** (the directive family no longer collapses to stellar — see D14), and the path-sync list validated as a
+projection of the catalog (D15). Phases **4–5 are ⏳**. `dev/phase2a` has been merged in (a new Media domain, PEP105
+directive icons/banners, timeframes) — none of it touches the refactor surface (see the merge note under decisions).
 
 **Where the work lives (onboarding).** The refactor and the PEP108 operation-status system have been *waterfalled*
 onto one branch, **`claude/refactor-alpha-continued`**, in this order: `0362720` (phase 2 forward) → PEP108 A/B/C/E
-→ `99b82ed` (phase 3 families) → `d2f2053` (phase 2 reverse) → `ff0b9f2` (phase 2 P2). Each commit lands the suite
-green save one **wall-clock-flaky** test (`DeclarativeEcosystemTests.Cycle_begin_materializes_proximity_eventives`
-— a fate at 23:00 + a 24h window; pre-existing, being fixed separately). PEP108 is a *sibling* system with its own
-document (`PEP108 - Operation Status System.md`); it depends on this refactor's phase 4 for its own phase D.
+→ `99b82ed` (phase 3 families) → `d2f2053` (phase 2 reverse) → `ff0b9f2` (phase 2 P2) → `b1dabbb` (onboarding docs)
+→ `a8aedd2` (merge `dev/phase2a`) → `2675485` (phase 3 identity-driven concrete type) → `ed51687` (phase 3 validated
+projection). Each commit lands the suite green save one **wall-clock-flaky** test
+(`DeclarativeEcosystemTests.Cycle_begin_materializes_proximity_eventives` — a fate at 23:00 + a 24h window;
+pre-existing, being fixed separately). PEP108 is a *sibling* system with its own document
+(`PEP108 - Operation Status System.md`); it depends on this refactor's phase 4 for its own phase D.
 
 **Onboarding keypoints — the non-obvious load-bearing facts:**
 - **The lifecycle system already exists.** PEP101's begin/finish is a *built*, declarative mechanism —
@@ -35,6 +39,10 @@ document (`PEP108 - Operation Status System.md`); it depends on this refactor's 
   contained to the resolver (D11). Getting freeform "clean" is largely phase 4's job — the Freeform policy object
   must own the *full* question set, not the five sampled below.
 - **The mode-policy split already exists** (`VaultStorageModePolicyRouter`); phase 4 *extends* it, never invents.
+- **A polymorphic family's concrete type is resolved by identity, never hard-coded.** `VaultFamilyInstantiationResolver`
+  picks the member whose PUCK declaration mints the file's id (`A…`→stellar, `LUNA…`→lunar), with the model's
+  `ConcreteType` as fallback. Lunar and stellar are the *same* mechanism differing only by declared identity +
+  default location — **the north-star: changing a kind's behaviour is an attribute swap, no strings attached** (D14).
 - **Type names + discriminators are a cross-repo contract** (the PEP106 SDK identity map keys on `{@type}:{id}`),
   gated by `EntityTypeNameContractTests` — treat renames as contract changes.
 
@@ -74,12 +82,12 @@ document (`PEP108 - Operation Status System.md`); it depends on this refactor's 
 | 0 | `VaultEntityModelCatalog` — declarative entity registry + activation validation | ✅ |
 | 1 | `VaultEntityGateway` — retire `typeof`/DbSet dispatch, generic snapshots, known-id loaders | ✅ |
 | 2 | Storage shape strategies — collapse `MarkdownFileLocator` / path composition per-type code | ✅ (candidate-enumeration folds into 3) |
-| 3 | Polymorphic family descriptor — first-class TPH families; registry-generated path-sync models | 🚧 |
-| 4 | Storage-mode policy objects — consolidate Freeform/Implicit/Synced/… conditionals | ⏳ |
+| 3 | Polymorphic family descriptor — first-class TPH families; identity-driven concrete type; catalog-projected path-sync list | ✅ (predicate/scan-root projection folds into 4) |
+| 4 | Storage-mode policy objects — consolidate Freeform/Implicit/Synced/… conditionals; absorb per-model scan predicates + roots | ⏳ |
 | 5 | API kit — policy-derived actions (begin-boundary, init-from-file) + optional generic CRUD | ⏳ |
 | P1 | Retire the base `A{S:6}` directive declaration | 🅿️ |
 | P2 | Entity→note association for directives | ✅ (phase 2) |
-| P3 | Lunar directive file auto-discovery | 🅿️ (folds into phase 3) |
+| P3 | Lunar directives symmetric with stellar (was "lunar auto-discovery") | ✅ (phase 3, D14) |
 
 ---
 
@@ -176,7 +184,7 @@ registry projection. Risk called out at the time, and honoured: path composition
 rename/relocation, and the graveyard, so both slices were behaviour-preserving with goldens, no policy changes
 smuggled in.)*
 
-## Phase 3 — Polymorphic family descriptor 🚧
+## Phase 3 — Polymorphic family descriptor ✅
 
 **Landed (2026-08-16) — first-class families + family-aware discovery.** `VaultEntityModelCatalog` now models
 TPH families first-class: `VaultEntityFamily` (anchor + concrete members), with `GetFamilies` / `TryGetFamily` /
@@ -185,6 +193,19 @@ shared by *some but not all* members), so `Incentive` — which declares no enti
 a catalog model — still anchors its family. First consumer thinned: discovery's hand-kept `IsDirectiveEntityTypeName`
 name-list is gone, replaced by `catalog.IsFamilyMember(typeof(Directive), name)` (behaviour-preserving). Covered by
 `EntityModelCatalogTests` (both families enumerated, anchor round-trip, membership-by-name).
+
+**Landed (2026-08-20) — identity-driven concrete type + validated projection.** The directive path-sync model no
+longer hard-codes `concreteType: typeof(StellarDirective)` as *the* type it materializes. `VaultFamilyInstantiationResolver`
+selects the concrete member whose PUCK declaration mints the file's identity (`A…` → stellar, `LUNA…` → lunar) via the
+pure notation gate (`PuckTokenizer`), falling back to the model's declared default when identity is absent or
+ambiguous — so single-member models and brand-new files are byte-for-byte unchanged, and `ConcreteType` becomes an
+honest fallback, not a family collapse. Wired into every path-composition site (discovery, `VaultLoader`,
+watcher-sync id creation). This is where the long-standing lunar/stellar asymmetry is retired (D14). Separately,
+`VaultPathSyncModelCatalog.ValidateAgainstCatalog` (run in `VaultBootstrapper`) makes the path-sync list a *validated
+projection* of the catalog: every model targets a vault-stored catalog entity of the declared shape, and every
+concrete vault-stored entity is discoverable through a model or a family anchor — a new entity added without a model
+now fails activation fast (D15). Covered by `FamilyInstantiationResolverTests`, `PathSyncModelCatalogTests`, and a
+lunar-composition test in `DirectiveInitAndResolutionTests`.
 
 **Note on the phase-2 boundary.** Phase 2's forward path composition (the shape-strategy composer) is the landed
 core. Its *remaining* concerns — path→identity (reverse) composition and candidate enumeration — turned out to be
@@ -204,34 +225,34 @@ polymorphic edge: `Directive`/`LunarDirective` owner announcement (documented op
 `core/.DISCUSSION.md`, harmless today because no child record has a directive FK). A first-class family
 descriptor is where that edge gets resolved rather than worked around.
 
-**Target.** The catalog models families first-class: anchor type, concrete members, per-member PUCK
-declaration, per-member storage override, EF discriminator values. Consumers then derive:
+**Target — how each item resolved.** The catalog models families first-class (anchor type, concrete members,
+per-member PUCK declaration, per-member storage override, EF discriminator values). Consumers derive:
 
-- **Path-sync models generated from the registry** — the hand-written `VaultPathSyncModelCatalog`
-  registration list (including the directive model's manual `concreteType:` argument) becomes a projection of
-  catalog entries; per-model scan predicates remain declared behaviour (they are policy, phase 4's subject).
-- **Family-aware discovery** — replaces name-list checks (`IsDirectiveEntityTypeName`) with catalog queries.
-- **P3 parked item — lunar auto-discovery.** Today directives are reconciled only through explicit init and
-  the API; lunar files authored under `./Moonlight` round-trip via the API. If lunar file auto-discovery is
-  wanted, it lands here as a per-member path-sync model projected from `LunarDirective`'s own policy —
-  *without* binding lunar files to `./Moonlight` (Freeform still means anywhere; concrete-type selection must
-  come from identity, i.e. the `LUNA` declaration, not the directory).
-- Directive family validation (per-member declarations coherent, discriminators unique) moves from ad-hoc
-  knowledge into `Validate`.
-
-**Test gate:** the directive family is already the fully-tested template (storage locations, init
-materialization, per-kind resolution, discriminator migration). Add the incentive-family equivalents:
-classification goldens per kind and a family-resolution matrix (every member declaration resolves to its
-member; anchor spans the family). Keep `EntityTypeNameContractTests` (which pins the concrete PUCK type names
-on the wire) as a regression anchor — see the cross-repo constraint below.
+- **Path-sync models projected from the registry** — ✅ *as a validated projection, not a generated list.* Mode,
+  shape, and known-id loaders already derived from the declared storage attribute; `ValidateAgainstCatalog` now makes
+  the entity catalog the **authority** the list must conform to (coverage + shape coherence, fail-fast). The manual
+  `concreteType:` argument is retired as a collapse and demoted to a fallback (D14). What deliberately **did not**
+  move: the per-model **scan predicates + roots**, and the family-vs-per-member **grouping** (directive = one model
+  spanning both kinds; incentives = one model each). Those are storage *policy* — phase 4's policy objects own them,
+  and generating the list from them before then would just churn (D15).
+- **Family-aware discovery** — ✅ name-list checks (`IsDirectiveEntityTypeName`) replaced by catalog queries.
+- **P3 — lunar/stellar symmetry** (was "lunar auto-discovery", a mis-framing). ✅ The only real asymmetry was the
+  hard-coded stellar `concreteType`; identity-driven resolution retires it, so a `LUNA…`-identity file now composes to
+  `LunarDirective` at every site, no `./Moonlight` binding (D14). Whether directives are *filesystem*-auto-discovered
+  at all (the `_ => false` predicate) is a **separate** axis, unchanged, and orthogonal to kind symmetry.
+- **Family / discriminator validation** — ✅ *already enforced*, not re-implemented. Sibling-declaration coherence and
+  parse-space uniqueness live in `PuckRuntimeCompilationCatalog` (`ValidateDeclarationUniqueness` /
+  `ValidateParseSpaceUniqueness`) — the latter is exactly what guarantees the resolver can always disambiguate a
+  family — and discriminators are EF-default type names (inherently unique). Duplicating this in `Validate` would add
+  nothing (D15).
 
 **Cross-repo blast radius.** Concrete type names and discriminators are no longer core-only: the PEP106 SDK
 identity map keys resolutions on `{@type}:{id}` and routes type names → repositories (`@model(...)`), so any
 change here to a concrete type name or discriminator is a two-repo change gated by `EntityTypeNameContractTests`.
-Treat renames as contract changes, not refactors.
+Treat renames as contract changes, not refactors. (Nothing in this phase renamed a type or discriminator.)
 
-**Risk.** Medium. The registry projection must reproduce today's 8 path-sync models byte-for-byte in
-behaviour before adding anything new (assert model-list equivalence in a test during the transition).
+**Risk — retired.** The byte-for-byte concern (reproduce today's 8 models) is pinned by `PathSyncModelCatalogTests`
+(type/mode/shape set + directive fallback) and the full suite (153/153 save the known wall-clock flake).
 
 ## Phase 4 — Storage-mode policy objects ⏳
 
@@ -250,6 +271,14 @@ policy; mode enums stop leaking. The Freeform and Implicit services (already reg
 special-case checks. These same policy objects are what phase 5's `begin`/`init` actions dispatch through, so
 this phase is a hard dependency of phase 5a.
 
+**Absorbed from phase 3 (D15).** The per-model **scan predicates + roots** in `VaultPathSyncModelCatalog` (the
+`IsIncentiveMarkdownFile` / `IsExecutiveOrderMarkdownFile` / self-named predicates and the `[…Root, VaultRoot]`
+scan-root lists) are storage policy, and the family-vs-per-member **grouping** is too. They land here: a mode's
+policy object should answer "is this path a candidate for me, and where do I scan" so the path-sync list becomes a
+true projection (entity catalog × mode policy) with no imperative residue. The `_ => false` directive predicate — no
+filesystem auto-discovery, init/API-only — is one such policy datum to make explicit here (and the place to
+deliberately decide whether directives should auto-discover at all, a behaviour change held out of phase 3).
+
 **Test gate:** Implicit is already well covered (`ImplicitBoundaryTests`); Freeform via the directive init
 tests. Add a per-mode behavioural matrix for Synced / Enforced / FileFirst / Optional when their branches are
 touched — before, not after.
@@ -259,8 +288,10 @@ delete) are load-bearing; matrix tests must pin them first.
 
 ## Phase 5 — API kit: policy-derived actions + generic CRUD ⏳
 
-The 8 × (`IApi` + `ApiService` + `Module`) triplets (directive, objective, declarative, onrush, polaris, lore,
-dependency, system) mix **three kinds of endpoint**, which must be told apart before anything is genericised:
+The 9 × (`IApi` + `ApiService` + `Module`) triplets (directive, objective, declarative, onrush, polaris, lore,
+dependency, system, and — since `dev/phase2a` — media) mix **three kinds of endpoint**, which must be told apart
+before anything is genericised (the media triplet adds a fourth flavour: media-attachment mutations like
+`SetIcon`/`SetBanner` over the new `[Media]` seam attribute — classify it here, D16):
 
 - **Policy-derived actions** — mechanical consequences of a storage *mode*, currently hand-written per entity.
   This is the phase's real prize (§5a). Two families exist today:
@@ -360,6 +391,9 @@ Identity-driven: concrete-type selection by `LUNA` declaration, never by directo
 | D11 | Phase 2 note-association (P2) was broken for **all Quiet entities**, not just directives (the matcher read the filename PUCK; Quiet/freeform keep it in frontmatter). Fixed in `PuckEntityResolutionService` by frontmatter-PUCK matching + a family-anchored model lookup (lunar resolves too) + — per the operator's **"derive from mode"** call — enumerating freeform entities by scanning self-named files. Kept **contained to the resolver** so the shared `IsCandidatePath`/scan/storage/migration behaviour is untouched; turning `IsCandidatePath` itself into strategy-owned candidate enumeration is deferred to phase 3 | phase 2 (operator call) |
 | D12 | Phase 3 families are derived from the concrete members' **inheritance** (an abstract base shared by *some but not all* members), not from catalog membership — so `Incentive`, which declares no entity attributes of its own and is not a catalog model, still anchors its `{Objective, Fate, Decree}` family | phase 3 |
 | D13 | Phase 2's leftover reverse/candidate-enumeration work was **not** forced into a standalone "phase 2 completion": the reverse `Apply*` helpers entangle with the path-sync catalog (phase 3) and the triplicated containing-owner resolvers in the path policy (phase 4), so they land there. Phase 2 is ✅ for the shape composer; phase 3's registry projection clears the rest | phase 2/3 boundary |
+| D14 | The directive family's concrete type is resolved **by identity, not hard-coded**: `VaultFamilyInstantiationResolver` tokenizes the file's PUCK against each member's declaration (`A…` → stellar, `LUNA…` → lunar), falling back to the model's declared default (`ConcreteType`) only when identity is absent/ambiguous — so single-member models and brand-new files are byte-for-byte, and a `LUNA…` file now composes to `LunarDirective` at every site (discovery, loader, watcher-sync id creation). This retires the lunar/stellar asymmetry. **Operator framing:** lunar and stellar are the *same* mechanism differing only by declared identity + default location; making lunar behave differently later (e.g. `Synced`/`Implicit`) is an **attribute swap with no strings attached**, which is the whole point. The `./Moonlight` folder is a usage convention, never a system rule. *(This reframes and closes the old P3 "lunar auto-discovery" item, which was a mis-naming.)* | phase 3 (operator call) |
+| D15 | Phase 3's "registry-projected path-sync models" landed as a **validated projection, not a generated list**: mode/shape/known-ids already derived from the storage attribute, so `ValidateAgainstCatalog` (in `VaultBootstrapper`) makes the entity catalog the *authority* (coverage + shape coherence, fail-fast) rather than churning the list. Per-model **scan predicates + roots** and the family-vs-per-member **grouping** are storage policy → deferred to phase 4's policy objects (generating them now would just move them twice). The plan's "family/discriminator validation into `Validate`" is **already enforced** by `PuckRuntimeCompilationCatalog` (`ValidateDeclarationUniqueness`/`ValidateParseSpaceUniqueness`, the latter guaranteeing the resolver can disambiguate) + EF type-name discriminators — not duplicated | phase 3/4 boundary |
+| D16 | `dev/phase2a` merged into the refactor branch (`a8aedd2`) after assessment: the new Media domain is a non-persisted sidecar (`[Media]` marshals out, never a stored entity), PEP105 directive icons/banners are plain `[MarkdownField]`s, and timeframes/reflectives are DB-only — **none add a vault-stored/path-sync/family member**, and dev/phase2a touched none of the refactor's core files, so no resync was needed. Note for phase 5: there is now a **9th** API triplet (Media: `IMediaApi`/`MediaApiService`/`MediaModule`) and a new `[Media]` seam attribute to fold into the endpoint taxonomy | merge |
 
 ## Standing constraints
 
