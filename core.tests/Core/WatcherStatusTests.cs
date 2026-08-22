@@ -118,6 +118,59 @@ public sealed class WatcherStatusTests : VaultTestBase
 	}
 
 	[Fact]
+	public void Sync_success_resolves_the_inspection_issue_a_purge_would_otherwise_strand()
+	{
+		// Regression for the "errors linger after purge" report. A disallowed file is inspected (raising a policy
+		// violation) and then purged. The purge suppresses its own delete through the write barrier, so no later
+		// re-inspection will ever report the file gone — the sync-success report is the only thing that can resolve
+		// the flag, and it must clear the *whole* reconcile check-set, not just SyncFailed.
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		var candidate = Candidate("Objectives/Stray.md", VaultSyncAction.PurgeFile, "Unknown file is disallowed by enforced storage policy.");
+		watcher.ReportInspectCandidate(candidate);
+		Assert.Equal(WatcherOperations.PolicyViolation, Assert.Single(registry.GetActiveStatuses()).ReasonCode);
+
+		watcher.ReportSyncSucceeded(candidate);
+
+		Assert.Empty(registry.GetActiveStatuses());
+		Assert.Equal(OperationHealth.Ok, registry.GetHealth());
+		// Resolved, not merely never-raised: the transition is recorded.
+		Assert.Contains(registry.GetRecentResolved(), transition => transition.ReasonCode == WatcherOperations.PolicyViolation);
+	}
+
+	[Fact(Skip = "PEP108 phase D (structured outcomes, with REFACTOR Alpha phase 4): one root cause should yield one classified reason. Today the three string-sniffing heuristics each match independently, so a single file raises MarkdownInvalid + PuckViolation + PolicyViolation.")]
+	public void One_bad_file_should_raise_a_single_classified_issue()
+	{
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		// One file, one root cause — a bad PUCK that also trips the policy reject path and carries a validation issue.
+		watcher.ReportInspectCandidate(Candidate(
+			"Objectives/Bad.md",
+			VaultSyncAction.PurgeFile,
+			"Implicit storage rejects unknown frontmatter PUCK assertion.",
+			issues: [new MarkdownValidationIssue("id", "puck mismatch")]));
+
+		Assert.Single(registry.GetActiveStatuses());
+	}
+
+	[Fact(Skip = "REFACTOR Alpha phase 4 + dismiss feature: a foreign, unmanaged file in a non-exclusive root is not a system error. The mode policy should classify it as a dismissible warning (and leave it in place), not an Error-severity policy violation to be purged.")]
+	public void Foreign_file_in_a_non_exclusive_root_should_surface_as_a_warning()
+	{
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		// A stray, unmanaged note in a shared implicit root — roots are not required to be exclusive.
+		watcher.ReportInspectCandidate(Candidate(
+			"Objectives/My personal note.md",
+			VaultSyncAction.PurgeFile,
+			"Implicit storage rejects unknown frontmatter PUCK assertion."));
+
+		Assert.Equal(OperationSeverity.Warning, Assert.Single(registry.GetActiveStatuses()).Severity);
+	}
+
+	[Fact]
 	public async Task System_api_report_preserves_the_watcher_contract()
 	{
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();

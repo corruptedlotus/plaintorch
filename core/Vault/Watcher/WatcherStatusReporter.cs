@@ -53,15 +53,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 
 	/// <summary>Reports that a path was inspected cleanly but is not a managed candidate: all reconcile checks pass.</summary>
 	public void ReportInspectIgnored(string path)
-		=> Report(
-			WatcherOperations.Reconcile,
-			path,
-			Pass(WatcherOperations.DiscoveryFailed),
-			Pass(WatcherOperations.PermissionDenied),
-			Pass(WatcherOperations.FileInUse),
-			Pass(WatcherOperations.MarkdownInvalid),
-			Pass(WatcherOperations.PuckViolation),
-			Pass(WatcherOperations.PolicyViolation));
+		=> ReportReconcileHealthy(path);
 
 	/// <summary>
 	/// Reports the quality of an inspected candidate: file access checks pass (discovery succeeded), and the
@@ -89,11 +81,18 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 			Check(WatcherOperations.PolicyViolation, policyViolation, policyViolation ? candidate.SuggestedReason : null, files: [path], entityId: candidate.PathId));
 	}
 
-	/// <summary>Reports that a candidate synced successfully.</summary>
+	/// <summary>
+	/// Reports that a candidate synced successfully. A successful sync leaves the path in a policy-consistent state,
+	/// so the *whole* reconcile check-set is reported passing — this resolves any issue an earlier
+	/// <see cref="ReportInspectCandidate"/> raised for the path. It is the only resolution path for a purged file:
+	/// the purge suppresses its own delete through the write barrier, so no later re-inspection will ever clear the
+	/// flag, and a report that passed only <see cref="WatcherOperations.SyncFailed"/> would strand it (a reason code
+	/// absent from a report is left untouched by the status core).
+	/// </summary>
 	public void ReportSyncSucceeded(VaultSyncCandidate candidate)
 	{
 		ArgumentNullException.ThrowIfNull(candidate);
-		Report(WatcherOperations.Reconcile, candidate.AbsolutePath, Check(WatcherOperations.SyncFailed, failed: false));
+		ReportReconcileHealthy(candidate.AbsolutePath);
 	}
 
 	/// <summary>Reports that a candidate's sync execution threw, classified to a concrete cause.</summary>
@@ -103,6 +102,25 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		var reason = ClassifyOperationalFailure(exception, WatcherOperations.SyncFailed);
 		Report(WatcherOperations.Reconcile, candidate.AbsolutePath, Check(reason, failed: true, exception.Message, files: [candidate.AbsolutePath], entityId: candidate.PathId));
 	}
+
+	// Every reason code the reconcile operation can raise across inspection and sync. A clean outcome reports the
+	// whole set as passing so the status core resolves *any* previously-raised reason for the scope, since a reason
+	// absent from a report is left untouched (see OperationStatusRegistry). Narrower "success" reports would strand
+	// earlier flags — the bug this set closes.
+	private static readonly string[] ReconcileReasonCodes =
+	[
+		WatcherOperations.DiscoveryFailed,
+		WatcherOperations.PermissionDenied,
+		WatcherOperations.FileInUse,
+		WatcherOperations.MarkdownInvalid,
+		WatcherOperations.PuckViolation,
+		WatcherOperations.PolicyViolation,
+		WatcherOperations.SyncFailed,
+	];
+
+	/// <summary>Reports every reconcile reason code as passing for a scope, resolving any active reconcile flag on it.</summary>
+	private void ReportReconcileHealthy(string path)
+		=> Report(WatcherOperations.Reconcile, path, Array.ConvertAll(ReconcileReasonCodes, Pass));
 
 	private void Report(string operationId, string scopeKey, params OperationCheck[] checks)
 		=> reporter.Report(new OperationReport(operationId, scopeKey, checks));
