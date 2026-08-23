@@ -431,6 +431,15 @@ public sealed class OnrushSprintApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task<ExecutiveOrder?> GetExecutiveOrderAsync(string executiveOrderId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(executiveOrderId);
+		return await context.ExecutiveOrders
+			.AsNoTracking()
+			.FirstOrDefaultAsync(order => order.Id == executiveOrderId, cancellationToken);
+	}
+
+	/// <inheritdoc />
 	public async Task<ExecutiveOrder> UpdateExecutiveOrderAsync(string executiveOrderId, ExecutiveOrderUpdate update, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(executiveOrderId);

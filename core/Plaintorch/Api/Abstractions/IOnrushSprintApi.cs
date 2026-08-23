@@ -83,6 +83,11 @@ public interface IOnrushSprintApi
 	Task<IReadOnlyList<ExecutiveOrder>> ListExecutiveOrdersAsync(string onrushSprintId, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Gets a single executive order by its identifier, or <see langword="null"/> when none has it.
+	/// </summary>
+	Task<ExecutiveOrder?> GetExecutiveOrderAsync(string executiveOrderId, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Updates the mutable fields of an executive order.
 	/// </summary>
 	Task<ExecutiveOrder> UpdateExecutiveOrderAsync(string executiveOrderId, ExecutiveOrderUpdate update, CancellationToken cancellationToken = default);

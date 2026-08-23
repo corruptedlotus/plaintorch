@@ -93,6 +93,12 @@ public sealed class OnrushSprintModule : Module
 		});
 
 		var orders = endpoints.MapGroup("/api/executive-orders");
+		orders.MapGet("/{executiveOrderId}", async (string executiveOrderId, IOnrushSprintApi api, CancellationToken cancellationToken) =>
+		{
+			var order = await api.GetExecutiveOrderAsync(executiveOrderId, cancellationToken);
+			return order is null ? Results.NotFound() : Results.Ok(order);
+		});
+
 		orders.MapPut("/{executiveOrderId}", async (string executiveOrderId, ExecutiveOrderUpdate request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateExecutiveOrderAsync(executiveOrderId, request, cancellationToken)));
 

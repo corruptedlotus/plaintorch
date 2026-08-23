@@ -1,21 +1,37 @@
 import { component, css, html, nothing } from "@a11d/lit"
 import { ExecutiveOrder, ExecutiveOrderUpdate } from "@pleiades/sdk"
-import { Notice } from "obsidian"
-import { core, IconName } from ".."
+import { core, IconName, ReactiveBinder } from ".."
 import { EntityBanner } from './EntityBanner'
-import type { EditablePart } from "../editing/EditableDataLink"
 
 /**
  * Banner for an executive order (PEP102.5): a constraint or direction shaping how an onrush is moved through.
  *
- * Executive orders have no registered entity repository, so — unlike the other banners — this one renders from
- * the entity the note resolution hands it and persists edits straight through the onrush SDK, folding the
- * response back over the local entity for immediate reflection. The flare accent is overridden to the same warn
- * yellow the briefing hero draws active orders in, so the surfaces read as one.
+ * Repo-backed like the other banners (it resolves and observes its order through the executive-order repository),
+ * so an edit made here propagates everywhere the order is shown. The flare accent is the same warn yellow the
+ * briefing hero draws active orders in, so the surfaces read as one.
  */
 @component('p7t-executive-order-banner')
 export class ExecutiveOrderBanner extends EntityBanner<ExecutiveOrder> {
 	override icon: IconName = 'exec-order'
+
+	protected override readonly entityTypeName = 'ExecutiveOrder' as const
+
+	protected binder = new ReactiveBinder<ExecutiveOrder>(this, 'entity', {
+		sourceUpdate: () => this.beginEntityEdit(),
+		sourceUpdated: async (_, keyPath) => {
+			const entity = this.entity!
+			const update: ExecutiveOrderUpdate = {}
+			switch (keyPath) {
+				case 'title': update.title = entity.title; break
+				case 'summary': update.summary = entity.summary; break
+				case 'effectiveFrom': update.effectiveFrom = entity.effectiveFrom; break
+				case 'effectiveUntil': update.effectiveUntil = entity.effectiveUntil; break
+				default: return
+			}
+
+			await this.commitEntityEdit(async () => await core.onrush.updateExecutiveOrder(entity.id, update))
+		}
+	})
 
 	static override get styles() {
 		return css`
@@ -78,17 +94,13 @@ export class ExecutiveOrderBanner extends EntityBanner<ExecutiveOrder> {
 
 	protected override get headingTemplate() {
 		return html`
-			<p7t-editable-plaintext required label='Title' placeholder='Untitled' .value=${this.entity?.title}
-				@change=${(e: Event) => void this.save({ title: (e.target as EditablePart<string>).value })}>
-			</p7t-editable-plaintext>
+			<p7t-editable-plaintext required label='Title' placeholder='Untitled' ${this.binder.bind('title')}></p7t-editable-plaintext>
 		`
 	}
 
 	protected override get secondary() {
 		return html`
-			<p7t-editable-plaintext multiline class='summary' placeholder='No summary' .value=${this.entity?.summary}
-				@change=${(e: Event) => void this.save({ summary: (e.target as EditablePart<string>).value })}>
-			</p7t-editable-plaintext>
+			<p7t-editable-plaintext multiline class='summary' placeholder='No summary' ${this.binder.bind('summary')}></p7t-editable-plaintext>
 		`
 	}
 
@@ -96,32 +108,12 @@ export class ExecutiveOrderBanner extends EntityBanner<ExecutiveOrder> {
 		return html`
 			<div class='window'>
 				<span class='label'>Effective</span>
-				<p7t-editable-date .value=${this.entity?.effectiveFrom}
-					@change=${(e: Event) => void this.save({ effectiveFrom: (e.target as EditablePart<string>).value })}>
-				</p7t-editable-date>
+				<p7t-editable-date ${this.binder.bind('effectiveFrom')}></p7t-editable-date>
 				<p7t-icon icon='lucide:arrow-right'></p7t-icon>
-				<p7t-editable-date .value=${this.entity?.effectiveUntil}
-					@change=${(e: Event) => void this.save({ effectiveUntil: (e.target as EditablePart<string>).value })}>
-				</p7t-editable-date>
+				<p7t-editable-date ${this.binder.bind('effectiveUntil')}></p7t-editable-date>
 			</div>
 			${!this.onrushBound ? nothing : html`<span class='bound'>Onrush-bound — in effect while its onrush runs</span>`}
 		`
-	}
-
-	/** Persists a field edit and folds the response back over the local entity (there is no repo to observe here). */
-	private async save(update: ExecutiveOrderUpdate) {
-		const order = this.entity
-		if (!order) {
-			return
-		}
-
-		const updated = await core.onrush.updateExecutiveOrder(order.id, update)
-		if (!updated) {
-			new Notice('PLAINTORCH could not save that change.')
-			return
-		}
-
-		this.entity = updated
 	}
 }
 

@@ -82,6 +82,10 @@ export class PlaintorchOnrushSdk {
 		)
 	}
 
+	public async getExecutiveOrder(executiveOrderId: string): Promise<ExecutiveOrder | undefined> {
+		return await this.client.getJson<ExecutiveOrder>(`/api/executive-orders/${encodeURIComponent(executiveOrderId)}`)
+	}
+
 	public async issueExecutiveOrder(onrushId: string, plan: ExecutiveOrderPlan): Promise<ExecutiveOrder | undefined> {
 		return await this.client.postForJson<ExecutiveOrder>(`/api/onrush/${encodeURIComponent(onrushId)}/orders`, plan)
 	}

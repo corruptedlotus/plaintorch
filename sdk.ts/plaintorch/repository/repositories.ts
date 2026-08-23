@@ -2,7 +2,7 @@ import type { PlaintorchCoreClient } from "../coreClient"
 import type { Objective } from "../objectives/models"
 import type { Directive } from "../directives/models"
 import type { Decree, Fate } from "../declaratives/models"
-import type { OnrushSprint } from "../onrush/models"
+import type { ExecutiveOrder, OnrushSprint } from "../onrush/models"
 import type { PolarisAgenda, PolarisCycle } from "../polaris/models"
 import type { LorePage } from "../lore/models"
 import type { Checkpoint, Dependency } from "../dependencies/models"
@@ -45,6 +45,8 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	public readonly directives: EntityRepository<Directive>
 	public readonly lunarDirectives: EntityRepository<Directive>
 	public readonly onrush: EntityRepository<OnrushSprint>
+	/** Executive orders (PEP102.5). PUCK-addressable; owned by an onrush sprint. */
+	public readonly executiveOrders: EntityRepository<ExecutiveOrder>
 	public readonly polaris: EntityRepository<PolarisCycle>
 	public readonly lore: EntityRepository<LorePage>
 	/** Checkpoints (PEP101). PUCK-addressable like the rest, but database-only — they carry no note. */
@@ -110,6 +112,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		this.directives = new EntityRepository(store, "StellarDirective", (id) => client.directives.get(id), entity)
 		this.lunarDirectives = new EntityRepository(store, "LunarDirective", (id) => client.directives.get(id), entity)
 		this.onrush = new EntityRepository(store, "OnrushSprint", (id) => client.onrush.get(id), entity)
+		this.executiveOrders = new EntityRepository(store, "ExecutiveOrder", (id) => client.onrush.getExecutiveOrder(id), entity)
 		this.polaris = new EntityRepository(store, "PolarisCycle", (id) => client.polaris.get(id), entity)
 		this.lore = new EntityRepository(store, "LorePage", (id) => client.lore.get(id), entity)
 		this.checkpoints = new EntityRepository(store, "Checkpoint", (id) => client.dependencies.getCheckpoint(id), entity)
@@ -137,6 +140,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 			["StellarDirective", this.directives as EntityRepository<never>],
 			["LunarDirective", this.lunarDirectives as EntityRepository<never>],
 			["OnrushSprint", this.onrush as EntityRepository<never>],
+			["ExecutiveOrder", this.executiveOrders as EntityRepository<never>],
 			["PolarisCycle", this.polaris as EntityRepository<never>],
 			["LorePage", this.lore as EntityRepository<never>],
 			["Checkpoint", this.checkpoints as EntityRepository<never>]
