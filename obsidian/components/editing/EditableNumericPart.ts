@@ -1,4 +1,4 @@
-import { css, eventListener, html, property } from "@a11d/lit"
+import { css, eventListener, html, nothing, property } from "@a11d/lit"
 import { EditablePart } from "./EditableDataLink"
 
 /** How long consecutive digits keep accumulating into the same entry. */
@@ -97,6 +97,7 @@ export abstract class EditableNumericPart extends EditablePart<number> {
 					@mousedown=${(e: Event) => e.preventDefault()}
 					@click=${() => this.stepValue(-1)}>
 				</p7t-icon>
+				${!this.nullable ? nothing : this.clearButtonTemplate}
 			</div>
 		`
 	}
@@ -150,7 +151,13 @@ export abstract class EditableNumericPart extends EditablePart<number> {
 			case 'Delete':
 				e.preventDefault()
 				this.flushEntry()
-				this.setValue(this.min)
+				// A nullable field empties to no value; otherwise it floors, as a numeric field always has a value.
+				if (this.nullable) {
+					this.setNull()
+				}
+				else {
+					this.setValue(this.min)
+				}
 				return
 			default:
 				if (!/^\d$/.test(e.key)) return
@@ -170,6 +177,14 @@ export abstract class EditableNumericPart extends EditablePart<number> {
 
 		this.value = clamped
 		this.dispatchEvent(new CustomEvent<number>('preview', { detail: clamped }))
+	}
+
+	/** Empties a nullable field to no value, previewing the floor so live surfaces have a number to draw. */
+	protected setNull() {
+		if (this.value === undefined) return
+
+		this.value = undefined
+		this.dispatchEvent(new CustomEvent<number>('preview', { detail: this.min }))
 	}
 
 	protected flushEntry() {

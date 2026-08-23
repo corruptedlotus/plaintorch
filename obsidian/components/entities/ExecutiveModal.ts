@@ -21,16 +21,18 @@ export class ExecutiveEditor extends Component {
 	@property({
 		type: Object,
 		updated(this: ExecutiveEditor, value: Executive | undefined) {
+			// The allocations are nullable and kept undefined when unset, so a cleared allocation reads as cleared
+			// rather than as zero; only the tracked tally always has a value.
 			this.draft = {
 				elapsed: value?.elapsed ?? 0,
-				estimation: value?.estimation ?? 0,
-				minimum: value?.minimum ?? 0,
-				maximum: value?.maximum ?? 0,
+				estimation: value?.estimation,
+				minimum: value?.minimum,
+				maximum: value?.maximum,
 			}
 		}
 	}) executive?: Executive
 
-	@state() private draft: Record<Allocation, number> = { elapsed: 0, estimation: 0, minimum: 0, maximum: 0 }
+	@state() private draft: Record<Allocation, number | undefined> = { elapsed: 0, estimation: undefined, minimum: undefined, maximum: undefined }
 
 	static override get styles() {
 		return css`
@@ -229,10 +231,10 @@ export class ExecutiveEditor extends Component {
 			</div>
 
 			<p7t-allocation-bar
-				.elapsed=${this.draft.elapsed}
-				.estimation=${this.draft.estimation}
-				.minimum=${this.draft.minimum}
-				.maximum=${this.draft.maximum}>
+				.elapsed=${this.draft.elapsed ?? 0}
+				.estimation=${this.draft.estimation ?? 0}
+				.minimum=${this.draft.minimum ?? 0}
+				.maximum=${this.draft.maximum ?? 0}>
 			</p7t-allocation-bar>
 
 			<div class='allocations'>
@@ -247,6 +249,7 @@ export class ExecutiveEditor extends Component {
 		return html`
 			<div class='allocation ${featured ? 'featured' : ''}'>
 				<p7t-editable-time-unit
+					nullable
 					?accent=${featured}
 					.value=${this.draft[allocation]}
 					@preview=${(e: CustomEvent<number>) => this.previewAllocation(allocation, e.detail)}
@@ -257,14 +260,15 @@ export class ExecutiveEditor extends Component {
 		`
 	}
 
-	private previewAllocation(allocation: Allocation, value: number) {
+	private previewAllocation(allocation: Allocation, value: number | undefined) {
 		this.draft = { ...this.draft, [allocation]: value }
 	}
 
 	private commitAllocation(allocation: Allocation, e: Event) {
-		const value = (e.target as EditableTimeUnit).value ?? 0
+		const value = (e.target as EditableTimeUnit).value
 		this.previewAllocation(allocation, value)
-		this.applyUpdate({ [allocation]: value })
+		// A cleared allocation commits as null (a canonical clear); a set one as its value.
+		this.applyUpdate({ [allocation]: value ?? null } as ExecutiveUpdate)
 	}
 
 	private commitExecuted(e: Event) {
