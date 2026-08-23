@@ -33,6 +33,8 @@ export class ScheduleItem extends InfoItem {
 	@property() orbit?: string
 	@property() date?: string
 	@property() time?: string
+	/** The end of a datetime range (e.g. a fate's event window); shown as "start – end" when present. */
+	@property() endTime?: string
 
 	/**
 	 * Caps the label at this many characters' width, tailing an ellipsis past it (the full phrase stays in the
@@ -97,6 +99,12 @@ export class ScheduleItem extends InfoItem {
 		return this.orbit ? 'orbit' : this.date ? 'datetime' : 'none'
 	}
 
+	/** The " · HH:MM" (or " · HH:MM – HH:MM" range) suffix beside a date, or empty when timeless. */
+	private get timeLabel(): string {
+		if (!this.time) return ''
+		return this.endTime ? ` · ${formatTime(this.time)} – ${formatTime(this.endTime)}` : ` · ${formatTime(this.time)}`
+	}
+
 	protected override get content() {
 		const clip = this.max > 0
 		const labelStyle = clip ? `max-width:${this.max}ch` : nothing
@@ -115,7 +123,7 @@ export class ScheduleItem extends InfoItem {
 			return html`
 				<span class='schedule'>
 					<p7t-icon icon='lucide:calendar-clock'></p7t-icon>
-					<span class='label ${clip ? 'clip' : ''}' style=${labelStyle}>${formatDate(this.date!)}${!this.time ? '' : ` · ${formatTime(this.time)}`}</span>
+					<span class='label ${clip ? 'clip' : ''}' style=${labelStyle}>${formatDate(this.date!)}${this.timeLabel}</span>
 				</span>
 			`
 		}
@@ -136,7 +144,7 @@ export class ScheduleItem extends InfoItem {
 		}
 
 		if (this.mode === 'datetime') {
-			return `${formatDateLong(this.date!)}${!this.time ? '' : ` · ${formatTime(this.time)}`}`
+			return `${formatDateLong(this.date!)}${this.timeLabel}`
 		}
 
 		return nothing

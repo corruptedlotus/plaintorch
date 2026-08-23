@@ -1,4 +1,4 @@
-import { Component, component, css, event, eventListener, html, property, state } from "@a11d/lit"
+import { Component, component, css, event, eventListener, html, nothing, property, state } from "@a11d/lit"
 import { EditablePart } from "./EditableDataLink"
 import "../entities/ScheduleItem"
 
@@ -10,6 +10,8 @@ export interface ScheduleValue {
 	orbit?: string
 	date?: string
 	time?: string
+	/** The end of a datetime range, when {@link EditableOrbitDatetime.range} is on (e.g. a fate's event window). */
+	endTime?: string
 }
 
 /**
@@ -23,6 +25,11 @@ export class EditableOrbitDatetime extends Component {
 	@property() orbit?: string
 	@property() date?: string
 	@property() time?: string
+	/** The end of the datetime range, surfaced only when {@link range} is on. */
+	@property() endTime?: string
+
+	/** Whether the datetime mode edits a start–end range (a second time field) rather than a single time. */
+	@property({ type: Boolean }) range = false
 
 	@event() schedulechange!: EventDispatcher<ScheduleValue>
 
@@ -94,6 +101,12 @@ export class EditableOrbitDatetime extends Component {
 				gap: .5ch;
 			}
 
+			.range-sep {
+				width: 1em;
+				height: 1em;
+				opacity: .5;
+			}
+
 			/*
 			 * Idle the face carries the same editability outline every other editable shows on hover, so it reads
 			 * as a thing you can click into — matching {@link EditablePart}'s treatment, which this control does not
@@ -127,6 +140,7 @@ export class EditableOrbitDatetime extends Component {
 					.orbit=${this.orbit}
 					.date=${this.date}
 					.time=${this.time}
+					.endTime=${this.endTime}
 					@click=${() => this.enterEditing()}>
 				</p7t-schedule-item>
 			`
@@ -155,6 +169,13 @@ export class EditableOrbitDatetime extends Component {
 						.value=${this.time}
 						@change=${(e: Event) => this.commit('time', (e.target as EditablePart<string>).value)}>
 					</p7t-editable-time>
+					${!this.range ? nothing : html`
+						<p7t-icon class='range-sep' icon='lucide:arrow-right'></p7t-icon>
+						<p7t-editable-time
+							.value=${this.endTime}
+							@change=${(e: Event) => this.commit('endtime', (e.target as EditablePart<string>).value)}>
+						</p7t-editable-time>
+					`}
 				`}
 			</div>
 		`
@@ -185,6 +206,7 @@ export class EditableOrbitDatetime extends Component {
 			// Recurring wins over a lingering date; clearing it keeps the fate from materializing both shapes.
 			this.date = undefined
 			this.time = undefined
+			this.endTime = undefined
 		}
 		else {
 			this.orbit = undefined
@@ -193,7 +215,7 @@ export class EditableOrbitDatetime extends Component {
 		this.emit()
 	}
 
-	private commit(field: 'orbit' | 'date' | 'time', raw: string | undefined) {
+	private commit(field: 'orbit' | 'date' | 'time' | 'endtime', raw: string | undefined) {
 		const value = raw && raw.length > 0 ? raw : undefined
 		if (field === 'orbit') {
 			this.orbit = value
@@ -201,6 +223,10 @@ export class EditableOrbitDatetime extends Component {
 		}
 		else if (field === 'date') {
 			this.date = value
+			this.chosenMode = 'datetime'
+		}
+		else if (field === 'endtime') {
+			this.endTime = value
 			this.chosenMode = 'datetime'
 		}
 		else {
@@ -214,7 +240,7 @@ export class EditableOrbitDatetime extends Component {
 	private emit() {
 		this.schedulechange.dispatch(this.mode === 'orbit'
 			? { mode: 'orbit', orbit: this.orbit }
-			: { mode: 'datetime', date: this.date, time: this.time })
+			: { mode: 'datetime', date: this.date, time: this.time, endTime: this.range ? this.endTime : undefined })
 	}
 }
 

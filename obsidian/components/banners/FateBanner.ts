@@ -3,6 +3,7 @@ import { EntityBanner } from './EntityBanner'
 import { Eventive, EventiveResolution, Fate, FateStatus, FateUpdate, PleiadeanDate } from '@pleiades/sdk'
 import { App } from "obsidian"
 import { core, IconName, ReactiveBinder, SelectFateStatusModal } from ".."
+import type { ScheduleValue } from "../editing/EditableOrbitDatetime"
 
 /**
  * Banner for a Fate declarative (PEP100). Fates are event-like: they show their Orbit
@@ -73,8 +74,22 @@ export class FateBanner extends EntityBanner<Fate> {
 		app.workspace.getLeaf(true).openFile(file)
 	}
 
-	protected get isSingleInstance() {
-		return !this.entity!.orbit && !!this.entity!.date
+	/**
+	 * Persists a schedule edited through the unified control. A recurring pick clears the fixed date; a one-off
+	 * pick clears the orbit — the two shapes are mutually exclusive (PEP100). The event window's end is carried
+	 * only in the one-off shape (the control runs in range mode here).
+	 */
+	private async onScheduleChange(value: ScheduleValue) {
+		const entity = this.entity!
+		const update: FateUpdate = value.mode === 'orbit'
+			? { orbit: value.orbit ?? '', clearDate: true }
+			: { orbit: '', date: value.date, startTime: value.time, endTime: value.endTime }
+
+		this.beginEntityEdit()
+		const saved = await this.commitEntityEdit(async () => await core.declaratives.updateFate(entity.id, update))
+		if (saved) {
+			await this.loadNextEventive(entity.id)
+		}
 	}
 
 	static override get styles() {
@@ -150,34 +165,16 @@ export class FateBanner extends EntityBanner<Fate> {
 	}
 
 	protected override get actions() {
-		// Single-instance fates show their datetime [range]; anything else exposes the
-		// Orbit definition inline (editable), mirroring where a lorepage shows its date.
-		if (this.isSingleInstance) {
-			return html`
-				<div class='date-span'>
-					<p7t-date-view .date=${PleiadeanDate.fromDate(new Date(this.entity!.date!))}></p7t-date-view>
-					${this.timeRangeTemplate}
-				</div>
-			`
-		}
-
+		// One unified control for both shapes: a recurring orbit or a one-off date with an event-time range.
 		return html`
-			<div class='schedule'>
-				<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>
-			</div>
-		`
-	}
-
-	protected get timeRangeTemplate() {
-		const start = this.entity!.startTime
-		if (!start) return nothing
-		const end = this.entity!.endTime
-		return html`
-			<span class='time'>${formatTime(start)}</span>
-			${!end ? nothing : html`
-				<p7t-icon icon='lucide:arrow-right'></p7t-icon>
-				<span class='time'>${formatTime(end)}</span>
-			`}
+			<p7t-editable-orbit-datetime
+				range
+				.orbit=${this.entity!.orbit}
+				.date=${this.entity!.date}
+				.time=${this.entity!.startTime}
+				.endTime=${this.entity!.endTime}
+				@schedulechange=${(e: CustomEvent<ScheduleValue>) => void this.onScheduleChange(e.detail)}>
+			</p7t-editable-orbit-datetime>
 		`
 	}
 
