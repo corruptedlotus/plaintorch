@@ -1,1 +1,1 @@
-export type { LorePage } from "./models"
+export type { LorePage, LorePageUpdate } from "./models"

@@ -17,4 +17,10 @@ public interface ILorePageApi
 	/// Lists all lore pages in hierarchy order.
 	/// </summary>
 	Task<IReadOnlyList<LorePageRecord>> ListAsync(CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Applies an in-place edit to a lore page's frontmatter-backed metadata, writing the change through to its
+	/// file. Returns the updated record, or <see langword="null"/> when no lore page has the given PUCK.
+	/// </summary>
+	Task<LorePageRecord?> UpdateAsync(string puck, LorePageUpdate update, CancellationToken cancellationToken = default);
 }

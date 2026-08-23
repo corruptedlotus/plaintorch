@@ -19,3 +19,10 @@ export class LorePage {
 	indexedUtc!: string
 	parent?: LorePage
 }
+
+/** In-place edit of a lore page's frontmatter-backed metadata (its title/hierarchy are path-derived, not editable). */
+export interface LorePageUpdate {
+	beginning?: string | undefined
+	/** Clears the beginning date regardless of any provided value. */
+	clearBeginning?: boolean
+}

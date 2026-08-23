@@ -1,12 +1,24 @@
 import { component, css, html } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { LorePage, PleiadeanDate } from '@pleiades/sdk'
-import { IconName } from ".."
+import { LorePage } from '@pleiades/sdk'
+import { core, IconName, ReactiveBinder } from ".."
 import { toRomanNumeral } from "@pleiades/sdk/helpers"
 
 @component('p7t-lore-banner')
 export class LoreBanner extends EntityBanner<LorePage> {
-	
+
+	/** Two-way binds the beginning date, persisting it through the lore SDK (file-first frontmatter write). */
+	protected binder = new ReactiveBinder<LorePage>(this, 'entity', {
+		sourceUpdate: () => this.beginEntityEdit(),
+		sourceUpdated: async (_, keyPath) => {
+			if (keyPath !== 'beginning') return
+			const entity = this.entity!
+			await this.commitEntityEdit(async () => await core.lore.update(
+				entity.id,
+				entity.beginning ? { beginning: entity.beginning } : { clearBeginning: true }))
+		}
+	})
+
 	static override get styles() {
 		return css`
 			${super.styles}
@@ -30,6 +42,13 @@ export class LoreBanner extends EntityBanner<LorePage> {
 				gap: .5em;
 				opacity: .7;
 				font-size: 1em;
+
+				& .label {
+					font-size: .7em;
+					text-transform: uppercase;
+					letter-spacing: .08em;
+					opacity: .7;
+				}
 			}
 		`
 	}
@@ -64,11 +83,10 @@ export class LoreBanner extends EntityBanner<LorePage> {
 
 	protected override get actions() {
 		return html`
-			${!this.entity!.beginning ? html`` : html`
-				<div class="date-span">
-					<p7t-date-view .date=${PleiadeanDate.fromDate(new Date(this.entity!.beginning))}></p7t-date-view>
-				</div>
-			`}
+			<div class="date-span">
+				<span class='label'>Begins</span>
+				<p7t-editable-date ${this.binder.bind('beginning')}></p7t-editable-date>
+			</div>
 		`
 	}
 

@@ -1,4 +1,5 @@
 using Pleiades.Plaintorch.Api.Abstractions;
+using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Api.Services;
 
 namespace Pleiades.Plaintorch.Api.Endpoints;
@@ -36,6 +37,17 @@ public sealed class LorePageModule : Module
 
 			var lorePage = await api.GetAsync(puck, cancellationToken);
 			return lorePage is null ? Results.NotFound() : Results.Ok(lorePage);
+		});
+
+		group.MapPut("/{*puck}", async (string puck, LorePageUpdate request, ILorePageApi api, CancellationToken cancellationToken) =>
+		{
+			if (string.IsNullOrWhiteSpace(puck))
+			{
+				return Results.BadRequest("A lore PUCK is required.");
+			}
+
+			var updated = await api.UpdateAsync(puck, request, cancellationToken);
+			return updated is null ? Results.NotFound() : Results.Ok(updated);
 		});
 	}
 }

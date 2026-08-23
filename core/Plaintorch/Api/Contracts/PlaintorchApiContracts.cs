@@ -103,6 +103,14 @@ public sealed record LorePageRecord(
 	DateTimeOffset IndexedUtc);
 
 /// <summary>
+/// Represents an in-place edit of a lore page's mutable metadata. Its structural identity (title, hierarchy) is
+/// path-derived and not editable here; only frontmatter-backed fields are.
+/// </summary>
+public sealed record LorePageUpdate(
+	DateOnly? Beginning = null,
+	bool ClearBeginning = false);
+
+/// <summary>
 /// Represents a generic text search request used by list/find style API actions.
 /// </summary>
 /// <param name="Query">The query text to search for.</param>

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
+using Pleiades.Plaintorch.Markdown;
 using Pleiades.Saga;
 using Pleiades.Vault.Database;
 
@@ -9,7 +10,7 @@ namespace Pleiades.Plaintorch.Api.Services;
 /// <summary>
 /// Implements the lore page-facing PLAINTORCH application API.
 /// </summary>
-public sealed class LorePageApiService(PlainfraContext context) : ILorePageApi
+public sealed class LorePageApiService(PlainfraContext context, PlaintorchMarkdownStorageService markdownStorageService) : ILorePageApi
 {
 	/// <inheritdoc />
 	public async Task<LorePage?> GetAsync(string puck, CancellationToken cancellationToken = default)
@@ -43,6 +44,34 @@ public sealed class LorePageApiService(PlainfraContext context) : ILorePageApi
 				item.Phase,
 				item.IndexedUtc))
 			.ToListAsync(cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public async Task<LorePageRecord?> UpdateAsync(string puck, LorePageUpdate update, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(puck);
+		ArgumentNullException.ThrowIfNull(update);
+
+		var lorePage = await context.LorePages.FirstOrDefaultAsync(item => item.Id == puck, cancellationToken);
+		if (lorePage is null)
+		{
+			return null;
+		}
+
+		if (update.ClearBeginning)
+		{
+			lorePage.Beginning = null;
+		}
+		else if (update.Beginning is not null)
+		{
+			lorePage.Beginning = update.Beginning;
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		// Lore is file-first, so the change is written back through the entity's own markdown file (frontmatter only,
+		// body preserved). A null previous keeps the existing file in place — only a frontmatter field changed.
+		await markdownStorageService.SaveLorePageAsync(lorePage, cancellationToken: cancellationToken);
+		return Map(lorePage);
 	}
 
 	private static LorePageRecord Map(LorePage lorePage)
