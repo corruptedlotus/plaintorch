@@ -89,14 +89,17 @@ public sealed class DeclarativeApiService(
 		ValidateEventWindow(plan.StartTime, plan.EndTime);
 		PlaintorchOrbitService.ValidateFateOrbit(plan.Orbit);
 
+		// Orbit and a fixed date are mutually exclusive (PEP100); a recurring plan keeps only the orbit, dropping any
+		// stray one-off date/time so the fate is never born carrying both shapes.
+		var recurring = !string.IsNullOrWhiteSpace(plan.Orbit);
 		var fate = new Fate
 		{
 			Id = puckCreationService.CreateIdFor<Fate>(plan.Id),
 			Title = plan.Title,
 			DirectiveId = plan.DirectiveId,
-			Date = plan.Date,
-			StartTime = plan.StartTime,
-			EndTime = plan.EndTime,
+			Date = recurring ? null : plan.Date,
+			StartTime = recurring ? null : plan.StartTime,
+			EndTime = recurring ? null : plan.EndTime,
 			Orbit = plan.Orbit,
 			EventDuration = plan.EventDuration,
 		};
@@ -184,6 +187,21 @@ public sealed class DeclarativeApiService(
 		if (update.EventDuration is not null)
 		{
 			fate.EventDuration = update.EventDuration;
+		}
+
+		// Orbit and a fixed date are mutually exclusive (PEP100). Whichever this update sets clears the other, so a
+		// caller never has to send an explicit clear alongside — the schedule interception keeps the fate single-shaped.
+		var setsOrbit = update.Orbit is not null && !string.IsNullOrWhiteSpace(update.Orbit);
+		var setsDate = !update.ClearDate && update.Date is not null;
+		if (setsOrbit)
+		{
+			fate.Date = null;
+			fate.StartTime = null;
+			fate.EndTime = null;
+		}
+		else if (setsDate)
+		{
+			fate.Orbit = null;
 		}
 
 		ValidateEventWindow(fate.StartTime, fate.EndTime);

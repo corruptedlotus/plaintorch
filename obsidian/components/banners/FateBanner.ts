@@ -75,15 +75,15 @@ export class FateBanner extends EntityBanner<Fate> {
 	}
 
 	/**
-	 * Persists a schedule edited through the unified control. A recurring pick clears the fixed date; a one-off
-	 * pick clears the orbit — the two shapes are mutually exclusive (PEP100). The event window's end is carried
-	 * only in the one-off shape (the control runs in range mode here).
+	 * Persists a schedule edited through the unified control. Orbit and date are mutually exclusive, but the core
+	 * interceptor clears whichever shape this update does not set, so only the chosen one is sent. The event
+	 * window's end is carried only in the one-off shape (the control runs in range mode here).
 	 */
 	private async onScheduleChange(value: ScheduleValue) {
 		const entity = this.entity!
 		const update: FateUpdate = value.mode === 'orbit'
-			? { orbit: value.orbit ?? '', clearDate: true }
-			: { orbit: '', date: value.date, startTime: value.time, endTime: value.endTime }
+			? { orbit: value.orbit ?? '' }
+			: { date: value.date, startTime: value.time, endTime: value.endTime }
 
 		this.beginEntityEdit()
 		const saved = await this.commitEntityEdit(async () => await core.declaratives.updateFate(entity.id, update))
