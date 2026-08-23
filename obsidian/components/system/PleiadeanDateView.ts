@@ -1,6 +1,7 @@
 import { Component, component, css, html, property } from "@a11d/lit"
 import { PleiadeanDate } from "@pleiades/sdk"
 import { getOrdinalSuffix } from "@pleiades/sdk/helpers"
+import "../design/Tooltip"
 
 @component('p7t-date-view')
 export class PleiadeanDateView extends Component {
@@ -12,6 +13,10 @@ export class PleiadeanDateView extends Component {
 			:host {
 				display: inline;
 				font-weight: 250;
+			}
+
+			p7t-tooltip {
+				display: inline;
 			}
 
 			.day-suffix {
@@ -41,21 +46,34 @@ export class PleiadeanDateView extends Component {
 
 	override get template() {
 		return html`
-			<span>${this.date.day}</span><span class='day-suffix'>${getOrdinalSuffix(this.date.day)}</span>
-			<span> of </span>
-			<span class='month'>${this.date.monthName},</span>
-			${this.date.year === 0 ? html`
-				<span>Year ZERO</span>
-			` : html`
-				<span>${Math.abs(this.date.year)}</span>
-				<div class='year-specs'>
-					<span class='year-suffix'>
-						${this.date.year > 0 ? 'A.U.' : 'B.U.'}
-					</span>
-					<span class='year-type'>${this.date.yearType}</span>
-				</div>
-			`}
+			<p7t-tooltip .text=${this.gregorianLabel}>
+				<span>${this.date.day}</span><span class='day-suffix'>${getOrdinalSuffix(this.date.day)}</span>
+				<span> of </span>
+				<span class='month'>${this.date.monthName},</span>
+				${this.date.year === 0 ? html`
+					<span>Year ZERO</span>
+				` : html`
+					<span>${Math.abs(this.date.year)}</span>
+					<div class='year-specs'>
+						<span class='year-suffix'>
+							${this.date.year > 0 ? 'A.U.' : 'B.U.'}
+						</span>
+						<span class='year-type'>${this.date.yearType}</span>
+					</div>
+				`}
+			</p7t-tooltip>
 		`
+	}
+
+	/** The same day in the device's default calendar and locale, spelled out in full — the tooltip counterpart to the Pleiadean face. */
+	private get gregorianLabel(): string {
+		try {
+			// The Pleiadean date is a whole day anchored in UTC, so format it in UTC to keep the day from shifting.
+			return this.date.toDate().toLocaleDateString(undefined, { dateStyle: 'full', timeZone: 'UTC' })
+		}
+		catch {
+			return ''
+		}
 	}
 }
 

@@ -155,15 +155,8 @@ export class DecreeBanner extends EntityBanner<Decree> {
 	}
 
 	protected override get secondary() {
-		const directiveTitle = this.entity!.directive?.title
-		const parentage = !directiveTitle ? html`
-			<span style='opacity: .5'>World Quest</span>
-		` : html`
-			<span>${directiveTitle}</span>
-		`
-
 		return html`
-			${parentage}
+			<p7t-directive-item .directive=${this.entity!.directive}></p7t-directive-item>
 			${!this.isLunarHierarchy ? nothing : this.reflectionRow}
 		`
 	}

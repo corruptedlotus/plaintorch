@@ -77,11 +77,8 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 	}
 
 	protected override get secondary() {
-		const directiveTitle = this.entity!.parentDirective?.title
-		return !directiveTitle ? html`
-			<span style='opacity: .5'>Constellation Directive</span>
-		` : html`
-			<span>${directiveTitle}</span>
+		return html`
+			<p7t-directive-item placeholder='Constellation Directive' .directive=${this.entity!.parentDirective}></p7t-directive-item>
 		`
 	}
 

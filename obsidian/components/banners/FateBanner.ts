@@ -131,11 +131,8 @@ export class FateBanner extends EntityBanner<Fate> {
 	}
 
 	protected override get secondary() {
-		const directiveTitle = this.entity!.directive?.title
-		return !directiveTitle ? html`
-			<span style='opacity: .5'>World Quest</span>
-		` : html`
-			<span>${directiveTitle}</span>
+		return html`
+			<p7t-directive-item .directive=${this.entity!.directive}></p7t-directive-item>
 		`
 	}
 

@@ -16,6 +16,13 @@ export class EditableDate extends EditableTemporalPart {
 		const parsed = new Date(`${value}T00:00:00`)
 		return Number.isNaN(parsed.getTime()) ? value : PleiadeanDate.fromDate(parsed).toString()
 	}
+
+	/** The same day in the device's default calendar and locale, spelled out in full, as the hover reading. */
+	protected override get idleTooltip(): string {
+		if (!this.value) return ''
+		const parsed = new Date(`${this.value}T00:00:00`)
+		return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString(undefined, { dateStyle: 'full' })
+	}
 }
 
 declare global {
