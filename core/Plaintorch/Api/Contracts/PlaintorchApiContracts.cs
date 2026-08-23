@@ -339,8 +339,8 @@ public sealed record PolarisExecutivePlanResult(Objective? Objective, Executive 
 /// Represents a mutable update to an executive record.
 /// </summary>
 /// <remarks>
-/// The time allocation fields carry whole-minute working time units. Each is paired with a
-/// <c>Clear*</c> flag so a caller can distinguish "leave unchanged" (null) from "unset" (clear).
+/// The time allocation fields carry whole-minute working time units, each an <see cref="Optional{T}"/>: an
+/// omitted key leaves it unchanged, an explicit value sets it, and an explicit null clears it.
 /// After the values are applied the record is reconciled through <see cref="Executive.NormalizeTimeAllocations"/>.
 /// <paramref name="Elapsed"/> is the raw tracked-minute tally: <c>null</c> leaves it unchanged and any
 /// supplied value (including <c>0</c> to reset) overwrites it. It has no <c>Clear*</c> flag because it is never unset.
@@ -351,12 +351,9 @@ public sealed record ExecutiveUpdate(
 	bool? Executed = null,
 	string? ObjectiveId = null,
 	bool ClearObjective = false,
-	int? Estimation = null,
-	int? Minimum = null,
-	int? Maximum = null,
-	bool ClearEstimation = false,
-	bool ClearMinimum = false,
-	bool ClearMaximum = false,
+	Optional<int?> Estimation = default,
+	Optional<int?> Minimum = default,
+	Optional<int?> Maximum = default,
 	int? Elapsed = null,
 	long? AffinityTimeframeId = null,
 	bool ClearAffinityTimeframe = false);
@@ -456,9 +453,9 @@ public sealed record EventiveUpdate(
 	TimeOnly? StartTime = null,
 	TimeOnly? EndTime = null,
 	EventiveResolution? Resolution = null,
-	int? Estimation = null,
-	int? Minimum = null,
-	int? Maximum = null);
+	Optional<int?> Estimation = default,
+	Optional<int?> Minimum = default,
+	Optional<int?> Maximum = default);
 
 /// <summary>
 /// Represents the caller-supplied occurrence details when interacting with a decree to materialize an
@@ -483,9 +480,9 @@ public sealed record AttentiveUpdate(
 	TimeOnly? Time = null,
 	AttentiveResolution? Resolution = null,
 	string? MoveToPolarisCycleId = null,
-	int? Estimation = null,
-	int? Minimum = null,
-	int? Maximum = null);
+	Optional<int?> Estimation = default,
+	Optional<int?> Minimum = default,
+	Optional<int?> Maximum = default);
 
 /// <summary>
 /// Represents the data required to manually add a decree to a Polaris cycle, creating a Polaris-bound

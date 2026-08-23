@@ -156,9 +156,10 @@ export interface EventiveUpdate {
 	startTime?: string | undefined
 	endTime?: string | undefined
 	resolution?: EventiveResolution | undefined
-	estimation?: number | undefined
-	minimum?: number | undefined
-	maximum?: number | undefined
+	/** Whole minutes. Omit to keep, a value to set, `null` to clear. */
+	estimation?: number | null | undefined
+	minimum?: number | null | undefined
+	maximum?: number | null | undefined
 }
 
 /** Occurrence details for interaction-triggered materialization. */
@@ -177,7 +178,8 @@ export interface AttentiveUpdate {
 	resolution?: AttentiveResolution | undefined
 	/** Moves the attentive to another cycle; only valid while Polaris-bound. */
 	moveToPolarisCycleId?: string | undefined
-	estimation?: number | undefined
-	minimum?: number | undefined
-	maximum?: number | undefined
+	/** Whole minutes. Omit to keep, a value to set, `null` to clear. */
+	estimation?: number | null | undefined
+	minimum?: number | null | undefined
+	maximum?: number | null | undefined
 }

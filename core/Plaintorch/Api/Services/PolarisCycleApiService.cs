@@ -276,34 +276,20 @@ public sealed class PolarisCycleApiService(
 			executive.ObjectiveId = null;
 		}
 
-		if (update.Estimation is not null)
+		// A set allocation applies its value — including null, which clears it; an unset one is left unchanged.
+		if (update.Estimation.IsSet)
 		{
-			executive.Estimation = update.Estimation;
+			executive.Estimation = update.Estimation.Value;
 		}
 
-		if (update.ClearEstimation)
+		if (update.Minimum.IsSet)
 		{
-			executive.Estimation = null;
+			executive.Minimum = update.Minimum.Value;
 		}
 
-		if (update.Minimum is not null)
+		if (update.Maximum.IsSet)
 		{
-			executive.Minimum = update.Minimum;
-		}
-
-		if (update.ClearMinimum)
-		{
-			executive.Minimum = null;
-		}
-
-		if (update.Maximum is not null)
-		{
-			executive.Maximum = update.Maximum;
-		}
-
-		if (update.ClearMaximum)
-		{
-			executive.Maximum = null;
+			executive.Maximum = update.Maximum.Value;
 		}
 
 		if (update.Elapsed is not null)

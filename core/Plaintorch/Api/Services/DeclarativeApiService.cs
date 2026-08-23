@@ -679,21 +679,22 @@ public sealed class DeclarativeApiService(
 		return attentive;
 	}
 
-	private static void ApplyAllocations(ITimeAllocated record, int? estimation, int? minimum, int? maximum)
+	private static void ApplyAllocations(ITimeAllocated record, Optional<int?> estimation, Optional<int?> minimum, Optional<int?> maximum)
 	{
-		if (estimation is not null)
+		// A set field applies its value — including null, which clears the allocation; an unset field is left alone.
+		if (estimation.IsSet)
 		{
-			record.Estimation = estimation;
+			record.Estimation = estimation.Value;
 		}
 
-		if (minimum is not null)
+		if (minimum.IsSet)
 		{
-			record.Minimum = minimum;
+			record.Minimum = minimum.Value;
 		}
 
-		if (maximum is not null)
+		if (maximum.IsSet)
 		{
-			record.Maximum = maximum;
+			record.Maximum = maximum.Value;
 		}
 
 		record.Normalize();

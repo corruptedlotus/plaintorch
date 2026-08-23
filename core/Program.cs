@@ -6,6 +6,7 @@ using System.Net.Sockets;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Pleiades.Calendar;
+using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Vault;
 
 namespace Pleiades.Plaintorch;
@@ -46,6 +47,8 @@ public static class Program
 		builder.Services.ConfigureHttpJsonOptions(options =>
 		{
 			options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+			// Tri-state update fields: a present key (value or explicit null) applies; an omitted key leaves unchanged.
+			options.SerializerOptions.Converters.Add(new OptionalJsonConverterFactory());
 			options.SerializerOptions.TypeInfoResolver = new DefaultJsonTypeInfoResolver
 			{
 				Modifiers =

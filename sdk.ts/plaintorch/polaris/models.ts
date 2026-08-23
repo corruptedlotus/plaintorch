@@ -123,18 +123,12 @@ export interface ExecutiveUpdate {
 	objectiveId?: string | undefined
 	title?: string | undefined
 	clearObjective?: boolean
-	/** Primary time allocation, as a whole-minute working time unit. Leave undefined to keep the current value. */
-	estimation?: number | undefined
-	/** Minimum time allocation, as a whole-minute working time unit. Leave undefined to keep the current value. */
-	minimum?: number | undefined
-	/** Maximum time allocation, as a whole-minute working time unit. Leave undefined to keep the current value. */
-	maximum?: number | undefined
-	/** Clears the estimation allocation regardless of any provided value. */
-	clearEstimation?: boolean
-	/** Clears the minimum allocation regardless of any provided value. */
-	clearMinimum?: boolean
-	/** Clears the maximum allocation regardless of any provided value. */
-	clearMaximum?: boolean
+	/** Primary time allocation (whole minutes). Omit to keep, a value to set, `null` to clear. */
+	estimation?: number | null | undefined
+	/** Minimum time allocation (whole minutes). Omit to keep, a value to set, `null` to clear. */
+	minimum?: number | null | undefined
+	/** Maximum time allocation (whole minutes). Omit to keep, a value to set, `null` to clear. */
+	maximum?: number | null | undefined
 	/** Raw tracked-minute tally. Leave undefined to keep the current value; supply a value (including 0 to reset) to overwrite. */
 	elapsed?: number | undefined
 	/** Preferred timeframe for execution (affinity, PEP100). */
