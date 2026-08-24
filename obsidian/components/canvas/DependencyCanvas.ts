@@ -663,15 +663,15 @@ export class DependencyCanvas extends Component {
 				`}
 				<div class='tray-actions'>
 					${!sprint ? nothing : html`
-						<button class='tray-btn' aria-label='Onrush details' @click=${() => this.openOnrushDetails()}>
+						<button class='tray-btn' aria-label='Onrush details' title='Onrush details' @click=${() => this.openOnrushDetails()}>
 							<p7t-icon icon='lucide:pen'></p7t-icon>
 						</button>
 					`}
-					<button class='tray-btn' aria-label='Reset layout' @click=${() => this.resetLayout()}>
+					<button class='tray-btn' aria-label='Reset layout' title='Reset layout' @click=${() => this.resetLayout()}>
 						<p7t-icon icon='lucide:rotate-ccw'></p7t-icon>
 					</button>
 					${this.mode === 'global' && !this.fileBacked ? html`
-						<button class='tray-btn' aria-label='Save to file' @click=${() => void this.onSaveToFile()}>
+						<button class='tray-btn' aria-label='Save to file' title='Save to file' @click=${() => void this.onSaveToFile()}>
 							<p7t-icon icon='lucide:save'></p7t-icon>
 						</button>
 					` : nothing}

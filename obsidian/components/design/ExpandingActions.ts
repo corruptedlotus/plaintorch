@@ -143,6 +143,7 @@ export class ExpandingActions extends Component {
 			<button
 				class='trigger'
 				aria-label=${this.actionLabel}
+				title=${this.actionLabel}
 				@click=${(e: MouseEvent) => this.onTriggerClick(e)}>
 				<p7t-icon .icon=${this.icon}></p7t-icon>
 				${!this.label ? '' : html`<span>${this.label}</span>`}

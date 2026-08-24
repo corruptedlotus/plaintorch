@@ -216,7 +216,7 @@ export class TimeframesEditor extends Component {
 						.value=${timeframe.title}
 						@change=${(e: Event) => this.saveTimeframe(timeframe.id, { title: (e.target as EditablePart<string>).value ?? '' })}>
 					</p7t-editable-plaintext>
-					<button class='remove' aria-label='Remove timeframe' @click=${() => this.removeTimeframe(timeframe)}>
+					<button class='remove' aria-label='Remove timeframe' title='Remove timeframe' @click=${() => this.removeTimeframe(timeframe)}>
 						<p7t-icon icon='lucide:trash-2'></p7t-icon>
 					</button>
 				</div>

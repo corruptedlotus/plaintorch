@@ -266,7 +266,7 @@ export class GridItem extends Component {
 			</div>
 			${this.leadingCells.map(cell => html`<div class='cell'>${cell}</div>`)}
 			<div class='cell actions'>
-				<button class='goto' aria-label='Open note' @click=${() => this.open()}>
+				<button class='goto' aria-label='Open note' title='Open note' @click=${() => this.open()}>
 					<p7t-icon icon='lucide:square-arrow-out-up-right'></p7t-icon>
 				</button>
 			</div>
@@ -317,7 +317,7 @@ export class GridItem extends Component {
 				// A lunar directive carries no measure of its own, so its otherwise-empty column hosts the button
 				// that opens its editing modal — the one place its timeframes are managed (PEP100 patch).
 				return html`
-					<button class='measure-button' aria-label='Edit timeframes' @click=${() => this.openLunarEditor()}>
+					<button class='measure-button' aria-label='Edit timeframes' title='Edit timeframes' @click=${() => this.openLunarEditor()}>
 						<p7t-icon icon='lucide:clock'></p7t-icon>
 					</button>
 				`

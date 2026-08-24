@@ -1,4 +1,4 @@
-import { Component, component, css, html, property } from "@a11d/lit"
+import { Component, component, css, html, nothing, property } from "@a11d/lit"
 import { IconName } from 'components'
 
 /**
@@ -9,6 +9,11 @@ export class Button extends Component {
 	@property({ type: Boolean, reflect: true }) disabled = false
 	@property({ type: Boolean, reflect: true }) emphasis = false
 	@property() icon?: IconName
+	/**
+	 * The button's accessible name, surfaced as a hover tooltip — the label an icon-only button has no room to
+	 * show. Set it wherever the button is drawn as its glyph alone.
+	 */
+	@property() label?: string
 
 	static override get styles() {
 		return css`
@@ -73,7 +78,7 @@ export class Button extends Component {
 
 	protected override get template() {
 		return html`
-			<button>
+			<button title=${this.label ?? nothing} aria-label=${this.label ?? nothing}>
 				${this.icon ? html`<p7t-icon part='icon' .icon=${this.icon}></p7t-icon>` : ''}
 				<slot part='text'></slot>
 			</button>

@@ -143,6 +143,7 @@ export class CardComponent extends Component {
 				class='collapse-chevron ${this.collapsed ? 'collapsed' : ''}'
 				part='collapse-toggle'
 				aria-label=${this.collapsed ? 'Expand card' : 'Collapse card'}
+				title=${this.collapsed ? 'Expand card' : 'Collapse card'}
 				aria-expanded=${!this.collapsed}
 				@click=${() => this.dispatchEvent(new CustomEvent('collapsetoggle', { bubbles: true, composed: true }))}>
 				<p7t-icon icon='lucide:chevron-down'></p7t-icon>

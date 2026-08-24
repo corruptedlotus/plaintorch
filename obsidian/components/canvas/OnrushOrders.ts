@@ -189,7 +189,7 @@ export class OnrushOrders extends Component {
 						@change=${(e: Event) => this.saveOrder(order.id, { effectiveUntil: (e.target as EditablePart<string>).value })}>
 					</p7t-editable-date>
 				</div>
-				<button class='remove' aria-label='Remove order' @click=${() => this.removeOrder(order)}>
+				<button class='remove' aria-label='Remove order' title='Remove order' @click=${() => this.removeOrder(order)}>
 					<p7t-icon icon='lucide:trash-2'></p7t-icon>
 				</button>
 				<p7t-editable-plaintext
