@@ -1,5 +1,6 @@
 import { Component, component, css, html, nothing, property } from "@a11d/lit"
 import { IconName } from 'components'
+import './Tooltip'
 
 /**
  * @attr large
@@ -77,12 +78,18 @@ export class Button extends Component {
 	}
 
 	protected override get template() {
-		return html`
-			<button title=${this.label ?? nothing} aria-label=${this.label ?? nothing}>
+		const button = html`
+			<button aria-label=${this.label ?? nothing}>
 				${this.icon ? html`<p7t-icon part='icon' .icon=${this.icon}></p7t-icon>` : ''}
 				<slot part='text'></slot>
 			</button>
 		`
+
+		// The label is the tooltip too — through p7t-tooltip, not a native title, so it reads the same as every
+		// other tooltip in the app. Only wrapped when there is a label (icon-only buttons); text buttons render bare.
+		return this.label
+			? html`<p7t-tooltip .text=${this.label}>${button}</p7t-tooltip>`
+			: button
 	}
 }
 
