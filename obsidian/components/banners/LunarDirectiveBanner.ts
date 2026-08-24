@@ -34,9 +34,10 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 					return await core.directives.shiftLunarWorkflow(entity.id, { status: entity.status as LunarDirectiveStatus })
 				}
 
+				// Codename is nullable: a cleared field commits as null (a clear), not undefined (a no-op).
 				const update: LunarDirectiveUpdate = {}
 				if (keyPath === 'title') update.title = entity.title
-				if (keyPath === 'codename') update.codename = entity.codename
+				if (keyPath === 'codename') update.codename = entity.codename ?? null
 				return await core.directives.updateLunar(entity.id, update)
 			})
 

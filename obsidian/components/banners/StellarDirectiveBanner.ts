@@ -33,10 +33,11 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 					return await core.directives.shiftStellarWorkflow(entity.id, { status: entity.status as DirectiveStatus })
 				}
 
+				// Codename and due are nullable: a cleared field commits as null (a clear), not undefined (a no-op).
 				const update: StellarDirectiveUpdate = {}
 				if (keyPath === 'title') update.title = entity.title
-				if (keyPath === 'codename') update.codename = entity.codename
-				if (keyPath === 'due') update.due = entity.due
+				if (keyPath === 'codename') update.codename = entity.codename ?? null
+				if (keyPath === 'due') update.due = entity.due ?? null
 				return await core.directives.updateStellar(entity.id, update)
 			})
 

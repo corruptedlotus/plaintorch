@@ -20,12 +20,13 @@ export class ExecutiveOrderBanner extends EntityBanner<ExecutiveOrder> {
 		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
+			// Summary and the effective dates are nullable: a cleared field commits as null (a clear), not a no-op.
 			const update: ExecutiveOrderUpdate = {}
 			switch (keyPath) {
 				case 'title': update.title = entity.title; break
-				case 'summary': update.summary = entity.summary; break
-				case 'effectiveFrom': update.effectiveFrom = entity.effectiveFrom; break
-				case 'effectiveUntil': update.effectiveUntil = entity.effectiveUntil; break
+				case 'summary': update.summary = entity.summary ?? null; break
+				case 'effectiveFrom': update.effectiveFrom = entity.effectiveFrom ?? null; break
+				case 'effectiveUntil': update.effectiveUntil = entity.effectiveUntil ?? null; break
 				default: return
 			}
 
