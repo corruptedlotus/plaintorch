@@ -113,11 +113,10 @@ export interface FateUpdate {
 	title?: string | undefined
 	status?: FateStatus | undefined
 	directiveId?: string | undefined
-	parentIncentiveId?: string | undefined
-	clearParentIncentive?: boolean
-	date?: string | undefined
-	/** Drops the fixed date (used when switching a one-off fate onto a recurring orbit). */
-	clearDate?: boolean
+	/** Parent incentive. Omit to keep, an id to set, `null` to clear. */
+	parentIncentiveId?: string | null | undefined
+	/** Fixed date. Omit to keep, a value to set, `null` to clear (e.g. switching onto a recurring orbit). */
+	date?: string | null | undefined
 	startTime?: string | undefined
 	endTime?: string | undefined
 	orbit?: string | undefined

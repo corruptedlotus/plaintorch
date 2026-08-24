@@ -32,7 +32,7 @@ export class CheckpointBanner extends EntityBanner<Checkpoint> {
 			await this.commitEntityEdit(async () => {
 				if (keyPath === 'celestronToll') {
 					const toll = checkpoint.celestronToll ?? 0
-					return await core.dependencies.updateCheckpoint(checkpoint.id, toll > 0 ? { celestronToll: toll } : { clearCelestronToll: true })
+					return await core.dependencies.updateCheckpoint(checkpoint.id, { celestronToll: toll > 0 ? toll : null })
 				}
 
 				return await core.dependencies.updateCheckpoint(checkpoint.id, { title: checkpoint.title })
@@ -75,7 +75,7 @@ export class CheckpointBanner extends EntityBanner<Checkpoint> {
 		return html`
 			<div style='display: flex; align-items: center; gap: .3em'>
 				<span>Toll:</span>
-				<p7t-editable-starfire ${this.binder.bind('celestronToll')}></p7t-editable-starfire>
+				<p7t-editable-starfire nullable ${this.binder.bind('celestronToll')}></p7t-editable-starfire>
 				${hasToll && checkpoint.tollPaid ? html`<span style='opacity: .6'>paid</span>` : nothing}
 			</div>
 			<div style='display: flex; align-items: center; gap: .3em'>
@@ -108,7 +108,7 @@ export class CheckpointBanner extends EntityBanner<Checkpoint> {
 				<p7t-button large icon=${condition ? 'state-done' : 'state-zero'} @click=${() => this.applyUpdate({ externalCondition: !condition })}>
 					<span>${condition ? 'Mark unmet' : 'Mark met'}</span>
 				</p7t-button>
-				<p7t-button large icon='lucide:x' @click=${() => this.applyUpdate({ clearExternalCondition: true })}>
+				<p7t-button large icon='lucide:x' @click=${() => this.applyUpdate({ externalCondition: null })}>
 					<span>Remove condition</span>
 				</p7t-button>
 			`}

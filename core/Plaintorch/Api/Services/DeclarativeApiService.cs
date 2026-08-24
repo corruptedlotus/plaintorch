@@ -146,25 +146,23 @@ public sealed class DeclarativeApiService(
 			fate.DirectiveId = update.DirectiveId;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.ParentIncentiveId))
+		if (update.ParentIncentiveId.IsSet)
 		{
-			await ApplyParentAsync(fate, update.ParentIncentiveId, cancellationToken);
+			if (string.IsNullOrWhiteSpace(update.ParentIncentiveId.Value))
+			{
+				fate.ParentIncentiveId = null;
+			}
+			else
+			{
+				await ApplyParentAsync(fate, update.ParentIncentiveId.Value, cancellationToken);
+			}
 		}
 
-		if (update.ClearParentIncentive)
+		if (update.Date.IsSet)
 		{
-			fate.ParentIncentiveId = null;
-		}
-
-		if (update.ClearDate)
-		{
-			// Switching a one-off fate onto a recurring orbit drops its fixed date, so it no longer
-			// materializes a standalone eventive alongside the orbit's occurrences.
-			fate.Date = null;
-		}
-		else if (update.Date is not null)
-		{
-			fate.Date = update.Date;
+			// A null date drops the fixed date — e.g. switching a one-off fate onto a recurring orbit, so it no
+			// longer materializes a standalone eventive alongside the orbit's occurrences.
+			fate.Date = update.Date.Value;
 		}
 
 		if (update.StartTime is not null)
@@ -192,7 +190,7 @@ public sealed class DeclarativeApiService(
 		// Orbit and a fixed date are mutually exclusive (PEP100). Whichever this update sets clears the other, so a
 		// caller never has to send an explicit clear alongside — the schedule interception keeps the fate single-shaped.
 		var setsOrbit = update.Orbit is not null && !string.IsNullOrWhiteSpace(update.Orbit);
-		var setsDate = !update.ClearDate && update.Date is not null;
+		var setsDate = update.Date.IsSet && update.Date.Value is not null;
 		if (setsOrbit)
 		{
 			fate.Date = null;

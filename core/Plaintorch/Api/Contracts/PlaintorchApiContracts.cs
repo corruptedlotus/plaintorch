@@ -107,8 +107,7 @@ public sealed record LorePageRecord(
 /// path-derived and not editable here; only frontmatter-backed fields are.
 /// </summary>
 public sealed record LorePageUpdate(
-	DateOnly? Beginning = null,
-	bool ClearBeginning = false);
+	Optional<DateOnly?> Beginning = default);
 
 /// <summary>
 /// Represents a generic text search request used by list/find style API actions.
@@ -214,9 +213,8 @@ public sealed record ObjectiveUpdate(
 	ObjectiveCollege? College = null,
 	int? CelestronValue = null,
 	bool? IsEnduring = null,
-	DateOnly? Due = null,
-	string? ParentIncentiveId = null,
-	bool ClearParentIncentive = false);
+	Optional<DateOnly?> Due = default,
+	Optional<string?> ParentIncentiveId = default);
 
 /// <summary>
 /// Represents the editable fields of a checkpoint (PEP102): its name, its Celestron toll, and its external
@@ -230,10 +228,8 @@ public sealed record ObjectiveUpdate(
 /// </remarks>
 public sealed record CheckpointUpdate(
 	string? Title = null,
-	int? CelestronToll = null,
-	bool ClearCelestronToll = false,
-	bool? ExternalCondition = null,
-	bool ClearExternalCondition = false);
+	Optional<int?> CelestronToll = default,
+	Optional<bool?> ExternalCondition = default);
 
 /// <summary>
 /// Represents a workflow shift for an objective.
@@ -350,13 +346,11 @@ public sealed record PolarisExecutivePlanResult(Objective? Objective, Executive 
 public sealed record ExecutiveUpdate(
 	bool? Executed = null,
 	string? ObjectiveId = null,
-	bool ClearObjective = false,
 	Optional<int?> Estimation = default,
 	Optional<int?> Minimum = default,
 	Optional<int?> Maximum = default,
 	int? Elapsed = null,
-	long? AffinityTimeframeId = null,
-	bool ClearAffinityTimeframe = false);
+	Optional<long?> AffinityTimeframeId = default);
 
 /// <summary>
 /// Represents the inputs used to draw reflectives for a Polaris cycle.
@@ -402,10 +396,8 @@ public sealed record FateUpdate(
 	string? Title = null,
 	FateStatus? Status = null,
 	string? DirectiveId = null,
-	string? ParentIncentiveId = null,
-	bool ClearParentIncentive = false,
-	DateOnly? Date = null,
-	bool ClearDate = false,
+	Optional<string?> ParentIncentiveId = default,
+	Optional<DateOnly?> Date = default,
 	TimeOnly? StartTime = null,
 	TimeOnly? EndTime = null,
 	string? Orbit = null,
@@ -535,13 +527,10 @@ public sealed record TimeframeUpdate(
 	string? Title = null,
 	TimeOnly? StartTime = null,
 	TimeOnly? EndTime = null,
-	string? Orbit = null,
-	bool ClearOrbit = false,
-	string? Icon = null,
-	bool ClearIcon = false,
+	Optional<string?> Orbit = default,
+	Optional<string?> Icon = default,
 	TimeframeInclusion? AutoInclusion = null,
-	ObjectiveCollege? AutoInclusionCollege = null,
-	bool ClearAutoInclusionCollege = false);
+	Optional<ObjectiveCollege?> AutoInclusionCollege = default);
 
 /// <summary>
 /// Represents the emitted dependency lock for an entity (PEP101), computed from its unsatisfied incoming

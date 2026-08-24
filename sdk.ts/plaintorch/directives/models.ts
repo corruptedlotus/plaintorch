@@ -175,18 +175,14 @@ export interface TimeframeUpdate {
 	title?: string | undefined
 	startTime?: string | undefined
 	endTime?: string | undefined
-	orbit?: string | undefined
-	clearOrbit?: boolean
-	/** Icon key (PEP100 patch). Leave undefined to keep the current icon. */
-	icon?: string | undefined
-	/** Clears the icon regardless of any provided value (PEP100 patch). */
-	clearIcon?: boolean
+	/** Orbit notation. Omit to keep, a value to set, `null` to clear. */
+	orbit?: string | null | undefined
+	/** Icon key (PEP100 patch). Omit to keep, a value to set, `null` to clear. */
+	icon?: string | null | undefined
 	/** How this timeframe auto-includes workitems (PEP100 patch). Leave undefined to keep the current mechanism. */
 	autoInclusion?: TimeframeInclusion
-	/** The college driving college-based auto-inclusion (PEP100 patch). Leave undefined to keep the current college. */
-	autoInclusionCollege?: ObjectiveCollege | undefined
-	/** Clears the auto-inclusion college regardless of any provided value (PEP100 patch). */
-	clearAutoInclusionCollege?: boolean
+	/** The college driving college-based auto-inclusion (PEP100 patch). Omit to keep, a value to set, `null` to clear. */
+	autoInclusionCollege?: ObjectiveCollege | null | undefined
 }
 
 /** How a media key resolves (PEP105): a built-in glyph, self/level media, or vault-level shared media. */

@@ -58,9 +58,10 @@ export interface ObjectiveUpdate {
 	college?: ObjectiveCollege | undefined
 	celestronValue?: number | undefined
 	isEnduring?: boolean | undefined
-	due?: string | undefined
-	parentIncentiveId?: string | undefined
-	clearParentIncentive?: boolean
+	/** Due date. Omit to keep, a value to set, `null` to clear. */
+	due?: string | null | undefined
+	/** Parent incentive. Omit to keep, an id to set, `null` to clear. */
+	parentIncentiveId?: string | null | undefined
 }
 
 export interface ObjectiveWorkflowShift {

@@ -390,7 +390,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 
 		var cleared = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
-			.UpdateExecutiveAsync(planned.Executive.Id, new ExecutiveUpdate(ClearAffinityTimeframe: true), cancellationToken));
+			.UpdateExecutiveAsync(planned.Executive.Id, new ExecutiveUpdate(AffinityTimeframeId: null), cancellationToken));
 		Assert.Null(cleared.AffinityTimeframeId);
 	}
 }

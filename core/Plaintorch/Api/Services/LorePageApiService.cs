@@ -58,13 +58,9 @@ public sealed class LorePageApiService(PlainfraContext context, PlaintorchMarkdo
 			return null;
 		}
 
-		if (update.ClearBeginning)
+		if (update.Beginning.IsSet)
 		{
-			lorePage.Beginning = null;
-		}
-		else if (update.Beginning is not null)
-		{
-			lorePage.Beginning = update.Beginning;
+			lorePage.Beginning = update.Beginning.Value;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);

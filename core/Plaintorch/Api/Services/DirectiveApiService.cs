@@ -614,26 +614,16 @@ public sealed class DirectiveApiService(
 			timeframe.EndTime = update.EndTime.Value;
 		}
 
-		if (update.Orbit is not null)
+		if (update.Orbit.IsSet)
 		{
-			var normalizedOrbit = string.IsNullOrWhiteSpace(update.Orbit) ? null : update.Orbit;
+			var normalizedOrbit = string.IsNullOrWhiteSpace(update.Orbit.Value) ? null : update.Orbit.Value;
 			PlaintorchOrbitService.ValidateTimeframeOrbit(normalizedOrbit);
 			timeframe.Orbit = normalizedOrbit;
 		}
 
-		if (update.ClearOrbit)
+		if (update.Icon.IsSet)
 		{
-			timeframe.Orbit = null;
-		}
-
-		if (update.Icon is not null)
-		{
-			timeframe.Icon = string.IsNullOrWhiteSpace(update.Icon) ? null : update.Icon.Trim();
-		}
-
-		if (update.ClearIcon)
-		{
-			timeframe.Icon = null;
+			timeframe.Icon = string.IsNullOrWhiteSpace(update.Icon.Value) ? null : update.Icon.Value.Trim();
 		}
 
 		if (update.AutoInclusion is not null)
@@ -646,14 +636,9 @@ public sealed class DirectiveApiService(
 			}
 		}
 
-		if (update.AutoInclusionCollege is not null)
+		if (update.AutoInclusionCollege.IsSet)
 		{
-			timeframe.AutoInclusionCollege = update.AutoInclusionCollege;
-		}
-
-		if (update.ClearAutoInclusionCollege)
-		{
-			timeframe.AutoInclusionCollege = null;
+			timeframe.AutoInclusionCollege = update.AutoInclusionCollege.Value;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);

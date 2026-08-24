@@ -127,25 +127,27 @@ public sealed class ObjectiveApiService(
 			objective.IsEnduring = update.IsEnduring.Value;
 		}
 
-		if (update.Due is not null)
+		if (update.Due.IsSet)
 		{
-			objective.Due = update.Due;
+			objective.Due = update.Due.Value;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.ParentIncentiveId))
+		if (update.ParentIncentiveId.IsSet)
 		{
-			var parent = await context.Incentives
-				.AsNoTracking()
-				.IgnoreAutoIncludes()
-				.FirstOrDefaultAsync(item => item.Id == update.ParentIncentiveId, cancellationToken)
-				?? throw new InvalidOperationException($"Parent incentive '{update.ParentIncentiveId}' was not found.");
-			IncentiveParenting.EnsureValidParent(objective, parent);
-			objective.ParentIncentiveId = parent.Id;
-		}
-
-		if (update.ClearParentIncentive)
-		{
-			objective.ParentIncentiveId = null;
+			if (string.IsNullOrWhiteSpace(update.ParentIncentiveId.Value))
+			{
+				objective.ParentIncentiveId = null;
+			}
+			else
+			{
+				var parent = await context.Incentives
+					.AsNoTracking()
+					.IgnoreAutoIncludes()
+					.FirstOrDefaultAsync(item => item.Id == update.ParentIncentiveId.Value, cancellationToken)
+					?? throw new InvalidOperationException($"Parent incentive '{update.ParentIncentiveId.Value}' was not found.");
+				IncentiveParenting.EnsureValidParent(objective, parent);
+				objective.ParentIncentiveId = parent.Id;
+			}
 		}
 
 		await context.SaveChangesAsync(cancellationToken);

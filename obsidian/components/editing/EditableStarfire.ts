@@ -32,9 +32,10 @@ export class EditableStarfire extends EditableNumericPart {
 	}
 
 	protected override get template() {
+		const empty = this.nullable && (this.value === undefined || this.value === null)
 		return html`
 			<p7t-icon icon='starfire'></p7t-icon>
-			<span class='value'>${this.value ?? 'x'}</span>
+			<span class='value'>${empty ? this.nullDisplayTemplate : (this.value ?? 'x')}</span>
 			${this.stepperTemplate()}
 		`
 	}

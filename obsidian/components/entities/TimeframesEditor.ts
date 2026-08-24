@@ -295,7 +295,7 @@ export class TimeframesEditor extends Component {
 
 	private saveIcon(timeframeId: number, e: Event) {
 		const value = (e.target as EditablePart<string>).value?.trim() ?? ''
-		void this.saveTimeframe(timeframeId, value ? { icon: value } : { clearIcon: true })
+		void this.saveTimeframe(timeframeId, { icon: value || null })
 	}
 
 	private saveCollege(timeframeId: number, e: Event) {
@@ -306,7 +306,7 @@ export class TimeframesEditor extends Component {
 
 		// The "None" college is how a timeframe is turned back into a manual (non-auto-including) one.
 		const update: TimeframeUpdate = college === ObjectiveCollege.Unspecified
-			? { autoInclusion: TimeframeInclusion.None, clearAutoInclusionCollege: true }
+			? { autoInclusion: TimeframeInclusion.None, autoInclusionCollege: null }
 			: { autoInclusion: TimeframeInclusion.College, autoInclusionCollege: college }
 		void this.saveTimeframe(timeframeId, update)
 	}

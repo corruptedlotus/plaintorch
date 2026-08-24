@@ -266,14 +266,11 @@ public sealed class PolarisCycleApiService(
 			executive.Executed = update.Executed.Value;
 		}
 
+		// The executive's objective can be reassigned but never cleared — an executive without an objective has
+		// nothing to work at.
 		if (!string.IsNullOrWhiteSpace(update.ObjectiveId))
 		{
 			executive.ObjectiveId = update.ObjectiveId;
-		}
-
-		if (update.ClearObjective)
-		{
-			executive.ObjectiveId = null;
 		}
 
 		// A set allocation applies its value — including null, which clears it; an unset one is left unchanged.
@@ -297,20 +294,22 @@ public sealed class PolarisCycleApiService(
 			executive.Elapsed = update.Elapsed.Value;
 		}
 
-		if (update.AffinityTimeframeId is not null)
+		if (update.AffinityTimeframeId.IsSet)
 		{
-			var timeframeExists = await context.Timeframes.AnyAsync(item => item.Id == update.AffinityTimeframeId.Value, cancellationToken);
-			if (!timeframeExists)
+			if (update.AffinityTimeframeId.Value is long timeframeId)
 			{
-				throw new InvalidOperationException($"Timeframe '{update.AffinityTimeframeId}' was not found.");
+				var timeframeExists = await context.Timeframes.AnyAsync(item => item.Id == timeframeId, cancellationToken);
+				if (!timeframeExists)
+				{
+					throw new InvalidOperationException($"Timeframe '{timeframeId}' was not found.");
+				}
+
+				executive.AffinityTimeframeId = timeframeId;
 			}
-
-			executive.AffinityTimeframeId = update.AffinityTimeframeId;
-		}
-
-		if (update.ClearAffinityTimeframe)
-		{
-			executive.AffinityTimeframeId = null;
+			else
+			{
+				executive.AffinityTimeframeId = null;
+			}
 		}
 
 		executive.NormalizeTimeAllocations();

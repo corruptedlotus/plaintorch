@@ -120,9 +120,9 @@ export interface PolarisExecutivePlanResult {
 
 export interface ExecutiveUpdate {
 	executed?: boolean | undefined
+	/** The objective can be reassigned but not cleared. */
 	objectiveId?: string | undefined
 	title?: string | undefined
-	clearObjective?: boolean
 	/** Primary time allocation (whole minutes). Omit to keep, a value to set, `null` to clear. */
 	estimation?: number | null | undefined
 	/** Minimum time allocation (whole minutes). Omit to keep, a value to set, `null` to clear. */
@@ -131,10 +131,8 @@ export interface ExecutiveUpdate {
 	maximum?: number | null | undefined
 	/** Raw tracked-minute tally. Leave undefined to keep the current value; supply a value (including 0 to reset) to overwrite. */
 	elapsed?: number | undefined
-	/** Preferred timeframe for execution (affinity, PEP100). */
-	affinityTimeframeId?: number | undefined
-	/** Clears the affinity timeframe regardless of any provided value. */
-	clearAffinityTimeframe?: boolean
+	/** Preferred timeframe for execution (affinity, PEP100). Omit to keep, an id to set, `null` to clear. */
+	affinityTimeframeId?: number | null | undefined
 }
 
 export interface ReflectiveDrawRequest {

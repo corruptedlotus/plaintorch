@@ -164,9 +164,10 @@ export function isSingleInstanceFate(entity: GridEntity): boolean {
  * materializing two schedules at once.
  */
 export async function saveFateSchedule(entity: GridEntity, schedule: ScheduleValue): Promise<boolean> {
+	// The core interceptor clears whichever shape this update does not set, so only the chosen one is sent.
 	return !!await core.repos.fates.mutate(entity.id, async () => await core.declaratives.updateFate(entity.id, schedule.mode === 'orbit'
-		? { orbit: schedule.orbit ?? '', clearDate: true }
-		: { orbit: '', date: schedule.date, startTime: schedule.time }))
+		? { orbit: schedule.orbit ?? '' }
+		: { date: schedule.date, startTime: schedule.time }))
 }
 
 /** Opens the note an entity is the authority for, in a new tab. */

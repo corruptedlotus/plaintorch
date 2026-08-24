@@ -15,7 +15,7 @@ export class LoreBanner extends EntityBanner<LorePage> {
 			const entity = this.entity!
 			await this.commitEntityEdit(async () => await core.lore.update(
 				entity.id,
-				entity.beginning ? { beginning: entity.beginning } : { clearBeginning: true }))
+				{ beginning: entity.beginning ?? null }))
 		}
 	})
 

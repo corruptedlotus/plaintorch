@@ -275,7 +275,7 @@ export class ExecutiveEditor extends Component {
 		if (choice === undefined) return
 
 		const update: ExecutiveUpdate = choice === null
-			? { clearAffinityTimeframe: true }
+			? { affinityTimeframeId: null }
 			: { affinityTimeframeId: choice.id }
 
 		const updated = await core.polaris.updateExecutive(this.executive!.id, update)

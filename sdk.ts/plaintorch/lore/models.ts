@@ -22,7 +22,6 @@ export class LorePage {
 
 /** In-place edit of a lore page's frontmatter-backed metadata (its title/hierarchy are path-derived, not editable). */
 export interface LorePageUpdate {
-	beginning?: string | undefined
-	/** Clears the beginning date regardless of any provided value. */
-	clearBeginning?: boolean
+	/** Beginning date. Omit to keep, a value to set, `null` to clear. */
+	beginning?: string | null | undefined
 }
