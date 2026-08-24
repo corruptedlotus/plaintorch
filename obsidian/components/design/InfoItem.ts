@@ -1,4 +1,6 @@
-import { Component, css, html, nothing } from '@a11d/lit'
+import { Component, css, html, nothing, property } from '@a11d/lit'
+import { IconName } from 'components/PleiadesIcon'
+import { defaultNullGlyph, nullGlyphStyle, nullGlyphTemplate } from './nullGlyph'
 import './Tooltip'
 
 /**
@@ -13,6 +15,16 @@ import './Tooltip'
  * from {@link content}, and modes (compact/large/icon-only/…) are the subclass's own reflected properties.
  */
 export abstract class InfoItem extends Component {
+	/**
+	 * Whether this chip stands for a nullable value. A nullable chip draws the {@link nullGlyph} (through
+	 * {@link nullGlyphTemplate}) for its empty state, the same glyph the editable fields use — so "no value" reads
+	 * one way everywhere. Off by default; a chip opts in and renders {@link nullGlyphTemplate} where it is empty.
+	 */
+	@property({ type: Boolean }) nullable = false
+
+	/** The glyph drawn for an absent value; overridable, or replaced wholesale via the `null` slot. */
+	@property() nullGlyph: IconName = defaultNullGlyph
+
 	static override get styles() {
 		return css`
 			:host {
@@ -24,12 +36,19 @@ export abstract class InfoItem extends Component {
 				display: inline-flex;
 				align-items: center;
 			}
+
+			${nullGlyphStyle}
 		`
 	}
 
 	/** The extra information a hover reveals: a string (plain text), a template (rich), or `nothing` for no tooltip. */
 	protected get tooltip(): unknown {
 		return nothing
+	}
+
+	/** The unified null indicator, for a nullable chip to render in place of its content when it has no value. */
+	protected get nullGlyphTemplate() {
+		return nullGlyphTemplate(this.nullGlyph)
 	}
 
 	/** The visible chip content. */

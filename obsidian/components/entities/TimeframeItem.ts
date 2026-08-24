@@ -80,16 +80,17 @@ export class TimeframeItem extends InfoItem {
 	protected override get content() {
 		const timeframe = this.timeframe
 		if (!timeframe) {
-			return nothing
+			// A nullable chip reads its empty state as the shared null glyph; otherwise it draws nothing.
+			return this.nullable ? this.nullGlyphTemplate : nothing
 		}
 
 		if (this.mode === 'icon') {
-			return html`<p7t-icon class='icon-only' .icon=${this.glyph}></p7t-icon>`
+			return html`<p7t-icon class='icon-only' part='icon' .icon=${this.glyph}></p7t-icon>`
 		}
 
 		return html`
 			<span class='named'>
-				<p7t-icon .icon=${this.glyph}></p7t-icon>
+				<p7t-icon part='icon' .icon=${this.glyph}></p7t-icon>
 				<span>${timeframe.title}</span>
 			</span>
 		`

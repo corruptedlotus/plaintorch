@@ -1,5 +1,6 @@
 import { bindingDefaultProperty, Component, component, css, event, eventListener, html, nothing, property } from "@a11d/lit"
 import { IconName } from "components/PleiadesIcon"
+import { defaultNullGlyph, nullGlyphStyle, nullGlyphTemplate } from "../design/nullGlyph"
 
 @component('p7t-editable')
 export class EditablePart<T> extends Component {
@@ -16,7 +17,7 @@ export class EditablePart<T> extends Component {
 	@property({ type: Boolean, reflect: true }) nullable = false
 
 	/** The glyph drawn for an absent value; overridable, or replaced wholesale via the `null` slot. */
-	@property() nullGlyph: IconName = 'lucide:minus'
+	@property() nullGlyph: IconName = defaultNullGlyph
 
 	@event() edit!: EventDispatcher<T | undefined>
 
@@ -56,7 +57,7 @@ export class EditablePart<T> extends Component {
 
 	/** The null indicator: the null glyph, or whatever a consumer slots into `null` as a placeholder/fallback. */
 	protected get nullDisplayTemplate() {
-		return html`<slot name='null'><p7t-icon class='null-glyph' icon=${this.nullGlyph}></p7t-icon></slot>`
+		return nullGlyphTemplate(this.nullGlyph)
 	}
 
 	/** A clear affordance, shown only while editing a nullable field. */
@@ -108,11 +109,7 @@ export class EditablePart<T> extends Component {
 				animation: pulse .7s ease-in-out infinite alternate;
 			}
 
-			.null-glyph {
-				width: 1em;
-				height: 1em;
-				opacity: .4;
-			}
+			${nullGlyphStyle}
 
 			.clear {
 				width: .9em;
