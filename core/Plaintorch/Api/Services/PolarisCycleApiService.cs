@@ -507,9 +507,9 @@ public sealed class PolarisCycleApiService(
 			reflective.Executed = update.Executed.Value;
 		}
 
-		if (update.Time is not null)
+		if (update.Time.IsSet)
 		{
-			reflective.Time = update.Time;
+			reflective.Time = update.Time.Value;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);

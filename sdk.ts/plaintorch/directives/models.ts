@@ -125,21 +125,21 @@ export interface InitDirectiveRequest {
 	path: string
 }
 
-/** Stellar directive update, including scheduling dates. */
+/** Stellar directive update, including scheduling dates. Nullable fields: omit to keep, a value to set, `null` to clear. */
 export interface StellarDirectiveUpdate {
 	title?: string | undefined
-	codename?: string | undefined
+	codename?: string | null | undefined
 	parentDirectiveId?: string | undefined
 	tags?: string[] | undefined
-	due?: string | undefined
-	startDate?: string | undefined
-	endDate?: string | undefined
+	due?: string | null | undefined
+	startDate?: string | null | undefined
+	endDate?: string | null | undefined
 }
 
 /** Lunar directive update. Lunar directives are everglow and carry no scheduling dates (PEP100). */
 export interface LunarDirectiveUpdate {
 	title?: string | undefined
-	codename?: string | undefined
+	codename?: string | null | undefined
 	parentDirectiveId?: string | undefined
 	tags?: string[] | undefined
 }

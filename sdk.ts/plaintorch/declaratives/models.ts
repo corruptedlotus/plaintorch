@@ -152,8 +152,9 @@ export interface EventiveMaterialization {
 
 export interface EventiveUpdate {
 	date?: string | undefined
-	startTime?: string | undefined
-	endTime?: string | undefined
+	/** Times: omit to keep, a value to set, `null` to clear. */
+	startTime?: string | null | undefined
+	endTime?: string | null | undefined
 	resolution?: EventiveResolution | undefined
 	/** Whole minutes. Omit to keep, a value to set, `null` to clear. */
 	estimation?: number | null | undefined
@@ -173,7 +174,8 @@ export interface AttentiveMaterialization {
 export interface AttentiveUpdate {
 	/** Reschedules the occurrence; only valid while unbound. */
 	date?: string | undefined
-	time?: string | undefined
+	/** Time: omit to keep, a value to set, `null` to clear. */
+	time?: string | null | undefined
 	resolution?: AttentiveResolution | undefined
 	/** Moves the attentive to another cycle; only valid while Polaris-bound. */
 	moveToPolarisCycleId?: string | undefined

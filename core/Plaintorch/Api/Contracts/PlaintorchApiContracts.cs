@@ -137,12 +137,12 @@ public enum DirectiveKind
 /// </summary>
 public sealed record StellarDirectiveUpdate(
 	string? Title = null,
-	string? Codename = null,
+	Optional<string?> Codename = default,
 	string? ParentDirectiveId = null,
 	IReadOnlyList<string>? Tags = null,
-	DateOnly? Due = null,
-	DateOnly? StartDate = null,
-	DateOnly? EndDate = null);
+	Optional<DateOnly?> Due = default,
+	Optional<DateOnly?> StartDate = default,
+	Optional<DateOnly?> EndDate = default);
 
 /// <summary>
 /// Represents the mutable fields of a lunar directive for update actions. Lunar directives are everglow and
@@ -150,7 +150,7 @@ public sealed record StellarDirectiveUpdate(
 /// </summary>
 public sealed record LunarDirectiveUpdate(
 	string? Title = null,
-	string? Codename = null,
+	Optional<string?> Codename = default,
 	string? ParentDirectiveId = null,
 	IReadOnlyList<string>? Tags = null);
 
@@ -248,8 +248,8 @@ public sealed record PolarisCycleUpdate(
 /// </summary>
 public sealed record OnrushSprintUpdate(
 	string? Title = null,
-	DateOnly? StartDate = null,
-	DateOnly? EndDate = null);
+	Optional<DateOnly?> StartDate = default,
+	Optional<DateOnly?> EndDate = default);
 
 /// <summary>
 /// Represents the data required to plan an onrush sprint.
@@ -273,9 +273,9 @@ public sealed record ExecutiveOrderPlan(
 /// </summary>
 public sealed record ExecutiveOrderUpdate(
 	string? Title = null,
-	string? Summary = null,
-	DateOnly? EffectiveFrom = null,
-	DateOnly? EffectiveUntil = null);
+	Optional<string?> Summary = default,
+	Optional<DateOnly?> EffectiveFrom = default,
+	Optional<DateOnly?> EffectiveUntil = default);
 
 /// <summary>
 /// Represents the supported sources for planning a Polaris executive.
@@ -367,7 +367,7 @@ public sealed record ReflectiveDrawRequest(
 public sealed record ReflectiveUpdate(
 	string? Description = null,
 	bool? Executed = null,
-	TimeOnly? Time = null);
+	Optional<TimeOnly?> Time = default);
 
 /// <summary>
 /// Represents a moonlight workflow shift for a lunar directive (PEP100).
@@ -442,8 +442,8 @@ public sealed record EventiveMaterialization(
 /// </summary>
 public sealed record EventiveUpdate(
 	DateOnly? Date = null,
-	TimeOnly? StartTime = null,
-	TimeOnly? EndTime = null,
+	Optional<TimeOnly?> StartTime = default,
+	Optional<TimeOnly?> EndTime = default,
 	EventiveResolution? Resolution = null,
 	Optional<int?> Estimation = default,
 	Optional<int?> Minimum = default,
@@ -469,7 +469,7 @@ public sealed record AttentiveMaterialization(
 /// </remarks>
 public sealed record AttentiveUpdate(
 	DateOnly? Date = null,
-	TimeOnly? Time = null,
+	Optional<TimeOnly?> Time = default,
 	AttentiveResolution? Resolution = null,
 	string? MoveToPolarisCycleId = null,
 	Optional<int?> Estimation = default,

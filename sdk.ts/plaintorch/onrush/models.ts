@@ -40,9 +40,10 @@ export interface ExecutiveOrderPlan {
 
 export interface ExecutiveOrderUpdate {
 	title?: string | undefined
-	summary?: string | undefined
-	effectiveFrom?: string | undefined
-	effectiveUntil?: string | undefined
+	/** Nullable fields: omit to keep, a value to set, `null` to clear. */
+	summary?: string | null | undefined
+	effectiveFrom?: string | null | undefined
+	effectiveUntil?: string | null | undefined
 }
 
 export interface OnrushSprintPlan {
@@ -62,6 +63,7 @@ export interface SetGraphLayoutRequest {
 
 export interface OnrushSprintUpdate {
 	title?: string | undefined
-	startDate?: string | undefined
-	endDate?: string | undefined
+	/** Nullable dates: omit to keep, a value to set, `null` to clear. */
+	startDate?: string | null | undefined
+	endDate?: string | null | undefined
 }

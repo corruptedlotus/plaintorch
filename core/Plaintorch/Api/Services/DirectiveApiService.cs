@@ -150,9 +150,9 @@ public sealed class DirectiveApiService(
 			stellar.Title = update.Title;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.Codename))
+		if (update.Codename.IsSet)
 		{
-			stellar.Codename = update.Codename;
+			stellar.Codename = string.IsNullOrWhiteSpace(update.Codename.Value) ? null : update.Codename.Value;
 		}
 
 		if (!string.IsNullOrWhiteSpace(update.ParentDirectiveId))
@@ -165,19 +165,19 @@ public sealed class DirectiveApiService(
 			stellar.Tags = update.Tags.ToList();
 		}
 
-		if (update.Due is not null)
+		if (update.Due.IsSet)
 		{
-			stellar.Due = update.Due;
+			stellar.Due = update.Due.Value;
 		}
 
-		if (update.StartDate is not null)
+		if (update.StartDate.IsSet)
 		{
-			stellar.StartDate = update.StartDate;
+			stellar.StartDate = update.StartDate.Value;
 		}
 
-		if (update.EndDate is not null)
+		if (update.EndDate.IsSet)
 		{
-			stellar.EndDate = update.EndDate;
+			stellar.EndDate = update.EndDate.Value;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
@@ -211,9 +211,9 @@ public sealed class DirectiveApiService(
 			lunar.Title = update.Title;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.Codename))
+		if (update.Codename.IsSet)
 		{
-			lunar.Codename = update.Codename;
+			lunar.Codename = string.IsNullOrWhiteSpace(update.Codename.Value) ? null : update.Codename.Value;
 		}
 
 		if (!string.IsNullOrWhiteSpace(update.ParentDirectiveId))

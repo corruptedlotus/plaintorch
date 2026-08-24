@@ -595,14 +595,14 @@ public sealed class DeclarativeApiService(
 			eventive.Date = update.Date.Value;
 		}
 
-		if (update.StartTime is not null)
+		if (update.StartTime.IsSet)
 		{
-			eventive.StartTime = update.StartTime;
+			eventive.StartTime = update.StartTime.Value;
 		}
 
-		if (update.EndTime is not null)
+		if (update.EndTime.IsSet)
 		{
-			eventive.EndTime = update.EndTime;
+			eventive.EndTime = update.EndTime.Value;
 		}
 
 		if (update.Resolution is not null)
@@ -655,9 +655,9 @@ public sealed class DeclarativeApiService(
 			attentive.PolarisCycleId = update.MoveToPolarisCycleId;
 		}
 
-		if (update.Time is not null)
+		if (update.Time.IsSet)
 		{
-			attentive.Time = update.Time;
+			attentive.Time = update.Time.Value;
 		}
 
 		if (update.Resolution is not null)

@@ -145,7 +145,8 @@ export interface ReflectiveDrawRequest {
 export interface ReflectiveUpdate {
 	description?: string | undefined
 	executed?: boolean | undefined
-	time?: string | undefined
+	/** Time: omit to keep, a value to set, `null` to clear. */
+	time?: string | null | undefined
 }
 
 export interface PolarisCycleUpdate {
