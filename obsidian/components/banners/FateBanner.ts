@@ -1,6 +1,6 @@
-import { component, css, html, nothing, state } from "@a11d/lit"
+import { component, css, html, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { Eventive, EventiveResolution, Fate, FateStatus, FateUpdate, PleiadeanDate } from '@pleiades/sdk'
+import { Eventive, EventiveResolution, Fate, FateStatus, FateUpdate } from '@pleiades/sdk'
 import { App } from "obsidian"
 import { core, IconName, ReactiveBinder, SelectFateStatusModal } from ".."
 import type { ScheduleValue } from "../editing/EditableOrbitDatetime"
@@ -156,10 +156,7 @@ export class FateBanner extends EntityBanner<Fate> {
 		return html`
 			<div class='next-eventive'>
 				<span class='label'>Next</span>
-				<p7t-date-view .date=${PleiadeanDate.fromDate(new Date(this.nextEventive.date))}></p7t-date-view>
-				${!this.nextEventive.startTime ? nothing : html`
-					<p7t-time-view class='time' .time=${this.nextEventive.startTime}></p7t-time-view>
-				`}
+				<p7t-datetime-view .date=${this.nextEventive.date} .time=${this.nextEventive.startTime}></p7t-datetime-view>
 			</div>
 		`
 	}

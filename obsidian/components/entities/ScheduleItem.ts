@@ -1,9 +1,7 @@
 import { component, css, html, nothing, property } from '@a11d/lit'
-import { PleiadeanDate } from '@pleiades/sdk'
 import { humanizeOrbit } from 'orbits'
 import { InfoItem } from '../design/InfoItem'
-import '../system/PleiadeanDateView'
-import '../system/TimeView'
+import '../system/DatetimeView'
 
 /**
  * The schedule a fate-like entity carries (PEP100) — a recurring **orbit** or a fixed **date/time**, never both —
@@ -90,12 +88,6 @@ export class ScheduleItem extends InfoItem {
 		return this.orbit ? 'orbit' : this.date ? 'datetime' : 'none'
 	}
 
-	/** The fixed date as a Pleiadean date, or undefined when it cannot be parsed. Anchored in UTC, like the views. */
-	private get pleiadeanDate(): PleiadeanDate | undefined {
-		const parsed = new Date(this.date!)
-		return Number.isNaN(parsed.getTime()) ? undefined : PleiadeanDate.fromDate(parsed)
-	}
-
 	protected override get content() {
 		if (this.mode === 'orbit') {
 			const clip = this.max > 0
@@ -109,19 +101,10 @@ export class ScheduleItem extends InfoItem {
 		}
 
 		if (this.mode === 'datetime') {
-			const pleiadean = this.pleiadeanDate
 			return html`
 				<span class='schedule'>
 					<p7t-icon icon='lucide:calendar-clock'></p7t-icon>
-					${pleiadean ? html`<p7t-date-view .date=${pleiadean}></p7t-date-view>` : html`<span>${this.date}</span>`}
-					${!this.time ? nothing : html`
-						<span class='sep'>·</span>
-						<p7t-time-view .time=${this.time}></p7t-time-view>
-						${!this.endTime ? nothing : html`
-							<span class='sep'>–</span>
-							<p7t-time-view .time=${this.endTime}></p7t-time-view>
-						`}
-					`}
+					<p7t-datetime-view .date=${this.date} .time=${this.time} .endTime=${this.endTime}></p7t-datetime-view>
 				</span>
 			`
 		}
@@ -141,7 +124,7 @@ export class ScheduleItem extends InfoItem {
 			`
 		}
 
-		// The composed date and time views carry their own tooltips (the Gregorian date, the locale time).
+		// The composed datetime view carries the one unified tooltip (the full Gregorian date and locale time).
 		return nothing
 	}
 }
