@@ -1,7 +1,7 @@
 import { Component, component, css, html, nothing, property, state } from "@a11d/lit"
 import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
 import { App, Modal, Notice } from "obsidian"
-import { core, getApp, resolveMediaIcon, SelectObjectiveStatusModal, SelectTimeframeModal } from ".."
+import { core, SelectObjectiveStatusModal, SelectTimeframeModal } from ".."
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 import type { EditablePart } from "../editing/EditableDataLink"
 import type { EditableTimeUnit } from "../editing/EditableTimeUnit"
@@ -118,19 +118,10 @@ export class ExecutiveEditor extends Component {
 				align-self: stretch;
 			}
 
-			.affinity {
-				display: flex;
-				align-items: center;
-				gap: .4em;
-
-				& p7t-icon {
-					width: 1.4em;
-					height: 1.4em;
-				}
-
-				&.muted {
-					opacity: .5;
-				}
+			/* The affinity chip aligns to the status item beside it — same glyph size, same row rhythm. */
+			.status p7t-timeframe-item::part(icon) {
+				width: 2em;
+				height: 2em;
 			}
 
 			.allocations {
@@ -225,7 +216,7 @@ export class ExecutiveEditor extends Component {
 						.value=${executive.affinityTimeframe}
 						.doEdit=${SelectTimeframeModal.prompt}
 						@change=${(e: Event) => this.commitAffinity(e)}>
-						${this.affinityTemplate(executive.affinityTimeframe)}
+						<p7t-timeframe-item nullable .timeframe=${executive.affinityTimeframe}></p7t-timeframe-item>
 					</p7t-editable>
 				</div>
 			</div>
@@ -276,26 +267,6 @@ export class ExecutiveEditor extends Component {
 		if (executed === undefined || executed === this.executive?.executed) return
 
 		this.applyUpdate({ executed })
-	}
-
-	/** The display shown inside the affinity selector: the affined timeframe's icon and title, or a muted placeholder. */
-	private affinityTemplate(timeframe: Timeframe | undefined) {
-		if (!timeframe) {
-			return html`
-				<span class='affinity muted'>
-					<p7t-icon icon='lucide:clock'></p7t-icon>
-					<span>No affinity</span>
-				</span>
-			`
-		}
-
-		const icon = resolveMediaIcon(timeframe.iconMedia, getApp(), 'lucide:clock')
-		return html`
-			<span class='affinity'>
-				<p7t-icon .icon=${icon}></p7t-icon>
-				<span>${timeframe.title}</span>
-			</span>
-		`
 	}
 
 	private async commitAffinity(e: Event) {
