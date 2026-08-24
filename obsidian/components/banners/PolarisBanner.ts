@@ -124,7 +124,7 @@ export class PolarisBanner extends EntityBanner<PolarisCycle> {
 		return html`
 			<div class='date-span'>
 				${!this.entity!.startTime ? html`<span>Not Started</span>` : html`
-					<span>${PleiadeanDate.fromDate(new Date(this.entity!.startTime)).toString()}</span>
+					<p7t-date-view .date=${PleiadeanDate.fromDate(new Date(this.entity!.startTime))}></p7t-date-view>
 				`}
 			</div>
 		`

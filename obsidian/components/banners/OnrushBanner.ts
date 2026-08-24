@@ -105,10 +105,10 @@ export class OnrushBanner extends EntityBanner<OnrushSprint> {
 		return html`
 			<div class='date-span'>
 				${!this.entity!.startDate ? html`<span>Not Started</span>` : html`
-					<span>${PleiadeanDate.fromDate(new Date(this.entity!.startDate)).toString()}</span>
+					<p7t-date-view .date=${PleiadeanDate.fromDate(new Date(this.entity!.startDate))}></p7t-date-view>
 					${!this.entity!.endDate ? html`<p7t-icon icon='lucide:step-forward'></p7t-icon>` : html`
 						<p7t-icon icon='lucide:arrow-right'></p7t-icon>
-						<span>${PleiadeanDate.fromDate(new Date(this.entity!.endDate)).toString()}</span>
+						<p7t-date-view .date=${PleiadeanDate.fromDate(new Date(this.entity!.endDate))}></p7t-date-view>
 					`}
 				`}
 			</div>

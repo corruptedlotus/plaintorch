@@ -158,7 +158,7 @@ export class FateBanner extends EntityBanner<Fate> {
 				<span class='label'>Next</span>
 				<p7t-date-view .date=${PleiadeanDate.fromDate(new Date(this.nextEventive.date))}></p7t-date-view>
 				${!this.nextEventive.startTime ? nothing : html`
-					<span class='time'>${formatTime(this.nextEventive.startTime)}</span>
+					<p7t-time-view class='time' .time=${this.nextEventive.startTime}></p7t-time-view>
 				`}
 			</div>
 		`
@@ -210,11 +210,6 @@ function pickNextEventive(eventives: Eventive[]): Eventive | undefined {
 function todayKey(): string {
 	const now = new Date()
 	return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-}
-
-/** Trims a serialized TimeOnly ("HH:MM:SS") down to "HH:MM". */
-function formatTime(time: string): string {
-	return time.slice(0, 5)
 }
 
 function pad(value: number): string {

@@ -1,32 +1,19 @@
 import { component, css, html, nothing, property } from '@a11d/lit'
+import { PleiadeanDate } from '@pleiades/sdk'
 import { humanizeOrbit } from 'orbits'
 import { InfoItem } from '../design/InfoItem'
-
-/** 'YYYY-MM-DD' → a short 'Mon 12' label, parsed as local time so the day never shifts across a timezone. */
-function formatDate(date: string): string {
-	const parsed = new Date(`${date}T00:00:00`)
-	return Number.isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })
-}
-
-/** 'YYYY-MM-DD' → a full 'Monday, 12 August 2025' label, for the tooltip. */
-function formatDateLong(date: string): string {
-	const parsed = new Date(`${date}T00:00:00`)
-	return Number.isNaN(parsed.getTime())
-		? date
-		: parsed.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-}
-
-/** 'HH:MM[:SS]' → 'HH:MM'. */
-const formatTime = (time: string): string => time.slice(0, 5)
+import '../system/PleiadeanDateView'
+import '../system/TimeView'
 
 /**
  * The schedule a fate-like entity carries (PEP100) — a recurring **orbit** or a fixed **date/time**, never both —
  * drawn read-only, the display counterpart of {@link EditableOrbitDatetime}. It prefers the orbit when both are
  * present and humanizes the orbit notation for the face.
  *
- * A humanized orbit can run long ("Wednesdays of every 3 weeks at 12:00"), so the face is length-aware: set
- * {@link max} to cap its width and it tails an ellipsis, keeping the chip a chip. The full phrase is always in the
- * tooltip — the humanized reading over the raw notation — so nothing is lost to the truncation.
+ * The date/time face is not drawn here: it composes {@link PleiadeanDateView} and {@link TimeView}, the same views a
+ * standalone date or time uses, so a schedule reads the same Pleiadean date (with its Gregorian tooltip) and locale
+ * time as they do. The orbit face is length-aware: {@link max} caps its width with an ellipsis, the full reading
+ * staying in the tooltip.
  */
 @component('p7t-schedule-item')
 export class ScheduleItem extends InfoItem {
@@ -37,7 +24,7 @@ export class ScheduleItem extends InfoItem {
 	@property() endTime?: string
 
 	/**
-	 * Caps the label at this many characters' width, tailing an ellipsis past it (the full phrase stays in the
+	 * Caps the orbit label at this many characters' width, tailing an ellipsis past it (the full phrase stays in the
 	 * tooltip). `0`, the default, never truncates — the face grows to the whole reading.
 	 */
 	@property({ type: Number }) max = 0
@@ -70,6 +57,10 @@ export class ScheduleItem extends InfoItem {
 				white-space: nowrap;
 			}
 
+			.sep {
+				opacity: .5;
+			}
+
 			.none {
 				opacity: .5;
 			}
@@ -99,36 +90,43 @@ export class ScheduleItem extends InfoItem {
 		return this.orbit ? 'orbit' : this.date ? 'datetime' : 'none'
 	}
 
-	/** The " · HH:MM" (or " · HH:MM – HH:MM" range) suffix beside a date, or empty when timeless. */
-	private get timeLabel(): string {
-		if (!this.time) return ''
-		return this.endTime ? ` · ${formatTime(this.time)} – ${formatTime(this.endTime)}` : ` · ${formatTime(this.time)}`
+	/** The fixed date as a Pleiadean date, or undefined when it cannot be parsed. Anchored in UTC, like the views. */
+	private get pleiadeanDate(): PleiadeanDate | undefined {
+		const parsed = new Date(this.date!)
+		return Number.isNaN(parsed.getTime()) ? undefined : PleiadeanDate.fromDate(parsed)
 	}
 
 	protected override get content() {
-		const clip = this.max > 0
-		const labelStyle = clip ? `max-width:${this.max}ch` : nothing
-
 		if (this.mode === 'orbit') {
+			const clip = this.max > 0
 			const { text } = humanizeOrbit(this.orbit, this.short)
 			return html`
 				<span class='schedule'>
 					<p7t-icon icon='lucide:repeat'></p7t-icon>
-					<span class='label ${clip ? 'clip' : ''}' style=${labelStyle}>${text || this.orbit}</span>
+					<span class='label ${clip ? 'clip' : ''}' style=${clip ? `max-width:${this.max}ch` : nothing}>${text || this.orbit}</span>
 				</span>
 			`
 		}
 
 		if (this.mode === 'datetime') {
+			const pleiadean = this.pleiadeanDate
 			return html`
 				<span class='schedule'>
 					<p7t-icon icon='lucide:calendar-clock'></p7t-icon>
-					<span class='label ${clip ? 'clip' : ''}' style=${labelStyle}>${formatDate(this.date!)}${this.timeLabel}</span>
+					${pleiadean ? html`<p7t-date-view .date=${pleiadean}></p7t-date-view>` : html`<span>${this.date}</span>`}
+					${!this.time ? nothing : html`
+						<span class='sep'>·</span>
+						<p7t-time-view .time=${this.time}></p7t-time-view>
+						${!this.endTime ? nothing : html`
+							<span class='sep'>–</span>
+							<p7t-time-view .time=${this.endTime}></p7t-time-view>
+						`}
+					`}
 				</span>
 			`
 		}
 
-		return html`<span class='schedule none'>No schedule</span>`
+		return this.nullable ? this.nullGlyphTemplate : html`<span class='schedule none'>No schedule</span>`
 	}
 
 	protected override get tooltip() {
@@ -143,10 +141,7 @@ export class ScheduleItem extends InfoItem {
 			`
 		}
 
-		if (this.mode === 'datetime') {
-			return `${formatDateLong(this.date!)}${this.timeLabel}`
-		}
-
+		// The composed date and time views carry their own tooltips (the Gregorian date, the locale time).
 		return nothing
 	}
 }
