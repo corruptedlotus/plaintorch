@@ -2,16 +2,15 @@ import { Component, component, css, html, nothing, property } from "@a11d/lit"
 import { PleiadeanDate } from "@pleiades/sdk"
 import { gregorianDateLabel } from "./PleiadeanDateView"
 import { localeTimeLabel } from "./TimeView"
-import "./PleiadeanDateView"
 import "./TimeView"
 import "../design/Tooltip"
 
 /**
- * A composed date + time reading (PEP100) that carries **one** tooltip. It draws {@link PleiadeanDateView} and
- * {@link TimeView} bare — so they defer their own hovers — and wraps them in a single tooltip: the full Gregorian
- * date and the locale time together, rather than a separate hover for the date and for the time. Any surface that
- * shows a date beside a time shares this — the schedule chip's datetime face, a banner's next occurrence — so a
- * moment reads the same everywhere and the tooltip never splits in two.
+ * A composed date + time reading (PEP100) that carries **one** tooltip. The date is drawn in the same compact
+ * Pleiadean format an editable date shows ({@link PleiadeanDate.toString}), the time through {@link TimeView} bare;
+ * they are wrapped in a single tooltip carrying the full Gregorian date and the locale time together, rather than a
+ * separate hover for the date and for the time. Any surface that shows a date (with or without a time) shares this —
+ * the schedule chip's datetime face, a banner's dates — so a moment reads the same everywhere.
  */
 @component('p7t-datetime-view')
 export class DatetimeView extends Component {
@@ -49,7 +48,7 @@ export class DatetimeView extends Component {
 		const pleiadean = this.pleiadean
 		return html`
 			<p7t-tooltip .text=${this.unifiedLabel(pleiadean)}>
-				${pleiadean ? html`<p7t-date-view bare .date=${pleiadean}></p7t-date-view>` : html`<span>${this.date}</span>`}
+				<span>${pleiadean ? pleiadean.toString() : this.date}</span>
 				${!this.time ? nothing : html`
 					<span class='sep'>·</span>
 					<p7t-time-view bare .time=${this.time}></p7t-time-view>
