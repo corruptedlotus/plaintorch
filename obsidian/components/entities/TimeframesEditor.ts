@@ -140,26 +140,6 @@ export class TimeframesEditor extends Component {
 				}
 			}
 
-			.remove {
-				display: flex;
-				padding: .3em;
-				border: none;
-				border-radius: 6px;
-				background: transparent;
-				color: color-mix(in srgb, var(--text-normal) 45%, transparent);
-				cursor: pointer;
-				transition: .2s ease;
-
-				& p7t-icon {
-					width: 1.2em;
-					height: 1.2em;
-				}
-
-				&:hover {
-					color: var(--text-error, crimson);
-					background-color: color-mix(in srgb, var(--text-error, crimson) 12%, transparent);
-				}
-			}
 
 			.add {
 				align-self: flex-start;
@@ -216,9 +196,7 @@ export class TimeframesEditor extends Component {
 						.value=${timeframe.title}
 						@change=${(e: Event) => this.saveTimeframe(timeframe.id, { title: (e.target as EditablePart<string>).value ?? '' })}>
 					</p7t-editable-plaintext>
-					<button class='remove' aria-label='Remove timeframe' title='Remove timeframe' @click=${() => this.removeTimeframe(timeframe)}>
-						<p7t-icon icon='lucide:trash-2'></p7t-icon>
-					</button>
+					<p7t-button ghost danger icon='lucide:trash-2' label='Remove timeframe' @click=${() => this.removeTimeframe(timeframe)}></p7t-button>
 				</div>
 				<div class='fields'>
 					<div class='field'>

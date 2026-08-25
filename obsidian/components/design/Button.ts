@@ -9,6 +9,10 @@ import './Tooltip'
 export class Button extends Component {
 	@property({ type: Boolean, reflect: true }) disabled = false
 	@property({ type: Boolean, reflect: true }) emphasis = false
+	/** A borderless, transparent variant with only a subtle hover — for icon-only affordances that shouldn't read as a solid button. */
+	@property({ type: Boolean, reflect: true }) ghost = false
+	/** Marks a destructive action; it reads in the error colour on hover. */
+	@property({ type: Boolean, reflect: true }) danger = false
 	@property() icon?: IconName
 	/**
 	 * The button's accessible name, surfaced as a hover tooltip — the label an icon-only button has no room to
@@ -61,8 +65,27 @@ export class Button extends Component {
 					background-color: color-mix(in srgb, var(--text-normal) 20%, transparent);
 					border-color: color-mix(in srgb, var(--text-normal) 30%, transparent);
 				}
+
+				/* Ghost: no chrome at rest, only a faint hover — for icon-only affordances. */
+				:host([ghost]) & {
+					background-color: transparent;
+					border-color: transparent;
+					padding: .3em;
+				}
+
+				:host([ghost]) &:hover {
+					background-color: color-mix(in srgb, var(--text-normal) 14%, transparent);
+					border-color: transparent;
+				}
+
+				/* Danger: a destructive action reads in the error colour on hover. */
+				:host([danger]) &:hover {
+					color: var(--text-error, crimson);
+					background-color: color-mix(in srgb, var(--text-error, crimson) 12%, transparent);
+					border-color: transparent;
+				}
 			}
-			
+
 			:host::part(text) {
 				display: flex;
 				flex-direction: column;

@@ -195,51 +195,6 @@ export class GridItem extends Component {
 				opacity: 1;
 			}
 
-			.goto {
-				display: flex;
-				align-items: center;
-				justify-content: center;
-				min-width: 1.9em;
-				min-height: 1.9em;
-				border: none;
-				border-radius: 8px;
-				background: transparent;
-				color: inherit;
-				cursor: pointer;
-				transition: background-color .2s ease;
-			}
-
-			.goto:hover {
-				background-color: color-mix(in srgb, var(--text-normal) 14%, transparent);
-			}
-
-			.goto p7t-icon {
-				width: 1.2em;
-				height: 1.2em;
-			}
-
-			.measure-button {
-				display: flex;
-				align-items: center;
-				justify-content: center;
-				min-width: 1.9em;
-				min-height: 1.9em;
-				border: none;
-				border-radius: 8px;
-				background: transparent;
-				color: inherit;
-				cursor: pointer;
-				transition: background-color .2s ease;
-			}
-
-			.measure-button:hover {
-				background-color: color-mix(in srgb, var(--text-normal) 14%, transparent);
-			}
-
-			.measure-button p7t-icon {
-				width: 1.2em;
-				height: 1.2em;
-			}
 		`
 	}
 
@@ -266,9 +221,7 @@ export class GridItem extends Component {
 			</div>
 			${this.leadingCells.map(cell => html`<div class='cell'>${cell}</div>`)}
 			<div class='cell actions'>
-				<button class='goto' aria-label='Open note' title='Open note' @click=${() => this.open()}>
-					<p7t-icon icon='lucide:square-arrow-out-up-right'></p7t-icon>
-				</button>
+				<p7t-button ghost icon='lucide:square-arrow-out-up-right' label='Open note' @click=${() => this.open()}></p7t-button>
 			</div>
 			<div class='cell actions'>
 				${this.actions.length === 0 ? nothing : html`
@@ -317,9 +270,7 @@ export class GridItem extends Component {
 				// A lunar directive carries no measure of its own, so its otherwise-empty column hosts the button
 				// that opens its editing modal — the one place its timeframes are managed (PEP100 patch).
 				return html`
-					<button class='measure-button' aria-label='Edit timeframes' title='Edit timeframes' @click=${() => this.openLunarEditor()}>
-						<p7t-icon icon='lucide:clock'></p7t-icon>
-					</button>
+					<p7t-button ghost icon='lucide:clock' label='Edit timeframes' @click=${() => this.openLunarEditor()}></p7t-button>
 				`
 			default:
 				return nothing
