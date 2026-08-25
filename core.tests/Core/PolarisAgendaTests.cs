@@ -111,4 +111,55 @@ public sealed class PolarisAgendaTests : VaultTestBase
 		Assert.Equal(today.AddDays(3), eventive.Date);
 		Assert.NotNull(eventive.Fate);
 	}
+
+	[Fact]
+	public async Task Agenda_includes_only_unbound_attentives_resolved_within_the_past_hour()
+	{
+		var ct = TestContext.Current.CancellationToken;
+		var today = DateOnly.FromDateTime(DateTime.Today);
+
+		var directive = await Vault.WithScopeAsync(s => s.GetRequiredService<IDirectiveApi>()
+			.CreateStandaloneAsync("Ops", cancellationToken: ct));
+		var decree = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
+			.CreateDecreeAsync(new DecreePlan("Check inbox", DirectiveId: directive.Id), ct));
+		var cycle = await Vault.WithScopeAsync(s => s.GetRequiredService<IPolarisCycleApi>()
+			.StartNewAsync(cancellationToken: ct));
+
+		var recentlyResolvedOn = DateTimeOffset.UtcNow.AddMinutes(-30);
+		await Vault.WithScopeAsync(async s =>
+		{
+			var context = s.GetRequiredService<PlainfraContext>();
+			context.Attentives.AddRange(
+				new Attentive
+				{
+					DecreeId = decree.Id,
+					Date = today.AddDays(14),
+					Resolution = AttentiveResolution.Done,
+					ResolvedOn = recentlyResolvedOn,
+				},
+				new Attentive
+				{
+					DecreeId = decree.Id,
+					PolarisCycleId = cycle.Id,
+					Date = today.AddDays(14),
+					Resolution = AttentiveResolution.Done,
+					ResolvedOn = recentlyResolvedOn,
+				},
+				new Attentive
+				{
+					DecreeId = decree.Id,
+					Date = today.AddDays(14),
+					Resolution = AttentiveResolution.Done,
+					ResolvedOn = DateTimeOffset.UtcNow.AddHours(-2),
+				});
+			await context.SaveChangesAsync(ct);
+		});
+
+		var agenda = await Vault.WithScopeAsync(s => s.GetRequiredService<IPolarisCycleApi>()
+			.GetAgendaAsync(ct));
+
+		var attentive = Assert.Single(agenda.Attentives);
+		Assert.Null(attentive.PolarisCycleId);
+		Assert.Equal(recentlyResolvedOn, attentive.ResolvedOn);
+	}
 }

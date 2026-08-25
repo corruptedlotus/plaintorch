@@ -31,7 +31,7 @@ public sealed class PlaintorchStatePolicyProcessor(DependencyReconciler dependen
 		await EnforceOnrushRulesAsync(context, cancellationToken);
 		var supersededForecasts = await EnforcePolarisRulesAsync(context, cancellationToken);
 		await ApplyObjectiveSettlementRulesAsync(context, cancellationToken);
-		await ApplyAttentiveRewardRulesAsync(context, cancellationToken);
+		await ApplyAttentiveResolutionRulesAsync(context, cancellationToken);
 		await ApplyReflectiveCollectionRewardRulesAsync(context, cancellationToken);
 		await dependencyReconciler.ReconcileAsync(context, cancellationToken);
 
@@ -212,11 +212,12 @@ public sealed class PlaintorchStatePolicyProcessor(DependencyReconciler dependen
 	}
 
 	/// <summary>
-	/// Grants the decree-predefined Celestron reward on each attentive execution (PEP100). The reward is
-	/// granted when an attentive transitions to Done and revoked when it leaves Done, keyed per attentive
-	/// instance so repeated occurrences of the same decree each reward independently.
+	/// Records completion time and grants the decree-predefined Celestron reward for each attentive execution
+	/// (PEP100). Completion time and reward are recorded when an attentive transitions to Done; both are
+	/// cleared or revoked when it leaves Done. Rewards are keyed per attentive instance so repeated occurrences
+	/// of the same decree reward independently.
 	/// </summary>
-	private static async Task ApplyAttentiveRewardRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	private static async Task ApplyAttentiveResolutionRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
 		var attentiveEntries = context.ChangeTracker.Entries<Attentive>()
 			.Where(entry => entry.State == EntityState.Modified)
@@ -233,6 +234,15 @@ public sealed class PlaintorchStatePolicyProcessor(DependencyReconciler dependen
 			var previousResolution = entry.OriginalValues.GetValue<AttentiveResolution>(nameof(Attentive.Resolution));
 			var wasDone = previousResolution == AttentiveResolution.Done;
 			var isDone = current.Resolution == AttentiveResolution.Done;
+
+			if (!wasDone && isDone)
+			{
+				current.ResolvedOn = DateTimeOffset.UtcNow;
+			}
+			else if (!isDone)
+			{
+				current.ResolvedOn = null;
+			}
 
 			if (wasDone == isDone)
 			{

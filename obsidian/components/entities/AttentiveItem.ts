@@ -41,6 +41,10 @@ export class AttentiveItem extends OccurrenceItem {
 		return this.attentive?.resolution === AttentiveResolution.Done
 	}
 
+	override get disabled() {
+		return this.done
+	}
+
 	protected override get heading() {
 		return this.attentive?.decree?.title ?? 'Attentive'
 	}
@@ -50,7 +54,9 @@ export class AttentiveItem extends OccurrenceItem {
 	}
 
 	protected override get notchTemplate() {
-		return html`<p7t-icon icon=${this.done ? 'state-done' : 'state-zero'}></p7t-icon>`
+		return html`
+			<p7t-status-item icon-only status=${this.done ? 'Done' : 'Standby'}></p7t-status-item>
+		`
 	}
 
 	protected override async notchAction() {
@@ -71,16 +77,28 @@ export class AttentiveItem extends OccurrenceItem {
 	}
 
 	override get info() {
-		const epoch = Temporal.PlainDateTime.from(`${this.attentive?.date ?? ''}T${this.attentive?.time ?? ''}`)
-		const past = epoch.since(Temporal.Now.plainDateTimeISO()).sign === -1
+		if (!this.done) {
+			const epoch = Temporal.PlainDateTime.from(`${this.attentive?.date ?? ''}T${this.attentive?.time ?? ''}`)
+			const past = epoch.since(Temporal.Now.plainDateTimeISO()).sign === -1
 
-		return html`
-			<span class='timer ${past ? 'past' : 'future'}'>
-				${past ? html`` : html`in`}
-				<p7t-elapsed-view absolute showDays .epoch=${epoch.toString()}></p7t-elapsed-view>
-				${past ? html`<p7t-icon icon='lucide:clock-alert'></p7t-icon>` : html``}
-			</span>
-		`
+			return html`
+				<span class='timer ${past ? 'past' : 'future'}'>
+					${past ? html`` : html`in`}
+					<p7t-elapsed-view absolute showDays .epoch=${epoch.toString()}></p7t-elapsed-view>
+					${past ? html`<p7t-icon icon='lucide:clock-alert'></p7t-icon>` : html``}
+				</span>
+			`
+		} else {
+			const epoch = Temporal.Instant.from(this.attentive?.resolvedOn ?? '')
+				.toZonedDateTimeISO('UTC').withTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone).toPlainDateTime()
+
+			return html`
+				<span class='timer'>
+					<p7t-elapsed-view absolute showDays .epoch=${epoch.toString()}></p7t-elapsed-view>
+					ago
+				</span>
+			`
+		}
 	}
 }
 

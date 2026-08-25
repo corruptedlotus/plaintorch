@@ -271,8 +271,14 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		var first = await WithApi(api => api.MaterializeAttentiveAsync(decree.Id, new AttentiveMaterialization(Date: new DateOnly(2026, 8, 1)), cancellationToken));
 		var second = await WithApi(api => api.MaterializeAttentiveAsync(decree.Id, new AttentiveMaterialization(Date: new DateOnly(2026, 8, 2)), cancellationToken));
 
-		await WithApi(api => api.UpdateAttentiveAsync(first.Id, new AttentiveUpdate(Resolution: AttentiveResolution.Done), cancellationToken));
-		await WithApi(api => api.UpdateAttentiveAsync(second.Id, new AttentiveUpdate(Resolution: AttentiveResolution.Done), cancellationToken));
+		var beforeResolution = DateTimeOffset.UtcNow;
+		var resolvedFirst = await WithApi(api => api.UpdateAttentiveAsync(first.Id, new AttentiveUpdate(Resolution: AttentiveResolution.Done), cancellationToken));
+		var resolvedSecond = await WithApi(api => api.UpdateAttentiveAsync(second.Id, new AttentiveUpdate(Resolution: AttentiveResolution.Done), cancellationToken));
+		var afterResolution = DateTimeOffset.UtcNow;
+		Assert.NotNull(resolvedFirst.ResolvedOn);
+		Assert.NotNull(resolvedSecond.ResolvedOn);
+		Assert.InRange(resolvedFirst.ResolvedOn!.Value, beforeResolution, afterResolution);
+		Assert.InRange(resolvedSecond.ResolvedOn!.Value, beforeResolution, afterResolution);
 
 		var transactions = await Vault.QueryAsync(context => context.CelestronLedger
 			.Where(item => item.SourcePuck == decree.Id)
@@ -281,7 +287,8 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		Assert.All(transactions, transaction => Assert.Equal(3, transaction.Amount));
 
 		// Undoing an execution revokes exactly that occurrence's reward.
-		await WithApi(api => api.UpdateAttentiveAsync(second.Id, new AttentiveUpdate(Resolution: AttentiveResolution.Skipped), cancellationToken));
+		var unresolvedSecond = await WithApi(api => api.UpdateAttentiveAsync(second.Id, new AttentiveUpdate(Resolution: AttentiveResolution.Skipped), cancellationToken));
+		Assert.Null(unresolvedSecond.ResolvedOn);
 		var remaining = await Vault.QueryAsync(context => context.CelestronLedger
 			.Where(item => item.SourcePuck == decree.Id)
 			.ToListAsync(cancellationToken));

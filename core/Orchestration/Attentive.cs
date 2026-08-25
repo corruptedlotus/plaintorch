@@ -70,6 +70,12 @@ public sealed class Attentive : ITimeAllocated
 	public AttentiveResolution Resolution { get; set; } = AttentiveResolution.Pending;
 
 	/// <summary>
+	/// Gets or sets the UTC time at which the attentive most recently transitioned to <see cref="AttentiveResolution.Done"/>.
+	/// This is cleared when the attentive is no longer done.
+	/// </summary>
+	public DateTimeOffset? ResolvedOn { get; set; }
+
+	/// <summary>
 	/// Gets or sets the optional primary time allocation, expressed as a whole-minute working time unit.
 	/// Seeded from the owning decree's default length; overridable per instance.
 	/// </summary>

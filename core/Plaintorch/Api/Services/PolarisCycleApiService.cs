@@ -373,19 +373,30 @@ public sealed class PolarisCycleApiService(
 		// "Requiring attention" spans the next 24h, so at day granularity that is today plus tomorrow, alongside
 		// anything overdue. This mirrors what the rolling materialization pass writes for the same window.
 		var attentiveThrough = today.AddDays(1);
+		var now = DateTimeOffset.UtcNow;
+		var resolvedSince = now.AddHours(-1);
 
 		// Requiring attention: unbound, still pending, and due within the next 24h or overdue (same-day/24h and
-		// previous unattended). Including the decree pulls its directive through the auto-include, so each item
-		// can show its relevant lunar directive.
-		var attentives = await context.Attentives
+		// previous unattended), plus unbound attentives completed in the past hour. SQLite
+		// does not provide reliable translated comparison semantics for DateTimeOffset, so that rolling comparison
+		// is applied after materialization. Including the decree pulls its directive through the auto-include, so
+		// each item can show its relevant lunar directive.
+		var attentiveCandidates = await context.Attentives
 			.AsNoTracking()
 			.Include(item => item.Decree)
 			.Where(item => item.PolarisCycleId == null
-				&& item.Resolution == AttentiveResolution.Pending
-				&& item.Date <= attentiveThrough)
+				&& ((item.Resolution == AttentiveResolution.Pending && item.Date <= attentiveThrough)
+					|| item.ResolvedOn != null))
+			.ToListAsync(cancellationToken);
+
+		var attentives = attentiveCandidates
+			.Where(item => (item.PolarisCycleId == null
+					&& item.Resolution == AttentiveResolution.Pending
+					&& item.Date <= attentiveThrough)
+				|| (item.PolarisCycleId == null && item.ResolvedOn >= resolvedSince && item.ResolvedOn <= now))
 			.OrderBy(item => item.Date)
 			.ThenBy(item => item.Time)
-			.ToListAsync(cancellationToken);
+			.ToList();
 
 		// Upcoming eventives within the horizon that have not yet resolved. Fate and objective are included so
 		// the occurrence can name its owner and surface that owner's directive.

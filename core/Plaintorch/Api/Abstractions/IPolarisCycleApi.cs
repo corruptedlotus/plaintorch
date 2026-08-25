@@ -60,8 +60,8 @@ public interface IPolarisCycleApi
 	Task<PolarisCycleInclusions> GetInclusionsAsync(string? polarisCycleId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Gets the day-level agenda relative to today: unbound attentives requiring attention (same-day and
-	/// previous unattended) and upcoming eventives within a short horizon (PEP100).
+	/// Gets the day-level agenda relative to today: unbound attentives requiring attention, attentives resolved
+	/// during the past hour, and upcoming eventives within a short horizon (PEP100).
 	/// </summary>
 	Task<PolarisAgenda> GetAgendaAsync(CancellationToken cancellationToken = default);
 

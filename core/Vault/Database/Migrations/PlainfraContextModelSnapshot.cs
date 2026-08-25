@@ -45,6 +45,9 @@ namespace plaintorch.Vault.Database.Migrations
                     b.Property<string>("PolarisCycleId")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset?>("ResolvedOn")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Resolution")
                         .IsRequired()
                         .HasColumnType("TEXT");

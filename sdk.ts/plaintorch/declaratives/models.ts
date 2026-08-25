@@ -91,6 +91,8 @@ export interface Attentive {
 	 */
 	periodEndDate: string | undefined
 	resolution: AttentiveResolution
+	/** UTC timestamp of the most recent transition to Done; cleared when the attentive is unresolved. */
+	resolvedOn: string | undefined
 	estimation: number | undefined
 	minimum: number | undefined
 	maximum: number | undefined
