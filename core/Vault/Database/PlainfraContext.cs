@@ -309,5 +309,9 @@ public class PlainfraContext : DbContext
 		modelBuilder.Entity<Executive>()
 			.Navigation(x => x.Objective)
 			.AutoInclude();
+
+		modelBuilder.Entity<Executive>()
+			.Navigation(x => x.AffinityTimeframe)
+			.AutoInclude();
 	}
 }
