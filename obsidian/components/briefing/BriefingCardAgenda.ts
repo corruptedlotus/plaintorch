@@ -1,4 +1,4 @@
-import { component, css, eventListener, html, nothing } from "@a11d/lit"
+import { component, css, eventListener, html, nothing, property } from "@a11d/lit"
 import { CardComponent } from "components/design"
 import { core, DerivedRef } from ".."
 
@@ -9,6 +9,8 @@ import { core, DerivedRef } from ".."
  */
 @component('p7t-briefing-agenda')
 export class BriefingCardAgenda extends CardComponent {
+	@property() mode: 'all' | 'attentives' | 'eventives' = 'all'
+
 	private readonly agendaRef = new DerivedRef(this, core.repos.agenda)
 
 	private get agenda() {
@@ -23,6 +25,19 @@ export class BriefingCardAgenda extends CardComponent {
 				background: none;
 				border: none;
 				padding-block: .2em;
+			}
+
+			:host::part(content) {
+				position: relative;
+				z-index: 2;
+				inset-inline: -1em;
+				width: calc(100% + 1em);
+				overflow-y: auto;
+				padding-inline: .5em;
+				flex-shrink: 1;
+				flex-basis: 0;
+				scrollbar-width: thin;
+				scrollbar-color: color-mix(in srgb, var(--text-normal) 20%, transparent) transparent;
 			}
 
 			.section {
@@ -42,7 +57,7 @@ export class BriefingCardAgenda extends CardComponent {
 				text-transform: uppercase;
 				letter-spacing: .04em;
 				opacity: .55;
-				margin-inline-start: .4em;
+				margin-inline: .8em;
 				margin-bottom: .2em;
 			}
 
@@ -77,18 +92,40 @@ export class BriefingCardAgenda extends CardComponent {
 	}
 
 	override get headingTemplate() {
-		const count = this.agenda?.attentives.length ?? 0
-		return html`
-			<span>
-				Agenda
-				${this.collapsed && count > 0 ? html`<span class='count-badge'>${count}</span>` : nothing}
-			</span>
-		`
+		switch (this.mode) {
+
+			case 'attentives':
+				const attCount = this.agenda?.attentives.length ?? 0
+				return html`
+					<span>
+						Orbits
+						${this.collapsed && attCount > 0 ? html`<span class='count-badge'>${attCount}</span>` : nothing}
+					</span>
+				`
+			
+			case 'eventives':
+				const evCount = this.agenda?.eventives.length ?? 0
+				return html`
+					<span>
+						Agenda
+						${this.collapsed && evCount > 0 ? html`<span class='count-badge'>${evCount}</span>` : nothing}
+					</span>
+				`
+
+			default:
+				const countAll = (this.agenda?.attentives.length ?? 0) + (this.agenda?.eventives.length ?? 0)
+				return html`
+					<span>
+						Agenda
+						${this.collapsed && countAll > 0 ? html`<span class='count-badge'>${countAll}</span>` : nothing}
+					</span>
+				`
+		}
 	}
 
 	protected override get content() {
-		const attentives = this.agenda?.attentives ?? []
-		const eventives = this.agenda?.eventives ?? []
+		const attentives = this.mode !== 'eventives' ? this.agenda?.attentives ?? [] : []
+		const eventives = this.mode !== 'attentives' ? this.agenda?.eventives ?? [] : []
 
 		if (attentives.length === 0 && eventives.length === 0) {
 			return html`<span class='empty'>Nothing needs your attention.</span>`
@@ -97,7 +134,7 @@ export class BriefingCardAgenda extends CardComponent {
 		return html`
 			${attentives.length === 0 ? nothing : html`
 				<div class='section'>
-					<span class='section-title'>Requires Attention</span>
+					${this.mode === 'attentives' ? nothing : html`<span class='section-title'>Requires Attention</span>`}
 					<div class='list'>
 						${attentives.map(attentive => html`
 							<p7t-attentive-item interactive .attentive=${attentive}></p7t-attentive-item>
@@ -107,7 +144,7 @@ export class BriefingCardAgenda extends CardComponent {
 			`}
 			${eventives.length === 0 ? nothing : html`
 				<div class='section'>
-					<span class='section-title'>Upcoming</span>
+					${this.mode === 'eventives' ? nothing : html`<span class='section-title'>Upcoming</span>`}
 					<div class='list'>
 						${eventives.map(eventive => html`
 							<p7t-eventive-item interactive .eventive=${eventive}></p7t-eventive-item>

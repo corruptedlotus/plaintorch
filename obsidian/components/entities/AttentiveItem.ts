@@ -77,7 +77,7 @@ export class AttentiveItem extends OccurrenceItem {
 		return html`
 			<span class='timer ${past ? 'past' : 'future'}'>
 				${past ? html`` : html`in`}
-				<p7t-elapsed-view .epoch=${epoch.toString()}></p7t-elapsed-view>
+				<p7t-elapsed-view absolute showDays .epoch=${epoch.toString()}></p7t-elapsed-view>
 				${past ? html`<p7t-icon icon='lucide:clock-alert'></p7t-icon>` : html``}
 			</span>
 		`

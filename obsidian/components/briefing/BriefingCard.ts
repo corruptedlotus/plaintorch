@@ -5,7 +5,7 @@ import { 'everglow-banner' as EverglowBanner } from 'assets/design'
 import { 'grunge-1-png' as GrungeNoise } from 'assets/design'
 
 @component('p7t-briefing-card')
-export class BriefingCard<T extends { id: string }> extends CardComponent {
+export class BriefingCard<T> extends CardComponent {
 	@property({ type: Object }) data?: T
 	protected readonly icon?: IconName
 
