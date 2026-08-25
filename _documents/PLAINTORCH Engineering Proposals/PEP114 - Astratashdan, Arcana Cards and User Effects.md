@@ -1,4 +1,4 @@
 ---
+status: idea
 assignee: Copilot 🤖
-status: implemented
 ---
