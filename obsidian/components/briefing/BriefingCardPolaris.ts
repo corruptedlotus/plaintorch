@@ -1,13 +1,19 @@
 import { component, css, eventListener, html, nothing, state } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
 import { Attentive, Objective, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
-import { core } from ".."
+import { core, EntityWatch } from ".."
 import { App, SuggestModal } from "obsidian"
 
 @component('p7t-briefing-polaris')
 export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 	override readonly icon = 'polaris'
 	override readonly preHeading = 'Active Polaris Cycle'
+
+	/**
+	 * Subscribes to the canonical PolarisCycle instance so in-place mutations (e.g. a new executive
+	 * being merged into the array) trigger a re-render without requiring a prop reference change.
+	 */
+	protected readonly watch = new EntityWatch(this, () => this.data)
 
 	@state() private reflectivesExpanded = false
 
