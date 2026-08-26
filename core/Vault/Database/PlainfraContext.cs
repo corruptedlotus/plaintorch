@@ -156,6 +156,16 @@ public class PlainfraContext : DbContext
 			value => (value ?? new List<string>()).Aggregate(0, (hash, item) => HashCode.Combine(hash, item.GetHashCode(StringComparison.Ordinal))),
 			value => (value ?? new List<string>()).ToList());
 
+		// A timeframe's auto-inclusion colleges are a small set, stored as a JSON array rather than a join table.
+		var collegesConverter = new ValueConverter<List<ObjectiveCollege>, string>(
+			value => JsonSerializer.Serialize(value, JsonSerializerOptions.Default),
+			value => JsonSerializer.Deserialize<List<ObjectiveCollege>>(value, JsonSerializerOptions.Default) ?? new List<ObjectiveCollege>());
+
+		var collegesComparer = new ValueComparer<List<ObjectiveCollege>>(
+			(left, right) => (left ?? new List<ObjectiveCollege>()).SequenceEqual(right ?? new List<ObjectiveCollege>()),
+			value => (value ?? new List<ObjectiveCollege>()).Aggregate(0, (hash, item) => HashCode.Combine(hash, item.GetHashCode())),
+			value => (value ?? new List<ObjectiveCollege>()).ToList());
+
 		// Stellar and lunar directives share the Directives table (TPH). Their same-named Status properties carry
 		// different enums, so each maps to an explicit column to keep the shared table readable and unambiguous.
 		modelBuilder.Entity<StellarDirective>()
@@ -175,6 +185,11 @@ public class PlainfraContext : DbContext
 		modelBuilder.Entity<Objective>()
 			.Property(x => x.College)
 			.HasConversion<string>();
+
+		modelBuilder.Entity<Timeframe>()
+			.Property(x => x.AutoInclusionColleges)
+			.HasConversion(collegesConverter)
+			.Metadata.SetValueComparer(collegesComparer);
 
 		modelBuilder.Entity<Objective>()
 			.Property(x => x.Status)

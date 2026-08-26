@@ -520,7 +520,7 @@ public sealed class DirectiveApiService(
 			Orbit = plan.Orbit,
 			Icon = string.IsNullOrWhiteSpace(plan.Icon) ? null : plan.Icon.Trim(),
 			AutoInclusion = plan.AutoInclusion,
-			AutoInclusionCollege = plan.AutoInclusion == TimeframeInclusion.College ? plan.AutoInclusionCollege : null,
+			AutoInclusionColleges = plan.AutoInclusion == TimeframeInclusion.College ? (plan.AutoInclusionColleges?.ToList() ?? []) : [],
 		};
 
 		context.Timeframes.Add(timeframe);
@@ -557,8 +557,9 @@ public sealed class DirectiveApiService(
 	/// <inheritdoc />
 	public async Task<IReadOnlyList<DirectiveTimeframeRecord>> ListAllTimeframesAsync(CancellationToken cancellationToken = default)
 	{
-		// Order on the entity columns before projecting into the record so the query stays SQL-translatable.
-		var records = await context.Timeframes
+		// The colleges are a JSON list column that cannot be projected in SQL, so the joined rows are materialized
+		// (ordered on entity columns first) and mapped to records in memory.
+		var pairs = await context.Timeframes
 			.AsNoTracking()
 			.Join(
 				context.LunarDirectives.AsNoTracking(),
@@ -567,6 +568,9 @@ public sealed class DirectiveApiService(
 				(timeframe, directive) => new { Timeframe = timeframe, Directive = directive })
 			.OrderBy(pair => pair.Directive.Title)
 			.ThenBy(pair => pair.Timeframe.StartTime)
+			.ToListAsync(cancellationToken);
+
+		var records = pairs
 			.Select(pair => new DirectiveTimeframeRecord(
 				pair.Timeframe.Id,
 				pair.Directive.Id,
@@ -579,8 +583,8 @@ public sealed class DirectiveApiService(
 				pair.Timeframe.Orbit,
 				pair.Timeframe.Icon,
 				pair.Timeframe.AutoInclusion,
-				pair.Timeframe.AutoInclusionCollege))
-			.ToListAsync(cancellationToken);
+				pair.Timeframe.AutoInclusionColleges))
+			.ToList();
 
 		// The projection cannot call the media service, so resolve each icon companion afterwards. Timeframes
 		// keep no self folder, so vault and glyph keys resolve and self keys carry no path.
@@ -629,16 +633,17 @@ public sealed class DirectiveApiService(
 		if (update.AutoInclusion is not null)
 		{
 			timeframe.AutoInclusion = update.AutoInclusion.Value;
-			// Dropping to a non-college kind leaves no college behind to match against.
+			// Dropping to a non-college kind leaves no colleges behind to match against.
 			if (update.AutoInclusion.Value != TimeframeInclusion.College)
 			{
-				timeframe.AutoInclusionCollege = null;
+				timeframe.AutoInclusionColleges = [];
 			}
 		}
 
-		if (update.AutoInclusionCollege.IsSet)
+		// A null college list leaves it unchanged; any list (empty included) replaces it.
+		if (update.AutoInclusionColleges is not null)
 		{
-			timeframe.AutoInclusionCollege = update.AutoInclusionCollege.Value;
+			timeframe.AutoInclusionColleges = update.AutoInclusionColleges.ToList();
 		}
 
 		await context.SaveChangesAsync(cancellationToken);

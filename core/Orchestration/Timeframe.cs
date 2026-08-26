@@ -72,15 +72,15 @@ public sealed class Timeframe
 
 	/// <summary>
 	/// Gets or sets how this timeframe auto-includes Polaris workitems (PEP100 patch). Defaults to
-	/// <see cref="TimeframeInclusion.None"/>; the criterion for <see cref="TimeframeInclusion.College"/> is
-	/// <see cref="AutoInclusionCollege"/>.
+	/// <see cref="TimeframeInclusion.None"/>; the criteria for <see cref="TimeframeInclusion.College"/> are
+	/// <see cref="AutoInclusionColleges"/>.
 	/// </summary>
 	public TimeframeInclusion AutoInclusion { get; set; } = TimeframeInclusion.None;
 
 	/// <summary>
-	/// Gets or sets the college that drives auto-inclusion when <see cref="AutoInclusion"/> is
-	/// <see cref="TimeframeInclusion.College"/> — every executive or reflective whose owning incentive carries this
-	/// college is affined to this timeframe on creation. Ignored for other inclusion kinds.
+	/// Gets or sets the colleges that drive auto-inclusion when <see cref="AutoInclusion"/> is
+	/// <see cref="TimeframeInclusion.College"/> — every executive or reflective whose owning incentive carries any of
+	/// these colleges is affined to this timeframe on creation. Ignored for other inclusion kinds. Stored as JSON.
 	/// </summary>
-	public ObjectiveCollege? AutoInclusionCollege { get; set; }
+	public List<ObjectiveCollege> AutoInclusionColleges { get; set; } = [];
 }

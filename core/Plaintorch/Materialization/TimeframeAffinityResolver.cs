@@ -20,11 +20,17 @@ public sealed class TimeframeAffinityResolver(PlainfraContext context)
 	/// </summary>
 	public async Task<long?> ResolveForCollegeAsync(ObjectiveCollege college, CancellationToken cancellationToken = default)
 	{
-		return await context.Timeframes
+		// The colleges are a JSON list column, not SQL-queryable, so the college-mode timeframes (few per directive)
+		// are materialized and the membership test runs in memory.
+		var candidates = await context.Timeframes
 			.AsNoTracking()
-			.Where(timeframe => timeframe.AutoInclusion == TimeframeInclusion.College && timeframe.AutoInclusionCollege == college)
+			.Where(timeframe => timeframe.AutoInclusion == TimeframeInclusion.College)
 			.OrderBy(timeframe => timeframe.Id)
+			.ToListAsync(cancellationToken);
+
+		return candidates
+			.Where(timeframe => timeframe.AutoInclusionColleges.Contains(college))
 			.Select(timeframe => (long?)timeframe.Id)
-			.FirstOrDefaultAsync(cancellationToken);
+			.FirstOrDefault();
 	}
 }

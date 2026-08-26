@@ -516,12 +516,13 @@ public sealed record TimeframePlan(
 	string? Orbit = null,
 	string? Icon = null,
 	TimeframeInclusion AutoInclusion = TimeframeInclusion.None,
-	ObjectiveCollege? AutoInclusionCollege = null);
+	IReadOnlyList<ObjectiveCollege>? AutoInclusionColleges = null);
 
 /// <summary>
 /// Represents the mutable fields of a timeframe definition. The auto-inclusion and icon fields are PEP100 patch
-/// additions: <paramref name="AutoInclusion"/> and <paramref name="AutoInclusionCollege"/> are applied only when
-/// supplied, while the <c>Clear*</c> flags unset the icon or the college outright.
+/// additions: <paramref name="AutoInclusion"/> and <paramref name="AutoInclusionColleges"/> are applied only when
+/// supplied (a null college list leaves it unchanged; an empty one clears it), while the Orbit/Icon Optionals
+/// distinguish keep/set/clear.
 /// </summary>
 public sealed record TimeframeUpdate(
 	string? Title = null,
@@ -530,7 +531,7 @@ public sealed record TimeframeUpdate(
 	Optional<string?> Orbit = default,
 	Optional<string?> Icon = default,
 	TimeframeInclusion? AutoInclusion = null,
-	Optional<ObjectiveCollege?> AutoInclusionCollege = default);
+	IReadOnlyList<ObjectiveCollege>? AutoInclusionColleges = null);
 
 /// <summary>
 /// Represents the emitted dependency lock for an entity (PEP101), computed from its unsatisfied incoming
@@ -575,7 +576,7 @@ public sealed record EndpointHit(
 /// <param name="Orbit">The optional Orbit notation scoping the timeframe to particular Polaris cycles.</param>
 /// <param name="Icon">The optional icon key (PEP100 patch).</param>
 /// <param name="AutoInclusion">How the timeframe auto-includes Polaris workitems (PEP100 patch).</param>
-/// <param name="AutoInclusionCollege">The college driving college-based auto-inclusion (PEP100 patch).</param>
+/// <param name="AutoInclusionColleges">The colleges driving college-based auto-inclusion (PEP100 patch).</param>
 public sealed record DirectiveTimeframeRecord(
 	long Id,
 	string DirectiveId,
@@ -588,7 +589,7 @@ public sealed record DirectiveTimeframeRecord(
 	string? Orbit,
 	string? Icon,
 	TimeframeInclusion AutoInclusion,
-	ObjectiveCollege? AutoInclusionCollege)
+	IReadOnlyList<ObjectiveCollege> AutoInclusionColleges)
 {
 	/// <summary>
 	/// Gets or sets the resolved companion of <see cref="Icon"/>, filled after the record is projected (its LINQ
