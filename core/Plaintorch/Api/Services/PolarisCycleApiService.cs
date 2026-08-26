@@ -23,7 +23,6 @@ public sealed class PolarisCycleApiService(
 	PlaintorchMarkdownStorageService markdownFileService,
 	ProximityMaterializationService materializationService,
 	TimeframeAffinityResolver affinityResolver,
-	VaultMediaService mediaService,
 	VaultAuditLogService auditLogService) : IPolarisCycleApi
 {
 	/// <inheritdoc />
@@ -143,17 +142,6 @@ public sealed class PolarisCycleApiService(
 			.Include(item => item.Attentives)
 				.ThenInclude(attentive => attentive.Decree)
 			.FirstOrDefaultAsync(item => item.Id == targetId, cancellationToken);
-
-		if (cycle is not null)
-		{
-			// The affined timeframe carries an icon that stands in for the Celestron value on the client; resolve
-			// its media companion so the client can render it (PEP100 patch). Timeframes keep no self folder, so
-			// only vault and glyph keys resolve.
-			foreach (var timeframe in cycle.Executives.Select(executive => executive.AffinityTimeframe).OfType<Timeframe>())
-			{
-				mediaService.EnrichMedia(timeframe, null);
-			}
-		}
 
 		return cycle;
 	}

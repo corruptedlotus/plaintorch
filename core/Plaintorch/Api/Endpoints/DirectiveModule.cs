@@ -24,7 +24,7 @@ public sealed class DirectiveModule : Module
 	/// <inheritdoc />
 	public override void ConfigureEndpoints(IEndpointRouteBuilder endpoints)
 	{
-		var group = endpoints.MapGroup("/api/directives");
+		var group = endpoints.MapPlaintorchApiGroup("/api/directives");
 
 		// General directive surface spanning both kinds.
 		group.MapGet("/", async (string? q, string? kind, int? take, IDirectiveApi api, CancellationToken cancellationToken) =>
@@ -112,7 +112,7 @@ public sealed class DirectiveModule : Module
 		});
 
 		// Timeframes span every lunar directive.
-		var timeframes = endpoints.MapGroup("/api/timeframes");
+		var timeframes = endpoints.MapPlaintorchApiGroup("/api/timeframes");
 
 		timeframes.MapGet("/", async (IDirectiveApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListAllTimeframesAsync(cancellationToken)));

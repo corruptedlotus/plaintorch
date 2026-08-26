@@ -587,7 +587,7 @@ public sealed record DirectiveTimeframeRecord(
 	TimeOnly StartTime,
 	TimeOnly EndTime,
 	string? Orbit,
-	string? Icon,
+	[property: Media] string? Icon,
 	TimeframeInclusion AutoInclusion,
 	IReadOnlyList<ObjectiveCollege> AutoInclusionColleges)
 {

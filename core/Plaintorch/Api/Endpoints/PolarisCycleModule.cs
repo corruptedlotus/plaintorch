@@ -24,7 +24,7 @@ public sealed class PolarisCycleModule : Module
 	/// <inheritdoc />
 	public override void ConfigureEndpoints(IEndpointRouteBuilder endpoints)
 	{
-		var cycles = endpoints.MapGroup("/api/polaris");
+		var cycles = endpoints.MapPlaintorchApiGroup("/api/polaris");
 
 		cycles.MapGet("/current", async (IPolarisCycleApi api, CancellationToken cancellationToken) =>
 		{
@@ -92,11 +92,11 @@ public sealed class PolarisCycleModule : Module
 		cycles.MapPost("/current/reflectives/draw", async (ReflectiveDrawRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.DrawReflectivesAsync(request with { PolarisCycleId = null }, cancellationToken)));
 
-		var executives = endpoints.MapGroup("/api/executives");
+		var executives = endpoints.MapPlaintorchApiGroup("/api/executives");
 		executives.MapPut("/{executiveId:long}", async (long executiveId, ExecutiveUpdate request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateExecutiveAsync(executiveId, request, cancellationToken)));
 
-		var reflectives = endpoints.MapGroup("/api/reflectives");
+		var reflectives = endpoints.MapPlaintorchApiGroup("/api/reflectives");
 		reflectives.MapPut("/{reflectiveId:long}", async (long reflectiveId, ReflectiveUpdate request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateReflectiveAsync(reflectiveId, request, cancellationToken)));
 	}

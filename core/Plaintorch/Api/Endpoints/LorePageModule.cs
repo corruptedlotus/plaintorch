@@ -23,7 +23,7 @@ public sealed class LorePageModule : Module
 	/// <inheritdoc />
 	public override void ConfigureEndpoints(IEndpointRouteBuilder endpoints)
 	{
-		var group = endpoints.MapGroup("/api/lorepages");
+		var group = endpoints.MapPlaintorchApiGroup("/api/lorepages");
 
 		group.MapGet("/", async (ILorePageApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListAsync(cancellationToken)));

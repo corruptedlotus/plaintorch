@@ -1,8 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Http;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
+using Pleiades.Plaintorch.Api.Endpoints;
+using Pleiades.Plaintorch.Media;
 using Pleiades.Tests.Harness;
 using Pleiades.Vault.Media;
 using Pleiades.Vault.Policy;
@@ -36,15 +39,29 @@ public sealed class VaultMediaTests : VaultTestBase
 			.GetRequiredService<IMediaApi>()
 			.UploadVaultAsync(upload, TestContext.Current.CancellationToken));
 
-	private Task<Directive> SetIconAsync(string directiveId, DirectiveIconRequest request)
-		=> Vault.WithScopeAsync(services => services
+	private async Task<Directive> SetIconAsync(string directiveId, DirectiveIconRequest request)
+	{
+		var directive = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IDirectiveApi>()
 			.SetIconAsync(directiveId, request, TestContext.Current.CancellationToken));
+		return await EnrichResponseAsync(directive);
+	}
 
-	private Task<Directive> SetBannerAsync(string directiveId, DirectiveBannerRequest request)
-		=> Vault.WithScopeAsync(services => services
+	private async Task<Directive> SetBannerAsync(string directiveId, DirectiveBannerRequest request)
+	{
+		var directive = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IDirectiveApi>()
 			.SetBannerAsync(directiveId, request, TestContext.Current.CancellationToken));
+		return await EnrichResponseAsync(directive);
+	}
+
+	private async Task<T> EnrichResponseAsync<T>(T response)
+	{
+		await Vault.WithScopeAsync(services => services
+			.GetRequiredService<MediaResponseEnricher>()
+			.EnrichAsync(response, TestContext.Current.CancellationToken));
+		return response;
+	}
 
 	[Fact]
 	public async Task Uploading_an_icon_to_the_entity_then_referencing_it_resolves_the_self_companion()
@@ -73,8 +90,82 @@ public sealed class VaultMediaTests : VaultTestBase
 		var reloaded = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IDirectiveApi>()
 			.GetAsync(directive.Id, TestContext.Current.CancellationToken));
+		await EnrichResponseAsync(reloaded);
 		Assert.Equal(MediaKind.Media, reloaded!.IconMedia!.Type);
 		Assert.Equal("Directives/Campaign/_assets/crest.png", reloaded.IconMedia.Path);
+	}
+
+	[Fact]
+	public async Task Response_filter_enriches_an_ok_payload_without_service_specific_calls()
+	{
+		var directive = await CreateCampaignAsync();
+		var stored = await UploadEntityAsync("directive", directive.Id, new MediaUpload("crest.png", SampleImage));
+		var raw = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.SetIconAsync(directive.Id, new DirectiveIconRequest(Reference: stored.Key), TestContext.Current.CancellationToken));
+
+		Assert.Null(raw.IconMedia);
+
+		await Vault.WithScopeAsync(async services =>
+		{
+			var httpContext = new DefaultHttpContext
+			{
+				RequestServices = services,
+			};
+			var context = EndpointFilterInvocationContext.Create(httpContext);
+			var filter = new MediaEnrichmentEndpointFilter();
+			await filter.InvokeAsync(context, _ => ValueTask.FromResult<object?>(Results.Ok(raw)));
+		});
+
+		Assert.Equal(MediaKind.Media, raw.IconMedia!.Type);
+		Assert.Equal("Directives/Campaign/_assets/crest.png", raw.IconMedia.Path);
+	}
+
+	[Fact]
+	public async Task Response_enrichment_walks_nested_contract_records()
+	{
+		var record = new DirectiveTimeframeRecord(
+			1,
+			"lunar",
+			"Lunar Directive",
+			null,
+			LunarDirectiveStatus.Active,
+			"Morning",
+			new TimeOnly(9, 0),
+			new TimeOnly(10, 0),
+			null,
+			"lucide:sun",
+			TimeframeInclusion.None,
+			null);
+
+		await EnrichResponseAsync(new { Timeframes = new[] { record } });
+
+		Assert.Equal(MediaKind.Icon, record.IconMedia!.Type);
+		Assert.Equal("lucide:sun", record.IconMedia.Key);
+		Assert.Null(record.IconMedia.Path);
+	}
+
+	[Fact]
+	public async Task Response_enrichment_leaves_unsupported_self_media_without_a_path()
+	{
+		var record = new DirectiveTimeframeRecord(
+			1,
+			"lunar",
+			"Lunar Directive",
+			null,
+			LunarDirectiveStatus.Active,
+			"Morning",
+			new TimeOnly(9, 0),
+			new TimeOnly(10, 0),
+			null,
+			"media:unsupported.png",
+			TimeframeInclusion.None,
+			null);
+
+		await EnrichResponseAsync(record);
+
+		Assert.Equal(MediaKind.Media, record.IconMedia!.Type);
+		Assert.Null(record.IconMedia.Path);
 	}
 
 	[Fact]

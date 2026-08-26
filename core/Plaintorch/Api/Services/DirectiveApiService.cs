@@ -38,11 +38,6 @@ public sealed class DirectiveApiService(
 		var directive = await context.Directives
 			.AsNoTracking()
 			.FirstOrDefaultAsync(item => item.Id == directiveId, cancellationToken);
-		if (directive is not null)
-		{
-			await EnrichMediaAsync(directive, cancellationToken);
-		}
-
 		return directive;
 	}
 
@@ -60,7 +55,6 @@ public sealed class DirectiveApiService(
 		var directives = await query
 			.OrderBy(directive => directive.Title)
 			.ToListAsync(cancellationToken);
-		await EnrichMediaAsync(directives, cancellationToken);
 		return directives;
 	}
 
@@ -72,7 +66,6 @@ public sealed class DirectiveApiService(
 			.OfType<StellarDirective>()
 			.OrderBy(directive => directive.Title)
 			.ToListAsync(cancellationToken);
-		await EnrichMediaAsync(directives, cancellationToken);
 		return directives;
 	}
 
@@ -83,7 +76,6 @@ public sealed class DirectiveApiService(
 			.AsNoTracking()
 			.OrderBy(directive => directive.Title)
 			.ToListAsync(cancellationToken);
-		await EnrichMediaAsync(directives, cancellationToken);
 		return directives;
 	}
 
@@ -108,7 +100,6 @@ public sealed class DirectiveApiService(
 		var directives = await query
 			.OrderBy(directive => directive.Title)
 			.ToListAsync(cancellationToken);
-		await EnrichMediaAsync(directives, cancellationToken);
 		return directives;
 	}
 
@@ -188,7 +179,6 @@ public sealed class DirectiveApiService(
 			subject: stellar,
 			details: new { previousTitle = previous.Title, previousStatus = previous.Status.ToString() },
 			cancellationToken: cancellationToken);
-		await EnrichMediaAsync(stellar, cancellationToken);
 		return stellar;
 	}
 
@@ -234,7 +224,6 @@ public sealed class DirectiveApiService(
 			subject: lunar,
 			details: new { previousTitle = previous.Title, previousStatus = previous.Status.ToString() },
 			cancellationToken: cancellationToken);
-		await EnrichMediaAsync(lunar, cancellationToken);
 		return lunar;
 	}
 
@@ -263,7 +252,6 @@ public sealed class DirectiveApiService(
 			subject: stellar,
 			details: new { from = previousStatus.ToString(), to = stellar.Status.ToString() },
 			cancellationToken: cancellationToken);
-		await EnrichMediaAsync(stellar, cancellationToken);
 		return stellar;
 	}
 
@@ -323,7 +311,6 @@ public sealed class DirectiveApiService(
 			subject: directive,
 			details: new { previous, icon = directive.Icon },
 			cancellationToken: cancellationToken);
-		await EnrichMediaAsync(directive, cancellationToken);
 		return directive;
 	}
 
@@ -347,7 +334,6 @@ public sealed class DirectiveApiService(
 			subject: directive,
 			details: new { previous, banner = directive.Banner },
 			cancellationToken: cancellationToken);
-		await EnrichMediaAsync(directive, cancellationToken);
 		return directive;
 	}
 
@@ -533,7 +519,6 @@ public sealed class DirectiveApiService(
 			subjectTitle: timeframe.Title,
 			details: new { lunarDirectiveId },
 			cancellationToken: cancellationToken);
-		mediaService.EnrichMedia(timeframe, null);
 		return timeframe;
 	}
 
@@ -546,11 +531,6 @@ public sealed class DirectiveApiService(
 			.Where(item => item.DirectiveId == lunarDirectiveId)
 			.OrderBy(item => item.StartTime)
 			.ToListAsync(cancellationToken);
-		foreach (var timeframe in timeframes)
-		{
-			mediaService.EnrichMedia(timeframe, null);
-		}
-
 		return timeframes;
 	}
 
@@ -585,13 +565,6 @@ public sealed class DirectiveApiService(
 				pair.Timeframe.AutoInclusion,
 				pair.Timeframe.AutoInclusionColleges))
 			.ToList();
-
-		// The projection cannot call the media service, so resolve each icon companion afterwards. Timeframes
-		// keep no self folder, so vault and glyph keys resolve and self keys carry no path.
-		foreach (var record in records)
-		{
-			record.IconMedia = mediaService.ResolveReference(record.Icon, null);
-		}
 
 		return records;
 	}
@@ -654,7 +627,6 @@ public sealed class DirectiveApiService(
 			subjectId: timeframe.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
 			subjectTitle: timeframe.Title,
 			cancellationToken: cancellationToken);
-		mediaService.EnrichMedia(timeframe, null);
 		return timeframe;
 	}
 
@@ -697,29 +669,6 @@ public sealed class DirectiveApiService(
 	private Directive Clone(Directive directive)
 	{
 		return (Directive)entityGateway.CloneScalars(directive);
-	}
-
-	/// <summary>
-	/// Fills a directive's <c>[Media]</c> companions (<see cref="Directive.IconMedia"/> /
-	/// <see cref="Directive.BannerMedia"/>) from its stored keys (PEP105), model-agnostically via
-	/// <see cref="VaultMediaService.EnrichMedia"/>. The entity's own asset folder is resolved only when a
-	/// <c>media:</c> (self) key is present, so glyph-only, vault-only, and no-media directives touch neither the
-	/// database nor the filesystem.
-	/// </summary>
-	private async Task EnrichMediaAsync(Directive directive, CancellationToken cancellationToken)
-	{
-		var selfAssetFolder = mediaService.HasSelfMedia(directive)
-			? await ResolveAssetFolderAsync(directive.Id, cancellationToken)
-			: null;
-		mediaService.EnrichMedia(directive, selfAssetFolder);
-	}
-
-	private async Task EnrichMediaAsync(IEnumerable<Directive> directives, CancellationToken cancellationToken)
-	{
-		foreach (var directive in directives)
-		{
-			await EnrichMediaAsync(directive, cancellationToken);
-		}
 	}
 
 	/// <summary>

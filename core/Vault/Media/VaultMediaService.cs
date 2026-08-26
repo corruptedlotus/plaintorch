@@ -200,6 +200,16 @@ public sealed class VaultMediaService(
 	/// Whether an entity has any self (<c>media:</c>) key, and so needs its own asset folder resolved before
 	/// enrichment. Vault keys and glyphs resolve without it.
 	/// </summary>
+	public bool HasMedia(object entity)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		return GetMediaProperties(entity.GetType()).Count > 0;
+	}
+
+	/// <summary>
+	/// Whether an entity has any self (<c>media:</c>) key, and so needs its own asset folder resolved before
+	/// enrichment. Vault keys and glyphs resolve without it.
+	/// </summary>
 	public bool HasSelfMedia(object entity)
 	{
 		ArgumentNullException.ThrowIfNull(entity);

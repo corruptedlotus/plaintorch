@@ -23,7 +23,7 @@ public sealed class SystemModule : Module
 	/// <inheritdoc />
 	public override void ConfigureEndpoints(IEndpointRouteBuilder endpoints)
 	{
-		var group = endpoints.MapGroup("/api/system");
+		var group = endpoints.MapPlaintorchApiGroup("/api/system");
 		group.MapGet("/briefing", async (ISystemApi api, CancellationToken cancellationToken) =>
 		{
 			return Results.Ok(await api.GetBriefingAsync(cancellationToken));
@@ -57,7 +57,8 @@ public sealed class SystemModule : Module
 			return Results.Ok(await api.GetWatcherIssuesForPathAsync(path, cancellationToken));
 		});
 
-		endpoints.MapGet("/system/resolve/{id}", async (string id, ISystemApi api, CancellationToken cancellationToken) =>
+		var legacySystem = endpoints.MapPlaintorchApiGroup("/system");
+		legacySystem.MapGet("/resolve/{id}", async (string id, ISystemApi api, CancellationToken cancellationToken) =>
 		{
 			return Results.Ok(await api.ResolveEntityByPuckAsync(id, cancellationToken));
 		});
