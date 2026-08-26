@@ -14,22 +14,24 @@ export interface ScheduleValue {
 	orbit?: string
 	date?: string
 	time?: string
-	/** The end of a datetime range, when {@link EditableOrbitDatetime.range} is on (e.g. a fate's event window). */
+	/** The end of a datetime range, when {@link EditableSchedule.range} is on (e.g. a fate's event window). */
 	endTime?: string
 }
 
 /**
  * The editable schedule. It **is** a {@link ScheduleItem} — it inherits the orbit/date/time composition, the mode
- * logic and the shared calendar calculator — and only overrides the three chip templates ({@link orbitTemplate},
- * {@link dateTemplate}, {@link timeTemplate}) to swap each read-only chip for its editable counterpart. Those fields
- * are held {@link EditablePart.disabled | inert} until the schedule enters editing, so idle it reads exactly like the
- * plain chip; a click arms it, and a switch (accent-coloured while editing) flips orbit ⇄ datetime.
+ * logic, the shared calendar calculator and the composed tooltip — and only overrides the three chip templates
+ * ({@link orbitTemplate}, {@link dateTemplate}, {@link timeTemplate}) to swap each read-only chip for its editable
+ * counterpart. Those fields are held {@link EditablePart.disabled | inert} until the schedule enters editing, so idle
+ * it reads exactly like the plain chip — the same single surrogate tooltip and all; a click arms it, and a switch
+ * (accent-coloured while editing) flips orbit ⇄ datetime.
  *
  * The display prefers the orbit (orbit &gt; datetime), and committing in one mode clears the other so the entity
- * never carries both. Emits `schedulechange` with the chosen mode and its value for the host to persist.
+ * never carries both. An empty schedule falls back to the orbit "No schedule" face even after a switch to datetime.
+ * Emits `schedulechange` with the chosen mode and its value for the host to persist.
  */
-@component('p7t-editable-orbit-datetime')
-export class EditableOrbitDatetime extends ScheduleItem {
+@component('p7t-editable-schedule')
+export class EditableSchedule extends ScheduleItem {
 	/** Whether the datetime mode edits a start–end range (a second time field) rather than a single time. */
 	@property({ type: Boolean }) range = false
 
@@ -59,12 +61,17 @@ export class EditableOrbitDatetime extends ScheduleItem {
 		// A field still holding focus commits on blur, so blur it first — otherwise collapsing the editor out from
 		// under it could drop the in-progress edit.
 		;((this.renderRoot as ShadowRoot).activeElement as HTMLElement | null)?.blur()
-		this.editing = false
+		this.endEditing()
 	}
 
 	/** The active mode — chosen if the user has flipped, else inferred from the values (orbit wins). Never "none". */
 	private get editMode(): ScheduleMode {
 		return this.chosenMode ?? (this.orbit ? 'orbit' : this.date ? 'datetime' : 'orbit')
+	}
+
+	/** True when the schedule carries no value at all, in either shape. */
+	private get isEmpty(): boolean {
+		return !this.orbit && !this.date && !this.time && !this.endTime
 	}
 
 	static override get styles() {
@@ -148,24 +155,36 @@ export class EditableOrbitDatetime extends ScheduleItem {
 	protected override get template() {
 		const mode = this.editMode
 		const icon = mode === 'orbit' ? 'lucide:repeat' : 'lucide:calendar-clock'
+
+		// The composed schedule tooltip is surrogated by this chip, not by the inner fields: idle it wraps the whole
+		// control in the one tooltip {@link ScheduleItem} builds (the orbit reading, or the Gregorian date + time),
+		// and the inert fields draw no tooltip of their own. While editing it steps aside for the live fields.
+		const tip = this.editing ? nothing : this.tooltip
+		const tipText = typeof tip === 'string' ? tip : ''
+		const tipRich = tip !== nothing && tip !== undefined && tip !== null && typeof tip !== 'string'
+		const hasTip = tipText.length > 0 || tipRich
+
 		return html`
-			<div class='control ${this.editing ? 'editing' : ''}' @click=${() => this.onControlClick()}>
-				${this.editing ? html`
-					<p7t-tooltip
-						text=${mode === 'orbit' ? 'Recurring schedule — switch to a fixed date' : 'Fixed date — switch to a recurring schedule'}
-					>
-						<button class='switch' aria-label='Switch schedule type' @click=${() => this.switchMode()}>
-							<p7t-icon icon=${icon}></p7t-icon>
-						</button>
-					</p7t-tooltip>
-				` : html`
-					<!-- Idle the mode reads as the same dimmed glyph the plain schedule chip shows; arming swaps it for the accent switch. -->
-					<p7t-icon class='mode-glyph' icon=${icon}></p7t-icon>
-				`}
-				<span class='fields'>
-					${mode === 'orbit' ? this.orbitTemplate() : html`${this.dateTemplate()}${this.timeTemplate()}`}
-				</span>
-			</div>
+			<p7t-tooltip ?disabled=${!hasTip} .text=${tipText}>
+				<div class='control ${this.editing ? 'editing' : ''}' @click=${() => this.onControlClick()}>
+					${this.editing ? html`
+						<p7t-tooltip
+							text=${mode === 'orbit' ? 'Recurring schedule — switch to a fixed date' : 'Fixed date — switch to a recurring schedule'}
+						>
+							<button class='switch' aria-label='Switch schedule type' @click=${() => this.switchMode()}>
+								<p7t-icon icon=${icon}></p7t-icon>
+							</button>
+						</p7t-tooltip>
+					` : html`
+						<!-- Idle the mode reads as the same dimmed glyph the plain schedule chip shows; arming swaps it for the accent switch. -->
+						<p7t-icon class='mode-glyph' icon=${icon}></p7t-icon>
+					`}
+					<span class='fields'>
+						${mode === 'orbit' ? this.orbitTemplate() : html`${this.dateTemplate()}${this.timeTemplate()}`}
+					</span>
+				</div>
+				${tipRich ? html`<div slot='tooltip'>${tip}</div>` : nothing}
+			</p7t-tooltip>
 		`
 	}
 
@@ -226,12 +245,24 @@ export class EditableOrbitDatetime extends ScheduleItem {
 		})
 	}
 
+	/**
+	 * Leaves editing. An empty schedule drops any chosen datetime mode so it falls back to the orbit "No schedule"
+	 * face — a user who flips to datetime, enters nothing, and clicks away should not be left staring at empty
+	 * date/time fields.
+	 */
+	private endEditing() {
+		this.editing = false
+		if (this.isEmpty) {
+			this.chosenMode = undefined
+		}
+	}
+
 	/** Returns to the read-only face once focus has actually left the whole control, not merely moved between fields. */
 	@eventListener({ type: 'focusout', target: this })
 	protected onFocusOut() {
 		window.setTimeout(() => {
 			if (!this.matches(':focus-within')) {
-				this.editing = false
+				this.endEditing()
 			}
 		}, 0)
 	}
@@ -283,6 +314,6 @@ export class EditableOrbitDatetime extends ScheduleItem {
 
 declare global {
 	interface HTMLElementTagNameMap {
-		'p7t-editable-orbit-datetime': EditableOrbitDatetime
+		'p7t-editable-schedule': EditableSchedule
 	}
 }

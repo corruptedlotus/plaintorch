@@ -18,7 +18,7 @@ export class EditablePart<T> extends Component {
 
 	/**
 	 * Holds the field inert: it still draws its read-only face but refuses to enter editing. A composite editable
-	 * (e.g. {@link EditableOrbitDatetime}) uses this to embed the plain field's face while it is not itself in
+	 * (e.g. {@link EditableSchedule}) uses this to embed the plain field's face while it is not itself in
 	 * editing mode, then lifts it to let the field be edited. Off by default, so a standalone field is unchanged.
 	 */
 	@property({ type: Boolean, reflect: true }) disabled = false

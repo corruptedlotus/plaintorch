@@ -3,7 +3,7 @@ import { EntityBanner } from './EntityBanner'
 import { Eventive, EventiveResolution, Fate, FateStatus, FateUpdate } from '@pleiades/sdk'
 import { App } from "obsidian"
 import { core, IconName, ReactiveBinder, SelectFateStatusModal } from ".."
-import type { ScheduleValue } from "../editing/EditableOrbitDatetime"
+import type { ScheduleValue } from "../editing/EditableSchedule"
 
 /**
  * Banner for a Fate declarative (PEP100). Fates are event-like: they show their Orbit
@@ -164,14 +164,14 @@ export class FateBanner extends EntityBanner<Fate> {
 	protected override get actions() {
 		// One unified control for both shapes: a recurring orbit or a one-off date with an event-time range.
 		return html`
-			<p7t-editable-orbit-datetime
+			<p7t-editable-schedule
 				range
 				.orbit=${this.entity!.orbit}
 				.date=${this.entity!.date}
 				.time=${this.entity!.startTime}
 				.endTime=${this.entity!.endTime}
 				@schedulechange=${(e: CustomEvent<ScheduleValue>) => void this.onScheduleChange(e.detail)}>
-			</p7t-editable-orbit-datetime>
+			</p7t-editable-schedule>
 		`
 	}
 

@@ -9,7 +9,7 @@ import '../system/TimeView'
 
 /**
  * The schedule a fate-like entity carries (PEP100) — a recurring **orbit** or a fixed **date/time**, never both —
- * drawn read-only, the display counterpart of {@link EditableOrbitDatetime}. It prefers the orbit when both are
+ * drawn read-only, the display counterpart of {@link EditableSchedule}. It prefers the orbit when both are
  * present and humanizes the orbit notation for the face.
  *
  * The schedule is composed from **three chips**, each behind its own overridable template method so a subclass can
@@ -20,7 +20,7 @@ import '../system/TimeView'
  * calculator ({@link PleiadeanDate.fromISO}) so every surface agrees on the Pleiadean day. The orbit face is
  * length-aware: {@link max} caps its width with an ellipsis, the full reading staying in the tooltip.
  *
- * {@link EditableOrbitDatetime} extends this and overrides the three chip methods with their editable counterparts,
+ * {@link EditableSchedule} extends this and overrides the three chip methods with their editable counterparts,
  * inheriting the mode logic, the calculator and the tooltips unchanged.
  */
 @component('p7t-schedule-item')

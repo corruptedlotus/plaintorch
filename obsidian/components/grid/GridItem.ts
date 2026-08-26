@@ -257,12 +257,12 @@ export class GridItem extends Component {
 				// A fate is scheduled either way — a recurring Orbit or a fixed date/time — and the editable
 				// lets the user switch and clears whichever it is not.
 				const fate = entity as { orbit?: string, date?: string, startTime?: string }
-				return html`<p7t-editable-orbit-datetime
+				return html`<p7t-editable-schedule
 					.orbit=${fate.orbit}
 					.date=${fate.date}
 					.time=${fate.startTime}
 					@schedulechange=${(e: CustomEvent<ScheduleValue>) => saveFateSchedule(entity, e.detail)}>
-				</p7t-editable-orbit-datetime>`
+				</p7t-editable-schedule>`
 			}
 			case 'decree':
 				return html`<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>`

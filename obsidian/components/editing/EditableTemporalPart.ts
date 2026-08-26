@@ -69,8 +69,9 @@ export abstract class EditableTemporalPart extends EditablePart<string> {
 			</span>
 		`
 
-		// A subclass whose reading is in one calendar can offer the same moment in another as a tooltip.
-		const tip = this.idleTooltip
+		// A subclass whose reading is in one calendar can offer the same moment in another as a tooltip — but an
+		// inert field draws none, leaving a composing chip (e.g. the editable schedule) to surrogate the one tooltip.
+		const tip = this.disabled ? '' : this.idleTooltip
 		return !tip ? display : html`<p7t-tooltip .text=${tip}>${display}</p7t-tooltip>`
 	}
 
