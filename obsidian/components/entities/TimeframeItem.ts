@@ -30,6 +30,13 @@ export class TimeframeItem extends InfoItem {
 	@property({ type: Object }) timeframe?: TimeframeLike
 	@property() mode: 'icon' | 'named' = 'named'
 
+	/**
+	 * Draws the chip as an executive's **affinity** rather than a timeframe in the abstract: an empty one reads as
+	 * "No Affinity" behind a polaris glyph, a set one suffixes "Affinity" to the name, and the tooltip drops the
+	 * scheduling detail (window, scope, college) — an affinity is only *which* timeframe, not its mechanics.
+	 */
+	@property({ type: Boolean }) affinity = false
+
 	static override get styles() {
 		return css`
 			${super.styles}
@@ -80,7 +87,13 @@ export class TimeframeItem extends InfoItem {
 	protected override get content() {
 		const timeframe = this.timeframe
 		if (!timeframe) {
-			// A nullable chip reads its empty state as the shared null glyph; otherwise it draws nothing.
+			// Affinity mode has its own empty state (No Affinity); otherwise a nullable chip shows the null glyph.
+			if (this.affinity) {
+				return this.mode === 'icon'
+					? html`<p7t-icon class='icon-only' part='icon' icon='polaris'></p7t-icon>`
+					: html`<span class='named'><p7t-icon part='icon' icon='polaris'></p7t-icon><span>No Affinity</span></span>`
+			}
+
 			return this.nullable ? this.nullGlyphTemplate : nothing
 		}
 
@@ -91,13 +104,19 @@ export class TimeframeItem extends InfoItem {
 		return html`
 			<span class='named'>
 				<p7t-icon part='icon' .icon=${this.glyph}></p7t-icon>
-				<span>${timeframe.title}</span>
+				<span>${this.affinity ? `${timeframe.title} Affinity` : timeframe.title}</span>
 			</span>
 		`
 	}
 
 	protected override get tooltip() {
 		const timeframe = this.timeframe
+
+		// An affinity is just which timeframe it is: its name suffixed with "Affinity", or "No Affinity" when unset.
+		if (this.affinity) {
+			return timeframe ? `${timeframe.title} Affinity` : 'No Affinity'
+		}
+
 		if (!timeframe) {
 			return nothing
 		}
