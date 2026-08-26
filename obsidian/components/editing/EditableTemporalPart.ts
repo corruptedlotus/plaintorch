@@ -80,6 +80,10 @@ export abstract class EditableTemporalPart extends EditablePart<string> {
 	}
 
 	private beginEdit() {
+		if (this.disabled) {
+			return
+		}
+
 		this.valueAtFocus = this.value
 		this.active = true
 		void this.updateComplete.then(() => {
