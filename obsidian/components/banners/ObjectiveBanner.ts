@@ -61,7 +61,11 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 			await core.polaris.addObjectiveToCurrent(objectiveId))
 		if (added) {
 			new Notice('Added to active Polaris cycle.')
-			await core.repos.objectives.refresh(objectiveId)
+			await Promise.all([
+				core.repos.objectives.refresh(objectiveId),
+				core.repos.polaris.revalidateObserved(),
+				core.repos.briefing.revalidateIfObserved()
+			])
 			this.activePolaris = await core.polaris.getCurrent()
 		}
 	}

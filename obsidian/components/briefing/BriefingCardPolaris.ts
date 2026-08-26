@@ -200,10 +200,14 @@ class AddObjectiveModal extends SuggestModal<Objective> {
 	}
 
 	override async onChooseSuggestion(item: Objective, _: MouseEvent | KeyboardEvent) {
-		if (await core.polaris.addObjectiveToCurrent(item.id)) {
-			const updatedCycle = await core.polaris.getCurrent()
-			if (!!updatedCycle) this.host.data = updatedCycle
-			void core.repos.briefing.revalidateIfObserved()
+		const added = await core.repos.objectives.mutate(item.id, async () =>
+			await core.polaris.addObjectiveToCurrent(item.id))
+		if (added) {
+			await Promise.all([
+				core.repos.objectives.refresh(item.id),
+				core.repos.polaris.revalidateObserved(),
+				core.repos.briefing.revalidateIfObserved()
+			])
 		}
 	}
 }
