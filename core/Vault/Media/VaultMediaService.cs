@@ -26,7 +26,7 @@ public sealed class VaultMediaService(
 	VaultTemporalDataService temporalDataService)
 {
 	/// <summary>The asset folder name; the leading underscore excludes it from markdown discovery.</summary>
-	public const string AssetFolderName = "_assets";
+	public const string AssetFolderName = "_media";
 
 	/// <summary>Marks a self/level media key — a file in the owning entity's own asset folder.</summary>
 	public const string SelfReferencePrefix = "media:";
