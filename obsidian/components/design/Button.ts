@@ -1,4 +1,4 @@
-import { Component, component, css, html, nothing, property } from "@a11d/lit"
+import { Component, component, css, eventListener, html, nothing, property } from "@a11d/lit"
 import { IconName } from 'components'
 import './Tooltip'
 
@@ -25,9 +25,11 @@ export class Button extends Component {
 			:host {
 				display: flex;
 				align-items: center;
+				pointer-events: none;
 			}
 
 			button {
+				pointer-events: auto;
 				background-color: color-mix(in srgb, var(--text-normal) 10%, transparent);
 				outline: none;
 				border: 1px solid transparent;
@@ -54,10 +56,10 @@ export class Button extends Component {
 				}
 
 				& p7t-icon {
-					font-size: 1.4em;
+					font-size: 1.2em;
 
 					:host([large]) & {
-						font-size: 1.8em;
+						font-size: 1.5em;
 					}
 				}
 
@@ -100,11 +102,12 @@ export class Button extends Component {
 		`
 	}
 
+
 	protected override get template() {
 		const button = html`
-			<button aria-label=${this.label ?? nothing}>
+			<button part='button' aria-label=${this.label ?? nothing}>
 				${this.icon ? html`<p7t-icon part='icon' .icon=${this.icon}></p7t-icon>` : ''}
-				<slot part='text'></slot>
+				${![...this.childNodes].filter(x => x.nodeType === Node.ELEMENT_NODE || (x.nodeType === Node.TEXT_NODE && x.textContent?.trim())).length ? nothing : html`<slot part='text'></slot>`}
 			</button>
 		`
 

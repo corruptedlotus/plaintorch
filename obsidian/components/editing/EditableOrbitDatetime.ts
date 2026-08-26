@@ -147,13 +147,16 @@ export class EditableOrbitDatetime extends Component {
 		}
 
 		return html`
-			<button
-				class='switch'
-				aria-label='Switch schedule type'
-				title=${mode === 'orbit' ? 'Recurring schedule — switch to a fixed date' : 'Fixed date — switch to a recurring schedule'}
-				@click=${() => this.switchMode()}>
-				<p7t-icon icon=${mode === 'orbit' ? 'lucide:repeat' : 'lucide:calendar-clock'}></p7t-icon>
-			</button>
+			<p7t-tooltip
+				text=${mode === 'orbit' ? 'Recurring schedule — switch to a fixed date' : 'Fixed date — switch to a recurring schedule'}
+			>
+				<button
+					class='switch'
+					aria-label='Switch schedule type'
+					@click=${() => this.switchMode()}>
+					<p7t-icon icon=${mode === 'orbit' ? 'lucide:repeat' : 'lucide:calendar-clock'}></p7t-icon>
+				</button>
+			</p7t-tooltip>
 			<div class='fields'>
 				${mode === 'orbit' ? html`
 					<p7t-editable-orbit
