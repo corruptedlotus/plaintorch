@@ -15,6 +15,7 @@ export * from './EditableOrbit'
 export * from './EditableDate'
 export * from './EditableTime'
 export * from './EditableOrbitDatetime'
+export * from './ItemGroup'
 export * from './PromptTextModal'
 
 export const getApp = () => (window as any).app as App
