@@ -19,20 +19,3 @@ public sealed class MediaEnrichmentEndpointFilter : IEndpointFilter
 		return result;
 	}
 }
-
-/// <summary>
-/// Maps a PLAINTORCH API route group with response-level media enrichment enabled.
-/// </summary>
-public static class PlaintorchApiEndpointRouteBuilderExtensions
-{
-	/// <summary>
-	/// Maps an API route group that enriches every <see cref="Pleiades.Vault.Media.MediaAttribute"/> field in its
-	/// response object graph before JSON serialization.
-	/// </summary>
-	public static RouteGroupBuilder MapPlaintorchApiGroup(this IEndpointRouteBuilder endpoints, string pattern)
-	{
-		ArgumentNullException.ThrowIfNull(endpoints);
-		ArgumentException.ThrowIfNullOrWhiteSpace(pattern);
-		return endpoints.MapGroup(pattern).AddEndpointFilter<MediaEnrichmentEndpointFilter>();
-	}
-}

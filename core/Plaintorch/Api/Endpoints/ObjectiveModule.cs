@@ -24,7 +24,7 @@ public sealed class ObjectiveModule : Module
 	/// <inheritdoc />
 	public override void ConfigureEndpoints(IEndpointRouteBuilder endpoints)
 	{
-		var group = endpoints.MapPlaintorchApiGroup("/api/objectives");
+		var group = endpoints.MapEnrichedGroup("/api/objectives");
 
 		group.MapGet("/", async (string? q, int? take, IObjectiveApi api, CancellationToken cancellationToken) =>
 		{

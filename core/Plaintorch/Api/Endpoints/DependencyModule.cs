@@ -25,7 +25,7 @@ public sealed class DependencyModule : Module
 	/// <inheritdoc />
 	public override void ConfigureEndpoints(IEndpointRouteBuilder endpoints)
 	{
-		var dependencies = endpoints.MapPlaintorchApiGroup("/api/dependencies");
+		var dependencies = endpoints.MapEnrichedGroup("/api/dependencies");
 
 		dependencies.MapGet("/", async (string? entityId, IDependencyApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListAsync(entityId, cancellationToken)));
@@ -48,7 +48,7 @@ public sealed class DependencyModule : Module
 			return Results.NoContent();
 		});
 
-		var checkpoints = endpoints.MapPlaintorchApiGroup("/api/checkpoints");
+		var checkpoints = endpoints.MapEnrichedGroup("/api/checkpoints");
 
 		checkpoints.MapGet("/", async (IDependencyApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListCheckpointsAsync(cancellationToken)));
