@@ -229,36 +229,15 @@ export class TimeframesEditor extends Component {
 					</div>
 					<div class='field'>
 						<span class='caption'>Auto-include</span>
-						<p7t-editable
-							.value=${timeframe.autoInclusionCollege}
-							.doEdit=${SelectCollegeModal.prompt}
-							@change=${(e: Event) => this.saveCollege(timeframe.id, e)}>
-							${this.includeTemplate(timeframe)}
-						</p7t-editable>
+						<p7t-item-group
+							.items=${timeframe.autoInclusionColleges ?? []}
+							.renderItem=${(college: unknown) => html`<p7t-college-item mode='named' .college=${college as ObjectiveCollege}></p7t-college-item>`}
+							.onAdd=${() => void this.addCollege(timeframe)}
+							.onRemove=${(college: unknown) => this.removeCollege(timeframe, college as ObjectiveCollege)}>
+						</p7t-item-group>
 					</div>
 				</div>
 			</div>
-		`
-	}
-
-	/** The display inside the auto-include selector: the chosen college's glyph and name, or a muted placeholder. */
-	private includeTemplate(timeframe: Timeframe) {
-		const active = timeframe.autoInclusion === TimeframeInclusion.College && timeframe.autoInclusionCollege !== undefined
-		if (!active) {
-			return html`
-				<span class='include muted'>
-					<p7t-icon icon='college-none'></p7t-icon>
-					<span>None</span>
-				</span>
-			`
-		}
-
-		const name = ObjectiveCollege[timeframe.autoInclusionCollege!]
-		return html`
-			<span class='include'>
-				<p7t-icon icon='college-${name.toLowerCase()}'></p7t-icon>
-				<span>${name}</span>
-			</span>
 		`
 	}
 
@@ -276,17 +255,31 @@ export class TimeframesEditor extends Component {
 		void this.saveTimeframe(timeframeId, { icon: value || null })
 	}
 
-	private saveCollege(timeframeId: number, e: Event) {
-		const college = (e.target as EditablePart<ObjectiveCollege>).value
-		if (college === undefined) {
+	/** Adds a college to a timeframe's auto-inclusion list, ignoring "None" and duplicates. */
+	private async addCollege(timeframe: Timeframe) {
+		const college = await SelectCollegeModal.prompt()
+		if (college === undefined || college === ObjectiveCollege.Unspecified) {
 			return
 		}
 
-		// The "None" college is how a timeframe is turned back into a manual (non-auto-including) one.
-		const update: TimeframeUpdate = college === ObjectiveCollege.Unspecified
-			? { autoInclusion: TimeframeInclusion.None, autoInclusionCollege: null }
-			: { autoInclusion: TimeframeInclusion.College, autoInclusionCollege: college }
-		void this.saveTimeframe(timeframeId, update)
+		const current = timeframe.autoInclusionColleges ?? []
+		if (current.includes(college)) {
+			return
+		}
+
+		this.saveColleges(timeframe.id, [...current, college])
+	}
+
+	private removeCollege(timeframe: Timeframe, college: ObjectiveCollege) {
+		this.saveColleges(timeframe.id, (timeframe.autoInclusionColleges ?? []).filter(item => item !== college))
+	}
+
+	/** Persists the college list; a non-empty list turns on college auto-inclusion, an empty one turns it off. */
+	private saveColleges(timeframeId: number, colleges: ObjectiveCollege[]) {
+		void this.saveTimeframe(timeframeId, {
+			autoInclusion: colleges.length > 0 ? TimeframeInclusion.College : TimeframeInclusion.None,
+			autoInclusionColleges: colleges,
+		})
 	}
 
 	private async saveTimeframe(timeframeId: number, update: TimeframeUpdate) {

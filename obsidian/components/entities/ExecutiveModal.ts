@@ -306,7 +306,7 @@ export class ExecutiveEditor extends Component {
 			icon: record.icon,
 			iconMedia: record.iconMedia,
 			autoInclusion: record.autoInclusion,
-			autoInclusionCollege: record.autoInclusionCollege,
+			autoInclusionColleges: record.autoInclusionColleges,
 		}
 	}
 

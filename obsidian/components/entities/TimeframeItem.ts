@@ -14,7 +14,7 @@ export interface TimeframeLike {
 	icon?: string
 	iconMedia?: MediaReference
 	autoInclusion?: TimeframeInclusion
-	autoInclusionCollege?: ObjectiveCollege
+	autoInclusionColleges?: ObjectiveCollege[]
 }
 
 /** 'HH:MM[:SS]' → 'HH:MM'. */
@@ -126,16 +126,17 @@ export class TimeframeItem extends InfoItem {
 			: undefined
 		// No Orbit means the timeframe applies to every Polaris cycle (PEP100).
 		const scope = timeframe.orbit ? (humanizeOrbit(timeframe.orbit).text || timeframe.orbit) : 'Every cycle'
-		const college = timeframe.autoInclusion === TimeframeInclusion.College && timeframe.autoInclusionCollege !== undefined
-			? collegeDescriptorOf(timeframe.autoInclusionCollege)
-			: undefined
+		const colleges = timeframe.autoInclusion === TimeframeInclusion.College
+			? (timeframe.autoInclusionColleges ?? []).map(collegeDescriptorOf)
+			: []
+		const [primaryCollege] = colleges
 
 		return html`
 			<div class='details'>
 				<div class='title'>${timeframe.title}</div>
 				${!window ? nothing : html`<div class='row'><p7t-icon icon='lucide:clock'></p7t-icon><span>${window}</span></div>`}
 				<div class='row'><p7t-icon icon='lucide:repeat'></p7t-icon><span>${scope}</span></div>
-				${!college ? nothing : html`<div class='row'><p7t-icon icon=${college.icon}></p7t-icon><span>Includes ${college.name}</span></div>`}
+				${!primaryCollege ? nothing : html`<div class='row'><p7t-icon icon=${primaryCollege.icon}></p7t-icon><span>Includes ${colleges.map(descriptor => descriptor.name).join(', ')}</span></div>`}
 			</div>
 		`
 	}

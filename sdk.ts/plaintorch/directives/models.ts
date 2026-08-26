@@ -89,8 +89,8 @@ export interface Timeframe {
 	iconMedia?: MediaReference | undefined
 	/** How this timeframe auto-includes workitems (PEP100 patch). */
 	autoInclusion: TimeframeInclusion
-	/** The college driving college-based auto-inclusion (PEP100 patch). */
-	autoInclusionCollege?: ObjectiveCollege | undefined
+	/** The colleges driving college-based auto-inclusion (PEP100 patch). */
+	autoInclusionColleges: ObjectiveCollege[]
 }
 
 /** A timeframe paired with a summary of the lunar directive that owns it (global timeframe listing, PEP100). */
@@ -110,8 +110,8 @@ export interface DirectiveTimeframeRecord {
 	iconMedia?: MediaReference | undefined
 	/** How this timeframe auto-includes workitems (PEP100 patch). */
 	autoInclusion: TimeframeInclusion
-	/** The college driving college-based auto-inclusion (PEP100 patch). */
-	autoInclusionCollege?: ObjectiveCollege | undefined
+	/** The colleges driving college-based auto-inclusion (PEP100 patch). */
+	autoInclusionColleges: ObjectiveCollege[]
 }
 
 export interface CreateDirectiveRequest {
@@ -167,8 +167,8 @@ export interface TimeframePlan {
 	icon?: string | undefined
 	/** How this timeframe auto-includes workitems (PEP100 patch); defaults to none. */
 	autoInclusion?: TimeframeInclusion
-	/** The college driving college-based auto-inclusion (PEP100 patch). */
-	autoInclusionCollege?: ObjectiveCollege | undefined
+	/** The colleges driving college-based auto-inclusion (PEP100 patch). */
+	autoInclusionColleges?: ObjectiveCollege[] | undefined
 }
 
 export interface TimeframeUpdate {
@@ -181,8 +181,8 @@ export interface TimeframeUpdate {
 	icon?: string | null | undefined
 	/** How this timeframe auto-includes workitems (PEP100 patch). Leave undefined to keep the current mechanism. */
 	autoInclusion?: TimeframeInclusion
-	/** The college driving college-based auto-inclusion (PEP100 patch). Omit to keep, a value to set, `null` to clear. */
-	autoInclusionCollege?: ObjectiveCollege | null | undefined
+	/** The colleges driving college-based auto-inclusion (PEP100 patch). Omit to keep; any list (empty to clear) replaces. */
+	autoInclusionColleges?: ObjectiveCollege[] | undefined
 }
 
 /** How a media key resolves (PEP105): a built-in glyph, self/level media, or vault-level shared media. */
