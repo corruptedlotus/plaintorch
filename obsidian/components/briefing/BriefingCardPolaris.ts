@@ -1,13 +1,19 @@
 import { component, css, eventListener, html, nothing, state } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
 import { Attentive, Objective, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
-import { core } from ".."
+import { core, EntityWatch } from ".."
 import { App, SuggestModal } from "obsidian"
 
 @component('p7t-briefing-polaris')
 export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 	override readonly icon = 'polaris'
 	override readonly preHeading = 'Active Polaris Cycle'
+
+	/**
+	 * Subscribes to the canonical PolarisCycle instance so in-place mutations (e.g. a new executive
+	 * being merged into the array) trigger a re-render without requiring a prop reference change.
+	 */
+	protected readonly watch = new EntityWatch(this, () => this.data)
 
 	@state() private reflectivesExpanded = false
 
@@ -200,10 +206,14 @@ class AddObjectiveModal extends SuggestModal<Objective> {
 	}
 
 	override async onChooseSuggestion(item: Objective, _: MouseEvent | KeyboardEvent) {
-		if (await core.polaris.addObjectiveToCurrent(item.id)) {
-			const updatedCycle = await core.polaris.getCurrent()
-			if (!!updatedCycle) this.host.data = updatedCycle
-			void core.repos.briefing.revalidateIfObserved()
+		const added = await core.repos.objectives.mutate(item.id, async () =>
+			await core.polaris.addObjectiveToCurrent(item.id))
+		if (added) {
+			await Promise.all([
+				core.repos.objectives.refresh(item.id),
+				core.repos.polaris.revalidateObserved(),
+				core.repos.briefing.revalidateIfObserved()
+			])
 		}
 	}
 }

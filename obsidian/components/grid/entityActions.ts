@@ -214,6 +214,12 @@ export function objectiveActions(objectiveId: string): ExpandingAction[] {
 				const added = await core.repos.objectives.mutate(objectiveId, async () =>
 					await core.polaris.addObjectiveToCurrent(objectiveId))
 				new Notice(added ? 'Added to active Polaris cycle.' : 'Could not add to Polaris.')
+				if (added) {
+					await Promise.all([
+						core.repos.polaris.revalidateObserved(),
+						core.repos.briefing.revalidateIfObserved()
+					])
+				}
 			}
 		},
 		{
