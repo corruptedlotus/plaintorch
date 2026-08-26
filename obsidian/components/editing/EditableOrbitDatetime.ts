@@ -1,6 +1,10 @@
-import { Component, component, css, event, eventListener, html, nothing, property, state } from "@a11d/lit"
+import { component, css, event, eventListener, html, nothing, property, state } from "@a11d/lit"
+import { ScheduleItem } from "../entities/ScheduleItem"
 import { EditablePart } from "./EditableDataLink"
-import "../entities/ScheduleItem"
+import "./EditableOrbit"
+import "./EditableDate"
+import "./EditableTime"
+import "../design/Tooltip"
 
 export type ScheduleMode = 'orbit' | 'datetime'
 
@@ -15,19 +19,17 @@ export interface ScheduleValue {
 }
 
 /**
- * Dynamic editable for entities that can be scheduled either way — a recurring **orbit** or a one-off
- * **date/time**. A switch flips between the two; the display prefers the orbit (orbit &gt; datetime), and
- * committing in one mode clears the other so the entity never carries both. Emits `schedulechange` with the
- * chosen mode and its value for the host to persist.
+ * The editable schedule. It **is** a {@link ScheduleItem} — it inherits the orbit/date/time composition, the mode
+ * logic and the shared calendar calculator — and only overrides the three chip templates ({@link orbitTemplate},
+ * {@link dateTemplate}, {@link timeTemplate}) to swap each read-only chip for its editable counterpart. Those fields
+ * are held {@link EditablePart.disabled | inert} until the schedule enters editing, so idle it reads exactly like the
+ * plain chip; a click arms it, and a switch (accent-coloured while editing) flips orbit ⇄ datetime.
+ *
+ * The display prefers the orbit (orbit &gt; datetime), and committing in one mode clears the other so the entity
+ * never carries both. Emits `schedulechange` with the chosen mode and its value for the host to persist.
  */
 @component('p7t-editable-orbit-datetime')
-export class EditableOrbitDatetime extends Component {
-	@property() orbit?: string
-	@property() date?: string
-	@property() time?: string
-	/** The end of the datetime range, surfaced only when {@link range} is on. */
-	@property() endTime?: string
-
+export class EditableOrbitDatetime extends ScheduleItem {
 	/** Whether the datetime mode edits a start–end range (a second time field) rather than a single time. */
 	@property({ type: Boolean }) range = false
 
@@ -36,7 +38,7 @@ export class EditableOrbitDatetime extends Component {
 	/** The chosen mode; falls back to whichever shape the values already describe (orbit takes precedence). */
 	@state() private chosenMode?: ScheduleMode
 
-	/** Whether the editor is showing its fields; idle it shows the read-only {@link ScheduleItem} face. */
+	/** Whether the editor is armed; idle the inert fields render the same read-only face the plain chip shows. */
 	@state() private editing = false
 
 	override connectedCallback() {
@@ -60,13 +62,43 @@ export class EditableOrbitDatetime extends Component {
 		this.editing = false
 	}
 
-	private get mode(): ScheduleMode {
+	/** The active mode — chosen if the user has flipped, else inferred from the values (orbit wins). Never "none". */
+	private get editMode(): ScheduleMode {
 		return this.chosenMode ?? (this.orbit ? 'orbit' : this.date ? 'datetime' : 'orbit')
 	}
 
 	static override get styles() {
 		return css`
+			${super.styles}
+
 			:host {
+				display: inline-flex;
+				align-items: center;
+			}
+
+			/*
+			 * Idle the control carries the same editability outline every other editable shows on hover, so it reads
+			 * as a thing you can click into. While editing the outline gives way to the fields' own affordances.
+			 */
+			.control {
+				display: inline-flex;
+				align-items: center;
+				gap: .5ch;
+				border-radius: 4px;
+				outline: 1px solid transparent;
+				outline-offset: .16rem;
+				transition: .3s ease;
+			}
+
+			.control:not(.editing) {
+				cursor: pointer;
+			}
+
+			.control:not(.editing):hover {
+				outline-color: var(--p7t-flare-accent, var(--interactive-accent));
+			}
+
+			.fields {
 				display: inline-flex;
 				align-items: center;
 				gap: .5ch;
@@ -79,26 +111,30 @@ export class EditableOrbitDatetime extends Component {
 				padding: .15em;
 				border: none;
 				border-radius: 6px;
-				background-color: color-mix(in srgb, var(--text-normal) 8%, transparent);
-				color: color-mix(in srgb, var(--text-normal) 65%, transparent);
 				cursor: pointer;
 				transition: .2s ease;
+				/* Accent-coloured while editing — the switch only shows then, so this is its resting look. */
+				background-color: var(--p7t-flare-accent, var(--interactive-accent));
+				color: var(--text-on-accent, white);
 			}
 
 			.switch:hover {
-				color: var(--text-normal);
-				background-color: color-mix(in srgb, var(--text-normal) 16%, transparent);
+				filter: brightness(1.1);
 			}
 
 			.switch p7t-icon {
 				width: 1.1em;
 				height: 1.1em;
+				/* Full opacity over the accent fill — overrides the dimmed icon rule inherited from the schedule chip. */
+				opacity: 1;
 			}
 
-			.fields {
-				display: inline-flex;
-				align-items: center;
-				gap: .5ch;
+			/* The idle mode indicator: the plain chip's dimmed glyph, so an unarmed schedule reads like the read-only one. */
+			.mode-glyph {
+				width: 1.1em;
+				height: 1.1em;
+				opacity: .7;
+				flex: 0 0 auto;
 			}
 
 			.range-sep {
@@ -106,85 +142,83 @@ export class EditableOrbitDatetime extends Component {
 				height: 1em;
 				opacity: .5;
 			}
-
-			/*
-			 * Idle the face carries the same editability outline every other editable shows on hover, so it reads
-			 * as a thing you can click into — matching {@link EditablePart}'s treatment, which this control does not
-			 * inherit since it wraps the read-only chip rather than being an editable itself.
-			 */
-			.display {
-				cursor: pointer;
-				outline: 1px solid transparent;
-				outline-offset: .16rem;
-				border-radius: 4px;
-				transition: .3s ease;
-			}
-
-			.display:hover {
-				outline-color: var(--p7t-flare-accent, var(--interactive-accent));
-			}
 		`
 	}
 
 	protected override get template() {
-		const mode = this.mode
-
-		// Idle shows only the read-only chip — which already carries the type icon, so the switch (which repeats
-		// that icon) is withheld until editing, when flipping the type is actually on offer. This is what kept the
-		// icon from appearing twice on the idle face.
-		if (!this.editing) {
-			return html`
-				<p7t-schedule-item
-					class='display'
-					short
-					.orbit=${this.orbit}
-					.date=${this.date}
-					.time=${this.time}
-					.endTime=${this.endTime}
-					@click=${() => this.enterEditing()}>
-				</p7t-schedule-item>
-			`
-		}
-
+		const mode = this.editMode
+		const icon = mode === 'orbit' ? 'lucide:repeat' : 'lucide:calendar-clock'
 		return html`
-			<p7t-tooltip
-				text=${mode === 'orbit' ? 'Recurring schedule — switch to a fixed date' : 'Fixed date — switch to a recurring schedule'}
-			>
-				<button
-					class='switch'
-					aria-label='Switch schedule type'
-					@click=${() => this.switchMode()}>
-					<p7t-icon icon=${mode === 'orbit' ? 'lucide:repeat' : 'lucide:calendar-clock'}></p7t-icon>
-				</button>
-			</p7t-tooltip>
-			<div class='fields'>
-				${mode === 'orbit' ? html`
-					<p7t-editable-orbit
-						.value=${this.orbit}
-						@change=${(e: Event) => this.commit('orbit', (e.target as EditablePart<string>).value)}>
-					</p7t-editable-orbit>
+			<div class='control ${this.editing ? 'editing' : ''}' @click=${() => this.onControlClick()}>
+				${this.editing ? html`
+					<p7t-tooltip
+						text=${mode === 'orbit' ? 'Recurring schedule — switch to a fixed date' : 'Fixed date — switch to a recurring schedule'}
+					>
+						<button class='switch' aria-label='Switch schedule type' @click=${() => this.switchMode()}>
+							<p7t-icon icon=${icon}></p7t-icon>
+						</button>
+					</p7t-tooltip>
 				` : html`
-					<p7t-editable-date
-						.value=${this.date}
-						@change=${(e: Event) => this.commit('date', (e.target as EditablePart<string>).value)}>
-					</p7t-editable-date>
-					<p7t-editable-time
-						.value=${this.time}
-						@change=${(e: Event) => this.commit('time', (e.target as EditablePart<string>).value)}>
-					</p7t-editable-time>
-					${!this.range ? nothing : html`
-						<p7t-icon class='range-sep' icon='lucide:arrow-right'></p7t-icon>
-						<p7t-editable-time
-							.value=${this.endTime}
-							@change=${(e: Event) => this.commit('endtime', (e.target as EditablePart<string>).value)}>
-						</p7t-editable-time>
-					`}
+					<!-- Idle the mode reads as the same dimmed glyph the plain schedule chip shows; arming swaps it for the accent switch. -->
+					<p7t-icon class='mode-glyph' icon=${icon}></p7t-icon>
 				`}
+				<span class='fields'>
+					${mode === 'orbit' ? this.orbitTemplate() : html`${this.dateTemplate()}${this.timeTemplate()}`}
+				</span>
 			</div>
 		`
 	}
 
-	/** Reveals the fields and lands the caret in the first one, so a single click on the face begins editing. */
+	/** The orbit chip, as an editable field held inert until the schedule is armed. */
+	protected override orbitTemplate(): unknown {
+		return html`
+			<p7t-editable-orbit
+				?disabled=${!this.editing}
+				.value=${this.orbit}
+				@change=${(e: Event) => this.commit('orbit', (e.target as EditablePart<string>).value)}>
+			</p7t-editable-orbit>
+		`
+	}
+
+	/** The date chip, as an editable field held inert until the schedule is armed. */
+	protected override dateTemplate(): unknown {
+		return html`
+			<p7t-editable-date
+				?disabled=${!this.editing}
+				.value=${this.date}
+				@change=${(e: Event) => this.commit('date', (e.target as EditablePart<string>).value)}>
+			</p7t-editable-date>
+		`
+	}
+
+	/** The time chip (with the range end when {@link range} is on), as editable fields held inert until armed. */
+	protected override timeTemplate(): unknown {
+		return html`
+			<p7t-editable-time
+				?disabled=${!this.editing}
+				.value=${this.time}
+				@change=${(e: Event) => this.commit('time', (e.target as EditablePart<string>).value)}>
+			</p7t-editable-time>
+			${!this.range ? nothing : html`
+				<p7t-icon class='range-sep' icon='lucide:arrow-right'></p7t-icon>
+				<p7t-editable-time
+					?disabled=${!this.editing}
+					.value=${this.endTime}
+					@change=${(e: Event) => this.commit('endtime', (e.target as EditablePart<string>).value)}>
+				</p7t-editable-time>
+			`}
+		`
+	}
+
+	/** A click on the idle face arms the editor and lands the caret in the first field; while editing it is a no-op. */
+	private onControlClick() {
+		if (this.editing) {
+			return
+		}
+
+		this.enterEditing()
+	}
+
 	private enterEditing() {
 		this.editing = true
 		void this.updateComplete.then(() => {
@@ -203,7 +237,7 @@ export class EditableOrbitDatetime extends Component {
 	}
 
 	private switchMode() {
-		const next: ScheduleMode = this.mode === 'orbit' ? 'datetime' : 'orbit'
+		const next: ScheduleMode = this.editMode === 'orbit' ? 'datetime' : 'orbit'
 		this.chosenMode = next
 		if (next === 'orbit') {
 			// Recurring wins over a lingering date; clearing it keeps the fate from materializing both shapes.
@@ -241,7 +275,7 @@ export class EditableOrbitDatetime extends Component {
 	}
 
 	private emit() {
-		this.schedulechange.dispatch(this.mode === 'orbit'
+		this.schedulechange.dispatch(this.editMode === 'orbit'
 			? { mode: 'orbit', orbit: this.orbit }
 			: { mode: 'datetime', date: this.date, time: this.time, endTime: this.range ? this.endTime : undefined })
 	}

@@ -22,7 +22,8 @@ const warningDelay = 500
  * and optionally {@link validateContent}.
  */
 export abstract class EditableTextPart<T> extends EditablePart<T> {
-	override readonly contentEditable = 'plaintext-only'
+	// Not `readonly`: it is flipped to 'false' while the field is disabled so an inert field cannot take the caret.
+	override contentEditable = 'plaintext-only'
 	override readonly spellcheck = false
 
 	/** Refuses an empty commit (void prevention). */
@@ -77,6 +78,8 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 		super.updated?.(changed)
 		this.dataset.placeholder = this.placeholder
 		this.toggleAttribute('warning', this.warning)
+		// An inert field is not editable at all — it renders its read-only face and never takes the caret.
+		this.contentEditable = this.disabled ? 'false' : 'plaintext-only'
 		// While editing, the caret lives in this text; rewriting it would collapse the selection, so the text
 		// is synced only when idle. The editing form is installed once, on focus.
 		if (this.active) return
@@ -93,6 +96,11 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 
 	@eventListener({ type: 'focus', target: this })
 	protected handleFocus() {
+		if (this.disabled) {
+			this.blur()
+			return
+		}
+
 		this.valueAtFocus = this.value
 		this.beginManualEditing()
 		this.textContent = this.toEditableText(this.value)

@@ -2,6 +2,7 @@ import { Component, component, css, html, nothing, property } from "@a11d/lit"
 import { PleiadeanDate } from "@pleiades/sdk"
 import { gregorianDateLabel } from "./PleiadeanDateView"
 import { localeTimeLabel } from "./TimeView"
+import "./PleiadeanDateView"
 import "./TimeView"
 import "../design/Tooltip"
 
@@ -34,21 +35,16 @@ export class DatetimeView extends Component {
 		`
 	}
 
-	/** The fixed date as a Pleiadean date, or undefined when it cannot be parsed. Anchored in UTC, like the views. */
+	/** The fixed date as a Pleiadean date, or undefined when it cannot be parsed. Anchored in UTC via the calculator. */
 	private get pleiadean(): PleiadeanDate | undefined {
-		if (!this.date) {
-			return undefined
-		}
-
-		const parsed = new Date(this.date)
-		return Number.isNaN(parsed.getTime()) ? undefined : PleiadeanDate.fromDate(parsed)
+		return PleiadeanDate.tryFromISO(this.date)
 	}
 
 	override get template() {
 		const pleiadean = this.pleiadean
 		return html`
 			<p7t-tooltip .text=${this.unifiedLabel(pleiadean)}>
-				<span>${pleiadean ? pleiadean.toString() : this.date}</span>
+				${pleiadean ? html`<p7t-date-view short bare .date=${pleiadean}></p7t-date-view>` : html`<span>${this.date}</span>`}
 				${!this.time ? nothing : html`
 					<span class='sep'>·</span>
 					<p7t-time-view bare .time=${this.time}></p7t-time-view>

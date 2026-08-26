@@ -3,8 +3,16 @@ import { PleiadeanDate } from "@pleiades/sdk"
 import { getOrdinalSuffix } from "@pleiades/sdk/helpers"
 import "../design/Tooltip"
 
-/** The day in the device's default calendar and locale, spelled out in full — the Gregorian counterpart to the Pleiadean face. */
-export function gregorianDateLabel(date: PleiadeanDate): string {
+/**
+ * The day in the device's default calendar and locale, spelled out in full — the Gregorian counterpart to the
+ * Pleiadean face and the **one** Gregorian date formatter every chip shares, so a date's hover reads the same
+ * everywhere. Anchored in UTC to match the calendar's UTC day; an absent date reads as the empty string.
+ */
+export function gregorianDateLabel(date: PleiadeanDate | undefined): string {
+	if (!date) {
+		return ''
+	}
+
 	try {
 		// The Pleiadean date is a whole day anchored in UTC, so format it in UTC to keep the day from shifting.
 		return date.toDate().toLocaleDateString(undefined, { dateStyle: 'full', timeZone: 'UTC' })
@@ -21,6 +29,12 @@ export class PleiadeanDateView extends Component {
 
 	/** Renders the face without its own tooltip, so a composer (e.g. {@link DatetimeView}) can wrap it in a shared one. */
 	@property({ type: Boolean }) bare = false
+
+	/**
+	 * Draws the terse reading ({@link PleiadeanDate.toString}, e.g. "26/Sol 3") rather than the spelled-out face —
+	 * what a compact surface (a schedule chip, a banner date) wants, where the long face has no room.
+	 */
+	@property({ type: Boolean }) short = false
 
 	static override get styles() {
 		return css`
@@ -59,7 +73,7 @@ export class PleiadeanDateView extends Component {
 	}
 
 	override get template() {
-		const face = html`
+		const face = this.short ? html`<span>${this.date.toString()}</span>` : html`
 			<span>${this.date.day}</span><span class='day-suffix'>${getOrdinalSuffix(this.date.day)}</span>
 			<span> of </span>
 			<span class='month'>${this.date.monthName},</span>

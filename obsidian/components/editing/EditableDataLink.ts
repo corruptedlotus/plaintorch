@@ -16,6 +16,13 @@ export class EditablePart<T> extends Component {
 	 */
 	@property({ type: Boolean, reflect: true }) nullable = false
 
+	/**
+	 * Holds the field inert: it still draws its read-only face but refuses to enter editing. A composite editable
+	 * (e.g. {@link EditableOrbitDatetime}) uses this to embed the plain field's face while it is not itself in
+	 * editing mode, then lifts it to let the field be edited. Off by default, so a standalone field is unchanged.
+	 */
+	@property({ type: Boolean, reflect: true }) disabled = false
+
 	/** The glyph drawn for an absent value; overridable, or replaced wholesale via the `null` slot. */
 	@property() nullGlyph: IconName = defaultNullGlyph
 
@@ -25,6 +32,10 @@ export class EditablePart<T> extends Component {
 
 	@eventListener({ type: 'click', target: this })
 	protected handleClick() {
+		if (this.disabled) {
+			return
+		}
+
 		this.beginEditing()
 	}
 
@@ -104,9 +115,18 @@ export class EditablePart<T> extends Component {
 			:host(:hover) {
 				outline-color: var(--p7t-flare-accent, var(--interactive-accent));
 			}
-			
+
 			:host([active]) {
 				animation: pulse .7s ease-in-out infinite alternate;
+			}
+
+			/* An inert field reads as plain text: no editability outline, no edit cursor. */
+			:host([disabled]) {
+				cursor: default;
+			}
+
+			:host([disabled]:hover) {
+				outline-color: transparent;
 			}
 
 			${nullGlyphStyle}

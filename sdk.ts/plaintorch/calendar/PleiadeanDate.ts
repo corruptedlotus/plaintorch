@@ -85,6 +85,39 @@ export class PleiadeanDate {
 		return new Date(epochUtcMs + daysOffset * dayMilliseconds)
 	}
 
+	/**
+	 * Parses a stored ISO date into its Pleiadean day, anchored in **UTC** — the single inverse of the calendar's
+	 * UTC serialization ({@link toDate} produces UTC midnights, {@link toISODate} reads them back out).
+	 *
+	 * This is the one place a `YYYY-MM-DD` string becomes a calendar day. It exists because {@link fromDate} takes a
+	 * `Date` — an instant — which forces every caller to first pin a bare calendar day to *some* time zone; doing that
+	 * ad hoc (one caller local midnight, another UTC midnight) is exactly what let the same date read as two different
+	 * Pleiadean days across the app. A bare `YYYY-MM-DD` is read as that UTC calendar day and never shifted into the
+	 * viewer's zone; a full timestamp is reduced to the UTC day it falls on. Throws on an unparseable string, like
+	 * {@link fromDate}; use {@link tryFromISO} for the nullable form.
+	 */
+	public static fromISO(iso: string): PleiadeanDate {
+		const bare = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim())
+		const date = bare
+			? new Date(Date.UTC(Number(bare[1]), Number(bare[2]) - 1, Number(bare[3])))
+			: new Date(iso)
+		return PleiadeanDate.fromDate(date)
+	}
+
+	/** {@link fromISO} for a value that may be absent or malformed: returns `undefined` instead of throwing. */
+	public static tryFromISO(iso: string | undefined | null): PleiadeanDate | undefined {
+		if (!iso) {
+			return undefined
+		}
+
+		try {
+			return PleiadeanDate.fromISO(iso)
+		}
+		catch {
+			return undefined
+		}
+	}
+
 	public static fromDate(date: Date): PleiadeanDate {
 		if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
 			throw new TypeError("A valid Date is required")
@@ -149,6 +182,11 @@ export class PleiadeanDate {
 		const nextStart = resolvePersianYearStartUtc(persianYear + 1)
 		const daySpan = Math.floor((nextStart.getTime() - thisStart.getTime()) / dayMilliseconds)
 		return daySpan === 366
+	}
+
+	/** This day as the `YYYY-MM-DD` ISO string the core stores — the inverse of {@link fromISO}, anchored in UTC. */
+	public toISODate(): string {
+		return this.toDate().toISOString().slice(0, 10)
 	}
 
 	public toString() {
