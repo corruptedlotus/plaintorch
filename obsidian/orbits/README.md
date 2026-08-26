@@ -35,7 +35,7 @@ eventives from the core rather than resolving occurrences client-side.
 `shortHumanizer.ts` (`OrbitShortHumanizer`) is **not** vendored — upstream has no short form, so
 this is PLAINTORCH's own rendering and follows the plugin's strict `tsconfig` (no `@ts-nocheck`).
 It exists for space-constrained frontend chips (`p7t-schedule-item short`, the idle face of
-`p7t-editable-orbit-datetime`), where the full phrase is too long to sit inline.
+`p7t-editable-schedule`), where the full phrase is too long to sit inline.
 
 It mirrors the vendored humanizer's three shapes — the weekly-day shorthand, the clock shorthand,
 and the regular unit assembly — but emits an abbreviated, **prefix-ordered** reading instead of
