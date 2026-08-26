@@ -56,6 +56,7 @@ export class ObjectiveItem extends EntityItem<Objective> {
 		if (added) {
 			await Promise.all([
 				core.repos.objectives.refresh(objectiveId),
+				core.repos.polaris.revalidateObserved(),
 				core.repos.briefing.revalidateIfObserved()
 			])
 		}
