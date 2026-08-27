@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
+using Pleiades.Saga;
 using Pleiades.Tests.Harness;
 using Pleiades.Vault.Database;
 using Xunit;
@@ -15,7 +16,7 @@ namespace Pleiades.Tests.Core;
 /// </summary>
 public sealed class LorePageStorageTests : VaultTestBase
 {
-	private Task<LorePageRecord> CreateAsync(string? parentPuck, string title)
+	private Task<LorePage> CreateAsync(string? parentPuck, string title)
 		=> Vault.WithScopeAsync(services => services.GetRequiredService<ILorePageApi>()
 			.CreateAsync(new LorePageCreateRequest(parentPuck, title), TestContext.Current.CancellationToken));
 
@@ -32,8 +33,8 @@ public sealed class LorePageStorageTests : VaultTestBase
 		Assert.Equal("Era1/Cha1/Act1", act.Puck);
 		Assert.Equal("Era1/Cha1/Act1/p1", phase.Puck);
 
-		Assert.Equal("Era1", chapter.ParentPuck);
-		Assert.Equal("Era1/Cha1/Act1", phase.ParentPuck);
+		Assert.Equal("Era1", chapter.ParentId);
+		Assert.Equal("Era1/Cha1/Act1", phase.ParentId);
 		Assert.Equal("p", phase.Level);
 
 		// Each level's file sits nested inside its parent's folder, and the phase file exists at the deepest path.

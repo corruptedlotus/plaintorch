@@ -5,7 +5,7 @@ import type { GridRow } from './entityTree'
  * Flattens the lore pages into the rows the grid renders, mirroring {@link buildGridRows} for the backlog.
  *
  * Lore is a strict Era → Chapter → Act → Phase hierarchy of one entity, so the shape comes entirely from each page's
- * `parentPuck`. Siblings are ordered by narrative index, and a page whose parent is missing is surfaced as a root
+ * `parentId`. Siblings are ordered by narrative index, and a page whose parent is missing is surfaced as a root
  * rather than dropped. Each row also carries whether it is {@link GridRow.active} — see {@link markActive}.
  */
 export function buildLoreRows(pages: readonly LorePage[], toggled: ReadonlySet<string>, expandedByDefault = false): GridRow[] {
@@ -14,7 +14,7 @@ export function buildLoreRows(pages: readonly LorePage[], toggled: ReadonlySet<s
 	const byParent = new Map<string, LorePage[]>()
 
 	for (const page of pages) {
-		const parent = page.parentPuck
+		const parent = page.parentId
 		if (parent && known.has(parent)) {
 			group(byParent, parent, page)
 		} else {

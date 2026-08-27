@@ -45,7 +45,7 @@ public sealed class LorePageModule : Module
 			return updated is null ? Results.NotFound() : Results.Ok(updated);
 		});
 
-		group.MapGet("/{*puck}", async (string puck, ILorePageApi api, CancellationToken cancellationToken) =>
+		group.MapGet("/{*puck:minlength(1)}", async (string puck, ILorePageApi api, CancellationToken cancellationToken) =>
 		{
 			if (string.IsNullOrWhiteSpace(puck))
 			{
@@ -56,7 +56,7 @@ public sealed class LorePageModule : Module
 			return lorePage is null ? Results.NotFound() : Results.Ok(lorePage);
 		});
 
-		group.MapPut("/{*puck}", async (string puck, LorePageUpdate request, ILorePageApi api, CancellationToken cancellationToken) =>
+		group.MapPut("/{*puck:minlength(1)}", async (string puck, LorePageUpdate request, ILorePageApi api, CancellationToken cancellationToken) =>
 		{
 			if (string.IsNullOrWhiteSpace(puck))
 			{
@@ -67,7 +67,7 @@ public sealed class LorePageModule : Module
 			return updated is null ? Results.NotFound() : Results.Ok(updated);
 		});
 
-		group.MapDelete("/{*puck}", async (string puck, ILorePageApi api, CancellationToken cancellationToken) =>
+		group.MapDelete("/{*puck:minlength(1)}", async (string puck, ILorePageApi api, CancellationToken cancellationToken) =>
 		{
 			if (string.IsNullOrWhiteSpace(puck))
 			{

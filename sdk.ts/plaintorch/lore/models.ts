@@ -2,13 +2,15 @@ import { model } from "@a11d/api-dotnet"
 
 @model("LorePage")
 export class LorePage {
-	get id() {
-		return this.puck
-	}
-	puck!: string
+	// The lore API returns the entity (not a record projection), so the wire carries a real `id` — this must be a
+	// stored field, not a getter over `puck`, or the identity map cannot absorb it and every `id` read is undefined.
+	id!: string
 	title!: string
+	/** Same value as {@link id}; the entity also serializes its frontmatter PUCK. */
+	puck?: string
 	overrideIdentifier?: string
-	parentPuck?: string
+	/** The parent lore PUCK, driving the hierarchy. */
+	parentId?: string
 	beginning?: string
 	level?: string
 	relativePath?: string

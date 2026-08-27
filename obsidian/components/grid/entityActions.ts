@@ -181,6 +181,11 @@ export async function openEntityNote(entity: { id: string }): Promise<void> {
 	getWorkspace().openLinkText(existence.associatedNote, '', true)
 }
 
+/** Opens a known vault-relative markdown path in a new tab, normalizing separators for Obsidian. */
+export function openNotePath(vaultRelativePath: string): void {
+	getWorkspace().openLinkText(vaultRelativePath.replace(/\\/g, '/'), '', true)
+}
+
 /** The choices offered for creating something anywhere, in the order the FAB presents them. */
 export function creationActions(directiveId?: string, kinds?: readonly EntityKind[]): ExpandingAction[] {
 	const offered = kinds ?? ['lunar-directive', 'stellar-directive', 'objective', 'fate', 'decree'] as const

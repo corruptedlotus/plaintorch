@@ -86,23 +86,6 @@ public sealed record WatcherIssueReport(
 	IReadOnlyList<WatcherCriterionRecord> Criteria);
 
 /// <summary>
-/// Represents a saga lore page payload exposed by the API.
-/// </summary>
-public sealed record LorePageRecord(
-	string Puck,
-	string Title,
-	string? OverrideIdentifier,
-	string? ParentPuck,
-	DateOnly? Beginning,
-	string Level,
-	string RelativePath,
-	int? Era,
-	int? Chapter,
-	int? Act,
-	int? Phase,
-	DateTimeOffset IndexedUtc);
-
-/// <summary>
 /// Represents an in-place edit of a lore page's mutable metadata. Its hierarchy (level and narrative index) stays
 /// path-derived and is not editable here; the title (which renames the self-named folder) and the frontmatter-backed
 /// beginning date are.

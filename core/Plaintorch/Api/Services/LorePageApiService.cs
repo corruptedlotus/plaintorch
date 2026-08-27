@@ -35,17 +35,16 @@ public sealed class LorePageApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<IReadOnlyList<LorePageRecord>> ListAsync(CancellationToken cancellationToken = default)
+	public async Task<IReadOnlyList<LorePage>> ListAsync(CancellationToken cancellationToken = default)
 	{
-		var lorePages = await context.LorePages
+		return await context.LorePages
 			.AsNoTracking()
 			.OrderBy(item => item.Id)
 			.ToListAsync(cancellationToken);
-		return lorePages.Select(Map).ToList();
 	}
 
 	/// <inheritdoc />
-	public async Task<LorePageRecord> CreateAsync(LorePageCreateRequest request, CancellationToken cancellationToken = default)
+	public async Task<LorePage> CreateAsync(LorePageCreateRequest request, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(request);
 		ArgumentException.ThrowIfNullOrWhiteSpace(request.Title);
@@ -88,11 +87,11 @@ public sealed class LorePageApiService(
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveLorePageAsync(lorePage, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "lore.create", subject: lorePage, details: new { parent = parent?.Id, level }, cancellationToken: cancellationToken);
-		return Map(lorePage);
+		return lorePage;
 	}
 
 	/// <inheritdoc />
-	public async Task<LorePageRecord?> UpdateAsync(string puck, LorePageUpdate update, CancellationToken cancellationToken = default)
+	public async Task<LorePage?> UpdateAsync(string puck, LorePageUpdate update, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(puck);
 		ArgumentNullException.ThrowIfNull(update);
@@ -131,7 +130,7 @@ public sealed class LorePageApiService(
 		// snapshot lets the storage layer relocate the self-named directory when the title (and therefore folder) changed.
 		await markdownStorageService.SaveLorePageAsync(lorePage, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "lore.update", subject: lorePage, details: new { previousTitle = previous.Title }, cancellationToken: cancellationToken);
-		return Map(lorePage);
+		return lorePage;
 	}
 
 	/// <inheritdoc />
@@ -174,7 +173,7 @@ public sealed class LorePageApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<LorePageRecord?> SetIndexAsync(string puck, int index, CancellationToken cancellationToken = default)
+	public async Task<LorePage?> SetIndexAsync(string puck, int index, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(puck);
 		if (index < 1)
@@ -190,7 +189,7 @@ public sealed class LorePageApiService(
 
 		if ((OwnIndex(page) ?? 0) == index)
 		{
-			return Map(page);
+			return page;
 		}
 
 		// Renumbering changes the page's terminal PUCK token, so its id — and every descendant's id, which is prefixed
@@ -274,7 +273,7 @@ public sealed class LorePageApiService(
 		}
 
 		await auditLogService.WriteAsync("api", "lore.set-index", subject: page, details: new { previousId = oldId, index }, cancellationToken: cancellationToken);
-		return Map(page);
+		return page;
 	}
 
 	private static (string Level, string Discriminator) ResolveChildLevel(LorePage? parent)
@@ -376,22 +375,5 @@ public sealed class LorePageApiService(
 		}
 
 		return Path.GetRelativePath(layout.VaultRoot, absolutePath);
-	}
-
-	private static LorePageRecord Map(LorePage lorePage)
-	{
-		return new LorePageRecord(
-			lorePage.Id,
-			lorePage.Title,
-			lorePage.OverrideIdentifier,
-			lorePage.ParentId,
-			lorePage.Beginning,
-			lorePage.Level,
-			lorePage.RelativePath,
-			lorePage.Era,
-			lorePage.Chapter,
-			lorePage.Act,
-			lorePage.Phase,
-			lorePage.IndexedUtc);
 	}
 }

@@ -2,6 +2,7 @@ import { component, css, html, HTMLTemplateResult, nothing } from '@a11d/lit'
 import { Notice } from 'obsidian'
 import { LorePage } from '@pleiades/sdk'
 import { core, ExpandingAction, IconName } from '..'
+import { openNotePath } from './entityActions'
 import { GridItemBase } from './GridItemBase'
 import { loreLevelIcon, loreLevelLabel, loreOwnIndex, loreRowActions } from './loreActions'
 
@@ -110,6 +111,18 @@ export class LoreGridItem extends GridItemBase {
 
 	protected override get actions(): ExpandingAction[] {
 		return loreRowActions(this.row!.entity as LorePage)
+	}
+
+	// Lore pages carry their own note path, so open it directly rather than resolving it by PUCK — lore ids are not in
+	// the PUCK registry, so the generic resolution can miss them even though the note plainly exists.
+	protected override async open() {
+		const page = this.row!.entity as LorePage
+		if (!page.relativePath) {
+			new Notice('That lore page has no note yet.')
+			return
+		}
+
+		openNotePath(page.relativePath)
 	}
 
 	protected override async persistField(keyPath: string): Promise<void> {
