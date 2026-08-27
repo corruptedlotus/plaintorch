@@ -27,12 +27,25 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 
 			p7t-editable-media.banner {
 				display: flex;
-				width: 100%;
-				height: 132px;
+				width: auto;
+				min-height: auto;
 				border-radius: 8px;
-				margin-bottom: .4em;
+				margin-block: 0 .4em;
+				margin-inline-start: auto;
 				overflow: hidden;
 				box-sizing: border-box;
+
+				&::part(media) {
+					position: absolute;
+					width: 100%;
+					height: 100%;
+					object-fit: cover;
+					object-position: center;
+					inset: 0;
+					border-radius: 16px;
+					z-index: -1;
+					mask-image: linear-gradient(to bottom, white -10%, rgba(0, 0, 0, 0) 95%);
+				}
 			}
 
 			/* While empty, the banner reads as an affordance to add one rather than a blank strip. */
@@ -78,6 +91,7 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 				.value=${directive.banner ?? ''}
 				.default=${''}
 				.entity=${this.mediaEntity}
+				.promptTemplate=${html`<p7t-icon-item icon='lucide:image' text='Change Banner'>Change Banner</p7t-icon-item>`}
 				@change=${(e: Event) => void this.saveBanner(e)}>
 			</p7t-editable-media>
 		`

@@ -27,6 +27,7 @@ export class NoteBanner extends Component {
 				overflow-anchor: auto;
 				white-space: initial;
 				margin-block: -2em 1em !important;
+				contain: none !important;
 			}
 
 			:host([invalid]) {

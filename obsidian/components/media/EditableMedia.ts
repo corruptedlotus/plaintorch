@@ -1,4 +1,4 @@
-import { component, css, html, property } from '@a11d/lit'
+import { component, css, html, nothing, property, TemplateResult } from '@a11d/lit'
 import type { MediaReference } from '@pleiades/sdk'
 import { EditablePart } from '../editing/EditableDataLink'
 import { SelectMediaModal } from './SelectMediaModal'
@@ -28,18 +28,35 @@ export class EditableMedia extends EditablePart<string> {
 	/** The entity this field belongs to, enabling entity-level (`media:`) media; omit for a field with no self folder. */
 	@property({ type: Object }) entity?: MediaEntityRef
 
+	@property({ type: Object }) promptTemplate?: TemplateResult
+
 	static override get styles() {
 		return css`
 			${super.styles}
 
 			:host {
 				cursor: pointer;
+				display: grid;
+				grid-template-rows: 1fr;
+				grid-template-columns: 1fr;
 			}
 
 			/* Fill the frame the host is sized to, so one control serves both a small icon and a full-width banner. */
 			p7t-media {
 				width: 100%;
 				height: 100%;
+				grid-area: 1 / 1;
+			}
+
+			.prompt {
+				grid-area: 1 / 1;
+				opacity: .3;
+				transition: opacity .4s;
+				font-size: .75em;
+
+				&:hover {
+					opacity: .6;
+				}
 			}
 		`
 	}
@@ -54,11 +71,13 @@ export class EditableMedia extends EditablePart<string> {
 	protected override get template() {
 		return html`
 			<p7t-media
+				part='media'
 				?icon=${this.icon}
 				.media=${this.media}
 				.mediaKey=${this.value}
 				.default=${this.default}>
 			</p7t-media>
+			${!this.promptTemplate ? nothing : html`<div part='prompt' class='prompt'>${this.promptTemplate}</div>`}
 		`
 	}
 }
