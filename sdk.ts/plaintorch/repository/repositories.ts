@@ -63,6 +63,8 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	public readonly objectiveList: DerivedRepository<Objective[]>
 	public readonly fateList: DerivedRepository<Fate[]>
 	public readonly decreeList: DerivedRepository<Decree[]>
+	/** Every lore page, in hierarchy order — the record the lore grid observes and rebuilds its tree from. */
+	public readonly loreList: DerivedRepository<LorePage[]>
 
 	/**
 	 * Every dependency edge, and every checkpoint (PEP101).
@@ -121,6 +123,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		this.objectiveList = new DerivedRepository(async () => await client.objectives.list())
 		this.fateList = new DerivedRepository(async () => await client.declaratives.listFates())
 		this.decreeList = new DerivedRepository(async () => await client.declaratives.listDecrees())
+		this.loreList = new DerivedRepository(async () => await client.lore.list())
 
 		this.dependencyList = new DerivedRepository(async () => await client.dependencies.list())
 		this.checkpointList = new DerivedRepository(async () => await client.dependencies.listCheckpoints())
@@ -180,6 +183,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 			this.objectiveList as DerivedRepository<unknown>,
 			this.fateList as DerivedRepository<unknown>,
 			this.decreeList as DerivedRepository<unknown>,
+			this.loreList as DerivedRepository<unknown>,
 			this.dependencyList as DerivedRepository<unknown>,
 			this.checkpointList as DerivedRepository<unknown>,
 			this.onrushCurrent as DerivedRepository<unknown>,

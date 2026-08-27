@@ -177,6 +177,14 @@ public sealed class PlaintorchMarkdownStorageService(
 	}
 
 	/// <summary>
+	/// Deletes a lore page's self-named directory and markdown file.
+	/// </summary>
+	public Task<FileGraveyardEntry?> DeleteLorePageAsync(LorePage lorePage, CancellationToken cancellationToken = default)
+	{
+		return DeleteEntityPathAsync(lorePage, cancellationToken);
+	}
+
+	/// <summary>
 	/// Deletes a Polaris cycle markdown file.
 	/// </summary>
 	public Task<FileGraveyardEntry?> DeletePolarisCycleAsync(PolarisCycle cycle, CancellationToken cancellationToken = default)

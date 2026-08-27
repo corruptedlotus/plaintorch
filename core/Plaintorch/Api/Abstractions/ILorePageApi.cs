@@ -19,8 +19,21 @@ public interface ILorePageApi
 	Task<IReadOnlyList<LorePageRecord>> ListAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Applies an in-place edit to a lore page's frontmatter-backed metadata, writing the change through to its
-	/// file. Returns the updated record, or <see langword="null"/> when no lore page has the given PUCK.
+	/// Creates a lore page beneath the requested parent (or a new Era when none is given), composing its level, narrative
+	/// index, and PUCK identity, and materializing its self-named folder and file. Returns the created record.
+	/// </summary>
+	Task<LorePageRecord> CreateAsync(LorePageCreateRequest request, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Applies an in-place edit to a lore page's title and/or beginning date, writing the change through to its file
+	/// (a title change renames the self-named folder). Returns the updated record, or <see langword="null"/> when no
+	/// lore page has the given PUCK.
 	/// </summary>
 	Task<LorePageRecord?> UpdateAsync(string puck, LorePageUpdate update, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Deletes a lore page and its file. Fails when the page still has child lore pages. Returns <see langword="false"/>
+	/// when no lore page has the given PUCK.
+	/// </summary>
+	Task<bool> DeleteAsync(string puck, CancellationToken cancellationToken = default);
 }

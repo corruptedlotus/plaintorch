@@ -103,11 +103,22 @@ public sealed record LorePageRecord(
 	DateTimeOffset IndexedUtc);
 
 /// <summary>
-/// Represents an in-place edit of a lore page's mutable metadata. Its structural identity (title, hierarchy) is
-/// path-derived and not editable here; only frontmatter-backed fields are.
+/// Represents an in-place edit of a lore page's mutable metadata. Its hierarchy (level and narrative index) stays
+/// path-derived and is not editable here; the title (which renames the self-named folder) and the frontmatter-backed
+/// beginning date are.
 /// </summary>
 public sealed record LorePageUpdate(
+	Optional<string> Title = default,
 	Optional<DateOnly?> Beginning = default);
+
+/// <summary>
+/// Represents a request to create a lore page. The level is derived from the parent (a null parent creates an Era);
+/// the narrative index and PUCK identity are composed by the core from the parent and existing siblings.
+/// </summary>
+public sealed record LorePageCreateRequest(
+	string? ParentPuck,
+	string Title,
+	DateOnly? Beginning = null);
 
 /// <summary>
 /// Represents a generic text search request used by list/find style API actions.

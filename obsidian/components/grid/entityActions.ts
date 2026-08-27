@@ -170,8 +170,8 @@ export async function saveFateSchedule(entity: GridEntity, schedule: ScheduleVal
 		: { date: schedule.date, startTime: schedule.time }))
 }
 
-/** Opens the note an entity is the authority for, in a new tab. */
-export async function openEntityNote(entity: GridEntity): Promise<void> {
+/** Opens the note an entity is the authority for, in a new tab. Takes any entity with a PUCK identity. */
+export async function openEntityNote(entity: { id: string }): Promise<void> {
 	const existence = await core.repos.entityResolution.get(entity.id)
 	if (!existence?.associatedNote) {
 		new Notice('That entity has no note yet.')

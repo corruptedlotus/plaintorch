@@ -14,20 +14,28 @@ export type GridRowKind = 'directive' | 'incentive'
  */
 export type GridGuide = GridRowKind
 
-/** One rendered line of the grid. */
+/**
+ * One rendered line of a grid.
+ *
+ * Deliberately generic so every grid variant — the backlog's directives/incentives, the lore hierarchy — produces
+ * the same row shape and reuses one layout: `entity` is the row's payload of whatever kind, `kind` and `guides` are
+ * plain strings the row draws its icon and indent lining from, and `active` marks a row a variant considers current.
+ */
 export interface GridRow {
 	/** Stable across rebuilds, so Lit keeps the same element for the same entity. */
 	readonly key: string
-	readonly entity: GridEntity
-	readonly kind: GridRowKind
+	readonly entity: { readonly id: string }
+	readonly kind: string
 	readonly depth: number
 	/**
 	 * One entry per indent lane, outermost first, naming the lining that lane draws. Its length is the
 	 * row's depth, and its last entry is the group this row itself belongs to.
 	 */
-	readonly guides: readonly GridGuide[]
+	readonly guides: readonly string[]
 	readonly expandable: boolean
 	readonly expanded: boolean
+	/** Whether the row is part of its grid's "active" set (the lore spine); grids without one leave it unset. */
+	readonly active?: boolean
 }
 
 /** The flat listings a tree is composed from. */

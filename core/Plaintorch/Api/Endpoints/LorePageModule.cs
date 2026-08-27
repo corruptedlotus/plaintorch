@@ -28,6 +28,12 @@ public sealed class LorePageModule : Module
 		group.MapGet("/", async (ILorePageApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListAsync(cancellationToken)));
 
+		group.MapPost("/", async (LorePageCreateRequest request, ILorePageApi api, CancellationToken cancellationToken) =>
+		{
+			var created = await api.CreateAsync(request, cancellationToken);
+			return Results.Created($"/api/lorepages/{created.Puck}", created);
+		});
+
 		group.MapGet("/{*puck}", async (string puck, ILorePageApi api, CancellationToken cancellationToken) =>
 		{
 			if (string.IsNullOrWhiteSpace(puck))
@@ -48,6 +54,17 @@ public sealed class LorePageModule : Module
 
 			var updated = await api.UpdateAsync(puck, request, cancellationToken);
 			return updated is null ? Results.NotFound() : Results.Ok(updated);
+		});
+
+		group.MapDelete("/{*puck}", async (string puck, ILorePageApi api, CancellationToken cancellationToken) =>
+		{
+			if (string.IsNullOrWhiteSpace(puck))
+			{
+				return Results.BadRequest("A lore PUCK is required.");
+			}
+
+			var deleted = await api.DeleteAsync(puck, cancellationToken);
+			return deleted ? Results.NoContent() : Results.NotFound();
 		});
 	}
 }

@@ -6,7 +6,8 @@ const bannerTagByType: Record<string, string> = {
 	'StellarDirective': 'p7t-sdirective-banner',
 	'LunarDirective': 'p7t-ldirective-banner',
 	'Fate': 'p7t-fate-banner',
-	'Decree': 'p7t-decree-banner'
+	'Decree': 'p7t-decree-banner',
+	'LorePage': 'p7t-lore-banner'
 }
 
 /** The banner properties this modal sets; every banner resolves and observes from `puck`. */

@@ -1,7 +1,7 @@
 import { component, css, html } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { LorePage } from '@pleiades/sdk'
-import { core, IconName, ReactiveBinder } from ".."
+import { core, IconName, loreLevelIcon, ReactiveBinder } from ".."
 import { toRomanNumeral } from "@pleiades/sdk/helpers"
 
 @component('p7t-lore-banner')
@@ -93,13 +93,7 @@ export class LoreBanner extends EntityBanner<LorePage> {
 	protected override readonly entityTypeName = 'LorePage' as const
 
 	protected override get resolvedIcon(): IconName {
-		switch (this.entity?.level) {
-			case 'Era': return 'lore-era'
-			case 'Cha': return 'lore-chapter'
-			case 'Act': return 'lore-act'
-			case 'p': return 'lore-phase'
-			default: return 'lorepage'
-		}
+		return loreLevelIcon(this.entity?.level)
 	}
 
 	override icon: IconName = 'lorepage'

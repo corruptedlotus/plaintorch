@@ -12,7 +12,7 @@ namespace Pleiades.Saga;
 [PuckFormat("Era{?}/Cha{?}/Act{?}/p{?}")]
 [VaultStorage(
 	LocationKey = VaultLocationKeys.Saga,
-	Mode = VaultStorageMode.FileFirst,
+	Mode = VaultStorageMode.Synced,
 	Shape = VaultStorageShape.SelfNamedDirectory,
 	ParentIdProperty = nameof(ParentId),
 	ParentEntityType = typeof(LorePage),
