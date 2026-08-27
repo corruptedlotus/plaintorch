@@ -1,3 +1,4 @@
+export * from './globalTick'
 export * from './PleiadeanDateView'
 export * from './TimeView'
 export * from './DatetimeView'

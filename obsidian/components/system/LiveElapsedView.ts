@@ -1,8 +1,10 @@
 /**
- * A view that shows the elapsed time from a given epoch, updating every second.
+ * A view that shows the elapsed time from a given epoch, updating every second off the app-wide {@link TickController}
+ * (one shared timer, not a per-view interval).
  */
 
 import { Component, component, css, html, nothing, property } from "@a11d/lit";
+import { TickController } from "./globalTick";
 
 @component('p7t-elapsed-view')
 export class LiveElapsedView extends Component {
@@ -10,20 +12,8 @@ export class LiveElapsedView extends Component {
 	@property({ type: Boolean }) showDays = false
 	@property({ type: Boolean }) absolute = false
 
-
-	private intervalId?: number
-
-	override connectedCallback() {
-		super.connectedCallback()
-		this.intervalId = window.setInterval(() => this.requestUpdate(), 1000)
-	}
-
-	override disconnectedCallback() {
-		super.disconnectedCallback()
-		if (this.intervalId) {
-			clearInterval(this.intervalId)
-		}
-	}
+	/** Re-renders once a second off the shared app tick. */
+	protected readonly tick = new TickController(this)
 
 	static override get styles() {
 		return css`
