@@ -31,7 +31,7 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 				min-height: auto;
 				border-radius: 8px;
 				margin-block: -.4em .4em;
-				margin-inline: auto -.6em;
+				margin-inline: 0 -.6em;
 				overflow: hidden;
 				box-sizing: border-box;
 
@@ -51,6 +51,11 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 			/* While empty, the banner reads as an affordance to add one rather than a blank strip. */
 			p7t-editable-media.banner.empty {
 				border: 2px dashed color-mix(in srgb, var(--text-normal) 22%, transparent);
+			}
+
+			.top-wrapper {
+				display: flex;
+				justify-content: space-between;
 			}
 		`
 	}
@@ -78,6 +83,8 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 		`
 	}
 
+	protected get stampTemplate() { return html`` }
+
 	protected override get bannerImageTemplate() {
 		const directive = this.entity
 		if (!directive) {
@@ -85,15 +92,20 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 		}
 
 		return html`
-			<p7t-editable-media
-				class='banner ${directive.bannerMedia ? '' : 'empty'}'
-				.media=${directive.bannerMedia}
-				.value=${directive.banner ?? ''}
-				.default=${''}
-				.entity=${this.mediaEntity}
-				.promptTemplate=${html`<p7t-icon-item small icon='lucide:image' text='Change Banner'>Change Banner</p7t-icon-item>`}
-				@change=${(e: Event) => void this.saveBanner(e)}>
-			</p7t-editable-media>
+			<div class='top-wrapper'>
+				<span class='stamp'>
+					${this.stampTemplate}
+				</span>
+				<p7t-editable-media
+					class='banner ${directive.bannerMedia ? '' : 'empty'}'
+					.media=${directive.bannerMedia}
+					.value=${directive.banner ?? ''}
+					.default=${''}
+					.entity=${this.mediaEntity}
+					.promptTemplate=${html`<p7t-icon-item small icon='lucide:image' text='Change Banner'>Change Banner</p7t-icon-item>`}
+					@change=${(e: Event) => void this.saveBanner(e)}>
+				</p7t-editable-media>
+			</div>
 		`
 	}
 

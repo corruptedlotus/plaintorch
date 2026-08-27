@@ -100,6 +100,7 @@ export abstract class GridItemBase extends Component {
 				flex: 0 0 var(--p7t-grid-lane-width);
 				width: var(--p7t-grid-lane-width);
 				border-inline-start: 2px solid transparent;
+				margin-block: -.2em;
 			}
 
 			.notch {
@@ -113,8 +114,8 @@ export abstract class GridItemBase extends Component {
 			}
 
 			.notch p7t-icon {
-				width: 1.3em;
-				height: 1.3em;
+				width: 1.4em;
+				height: 1.4em;
 			}
 
 			.notch.expandable {
@@ -169,11 +170,6 @@ export abstract class GridItemBase extends Component {
 				padding-inline: .2em;
 				font-size: .9em;
 				white-space: nowrap;
-			}
-
-			p7t-editable-starfire p7t-icon {
-				width: 1.2em;
-				height: 1.2em;
 			}
 
 			/* Row-level affordances stay out of the way until the row is under the pointer. */

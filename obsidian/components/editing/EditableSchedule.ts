@@ -35,6 +35,8 @@ export class EditableSchedule extends ScheduleItem {
 	/** Whether the datetime mode edits a start–end range (a second time field) rather than a single time. */
 	@property({ type: Boolean }) range = false
 
+	@property({ type: Boolean }) shortOrbit = false
+
 	@event() schedulechange!: EventDispatcher<ScheduleValue>
 
 	/** The chosen mode; falls back to whichever shape the values already describe (orbit takes precedence). */
@@ -193,6 +195,7 @@ export class EditableSchedule extends ScheduleItem {
 		return html`
 			<p7t-editable-orbit
 				?disabled=${!this.editing}
+				?short=${this.shortOrbit}
 				.value=${this.orbit}
 				@change=${(e: Event) => this.commit('orbit', (e.target as EditablePart<string>).value)}>
 			</p7t-editable-orbit>

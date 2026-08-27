@@ -67,6 +67,7 @@ export class GridItem extends GridItemBase {
 				// lets the user switch and clears whichever it is not.
 				const fate = entity as { orbit?: string, date?: string, startTime?: string }
 				return html`<p7t-editable-schedule
+					shortOrbit
 					.orbit=${fate.orbit}
 					.date=${fate.date}
 					.time=${fate.startTime}
@@ -74,7 +75,7 @@ export class GridItem extends GridItemBase {
 				</p7t-editable-schedule>`
 			}
 			case 'decree':
-				return html`<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>`
+				return html`<p7t-editable-orbit short ${this.binder.bind('orbit')}></p7t-editable-orbit>`
 			case 'lunar-directive':
 				// A lunar directive carries no measure of its own, so its otherwise-empty column hosts the button
 				// that opens its editing modal — the one place its timeframes are managed (PEP100 patch).

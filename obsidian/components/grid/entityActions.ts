@@ -13,8 +13,8 @@ const kindIcons: Record<EntityKind, IconName> = {
 	'objective': 'objective',
 	// Fate and decree stand in with these to match their banners (which set the same icons); dedicated
 	// 'fate'/'decree' icons now exist but are not adopted here yet, to keep the grid and banners aligned.
-	'fate': 'eventive',
-	'decree': 'everglow'
+	'fate': 'fate',
+	'decree': 'decree'
 }
 
 const kindLabels: Record<EntityKind, string> = {

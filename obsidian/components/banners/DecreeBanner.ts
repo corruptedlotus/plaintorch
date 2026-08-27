@@ -13,7 +13,7 @@ import { core, IconName, ReactiveBinder, SelectDecreeStatusModal } from ".."
 @component('p7t-decree-banner')
 export class DecreeBanner extends EntityBanner<Decree> {
 	// TODO(icons): no dedicated 'decree' icon exists yet; 'everglow' stands in for the enduring/law-like nature.
-	override icon: IconName = 'everglow'
+	override icon: IconName = 'decree'
 
 	@state() activePolaris?: PolarisCycle
 
@@ -122,19 +122,8 @@ export class DecreeBanner extends EntityBanner<Decree> {
 				height: 1.4em;
 			}
 
-			.reflection {
-				align-self: flex-start;
-				user-select: none;
-			}
-
-			.reflection p7t-icon-item::part(icon) {
-				width: 1.4em;
-				height: 1.4em;
-			}
-
 			.reflection p7t-icon-item {
 				font-weight: 300;
-				font-size: .9em;
 			}
 
 			.schedule {
@@ -154,6 +143,14 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		`
 	}
 
+	protected override get preHeadingTemplate() {
+		return this.isLunarHierarchy ? html`
+			<span>Moonlight Decree</span>
+		` : html`
+			<span>Pleiades Decree</span>
+		`
+	}
+
 	protected override get secondary() {
 		return html`
 			<p7t-directive-item .directive=${this.entity!.directive}></p7t-directive-item>
@@ -170,8 +167,8 @@ export class DecreeBanner extends EntityBanner<Decree> {
 				.doEdit=${(current?: boolean) => Promise.resolve(!current)}
 				${this.binder.bind('reflect')}>
 				<p7t-icon-item
-					.icon=${reflected ? 'reflective' : ('attentive' as IconName)}
-					.text=${reflected ? 'Lunar Reflection Enabled' : 'Not Reflected'}>
+					.icon=${reflected ? 'reflective' : ('attentive' as IconName)}>
+					${reflected ? 'Lunar Reflection Enabled' : 'Not Reflected'}
 				</p7t-icon-item>
 			</p7t-editable>
 		`
@@ -204,10 +201,6 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		return html`
 			<p7t-editable-plaintext required label='Title' placeholder='Untitled' ${this.binder.bind('title')}></p7t-editable-plaintext>
 		`
-	}
-
-	protected override get preHeadingTemplate() {
-		return html`<span>Pleiades Decree</span>`
 	}
 
 	protected override get subHeadingTemplate() {

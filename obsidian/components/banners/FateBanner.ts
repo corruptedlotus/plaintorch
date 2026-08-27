@@ -14,7 +14,7 @@ import type { ScheduleValue } from "../editing/EditableSchedule"
 @component('p7t-fate-banner')
 export class FateBanner extends EntityBanner<Fate> {
 	// TODO(icons): no dedicated 'fate' icon exists yet; 'eventive' stands in for now.
-	override icon: IconName = 'eventive'
+	override icon: IconName = 'fate'
 
 	@state() nextEventive?: Eventive
 

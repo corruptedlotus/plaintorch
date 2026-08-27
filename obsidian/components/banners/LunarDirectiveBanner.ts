@@ -50,6 +50,14 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 		}
 	})
 
+	protected override get stampTemplate() {
+		return html`
+			<p7t-icon-item class='pml-stamp' icon='project-moonlight'>
+				Part of <span>Project Moonlight</span>
+			</p7t-icon-item>
+		`
+	}
+
 	private async revealAssociatedNote(directiveId: string) {
 		const existence = await core.repos.entityResolution.refresh(directiveId)
 		const app = (window as any).app as App
@@ -81,6 +89,21 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 
 			.codename {
 				text-transform: uppercase;
+			}
+
+			.pml-stamp {
+				color: var(--text-muted);
+				font-family: var(--font-interface);
+				font-size: .9em;
+				font-weight: 300;
+
+				&::part(text) {
+					
+				}
+
+				& span {
+					color: var(--text-normal);
+				}
 			}
 		`
 	}
