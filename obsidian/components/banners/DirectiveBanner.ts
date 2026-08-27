@@ -30,8 +30,8 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 				width: auto;
 				min-height: auto;
 				border-radius: 8px;
-				margin-block: 0 .4em;
-				margin-inline-start: auto;
+				margin-block: -.4em .4em;
+				margin-inline: auto -.6em;
 				overflow: hidden;
 				box-sizing: border-box;
 
@@ -91,7 +91,7 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 				.value=${directive.banner ?? ''}
 				.default=${''}
 				.entity=${this.mediaEntity}
-				.promptTemplate=${html`<p7t-icon-item icon='lucide:image' text='Change Banner'>Change Banner</p7t-icon-item>`}
+				.promptTemplate=${html`<p7t-icon-item small icon='lucide:image' text='Change Banner'>Change Banner</p7t-icon-item>`}
 				@change=${(e: Event) => void this.saveBanner(e)}>
 			</p7t-editable-media>
 		`

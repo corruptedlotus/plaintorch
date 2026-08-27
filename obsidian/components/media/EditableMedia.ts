@@ -50,11 +50,12 @@ export class EditableMedia extends EditablePart<string> {
 
 			.prompt {
 				grid-area: 1 / 1;
-				opacity: .3;
+				opacity: .2;
 				transition: opacity .4s;
 				font-size: .75em;
+				margin: .2em .4em;
 
-				&:hover {
+				:host(:hover) & {
 					opacity: .6;
 				}
 			}

@@ -14,7 +14,10 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 
 	protected override get preHeadingTemplate() {
 		return html`
-			<span>Stellar Directive · Codename <p7t-editable-plaintext class='codename' placeholder='none' ${this.binder.bind('codename')}></p7t-editable-plaintext></span>
+			<span>
+				${this.entity?.codename ? 'Codename' : 'Stellar Directive ·'}
+				<p7t-editable-plaintext class='codename' placeholder='-' ${this.binder.bind('codename')}></p7t-editable-plaintext>
+			</span>
 		`
 	}
 

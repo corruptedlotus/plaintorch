@@ -113,15 +113,9 @@ export class ExecutiveEditor extends Component {
 			}
 
 			/* Both indicators edit in place, so they align to the start rather than centring. */
-			.status p7t-editable {
+			.status > * {
 				justify-content: flex-start;
 				align-self: stretch;
-			}
-
-			/* The affinity chip aligns to the status item beside it — same glyph size, same row rhythm. */
-			.status p7t-timeframe-item::part(icon) {
-				width: 2em;
-				height: 2em;
 			}
 
 			.allocations {
