@@ -10,6 +10,7 @@ using Pleiades.Vault;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Watcher;
+using System.Reflection;
 
 namespace Pleiades.Plaintorch.Api.Services;
 
@@ -310,10 +311,11 @@ public sealed class SystemApiService(
 		CancellationToken cancellationToken,
 		ILogger? logger = null)
 	{
-		/*if (!string.IsNullOrWhiteSpace(pathPuck))
+		var storage = entityType.GetCustomAttribute<VaultStorageAttribute>(inherit: true);
+		if (storage?.PuckStorage == VaultPuckStorage.Index && !string.IsNullOrWhiteSpace(pathPuck))
 		{
 			return (pathPuck, pathTitle);
-		}*/
+		}
 
 		if (entityType == typeof(Objective))
 		{

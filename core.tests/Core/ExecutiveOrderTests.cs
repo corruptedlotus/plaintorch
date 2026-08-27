@@ -33,6 +33,31 @@ public sealed class ExecutiveOrderTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task Resolve_note_returns_executive_order_puck_for_order_markdown()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+		var sprint = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IOnrushSprintApi>()
+			.StartNewAsync(cancellationToken: cancellationToken));
+		var order = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IOnrushSprintApi>()
+			.IssueExecutiveOrderAsync(sprint.Id, new ExecutiveOrderPlan("No Context Switching"), cancellationToken));
+
+		var orderPath = Vault.MarkdownFilesUnder(Vault.Layout.OnrushRoot)
+			.Single(file => file.Contains("ExecutiveOrders") && file.Contains(order.Id, StringComparison.OrdinalIgnoreCase));
+		var vaultRelativePath = Path.GetRelativePath(Vault.VaultRoot, orderPath);
+
+		var resolution = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<ISystemApi>()
+			.ResolveVaultNoteAsync(vaultRelativePath, cancellationToken));
+
+		Assert.True(resolution.Exists);
+		Assert.Equal(order.Id, resolution.Puck);
+		Assert.Equal("executive-order", resolution.EntityKind);
+		Assert.Equal("ExecutiveOrder", resolution.EntityType);
+	}
+
+	[Fact]
 	public async Task Order_counters_increment_per_owning_onrush()
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
