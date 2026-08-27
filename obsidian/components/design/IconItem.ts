@@ -27,10 +27,6 @@ export class IconItem<T = unknown> extends InfoItem {
 	static override get styles() {
 		return css`
 			${super.styles}
-
-			:host {
-				display: flex;
-			}
 		`
 	}
 

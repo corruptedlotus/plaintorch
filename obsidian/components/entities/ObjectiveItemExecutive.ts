@@ -22,7 +22,7 @@ export class ObjectiveItemExecutive extends ObjectiveItem {
 	 * in whether or not a timeframe is in play.
 	 */
 	protected override get info() {
-		return html`<p7t-timeframe-item affinity mode='icon' .timeframe=${this.executive?.affinityTimeframe}></p7t-timeframe-item>`
+		return html`<p7t-timeframe-item affinity small mode='icon' .timeframe=${this.executive?.affinityTimeframe}></p7t-timeframe-item>`
 	}
 
 	protected override get extraActionTemplate() {

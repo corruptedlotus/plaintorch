@@ -1,4 +1,4 @@
-import { Component, css, html, nothing, property } from '@a11d/lit'
+import { Component, css, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
 import { IconName } from 'components/PleiadesIcon'
 import { defaultNullGlyph, nullGlyphStyle, nullGlyphTemplate } from './nullGlyph'
 import '../PleiadesIcon'
@@ -65,15 +65,15 @@ export abstract class InfoItem extends Component {
 			}
 
 			.info-icon {
-				width: 1.2em;
-				height: 1.2em;
+				width: 1.8em;
+				height: 1.8em;
 				flex: 0 0 auto;
 			}
 
 			/* The compact form: one step down for a tight row or an inline mention. */
 			:host([small]) .info-icon {
-				width: 1em;
-				height: 1em;
+				width: 1.2em;
+				height: 1.2em;
 			}
 
 			.info-text {
@@ -94,7 +94,7 @@ export abstract class InfoItem extends Component {
 	}
 
 	/** The chip's label. Defaults to the slotted content (the manual {@link IconItem}); a chip overrides it. */
-	protected get bulletText(): unknown {
+	protected get bulletText(): string | HTMLTemplateResult {
 		return html`<slot></slot>`
 	}
 

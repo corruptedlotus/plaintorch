@@ -36,11 +36,11 @@ export class ObjectiveItem extends EntityItem<Objective> {
 
 	protected override get preTitle() {
 		// The chip carries the directive glyph, the title, the "World Quest" placeholder, and the mini-banner tooltip.
-		return html`<p7t-directive-item .directive=${this.objective!.directive}></p7t-directive-item>`
+		return html`<p7t-directive-item small .directive=${this.objective!.directive}></p7t-directive-item>`
 	}
 
 	protected override get info() {
-		return html`<p7t-celestron-item .value=${this.objective!.celestronValue}></p7t-celestron-item>`
+		return html`<p7t-celestron-item small .value=${this.objective!.celestronValue}></p7t-celestron-item>`
 	}
 
 	protected override get extraActionTemplate(): HTMLTemplateResult | undefined {

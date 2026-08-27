@@ -189,18 +189,21 @@ export class ExecutiveEditor extends Component {
 
 				<div class='status'>
 					<span class='label'>Status</span>
+
 					<p7t-editable
 						.value=${executive.executed}
 						.doEdit=${(executed: boolean | undefined) => Promise.resolve(!executed)}
 						@change=${(e: Event) => this.commitExecuted(e)}>
-						<p7t-executed-item ?executed=${executive.executed}></p7t-executed-item>
+						<p7t-executed-item small ?executed=${executive.executed}></p7t-executed-item>
 					</p7t-editable>
+					
 					${!objective ? nothing : html`
 						<p7t-editable
 							.value=${objective.status}
 							.doEdit=${SelectObjectiveStatusModal.prompt}
 							@change=${(e: Event) => this.commitStatus(e)}>
 							<p7t-status-item
+								small
 								.status=${ObjectiveStatus[objective.status] as keyof typeof ObjectiveStatus}>
 							</p7t-status-item>
 						</p7t-editable>
@@ -210,7 +213,7 @@ export class ExecutiveEditor extends Component {
 						.value=${executive.affinityTimeframe}
 						.doEdit=${SelectTimeframeModal.prompt}
 						@change=${(e: Event) => this.commitAffinity(e)}>
-						<p7t-timeframe-item nullable .timeframe=${executive.affinityTimeframe}></p7t-timeframe-item>
+						<p7t-timeframe-item small nullable .timeframe=${executive.affinityTimeframe}></p7t-timeframe-item>
 					</p7t-editable>
 				</div>
 			</div>
