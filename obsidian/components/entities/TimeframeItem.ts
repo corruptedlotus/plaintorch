@@ -1,5 +1,6 @@
 import { component, css, html, nothing, property } from '@a11d/lit'
 import { ObjectiveCollege, TimeframeInclusion, type MediaReference } from '@pleiades/sdk'
+import { IconName } from 'components/PleiadesIcon'
 import { humanizeOrbit } from 'orbits'
 import { getApp, resolveMediaIcon } from '..'
 import { InfoItem } from '../design/InfoItem'
@@ -41,15 +42,11 @@ export class TimeframeItem extends InfoItem {
 		return css`
 			${super.styles}
 
-			.named {
-				display: inline-flex;
-				align-items: center;
-				gap: .4ch;
+			.info-bullet {
 				font-weight: 400;
 			}
 
-			.named p7t-icon,
-			.icon-only {
+			.info-icon {
 				width: 20px;
 				height: 20px;
 			}
@@ -84,29 +81,37 @@ export class TimeframeItem extends InfoItem {
 		return resolveMediaIcon(this.timeframe?.iconMedia, getApp(), 'lucide:clock')
 	}
 
-	protected override get content() {
+	/** The timeframe's media companion (or the polaris glyph for an unset affinity), drawn through the base icon slot. */
+	protected override get bulletIcon(): IconName | (string & {}) | undefined {
+		if (!this.timeframe) {
+			return this.affinity ? 'polaris' : undefined
+		}
+
+		return this.glyph
+	}
+
+	protected override get bulletText() {
 		const timeframe = this.timeframe
 		if (!timeframe) {
-			// Affinity mode has its own empty state (No Affinity); otherwise a nullable chip shows the null glyph.
-			if (this.affinity) {
-				return this.mode === 'icon'
-					? html`<p7t-icon class='icon-only' part='icon' icon='polaris'></p7t-icon>`
-					: html`<span class='named'><p7t-icon part='icon' icon='polaris'></p7t-icon><span>No Affinity</span></span>`
-			}
+			return 'No Affinity'
+		}
 
+		return this.affinity ? `${timeframe.title} Affinity` : timeframe.title
+	}
+
+	/** `icon` mode is the glyph alone — an affined executive's compact form; the label moves to the tooltip. */
+	protected override get textHidden(): boolean {
+		return this.mode === 'icon'
+	}
+
+	protected override get content() {
+		// Only a non-affinity empty timeframe steps outside the icon-text layout, for the null glyph (or nothing);
+		// an empty affinity keeps the layout to read "No Affinity" behind the polaris glyph.
+		if (!this.timeframe && !this.affinity) {
 			return this.nullable ? this.nullGlyphTemplate : nothing
 		}
 
-		if (this.mode === 'icon') {
-			return html`<p7t-icon class='icon-only' part='icon' .icon=${this.glyph}></p7t-icon>`
-		}
-
-		return html`
-			<span class='named'>
-				<p7t-icon part='icon' .icon=${this.glyph}></p7t-icon>
-				<span>${this.affinity ? `${timeframe.title} Affinity` : timeframe.title}</span>
-			</span>
-		`
+		return super.content
 	}
 
 	protected override get tooltip() {
