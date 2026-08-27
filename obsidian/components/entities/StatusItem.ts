@@ -55,18 +55,12 @@ export class StatusItem extends InfoItem {
 			${super.styles}
 
 			.info-bullet {
-				gap: .6ch;
 				user-select: none;
 				margin-inline-end: .4ch;
 			}
 
 			:host([icon-only]) .info-bullet {
 				margin-inline-end: 0;
-			}
-
-			.info-icon {
-				height: 2em;
-				width: 2em;
 			}
 		`
 	}

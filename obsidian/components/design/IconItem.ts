@@ -24,29 +24,12 @@ export class IconItem<T = unknown> extends InfoItem {
 	/** An arbitrary payload a consumer hangs on the chip (e.g. the value a select row stands for). */
 	@property() data!: T
 
-	/** Draws the glyph smaller — the compact form a dense list wants. */
-	@property({ type: Boolean, reflect: true }) small = false
-
 	static override get styles() {
 		return css`
 			${super.styles}
 
 			:host {
 				display: flex;
-			}
-
-			.info-bullet {
-				gap: 1ch;
-			}
-
-			.info-icon {
-				width: 2em;
-				height: 2em;
-			}
-
-			:host([small]) .info-icon {
-				width: 1.2em;
-				height: 1.2em;
 			}
 		`
 	}

@@ -23,7 +23,6 @@ export class DirectiveItem extends InfoItem {
 			${super.styles}
 
 			.info-bullet {
-				gap: 4px;
 				opacity: .6;
 				font-weight: 400;
 				font-size: .9em;
@@ -35,11 +34,6 @@ export class DirectiveItem extends InfoItem {
 				font-weight: 400;
 				font-size: .9em;
 				line-height: .9;
-			}
-
-			.info-icon {
-				width: 20px;
-				height: 20px;
 			}
 
 			.mini-banner {

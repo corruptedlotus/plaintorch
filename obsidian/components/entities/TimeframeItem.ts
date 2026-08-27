@@ -46,11 +46,6 @@ export class TimeframeItem extends InfoItem {
 				font-weight: 400;
 			}
 
-			.info-icon {
-				width: 20px;
-				height: 20px;
-			}
-
 			.details {
 				display: flex;
 				flex-direction: column;

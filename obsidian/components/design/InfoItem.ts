@@ -35,8 +35,18 @@ export abstract class InfoItem extends Component {
 	/** The glyph drawn for an absent value; overridable, or replaced wholesale via the `null` slot. */
 	@property() nullGlyph: IconName = defaultNullGlyph
 
+	/** Draws the glyph at the compact size — the dense form a tight row or inline mention wants. */
+	@property({ type: Boolean, reflect: true }) small = false
+
 	static override get styles() {
 		return css`
+			/*
+			 * The whole icon-text layout lives here so a chip never re-declares it: the flex structure, the one shared
+			 * gap, the one glyph size, and the compact small form are all fixed base rules — every chip reads the same.
+			 * A chip is left to add only its own niche bits (a badge, a placeholder, a rich tooltip) and to supply its
+			 * glyph and label through the bulletIcon/bulletText getters. An enclosing font-size (e.g. a headline
+			 * variant) scales the whole bullet, glyph included, since the sizes are in em.
+			 */
 			:host {
 				display: inline-flex;
 				align-items: center;
@@ -47,7 +57,6 @@ export abstract class InfoItem extends Component {
 				align-items: center;
 			}
 
-			/* The shared icon-text layout every simple chip renders through. A chip restyles its own icon size/gap. */
 			.info-bullet {
 				display: inline-flex;
 				align-items: center;
@@ -59,6 +68,12 @@ export abstract class InfoItem extends Component {
 				width: 1.2em;
 				height: 1.2em;
 				flex: 0 0 auto;
+			}
+
+			/* The compact form: one step down for a tight row or an inline mention. */
+			:host([small]) .info-icon {
+				width: 1em;
+				height: 1em;
 			}
 
 			.info-text {

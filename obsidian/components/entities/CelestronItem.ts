@@ -17,24 +17,13 @@ export class CelestronItem extends InfoItem {
 			${super.styles}
 
 			.info-bullet {
-				gap: 2px;
 				font-weight: 300;
 				line-height: .9;
-			}
-
-			.info-icon {
-				width: 20px;
-				height: 20px;
 			}
 
 			:host([large]) {
 				font-size: 1.5em;
 				font-weight: 400;
-			}
-
-			:host([large]) .info-icon {
-				width: 1.1em;
-				height: 1.1em;
 			}
 		`
 	}
