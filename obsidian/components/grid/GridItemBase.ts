@@ -213,6 +213,7 @@ export abstract class GridItemBase extends Component {
 					`}
 				</div>
 			</div>
+			<div class='cell leading'>${this.leadingCell}</div>
 			<div class='title'>
 				<p7t-editable-plaintext required label='Title' placeholder='Untitled' ${this.binder.bind('title')}></p7t-editable-plaintext>
 			</div>
@@ -230,6 +231,11 @@ export abstract class GridItemBase extends Component {
 
 	/** The icon of the entity's own kind, shown while the row is closed. */
 	protected abstract get kindIcon(): IconName
+
+	/** An optional label between the notch and the title (lore's level and index). Empty for variants without one. */
+	protected get leadingCell(): HTMLTemplateResult | typeof nothing {
+		return nothing
+	}
 
 	/**
 	 * The cells between the title and the two trailing action columns. Every variant lands them on the same shared

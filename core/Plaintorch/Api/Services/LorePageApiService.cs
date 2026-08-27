@@ -173,6 +173,110 @@ public sealed class LorePageApiService(
 		return true;
 	}
 
+	/// <inheritdoc />
+	public async Task<LorePageRecord?> SetIndexAsync(string puck, int index, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(puck);
+		if (index < 1)
+		{
+			throw new InvalidOperationException("A lore index must be 1 or greater.");
+		}
+
+		var page = await context.LorePages.AsNoTracking().FirstOrDefaultAsync(item => item.Id == puck, cancellationToken);
+		if (page is null)
+		{
+			return null;
+		}
+
+		if ((OwnIndex(page) ?? 0) == index)
+		{
+			return Map(page);
+		}
+
+		// Renumbering changes the page's terminal PUCK token, so its id — and every descendant's id, which is prefixed
+		// by it — changes with it. The parent (and therefore the folder placement) is unchanged; only the leaf number.
+		var oldId = page.Id;
+		var discriminator = LevelDiscriminator(page.Level);
+		var parentPrefix = string.IsNullOrWhiteSpace(page.ParentId) ? string.Empty : page.ParentId + "/";
+		var newId = $"{parentPrefix}{discriminator}{index}";
+		if (await context.LorePages.AnyAsync(item => item.Id == newId, cancellationToken))
+		{
+			throw new InvalidOperationException($"A lore page already exists at {page.Level} index {index}.");
+		}
+
+		var parent = string.IsNullOrWhiteSpace(page.ParentId)
+			? null
+			: await context.LorePages.AsNoTracking().FirstOrDefaultAsync(item => item.Id == page.ParentId, cancellationToken);
+		var descendants = await context.LorePages.AsNoTracking()
+			.Where(item => item.Id.StartsWith(oldId + "/"))
+			.ToListAsync(cancellationToken);
+
+		var previous = (LorePage)entityGateway.CloneScalars(page);
+		var oldDirectory = Path.GetDirectoryName(previous.RelativePath) ?? string.Empty;
+
+		// Re-key the page itself: new id, own index, new folder path.
+		page.Id = newId;
+		StampOwnIndex(page, page.Level, index);
+		page.RelativePath = ComposeRelativePath(page, parent);
+		var newDirectory = Path.GetDirectoryName(page.RelativePath) ?? string.Empty;
+
+		// Re-key each descendant: swap the id/parent prefix, renumber the shared level (descendants inherit it), and
+		// rebase its path under the page's new folder — the whole subtree moves with the page's folder on disk.
+		var remaps = new List<(string OldId, LorePage Entity)> { (oldId, page) };
+		foreach (var descendant in descendants)
+		{
+			var descendantOldId = descendant.Id;
+			descendant.Id = newId + descendantOldId[oldId.Length..];
+			if (string.Equals(descendant.ParentId, oldId, StringComparison.Ordinal))
+			{
+				descendant.ParentId = newId;
+			}
+			else if (descendant.ParentId is not null && descendant.ParentId.StartsWith(oldId + "/", StringComparison.Ordinal))
+			{
+				descendant.ParentId = newId + descendant.ParentId[oldId.Length..];
+			}
+
+			StampOwnIndex(descendant, page.Level, index);
+			if (descendant.RelativePath.StartsWith(oldDirectory, StringComparison.OrdinalIgnoreCase))
+			{
+				descendant.RelativePath = newDirectory + descendant.RelativePath[oldDirectory.Length..];
+			}
+
+			remaps.Add((descendantOldId, descendant));
+		}
+
+		// Apply the re-key in one transaction, deferring SQLite FK checks so the intermediate dangling parent
+		// references during the sweep are tolerated and only the consistent final state is validated at commit.
+		await using (var transaction = await context.Database.BeginTransactionAsync(cancellationToken))
+		{
+			await context.Database.ExecuteSqlRawAsync("PRAGMA defer_foreign_keys = ON;", cancellationToken);
+			foreach (var (rekeyOldId, entity) in remaps)
+			{
+				await context.LorePages.Where(item => item.Id == rekeyOldId).ExecuteUpdateAsync(setters => setters
+					.SetProperty(item => item.Id, entity.Id)
+					.SetProperty(item => item.ParentId, entity.ParentId)
+					.SetProperty(item => item.Era, entity.Era)
+					.SetProperty(item => item.Chapter, entity.Chapter)
+					.SetProperty(item => item.Act, entity.Act)
+					.SetProperty(item => item.Phase, entity.Phase)
+					.SetProperty(item => item.RelativePath, entity.RelativePath), cancellationToken);
+			}
+
+			await transaction.CommitAsync(cancellationToken);
+		}
+
+		// Move the page's self-named folder (relocating the whole subtree on disk) and rewrite its frontmatter, then
+		// rewrite each descendant's frontmatter PUCK at its new, already-moved location.
+		await markdownStorageService.SaveLorePageAsync(page, previous, cancellationToken: cancellationToken);
+		foreach (var descendant in descendants)
+		{
+			await markdownStorageService.SaveLorePageAsync(descendant, cancellationToken: cancellationToken);
+		}
+
+		await auditLogService.WriteAsync("api", "lore.set-index", subject: page, details: new { previousId = oldId, index }, cancellationToken: cancellationToken);
+		return Map(page);
+	}
+
 	private static (string Level, string Discriminator) ResolveChildLevel(LorePage? parent)
 	{
 		if (parent is null)
@@ -192,18 +296,48 @@ public sealed class LorePageApiService(
 
 	private async Task<int> ResolveNextSiblingIndexAsync(LorePage? parent, string level, CancellationToken cancellationToken)
 	{
+		// The numbering policy is not simply per-direct-parent: Era and Chapter numbering are global and never reset,
+		// Act numbering resets each Era, and Phase numbering resets each Act. So a new index is the max at that level
+		// within the appropriate scope, plus one.
+		var pages = context.LorePages.AsNoTracking();
+		var parentEra = parent?.Era;
 		var parentId = parent?.Id;
-		var siblings = context.LorePages.AsNoTracking().Where(item => item.ParentId == parentId);
 		var maxIndex = level.Trim().ToLowerInvariant() switch
 		{
-			"era" => await siblings.MaxAsync(item => (int?)item.Era, cancellationToken),
-			"cha" => await siblings.MaxAsync(item => (int?)item.Chapter, cancellationToken),
-			"act" => await siblings.MaxAsync(item => (int?)item.Act, cancellationToken),
-			"p" => await siblings.MaxAsync(item => (int?)item.Phase, cancellationToken),
+			"era" => await pages.Where(item => item.Level == "Era").MaxAsync(item => (int?)item.Era, cancellationToken),
+			"cha" => await pages.Where(item => item.Level == "Cha").MaxAsync(item => (int?)item.Chapter, cancellationToken),
+			"act" => await pages.Where(item => item.Level == "Act" && item.Era == parentEra).MaxAsync(item => (int?)item.Act, cancellationToken),
+			"p" => await pages.Where(item => item.Level == "p" && item.ParentId == parentId).MaxAsync(item => (int?)item.Phase, cancellationToken),
 			_ => null,
 		};
 
 		return (maxIndex ?? 0) + 1;
+	}
+
+	/// <summary>Gets the own-level index a lore page carries (its Era/Chapter/Act/Phase number).</summary>
+	private static int? OwnIndex(LorePage lorePage)
+	{
+		return lorePage.Level.Trim().ToLowerInvariant() switch
+		{
+			"era" => lorePage.Era,
+			"cha" => lorePage.Chapter,
+			"act" => lorePage.Act,
+			"p" => lorePage.Phase,
+			_ => null,
+		};
+	}
+
+	/// <summary>Gets the PUCK discriminator token for a lore level (Era/Cha/Act/p).</summary>
+	private static string LevelDiscriminator(string level)
+	{
+		return level.Trim().ToLowerInvariant() switch
+		{
+			"era" => "Era",
+			"cha" => "Cha",
+			"act" => "Act",
+			"p" => "p",
+			_ => throw new InvalidOperationException($"Lore level '{level}' has no PUCK discriminator."),
+		};
 	}
 
 	private static void StampOwnIndex(LorePage lorePage, string level, int index)

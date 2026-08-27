@@ -18,7 +18,8 @@ export class LoreGrid extends GridBase {
 	private readonly lore = new DerivedRef(this, core.repos.loreList)
 
 	protected override get rows(): GridRow[] {
-		return buildLoreRows(this.lore.value ?? [], this.expandedKeys)
+		// Expanded by default so the whole hierarchy shows at once; the toggle set tracks user-collapsed rows.
+		return buildLoreRows(this.lore.value ?? [], this.expandedKeys, true)
 	}
 
 	protected override get loading() {

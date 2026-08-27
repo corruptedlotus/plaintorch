@@ -1,15 +1,17 @@
 import { component, css, html, HTMLTemplateResult, nothing } from '@a11d/lit'
+import { Notice } from 'obsidian'
 import { LorePage } from '@pleiades/sdk'
 import { core, ExpandingAction, IconName } from '..'
 import { GridItemBase } from './GridItemBase'
-import { loreLevelIcon, loreRowActions } from './loreActions'
+import { loreLevelIcon, loreLevelLabel, loreOwnIndex, loreRowActions } from './loreActions'
 
 /**
  * One line of the lore grid: an Era, Chapter, Act, or Phase.
  *
  * The shared {@link GridItemBase} draws the indent lanes, the editable name, and the trailing open-note/add columns.
- * This variant fills the two middle cells — the editable beginning date and a read-only "active" marker — draws the
- * level's icon, offers creation of its successive level, and writes name/beginning edits through the lore SDK.
+ * This variant fills the leading label (the level and its editable index), the two middle cells (the editable
+ * beginning date and a read-only "active" marker), draws the level's icon, offers creation of its successive level,
+ * and writes name/beginning edits through the lore SDK.
  */
 @component('p7t-lore-grid-item')
 export class LoreGridItem extends GridItemBase {
@@ -20,6 +22,22 @@ export class LoreGridItem extends GridItemBase {
 			.lane[data-guide='lore'] {
 				border-inline-start-style: solid;
 				border-inline-start-color: color-mix(in srgb, var(--text-normal) 30%, transparent);
+			}
+
+			.cell.leading {
+				gap: .35em;
+			}
+
+			.cell.leading .level {
+				opacity: .55;
+				text-transform: uppercase;
+				letter-spacing: .05em;
+				font-size: .8em;
+			}
+
+			.cell.leading .index {
+				font-weight: 500;
+				min-width: 1ch;
 			}
 
 			/* The active marker (and only it) carries the accent, matching the row's accented wash. */
@@ -33,6 +51,45 @@ export class LoreGridItem extends GridItemBase {
 
 	protected override get kindIcon(): IconName {
 		return loreLevelIcon((this.row!.entity as LorePage).level)
+	}
+
+	/** The level name and its editable index — "Era 1". Editing the index renumbers the page (and its subtree). */
+	protected override get leadingCell(): HTMLTemplateResult {
+		const page = this.row!.entity as LorePage
+		const index = loreOwnIndex(page)
+		return html`
+			<span class='level'>${loreLevelLabel(page.level)}</span>
+			<p7t-editable-plaintext
+				class='index'
+				required
+				label='Index'
+				.value=${index != null ? String(index) : ''}
+				@edit=${(e: CustomEvent<string | undefined>) => this.commitIndex(e.detail)}>
+			</p7t-editable-plaintext>
+		`
+	}
+
+	/**
+	 * Renumbers the page to a typed index. This re-keys the page and its whole subtree server-side, so the listing is
+	 * re-read on success; an invalid or unchanged entry simply snaps the field back to the stored index.
+	 */
+	protected async commitIndex(raw: string | undefined) {
+		const page = this.row!.entity as LorePage
+		const value = Number.parseInt((raw ?? '').trim(), 10)
+		if (!Number.isInteger(value) || value < 1 || value === loreOwnIndex(page)) {
+			this.requestUpdate()
+			return
+		}
+
+		const updated = await core.lore.setIndex(page.id, value)
+		if (!updated) {
+			new Notice('Could not renumber that lore page — that index may already be taken.')
+			this.requestUpdate()
+			return
+		}
+
+		new Notice(`Renumbered to ${loreLevelLabel(updated.level)} ${value}.`)
+		await core.repos.loreList.refresh()
 	}
 
 	protected override get middleCells(): (HTMLTemplateResult | typeof nothing)[] {

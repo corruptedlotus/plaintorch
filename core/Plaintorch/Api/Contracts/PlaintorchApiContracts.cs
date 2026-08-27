@@ -121,6 +121,13 @@ public sealed record LorePageCreateRequest(
 	DateOnly? Beginning = null);
 
 /// <summary>
+/// Represents a request to renumber a lore page to a new index at its own level, re-keying it and its descendants.
+/// </summary>
+public sealed record LorePageRenumberRequest(
+	string Puck,
+	int Index);
+
+/// <summary>
 /// Represents a generic text search request used by list/find style API actions.
 /// </summary>
 /// <param name="Query">The query text to search for.</param>

@@ -8,7 +8,7 @@ import type { GridRow } from './entityTree'
  * `parentPuck`. Siblings are ordered by narrative index, and a page whose parent is missing is surfaced as a root
  * rather than dropped. Each row also carries whether it is {@link GridRow.active} — see {@link markActive}.
  */
-export function buildLoreRows(pages: readonly LorePage[], expanded: ReadonlySet<string>): GridRow[] {
+export function buildLoreRows(pages: readonly LorePage[], toggled: ReadonlySet<string>, expandedByDefault = false): GridRow[] {
 	const known = new Set(pages.map(page => page.id))
 	const roots: LorePage[] = []
 	const byParent = new Map<string, LorePage[]>()
@@ -34,7 +34,9 @@ export function buildLoreRows(pages: readonly LorePage[], expanded: ReadonlySet<
 		const children = byParent.get(page.id) ?? []
 		const expandable = children.length > 0
 		const key = loreRowKey(page)
-		const isExpanded = expandable && expanded.has(key)
+		// Lore is a small narrative hierarchy meant to be read as a whole, so it renders expanded by default: the
+		// toggled set then tracks which rows the user has collapsed rather than which they have opened.
+		const isExpanded = expandable && (expandedByDefault ? !toggled.has(key) : toggled.has(key))
 
 		rows.push({
 			key,

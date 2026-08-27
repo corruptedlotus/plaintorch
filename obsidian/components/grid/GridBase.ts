@@ -23,14 +23,16 @@ export abstract class GridBase extends Component {
 				position: relative;
 				display: grid;
 				/*
-				 * The shared tracks: indentation, title, two middle cells, then the two action columns.
+				 * The shared tracks: indentation, a leading label, title, two middle cells, then the two action
+				 * columns.
 				 *
 				 * The leading track is sized by the deepest row's indentation, so it grows with nesting while
-				 * everything after it stays put. The title keeps a floor rather than taking whatever is left: the
-				 * trailing tracks size to their content, so an unbounded title track is the one that collapses in a
-				 * narrow pane, and it is the cell that matters most. Below the floor the grid scrolls sideways instead.
+				 * everything after it stays put. The second track holds an optional leading label (lore's level and
+				 * index) and sizes to content — empty for variants that use none. The title keeps a floor rather than
+				 * taking whatever is left: the trailing tracks size to their content, so an unbounded title track is
+				 * the one that collapses in a narrow pane. Below the floor the grid scrolls sideways instead.
 				 */
-				grid-template-columns: auto minmax(7em, 1fr) auto auto auto auto;
+				grid-template-columns: auto auto minmax(7em, 1fr) auto auto auto auto;
 				align-content: start;
 				overflow: auto;
 				padding-block: .4em;

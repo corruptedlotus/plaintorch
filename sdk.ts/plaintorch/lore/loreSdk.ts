@@ -20,6 +20,14 @@ export class PlaintorchLoreSdk {
 		return await this.client.putForJson<LorePage>(`/api/lorepages/${puck}`, update)
 	}
 
+	/**
+	 * Renumbers a lore page to a new index at its own level. This re-keys the page's PUCK and cascades the id change
+	 * through its descendants (and moves the folder subtree), so callers should re-read the listing afterwards.
+	 */
+	public async setIndex(puck: string, index: number): Promise<LorePage | undefined> {
+		return await this.client.postForJson<LorePage>("/api/lorepages/renumber", { puck, index })
+	}
+
 	// The puck is not encoded so its hierarchy slashes reach the catch-all route, matching list/get/update above.
 	public async delete(puck: string): Promise<boolean> {
 		return await this.client.delete(`/api/lorepages/${puck}`)

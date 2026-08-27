@@ -32,6 +32,13 @@ public interface ILorePageApi
 	Task<LorePageRecord?> UpdateAsync(string puck, LorePageUpdate update, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Renumbers a lore page to a new index at its own level, re-keying its PUCK terminal token and cascading the id
+	/// change through every descendant (whose ids are prefixed by it), moving the folder subtree. Returns the updated
+	/// record, <see langword="null"/> when no lore page has the given PUCK, and throws when the target index is taken.
+	/// </summary>
+	Task<LorePageRecord?> SetIndexAsync(string puck, int index, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Deletes a lore page and its file. Fails when the page still has child lore pages. Returns <see langword="false"/>
 	/// when no lore page has the given PUCK.
 	/// </summary>

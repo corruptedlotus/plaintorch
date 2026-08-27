@@ -18,6 +18,28 @@ export function loreLevelIcon(level: string | undefined): IconName {
 	}
 }
 
+/** The human-readable name of a lore level, for the row's level+index label. */
+export function loreLevelLabel(level: string | undefined): string {
+	switch (level) {
+		case 'Era': return 'Era'
+		case 'Cha': return 'Chapter'
+		case 'Act': return 'Act'
+		case 'p': return 'Phase'
+		default: return 'Lore'
+	}
+}
+
+/** The own-level index a lore page carries (its Era/Chapter/Act/Phase number), from its level. */
+export function loreOwnIndex(page: LorePage): number | undefined {
+	switch (page.level) {
+		case 'Era': return page.era
+		case 'Cha': return page.chapter
+		case 'Act': return page.act
+		case 'p': return page.phase
+		default: return undefined
+	}
+}
+
 /** A successive lore level a page can gain a child at. */
 export interface LoreChildLevel {
 	readonly level: string

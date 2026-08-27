@@ -34,6 +34,17 @@ public sealed class LorePageModule : Module
 			return Results.Created($"/api/lorepages/{created.Puck}", created);
 		});
 
+		group.MapPost("/renumber", async (LorePageRenumberRequest request, ILorePageApi api, CancellationToken cancellationToken) =>
+		{
+			if (string.IsNullOrWhiteSpace(request.Puck))
+			{
+				return Results.BadRequest("A lore PUCK is required.");
+			}
+
+			var updated = await api.SetIndexAsync(request.Puck, request.Index, cancellationToken);
+			return updated is null ? Results.NotFound() : Results.Ok(updated);
+		});
+
 		group.MapGet("/{*puck}", async (string puck, ILorePageApi api, CancellationToken cancellationToken) =>
 		{
 			if (string.IsNullOrWhiteSpace(puck))
