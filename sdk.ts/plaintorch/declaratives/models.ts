@@ -1,3 +1,4 @@
+import { model } from "@a11d/api-dotnet"
 import type { Directive } from "../directives/models"
 import type { Objective } from "../objectives/models"
 import type { PolarisCycle } from "../polaris/models"
@@ -26,13 +27,14 @@ export enum AttentiveResolution {
 }
 
 /** Fate declarative (PEP100): an event-like incentive that happens rather than gets done. */
-export interface Fate {
-	id: string
-	title: string
+@model('Fate')
+export class Fate {
+	id: string = ''
+	title: string = ''
 	directiveId: string | undefined
 	directive?: Directive | undefined
 	parentIncentiveId: string | undefined
-	status: FateStatus
+	status: FateStatus = FateStatus.Active
 	orbit: string | undefined
 	date: string | undefined
 	startTime: string | undefined
@@ -43,19 +45,20 @@ export interface Fate {
 }
 
 /** Decree declarative (PEP100): an enduring routine/law controller. Exempt from the parent system. */
-export interface Decree {
-	id: string
-	title: string
+@model('Decree')
+export class Decree {
+	id: string = ''
+	title: string = ''
 	directiveId: string | undefined
 	directive?: Directive | undefined
-	status: DecreeStatus
+	status: DecreeStatus = DecreeStatus.Active
 	orbit: string | undefined
 	/** Default length in whole minutes, seeding materialized attentives. */
 	defaultLength: number | undefined
 	/** Celestron reward granted on each attentive execution; not overridable per attentive. */
-	activeCelestron: number
+	activeCelestron: number = 0
 	/** Whether the decree participates in daily reflective generation (lunar hierarchies only). */
-	reflect: boolean
+	reflect: boolean = false
 	attentives?: Attentive[]
 }
 

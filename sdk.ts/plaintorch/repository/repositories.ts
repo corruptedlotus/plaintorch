@@ -12,6 +12,19 @@ import { DerivedRepository } from "./derivedRepository"
 import { InvalidationScheduler, type InvalidationTarget } from "./invalidation"
 import { PlaintorchChangeFeed } from "./changeFeed"
 import { entityKey, type EntityKey, type EntityTypeName } from "./identity"
+import { ModelValueConstructor } from "@a11d/api-dotnet"
+
+// Imported for their load-time `@model` registration side effect: absorption can reconstruct an entity into
+// its class only once that class is registered, and these modules are otherwise reached only through erased
+// `import type`. The `register` guard below refuses to route a type that has not registered, so these are what
+// keep that guard honest regardless of how the client is first imported.
+import "../objectives/models"
+import "../directives/models"
+import "../declaratives/models"
+import "../onrush/models"
+import "../polaris/models"
+import "../lore/models"
+import "../dependencies/models"
 
 /** Key under which the single briefing record is cached. */
 export const briefingRecordKey = ""
@@ -112,6 +125,16 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		// `forTypeName` — and the change feed and invalidation that lean on it — finding it. That omission is
 		// exactly what once silently stopped every directive from being tracked.
 		const register = <T extends object>(typeName: EntityTypeName, fetcher: EntityFetcher<T>): EntityRepository<T> => {
+			// A routed type that is not `@model`-registered would be absorbed as a prototype-less plain object —
+			// the identify-vs-construct split. Fail fast at construction rather than let it surface later as a
+			// missing getter or a value that is not an instance of its class.
+			if (!ModelValueConstructor.modelConstructorsByTypeName.has(typeName)) {
+				throw new Error(
+					`PLAINTORCH: entity type "${typeName}" is routed to a repository but is not registered with @model, `
+					+ `so absorption would track it as a prototype-less plain object. Declare its model class with @model('${typeName}').`
+				)
+			}
+
 			const repository = new EntityRepository<T>(store, typeName, fetcher, entity)
 			this.byTypeName.set(typeName, repository as EntityRepository<never>)
 			return repository

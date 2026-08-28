@@ -1,14 +1,16 @@
+import { model } from "@a11d/api-dotnet"
 import type { Objective } from "../objectives/models"
 import type { Checkpoint } from "../dependencies/models"
-export interface OnrushSprint {
-	id: string
-	title: string
+@model('OnrushSprint')
+export class OnrushSprint {
+	id: string = ''
+	title: string = ''
 	startDate: string | undefined
 	endDate: string | undefined
-	objectives: Objective[]
-	executiveOrders: ExecutiveOrder[]
+	objectives: Objective[] = []
+	executiveOrders: ExecutiveOrder[] = []
 	/** The checkpoints this sprint tracks, its milestone among them (PEP102). */
-	checkpoints: Checkpoint[]
+	checkpoints: Checkpoint[] = []
 	/** The id of this sprint's milestone checkpoint, created with the sprint (PEP102). */
 	milestoneCheckpointId: string | undefined
 	/** This sprint's milestone checkpoint, when loaded. */
@@ -17,10 +19,11 @@ export interface OnrushSprint {
 	graphLayout: string | undefined
 }
 
-export interface ExecutiveOrder {
-	id: string
-	title: string
-	onrushSprintId: string
+@model('ExecutiveOrder')
+export class ExecutiveOrder {
+	id: string = ''
+	title: string = ''
+	onrushSprintId: string = ''
 	onrushSprint?: OnrushSprint | undefined
 	summary: string | undefined
 	effectiveFrom: string | undefined

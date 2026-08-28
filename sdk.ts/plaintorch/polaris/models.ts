@@ -1,3 +1,4 @@
+import { model } from "@a11d/api-dotnet"
 import type { Attentive, Decree, Eventive } from "../declaratives/models"
 import type { Objective, ObjectiveCollege } from "../objectives/models"
 import type { Timeframe } from "../directives/models"
@@ -13,15 +14,16 @@ export interface PolarisForecast {
 	forecastTarget: string
 }
 
-export interface PolarisCycle {
-	id: string
-	title: string
+@model('PolarisCycle')
+export class PolarisCycle {
+	id: string = ''
+	title: string = ''
 	forecast: PolarisForecast | undefined
 	startTime: string | undefined
 	endTime: string | undefined
 	isForecast?: boolean
-	executives: Executive[]
-	reflectives: Reflective[]
+	executives: Executive[] = []
+	reflectives: Reflective[] = []
 	/** Polaris-bound attentives (PEP100). Unbound inclusions are served separately. */
 	attentives?: Attentive[]
 }
