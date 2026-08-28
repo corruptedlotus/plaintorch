@@ -1,7 +1,7 @@
 import { component, css, html, nothing, property, state } from '@a11d/lit'
 import { CardComponent } from 'components/design'
 import { IconName } from 'components/PleiadesIcon'
-import { App, Notice } from 'obsidian'
+import { App } from 'obsidian'
 import { EntityTypeName, isSuccessfulMutation } from '@pleiades/sdk'
 import { core, EntityRef } from '..'
 
@@ -55,58 +55,33 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 	protected async loadRelated(): Promise<void> {
 	}
 
-	/** Field values as they were before the current edit, kept so a rejected write can be undone. */
-	private editSnapshot?: Record<string, unknown>
-
 	protected get entityRepository() {
 		return core.repos.forTypeName<T & object>(this.entityTypeName)
 	}
 
 	/**
-	 * Announces an in-place edit of the entity to every other surface showing it.
+	 * Captures the entity before a two-way binding writes an edit into it, so a rejected write can be undone.
 	 *
-	 * Two-way bindings write straight through to the canonical instance they were handed, so the change is
-	 * already applied and there is nothing left for absorption to detect — without this it would stay
-	 * invisible to everything except the banner the edit was made in.
-	 */
-	protected publishEntityEdit(): void {
-		if (this.puck) {
-			this.entityRepository?.touch(this.puck)
-		}
-	}
-
-	/**
-	 * Captures the entity before a two-way binding writes an edit into it.
-	 *
-	 * Bindings apply the edit before anything is sent, so this is the last moment the previous state still
-	 * exists anywhere.
+	 * Delegated to the reference, which owns the edit cycle now; kept as the named step every banner's binder
+	 * already calls in its `sourceUpdate`.
 	 */
 	protected beginEntityEdit(): void {
-		this.editSnapshot = this.puck ? this.entityRepository?.snapshot(this.puck) : undefined
+		this.ref.beginEdit()
 	}
 
 	/**
-	 * Publishes the edit, sends it, and puts the entity back if the core rejected it.
+	 * Sends an edit already applied to the canonical instance and rolls it back if the core rejects it.
 	 *
-	 * Without the rollback a rejected write is indistinguishable from an accepted one: the edit is already
-	 * on screen, and a failed request reports itself by returning nothing rather than throwing.
+	 * The whole cycle — broadcast, send, rollback, failure notice — lives on the reference; this remains as
+	 * the name every banner's binder (and the odd direct caller) already invokes. With no resolved entity to
+	 * edit optimistically — a directly-provided entity with no PUCK — it simply sends.
 	 */
-	protected async commitEntityEdit<R>(send: () => Promise<R>): Promise<R | undefined> {
-		const repository = this.entityRepository
-		if (!repository || !this.puck) {
-			return await send()
+	protected async commitEntityEdit(send: () => Promise<unknown>): Promise<boolean> {
+		if (!this.entityRepository || !this.puck) {
+			return isSuccessfulMutation(await send())
 		}
 
-		this.publishEntityEdit()
-		const snapshot = this.editSnapshot
-		this.editSnapshot = undefined
-
-		const result = await repository.mutate(this.puck, send, { rollbackTo: snapshot })
-		if (!isSuccessfulMutation(result)) {
-			new Notice('PLAINTORCH could not save that change.')
-		}
-
-		return result
+		return await this.ref.commit(() => send())
 	}
 
 	protected override async initialized() {
