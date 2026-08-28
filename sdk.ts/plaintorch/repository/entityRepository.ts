@@ -1,6 +1,7 @@
 import { entityKey, type EntityKey, type EntityTypeName } from "./identity"
 import type { EntityStore, EntitySubscriber, EntitySubscription } from "./entityStore"
 import type { InvalidationScheduler } from "./invalidation"
+import { EntityDraft } from "./draft"
 
 /** Resolves one entity of a repository's type from the core. */
 export type EntityFetcher<T> = (id: string) => Promise<T | undefined>
@@ -68,6 +69,20 @@ export class EntityRepository<T extends object> {
 	/** Returns the canonical instance without contacting the core. */
 	public peek(id: string): T | undefined {
 		return this.store.peek<T>(this.key(id))
+	}
+
+	/**
+	 * Opens an isolated working copy of an entity for the fork-and-commit editing mode.
+	 *
+	 * Undefined when the entity has not been resolved into the store yet — there is nothing to copy.
+	 */
+	public fork(id: string): EntityDraft<T> | undefined {
+		const canonical = this.store.peek<T>(this.key(id))
+		if (!canonical) {
+			return undefined
+		}
+
+		return new EntityDraft<T>(this.store, this.key(id), this.typeName, id, canonical, this.invalidation)
 	}
 
 	/**
