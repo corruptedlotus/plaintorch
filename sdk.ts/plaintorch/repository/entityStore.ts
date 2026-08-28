@@ -42,6 +42,8 @@ export interface AbsorptionContext {
 export class EntityStore {
 	private readonly records = new Map<EntityKey, EntityRecord>()
 	private readonly globalSubscribers = new Set<EntitySubscriber>()
+	/** Set while a coalesced store-wide notification is already pending on the microtask queue. */
+	private globalFlushScheduled = false
 	/**
 	 * Advances on every local change, so a response can be compared against the state it was issued under.
 	 *
@@ -300,19 +302,44 @@ export class EntityStore {
 	}
 
 	/**
-	 * Tells everything observing an identity, and everything observing the store, that it changed.
+	 * Tells everything observing an identity that it changed, and schedules a store-wide notification.
 	 *
-	 * Subscriber sets are copied first: a subscriber is free to release its subscription while being
-	 * notified, which a live iteration would not survive.
+	 * Per-identity subscribers fire synchronously — they are cheap and targeted, and a surface editing its
+	 * own field should update at once. The set is copied first: a subscriber is free to release its
+	 * subscription while being notified, which a live iteration would not survive.
 	 */
 	private announce(record: EntityRecord): void {
 		for (const subscriber of [...record.subscribers]) {
 			subscriber()
 		}
 
-		for (const subscriber of [...this.globalSubscribers]) {
-			subscriber()
+		this.scheduleGlobalAnnounce()
+	}
+
+	/**
+	 * Notifies store-wide subscribers once per microtask rather than once per change.
+	 *
+	 * A single response absorbs many entities, each announcing as it lands, and a store-wide subscriber is a
+	 * structural view that reacts to any of them — so notifying it per change makes it recompute N times for
+	 * one response. Coalescing collapses that burst into one notification.
+	 *
+	 * Nothing is scheduled when no store-wide subscriber exists, which is the common case — only an open
+	 * structural view subscribes — so the store carries no per-change overhead for it.
+	 */
+	private scheduleGlobalAnnounce(): void {
+		if (this.globalFlushScheduled || this.globalSubscribers.size === 0) {
+			return
 		}
+
+		this.globalFlushScheduled = true
+		queueMicrotask(() => {
+			this.globalFlushScheduled = false
+			// Read at flush time, so a subscription released before the flush is honoured, and one added
+			// during the burst is included.
+			for (const subscriber of [...this.globalSubscribers]) {
+				subscriber()
+			}
+		})
 	}
 }
 
