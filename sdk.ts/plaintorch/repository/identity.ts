@@ -21,6 +21,12 @@ export function entityKey(typeName: string, id: string): EntityKey {
 	return `${typeName}:${id}`
 }
 
+/** The type-name half of a store key. */
+export function typeNameFromKey(key: EntityKey): EntityTypeName {
+	const separator = key.indexOf(":")
+	return separator < 0 ? key : key.slice(0, separator)
+}
+
 /**
  * Reads the runtime type name the core stamps onto every serialized object.
  */

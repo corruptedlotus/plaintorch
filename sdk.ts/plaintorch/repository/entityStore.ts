@@ -1,4 +1,4 @@
-import { identify, type EntityKey } from "./identity"
+import { identify, typeNameFromKey, type EntityKey, type EntityTypeName } from "./identity"
 import { isEquivalent } from "./equivalence"
 
 /** Notified when the canonical instance behind an identity changes. */
@@ -8,6 +8,7 @@ export type EntitySubscriber = () => void
 export type EntitySubscription = () => void
 
 interface EntityRecord {
+	readonly key: EntityKey
 	/** Undefined while an identity is observed but has not been absorbed yet. */
 	value: object | undefined
 	version: number
@@ -42,8 +43,14 @@ export interface AbsorptionContext {
 export class EntityStore {
 	private readonly records = new Map<EntityKey, EntityRecord>()
 	private readonly globalSubscribers = new Set<EntitySubscriber>()
-	/** Set while a coalesced store-wide notification is already pending on the microtask queue. */
-	private globalFlushScheduled = false
+	/** Subscribers to all entities of one type — for filtered, live-collection views (query refs). */
+	private readonly typeSubscribers = new Map<EntityTypeName, Set<EntitySubscriber>>()
+	/** Keys grouped by type, so a type's members enumerate without scanning the whole store. */
+	private readonly typeIndex = new Map<EntityTypeName, Set<EntityKey>>()
+	/** Types changed since the last structural flush, notified as a batch on the microtask. */
+	private readonly dirtyTypes = new Set<EntityTypeName>()
+	/** Set while a coalesced structural notification (store-wide and per-type) is pending on the microtask. */
+	private structuralFlushScheduled = false
 	/**
 	 * Advances on every local change, so a response can be compared against the state it was issued under.
 	 *
@@ -80,12 +87,17 @@ export class EntityStore {
 
 		const existing = this.records.get(key)
 		if (!existing) {
-			this.records.set(key, {
+			const record: EntityRecord = {
+				key,
 				value: value as object,
 				version: 0,
 				stale: false,
 				subscribers: new Set()
-			})
+			}
+			this.records.set(key, record)
+			this.indexKey(key)
+			// A new member of its type appeared — let structural and per-type observers recompute.
+			this.announce(record)
 			return value
 		}
 
@@ -214,6 +226,44 @@ export class EntityStore {
 	}
 
 	/**
+	 * Observes every entity of one type — a field edit on any member, a new member, or (once eviction lands)
+	 * a removal.
+	 *
+	 * This is what a filtered, live collection subscribes to instead of the whole store, so a change to an
+	 * unrelated type does not re-run it. Fired as a batch on the microtask, like the store-wide subscription.
+	 */
+	public subscribeType(typeName: EntityTypeName, subscriber: EntitySubscriber): EntitySubscription {
+		let subscribers = this.typeSubscribers.get(typeName)
+		if (!subscribers) {
+			subscribers = new Set()
+			this.typeSubscribers.set(typeName, subscribers)
+		}
+
+		subscribers.add(subscriber)
+		return () => {
+			subscribers.delete(subscriber)
+		}
+	}
+
+	/** Every resolved entity of a type currently held, for a query to scan and filter. */
+	public entitiesOfType<T>(typeName: EntityTypeName): T[] {
+		const keys = this.typeIndex.get(typeName)
+		if (!keys) {
+			return []
+		}
+
+		const entities: T[] = []
+		for (const key of keys) {
+			const value = this.records.get(key)?.value
+			if (value) {
+				entities.push(value as T)
+			}
+		}
+
+		return entities
+	}
+
+	/**
 	 * Determines whether anything is currently observing an identity.
 	 *
 	 * Invalidation uses this to refetch only what is on screen; everything else is left marked stale
@@ -316,13 +366,27 @@ export class EntityStore {
 	 */
 	private createPlaceholder(key: EntityKey): EntityRecord {
 		const record: EntityRecord = {
+			key,
 			value: undefined,
 			version: 0,
 			stale: true,
 			subscribers: new Set()
 		}
 		this.records.set(key, record)
+		this.indexKey(key)
 		return record
+	}
+
+	/** Records a key under its type, so the type's members can be enumerated without a full scan. */
+	private indexKey(key: EntityKey): void {
+		const typeName = typeNameFromKey(key)
+		let keys = this.typeIndex.get(typeName)
+		if (!keys) {
+			keys = new Set()
+			this.typeIndex.set(typeName, keys)
+		}
+
+		keys.add(key)
 	}
 
 	/**
@@ -337,31 +401,50 @@ export class EntityStore {
 			subscriber()
 		}
 
-		this.scheduleGlobalAnnounce()
+		this.scheduleStructuralAnnounce(typeNameFromKey(record.key))
 	}
 
 	/**
-	 * Notifies store-wide subscribers once per microtask rather than once per change.
+	 * Notifies structural subscribers — store-wide and per-type — once per microtask rather than once per
+	 * change.
 	 *
-	 * A single response absorbs many entities, each announcing as it lands, and a store-wide subscriber is a
-	 * structural view that reacts to any of them — so notifying it per change makes it recompute N times for
-	 * one response. Coalescing collapses that burst into one notification.
+	 * A single response absorbs many entities, each announcing as it lands, and a structural subscriber reacts
+	 * to any of them — so notifying it per change makes it recompute N times for one response. Coalescing
+	 * collapses the burst into one notification: the store-wide subscribers fire once, and each type that
+	 * changed notifies its own subscribers once.
 	 *
-	 * Nothing is scheduled when no store-wide subscriber exists, which is the common case — only an open
-	 * structural view subscribes — so the store carries no per-change overhead for it.
+	 * Nothing is scheduled when nothing observes the store structurally, the common case, so there is no
+	 * per-change overhead otherwise.
 	 */
-	private scheduleGlobalAnnounce(): void {
-		if (this.globalFlushScheduled || this.globalSubscribers.size === 0) {
+	private scheduleStructuralAnnounce(typeName: EntityTypeName): void {
+		if (this.globalSubscribers.size === 0 && this.typeSubscribers.size === 0) {
 			return
 		}
 
-		this.globalFlushScheduled = true
+		this.dirtyTypes.add(typeName)
+		if (this.structuralFlushScheduled) {
+			return
+		}
+
+		this.structuralFlushScheduled = true
 		queueMicrotask(() => {
-			this.globalFlushScheduled = false
+			this.structuralFlushScheduled = false
 			// Read at flush time, so a subscription released before the flush is honoured, and one added
 			// during the burst is included.
+			const types = [...this.dirtyTypes]
+			this.dirtyTypes.clear()
+
 			for (const subscriber of [...this.globalSubscribers]) {
 				subscriber()
+			}
+
+			for (const changed of types) {
+				const subscribers = this.typeSubscribers.get(changed)
+				if (subscribers) {
+					for (const subscriber of [...subscribers]) {
+						subscriber()
+					}
+				}
 			}
 		})
 	}
