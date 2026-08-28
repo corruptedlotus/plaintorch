@@ -7,7 +7,7 @@ import type { PolarisAgenda, PolarisCycle } from "../polaris/models"
 import type { LorePage } from "../lore/models"
 import type { Checkpoint, Dependency } from "../dependencies/models"
 import type { EntityExistence, SystemBriefing } from "../system/models"
-import { EntityRepository } from "./entityRepository"
+import { EntityRepository, type EntityFetcher } from "./entityRepository"
 import { DerivedRepository } from "./derivedRepository"
 import { InvalidationScheduler, type InvalidationTarget } from "./invalidation"
 import { PlaintorchChangeFeed } from "./changeFeed"
@@ -100,7 +100,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	/** PUCK-to-entity resolutions, keyed by PUCK. */
 	public readonly entityResolution: DerivedRepository<EntityExistence>
 
-	private readonly byTypeName: Map<EntityTypeName, EntityRepository<never>>
+	private readonly byTypeName = new Map<EntityTypeName, EntityRepository<never>>()
 
 	public constructor(private readonly client: PlaintorchCoreClient, options: PlaintorchRepositoriesOptions = {}) {
 		const store = client.store
@@ -108,16 +108,25 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		this.invalidation = new InvalidationScheduler(store, () => this)
 		const entity = { invalidation: this.invalidation }
 
-		this.objectives = new EntityRepository(store, "Objective", (id) => client.objectives.get(id), entity)
-		this.fates = new EntityRepository(store, "Fate", (id) => client.declaratives.getFate(id), entity)
-		this.decrees = new EntityRepository(store, "Decree", (id) => client.declaratives.getDecree(id), entity)
-		this.directives = new EntityRepository(store, "StellarDirective", (id) => client.directives.get(id), entity)
-		this.lunarDirectives = new EntityRepository(store, "LunarDirective", (id) => client.directives.get(id), entity)
-		this.onrush = new EntityRepository(store, "OnrushSprint", (id) => client.onrush.get(id), entity)
-		this.executiveOrders = new EntityRepository(store, "ExecutiveOrder", (id) => client.onrush.getExecutiveOrder(id), entity)
-		this.polaris = new EntityRepository(store, "PolarisCycle", (id) => client.polaris.get(id), entity)
-		this.lore = new EntityRepository(store, "LorePage", (id) => client.lore.get(id), entity)
-		this.checkpoints = new EntityRepository(store, "Checkpoint", (id) => client.dependencies.getCheckpoint(id), entity)
+		// Registering an entity repository also routes it by type name, so one cannot be added without
+		// `forTypeName` — and the change feed and invalidation that lean on it — finding it. That omission is
+		// exactly what once silently stopped every directive from being tracked.
+		const register = <T extends object>(typeName: EntityTypeName, fetcher: EntityFetcher<T>): EntityRepository<T> => {
+			const repository = new EntityRepository<T>(store, typeName, fetcher, entity)
+			this.byTypeName.set(typeName, repository as EntityRepository<never>)
+			return repository
+		}
+
+		this.objectives = register("Objective", (id) => client.objectives.get(id))
+		this.fates = register("Fate", (id) => client.declaratives.getFate(id))
+		this.decrees = register("Decree", (id) => client.declaratives.getDecree(id))
+		this.directives = register("StellarDirective", (id) => client.directives.get(id))
+		this.lunarDirectives = register("LunarDirective", (id) => client.directives.get(id))
+		this.onrush = register("OnrushSprint", (id) => client.onrush.get(id))
+		this.executiveOrders = register("ExecutiveOrder", (id) => client.onrush.getExecutiveOrder(id))
+		this.polaris = register("PolarisCycle", (id) => client.polaris.get(id))
+		this.lore = register("LorePage", (id) => client.lore.get(id))
+		this.checkpoints = register("Checkpoint", (id) => client.dependencies.getCheckpoint(id))
 
 		this.directiveList = new DerivedRepository(async () => await client.directives.list())
 		this.objectiveList = new DerivedRepository(async () => await client.objectives.list())
@@ -135,19 +144,6 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		this.briefing = new DerivedRepository(async () => await client.system.getBriefing())
 		this.noteResolution = new DerivedRepository(async (path) => await client.system.resolveNote(path), resolution)
 		this.entityResolution = new DerivedRepository(async (puck) => await client.system.resolveEntity(puck), resolution)
-
-		this.byTypeName = new Map<EntityTypeName, EntityRepository<never>>([
-			["Objective", this.objectives as EntityRepository<never>],
-			["Fate", this.fates as EntityRepository<never>],
-			["Decree", this.decrees as EntityRepository<never>],
-			["StellarDirective", this.directives as EntityRepository<never>],
-			["LunarDirective", this.lunarDirectives as EntityRepository<never>],
-			["OnrushSprint", this.onrush as EntityRepository<never>],
-			["ExecutiveOrder", this.executiveOrders as EntityRepository<never>],
-			["PolarisCycle", this.polaris as EntityRepository<never>],
-			["LorePage", this.lore as EntityRepository<never>],
-			["Checkpoint", this.checkpoints as EntityRepository<never>]
-		])
 
 		this.changeFeed = new PlaintorchChangeFeed(client, this)
 	}
