@@ -1,5 +1,5 @@
 import { component, css, html, nothing, property, unsafeCSS } from '@a11d/lit'
-import { IconName, navigateToEntity } from 'components'
+import { EntityWatch, IconName, navigateToEntity } from 'components'
 import { CardComponent } from 'components/design'
 import { 'everglow-banner' as EverglowBanner } from 'assets/design'
 import { 'grunge-1-png' as GrungeNoise } from 'assets/design'
@@ -7,6 +7,15 @@ import { 'grunge-1-png' as GrungeNoise } from 'assets/design'
 @component('p7t-briefing-card')
 export class BriefingCard<T> extends CardComponent {
 	@property({ type: Object }) data?: T
+
+	/**
+	 * Observes the canonical entity behind `data`, so a card re-renders when that instance is edited from
+	 * another surface. Absorption mutates the instance in place, keeping the same reference, which Lit's
+	 * property check never sees — the subscription is what turns such an edit into a re-render. A no-op when
+	 * `data` is not a tracked entity (an agenda, say), so every card shares it from the base.
+	 */
+	protected readonly watch = new EntityWatch(this, () => this.data)
+
 	protected readonly icon?: IconName
 
 	static override get styles() {
