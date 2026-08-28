@@ -2,6 +2,8 @@
 status: implemented
 assignee: Copilot 🤖
 phase: 2A
+patches:
+  - Patch106.1 - Tracked References, Forks & Queries
 ---
 # Frontend Repository System
 The frontend has no shared notion of "the objective with this PUCK". Every component that displays an entity holds its own private copy, fetched independently and mutated independently. Two surfaces showing the same entity are two unrelated objects, and a change to one is invisible to the other.
@@ -100,3 +102,88 @@ The system replaces, rather than supplements:
 - the bespoke note-resolution cache in the system SDK, which is a single-purpose instance of what the store does generally.
 
 It closes two standing tasks — using a push channel to update the briefing, and adding a global loading mechanism with unified entity components — and it is a precondition for any surface that displays the same entity in more than one place at once.
+
+# Patches
+
+## Patch106.1 - Tracked References, Forks & Queries
+The repository system shipped and works, but a sweep of the surfaces built on it shows the same three manual steps leaking back into call sites — the exact hand-repair this PEP set out to delete, displaced one level up. This patch closes that gap by making the reference a first-class *tracked* object in the sense an ORM means it: one that observes itself, propagates its own edits, can be forked for isolated work, and can be filtered into a live collection. It draws its boundary explicitly against the concurrent core-side REFACTOR Alpha, which owns the `{@type}:{id}` contract this rests on.
+
+### What diverged
+Three steps meant to be automatic are being done by hand, each a place the guarantee broke and was patched locally.
+
+**Watching is manual.** Absorption merges into the canonical instance *in place*, so its object reference never changes and Lit's `===` property check never fires. Every non-banner surface must therefore hand-wire an `EntityWatch` or it silently stops re-rendering. Only three files do; `BriefingCardOnrush` is missing it and is deaf to cross-surface edits today — the identical bug the polaris card was just patched for, one file over. The banner family avoided this by putting the reference in its base class, which is the tell: the fix is to make the reference universal, not to remember it per component.
+
+**In-place edits do not propagate themselves.** A two-way binding writes straight into the canonical instance, leaving nothing for absorption to detect, so the edit is invisible elsewhere unless the surface also calls `touch()`/`publish()` by hand. Writing and broadcasting are two separate manual acts.
+
+**Cross-entity refresh is hand-rolled.** After a `mutate()` that was supposed to invalidate dependents, surfaces run `Promise.all([…refresh, …revalidate])` themselves — because a write that *creates* a relationship (an objective joining a cycle) makes an edge the client's instance does not yet carry, so the local dependency table cannot find the other end, and because echo suppression drops the write's own feed events. The dependency graph the system was built to own is re-specified at every call site.
+
+The rest of this patch introduces one primitive per divergence, plus the propagation change that retires the third.
+
+### The tracked Reference
+The reference (`EntityRef` today) becomes the single object a surface holds and the single path through which it edits. Three properties make it *tracked*:
+
+- **It observes itself.** On connect it subscribes to its identity; on the store announcing a change it re-renders its host; on disconnect it releases. No component adds an `EntityWatch`, and none can forget to. A surface *handed* an instance rather than resolving one (a list row) establishes the same subscription from the instance's identity. `subscribeAll` is no longer the only way to "react to this entity," so surfaces stop reaching for the hammer.
+- **It owns the write.** The reference integrates with the `@a11d/lit` `Binder` — a `Ref`-aware variant of the `ReactiveBinder` already in use. The binder already fires once, on the editable's commit event, after the editable's own validation, and its `sourceUpdate`/`sourceUpdated` hooks are exactly the two moments the reference needs. So `${ref.bind('status')}` wires the whole cycle: snapshot for rollback (before), write-through into the canonical instance (the optimistic edit), broadcast, send, and rollback on rejection. The `beginEntityEdit`/`commitEntityEdit`/`publishEntityEdit` trio hand-assembled in the banner base collapses into the reference, and the redundant component-level `get/set entity` dance goes with it.
+- **Its send strategy is per field, declared once.** The one genuinely bespoke part of a write is *which* endpoint persists a given field — a status change is a workflow shift, a title change is an update. That stays explicit (it is domain, per REFACTOR Alpha's principle 5), declared as a persist map on the reference rather than branched inside every `sourceUpdated`.
+
+### Forking
+Inline single-field editing is immediate: the binder writes through and propagates on the spot. Everything else — a multi-field modal with a cancel, a background recomputation — wants a boundary. A **fork** provides it: `ref.fork()` returns a draft only the forking surface sees, mutated with plain assignment; `commit()` sends the changes and reconciles them into the shared store; `cancel()` discards them.
+
+Change tracking is by **snapshot and diff**, not by proxy. The fork captures the entity's field values at fork time; commit compares the draft against that baseline and sends only what changed. This is deliberately the mechanism a mainstream TypeScript ORM (MikroORM) uses — it keeps a copy of every property on load and diffs on flush, detecting changes *"rather than property interception."* An interception layer (a `Proxy` masquerading as the entity) was considered and rejected: it answers the same "what changed" question by the opposite, push means, and once a fork diffs on commit there is nothing left for it to do — its only unique capability, making an *un-forked* imperative write propagate instantly, is a behaviour this patch does not want (per-assignment sends, nested-mutation leaks, `===` confusion).
+
+Two properties the diff must hold:
+- **The baseline is the fork-time snapshot, not the live instance.** A concurrent edit to a *different* field of the canonical instance must survive the commit; diffing against the live instance would re-assert unchanged fields and clobber it. Diffing against the fork baseline sends exactly the fields this fork touched — the pull side of an optimistic-concurrency check, keyed on the store revision captured at fork.
+- **The copy preserves the class.** A draft made by spreading loses the prototype and its computed getters. The fork copies through the same `ModelValueConstructor` path construction already uses (`new Constructor` + writable-guarded field copy), so a draft is a real instance of its class. Forks are **shallow and field-level** by policy: collections are edited through explicit API actions, never by mutating a draft's array (which, shared by reference, would reach the live instance) — matching the existing shallow `snapshot`.
+
+Immediate editing and forking are the two editing modes this system needs, made concrete: a reference edits immediately by default; a fork is opted into where atomicity or cancellation matters.
+
+### Queries
+A surface that shows *many* entities under a condition — active objectives, a directive's children — has today only two tools: a server-computed listing (a `DerivedRepository`, not reactive to local edits) or `subscribeAll` + filter in the component (reactive but O(all entities) per change). Neither is a live query.
+
+A **query reference** is the missing primitive: a predicate over a base set that recomputes membership when a member changes and re-renders its host — the client analogue of `context.Objectives.Where(o => o.active)` under change tracking. It is affordable only once two costs are paid, which this patch pays as prerequisites:
+- **Announcements are batched.** Today every changed absorb/touch notifies every `subscribeAll` subscriber synchronously, so an inline edit rebuilds a structural view once per keystroke. Global announcements coalesce on a microtask (the mechanism `InvalidationScheduler` already uses), collapsing a burst into one notification.
+- **The store is indexed by type.** A query over objectives should hear about objectives, not about every entity. A per-type subscription lets a query subscribe to its kind rather than to the whole store.
+
+With those in place a query reference is cheap, and the grid and canvas stop using `subscribeAll` as a structural hammer.
+
+### Propagation without hand-rolling
+The hand-rolled fan-out after a write exists because two mechanisms leave a hole between them. The local dependency table resolves against the canonical instance, which cannot carry an edge a write has only just created. The change feed *does* announce the affected owners — the core derives them structurally from foreign-key metadata (`OwnersOf`) — but this PEP's echo suppression drops the write's own events wholesale, those owner announcements included, as redundant.
+
+The fix narrows echo suppression: **suppress only the written identity's own echo, not its owners'.** The entity the client wrote is already reconciled and needs no refetch — but the owner and related announcements carry exactly the invalidations the client could not compute locally, and are let through to drive them. The hand-rolled fan-out then disappears: a write invalidates what it can see locally, and the feed supplies the rest. When the feed is off this degrades as the PEP already specifies — the local dependency table plus activation revalidation, best-effort — so an immediate write or a fork/commit stays correct without the feed, only less prompt.
+
+This inherits the feed's one known-ambiguous edge: the `Directive`/`LunarDirective` owner announcement noted in `core/.DISCUSSION.md`, harmless while no child record carries a directive foreign key. REFACTOR Alpha's family descriptor is where that edge is resolved rather than worked around; this patch tracks it and does not depend on it.
+
+### Grounding — what this reuses and assumes
+- **`@a11d/api-dotnet` is the substrate, and the fork reuses it.** The `@type` convention the identity map keys on, and the reconstruction of real class instances (getters, methods, `instanceof`), both come from `ModelValueConstructor`. The fork's prototype-preserving copy *is* that same construction, not a new mechanism.
+- **Identify and construct must not drift.** Recognising an entity is structural (`@type` + string `id` + string `title`); constructing one is gated on `@model` registration. A type identified but not registered is tracked as a prototype-less plain object — the failure mode that once dropped every directive. This patch adds a startup assertion that every structurally-tracked type is `@model`-registered, so the two cannot diverge. It is the client-side complement to the core's `EntityTypeNameContractTests`; a concrete type-name change stays a two-repository contract change.
+- **The identity map is unbounded, and now needs a bound.** MikroORM's warning that a shared identity map keeps *"every entity that became managed"* is our long-session future: the store never evicts, and `changedAt` never prunes. Lacking their fork-per-request-and-clear escape (we are one long-lived context), this patch adds an eviction policy — drop entities with no subscribers past a horizon, and prune a `changedAt` entry once a read issued at or after it has settled.
+
+### Coordination with REFACTOR Alpha
+This patch is client/SDK-side; REFACTOR Alpha is core-side, and the two meet only at the SDK contract surface, which the refactor touches rarely. The boundaries held here:
+- **Write payloads are not genericised.** The per-field persist map dispatches through the *existing* per-entity update/shift contracts. A uniform patch endpoint is out of scope, deferred to align with REFACTOR Alpha's phase 5 API kit and consistent with its principle 5 (per-entity payload shapes are domain, not glue).
+- **Type names stay a shared contract.** The `@model`-registration assertion reinforces — does not fork — the `{@type}:{id}` contract gated by `EntityTypeNameContractTests`.
+- **Invalidation consumes the feed as-is.** Feed-scoped echo suppression is a client change; it relies on owner announcements the interceptor already emits, adds no core surface, and tracks (does not resolve) the directive/lunar owner edge that is the family descriptor's to close.
+
+### Housekeeping
+Carried in the same pass because they are the seams these primitives sit on:
+- **One registry table.** Adding an entity type touches three parallel lists in `repositories.ts` (constructor, `byTypeName`, `records`) — the drift that once dropped directives, most recently exercised by `ExecutiveOrder`. Drive all three from one declarative `{typeName, fetcher}` table.
+- **One cache coordinator.** `EntityRepository` and `DerivedRepository` re-implement the same in-flight dedup, freshness window, and subscriber plumbing; a shared base removes the duplication, value-in-store vs value-local being the only difference.
+- **Batched announcements** (above), plus two correctness nits noticed in passing: `InvalidationScheduler.settled()` can resolve before a flush begins, and overlapping flushes are possible under a burst.
+
+### Rollout
+Each step lands independently and leaves the system working.
+1. **The tracked Reference** — auto-watch, binder-owned write, and per-field persist map in the shared base; retire the hand-wired `EntityWatch`/`publish` and the `get/set entity` boilerplate. Fold in feed-scoped echo suppression and the `@model`-registration assertion.
+2. **Batched, type-indexed store** — the perf prerequisites; retire `subscribeAll` as a structural hammer.
+3. **Forking** — `fork()`/`commit()`/`cancel()` with diff-against-baseline; migrate multi-field modals and any background recomputation onto it.
+4. **Query references** — filtered live collections over the indexed store.
+
+Housekeeping (registry table, cache base, eviction/prune) rides alongside whichever step it unblocks.
+
+### Consequences
+The patch replaces, rather than supplements:
+- the per-component `EntityWatch` wiring and the manual `touch()`/`publish()` calls;
+- the hand-rolled `Promise.all` refresh fan-out after writes;
+- `subscribeAll` as the mechanism for list-shaped and filtered views;
+- the ad-hoc snapshot/rollback dance in the banner base.
+
+It makes the reference behave the way this PEP's opening promised the *entity* would — edited anywhere, current everywhere — with forking and filtering as first-class operations rather than things a surface assembles by hand.
