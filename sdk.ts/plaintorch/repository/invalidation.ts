@@ -69,8 +69,8 @@ export interface InvalidationTarget {
 export class InvalidationScheduler {
 	private readonly dirtyEntities = new Set<EntityKey>()
 	private recordsDirty = false
+	/** The running flush chain, or undefined when nothing is queued. */
 	private flushing?: Promise<void>
-	private scheduled = false
 
 	public constructor(
 		private readonly store: EntityStore,
@@ -99,21 +99,44 @@ export class InvalidationScheduler {
 		this.schedule()
 	}
 
-	/** Resolves once the queued work has settled. */
+	/**
+	 * Resolves once everything queued has been revalidated.
+	 *
+	 * Awaits the whole flush chain, not a single pass: work queued while a pass runs is drained by the same
+	 * chain, and a chain that begins after this is called (a later burst) is awaited too. The chain is
+	 * assigned synchronously by {@link schedule}, so this never resolves early against work that is queued but
+	 * whose flush has not yet begun.
+	 */
 	public async settled(): Promise<void> {
-		await this.flushing
+		while (this.flushing) {
+			await this.flushing
+		}
 	}
 
+	/**
+	 * Starts the flush chain unless one is already running.
+	 *
+	 * The chain is assigned synchronously — not deferred into the microtask — so `flushing` is set the instant
+	 * work is queued and {@link settled} can observe it. Coalescing is preserved inside the chain, which waits
+	 * one microtask before its first pass so a synchronous burst still flushes once. A single chain is also
+	 * what keeps flushes from overlapping: work queued mid-flush is picked up by the chain's own loop rather
+	 * than starting a second, concurrent flush.
+	 */
 	private schedule(): void {
-		if (this.scheduled) {
-			return
-		}
+		this.flushing ??= this.runFlushes()
+	}
 
-		this.scheduled = true
-		queueMicrotask(() => {
-			this.scheduled = false
-			this.flushing = this.flush()
-		})
+	private async runFlushes(): Promise<void> {
+		try {
+			// Let a synchronous burst of invalidate() calls accumulate before the first pass.
+			await Promise.resolve()
+			while (this.dirtyEntities.size > 0 || this.recordsDirty) {
+				await this.flush()
+			}
+		}
+		finally {
+			this.flushing = undefined
+		}
 	}
 
 	private async flush(): Promise<void> {
