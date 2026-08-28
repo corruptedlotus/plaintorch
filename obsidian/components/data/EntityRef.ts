@@ -1,5 +1,5 @@
 import { Controller, type ReactiveElement } from '@a11d/lit'
-import { EntityRepository, identify, isSuccessfulMutation, type EntityKey, type EntitySubscription } from '@pleiades/sdk'
+import { EntityDraft, EntityRepository, identify, isSuccessfulMutation, type EntityKey, type EntitySubscription } from '@pleiades/sdk'
 import { plaintorchNodeCoreClient } from '@pleiades/sdk/plaintorch/node'
 import { Notice } from 'obsidian'
 import { ReactiveBinder } from '../editing/ReactiveBinder'
@@ -94,6 +94,19 @@ export class EntityRef<T extends object> extends Controller {
 		}
 
 		await this.run(async () => await repository.refresh(id))
+	}
+
+	/**
+	 * Opens an isolated working copy of this reference's entity for a multi-field or cancellable edit.
+	 *
+	 * The draft is edited freely and applies nothing to the shared store until its `commit`; `cancel` throws
+	 * it away. This is the fork-and-commit editing mode, as opposed to the immediate write `bind` performs.
+	 * Undefined when the reference has no repository or has not resolved its entity yet.
+	 */
+	public fork(): EntityDraft<T> | undefined {
+		const repository = this.repository()
+		const id = this.source()
+		return repository && id ? repository.fork(id) : undefined
 	}
 
 	/**
