@@ -22,7 +22,14 @@ export class LorePage {
 	parent?: LorePage
 }
 
-/** In-place edit of a lore page's mutable metadata (its level and narrative index stay path-derived). */
+/** A lore page within the chronology index: the page plus whether it is currently active and, when the index is structured, its child pages. */
+@model("IndexedLorePage")
+export class IndexedLorePage extends LorePage {
+	isActive: boolean = false
+	children?: IndexedLorePage[]
+}
+
+/** In-place edit of a lore page's frontmatter-backed metadata (its title/hierarchy are path-derived, not editable). */
 export interface LorePageUpdate {
 	/** Title. Omit to keep; a value renames the page and its self-named folder. */
 	title?: string | undefined

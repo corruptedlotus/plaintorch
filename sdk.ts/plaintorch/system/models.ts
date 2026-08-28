@@ -1,4 +1,4 @@
-import type { LorePage } from "../lore/models"
+import type { IndexedLorePage } from "../lore/models"
 import type { OnrushSprint } from "../onrush/models"
 import type { PolarisCycle } from "../polaris/models"
 
@@ -25,7 +25,7 @@ export interface SystemBriefing {
 	onrushSelectionMode: string | undefined
 	currentOnrush: OnrushSprint | undefined
 	currentPolaris: PolarisCycle | undefined
-	activeLorePages: LorePage[]
+	activeLorePages: IndexedLorePage[]
 }
 
 export interface HealthStatus {

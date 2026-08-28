@@ -18,7 +18,7 @@ namespace Pleiades.Saga;
 	ParentEntityType = typeof(LorePage),
 	PuckStorage = VaultPuckStorage.Index)]
 [Table("LoreIndexEntries")]
-public sealed class LorePage : PuckNamedEntity
+public class LorePage : PuckNamedEntity
 {
 	private static readonly IComparer<LorePage> _narrativeOrderComparer = Comparer<LorePage>.Create(CompareByNarrativeOrder);
 
@@ -115,33 +115,6 @@ public sealed class LorePage : PuckNamedEntity
 	public string EffectiveIdentifier => string.IsNullOrWhiteSpace(OverrideIdentifier)
 		? TerminalIdentifier
 		: OverrideIdentifier.Trim();
-
-	/// <summary>
-	/// Determines whether the lore page was ongoing during a specific date.
-	/// </summary>
-	public bool WasOngoingIn(DateOnly date, DateOnly? endingExclusive)
-	{
-		if (Beginning is null)
-		{
-			return false;
-		}
-
-		if (date < Beginning.Value)
-		{
-			return false;
-		}
-
-		return endingExclusive is null || date < endingExclusive.Value;
-	}
-
-	/// <summary>
-	/// Determines whether the lore page is ongoing for a given date context.
-	/// </summary>
-	public bool IsOngoing(DateOnly? date = null, DateOnly? endingExclusive = null)
-	{
-		var effectiveDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
-		return WasOngoingIn(effectiveDate, endingExclusive);
-	}
 
 	/// <summary>
 	/// Resolves the exclusive ending boundary from the next known sibling beginning.
@@ -310,4 +283,13 @@ public sealed class LorePage : PuckNamedEntity
 
 		return 0;
 	}
+
+	public static int? GetLevelNumber(string level) => level.ToLower() switch
+	{
+		"era" => 0,
+		"chapter" or "cha" => 1,
+		"act" => 2,
+		"phase" or "p" => 3,
+		_ => null
+	};
 }
