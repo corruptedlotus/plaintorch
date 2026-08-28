@@ -2,6 +2,7 @@ import { entityKey, type EntityKey, type EntityTypeName } from "./identity"
 import type { EntityStore, EntitySubscriber, EntitySubscription } from "./entityStore"
 import type { InvalidationScheduler } from "./invalidation"
 import { EntityDraft } from "./draft"
+import { runWrite } from "./mutation"
 
 /** Resolves one entity of a repository's type from the core. */
 export type EntityFetcher<T> = (id: string) => Promise<T | undefined>
@@ -25,16 +26,6 @@ export interface MutateOptions<R> {
 	succeeded?: (result: R) => boolean
 }
 
-/**
- * Whether a write result means the core accepted it.
- *
- * The client reports a failed request by returning nothing rather than throwing, so an absent result is a
- * rejection and not merely an operation with no return value.
- */
-export function isSuccessfulMutation(result: unknown): boolean {
-	return result !== undefined && result !== null && result !== false
-}
-
 const defaultFreshnessMs = 30_000
 
 /**
@@ -47,7 +38,6 @@ const defaultFreshnessMs = 30_000
 export class EntityRepository<T extends object> {
 	private readonly inFlight = new Map<EntityKey, Promise<T | undefined>>()
 	private readonly resolvedAt = new Map<EntityKey, number>()
-	private readonly mutating = new Set<EntityKey>()
 	private readonly freshnessMs: number
 	private readonly invalidation?: InvalidationScheduler
 
@@ -128,7 +118,7 @@ export class EntityRepository<T extends object> {
 	public async revalidateIfObserved(id: string): Promise<void> {
 		const key = this.key(id)
 		this.invalidate(id)
-		if (this.store.hasSubscribers(key) && !this.mutating.has(key)) {
+		if (this.store.hasSubscribers(key) && !this.store.isWriting(key)) {
 			await this.refresh(id)
 		}
 	}
@@ -138,7 +128,7 @@ export class EntityRepository<T extends object> {
 		const observed = [...this.resolvedAt.keys()].filter((key) => this.store.hasSubscribers(key))
 		await Promise.all(observed.map(async (key) => {
 			const id = key.slice(key.indexOf(":") + 1)
-			if (!this.mutating.has(key)) {
+			if (!this.store.isWriting(key)) {
 				await this.refresh(id)
 			}
 		}))
@@ -158,42 +148,37 @@ export class EntityRepository<T extends object> {
 
 	/** Determines whether a write against an identity is currently in flight. */
 	public isMutating(id: string): boolean {
-		return this.mutating.has(this.key(id))
+		return this.store.isWriting(this.key(id))
 	}
 
 	/**
-	 * Runs a write against an entity, undoing it if the core rejects it and republishing what it changed.
+	 * Runs an imperative write — the path a non-binding action (a canvas edit, an add-to-Polaris) takes.
+	 * Undoes it if the core rejects it, and revalidates what it changed on success.
 	 *
-	 * While the write is in flight the identity is held, so a revalidation — including the echo of this
-	 * very write arriving on the change feed — cannot refetch over an edit the user is still making.
+	 * The shared cycle in {@link runWrite} holds the identity in the store for the duration, so a
+	 * revalidation — including the echo of this very write on the change feed — cannot refetch over it.
 	 */
 	public async mutate<R>(id: string, operation: () => Promise<R>, options: MutateOptions<R> = {}): Promise<R> {
-		const key = this.key(id)
-		this.mutating.add(key)
-		// Marked at both ends. Holding the identity only stops a revalidation from *starting*; a read
-		// already in flight would still land afterwards and revert the edit, because absorption has no
-		// sense of order and the older response simply arrived later.
-		this.store.noteLocalChange(key)
-		try {
-			const result = await operation()
-			const succeeded = (options.succeeded ?? isSuccessfulMutation)(result)
-			if (!succeeded) {
-				this.rollback(id, options.rollbackTo)
-				return result
-			}
+		const { result, ok } = await runWrite(this.store, this.invalidation, this.typeName, id, operation, options)
+		if (ok) {
+			this.resolvedAt.set(this.key(id), Date.now())
+		}
 
-			this.resolvedAt.set(key, Date.now())
-			this.invalidation?.invalidate(this.typeName, id)
-			return result
+		return result
+	}
+
+	/**
+	 * Runs a write whose edit is already applied to the canonical instance — the store-direct path the
+	 * reference's immediate commit takes. The same guard, invalidation and rollback as {@link mutate},
+	 * reporting only whether the core accepted it since a binding's edit is already on screen.
+	 */
+	public async commit(id: string, send: () => Promise<unknown>, rollbackTo?: Record<string, unknown>): Promise<boolean> {
+		const { ok } = await runWrite(this.store, this.invalidation, this.typeName, id, send, { rollbackTo })
+		if (ok) {
+			this.resolvedAt.set(this.key(id), Date.now())
 		}
-		catch (error) {
-			this.rollback(id, options.rollbackTo)
-			throw error
-		}
-		finally {
-			this.store.noteLocalChange(key)
-			this.mutating.delete(key)
-		}
+
+		return ok
 	}
 
 	/** Captures the current field values of an entity so a rejected write can be undone. */

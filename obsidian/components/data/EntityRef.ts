@@ -1,5 +1,5 @@
 import { Controller, type ReactiveElement } from '@a11d/lit'
-import { EntityDraft, EntityRepository, identify, isSuccessfulMutation, type EntityKey, type EntitySubscription } from '@pleiades/sdk'
+import { EntityDraft, EntityRepository, identify, type EntityKey, type EntitySubscription } from '@pleiades/sdk'
 import { plaintorchNodeCoreClient } from '@pleiades/sdk/plaintorch/node'
 import { Notice } from 'obsidian'
 import { ReactiveBinder } from '../editing/ReactiveBinder'
@@ -142,8 +142,9 @@ export class EntityRef<T extends object> extends Controller {
 		const snapshot = this.editSnapshot
 		this.editSnapshot = undefined
 
-		const result = await repository.mutate(id, async () => await send(entity), { rollbackTo: snapshot })
-		const saved = isSuccessfulMutation(result)
+		// The store-direct write path — the same guard, invalidation and rollback the repository gives an
+		// imperative mutate, but the reference owns the cycle now rather than routing an edit through mutate.
+		const saved = await repository.commit(id, async () => await send(entity), snapshot)
 		if (!saved) {
 			new Notice('PLAINTORCH could not save that change.')
 		}

@@ -52,6 +52,8 @@ export class EntityStore {
 	 */
 	private revision = 0
 	private readonly changedAt = new Map<EntityKey, number>()
+	/** Identities with a write in flight, held so a revalidation does not refetch over an edit mid-write. */
+	private readonly writing = new Set<EntityKey>()
 
 	/**
 	 * Registers or merges a value and returns the canonical instance for its identity.
@@ -150,6 +152,28 @@ export class EntityStore {
 	 */
 	public noteLocalChange(key: EntityKey): void {
 		this.changedAt.set(key, ++this.revision)
+	}
+
+	/**
+	 * Marks a write against an identity as in flight, and notes the local change.
+	 *
+	 * The hold lets a repository skip a revalidation while the write runs; the note is what supersedes a read
+	 * taken before it. This is the single home of the in-flight guard — every write path opens it here.
+	 */
+	public beginWrite(key: EntityKey): void {
+		this.writing.add(key)
+		this.noteLocalChange(key)
+	}
+
+	/** Ends the write, noting the local change again so a read taken *during* it is superseded too. */
+	public endWrite(key: EntityKey): void {
+		this.noteLocalChange(key)
+		this.writing.delete(key)
+	}
+
+	/** Whether a write against an identity is currently in flight. */
+	public isWriting(key: EntityKey): boolean {
+		return this.writing.has(key)
 	}
 
 	/**

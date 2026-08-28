@@ -3,13 +3,9 @@ import type { EntityStore } from "./entityStore"
 import type { EntityKey, EntityTypeName } from "./identity"
 import type { InvalidationScheduler } from "./invalidation"
 import { isEquivalent } from "./equivalence"
+import { runWrite } from "./mutation"
 
 const modelValueConstructor = new ModelValueConstructor()
-
-/** Mirrors `isSuccessfulMutation`: an absent result — undefined, null, or false — is a rejection. */
-function isAccepted(result: unknown): boolean {
-	return result !== undefined && result !== null && result !== false
-}
 
 /** Persists a draft's committed changes. Receives the changed fields and the reconciled canonical entity. */
 export type DraftPersist<T> = (patch: Partial<T>, entity: T) => Promise<unknown>
@@ -90,17 +86,18 @@ export class EntityDraft<T extends object> {
 		this.store.patch(this.key, patch as Record<string, unknown>)
 		const entity = this.store.peek<T>(this.key) ?? this.value
 
-		const result = await persist(patch, entity)
-		if (!isAccepted(result)) {
-			if (snapshot) {
-				this.store.restore(this.key, snapshot)
-			}
+		// The same shared write cycle mutate and the reference's commit run: it holds the identity, invalidates
+		// on success, and restores the pre-commit snapshot (undoing the patch) on rejection.
+		const { ok } = await runWrite(
+			this.store,
+			this.invalidation,
+			this.typeName,
+			this.id,
+			async () => await persist(patch, entity),
+			{ rollbackTo: snapshot }
+		)
 
-			return false
-		}
-
-		this.invalidation?.invalidate(this.typeName, this.id)
-		return true
+		return ok
 	}
 
 	/** Discards the draft. Nothing was applied to the store, so this only marks it spent. */
