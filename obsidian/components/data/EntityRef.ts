@@ -278,3 +278,48 @@ export class EntityWatch extends Controller {
 		this.observedKey = undefined
 	}
 }
+
+/**
+ * A live, filtered collection of one entity type.
+ *
+ * Observes the type in the store — a field edit on any member, a new member, a removal — and re-renders its
+ * host, so a view of "the active objectives" or "a directive's children" stays current as members change,
+ * enter, or leave the predicate. It scans only its type (through the store's per-type index), not the whole
+ * store, so an unrelated change never re-runs it — the scoped alternative to `subscribeAll` a structural view
+ * reached for before.
+ *
+ * This is a view over what the store already holds, not a fetch: the surface loads the members (a listing, the
+ * briefing) as usual, and this keeps a live filtered slice of them. The predicate and comparator are read on
+ * every access, so one that closes over component state — a chosen filter — tracks it without re-subscribing.
+ */
+export class QueryRef<T extends object> extends Controller {
+	private subscription?: EntitySubscription
+
+	public constructor(
+		host: ReactiveElement,
+		private readonly repository: EntityRepository<T>,
+		private readonly predicate?: (entity: T) => boolean,
+		private readonly compare?: (a: T, b: T) => number
+	) {
+		super(host)
+	}
+
+	/** The type's members matching the predicate, in order — recomputed from the live store on each read. */
+	public get items(): T[] {
+		const all = plaintorchNodeCoreClient.store.entitiesOfType<T>(this.repository.typeName)
+		const filtered = this.predicate ? all.filter(this.predicate) : all
+		return this.compare ? filtered.sort(this.compare) : filtered
+	}
+
+	public override hostConnected(): void {
+		this.subscription = plaintorchNodeCoreClient.store.subscribeType(
+			this.repository.typeName,
+			() => this.host.requestUpdate()
+		)
+	}
+
+	public override hostDisconnected(): void {
+		this.subscription?.()
+		this.subscription = undefined
+	}
+}
