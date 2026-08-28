@@ -43,6 +43,14 @@ public sealed class LorePageApiService(
 			.ToListAsync(cancellationToken);
 	}
 
+	public async Task<IReadOnlyList<LorePage>> ListActiveAsync(CancellationToken cancellationToken = default)
+	{
+		var index = await context.LorePages
+			.AsNoTracking()
+			.ToLoreIndexAsync(cancellationToken);
+		return index.ActivePages;
+	}
+
 	/// <inheritdoc />
 	public async Task<LorePage> CreateAsync(LorePageCreateRequest request, CancellationToken cancellationToken = default)
 	{
