@@ -1,9 +1,23 @@
 import { Controller, type ReactiveElement } from '@a11d/lit'
-import { EntityRepository, identify, type EntityKey, type EntitySubscription } from '@pleiades/sdk'
+import { EntityRepository, identify, isSuccessfulMutation, type EntityKey, type EntitySubscription } from '@pleiades/sdk'
 import { plaintorchNodeCoreClient } from '@pleiades/sdk/plaintorch/node'
+import { Notice } from 'obsidian'
+import { ReactiveBinder } from '../editing/ReactiveBinder'
 
 /** Supplies the identifier a reference should resolve, re-read on every host update. */
 export type EntityRefSource = () => string | undefined
+
+/** Persists one committed field of an entity. Returns the API result; an absent result is a rejection. */
+export type EntityFieldPersist<T> = (entity: T) => Promise<unknown>
+
+/**
+ * How each field of an entity is saved. A field name maps to the call that persists it; `'*'` is the fallback
+ * for any field without its own entry — typically a whole-entity update.
+ */
+export type EntityPersistMap<T> = Record<string, EntityFieldPersist<T>> & { '*': EntityFieldPersist<T> }
+
+/** Runs after a field commit settles, for surface-specific follow-up such as revealing a renamed note. */
+export type EntityCommitReaction<T> = (keyPath: string, entity: T, saved: boolean) => void | Promise<void>
 
 const warnedTags = new Set<string>()
 
@@ -31,6 +45,8 @@ export class EntityRef<T extends object> extends Controller {
 	private observedKey?: EntityKey
 	private resolving = false
 	private failure?: unknown
+	/** Fields captured before a binding writes an edit, kept so a rejected write can be undone. */
+	private editSnapshot?: Record<string, unknown>
 
 	public constructor(
 		host: ReactiveElement,
@@ -78,6 +94,68 @@ export class EntityRef<T extends object> extends Controller {
 		}
 
 		await this.run(async () => await repository.refresh(id))
+	}
+
+	/**
+	 * Captures the entity's fields before a two-way binding writes an edit into it.
+	 *
+	 * A binding applies the edit to the canonical instance before anything is sent, so this is the last moment
+	 * the previous state still exists anywhere — it is what a rejected write is rolled back to.
+	 */
+	public beginEdit(): void {
+		const repository = this.repository()
+		const id = this.source()
+		this.editSnapshot = repository && id ? repository.snapshot(id) : undefined
+	}
+
+	/**
+	 * Broadcasts an in-place edit already applied to the canonical instance, sends it, and rolls it back if
+	 * the core rejects it.
+	 *
+	 * The edit is on screen the instant a binding writes it; without the rollback a rejected write is
+	 * indistinguishable from an accepted one, since a failed request reports itself by returning nothing. The
+	 * optional reaction runs once the write has settled, for follow-up that depends on the outcome.
+	 */
+	public async commit(send: EntityFieldPersist<T>, reaction?: (saved: boolean) => void | Promise<void>): Promise<boolean> {
+		const repository = this.repository()
+		const id = this.source()
+		const entity = this.value
+		if (!repository || !id || !entity) {
+			return false
+		}
+
+		// Publish the optimistic in-place edit to every other surface showing this entity.
+		repository.touch(id)
+		const snapshot = this.editSnapshot
+		this.editSnapshot = undefined
+
+		const result = await repository.mutate(id, async () => await send(entity), { rollbackTo: snapshot })
+		const saved = isSuccessfulMutation(result)
+		if (!saved) {
+			new Notice('PLAINTORCH could not save that change.')
+		}
+
+		await reaction?.(saved)
+		return saved
+	}
+
+	/**
+	 * A two-way binder whose edits are persisted through this reference.
+	 *
+	 * `sourceKey` is the host property the binding reads the entity from — it resolves to this reference's
+	 * canonical value. `persist` says how each field is saved; `reaction`, if given, runs after each commit
+	 * for surface-specific follow-up. This is the whole edit cycle — snapshot, write-through, broadcast, send,
+	 * rollback — behind one `${ref.bind('field')}`.
+	 */
+	public binder(sourceKey: string, persist: EntityPersistMap<T>, reaction?: EntityCommitReaction<T>): ReactiveBinder<T> {
+		return new ReactiveBinder<T>(this.host as unknown as ReactiveElement, sourceKey, {
+			sourceUpdate: () => this.beginEdit(),
+			sourceUpdated: (_, keyPath) => {
+				const key = (keyPath as string | undefined) ?? '*'
+				const send = persist[key] ?? persist['*']
+				void this.commit(send, reaction && ((saved) => reaction(key, this.value!, saved)))
+			}
+		})
 	}
 
 	private sync(): void {

@@ -4,7 +4,7 @@ import { Objective, PolarisCycle } from '@pleiades/sdk'
 import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
 import { OnrushSprint } from "@pleiades/sdk"
 import { App, Notice, SuggestModal } from "obsidian"
-import { core, getApp, IconItem, IconName, ReactiveBinder, SelectCollegeModal, SelectObjectiveStatusModal } from ".."
+import { core, getApp, IconItem, IconName, SelectCollegeModal, SelectObjectiveStatusModal } from ".."
 
 @component('p7t-objective-banner')
 export class ObjectiveBanner extends EntityBanner<Objective> {
@@ -14,34 +14,29 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 
 	protected override readonly entityTypeName = 'Objective' as const
 
-	protected binder = new ReactiveBinder<Objective>(this, 'entity', {
-		sourceUpdate: () => this.beginEntityEdit(),
-		sourceUpdated: async (_, keyPath) => {
-			const entity = this.entity!
-			const saved = await this.commitEntityEdit(async () => keyPath === 'status'
-				? await core.objectives.shiftWorkflow(entity.id, { status: entity.status })
-				: await core.objectives.update(entity.id, entity))
-
-			if (!saved) {
-				return
-			}
-
-			if (keyPath === 'title')
-			{
-				const existence = await core.repos.entityResolution.refresh(entity.id)
-
-				const app = (window as any).app as App
-				if (!existence?.associatedNote
-					|| app.workspace.activeEditor?.file?.path === existence?.associatedNote) return
-
-				const file = app.vault.getFileByPath(existence.associatedNote)!
-				app.workspace.getLeaf(true).openFile(file)
-			}
+	protected binder = this.ref.binder('entity', {
+		status: (entity) => core.objectives.shiftWorkflow(entity.id, { status: entity.status }),
+		'*': (entity) => core.objectives.update(entity.id, entity)
+	}, (keyPath, entity, saved) => {
+		if (saved && keyPath === 'title') {
+			void this.revealRenamedNote(entity.id)
 		}
 	})
 
 	protected override async loadRelated() {
 		this.activePolaris = await core.polaris.getCurrent()
+	}
+
+	/** Opens the objective's note after a rename moved it, unless it is already the active file. */
+	private async revealRenamedNote(objectiveId: string): Promise<void> {
+		const existence = await core.repos.entityResolution.refresh(objectiveId)
+		const app = (window as any).app as App
+		if (!existence?.associatedNote || app.workspace.activeEditor?.file?.path === existence.associatedNote) {
+			return
+		}
+
+		const file = app.vault.getFileByPath(existence.associatedNote)!
+		app.workspace.getLeaf(true).openFile(file)
 	}
 
 	protected get isInActivePolaris() {
