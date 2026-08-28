@@ -123,22 +123,16 @@ export class CheckpointBanner extends EntityBanner<Checkpoint> {
 
 		const paid = await core.repos.checkpoints.mutate(checkpoint.id, async () => await core.dependencies.payToll(checkpoint.id))
 		new Notice(paid ? 'Toll paid.' : 'Could not pay the toll.')
-		if (paid) {
-			await core.repos.checkpoints.refresh(checkpoint.id)
-		}
 	}
 
-	/** Persists a checkpoint change made through an action rather than an inline edit, then refreshes. */
+	/** Persists a checkpoint change made through an action rather than an inline edit. */
 	private async applyUpdate(update: CheckpointUpdate) {
 		const checkpoint = this.entity
 		if (!checkpoint) {
 			return
 		}
 
-		const updated = await core.repos.checkpoints.mutate(checkpoint.id, async () => await core.dependencies.updateCheckpoint(checkpoint.id, update))
-		if (updated) {
-			await core.repos.checkpoints.refresh(checkpoint.id)
-		}
+		await core.repos.checkpoints.mutate(checkpoint.id, async () => await core.dependencies.updateCheckpoint(checkpoint.id, update))
 	}
 }
 

@@ -54,11 +54,8 @@ export class ObjectiveItem extends EntityItem<Objective> {
 		const added = await core.repos.objectives.mutate(objectiveId, async () =>
 			await core.polaris.addObjectiveToCurrent(objectiveId))
 		if (added) {
-			await Promise.all([
-				core.repos.objectives.refresh(objectiveId),
-				core.repos.polaris.revalidateObserved(),
-				core.repos.briefing.revalidateIfObserved()
-			])
+			// The objective and briefing ride on the mutate above; only the owning cycle needs a nudge.
+			await core.repos.polaris.revalidateObserved()
 		}
 	}
 

@@ -206,11 +206,8 @@ class AddObjectiveModal extends SuggestModal<Objective> {
 		const added = await core.repos.objectives.mutate(item.id, async () =>
 			await core.polaris.addObjectiveToCurrent(item.id))
 		if (added) {
-			await Promise.all([
-				core.repos.objectives.refresh(item.id),
-				core.repos.polaris.revalidateObserved(),
-				core.repos.briefing.revalidateIfObserved()
-			])
+			// The objective and briefing ride on the mutate above; only the owning cycle needs a nudge.
+			await core.repos.polaris.revalidateObserved()
 		}
 	}
 }

@@ -56,11 +56,9 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 			await core.polaris.addObjectiveToCurrent(objectiveId))
 		if (added) {
 			new Notice('Added to active Polaris cycle.')
-			await Promise.all([
-				core.repos.objectives.refresh(objectiveId),
-				core.repos.polaris.revalidateObserved(),
-				core.repos.briefing.revalidateIfObserved()
-			])
+			// The objective and the briefing are already covered by the mutate above; only the owning cycle
+			// needs a manual nudge (the feed reaches it too — this just keeps it prompt when the feed is down).
+			await core.repos.polaris.revalidateObserved()
 			this.activePolaris = await core.polaris.getCurrent()
 		}
 	}
@@ -215,7 +213,6 @@ class AddToOnrushModal extends SuggestModal<OnrushSprint | null> {
 		new Notice(!item
 			? 'Removed from Onrush.'
 			: `Added to ${(item.id === 'x0000' ? 'planning' : 'active')} Onrush.`)
-		await core.repos.objectives.refresh(objectiveId)
 	}
 
 }

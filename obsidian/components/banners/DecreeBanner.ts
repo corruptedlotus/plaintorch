@@ -78,7 +78,6 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		if (attentive) {
 			new Notice('Added to active Polaris cycle.')
 			this.activePolaris = await core.polaris.getCurrent()
-			await core.repos.decrees.refresh(decreeId)
 		}
 	}
 
