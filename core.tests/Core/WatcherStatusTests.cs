@@ -139,6 +139,44 @@ public sealed class WatcherStatusTests : VaultTestBase
 		Assert.Contains(registry.GetRecentResolved(), transition => transition.ReasonCode == WatcherOperations.PolicyViolation);
 	}
 
+	[Fact]
+	public void A_clean_reinspection_of_a_vanished_file_resolves_its_raised_issue()
+	{
+		// The other resolution path: a file that raised an issue is later gone, so discovery reports the path as a
+		// non-candidate (ReportInspectIgnored). That clean report must clear the flag for the scope.
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		watcher.ReportInspectCandidate(Candidate("Objectives/Gone.md", VaultSyncAction.Conflict, "policy violation: unknown file placement"));
+		Assert.Single(registry.GetActiveStatuses());
+
+		watcher.ReportInspectIgnored(Vault.AbsolutePath("Objectives/Gone.md"));
+
+		Assert.Empty(registry.GetActiveStatuses());
+	}
+
+	[Fact]
+	public void A_successful_sync_resolves_every_reason_the_inspection_raised()
+	{
+		// The core of the purge-lingering fix: a candidate that trips several reason codes at once must have *all* of
+		// them resolved on a successful sync, not only SyncFailed.
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		var candidate = Candidate(
+			"Objectives/Messy.md",
+			VaultSyncAction.PurgeFile,
+			"puck violation and policy rejection",
+			issues: [new MarkdownValidationIssue("id", "bad identity")]);
+		watcher.ReportInspectCandidate(candidate);
+		Assert.True(registry.GetActiveStatuses().Count >= 2, "expected the candidate to raise multiple reason codes");
+
+		watcher.ReportSyncSucceeded(candidate);
+
+		Assert.Empty(registry.GetActiveStatuses());
+		Assert.Equal(OperationHealth.Ok, registry.GetHealth());
+	}
+
 	[Fact(Skip = "PEP108 phase D (structured outcomes, with REFACTOR Alpha phase 4): one root cause should yield one classified reason. Today the three string-sniffing heuristics each match independently, so a single file raises MarkdownInvalid + PuckViolation + PolicyViolation.")]
 	public void One_bad_file_should_raise_a_single_classified_issue()
 	{
