@@ -109,11 +109,6 @@ public static class Program
 		var app = builder.Install<PLAINTORCH>().Build();
 		app.UseRouting();
 		app.UseCors("PlaintorchGlobalCors");
-		app.UseStaticFiles(new StaticFileOptions
-		{
-			FileProvider = new PhysicalFileProvider(Path.Combine(app.Environment.ContentRootPath, "Assets")),
-			RequestPath = "/assets"
-		});
 		app.Configure<PLAINTORCH>();
 
 		if (command == "serve")
@@ -201,7 +196,7 @@ public static class Program
 	/// <summary>
 	/// Runs the long-lived PLAINTORCH host for Windows service or systemd execution.
 	/// </summary>
-	private static async Task<int> RunServeAsync(WebApplication application)
+	private static async Task<int> RunServeAsync(WebApplication application, bool daemon = false)
 	{
 		await using var scope = application.Services.CreateAsyncScope();
 		var lockService = scope.ServiceProvider.GetRequiredService<PlaintorchVaultLockService>();
