@@ -63,6 +63,11 @@ public sealed class SystemModule : Module
 			return Results.Ok(await api.ResolveEntityByPuckAsync(id, cancellationToken));
 		});
 
-		endpoints.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
+		endpoints.MapGet("/healthz", (ActiveVaultSession session) => Results.Ok(new
+		{
+			status = "ok",
+			mode = session.IsActive ? "active" : "idle",
+			activeVault = session.ActiveVaultPath,
+		}));
 	}
 }

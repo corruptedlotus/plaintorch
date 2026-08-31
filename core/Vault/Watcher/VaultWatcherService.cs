@@ -17,6 +17,7 @@ public sealed class VaultWatcherService(
 	VaultLayout layout,
 	VaultWatcherWriteBarrier writeBarrier,
 	VaultWatcherIssueRegistry issueRegistry,
+	Pleiades.Plaintorch.ActiveVaultSession session,
 	ILogger<VaultWatcherService> logger) : BackgroundService
 {
 	private static readonly TimeSpan DebounceWindow = TimeSpan.FromMilliseconds(500);
@@ -26,6 +27,54 @@ public sealed class VaultWatcherService(
 
 	/// <inheritdoc />
 	protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+	{
+		var servedGeneration = 0L;
+		while (!stoppingToken.IsCancellationRequested)
+		{
+			long generation;
+			CancellationToken sessionToken;
+			try
+			{
+				(generation, sessionToken) = await session.WaitForSessionAsync(servedGeneration, stoppingToken);
+			}
+			catch (OperationCanceledException)
+			{
+				return;
+			}
+
+			// Record the generation before running so a session is never re-entered, even if RunSessionAsync
+			// returns early. The next iteration then blocks until a newer activation, preventing a hot loop.
+			servedGeneration = generation;
+			issueRegistry.SetOverrideStatus(VaultWatcherHealthStatus.Standby);
+
+			using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, sessionToken);
+			try
+			{
+				await RunSessionAsync(linkedCts.Token);
+			}
+			catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+			{
+				return;
+			}
+			catch (OperationCanceledException)
+			{
+				// The active vault was deactivated. Fall through to await the next activation.
+			}
+			catch (Exception exception)
+			{
+				logger.LogError(exception, "Vault watcher session terminated unexpectedly. The watcher will resume when a vault is next activated.");
+			}
+
+			issueRegistry.SetOverrideStatus(VaultWatcherHealthStatus.Standby);
+		}
+	}
+
+	/// <summary>
+	/// Runs one vault-serving watcher session: startup discovery, live observation, and drain reconciliation,
+	/// until the session token is cancelled by vault deactivation or host shutdown.
+	/// </summary>
+	/// <param name="stoppingToken">A token scoped to the active vault session.</param>
+	private async Task RunSessionAsync(CancellationToken stoppingToken)
 	{
 		issueRegistry.ClearOverrideStatus();
 

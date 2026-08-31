@@ -10,6 +10,7 @@ public sealed class CoreCommand
 	{
 		commands.Add<InitCommand>("init");
 		commands.Add<ActivateCommand>("activate");
+		commands.Add<DeactivateCommand>("deactivate");
 		commands.Add<ServeCommand>("serve");
 		commands.Add<BootstrapServiceCommand>("bootstrap-service");
 	}

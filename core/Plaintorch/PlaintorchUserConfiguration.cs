@@ -264,4 +264,22 @@ public sealed class PlaintorchVaultActivationService(
 		userLayout.EnsureExists();
 		return fullPath;
 	}
+
+	/// <summary>
+	/// Clears the active per-user PLAINTORCH vault so the hosted core returns to idle.
+	/// </summary>
+	/// <returns>The vault path that was previously active, or <see langword="null"/> when none was configured.</returns>
+	public string? Deactivate()
+	{
+		var configuration = configurationStore.Load();
+		var previousVaultPath = configuration.ActiveVaultPath;
+		if (previousVaultPath is null)
+		{
+			return null;
+		}
+
+		configuration.ActiveVaultPath = null;
+		configurationStore.Save(configuration);
+		return previousVaultPath;
+	}
 }
