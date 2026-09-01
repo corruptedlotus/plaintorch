@@ -1,9 +1,9 @@
-import { component, css, html, property } from "@a11d/lit"
+import { component, html, property } from "@a11d/lit"
 import { Attentive, AttentiveResolution } from "@pleiades/sdk"
 import { Notice } from "obsidian"
 import { OccurrenceItem } from "./OccurrenceItem"
 import { core } from ".."
-import { Temporal } from "@js-temporal/polyfill"
+import "../system/DatetimeView"
 
 /**
  * A single attentive occurrence of a decree. Its notch quick-switches between undone (Pending) and done;
@@ -16,29 +16,12 @@ import { Temporal } from "@js-temporal/polyfill"
 export class AttentiveItem extends OccurrenceItem {
 	@property({ type: Object }) attentive?: Attentive
 
-	static override get styles() {
-		return css`
-			${super.styles}
-
-			.timer {
-				font-weight: 400;
-				display: inline-flex;
-				align-items: center;
-				gap: .4ch;
-
-				&.past {
-					color: var(--text-error);
-				}
-
-				&.future {
-					opacity: .6;
-				}
-			}
-		`
-	}
-
 	private get done() {
 		return this.attentive?.resolution === AttentiveResolution.Done
+	}
+
+	override get disabled() {
+		return this.done
 	}
 
 	protected override get heading() {
@@ -50,7 +33,9 @@ export class AttentiveItem extends OccurrenceItem {
 	}
 
 	protected override get notchTemplate() {
-		return html`<p7t-icon icon=${this.done ? 'state-done' : 'state-zero'}></p7t-icon>`
+		return html`
+			<p7t-status-item icon-only status=${this.done ? 'Done' : 'Standby'}></p7t-status-item>
+		`
 	}
 
 	protected override async notchAction() {
@@ -71,15 +56,26 @@ export class AttentiveItem extends OccurrenceItem {
 	}
 
 	override get info() {
-		const epoch = Temporal.PlainDateTime.from(`${this.attentive?.date ?? ''}T${this.attentive?.time ?? ''}`)
-		const past = epoch.since(Temporal.Now.plainDateTimeISO()).sign === -1
+		const attentive = this.attentive
+		if (!attentive) {
+			return html``
+		}
+
+		// The relative chip states the direction itself ("in 2 hours", "3 minutes ago"), ticking live off the shared
+		// clock, and — while pending — flags an overdue occurrence red with a clock-alert via warn="past". It carries
+		// the exact date/time in its tooltip.
+		if (!this.done) {
+			return html`
+				<p7t-datetime-view relative warn='past' .date=${attentive.date} .time=${attentive.time}></p7t-datetime-view>
+			`
+		}
+
+		if (!attentive.resolvedOn) {
+			return html``
+		}
 
 		return html`
-			<span class='timer ${past ? 'past' : 'future'}'>
-				${past ? html`` : html`in`}
-				<p7t-elapsed-view .epoch=${epoch.toString()}></p7t-elapsed-view>
-				${past ? html`<p7t-icon icon='lucide:clock-alert'></p7t-icon>` : html``}
-			</span>
+			<p7t-datetime-view relative .date=${attentive.resolvedOn}></p7t-datetime-view>
 		`
 	}
 }

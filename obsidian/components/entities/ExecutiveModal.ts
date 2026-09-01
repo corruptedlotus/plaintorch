@@ -1,7 +1,7 @@
 import { Component, component, css, html, nothing, property, state } from "@a11d/lit"
 import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
 import { App, Modal, Notice } from "obsidian"
-import { core, getApp, resolveMediaIcon, SelectObjectiveStatusModal, SelectTimeframeModal } from ".."
+import { core, SelectObjectiveStatusModal, SelectTimeframeModal } from ".."
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 import type { EditablePart } from "../editing/EditableDataLink"
 import type { EditableTimeUnit } from "../editing/EditableTimeUnit"
@@ -21,16 +21,18 @@ export class ExecutiveEditor extends Component {
 	@property({
 		type: Object,
 		updated(this: ExecutiveEditor, value: Executive | undefined) {
+			// The allocations are nullable and kept undefined when unset, so a cleared allocation reads as cleared
+			// rather than as zero; only the tracked tally always has a value.
 			this.draft = {
 				elapsed: value?.elapsed ?? 0,
-				estimation: value?.estimation ?? 0,
-				minimum: value?.minimum ?? 0,
-				maximum: value?.maximum ?? 0,
+				estimation: value?.estimation,
+				minimum: value?.minimum,
+				maximum: value?.maximum,
 			}
 		}
 	}) executive?: Executive
 
-	@state() private draft: Record<Allocation, number> = { elapsed: 0, estimation: 0, minimum: 0, maximum: 0 }
+	@state() private draft: Record<Allocation, number | undefined> = { elapsed: 0, estimation: undefined, minimum: undefined, maximum: undefined }
 
 	static override get styles() {
 		return css`
@@ -111,24 +113,9 @@ export class ExecutiveEditor extends Component {
 			}
 
 			/* Both indicators edit in place, so they align to the start rather than centring. */
-			.status p7t-editable {
+			.status > * {
 				justify-content: flex-start;
 				align-self: stretch;
-			}
-
-			.affinity {
-				display: flex;
-				align-items: center;
-				gap: .4em;
-
-				& p7t-icon {
-					width: 1.4em;
-					height: 1.4em;
-				}
-
-				&.muted {
-					opacity: .5;
-				}
 			}
 
 			.allocations {
@@ -202,18 +189,21 @@ export class ExecutiveEditor extends Component {
 
 				<div class='status'>
 					<span class='label'>Status</span>
+
 					<p7t-editable
 						.value=${executive.executed}
 						.doEdit=${(executed: boolean | undefined) => Promise.resolve(!executed)}
 						@change=${(e: Event) => this.commitExecuted(e)}>
-						<p7t-executed-item ?executed=${executive.executed}></p7t-executed-item>
+						<p7t-executed-item small ?executed=${executive.executed}></p7t-executed-item>
 					</p7t-editable>
+					
 					${!objective ? nothing : html`
 						<p7t-editable
 							.value=${objective.status}
 							.doEdit=${SelectObjectiveStatusModal.prompt}
 							@change=${(e: Event) => this.commitStatus(e)}>
 							<p7t-status-item
+								small
 								.status=${ObjectiveStatus[objective.status] as keyof typeof ObjectiveStatus}>
 							</p7t-status-item>
 						</p7t-editable>
@@ -223,16 +213,16 @@ export class ExecutiveEditor extends Component {
 						.value=${executive.affinityTimeframe}
 						.doEdit=${SelectTimeframeModal.prompt}
 						@change=${(e: Event) => this.commitAffinity(e)}>
-						${this.affinityTemplate(executive.affinityTimeframe)}
+						<p7t-timeframe-item small nullable .timeframe=${executive.affinityTimeframe}></p7t-timeframe-item>
 					</p7t-editable>
 				</div>
 			</div>
 
 			<p7t-allocation-bar
-				.elapsed=${this.draft.elapsed}
-				.estimation=${this.draft.estimation}
-				.minimum=${this.draft.minimum}
-				.maximum=${this.draft.maximum}>
+				.elapsed=${this.draft.elapsed ?? 0}
+				.estimation=${this.draft.estimation ?? 0}
+				.minimum=${this.draft.minimum ?? 0}
+				.maximum=${this.draft.maximum ?? 0}>
 			</p7t-allocation-bar>
 
 			<div class='allocations'>
@@ -247,6 +237,7 @@ export class ExecutiveEditor extends Component {
 		return html`
 			<div class='allocation ${featured ? 'featured' : ''}'>
 				<p7t-editable-time-unit
+					nullable
 					?accent=${featured}
 					.value=${this.draft[allocation]}
 					@preview=${(e: CustomEvent<number>) => this.previewAllocation(allocation, e.detail)}
@@ -257,14 +248,15 @@ export class ExecutiveEditor extends Component {
 		`
 	}
 
-	private previewAllocation(allocation: Allocation, value: number) {
+	private previewAllocation(allocation: Allocation, value: number | undefined) {
 		this.draft = { ...this.draft, [allocation]: value }
 	}
 
 	private commitAllocation(allocation: Allocation, e: Event) {
-		const value = (e.target as EditableTimeUnit).value ?? 0
+		const value = (e.target as EditableTimeUnit).value
 		this.previewAllocation(allocation, value)
-		this.applyUpdate({ [allocation]: value })
+		// A cleared allocation commits as null (a canonical clear); a set one as its value.
+		this.applyUpdate({ [allocation]: value ?? null } as ExecutiveUpdate)
 	}
 
 	private commitExecuted(e: Event) {
@@ -274,33 +266,13 @@ export class ExecutiveEditor extends Component {
 		this.applyUpdate({ executed })
 	}
 
-	/** The display shown inside the affinity selector: the affined timeframe's icon and title, or a muted placeholder. */
-	private affinityTemplate(timeframe: Timeframe | undefined) {
-		if (!timeframe) {
-			return html`
-				<span class='affinity muted'>
-					<p7t-icon icon='lucide:clock'></p7t-icon>
-					<span>No affinity</span>
-				</span>
-			`
-		}
-
-		const icon = resolveMediaIcon(timeframe.iconMedia, getApp(), 'lucide:clock')
-		return html`
-			<span class='affinity'>
-				<p7t-icon .icon=${icon}></p7t-icon>
-				<span>${timeframe.title}</span>
-			</span>
-		`
-	}
-
 	private async commitAffinity(e: Event) {
 		const choice = (e.target as EditablePart<TimeframeChoice>).value
 		// A cancelled pick fires no change; a resolved one is a record (affine) or null (clear).
 		if (choice === undefined) return
 
 		const update: ExecutiveUpdate = choice === null
-			? { clearAffinityTimeframe: true }
+			? { affinityTimeframeId: null }
 			: { affinityTimeframeId: choice.id }
 
 		const updated = await core.polaris.updateExecutive(this.executive!.id, update)
@@ -331,7 +303,7 @@ export class ExecutiveEditor extends Component {
 			icon: record.icon,
 			iconMedia: record.iconMedia,
 			autoInclusion: record.autoInclusion,
-			autoInclusionCollege: record.autoInclusionCollege,
+			autoInclusionColleges: record.autoInclusionColleges,
 		}
 	}
 

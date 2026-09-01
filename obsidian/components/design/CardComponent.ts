@@ -139,14 +139,16 @@ export class CardComponent extends Component {
 
 	protected get collapseToggleTemplate() {
 		return html`
-			<button
-				class='collapse-chevron ${this.collapsed ? 'collapsed' : ''}'
-				part='collapse-toggle'
-				aria-label=${this.collapsed ? 'Expand card' : 'Collapse card'}
-				aria-expanded=${!this.collapsed}
-				@click=${() => this.dispatchEvent(new CustomEvent('collapsetoggle', { bubbles: true, composed: true }))}>
-				<p7t-icon icon='lucide:chevron-down'></p7t-icon>
-			</button>
+			<p7t-tooltip text=${this.collapsed ? 'Expand' : 'Collapse'}>
+				<button
+					class='collapse-chevron ${this.collapsed ? 'collapsed' : ''}'
+					part='collapse-toggle'
+					aria-label=${this.collapsed ? 'Expand card' : 'Collapse card'}
+					aria-expanded=${!this.collapsed}
+					@click=${() => this.dispatchEvent(new CustomEvent('collapsetoggle', { bubbles: true, composed: true }))}>
+					<p7t-icon icon='lucide:chevron-down'></p7t-icon>
+				</button>
+			</p7t-tooltip>
 		`
 	}
 

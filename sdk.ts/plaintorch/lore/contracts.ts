@@ -1,1 +1,1 @@
-export type { LorePage } from "./models"
+export type { LorePage, IndexedLorePage, LorePageUpdate, LorePageCreate } from "./models"

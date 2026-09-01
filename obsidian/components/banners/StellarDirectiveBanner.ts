@@ -13,10 +13,11 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 	override icon: IconName = 'directive'
 
 	protected override get preHeadingTemplate() {
-		return !this.entity?.codename ? html`
-			<span>Stellar Directive</span>
-		` : html`
-			<span>Codename ${this.entity.codename.toUpperCase()}</span>
+		return html`
+			<span>
+				${this.entity?.codename ? 'Codename' : 'Stellar Directive ·'}
+				<p7t-editable-plaintext class='codename' placeholder='-' ${this.binder.bind('codename')}></p7t-editable-plaintext>
+			</span>
 		`
 	}
 
@@ -26,7 +27,7 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
-			if (keyPath !== 'status' && keyPath !== 'title') {
+			if (keyPath !== 'status' && keyPath !== 'title' && keyPath !== 'codename' && keyPath !== 'due') {
 				return
 			}
 
@@ -35,7 +36,11 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 					return await core.directives.shiftStellarWorkflow(entity.id, { status: entity.status as DirectiveStatus })
 				}
 
-				const update: StellarDirectiveUpdate = { title: entity.title }
+				// Codename and due are nullable: a cleared field commits as null (a clear), not undefined (a no-op).
+				const update: StellarDirectiveUpdate = {}
+				if (keyPath === 'title') update.title = entity.title
+				if (keyPath === 'codename') update.codename = entity.codename ?? null
+				if (keyPath === 'due') update.due = entity.due ?? null
 				return await core.directives.updateStellar(entity.id, update)
 			})
 
@@ -73,15 +78,41 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 			p7t-status-item::part(icon) {
 				height: 1.4em;
 			}
+
+			.codename {
+				text-transform: uppercase;
+			}
+
+			.due {
+				display: flex;
+				align-items: center;
+				gap: .5em;
+				font-weight: 300;
+				opacity: .85;
+
+				& .label {
+					font-size: .7em;
+					text-transform: uppercase;
+					letter-spacing: .08em;
+					opacity: .7;
+				}
+			}
 		`
 	}
 
 	protected override get secondary() {
-		const directiveTitle = this.entity!.parentDirective?.title
-		return !directiveTitle ? html`
-			<span style='opacity: .5'>Constellation Directive</span>
-		` : html`
-			<span>${directiveTitle}</span>
+		return html`
+			<p7t-directive-item placeholder='Constellation Directive' .directive=${this.entity!.parentDirective}></p7t-directive-item>
+		`
+	}
+
+	protected override get info() {
+		// The scheduling period (start/end) is intentionally withheld for now; only the due date is surfaced.
+		return html`
+			<div class='due'>
+				<span class='label'>Due</span>
+				<p7t-editable-date ${this.binder.bind('due')}></p7t-editable-date>
+			</div>
 		`
 	}
 

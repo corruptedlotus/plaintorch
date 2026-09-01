@@ -38,11 +38,6 @@ public sealed class DirectiveApiService(
 		var directive = await context.Directives
 			.AsNoTracking()
 			.FirstOrDefaultAsync(item => item.Id == directiveId, cancellationToken);
-		if (directive is not null)
-		{
-			await EnrichMediaAsync(directive, cancellationToken);
-		}
-
 		return directive;
 	}
 
@@ -60,7 +55,6 @@ public sealed class DirectiveApiService(
 		var directives = await query
 			.OrderBy(directive => directive.Title)
 			.ToListAsync(cancellationToken);
-		await EnrichMediaAsync(directives, cancellationToken);
 		return directives;
 	}
 
@@ -72,7 +66,6 @@ public sealed class DirectiveApiService(
 			.OfType<StellarDirective>()
 			.OrderBy(directive => directive.Title)
 			.ToListAsync(cancellationToken);
-		await EnrichMediaAsync(directives, cancellationToken);
 		return directives;
 	}
 
@@ -83,7 +76,6 @@ public sealed class DirectiveApiService(
 			.AsNoTracking()
 			.OrderBy(directive => directive.Title)
 			.ToListAsync(cancellationToken);
-		await EnrichMediaAsync(directives, cancellationToken);
 		return directives;
 	}
 
@@ -108,7 +100,6 @@ public sealed class DirectiveApiService(
 		var directives = await query
 			.OrderBy(directive => directive.Title)
 			.ToListAsync(cancellationToken);
-		await EnrichMediaAsync(directives, cancellationToken);
 		return directives;
 	}
 
@@ -150,9 +141,9 @@ public sealed class DirectiveApiService(
 			stellar.Title = update.Title;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.Codename))
+		if (update.Codename.IsSet)
 		{
-			stellar.Codename = update.Codename;
+			stellar.Codename = string.IsNullOrWhiteSpace(update.Codename.Value) ? null : update.Codename.Value;
 		}
 
 		if (!string.IsNullOrWhiteSpace(update.ParentDirectiveId))
@@ -165,19 +156,19 @@ public sealed class DirectiveApiService(
 			stellar.Tags = update.Tags.ToList();
 		}
 
-		if (update.Due is not null)
+		if (update.Due.IsSet)
 		{
-			stellar.Due = update.Due;
+			stellar.Due = update.Due.Value;
 		}
 
-		if (update.StartDate is not null)
+		if (update.StartDate.IsSet)
 		{
-			stellar.StartDate = update.StartDate;
+			stellar.StartDate = update.StartDate.Value;
 		}
 
-		if (update.EndDate is not null)
+		if (update.EndDate.IsSet)
 		{
-			stellar.EndDate = update.EndDate;
+			stellar.EndDate = update.EndDate.Value;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
@@ -188,7 +179,6 @@ public sealed class DirectiveApiService(
 			subject: stellar,
 			details: new { previousTitle = previous.Title, previousStatus = previous.Status.ToString() },
 			cancellationToken: cancellationToken);
-		await EnrichMediaAsync(stellar, cancellationToken);
 		return stellar;
 	}
 
@@ -211,9 +201,9 @@ public sealed class DirectiveApiService(
 			lunar.Title = update.Title;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.Codename))
+		if (update.Codename.IsSet)
 		{
-			lunar.Codename = update.Codename;
+			lunar.Codename = string.IsNullOrWhiteSpace(update.Codename.Value) ? null : update.Codename.Value;
 		}
 
 		if (!string.IsNullOrWhiteSpace(update.ParentDirectiveId))
@@ -234,7 +224,6 @@ public sealed class DirectiveApiService(
 			subject: lunar,
 			details: new { previousTitle = previous.Title, previousStatus = previous.Status.ToString() },
 			cancellationToken: cancellationToken);
-		await EnrichMediaAsync(lunar, cancellationToken);
 		return lunar;
 	}
 
@@ -263,7 +252,6 @@ public sealed class DirectiveApiService(
 			subject: stellar,
 			details: new { from = previousStatus.ToString(), to = stellar.Status.ToString() },
 			cancellationToken: cancellationToken);
-		await EnrichMediaAsync(stellar, cancellationToken);
 		return stellar;
 	}
 
@@ -323,7 +311,6 @@ public sealed class DirectiveApiService(
 			subject: directive,
 			details: new { previous, icon = directive.Icon },
 			cancellationToken: cancellationToken);
-		await EnrichMediaAsync(directive, cancellationToken);
 		return directive;
 	}
 
@@ -347,7 +334,6 @@ public sealed class DirectiveApiService(
 			subject: directive,
 			details: new { previous, banner = directive.Banner },
 			cancellationToken: cancellationToken);
-		await EnrichMediaAsync(directive, cancellationToken);
 		return directive;
 	}
 
@@ -520,7 +506,7 @@ public sealed class DirectiveApiService(
 			Orbit = plan.Orbit,
 			Icon = string.IsNullOrWhiteSpace(plan.Icon) ? null : plan.Icon.Trim(),
 			AutoInclusion = plan.AutoInclusion,
-			AutoInclusionCollege = plan.AutoInclusion == TimeframeInclusion.College ? plan.AutoInclusionCollege : null,
+			AutoInclusionColleges = plan.AutoInclusion == TimeframeInclusion.College ? (plan.AutoInclusionColleges?.ToList() ?? []) : [],
 		};
 
 		context.Timeframes.Add(timeframe);
@@ -533,7 +519,6 @@ public sealed class DirectiveApiService(
 			subjectTitle: timeframe.Title,
 			details: new { lunarDirectiveId },
 			cancellationToken: cancellationToken);
-		mediaService.EnrichMedia(timeframe, null);
 		return timeframe;
 	}
 
@@ -546,19 +531,15 @@ public sealed class DirectiveApiService(
 			.Where(item => item.DirectiveId == lunarDirectiveId)
 			.OrderBy(item => item.StartTime)
 			.ToListAsync(cancellationToken);
-		foreach (var timeframe in timeframes)
-		{
-			mediaService.EnrichMedia(timeframe, null);
-		}
-
 		return timeframes;
 	}
 
 	/// <inheritdoc />
 	public async Task<IReadOnlyList<DirectiveTimeframeRecord>> ListAllTimeframesAsync(CancellationToken cancellationToken = default)
 	{
-		// Order on the entity columns before projecting into the record so the query stays SQL-translatable.
-		var records = await context.Timeframes
+		// The colleges are a JSON list column that cannot be projected in SQL, so the joined rows are materialized
+		// (ordered on entity columns first) and mapped to records in memory.
+		var pairs = await context.Timeframes
 			.AsNoTracking()
 			.Join(
 				context.LunarDirectives.AsNoTracking(),
@@ -567,6 +548,9 @@ public sealed class DirectiveApiService(
 				(timeframe, directive) => new { Timeframe = timeframe, Directive = directive })
 			.OrderBy(pair => pair.Directive.Title)
 			.ThenBy(pair => pair.Timeframe.StartTime)
+			.ToListAsync(cancellationToken);
+
+		var records = pairs
 			.Select(pair => new DirectiveTimeframeRecord(
 				pair.Timeframe.Id,
 				pair.Directive.Id,
@@ -579,15 +563,8 @@ public sealed class DirectiveApiService(
 				pair.Timeframe.Orbit,
 				pair.Timeframe.Icon,
 				pair.Timeframe.AutoInclusion,
-				pair.Timeframe.AutoInclusionCollege))
-			.ToListAsync(cancellationToken);
-
-		// The projection cannot call the media service, so resolve each icon companion afterwards. Timeframes
-		// keep no self folder, so vault and glyph keys resolve and self keys carry no path.
-		foreach (var record in records)
-		{
-			record.IconMedia = mediaService.ResolveReference(record.Icon, null);
-		}
+				pair.Timeframe.AutoInclusionColleges))
+			.ToList();
 
 		return records;
 	}
@@ -614,46 +591,32 @@ public sealed class DirectiveApiService(
 			timeframe.EndTime = update.EndTime.Value;
 		}
 
-		if (update.Orbit is not null)
+		if (update.Orbit.IsSet)
 		{
-			var normalizedOrbit = string.IsNullOrWhiteSpace(update.Orbit) ? null : update.Orbit;
+			var normalizedOrbit = string.IsNullOrWhiteSpace(update.Orbit.Value) ? null : update.Orbit.Value;
 			PlaintorchOrbitService.ValidateTimeframeOrbit(normalizedOrbit);
 			timeframe.Orbit = normalizedOrbit;
 		}
 
-		if (update.ClearOrbit)
+		if (update.Icon.IsSet)
 		{
-			timeframe.Orbit = null;
-		}
-
-		if (update.Icon is not null)
-		{
-			timeframe.Icon = string.IsNullOrWhiteSpace(update.Icon) ? null : update.Icon.Trim();
-		}
-
-		if (update.ClearIcon)
-		{
-			timeframe.Icon = null;
+			timeframe.Icon = string.IsNullOrWhiteSpace(update.Icon.Value) ? null : update.Icon.Value.Trim();
 		}
 
 		if (update.AutoInclusion is not null)
 		{
 			timeframe.AutoInclusion = update.AutoInclusion.Value;
-			// Dropping to a non-college kind leaves no college behind to match against.
+			// Dropping to a non-college kind leaves no colleges behind to match against.
 			if (update.AutoInclusion.Value != TimeframeInclusion.College)
 			{
-				timeframe.AutoInclusionCollege = null;
+				timeframe.AutoInclusionColleges = [];
 			}
 		}
 
-		if (update.AutoInclusionCollege is not null)
+		// A null college list leaves it unchanged; any list (empty included) replaces it.
+		if (update.AutoInclusionColleges is not null)
 		{
-			timeframe.AutoInclusionCollege = update.AutoInclusionCollege;
-		}
-
-		if (update.ClearAutoInclusionCollege)
-		{
-			timeframe.AutoInclusionCollege = null;
+			timeframe.AutoInclusionColleges = update.AutoInclusionColleges.ToList();
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
@@ -664,7 +627,6 @@ public sealed class DirectiveApiService(
 			subjectId: timeframe.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
 			subjectTitle: timeframe.Title,
 			cancellationToken: cancellationToken);
-		mediaService.EnrichMedia(timeframe, null);
 		return timeframe;
 	}
 
@@ -707,29 +669,6 @@ public sealed class DirectiveApiService(
 	private Directive Clone(Directive directive)
 	{
 		return (Directive)entityGateway.CloneScalars(directive);
-	}
-
-	/// <summary>
-	/// Fills a directive's <c>[Media]</c> companions (<see cref="Directive.IconMedia"/> /
-	/// <see cref="Directive.BannerMedia"/>) from its stored keys (PEP105), model-agnostically via
-	/// <see cref="VaultMediaService.EnrichMedia"/>. The entity's own asset folder is resolved only when a
-	/// <c>media:</c> (self) key is present, so glyph-only, vault-only, and no-media directives touch neither the
-	/// database nor the filesystem.
-	/// </summary>
-	private async Task EnrichMediaAsync(Directive directive, CancellationToken cancellationToken)
-	{
-		var selfAssetFolder = mediaService.HasSelfMedia(directive)
-			? await ResolveAssetFolderAsync(directive.Id, cancellationToken)
-			: null;
-		mediaService.EnrichMedia(directive, selfAssetFolder);
-	}
-
-	private async Task EnrichMediaAsync(IEnumerable<Directive> directives, CancellationToken cancellationToken)
-	{
-		foreach (var directive in directives)
-		{
-			await EnrichMediaAsync(directive, cancellationToken);
-		}
 	}
 
 	/// <summary>

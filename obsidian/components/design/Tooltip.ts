@@ -35,7 +35,7 @@ export class Tooltip extends Component {
 				margin: 0;
 				inset: auto;
 				box-sizing: border-box;
-				max-width: 24em;
+				max-width: 24rem;
 				padding: .55em .7em;
 				border: 1px solid color-mix(in srgb, var(--text-normal) 18%, transparent);
 				border-radius: 10px;
@@ -43,7 +43,13 @@ export class Tooltip extends Component {
 				color: var(--text-normal);
 				box-shadow: 0 8px 26px color-mix(in srgb, black 45%, transparent);
 				font-family: var(--font-interface);
-				font-size: .85em;
+				/*
+				 * Absolute (rem) size, not em: the trigger may be a large heading, and an em-relative tooltip would
+				 * balloon to match it. rem pins the overlay to the app's root size so every tooltip reads the same.
+				 * The padding/max-width below are em, now relative to this fixed rem base — so they scale with it, not
+				 * with the trigger.
+				 */
+				font-size: .85rem;
 				font-weight: 400;
 				line-height: 1.35;
 				pointer-events: none;

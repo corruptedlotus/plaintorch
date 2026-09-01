@@ -10,6 +10,7 @@ export class ThroneView extends Component {
 	 * The state lives here so a toggle on either card flips both. Default: the cycle expanded, the agenda
 	 * collapsed to its attentive count.
 	 */
+	@state() private orbitsExpanded = false
 	@state() private agendaExpanded = false
 
 	static override get styles() {
@@ -45,24 +46,42 @@ export class ThroneView extends Component {
 		`
 	}
 
-	private toggleColumn() {
+	private togglePolarisColumn() {
+		this.orbitsExpanded = !this.orbitsExpanded
+	}
+
+	private toggleOnrushColumn() {
 		this.agendaExpanded = !this.agendaExpanded
 	}
 
 	override get template() {
 		return html`
-			<p7t-briefing-onrush .data=${this.data?.currentOnrush}></p7t-briefing-onrush>
 			<div class='polaris-column'>
 				<p7t-briefing-agenda
 					collapsible
+					mode='eventives'
 					?collapsed=${!this.agendaExpanded}
-					@collapsetoggle=${() => this.toggleColumn()}>
+					@collapsetoggle=${() => this.toggleOnrushColumn()}>
+				</p7t-briefing-agenda>
+				<p7t-briefing-onrush
+					collapsible
+					?collapsed=${this.agendaExpanded}
+					@collapsetoggle=${() => this.toggleOnrushColumn()}
+					.data=${this.data?.currentOnrush}>
+				</p7t-briefing-onrush>
+			</div>
+			<div class='polaris-column'>
+				<p7t-briefing-agenda
+					collapsible
+					mode='attentives'
+					?collapsed=${!this.orbitsExpanded}
+					@collapsetoggle=${() => this.togglePolarisColumn()}>
 				</p7t-briefing-agenda>
 				<p7t-briefing-polaris
 					collapsible
-					?collapsed=${this.agendaExpanded}
+					?collapsed=${this.orbitsExpanded}
 					.data=${this.data?.currentPolaris}
-					@collapsetoggle=${() => this.toggleColumn()}>
+					@collapsetoggle=${() => this.togglePolarisColumn()}>
 				</p7t-briefing-polaris>
 			</div>
 		`

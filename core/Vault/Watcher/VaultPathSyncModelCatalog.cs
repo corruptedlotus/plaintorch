@@ -17,7 +17,37 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	private static readonly string? DecreePartitionName = ResolvePartitionUnder(typeof(Decree));
 	private static readonly HashSet<string> PartitionFolderNames = ResolvePartitionFolderNames();
 
-	private readonly IReadOnlyList<VaultPathSyncModel> _models =
+	private readonly object _modelsGate = new();
+	private string? _modelsVaultRoot;
+	private IReadOnlyList<VaultPathSyncModel>? _models;
+
+	/// <summary>
+	/// Gets the path-resolvable sync models for the currently bound vault, rebuilding them when the vault changes.
+	/// </summary>
+	/// <remarks>
+	/// The catalog is a process-wide singleton, but the served vault can change at runtime as the core is
+	/// activated and deactivated. Models are therefore built lazily against the active vault root instead of in
+	/// the constructor, so the singleton can be created while the core is idle and no vault is bound.
+	/// </remarks>
+	private IReadOnlyList<VaultPathSyncModel> Models
+	{
+		get
+		{
+			var vaultRoot = layout.VaultRoot;
+			lock (_modelsGate)
+			{
+				if (_models is null || !string.Equals(_modelsVaultRoot, vaultRoot, StringComparison.OrdinalIgnoreCase))
+				{
+					_models = BuildModels();
+					_modelsVaultRoot = vaultRoot;
+				}
+
+				return _models;
+			}
+		}
+	}
+
+	private IReadOnlyList<VaultPathSyncModel> BuildModels() =>
 	[
 		// The directive family is polymorphic: the abstract Directive anchors identity/known-id lookups (spanning
 		// the whole discriminated family), while path composition materializes the concrete member the file's own
@@ -52,7 +82,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	/// <summary>
 	/// Gets all known path-resolvable sync models.
 	/// </summary>
-	public IReadOnlyList<VaultPathSyncModel> GetModels() => _models;
+	public IReadOnlyList<VaultPathSyncModel> GetModels() => Models;
 
 	/// <summary>
 	/// Validates that the declared path-sync models are coherent with, and fully cover, the entity model catalog:
@@ -67,7 +97,8 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	{
 		ArgumentNullException.ThrowIfNull(entityModelCatalog);
 
-		foreach (var model in _models)
+		var models = Models;
+		foreach (var model in models)
 		{
 			var declared = entityModelCatalog.GetRequired(model.EntityType);
 			if (declared.Storage is null)
@@ -90,7 +121,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 				continue;
 			}
 
-			var covered = _models.Any(model =>
+			var covered = models.Any(model =>
 				model.EntityType == declared.EntityType
 				|| model.EntityType.IsAssignableFrom(declared.EntityType));
 			if (!covered)
@@ -106,7 +137,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	/// </summary>
 	public IReadOnlyList<string> GetScanRoots()
 	{
-		return _models
+		return Models
 			.SelectMany(model => model.ScanRoots)
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.OrderByDescending(root => Path.GetFullPath(root).Length)
@@ -118,7 +149,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	/// </summary>
 	public IReadOnlyList<string> EnumerateCandidateMarkdownPaths()
 	{
-		return _models
+		return Models
 			.SelectMany(model => EnumerateCandidateMarkdownPaths(model))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.ToList();
@@ -174,7 +205,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 		}
 
 		var selfNamedPrimary = Path.Combine(fullPath, $"{directoryName}.md");
-		model = _models
+		model = Models
 			.Where(candidate => candidate.Shape == VaultStorageShape.SelfNamedDirectory)
 			.OrderByDescending(candidate => candidate.ScanRoots.Max(root => root.Length))
 			.FirstOrDefault(candidate =>
@@ -201,7 +232,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(path);
 		var fullPath = Path.GetFullPath(path);
-		model = _models
+		model = Models
 			.OrderByDescending(candidate => candidate.ScanRoots.Max(root => root.Length))
 			.FirstOrDefault(candidate =>
 				candidate.ScanRoots.Any(root => IsPathUnderRoot(fullPath, root))

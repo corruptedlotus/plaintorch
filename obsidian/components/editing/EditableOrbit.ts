@@ -1,4 +1,4 @@
-import { component, css } from "@a11d/lit"
+import { component, css, property } from "@a11d/lit"
 import { humanizeOrbit } from "orbits"
 import { EditableTextPart } from "./EditableTextPart"
 
@@ -9,6 +9,8 @@ import { EditableTextPart } from "./EditableTextPart"
  */
 @component('p7t-editable-orbit')
 export class EditableOrbit extends EditableTextPart<string> {
+	@property({ type: Boolean }) short = false
+
 	override label = 'Orbit'
 
 	static override get styles() {
@@ -32,7 +34,7 @@ export class EditableOrbit extends EditableTextPart<string> {
 	}
 
 	protected override toDisplayText(value: string | undefined): string {
-		const { text } = humanizeOrbit(value)
+		const { text } = humanizeOrbit(value, this.short)
 		return text || 'No schedule'
 	}
 

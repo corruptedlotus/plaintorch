@@ -23,7 +23,6 @@ public sealed class PolarisCycleApiService(
 	PlaintorchMarkdownStorageService markdownFileService,
 	ProximityMaterializationService materializationService,
 	TimeframeAffinityResolver affinityResolver,
-	VaultMediaService mediaService,
 	VaultAuditLogService auditLogService) : IPolarisCycleApi
 {
 	/// <inheritdoc />
@@ -144,17 +143,6 @@ public sealed class PolarisCycleApiService(
 				.ThenInclude(attentive => attentive.Decree)
 			.FirstOrDefaultAsync(item => item.Id == targetId, cancellationToken);
 
-		if (cycle is not null)
-		{
-			// The affined timeframe carries an icon that stands in for the Celestron value on the client; resolve
-			// its media companion so the client can render it (PEP100 patch). Timeframes keep no self folder, so
-			// only vault and glyph keys resolve.
-			foreach (var timeframe in cycle.Executives.Select(executive => executive.AffinityTimeframe).OfType<Timeframe>())
-			{
-				mediaService.EnrichMedia(timeframe, null);
-			}
-		}
-
 		return cycle;
 	}
 
@@ -266,44 +254,27 @@ public sealed class PolarisCycleApiService(
 			executive.Executed = update.Executed.Value;
 		}
 
+		// The executive's objective can be reassigned but never cleared — an executive without an objective has
+		// nothing to work at.
 		if (!string.IsNullOrWhiteSpace(update.ObjectiveId))
 		{
 			executive.ObjectiveId = update.ObjectiveId;
 		}
 
-		if (update.ClearObjective)
+		// A set allocation applies its value — including null, which clears it; an unset one is left unchanged.
+		if (update.Estimation.IsSet)
 		{
-			executive.ObjectiveId = null;
+			executive.Estimation = update.Estimation.Value;
 		}
 
-		if (update.Estimation is not null)
+		if (update.Minimum.IsSet)
 		{
-			executive.Estimation = update.Estimation;
+			executive.Minimum = update.Minimum.Value;
 		}
 
-		if (update.ClearEstimation)
+		if (update.Maximum.IsSet)
 		{
-			executive.Estimation = null;
-		}
-
-		if (update.Minimum is not null)
-		{
-			executive.Minimum = update.Minimum;
-		}
-
-		if (update.ClearMinimum)
-		{
-			executive.Minimum = null;
-		}
-
-		if (update.Maximum is not null)
-		{
-			executive.Maximum = update.Maximum;
-		}
-
-		if (update.ClearMaximum)
-		{
-			executive.Maximum = null;
+			executive.Maximum = update.Maximum.Value;
 		}
 
 		if (update.Elapsed is not null)
@@ -311,20 +282,22 @@ public sealed class PolarisCycleApiService(
 			executive.Elapsed = update.Elapsed.Value;
 		}
 
-		if (update.AffinityTimeframeId is not null)
+		if (update.AffinityTimeframeId.IsSet)
 		{
-			var timeframeExists = await context.Timeframes.AnyAsync(item => item.Id == update.AffinityTimeframeId.Value, cancellationToken);
-			if (!timeframeExists)
+			if (update.AffinityTimeframeId.Value is long timeframeId)
 			{
-				throw new InvalidOperationException($"Timeframe '{update.AffinityTimeframeId}' was not found.");
+				var timeframeExists = await context.Timeframes.AnyAsync(item => item.Id == timeframeId, cancellationToken);
+				if (!timeframeExists)
+				{
+					throw new InvalidOperationException($"Timeframe '{timeframeId}' was not found.");
+				}
+
+				executive.AffinityTimeframeId = timeframeId;
 			}
-
-			executive.AffinityTimeframeId = update.AffinityTimeframeId;
-		}
-
-		if (update.ClearAffinityTimeframe)
-		{
-			executive.AffinityTimeframeId = null;
+			else
+			{
+				executive.AffinityTimeframeId = null;
+			}
 		}
 
 		executive.NormalizeTimeAllocations();
@@ -388,19 +361,30 @@ public sealed class PolarisCycleApiService(
 		// "Requiring attention" spans the next 24h, so at day granularity that is today plus tomorrow, alongside
 		// anything overdue. This mirrors what the rolling materialization pass writes for the same window.
 		var attentiveThrough = today.AddDays(1);
+		var now = DateTimeOffset.UtcNow;
+		var resolvedSince = now.AddHours(-1);
 
 		// Requiring attention: unbound, still pending, and due within the next 24h or overdue (same-day/24h and
-		// previous unattended). Including the decree pulls its directive through the auto-include, so each item
-		// can show its relevant lunar directive.
-		var attentives = await context.Attentives
+		// previous unattended), plus unbound attentives completed in the past hour. SQLite
+		// does not provide reliable translated comparison semantics for DateTimeOffset, so that rolling comparison
+		// is applied after materialization. Including the decree pulls its directive through the auto-include, so
+		// each item can show its relevant lunar directive.
+		var attentiveCandidates = await context.Attentives
 			.AsNoTracking()
 			.Include(item => item.Decree)
 			.Where(item => item.PolarisCycleId == null
-				&& item.Resolution == AttentiveResolution.Pending
-				&& item.Date <= attentiveThrough)
+				&& ((item.Resolution == AttentiveResolution.Pending && item.Date <= attentiveThrough)
+					|| item.ResolvedOn != null))
+			.ToListAsync(cancellationToken);
+
+		var attentives = attentiveCandidates
+			.Where(item => (item.PolarisCycleId == null
+					&& item.Resolution == AttentiveResolution.Pending
+					&& item.Date <= attentiveThrough)
+				|| (item.PolarisCycleId == null && item.ResolvedOn >= resolvedSince && item.ResolvedOn <= now))
 			.OrderBy(item => item.Date)
 			.ThenBy(item => item.Time)
-			.ToListAsync(cancellationToken);
+			.ToList();
 
 		// Upcoming eventives within the horizon that have not yet resolved. Fate and objective are included so
 		// the occurrence can name its owner and surface that owner's directive.
@@ -522,9 +506,9 @@ public sealed class PolarisCycleApiService(
 			reflective.Executed = update.Executed.Value;
 		}
 
-		if (update.Time is not null)
+		if (update.Time.IsSet)
 		{
-			reflective.Time = update.Time;
+			reflective.Time = update.Time.Value;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);

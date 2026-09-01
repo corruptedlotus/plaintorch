@@ -1,5 +1,6 @@
 import { component, css, html, nothing, property } from '@a11d/lit'
 import { ObjectiveCollege, TimeframeInclusion, type MediaReference } from '@pleiades/sdk'
+import { IconName } from 'components/PleiadesIcon'
 import { humanizeOrbit } from 'orbits'
 import { getApp, resolveMediaIcon } from '..'
 import { InfoItem } from '../design/InfoItem'
@@ -14,7 +15,7 @@ export interface TimeframeLike {
 	icon?: string
 	iconMedia?: MediaReference
 	autoInclusion?: TimeframeInclusion
-	autoInclusionCollege?: ObjectiveCollege
+	autoInclusionColleges?: ObjectiveCollege[]
 }
 
 /** 'HH:MM[:SS]' → 'HH:MM'. */
@@ -30,21 +31,19 @@ export class TimeframeItem extends InfoItem {
 	@property({ type: Object }) timeframe?: TimeframeLike
 	@property() mode: 'icon' | 'named' = 'named'
 
+	/**
+	 * Draws the chip as an executive's **affinity** rather than a timeframe in the abstract: an empty one reads as
+	 * "No Affinity" behind a polaris glyph, a set one suffixes "Affinity" to the name, and the tooltip drops the
+	 * scheduling detail (window, scope, college) — an affinity is only *which* timeframe, not its mechanics.
+	 */
+	@property({ type: Boolean }) affinity = false
+
 	static override get styles() {
 		return css`
 			${super.styles}
 
-			.named {
-				display: inline-flex;
-				align-items: center;
-				gap: .4ch;
+			.info-bullet {
 				font-weight: 400;
-			}
-
-			.named p7t-icon,
-			.icon-only {
-				width: 20px;
-				height: 20px;
 			}
 
 			.details {
@@ -77,26 +76,47 @@ export class TimeframeItem extends InfoItem {
 		return resolveMediaIcon(this.timeframe?.iconMedia, getApp(), 'lucide:clock')
 	}
 
-	protected override get content() {
+	/** The timeframe's media companion (or the polaris glyph for an unset affinity), drawn through the base icon slot. */
+	protected override get bulletIcon(): IconName | (string & {}) | undefined {
+		if (!this.timeframe) {
+			return this.affinity ? 'polaris' : undefined
+		}
+
+		return this.glyph
+	}
+
+	protected override get bulletText() {
 		const timeframe = this.timeframe
 		if (!timeframe) {
-			return nothing
+			return 'No Affinity'
 		}
 
-		if (this.mode === 'icon') {
-			return html`<p7t-icon class='icon-only' .icon=${this.glyph}></p7t-icon>`
+		return this.affinity ? `${timeframe.title} Affinity` : timeframe.title
+	}
+
+	/** `icon` mode is the glyph alone — an affined executive's compact form; the label moves to the tooltip. */
+	protected override get textHidden(): boolean {
+		return this.mode === 'icon'
+	}
+
+	protected override get content() {
+		// Only a non-affinity empty timeframe steps outside the icon-text layout, for the null glyph (or nothing);
+		// an empty affinity keeps the layout to read "No Affinity" behind the polaris glyph.
+		if (!this.timeframe && !this.affinity) {
+			return this.nullable ? this.nullGlyphTemplate : nothing
 		}
 
-		return html`
-			<span class='named'>
-				<p7t-icon .icon=${this.glyph}></p7t-icon>
-				<span>${timeframe.title}</span>
-			</span>
-		`
+		return super.content
 	}
 
 	protected override get tooltip() {
 		const timeframe = this.timeframe
+
+		// An affinity is just which timeframe it is: its name suffixed with "Affinity", or "No Affinity" when unset.
+		if (this.affinity) {
+			return timeframe ? `${timeframe.title} Affinity` : 'No Affinity'
+		}
+
 		if (!timeframe) {
 			return nothing
 		}
@@ -106,16 +126,17 @@ export class TimeframeItem extends InfoItem {
 			: undefined
 		// No Orbit means the timeframe applies to every Polaris cycle (PEP100).
 		const scope = timeframe.orbit ? (humanizeOrbit(timeframe.orbit).text || timeframe.orbit) : 'Every cycle'
-		const college = timeframe.autoInclusion === TimeframeInclusion.College && timeframe.autoInclusionCollege !== undefined
-			? collegeDescriptorOf(timeframe.autoInclusionCollege)
-			: undefined
+		const colleges = timeframe.autoInclusion === TimeframeInclusion.College
+			? (timeframe.autoInclusionColleges ?? []).map(collegeDescriptorOf)
+			: []
+		const [primaryCollege] = colleges
 
 		return html`
 			<div class='details'>
 				<div class='title'>${timeframe.title}</div>
 				${!window ? nothing : html`<div class='row'><p7t-icon icon='lucide:clock'></p7t-icon><span>${window}</span></div>`}
 				<div class='row'><p7t-icon icon='lucide:repeat'></p7t-icon><span>${scope}</span></div>
-				${!college ? nothing : html`<div class='row'><p7t-icon icon=${college.icon}></p7t-icon><span>Includes ${college.name}</span></div>`}
+				${!primaryCollege ? nothing : html`<div class='row'><p7t-icon icon=${primaryCollege.icon}></p7t-icon><span>Includes ${colleges.map(descriptor => descriptor.name).join(', ')}</span></div>`}
 			</div>
 		`
 	}

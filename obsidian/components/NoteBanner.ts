@@ -27,6 +27,7 @@ export class NoteBanner extends Component {
 				overflow-anchor: auto;
 				white-space: initial;
 				margin-block: -2em 1em !important;
+				contain: none !important;
 			}
 
 			:host([invalid]) {
@@ -51,6 +52,7 @@ export class NoteBanner extends Component {
 			case 'decree': return html`<p7t-decree-banner puck=${this.note?.puck}></p7t-decree-banner>`
 
 			case 'onrush-sprint': return html`<p7t-onrush-banner puck=${this.note?.puck}></p7t-onrush-banner>`
+			case 'executive-order': return html`<p7t-executive-order-banner puck=${this.note?.puck}></p7t-executive-order-banner>`
 			case 'polaris-cycle': return html`<p7t-polaris-banner puck=${this.note?.puck}></p7t-polaris-banner>`
 			case 'lore-page': return html`<p7t-lore-banner puck=${this.note?.puck}></p7t-lore-banner>`
 

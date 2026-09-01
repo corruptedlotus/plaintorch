@@ -1,4 +1,4 @@
-import { Component, component, css, html, property, query, state } from '@a11d/lit'
+import { Component, component, css, html, nothing, property, query, state } from '@a11d/lit'
 import { IconName } from 'components/PleiadesIcon'
 
 /** One choice offered when an expanding action opens. */
@@ -40,7 +40,7 @@ export class ExpandingActions extends Component {
 				align-items: center;
 			}
 
-			.trigger {
+			/*.trigger {
 				display: flex;
 				align-items: center;
 				justify-content: center;
@@ -63,28 +63,27 @@ export class ExpandingActions extends Component {
 				background-color: color-mix(in srgb, var(--text-normal) 14%, transparent);
 			}
 
-			:host([large]) .trigger {
-				min-width: 3em;
-				min-height: 3em;
-				border-radius: 999px;
-				background-color: var(--interactive-accent);
-				color: var(--text-on-accent);
-				box-shadow: 0 4px 14px rgb(0 0 0 / .35);
-			}
-
-			:host([large]) .trigger:hover {
-				background-color: color-mix(in srgb, var(--interactive-accent) 85%, white);
-			}
-
 			.trigger p7t-icon {
 				width: 1.25em;
 				height: 1.25em;
+			}*/
+
+			:host([large]) .trigger {
+				&::part(button) {
+					justify-content: center;
+					min-width: 3em;
+					min-height: 3em;
+					border-radius: 999px;
+					background-color: var(--interactive-accent);
+					color: var(--text-on-accent);
+					box-shadow: 0 4px 14px rgb(0 0 0 / .35);
+				}
+				
+				&:hover::part(button) {
+					background-color: color-mix(in srgb, var(--interactive-accent) 85%, white);
+				}
 			}
 
-			:host([large]) .trigger p7t-icon {
-				width: 1.6em;
-				height: 1.6em;
-			}
 
 			.panel {
 				position: fixed;
@@ -110,49 +109,30 @@ export class ExpandingActions extends Component {
 			}
 
 			.choice {
-				display: flex;
-				align-items: center;
-				gap: .45em;
-				padding: .4em .7em;
-				border-radius: 7px;
-				border: none;
-				background: transparent;
-				color: var(--text-normal);
 				font-family: inherit;
 				font-size: .95em;
 				font-weight: 300;
-				white-space: nowrap;
-				cursor: pointer;
-				transition: background-color .15s ease;
-			}
-
-			.choice:hover {
-				background-color: color-mix(in srgb, var(--text-normal) 12%, transparent);
-			}
-
-			.choice p7t-icon {
-				width: 1.4em;
-				height: 1.4em;
-				flex: 0 0 1.4em;
 			}
 		`
 	}
 
 	protected override get template() {
 		return html`
-			<button
+			<p7t-button
+				ghost
+				?large=${this.large}
 				class='trigger'
 				aria-label=${this.actionLabel}
+				label=${this.actionLabel}
+				.icon=${this.icon}
 				@click=${(e: MouseEvent) => this.onTriggerClick(e)}>
-				<p7t-icon .icon=${this.icon}></p7t-icon>
-				${!this.label ? '' : html`<span>${this.label}</span>`}
-			</button>
+				${!this.label ? nothing : html`<span>${this.label}</span>`}
+			</p7t-button>
 			<div class='panel' popover='auto' ?data-stacked=${this.stacked}>
 				${this.actions.map(action => html`
-					<button class='choice' @click=${() => this.choose(action)}>
-						<p7t-icon .icon=${action.icon}></p7t-icon>
-						<span>${action.label}</span>
-					</button>
+					<p7t-button ghost class='choice' icon=${action.icon} @click=${() => this.choose(action)}>
+						${action.label}
+					</p7t-button>
 				`)}
 			</div>
 		`

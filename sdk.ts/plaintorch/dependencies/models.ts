@@ -123,10 +123,10 @@ export interface CreateDependencyRequest {
  */
 export interface CheckpointUpdate {
 	title?: string | undefined
-	celestronToll?: number | undefined
-	clearCelestronToll?: boolean | undefined
-	externalCondition?: boolean | undefined
-	clearExternalCondition?: boolean | undefined
+	/** Optional Celestron toll. Omit to keep, a value to set, `null` to clear. */
+	celestronToll?: number | null | undefined
+	/** Optional external condition. Omit to keep, true/false to set, `null` to clear (no condition). */
+	externalCondition?: boolean | null | undefined
 }
 
 /** Payload to create a checkpoint (PEP101). */

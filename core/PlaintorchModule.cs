@@ -31,7 +31,11 @@ public sealed class PlaintorchModule : Module
 		services.TryAddSingleton(_ => PlaintorchUserLayout.CreateDefault());
 		services.AddSingleton<PlaintorchUserConfigurationStore>();
 		services.AddSingleton<PlaintorchVaultActivationService>();
-		services.AddSingleton<VaultLayout>();
+		services.AddSingleton<ActiveVaultSession>();
+		services.AddSingleton<VaultLayout>(serviceProvider =>
+			serviceProvider.GetService<VaultOptions>() is { } vaultOptions
+				? new VaultLayout(vaultOptions)
+				: new VaultLayout());
 		services.AddScoped<DependencyReconciler>();
 		services.AddScoped<DependencyGateService>();
 		services.AddScoped<PlaintorchStatePolicyProcessor>();
@@ -60,6 +64,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<VaultAuditLogService>();
 		services.AddScoped<VaultMediaService>();
 		services.AddScoped<MediaAssetFolderResolver>();
+		services.AddScoped<MediaResponseEnricher>();
 		services.AddScoped<VaultImplicitBoundaryService>();
 		services.AddSingleton<PuckNotationParser>();
 		services.AddSingleton<PuckRuntimeCompilationCatalog>();

@@ -25,7 +25,7 @@ public sealed class MediaModule : Module
 	/// <inheritdoc />
 	public override void ConfigureEndpoints(IEndpointRouteBuilder endpoints)
 	{
-		var group = endpoints.MapGroup("/api/media");
+		var group = endpoints.MapEnrichedGroup("/api/media");
 
 		// Vault-level (shared) media at the vault root.
 		group.MapGet("/vault", async (IMediaApi api, CancellationToken cancellationToken) =>

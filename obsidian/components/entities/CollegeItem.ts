@@ -1,5 +1,6 @@
 import { component, css, html, property } from '@a11d/lit'
 import { ObjectiveCollege } from '@pleiades/sdk'
+import { IconName } from 'components/PleiadesIcon'
 import { InfoItem } from '../design/InfoItem'
 import { collegeDescriptorOf } from './collegeDescriptors'
 
@@ -20,10 +21,7 @@ export class CollegeItem extends InfoItem {
 		return css`
 			${super.styles}
 
-			.named {
-				display: inline-flex;
-				align-items: center;
-				gap: .4ch;
+			.info-bullet {
 				font-weight: 400;
 			}
 
@@ -34,11 +32,6 @@ export class CollegeItem extends InfoItem {
 				color: color-mix(in srgb, var(--text-normal) 60%, transparent);
 				font-family: var(--font-interface);
 			}
-
-			p7t-icon {
-				width: 1.2em;
-				height: 1.2em;
-			}
 		`
 	}
 
@@ -46,22 +39,26 @@ export class CollegeItem extends InfoItem {
 		return collegeDescriptorOf(this.college)
 	}
 
+	protected override get bulletIcon(): IconName {
+		return this.descriptor.icon
+	}
+
+	protected override get bulletText() {
+		return this.descriptor.name
+	}
+
+	/** `icon` mode is the glyph alone (an item's highlight lane). */
+	protected override get textHidden(): boolean {
+		return this.mode === 'icon'
+	}
+
+	/** `badge` is a pill with no glyph — its own shape — so it steps outside the shared icon-text layout. */
 	protected override get content() {
-		const descriptor = this.descriptor
-		if (this.mode === 'icon') {
-			return html`<p7t-icon icon=${descriptor.icon}></p7t-icon>`
-		}
-
 		if (this.mode === 'badge') {
-			return html`<span class='badge'>${descriptor.fullName}</span>`
+			return html`<span class='badge'>${this.descriptor.fullName}</span>`
 		}
 
-		return html`
-			<span class='named'>
-				<p7t-icon icon=${descriptor.icon}></p7t-icon>
-				<span>${descriptor.name}</span>
-			</span>
-		`
+		return super.content
 	}
 
 	protected override get tooltip() {

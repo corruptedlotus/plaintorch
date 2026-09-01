@@ -58,6 +58,16 @@ export class MediaView extends Component {
 				height: 100%;
 			}
 
+			/*
+			 * In icon mode a custom picture is inset to ~80% of the frame (10% padding a side), so it reads with the
+			 * same breathing room a glyph mask has by design instead of crowding the square's edges. Glyphs are left
+			 * to fill as before.
+			 */
+			:host([icon]) p7t-icon.custom {
+				padding: 10%;
+				box-sizing: border-box;
+			}
+
 			/* A banner (non-icon) custom image fills the frame edge-to-edge; the icon path stays a contained glyph mask. */
 			img {
 				width: 100%;
@@ -95,10 +105,11 @@ export class MediaView extends Component {
 		}
 
 		// A free-form (non-icon) custom picture — a banner — renders as a covering image; a glyph, or anything in
-		// icon mode, stays a contained p7t-icon.
-		return !this.icon && isImageUrl(source)
+		// icon mode, stays a contained p7t-icon. A custom picture in icon mode is marked so it can be inset (above).
+		const custom = isImageUrl(source)
+		return !this.icon && custom
 			? html`<img part='image' src=${source} alt='' />`
-			: html`<p7t-icon .icon=${source}></p7t-icon>`
+			: html`<p7t-icon class=${custom ? 'custom' : ''} .icon=${source}></p7t-icon>`
 	}
 }
 

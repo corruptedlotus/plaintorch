@@ -6,6 +6,7 @@ using System.Net.Sockets;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Pleiades.Calendar;
+using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Vault;
 
 namespace Pleiades.Plaintorch;
@@ -30,15 +31,15 @@ public static class Program
 	public static async Task<int> Main(string[] args)
 	{
 		var command = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal))?.ToLowerInvariant() ?? "init";
-		if (command is not ("init" or "activate" or "serve" or "bootstrap-service"))
+		if (command is not ("init" or "activate" or "deactivate" or "serve" or "bootstrap-service"))
 		{
-			Console.Error.WriteLine("Unknown command. Supported commands: init, activate, serve, bootstrap-service.");
+			Console.Error.WriteLine("Unknown command. Supported commands: init, activate, deactivate, serve, bootstrap-service.");
 			return 1;
 		}
 
 		var userLayout = ResolveUserLayout(command, args);
 		var configurationStore = new PlaintorchUserConfigurationStore(userLayout);
-		var vaultPath = ResolveVaultPath(command, args, configurationStore);
+		var vaultPath = TryResolveVaultPath(command, args);
 
 		var builder = WebApplication.CreateBuilder(args);
 		builder.Host.UseWindowsService();
@@ -46,6 +47,8 @@ public static class Program
 		builder.Services.ConfigureHttpJsonOptions(options =>
 		{
 			options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+			// Tri-state update fields: a present key (value or explicit null) applies; an omitted key leaves unchanged.
+			options.SerializerOptions.Converters.Add(new OptionalJsonConverterFactory());
 			options.SerializerOptions.TypeInfoResolver = new DefaultJsonTypeInfoResolver
 			{
 				Modifiers =
@@ -62,10 +65,13 @@ public static class Program
 					.AllowAnyHeader()
 					.AllowAnyMethod());
 		});
-		builder.Services.AddSingleton(new VaultOptions
+		if (vaultPath is not null)
 		{
-			VaultPath = vaultPath,
-		});
+			builder.Services.AddSingleton(new VaultOptions
+			{
+				VaultPath = vaultPath,
+			});
+		}
 		builder.Services.AddSingleton(userLayout);
 		if (OperatingSystem.IsWindows())
 		{
@@ -106,11 +112,6 @@ public static class Program
 		var app = builder.Install<PLAINTORCH>().Build();
 		app.UseRouting();
 		app.UseCors("PlaintorchGlobalCors");
-		app.UseStaticFiles(new StaticFileOptions
-		{
-			FileProvider = new PhysicalFileProvider(Path.Combine(app.Environment.ContentRootPath, "Assets")),
-			RequestPath = "/assets"
-		});
 		app.Configure<PLAINTORCH>();
 
 		if (command == "serve")
@@ -134,10 +135,13 @@ public static class Program
 		switch (command)
 		{
 			case "init":
-				return await RunInitializeAsync(app, vaultPath);
+				return await RunInitializeAsync(app, vaultPath!);
 
 			case "activate":
-				return RunActivate(app, vaultPath);
+				return RunActivate(app, vaultPath!);
+
+			case "deactivate":
+				return RunDeactivate(app);
 
 			case "serve":
 				return await RunServeAsync(app);
@@ -198,19 +202,18 @@ public static class Program
 	/// <summary>
 	/// Runs the long-lived PLAINTORCH host for Windows service or systemd execution.
 	/// </summary>
-	private static async Task<int> RunServeAsync(WebApplication application)
+	/// <remarks>
+	/// The host starts idle without a vault. Vault activation, lock ownership, and vault initialization are
+	/// coordinated at runtime by <see cref="PlaintorchCoreService"/> in response to user settings, so that a
+	/// vault can be activated and deactivated without restarting the host.
+	/// </remarks>
+	private static async Task<int> RunServeAsync(WebApplication application, bool daemon = false)
 	{
-		await using var scope = application.Services.CreateAsyncScope();
-		var lockService = scope.ServiceProvider.GetRequiredService<PlaintorchVaultLockService>();
-		var splashService = scope.ServiceProvider.GetRequiredService<PlaintorchCoreSplashService>();
+		var splashService = application.Services.GetRequiredService<PlaintorchCoreSplashService>();
 
 		try
 		{
-			await splashService.ShowLoadingAsync("Acquiring vault lock...");
-			await using var lockHandle = await lockService.AcquireAsync();
-			await splashService.ShowLoadingAsync("Starting PLAINTORCH core...");
 			await application.RunAsync();
-			await splashService.CloseAsync();
 			return 0;
 		}
 		catch (Exception exception)
@@ -219,6 +222,30 @@ public static class Program
 			Console.Error.WriteLine(exception.Message);
 			return 1;
 		}
+	}
+
+	/// <summary>
+	/// Clears the active per-user PLAINTORCH vault, returning any running core to idle.
+	/// </summary>
+	private static int RunDeactivate(WebApplication application)
+	{
+		using var scope = application.Services.CreateScope();
+		var activationService = scope.ServiceProvider.GetRequiredService<PlaintorchVaultActivationService>();
+		var userLayout = scope.ServiceProvider.GetRequiredService<PlaintorchUserLayout>();
+
+		var previousVaultPath = activationService.Deactivate();
+		if (previousVaultPath is null)
+		{
+			Console.WriteLine("No active vault was configured.");
+		}
+		else
+		{
+			Console.WriteLine("Active vault cleared.");
+			Console.WriteLine($"Previous Vault: {previousVaultPath}");
+		}
+
+		Console.WriteLine($"User Config: {userLayout.ConfigurationPath}");
+		return 0;
 	}
 
 	private static void TryDeleteStaleSocket(string socketPath)
@@ -362,8 +389,13 @@ public static class Program
 	/// <summary>
 	/// Resolves the vault path from command-line arguments or environment variables.
 	/// </summary>
-	private static string ResolveVaultPath(string command, IReadOnlyList<string> args, PlaintorchUserConfigurationStore configurationStore)
+	private static string? TryResolveVaultPath(string command, IReadOnlyList<string> args)
 	{
+		if (command is "serve")
+		{
+			return null;
+		}
+
 		for (var index = 0; index < args.Count - 1; index++)
 		{
 			if (string.Equals(args[index], "--vault", StringComparison.OrdinalIgnoreCase))
@@ -372,13 +404,6 @@ public static class Program
 			}
 		}
 
-		if (command is "init" or "activate" or "bootstrap-service")
-		{
-			return Directory.GetCurrentDirectory();
-		}
-
-		return Environment.GetEnvironmentVariable("PLAINTORCH_VAULT_PATH")
-			?? configurationStore.Load().ActiveVaultPath
-			?? throw new InvalidOperationException("No active PLAINTORCH vault is configured. Run 'activate' in a PLAINTORCH vault first.");
+		return Directory.GetCurrentDirectory();
 	}
 }

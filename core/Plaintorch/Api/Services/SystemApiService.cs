@@ -11,6 +11,7 @@ using Pleiades.Vault;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Watcher;
+using System.Reflection;
 
 namespace Pleiades.Plaintorch.Api.Services;
 
@@ -329,10 +330,11 @@ public sealed class SystemApiService(
 		CancellationToken cancellationToken,
 		ILogger? logger = null)
 	{
-		/*if (!string.IsNullOrWhiteSpace(pathPuck))
+		var storage = entityType.GetCustomAttribute<VaultStorageAttribute>(inherit: true);
+		if (storage?.PuckStorage == VaultPuckStorage.Index && !string.IsNullOrWhiteSpace(pathPuck))
 		{
 			return (pathPuck, pathTitle);
-		}*/
+		}
 
 		if (entityType == typeof(Objective))
 		{
@@ -543,35 +545,9 @@ public sealed class SystemApiService(
 		var today = DateOnly.FromDateTime(DateTime.UtcNow);
 		var lorePages = await context.LorePages
 			.AsNoTracking()
-			.ToListAsync(cancellationToken);
+			.ToLoreIndexAsync(cancellationToken);
 
-		if (lorePages.Count == 0)
-		{
-			return [];
-		}
-
-		var siblingsByParent = lorePages
-			.GroupBy(item => item.ParentId ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-			.ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.OrdinalIgnoreCase);
-
-		var active = lorePages
-			.Where(item =>
-			{
-				var siblings = siblingsByParent[item.ParentId ?? string.Empty];
-				var endingExclusive = LorePage.ResolveEndingExclusive(item, siblings);
-				return item.WasOngoingIn(today, endingExclusive);
-			})
-			.Where(item =>
-				string.Equals(item.Level, "Era", StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(item.Level, "Cha", StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(item.Level, "Act", StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(item.Level, "p", StringComparison.OrdinalIgnoreCase))
-			.OrderBy(item => GetLoreLevelOrder(item.Level))
-			.ThenBy(item => item.Beginning)
-			.ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
-			.ToArray();
-
-		return active;
+		return lorePages.ActivePages;
 	}
 
 	private static int GetLoreLevelOrder(string level)

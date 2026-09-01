@@ -24,7 +24,7 @@ public sealed class DeclarativeModule : Module
 	/// <inheritdoc />
 	public override void ConfigureEndpoints(IEndpointRouteBuilder endpoints)
 	{
-		var fates = endpoints.MapGroup("/api/fates");
+		var fates = endpoints.MapEnrichedGroup("/api/fates");
 
 		fates.MapGet("/", async (IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListFatesAsync(cancellationToken)));
@@ -56,7 +56,7 @@ public sealed class DeclarativeModule : Module
 		fates.MapPost("/{fateId}/begin", async (string fateId, IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.BeginFateBoundaryAsync(fateId, cancellationToken)));
 
-		var decrees = endpoints.MapGroup("/api/decrees");
+		var decrees = endpoints.MapEnrichedGroup("/api/decrees");
 
 		decrees.MapGet("/", async (IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListDecreesAsync(cancellationToken)));
@@ -88,7 +88,7 @@ public sealed class DeclarativeModule : Module
 		decrees.MapPost("/{decreeId}/begin", async (string decreeId, IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.BeginDecreeBoundaryAsync(decreeId, cancellationToken)));
 
-		var eventives = endpoints.MapGroup("/api/eventives");
+		var eventives = endpoints.MapEnrichedGroup("/api/eventives");
 
 		eventives.MapGet("/", async (string? fateId, string? objectiveId, IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListEventivesAsync(fateId, objectiveId, cancellationToken)));
@@ -96,7 +96,7 @@ public sealed class DeclarativeModule : Module
 		eventives.MapPut("/{eventiveId:long}", async (long eventiveId, EventiveUpdate request, IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateEventiveAsync(eventiveId, request, cancellationToken)));
 
-		var attentives = endpoints.MapGroup("/api/attentives");
+		var attentives = endpoints.MapEnrichedGroup("/api/attentives");
 
 		attentives.MapGet("/", async (string? decreeId, IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListAttentivesAsync(decreeId, cancellationToken)));

@@ -328,14 +328,14 @@ public sealed class OnrushSprintApiService(
 			sprint.Title = update.Title;
 		}
 
-		if (update.StartDate is not null)
+		if (update.StartDate.IsSet)
 		{
-			sprint.StartDate = update.StartDate;
+			sprint.StartDate = update.StartDate.Value;
 		}
 
-		if (update.EndDate is not null)
+		if (update.EndDate.IsSet)
 		{
-			sprint.EndDate = update.EndDate;
+			sprint.EndDate = update.EndDate.Value;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
@@ -431,6 +431,15 @@ public sealed class OnrushSprintApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task<ExecutiveOrder?> GetExecutiveOrderAsync(string executiveOrderId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(executiveOrderId);
+		return await context.ExecutiveOrders
+			.AsNoTracking()
+			.FirstOrDefaultAsync(order => order.Id == executiveOrderId, cancellationToken);
+	}
+
+	/// <inheritdoc />
 	public async Task<ExecutiveOrder> UpdateExecutiveOrderAsync(string executiveOrderId, ExecutiveOrderUpdate update, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(executiveOrderId);
@@ -445,19 +454,19 @@ public sealed class OnrushSprintApiService(
 			order.Title = update.Title;
 		}
 
-		if (update.Summary is not null)
+		if (update.Summary.IsSet)
 		{
-			order.Summary = update.Summary;
+			order.Summary = string.IsNullOrWhiteSpace(update.Summary.Value) ? null : update.Summary.Value;
 		}
 
-		if (update.EffectiveFrom is not null)
+		if (update.EffectiveFrom.IsSet)
 		{
-			order.EffectiveFrom = update.EffectiveFrom;
+			order.EffectiveFrom = update.EffectiveFrom.Value;
 		}
 
-		if (update.EffectiveUntil is not null)
+		if (update.EffectiveUntil.IsSet)
 		{
-			order.EffectiveUntil = update.EffectiveUntil;
+			order.EffectiveUntil = update.EffectiveUntil.Value;
 		}
 
 		ValidateEffectiveWindow(order.EffectiveFrom, order.EffectiveUntil);

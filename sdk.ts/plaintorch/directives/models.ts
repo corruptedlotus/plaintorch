@@ -89,8 +89,8 @@ export interface Timeframe {
 	iconMedia?: MediaReference | undefined
 	/** How this timeframe auto-includes workitems (PEP100 patch). */
 	autoInclusion: TimeframeInclusion
-	/** The college driving college-based auto-inclusion (PEP100 patch). */
-	autoInclusionCollege?: ObjectiveCollege | undefined
+	/** The colleges driving college-based auto-inclusion (PEP100 patch). */
+	autoInclusionColleges: ObjectiveCollege[]
 }
 
 /** A timeframe paired with a summary of the lunar directive that owns it (global timeframe listing, PEP100). */
@@ -110,8 +110,8 @@ export interface DirectiveTimeframeRecord {
 	iconMedia?: MediaReference | undefined
 	/** How this timeframe auto-includes workitems (PEP100 patch). */
 	autoInclusion: TimeframeInclusion
-	/** The college driving college-based auto-inclusion (PEP100 patch). */
-	autoInclusionCollege?: ObjectiveCollege | undefined
+	/** The colleges driving college-based auto-inclusion (PEP100 patch). */
+	autoInclusionColleges: ObjectiveCollege[]
 }
 
 export interface CreateDirectiveRequest {
@@ -125,21 +125,21 @@ export interface InitDirectiveRequest {
 	path: string
 }
 
-/** Stellar directive update, including scheduling dates. */
+/** Stellar directive update, including scheduling dates. Nullable fields: omit to keep, a value to set, `null` to clear. */
 export interface StellarDirectiveUpdate {
 	title?: string | undefined
-	codename?: string | undefined
+	codename?: string | null | undefined
 	parentDirectiveId?: string | undefined
 	tags?: string[] | undefined
-	due?: string | undefined
-	startDate?: string | undefined
-	endDate?: string | undefined
+	due?: string | null | undefined
+	startDate?: string | null | undefined
+	endDate?: string | null | undefined
 }
 
 /** Lunar directive update. Lunar directives are everglow and carry no scheduling dates (PEP100). */
 export interface LunarDirectiveUpdate {
 	title?: string | undefined
-	codename?: string | undefined
+	codename?: string | null | undefined
 	parentDirectiveId?: string | undefined
 	tags?: string[] | undefined
 }
@@ -167,26 +167,22 @@ export interface TimeframePlan {
 	icon?: string | undefined
 	/** How this timeframe auto-includes workitems (PEP100 patch); defaults to none. */
 	autoInclusion?: TimeframeInclusion
-	/** The college driving college-based auto-inclusion (PEP100 patch). */
-	autoInclusionCollege?: ObjectiveCollege | undefined
+	/** The colleges driving college-based auto-inclusion (PEP100 patch). */
+	autoInclusionColleges?: ObjectiveCollege[] | undefined
 }
 
 export interface TimeframeUpdate {
 	title?: string | undefined
 	startTime?: string | undefined
 	endTime?: string | undefined
-	orbit?: string | undefined
-	clearOrbit?: boolean
-	/** Icon key (PEP100 patch). Leave undefined to keep the current icon. */
-	icon?: string | undefined
-	/** Clears the icon regardless of any provided value (PEP100 patch). */
-	clearIcon?: boolean
+	/** Orbit notation. Omit to keep, a value to set, `null` to clear. */
+	orbit?: string | null | undefined
+	/** Icon key (PEP100 patch). Omit to keep, a value to set, `null` to clear. */
+	icon?: string | null | undefined
 	/** How this timeframe auto-includes workitems (PEP100 patch). Leave undefined to keep the current mechanism. */
 	autoInclusion?: TimeframeInclusion
-	/** The college driving college-based auto-inclusion (PEP100 patch). Leave undefined to keep the current college. */
-	autoInclusionCollege?: ObjectiveCollege | undefined
-	/** Clears the auto-inclusion college regardless of any provided value (PEP100 patch). */
-	clearAutoInclusionCollege?: boolean
+	/** The colleges driving college-based auto-inclusion (PEP100 patch). Omit to keep; any list (empty to clear) replaces. */
+	autoInclusionColleges?: ObjectiveCollege[] | undefined
 }
 
 /** How a media key resolves (PEP105): a built-in glyph, self/level media, or vault-level shared media. */

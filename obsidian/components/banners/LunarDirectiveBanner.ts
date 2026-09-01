@@ -14,10 +14,11 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 	override icon: IconName = 'directive-lunar'
 
 	protected override get preHeadingTemplate() {
-		return !this.entity?.codename ? html`
-			<span>Lunar Directive</span>
-		` : html`
-			<span>Codename ${this.entity.codename.toUpperCase()}</span>
+		return html`
+			<span>
+				${this.entity?.codename ? 'Lunar Invocation' : 'Lunar Directive ·'}
+				<p7t-editable-plaintext class='codename' placeholder='-' ${this.binder.bind('codename')}></p7t-editable-plaintext>
+			</span>
 		`
 	}
 
@@ -27,7 +28,7 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
-			if (keyPath !== 'status' && keyPath !== 'title') {
+			if (keyPath !== 'status' && keyPath !== 'title' && keyPath !== 'codename') {
 				return
 			}
 
@@ -36,7 +37,10 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 					return await core.directives.shiftLunarWorkflow(entity.id, { status: entity.status as LunarDirectiveStatus })
 				}
 
-				const update: LunarDirectiveUpdate = { title: entity.title }
+				// Codename is nullable: a cleared field commits as null (a clear), not undefined (a no-op).
+				const update: LunarDirectiveUpdate = {}
+				if (keyPath === 'title') update.title = entity.title
+				if (keyPath === 'codename') update.codename = entity.codename ?? null
 				return await core.directives.updateLunar(entity.id, update)
 			})
 
@@ -45,6 +49,14 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 			}
 		}
 	})
+
+	protected override get stampTemplate() {
+		return html`
+			<p7t-icon-item class='pml-stamp' icon='project-moonlight'>
+				Part of <span>Project Moonlight</span>
+			</p7t-icon-item>
+		`
+	}
 
 	private async revealAssociatedNote(directiveId: string) {
 		const existence = await core.repos.entityResolution.refresh(directiveId)
@@ -74,15 +86,31 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 			p7t-status-item::part(icon) {
 				height: 1.4em;
 			}
+
+			.codename {
+				text-transform: uppercase;
+			}
+
+			.pml-stamp {
+				color: var(--text-muted);
+				font-family: var(--font-interface);
+				font-size: .9em;
+				font-weight: 300;
+
+				&::part(text) {
+					
+				}
+
+				& span {
+					color: var(--text-normal);
+				}
+			}
 		`
 	}
 
 	protected override get secondary() {
-		const directiveTitle = this.entity!.parentDirective?.title
-		return !directiveTitle ? html`
-			<span style='opacity: .5'>Constellation Directive</span>
-		` : html`
-			<span>${directiveTitle}</span>
+		return html`
+			<p7t-directive-item placeholder='Constellation Directive' .directive=${this.entity!.parentDirective}></p7t-directive-item>
 		`
 	}
 

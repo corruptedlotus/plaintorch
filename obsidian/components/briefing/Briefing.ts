@@ -43,10 +43,9 @@ export class Briefing extends Component {
 			<p7t-briefing-hero .briefing=${this.data} style='margin-bottom: .1em'></p7t-briefing-hero>
 			<div class='navbar'>
 				<p7t-navitem key='throne' icon='everglow' ?active=${this.page === 'throne'}>Throne Room</p7t-navitem>
-				<p7t-navitem key='forecast' icon='polaris' ?active=${this.page === 'forecast'}>Forecast</p7t-navitem>
 				<p7t-navitem key='planning' icon='onrush' ?active=${this.page === 'planning'}>Planning</p7t-navitem>
-				<p7t-navitem key='directives' icon='directive' ?active=${this.page === 'directives'}>Directives</p7t-navitem>
-				<p7t-navitem key='objectives' icon='objective' ?active=${this.page === 'objectives'}>Objectives</p7t-navitem>
+				<p7t-navitem key='backlog' icon='directive' ?active=${this.page === 'backlog'}>Backlog</p7t-navitem>
+				<p7t-navitem key='lore' icon='lorepage' ?active=${this.page === 'lore'}>Lore</p7t-navitem>
 			</div>
 			${this.content}
 		`
@@ -56,8 +55,10 @@ export class Briefing extends Component {
 		switch (this.page) {
 			case 'throne':
 				return html`<p7t-throne-view .data=${this.data}></p7t-throne-view>`
-			case 'directives':
+			case 'backlog':
 				return html`<p7t-entity-grid></p7t-entity-grid>`
+			case 'lore':
+				return html`<p7t-lore-grid></p7t-lore-grid>`
 			case 'planning':
 				return html`<p7t-dependency-canvas></p7t-dependency-canvas>`
 			default:

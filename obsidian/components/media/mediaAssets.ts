@@ -6,7 +6,7 @@ import type { MediaReference } from '@pleiades/sdk'
  * keeps it out of markdown discovery, and a `vault:` file resolves to a deterministic path beneath it — which is
  * what lets a vault image preview without waiting on a resolved companion from the core (PEP105).
  */
-export const ASSET_FOLDER = '_assets'
+export const ASSET_FOLDER = '_media'
 
 /**
  * Resolves a vault-relative media path (as the core serialises for a directive icon or banner, PEP105) to an

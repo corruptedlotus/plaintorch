@@ -44,17 +44,17 @@ export class AllocationItem extends InfoItem {
 			.progress {
 				display: flex;
 				flex-direction: column;
-				gap: .2em;
+				gap: .4em;
 				min-width: 10em;
 			}
 
-			.progress .row {
+			.row {
 				display: flex;
 				justify-content: space-between;
 				gap: 1.2em;
 			}
 
-			.progress .key {
+			.key {
 				opacity: .6;
 			}
 		`
@@ -82,19 +82,26 @@ export class AllocationItem extends InfoItem {
 	}
 
 	protected override get tooltip() {
-		if (!this.estimation && this.elapsed === 0) {
-			return nothing
-		}
-
 		const band = this.minimum !== undefined || this.maximum !== undefined
 			? `${humanizeMinutes(this.minimum)} – ${humanizeMinutes(this.maximum)}`
 			: undefined
 		return html`
-			<div class='progress'>
-				<div class='row'><span class='key'>Elapsed</span><span>${humanizeMinutes(this.elapsed)}</span></div>
-				<div class='row'><span class='key'>Estimation</span><span>${humanizeMinutes(this.estimation)}</span></div>
-				${!band ? nothing : html`<div class='row'><span class='key'>Range</span><span>${band}</span></div>`}
-			</div>
+				${this.executed ? html`
+					<div>
+						<span class='key'>Executed in</span>
+						<span>${humanizeMinutes(this.elapsed)}</span>
+					</div>
+				` : html`
+					<div class='progress'>
+						<p7t-value-progress
+							icon='lucide:timer'
+							.max=${this.estimation}
+							.value=${this.elapsed}
+							.valueTemplate=${(value: number) => html`<span>${humanizeMinutes(value)}</span>`}>
+						</p7t-value-progress>
+						${!band ? nothing : html`<div class='row'><span class='key'>Range</span><span>${band}</span></div>`}
+					</div>
+				`}
 		`
 	}
 }

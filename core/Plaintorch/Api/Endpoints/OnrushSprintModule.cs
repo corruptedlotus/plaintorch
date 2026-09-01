@@ -24,7 +24,7 @@ public sealed class OnrushSprintModule : Module
 	/// <inheritdoc />
 	public override void ConfigureEndpoints(IEndpointRouteBuilder endpoints)
 	{
-		var group = endpoints.MapGroup("/api/onrush");
+		var group = endpoints.MapEnrichedGroup("/api/onrush");
 
 		group.MapGet("/", async (IOnrushSprintApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListAsync(cancellationToken)));
@@ -92,7 +92,13 @@ public sealed class OnrushSprintModule : Module
 			return Results.Created($"/api/executive-orders/{order.Id}", order);
 		});
 
-		var orders = endpoints.MapGroup("/api/executive-orders");
+		var orders = endpoints.MapEnrichedGroup("/api/executive-orders");
+		orders.MapGet("/{executiveOrderId}", async (string executiveOrderId, IOnrushSprintApi api, CancellationToken cancellationToken) =>
+		{
+			var order = await api.GetExecutiveOrderAsync(executiveOrderId, cancellationToken);
+			return order is null ? Results.NotFound() : Results.Ok(order);
+		});
+
 		orders.MapPut("/{executiveOrderId}", async (string executiveOrderId, ExecutiveOrderUpdate request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateExecutiveOrderAsync(executiveOrderId, request, cancellationToken)));
 

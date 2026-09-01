@@ -88,21 +88,29 @@ public sealed record WatcherIssueReport(
 	IReadOnlyList<WatcherCriterionRecord> Criteria);
 
 /// <summary>
-/// Represents a saga lore page payload exposed by the API.
+/// Represents an in-place edit of a lore page's mutable metadata. Its hierarchy (level and narrative index) stays
+/// path-derived and is not editable here; the title (which renames the self-named folder) and the frontmatter-backed
+/// beginning date are.
 /// </summary>
-public sealed record LorePageRecord(
-	string Puck,
-	string Title,
-	string? OverrideIdentifier,
+public sealed record LorePageUpdate(
+	Optional<string> Title = default,
+	Optional<DateOnly?> Beginning = default);
+
+/// <summary>
+/// Represents a request to create a lore page. The level is derived from the parent (a null parent creates an Era);
+/// the narrative index and PUCK identity are composed by the core from the parent and existing siblings.
+/// </summary>
+public sealed record LorePageCreateRequest(
 	string? ParentPuck,
-	DateOnly? Beginning,
-	string Level,
-	string RelativePath,
-	int? Era,
-	int? Chapter,
-	int? Act,
-	int? Phase,
-	DateTimeOffset IndexedUtc);
+	string Title,
+	DateOnly? Beginning = null);
+
+/// <summary>
+/// Represents a request to renumber a lore page to a new index at its own level, re-keying it and its descendants.
+/// </summary>
+public sealed record LorePageRenumberRequest(
+	string Puck,
+	int Index);
 
 /// <summary>
 /// Represents a generic text search request used by list/find style API actions.
@@ -132,12 +140,12 @@ public enum DirectiveKind
 /// </summary>
 public sealed record StellarDirectiveUpdate(
 	string? Title = null,
-	string? Codename = null,
+	Optional<string?> Codename = default,
 	string? ParentDirectiveId = null,
 	IReadOnlyList<string>? Tags = null,
-	DateOnly? Due = null,
-	DateOnly? StartDate = null,
-	DateOnly? EndDate = null);
+	Optional<DateOnly?> Due = default,
+	Optional<DateOnly?> StartDate = default,
+	Optional<DateOnly?> EndDate = default);
 
 /// <summary>
 /// Represents the mutable fields of a lunar directive for update actions. Lunar directives are everglow and
@@ -145,7 +153,7 @@ public sealed record StellarDirectiveUpdate(
 /// </summary>
 public sealed record LunarDirectiveUpdate(
 	string? Title = null,
-	string? Codename = null,
+	Optional<string?> Codename = default,
 	string? ParentDirectiveId = null,
 	IReadOnlyList<string>? Tags = null);
 
@@ -208,9 +216,8 @@ public sealed record ObjectiveUpdate(
 	ObjectiveCollege? College = null,
 	int? CelestronValue = null,
 	bool? IsEnduring = null,
-	DateOnly? Due = null,
-	string? ParentIncentiveId = null,
-	bool ClearParentIncentive = false);
+	Optional<DateOnly?> Due = default,
+	Optional<string?> ParentIncentiveId = default);
 
 /// <summary>
 /// Represents the editable fields of a checkpoint (PEP102): its name, its Celestron toll, and its external
@@ -224,10 +231,8 @@ public sealed record ObjectiveUpdate(
 /// </remarks>
 public sealed record CheckpointUpdate(
 	string? Title = null,
-	int? CelestronToll = null,
-	bool ClearCelestronToll = false,
-	bool? ExternalCondition = null,
-	bool ClearExternalCondition = false);
+	Optional<int?> CelestronToll = default,
+	Optional<bool?> ExternalCondition = default);
 
 /// <summary>
 /// Represents a workflow shift for an objective.
@@ -246,8 +251,8 @@ public sealed record PolarisCycleUpdate(
 /// </summary>
 public sealed record OnrushSprintUpdate(
 	string? Title = null,
-	DateOnly? StartDate = null,
-	DateOnly? EndDate = null);
+	Optional<DateOnly?> StartDate = default,
+	Optional<DateOnly?> EndDate = default);
 
 /// <summary>
 /// Represents the data required to plan an onrush sprint.
@@ -271,9 +276,9 @@ public sealed record ExecutiveOrderPlan(
 /// </summary>
 public sealed record ExecutiveOrderUpdate(
 	string? Title = null,
-	string? Summary = null,
-	DateOnly? EffectiveFrom = null,
-	DateOnly? EffectiveUntil = null);
+	Optional<string?> Summary = default,
+	Optional<DateOnly?> EffectiveFrom = default,
+	Optional<DateOnly?> EffectiveUntil = default);
 
 /// <summary>
 /// Represents the supported sources for planning a Polaris executive.
@@ -333,8 +338,8 @@ public sealed record PolarisExecutivePlanResult(Objective? Objective, Executive 
 /// Represents a mutable update to an executive record.
 /// </summary>
 /// <remarks>
-/// The time allocation fields carry whole-minute working time units. Each is paired with a
-/// <c>Clear*</c> flag so a caller can distinguish "leave unchanged" (null) from "unset" (clear).
+/// The time allocation fields carry whole-minute working time units, each an <see cref="Optional{T}"/>: an
+/// omitted key leaves it unchanged, an explicit value sets it, and an explicit null clears it.
 /// After the values are applied the record is reconciled through <see cref="Executive.NormalizeTimeAllocations"/>.
 /// <paramref name="Elapsed"/> is the raw tracked-minute tally: <c>null</c> leaves it unchanged and any
 /// supplied value (including <c>0</c> to reset) overwrites it. It has no <c>Clear*</c> flag because it is never unset.
@@ -344,16 +349,11 @@ public sealed record PolarisExecutivePlanResult(Objective? Objective, Executive 
 public sealed record ExecutiveUpdate(
 	bool? Executed = null,
 	string? ObjectiveId = null,
-	bool ClearObjective = false,
-	int? Estimation = null,
-	int? Minimum = null,
-	int? Maximum = null,
-	bool ClearEstimation = false,
-	bool ClearMinimum = false,
-	bool ClearMaximum = false,
+	Optional<int?> Estimation = default,
+	Optional<int?> Minimum = default,
+	Optional<int?> Maximum = default,
 	int? Elapsed = null,
-	long? AffinityTimeframeId = null,
-	bool ClearAffinityTimeframe = false);
+	Optional<long?> AffinityTimeframeId = default);
 
 /// <summary>
 /// Represents the inputs used to draw reflectives for a Polaris cycle.
@@ -370,7 +370,7 @@ public sealed record ReflectiveDrawRequest(
 public sealed record ReflectiveUpdate(
 	string? Description = null,
 	bool? Executed = null,
-	TimeOnly? Time = null);
+	Optional<TimeOnly?> Time = default);
 
 /// <summary>
 /// Represents a moonlight workflow shift for a lunar directive (PEP100).
@@ -399,10 +399,8 @@ public sealed record FateUpdate(
 	string? Title = null,
 	FateStatus? Status = null,
 	string? DirectiveId = null,
-	string? ParentIncentiveId = null,
-	bool ClearParentIncentive = false,
-	DateOnly? Date = null,
-	bool ClearDate = false,
+	Optional<string?> ParentIncentiveId = default,
+	Optional<DateOnly?> Date = default,
 	TimeOnly? StartTime = null,
 	TimeOnly? EndTime = null,
 	string? Orbit = null,
@@ -447,12 +445,12 @@ public sealed record EventiveMaterialization(
 /// </summary>
 public sealed record EventiveUpdate(
 	DateOnly? Date = null,
-	TimeOnly? StartTime = null,
-	TimeOnly? EndTime = null,
+	Optional<TimeOnly?> StartTime = default,
+	Optional<TimeOnly?> EndTime = default,
 	EventiveResolution? Resolution = null,
-	int? Estimation = null,
-	int? Minimum = null,
-	int? Maximum = null);
+	Optional<int?> Estimation = default,
+	Optional<int?> Minimum = default,
+	Optional<int?> Maximum = default);
 
 /// <summary>
 /// Represents the caller-supplied occurrence details when interacting with a decree to materialize an
@@ -474,12 +472,12 @@ public sealed record AttentiveMaterialization(
 /// </remarks>
 public sealed record AttentiveUpdate(
 	DateOnly? Date = null,
-	TimeOnly? Time = null,
+	Optional<TimeOnly?> Time = default,
 	AttentiveResolution? Resolution = null,
 	string? MoveToPolarisCycleId = null,
-	int? Estimation = null,
-	int? Minimum = null,
-	int? Maximum = null);
+	Optional<int?> Estimation = default,
+	Optional<int?> Minimum = default,
+	Optional<int?> Maximum = default);
 
 /// <summary>
 /// Represents the data required to manually add a decree to a Polaris cycle, creating a Polaris-bound
@@ -521,24 +519,22 @@ public sealed record TimeframePlan(
 	string? Orbit = null,
 	string? Icon = null,
 	TimeframeInclusion AutoInclusion = TimeframeInclusion.None,
-	ObjectiveCollege? AutoInclusionCollege = null);
+	IReadOnlyList<ObjectiveCollege>? AutoInclusionColleges = null);
 
 /// <summary>
 /// Represents the mutable fields of a timeframe definition. The auto-inclusion and icon fields are PEP100 patch
-/// additions: <paramref name="AutoInclusion"/> and <paramref name="AutoInclusionCollege"/> are applied only when
-/// supplied, while the <c>Clear*</c> flags unset the icon or the college outright.
+/// additions: <paramref name="AutoInclusion"/> and <paramref name="AutoInclusionColleges"/> are applied only when
+/// supplied (a null college list leaves it unchanged; an empty one clears it), while the Orbit/Icon Optionals
+/// distinguish keep/set/clear.
 /// </summary>
 public sealed record TimeframeUpdate(
 	string? Title = null,
 	TimeOnly? StartTime = null,
 	TimeOnly? EndTime = null,
-	string? Orbit = null,
-	bool ClearOrbit = false,
-	string? Icon = null,
-	bool ClearIcon = false,
+	Optional<string?> Orbit = default,
+	Optional<string?> Icon = default,
 	TimeframeInclusion? AutoInclusion = null,
-	ObjectiveCollege? AutoInclusionCollege = null,
-	bool ClearAutoInclusionCollege = false);
+	IReadOnlyList<ObjectiveCollege>? AutoInclusionColleges = null);
 
 /// <summary>
 /// Represents the emitted dependency lock for an entity (PEP101), computed from its unsatisfied incoming
@@ -583,7 +579,7 @@ public sealed record EndpointHit(
 /// <param name="Orbit">The optional Orbit notation scoping the timeframe to particular Polaris cycles.</param>
 /// <param name="Icon">The optional icon key (PEP100 patch).</param>
 /// <param name="AutoInclusion">How the timeframe auto-includes Polaris workitems (PEP100 patch).</param>
-/// <param name="AutoInclusionCollege">The college driving college-based auto-inclusion (PEP100 patch).</param>
+/// <param name="AutoInclusionColleges">The colleges driving college-based auto-inclusion (PEP100 patch).</param>
 public sealed record DirectiveTimeframeRecord(
 	long Id,
 	string DirectiveId,
@@ -594,9 +590,9 @@ public sealed record DirectiveTimeframeRecord(
 	TimeOnly StartTime,
 	TimeOnly EndTime,
 	string? Orbit,
-	string? Icon,
+	[property: Media] string? Icon,
 	TimeframeInclusion AutoInclusion,
-	ObjectiveCollege? AutoInclusionCollege)
+	IReadOnlyList<ObjectiveCollege> AutoInclusionColleges)
 {
 	/// <summary>
 	/// Gets or sets the resolved companion of <see cref="Icon"/>, filled after the record is projected (its LINQ

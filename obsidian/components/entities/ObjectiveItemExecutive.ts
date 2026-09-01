@@ -17,17 +17,12 @@ export class ObjectiveItemExecutive extends ObjectiveItem {
 	}
 
 	/**
-	 * An executive affined to a timeframe shows that timeframe's icon where an objective would show its Celestron
-	 * value (PEP100 patch). With no affinity the Celestron reading is kept, so nothing is lost when a timeframe is
-	 * not in play.
+	 * An executive shows its timeframe **affinity** where an objective would show its Celestron — the Celestron is
+	 * replaced outright (PEP100 patch). The affinity chip carries its own empty state ("No Affinity"), so it stands
+	 * in whether or not a timeframe is in play.
 	 */
 	protected override get info() {
-		const timeframe = this.executive?.affinityTimeframe
-		if (!timeframe) {
-			return super.info
-		}
-
-		return html`<p7t-timeframe-item mode='icon' .timeframe=${timeframe}></p7t-timeframe-item>`
+		return html`<p7t-timeframe-item affinity small mode='icon' .timeframe=${this.executive?.affinityTimeframe}></p7t-timeframe-item>`
 	}
 
 	protected override get extraActionTemplate() {

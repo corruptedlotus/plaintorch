@@ -89,14 +89,17 @@ public sealed class DeclarativeApiService(
 		ValidateEventWindow(plan.StartTime, plan.EndTime);
 		PlaintorchOrbitService.ValidateFateOrbit(plan.Orbit);
 
+		// Orbit and a fixed date are mutually exclusive (PEP100); a recurring plan keeps only the orbit, dropping any
+		// stray one-off date/time so the fate is never born carrying both shapes.
+		var recurring = !string.IsNullOrWhiteSpace(plan.Orbit);
 		var fate = new Fate
 		{
 			Id = puckCreationService.CreateIdFor<Fate>(plan.Id),
 			Title = plan.Title,
 			DirectiveId = plan.DirectiveId,
-			Date = plan.Date,
-			StartTime = plan.StartTime,
-			EndTime = plan.EndTime,
+			Date = recurring ? null : plan.Date,
+			StartTime = recurring ? null : plan.StartTime,
+			EndTime = recurring ? null : plan.EndTime,
 			Orbit = plan.Orbit,
 			EventDuration = plan.EventDuration,
 		};
@@ -143,25 +146,23 @@ public sealed class DeclarativeApiService(
 			fate.DirectiveId = update.DirectiveId;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.ParentIncentiveId))
+		if (update.ParentIncentiveId.IsSet)
 		{
-			await ApplyParentAsync(fate, update.ParentIncentiveId, cancellationToken);
+			if (string.IsNullOrWhiteSpace(update.ParentIncentiveId.Value))
+			{
+				fate.ParentIncentiveId = null;
+			}
+			else
+			{
+				await ApplyParentAsync(fate, update.ParentIncentiveId.Value, cancellationToken);
+			}
 		}
 
-		if (update.ClearParentIncentive)
+		if (update.Date.IsSet)
 		{
-			fate.ParentIncentiveId = null;
-		}
-
-		if (update.ClearDate)
-		{
-			// Switching a one-off fate onto a recurring orbit drops its fixed date, so it no longer
-			// materializes a standalone eventive alongside the orbit's occurrences.
-			fate.Date = null;
-		}
-		else if (update.Date is not null)
-		{
-			fate.Date = update.Date;
+			// A null date drops the fixed date — e.g. switching a one-off fate onto a recurring orbit, so it no
+			// longer materializes a standalone eventive alongside the orbit's occurrences.
+			fate.Date = update.Date.Value;
 		}
 
 		if (update.StartTime is not null)
@@ -184,6 +185,21 @@ public sealed class DeclarativeApiService(
 		if (update.EventDuration is not null)
 		{
 			fate.EventDuration = update.EventDuration;
+		}
+
+		// Orbit and a fixed date are mutually exclusive (PEP100). Whichever this update sets clears the other, so a
+		// caller never has to send an explicit clear alongside — the schedule interception keeps the fate single-shaped.
+		var setsOrbit = update.Orbit is not null && !string.IsNullOrWhiteSpace(update.Orbit);
+		var setsDate = update.Date.IsSet && update.Date.Value is not null;
+		if (setsOrbit)
+		{
+			fate.Date = null;
+			fate.StartTime = null;
+			fate.EndTime = null;
+		}
+		else if (setsDate)
+		{
+			fate.Orbit = null;
 		}
 
 		ValidateEventWindow(fate.StartTime, fate.EndTime);
@@ -579,14 +595,14 @@ public sealed class DeclarativeApiService(
 			eventive.Date = update.Date.Value;
 		}
 
-		if (update.StartTime is not null)
+		if (update.StartTime.IsSet)
 		{
-			eventive.StartTime = update.StartTime;
+			eventive.StartTime = update.StartTime.Value;
 		}
 
-		if (update.EndTime is not null)
+		if (update.EndTime.IsSet)
 		{
-			eventive.EndTime = update.EndTime;
+			eventive.EndTime = update.EndTime.Value;
 		}
 
 		if (update.Resolution is not null)
@@ -639,9 +655,9 @@ public sealed class DeclarativeApiService(
 			attentive.PolarisCycleId = update.MoveToPolarisCycleId;
 		}
 
-		if (update.Time is not null)
+		if (update.Time.IsSet)
 		{
-			attentive.Time = update.Time;
+			attentive.Time = update.Time.Value;
 		}
 
 		if (update.Resolution is not null)
@@ -661,21 +677,22 @@ public sealed class DeclarativeApiService(
 		return attentive;
 	}
 
-	private static void ApplyAllocations(ITimeAllocated record, int? estimation, int? minimum, int? maximum)
+	private static void ApplyAllocations(ITimeAllocated record, Optional<int?> estimation, Optional<int?> minimum, Optional<int?> maximum)
 	{
-		if (estimation is not null)
+		// A set field applies its value — including null, which clears the allocation; an unset field is left alone.
+		if (estimation.IsSet)
 		{
-			record.Estimation = estimation;
+			record.Estimation = estimation.Value;
 		}
 
-		if (minimum is not null)
+		if (minimum.IsSet)
 		{
-			record.Minimum = minimum;
+			record.Minimum = minimum.Value;
 		}
 
-		if (maximum is not null)
+		if (maximum.IsSet)
 		{
-			record.Maximum = maximum;
+			record.Maximum = maximum.Value;
 		}
 
 		record.Normalize();

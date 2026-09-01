@@ -9,6 +9,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="A11d.Module" Version="1.0.1" />
+		<PackageReference Include="Mapster" Version="10.0.12" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.10">
 			<PrivateAssets>all</PrivateAssets>

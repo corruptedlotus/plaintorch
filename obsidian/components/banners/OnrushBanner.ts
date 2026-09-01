@@ -1,6 +1,6 @@
 import { component, css, html, nothing } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { OnrushSprint, PleiadeanDate } from '@pleiades/sdk'
+import { OnrushSprint } from '@pleiades/sdk'
 import { core, ReactiveBinder, SelectDirectiveStatusModal } from ".."
 import { App } from "obsidian"
 
@@ -105,10 +105,10 @@ export class OnrushBanner extends EntityBanner<OnrushSprint> {
 		return html`
 			<div class='date-span'>
 				${!this.entity!.startDate ? html`<span>Not Started</span>` : html`
-					<span>${PleiadeanDate.fromDate(new Date(this.entity!.startDate)).toString()}</span>
+					<p7t-datetime-view .date=${this.entity!.startDate}></p7t-datetime-view>
 					${!this.entity!.endDate ? html`<p7t-icon icon='lucide:step-forward'></p7t-icon>` : html`
 						<p7t-icon icon='lucide:arrow-right'></p7t-icon>
-						<span>${PleiadeanDate.fromDate(new Date(this.entity!.endDate)).toString()}</span>
+						<p7t-datetime-view .date=${this.entity!.endDate}></p7t-datetime-view>
 					`}
 				`}
 			</div>

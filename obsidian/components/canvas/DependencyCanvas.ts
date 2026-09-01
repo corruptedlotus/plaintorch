@@ -361,30 +361,6 @@ export class DependencyCanvas extends Component {
 				box-shadow: 0 4px 14px rgb(0 0 0 / .25);
 			}
 
-			.tray-btn {
-				display: flex;
-				align-items: center;
-				justify-content: center;
-				min-width: 2.2em;
-				min-height: 2.2em;
-				padding: .25em;
-				border: none;
-				border-radius: 8px;
-				background: transparent;
-				color: inherit;
-				cursor: pointer;
-				transition: background-color .2s ease;
-
-				& p7t-icon {
-					width: 1.3em;
-					height: 1.3em;
-				}
-
-				&:hover {
-					background-color: color-mix(in srgb, var(--text-normal) 12%, transparent);
-				}
-			}
-
 		`
 	}
 
@@ -663,17 +639,11 @@ export class DependencyCanvas extends Component {
 				`}
 				<div class='tray-actions'>
 					${!sprint ? nothing : html`
-						<button class='tray-btn' aria-label='Onrush details' @click=${() => this.openOnrushDetails()}>
-							<p7t-icon icon='lucide:pen'></p7t-icon>
-						</button>
+						<p7t-button ghost icon='lucide:pen' label='Onrush details' @click=${() => this.openOnrushDetails()}></p7t-button>
 					`}
-					<button class='tray-btn' aria-label='Reset layout' @click=${() => this.resetLayout()}>
-						<p7t-icon icon='lucide:rotate-ccw'></p7t-icon>
-					</button>
+					<p7t-button ghost icon='lucide:rotate-ccw' label='Reset layout' @click=${() => this.resetLayout()}></p7t-button>
 					${this.mode === 'global' && !this.fileBacked ? html`
-						<button class='tray-btn' aria-label='Save to file' @click=${() => void this.onSaveToFile()}>
-							<p7t-icon icon='lucide:save'></p7t-icon>
-						</button>
+						<p7t-button ghost icon='lucide:save' label='Save to file' @click=${() => void this.onSaveToFile()}></p7t-button>
 					` : nothing}
 					${this.lifecycleActions.length === 0 ? nothing : html`
 						<p7t-expanding-actions

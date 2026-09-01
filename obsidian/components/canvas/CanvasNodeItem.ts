@@ -1,5 +1,5 @@
-import { component, css, event, html, property } from '@a11d/lit'
-import { DependencyEndpointKind, ObjectiveStatus } from '@pleiades/sdk'
+import { component, css, event, html, property, PropertyValues } from '@a11d/lit'
+import { DependencyEndpointKind, DirectiveStatus, ObjectiveStatus } from '@pleiades/sdk'
 import { EntityItem, IconName, statusDescriptors } from '..'
 import type { CanvasEntity } from './graphModel'
 
@@ -115,6 +115,11 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 			/* Raced is the softer state — a finish it has yet to win, not a begin it is barred from. */
 			:host([lock='raced']) {
 				border-color: color-mix(in srgb, var(--text-warning, goldenrod) 45%, transparent);
+			}
+
+			/* A finished node reads done at a glance — the border treatment blocked and raced use, in green. */
+			:host([finished]) {
+				border-color: color-mix(in srgb, var(--color-green, #3fb950) 55%, transparent);
 			}
 
 			/* A blocker shown for context, not a member: faint, and dashed to read as not-quite-here. */
@@ -276,6 +281,35 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 		}
 
 		return kindIcons[this.kind]
+	}
+
+	/**
+	 * Whether the entity behind this node has reached its finished state — a done objective, a fulfilled or over
+	 * directive, an unlocked checkpoint. Reflected to the host so the card can be themed green, the way {@link lock}
+	 * themes blocked and raced. Read off the resolved entity the base watch keeps current.
+	 */
+	protected get finished(): boolean {
+		const entity = this.entity as { status?: number, unlocked?: boolean } | undefined
+		if (!entity) {
+			return false
+		}
+
+		switch (this.kind) {
+			case DependencyEndpointKind.Objective:
+				return entity.status === ObjectiveStatus.Done
+			case DependencyEndpointKind.Directive:
+				return entity.status === DirectiveStatus.Fulfilled || entity.status === DirectiveStatus.Over
+			case DependencyEndpointKind.Checkpoint:
+				return entity.unlocked === true
+			default:
+				return false
+		}
+	}
+
+	protected override updated(changed: PropertyValues) {
+		super.updated?.(changed)
+		// Derived from the watched entity's state rather than a property, so it is reflected here once each render.
+		this.toggleAttribute('finished', this.finished)
 	}
 
 	private onLinkStart(e: PointerEvent) {

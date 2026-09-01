@@ -13,8 +13,8 @@ const kindIcons: Record<EntityKind, IconName> = {
 	'objective': 'objective',
 	// Fate and decree stand in with these to match their banners (which set the same icons); dedicated
 	// 'fate'/'decree' icons now exist but are not adopted here yet, to keep the grid and banners aligned.
-	'fate': 'eventive',
-	'decree': 'everglow'
+	'fate': 'fate',
+	'decree': 'decree'
 }
 
 const kindLabels: Record<EntityKind, string> = {
@@ -164,13 +164,14 @@ export function isSingleInstanceFate(entity: GridEntity): boolean {
  * materializing two schedules at once.
  */
 export async function saveFateSchedule(entity: GridEntity, schedule: ScheduleValue): Promise<boolean> {
+	// The core interceptor clears whichever shape this update does not set, so only the chosen one is sent.
 	return !!await core.repos.fates.mutate(entity.id, async () => await core.declaratives.updateFate(entity.id, schedule.mode === 'orbit'
-		? { orbit: schedule.orbit ?? '', clearDate: true }
-		: { orbit: '', date: schedule.date, startTime: schedule.time }))
+		? { orbit: schedule.orbit ?? '' }
+		: { date: schedule.date, startTime: schedule.time }))
 }
 
-/** Opens the note an entity is the authority for, in a new tab. */
-export async function openEntityNote(entity: GridEntity): Promise<void> {
+/** Opens the note an entity is the authority for, in a new tab. Takes any entity with a PUCK identity. */
+export async function openEntityNote(entity: { id: string }): Promise<void> {
 	const existence = await core.repos.entityResolution.get(entity.id)
 	if (!existence?.associatedNote) {
 		new Notice('That entity has no note yet.')
@@ -178,6 +179,11 @@ export async function openEntityNote(entity: GridEntity): Promise<void> {
 	}
 
 	getWorkspace().openLinkText(existence.associatedNote, '', true)
+}
+
+/** Opens a known vault-relative markdown path in a new tab, normalizing separators for Obsidian. */
+export function openNotePath(vaultRelativePath: string): void {
+	getWorkspace().openLinkText(vaultRelativePath.replace(/\\/g, '/'), '', true)
 }
 
 /** The choices offered for creating something anywhere, in the order the FAB presents them. */
@@ -213,6 +219,12 @@ export function objectiveActions(objectiveId: string): ExpandingAction[] {
 				const added = await core.repos.objectives.mutate(objectiveId, async () =>
 					await core.polaris.addObjectiveToCurrent(objectiveId))
 				new Notice(added ? 'Added to active Polaris cycle.' : 'Could not add to Polaris.')
+				if (added) {
+					await Promise.all([
+						core.repos.polaris.revalidateObserved(),
+						core.repos.briefing.revalidateIfObserved()
+					])
+				}
 			}
 		},
 		{

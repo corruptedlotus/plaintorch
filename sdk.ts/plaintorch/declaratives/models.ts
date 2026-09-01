@@ -91,6 +91,8 @@ export interface Attentive {
 	 */
 	periodEndDate: string | undefined
 	resolution: AttentiveResolution
+	/** UTC timestamp of the most recent transition to Done; cleared when the attentive is unresolved. */
+	resolvedOn: string | undefined
 	estimation: number | undefined
 	minimum: number | undefined
 	maximum: number | undefined
@@ -113,11 +115,10 @@ export interface FateUpdate {
 	title?: string | undefined
 	status?: FateStatus | undefined
 	directiveId?: string | undefined
-	parentIncentiveId?: string | undefined
-	clearParentIncentive?: boolean
-	date?: string | undefined
-	/** Drops the fixed date (used when switching a one-off fate onto a recurring orbit). */
-	clearDate?: boolean
+	/** Parent incentive. Omit to keep, an id to set, `null` to clear. */
+	parentIncentiveId?: string | null | undefined
+	/** Fixed date. Omit to keep, a value to set, `null` to clear (e.g. switching onto a recurring orbit). */
+	date?: string | null | undefined
 	startTime?: string | undefined
 	endTime?: string | undefined
 	orbit?: string | undefined
@@ -153,12 +154,14 @@ export interface EventiveMaterialization {
 
 export interface EventiveUpdate {
 	date?: string | undefined
-	startTime?: string | undefined
-	endTime?: string | undefined
+	/** Times: omit to keep, a value to set, `null` to clear. */
+	startTime?: string | null | undefined
+	endTime?: string | null | undefined
 	resolution?: EventiveResolution | undefined
-	estimation?: number | undefined
-	minimum?: number | undefined
-	maximum?: number | undefined
+	/** Whole minutes. Omit to keep, a value to set, `null` to clear. */
+	estimation?: number | null | undefined
+	minimum?: number | null | undefined
+	maximum?: number | null | undefined
 }
 
 /** Occurrence details for interaction-triggered materialization. */
@@ -173,11 +176,13 @@ export interface AttentiveMaterialization {
 export interface AttentiveUpdate {
 	/** Reschedules the occurrence; only valid while unbound. */
 	date?: string | undefined
-	time?: string | undefined
+	/** Time: omit to keep, a value to set, `null` to clear. */
+	time?: string | null | undefined
 	resolution?: AttentiveResolution | undefined
 	/** Moves the attentive to another cycle; only valid while Polaris-bound. */
 	moveToPolarisCycleId?: string | undefined
-	estimation?: number | undefined
-	minimum?: number | undefined
-	maximum?: number | undefined
+	/** Whole minutes. Omit to keep, a value to set, `null` to clear. */
+	estimation?: number | null | undefined
+	minimum?: number | null | undefined
+	maximum?: number | null | undefined
 }

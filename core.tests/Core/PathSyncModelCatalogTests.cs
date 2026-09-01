@@ -24,7 +24,7 @@ public sealed class PathSyncModelCatalogTests : VaultTestBase
 		(typeof(OnrushSprint), VaultStorageMode.Enforced, VaultStorageShape.SelfNamedDirectory),
 		(typeof(ExecutiveOrder), VaultStorageMode.Synced, VaultStorageShape.SingleFile),
 		(typeof(PolarisCycle), VaultStorageMode.Enforced, VaultStorageShape.SingleFile),
-		(typeof(LorePage), VaultStorageMode.FileFirst, VaultStorageShape.SelfNamedDirectory),
+		(typeof(LorePage), VaultStorageMode.Synced, VaultStorageShape.SelfNamedDirectory),
 	];
 
 	[Fact]

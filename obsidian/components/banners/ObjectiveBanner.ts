@@ -61,7 +61,11 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 			await core.polaris.addObjectiveToCurrent(objectiveId))
 		if (added) {
 			new Notice('Added to active Polaris cycle.')
-			await core.repos.objectives.refresh(objectiveId)
+			await Promise.all([
+				core.repos.objectives.refresh(objectiveId),
+				core.repos.polaris.revalidateObserved(),
+				core.repos.briefing.revalidateIfObserved()
+			])
 			this.activePolaris = await core.polaris.getCurrent()
 		}
 	}
@@ -114,20 +118,15 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 
 	
 	protected override get secondary() {
-		const directiveTitle = this.entity!.directive?.title
-		return !directiveTitle ? html`
-			<span style='opacity: .5'>World Quest</span>
-		` : html`
-			<span>${directiveTitle}</span>
+		return html`
+			<p7t-directive-item .directive=${this.entity!.directive}></p7t-directive-item>
 		`
 	}
 
 	protected override get info() {
-		let college = ObjectiveCollege[this.entity!.college]
-
 		return html`
 			<p7t-editable .doEdit=${SelectCollegeModal.prompt} ${this.binder.bind('college')} class='college'>
-				<span>${college === 'Unspecified' ? 'No College' : 'College of ' + college}</span>
+				<p7t-college-item mode='badge' .college=${this.entity!.college}></p7t-college-item>
 			</p7t-editable>
 		`
 	}

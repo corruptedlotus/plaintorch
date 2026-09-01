@@ -193,29 +193,28 @@ public sealed class DependencyApiService(
 			checkpoint.Title = update.Title;
 		}
 
-		if (update.ClearCelestronToll)
+		if (update.CelestronToll.IsSet)
 		{
-			// Removing the toll removes what there was to pay, so the paid flag no longer means anything.
-			checkpoint.CelestronToll = null;
-			checkpoint.TollPaid = false;
-		}
-		else if (update.CelestronToll is int toll)
-		{
-			if (toll < 0)
+			if (update.CelestronToll.Value is int toll)
 			{
-				throw new InvalidOperationException("A checkpoint's Celestron toll cannot be negative.");
+				if (toll < 0)
+				{
+					throw new InvalidOperationException("A checkpoint's Celestron toll cannot be negative.");
+				}
+
+				checkpoint.CelestronToll = toll;
 			}
-
-			checkpoint.CelestronToll = toll;
+			else
+			{
+				// Removing the toll removes what there was to pay, so the paid flag no longer means anything.
+				checkpoint.CelestronToll = null;
+				checkpoint.TollPaid = false;
+			}
 		}
 
-		if (update.ClearExternalCondition)
+		if (update.ExternalCondition.IsSet)
 		{
-			checkpoint.ExternalCondition = null;
-		}
-		else if (update.ExternalCondition is bool condition)
-		{
-			checkpoint.ExternalCondition = condition;
+			checkpoint.ExternalCondition = update.ExternalCondition.Value;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);

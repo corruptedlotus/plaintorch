@@ -10,7 +10,7 @@ export interface InteractableEntity {
 }
 
 /** The runtime type names this menu can delete, each through its own domain's delete call. */
-const deletableTypes = new Set(['Objective', 'StellarDirective', 'LunarDirective', 'Fate', 'Decree'])
+const deletableTypes = new Set(['Objective', 'StellarDirective', 'LunarDirective', 'Fate', 'Decree', 'LorePage'])
 
 /**
  * Builds the context menu for an entity, whatever kind it is (an entity item, a grid row).
@@ -79,6 +79,7 @@ function deleteByType(typeName: string | undefined, id: string): Promise<boolean
 		case 'LunarDirective': return core.directives.delete(id)
 		case 'Fate': return core.declaratives.deleteFate(id)
 		case 'Decree': return core.declaratives.deleteDecree(id)
+		case 'LorePage': return core.lore.delete(id)
 		default: return undefined
 	}
 }
@@ -99,6 +100,7 @@ async function refreshAfterEntityChange(): Promise<void> {
 		core.repos.objectiveList.refresh(),
 		core.repos.fateList.refresh(),
 		core.repos.decreeList.refresh(),
+		core.repos.loreList.refresh(),
 		core.repos.onrushCurrent.refresh(),
 		core.repos.onrushPlanning.refresh(),
 		core.repos.briefing.revalidateIfObserved()

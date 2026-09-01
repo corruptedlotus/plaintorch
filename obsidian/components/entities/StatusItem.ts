@@ -1,4 +1,4 @@
-import { component, css, CSSResult, html, nothing, property } from "@a11d/lit"
+import { component, css, CSSResult, nothing, property } from "@a11d/lit"
 import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus } from "@pleiades/sdk"
 import { IconName } from "components"
 import { InfoItem } from "../design/InfoItem"
@@ -54,27 +54,13 @@ export class StatusItem extends InfoItem {
 		return css`
 			${super.styles}
 
-			.status {
-				display: inline-grid;
-				grid-template-columns: 2em auto;
-				align-items: center;
-				gap: .6ch;
+			.info-bullet {
 				user-select: none;
 				margin-inline-end: .4ch;
 			}
 
-			:host([icon-only]) .status {
-				grid-template-columns: 2em;
+			:host([icon-only]) .info-bullet {
 				margin-inline-end: 0;
-			}
-
-			:host([icon-only]) .label {
-				display: none;
-			}
-
-			p7t-icon {
-				height: 2em;
-				width: 2em;
 			}
 		`
 	}
@@ -83,14 +69,17 @@ export class StatusItem extends InfoItem {
 		return statusDescriptors[this.status]
 	}
 
-	protected override get content() {
-		const descriptor = this.descriptor
-		return html`
-			<span class='status'>
-				<p7t-icon part='icon' icon="${descriptor?.icon ?? 'exec-order'}"></p7t-icon>
-				<span class='label'>${descriptor?.label ?? this.status}</span>
-			</span>
-		`
+	protected override get bulletIcon(): IconName {
+		return this.descriptor?.icon ?? 'exec-order'
+	}
+
+	protected override get bulletText() {
+		return this.descriptor?.label ?? this.status
+	}
+
+	/** The icon-only form draws the state glyph alone; its label moves to the tooltip. */
+	protected override get textHidden(): boolean {
+		return this.iconOnly
 	}
 
 	protected override get tooltip() {

@@ -1,6 +1,6 @@
 import { component, css, html } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { PleiadeanDate, PolarisCycle } from '@pleiades/sdk'
+import { PolarisCycle } from '@pleiades/sdk'
 import { core, ReactiveBinder } from ".."
 import { App } from "obsidian"
 
@@ -124,7 +124,7 @@ export class PolarisBanner extends EntityBanner<PolarisCycle> {
 		return html`
 			<div class='date-span'>
 				${!this.entity!.startTime ? html`<span>Not Started</span>` : html`
-					<span>${PleiadeanDate.fromDate(new Date(this.entity!.startTime)).toString()}</span>
+					<p7t-datetime-view .date=${this.entity!.startTime}></p7t-datetime-view>
 				`}
 			</div>
 		`

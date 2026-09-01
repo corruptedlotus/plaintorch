@@ -127,7 +127,6 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 				padding: 0;
 				background: none;
 				border: none;
-				margin-inline: -.5rem;
 				margin-bottom: 0;
 				user-select: auto;
 			}

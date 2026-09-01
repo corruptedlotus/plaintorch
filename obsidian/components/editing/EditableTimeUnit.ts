@@ -35,8 +35,11 @@ export class EditableTimeUnit extends EditableNumericPart {
 	}
 
 	protected override get template() {
+		const empty = this.nullable && (this.value === undefined || this.value === null)
 		return html`
-			<p7t-time-unit .value=${Math.max(0, this.value ?? 0)}></p7t-time-unit>
+			${empty
+				? this.nullDisplayTemplate
+				: html`<p7t-time-unit .value=${Math.max(0, this.value ?? 0)}></p7t-time-unit>`}
 			${this.stepperTemplate()}
 		`
 	}

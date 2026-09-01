@@ -18,7 +18,6 @@ views:
     order:
       - file.name
       - status
-      - assignee
     sort:
       - property: file.name
         direction: ASC
@@ -26,13 +25,14 @@ views:
         direction: ASC
     summaries:
       status: Open
+      assignee: Unique
     imageAspectRatio: 0.95
     cardSize: 400
     separator: --
     indentProperties: true
     markers: none
     columnSize:
-      file.name: 439
+      file.name: 522
       note.status: 117
   - type: list
     name: Patches

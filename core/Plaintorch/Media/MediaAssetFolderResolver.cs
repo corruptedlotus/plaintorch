@@ -18,6 +18,20 @@ public sealed class MediaAssetFolderResolver(
 	VaultMediaService mediaService)
 {
 	/// <summary>
+	/// Resolves an entity's self asset folder for response enrichment, or <see langword="null"/> when the entity
+	/// either does not exist or does not own self media.
+	/// </summary>
+	public Task<string?> TryResolveAsync(object entity, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		return entity switch
+		{
+			Directive directive => ResolveDirectiveFolderAsync(directive.Id, cancellationToken),
+			_ => Task.FromResult<string?>(null),
+		};
+	}
+
+	/// <summary>
 	/// Resolves the absolute self asset folder for an entity (not guaranteed to exist yet), <see langword="null"/>
 	/// when the entity is missing, or throws for a type that keeps no self media.
 	/// </summary>

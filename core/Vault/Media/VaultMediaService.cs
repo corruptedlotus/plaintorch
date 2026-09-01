@@ -26,7 +26,7 @@ public sealed class VaultMediaService(
 	VaultTemporalDataService temporalDataService)
 {
 	/// <summary>The asset folder name; the leading underscore excludes it from markdown discovery.</summary>
-	public const string AssetFolderName = "_assets";
+	public const string AssetFolderName = "_media";
 
 	/// <summary>Marks a self/level media key — a file in the owning entity's own asset folder.</summary>
 	public const string SelfReferencePrefix = "media:";
@@ -194,6 +194,16 @@ public sealed class VaultMediaService(
 		{
 			companionProperty.SetValue(entity, ResolveReference(keyProperty.GetValue(entity) as string, selfAssetFolder));
 		}
+	}
+
+	/// <summary>
+	/// Whether an entity has any self (<c>media:</c>) key, and so needs its own asset folder resolved before
+	/// enrichment. Vault keys and glyphs resolve without it.
+	/// </summary>
+	public bool HasMedia(object entity)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		return GetMediaProperties(entity.GetType()).Count > 0;
 	}
 
 	/// <summary>

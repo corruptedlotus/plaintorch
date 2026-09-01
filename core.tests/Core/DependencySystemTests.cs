@@ -237,7 +237,7 @@ public sealed class DependencySystemTests : VaultTestBase
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Deps(api => api.UpdateCheckpointAsync(checkpoint.Id, new CheckpointUpdate(CelestronToll: -1), Ct)));
 
 		// Clearing removes the toll and the condition; an unnamed update leaves the name alone.
-		var cleared = await Deps(api => api.UpdateCheckpointAsync(checkpoint.Id, new CheckpointUpdate(ClearCelestronToll: true, ClearExternalCondition: true), Ct));
+		var cleared = await Deps(api => api.UpdateCheckpointAsync(checkpoint.Id, new CheckpointUpdate(CelestronToll: null, ExternalCondition: null), Ct));
 		Assert.Equal("Grand Gate", cleared.Title);
 		Assert.Null(cleared.CelestronToll);
 		Assert.Null(cleared.ExternalCondition);

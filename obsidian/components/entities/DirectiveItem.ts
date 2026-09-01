@@ -1,5 +1,6 @@
 import { component, css, html, nothing, property } from '@a11d/lit'
 import { Directive, DirectiveStatus, LunarDirectiveStatus } from '@pleiades/sdk'
+import { IconName } from 'components/PleiadesIcon'
 import { InfoItem } from '../design/InfoItem'
 import type { Status } from './StatusItem'
 
@@ -21,10 +22,7 @@ export class DirectiveItem extends InfoItem {
 		return css`
 			${super.styles}
 
-			.ref {
-				display: inline-flex;
-				align-items: center;
-				gap: 4px;
+			.info-bullet {
 				opacity: .6;
 				font-weight: 400;
 				font-size: .9em;
@@ -36,11 +34,6 @@ export class DirectiveItem extends InfoItem {
 				font-weight: 400;
 				font-size: .9em;
 				line-height: .9;
-			}
-
-			.ref p7t-icon {
-				width: 20px;
-				height: 20px;
 			}
 
 			.mini-banner {
@@ -77,7 +70,7 @@ export class DirectiveItem extends InfoItem {
 		`
 	}
 
-	private get kindIcon() {
+	private get kindIcon(): IconName {
 		return this.directive?.isLunar ? 'directive-lunar' : 'directive'
 	}
 
@@ -87,18 +80,21 @@ export class DirectiveItem extends InfoItem {
 		return (name ?? 'Planned') as Status
 	}
 
+	protected override get bulletIcon(): IconName | undefined {
+		return this.directive ? this.kindIcon : undefined
+	}
+
+	protected override get bulletText() {
+		return this.directive?.title ?? this.placeholder
+	}
+
+	/** With no directive the chip is just a dimmed placeholder (a world quest), outside the icon-text layout. */
 	protected override get content() {
-		const directive = this.directive
-		if (!directive) {
+		if (!this.directive) {
 			return html`<span class='placeholder'>${this.placeholder}</span>`
 		}
 
-		return html`
-			<span class='ref'>
-				<p7t-icon icon=${this.kindIcon}></p7t-icon>
-				<span>${directive.title}</span>
-			</span>
-		`
+		return super.content
 	}
 
 	protected override get tooltip() {

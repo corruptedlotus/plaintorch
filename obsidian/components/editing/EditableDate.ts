@@ -1,10 +1,15 @@
 import { component } from "@a11d/lit"
 import { PleiadeanDate } from "@pleiades/sdk"
+import { gregorianDateLabel } from "../system/PleiadeanDateView"
 import { EditableTemporalPart } from "./EditableTemporalPart"
 
 /**
  * Editable calendar date, held as an ISO `YYYY-MM-DD` string. Idle renders the Pleiadean reading; clicking
  * opens a native date picker. An empty value clears the date.
+ *
+ * Both readings go through the shared calendar calculator ({@link PleiadeanDate.fromISO}, UTC-anchored) and the
+ * shared {@link gregorianDateLabel}, so this field shows the exact same day as the read-only schedule chip — the
+ * two used to disagree by a day in zones east of UTC because this one parsed the string as *local* midnight.
  */
 @component('p7t-editable-date')
 export class EditableDate extends EditableTemporalPart {
@@ -12,9 +17,12 @@ export class EditableDate extends EditableTemporalPart {
 
 	protected override toDisplayText(value: string | undefined): string {
 		if (!value) return 'No date'
-		// Parse as local midnight so the day never shifts across a timezone.
-		const parsed = new Date(`${value}T00:00:00`)
-		return Number.isNaN(parsed.getTime()) ? value : PleiadeanDate.fromDate(parsed).toString()
+		return PleiadeanDate.tryFromISO(value)?.toString() ?? value
+	}
+
+	/** The same day in the device's default calendar and locale, spelled out in full, as the hover reading. */
+	protected override get idleTooltip(): string {
+		return gregorianDateLabel(PleiadeanDate.tryFromISO(this.value))
 	}
 }
 

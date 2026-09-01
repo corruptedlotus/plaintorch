@@ -40,6 +40,14 @@ export class CanvasCheckpointNode extends CanvasNodeItem {
 				color: color-mix(in srgb, var(--text-warning, goldenrod) 80%, var(--text-normal));
 			}
 
+			/*
+			 * A checkpoint has no card border, so the finished (unlocked) state colours its glyph and label green —
+			 * the same way blocked and raced colour the grid here — rather than the green border a carded node uses.
+			 */
+			:host([finished]) .grid {
+				color: color-mix(in srgb, var(--color-green, #3fb950) 80%, var(--text-normal));
+			}
+
 			.kind {
 				text-transform: uppercase;
 				letter-spacing: .04em;

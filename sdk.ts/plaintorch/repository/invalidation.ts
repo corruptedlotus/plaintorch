@@ -49,7 +49,7 @@ const dependents: Partial<Record<EntityTypeName, DependentResolver>> = {
 	],
 	OnrushSprint: (sprint) => asArray(sprint.executiveOrders).map((order) => key("ExecutiveOrder", order.id)),
 	ExecutiveOrder: (order) => [key("OnrushSprint", order.onrushSprintId)],
-	LorePage: (page) => [key("LorePage", page.parentPuck)]
+	LorePage: (page) => [key("LorePage", page.parentId)]
 }
 
 /** Revalidates identities and records that a change made stale. */

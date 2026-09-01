@@ -49,6 +49,9 @@ namespace plaintorch.Vault.Database.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset?>("ResolvedOn")
+                        .HasColumnType("TEXT");
+
                     b.Property<TimeOnly?>("Time")
                         .HasColumnType("TEXT");
 
@@ -499,8 +502,9 @@ namespace plaintorch.Vault.Database.Migrations
                     b.Property<int>("AutoInclusion")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int?>("AutoInclusionCollege")
-                        .HasColumnType("INTEGER");
+                    b.Property<string>("AutoInclusionColleges")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("DirectiveId")
                         .IsRequired()

@@ -83,27 +83,6 @@ export class OnrushOrders extends Component {
 				}
 			}
 
-			.remove {
-				display: flex;
-				padding: .3em;
-				border: none;
-				border-radius: 6px;
-				background: transparent;
-				color: color-mix(in srgb, var(--text-normal) 45%, transparent);
-				cursor: pointer;
-				transition: .2s ease;
-
-				& p7t-icon {
-					width: 1.2em;
-					height: 1.2em;
-				}
-
-				&:hover {
-					color: var(--text-error, crimson);
-					background-color: color-mix(in srgb, var(--text-error, crimson) 12%, transparent);
-				}
-			}
-
 			.add {
 				align-self: flex-start;
 				margin-top: .8em;
@@ -189,9 +168,7 @@ export class OnrushOrders extends Component {
 						@change=${(e: Event) => this.saveOrder(order.id, { effectiveUntil: (e.target as EditablePart<string>).value })}>
 					</p7t-editable-date>
 				</div>
-				<button class='remove' aria-label='Remove order' @click=${() => this.removeOrder(order)}>
-					<p7t-icon icon='lucide:trash-2'></p7t-icon>
-				</button>
+				<p7t-button ghost danger icon='lucide:trash-2' label='Remove order' @click=${() => this.removeOrder(order)}></p7t-button>
 				<p7t-editable-plaintext
 					class='summary'
 					multiline

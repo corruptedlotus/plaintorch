@@ -1,4 +1,5 @@
 import { component, css, html, property } from '@a11d/lit'
+import { IconName } from 'components/PleiadesIcon'
 import { InfoItem } from '../design/InfoItem'
 
 /**
@@ -15,38 +16,29 @@ export class CelestronItem extends InfoItem {
 		return css`
 			${super.styles}
 
-			.celestron {
-				display: inline-flex;
-				align-items: center;
-				gap: 2px;
+			.info-bullet {
 				font-weight: 300;
 				line-height: .9;
-			}
-
-			p7t-icon {
-				width: 20px;
-				height: 20px;
 			}
 
 			:host([large]) {
 				font-size: 1.5em;
 				font-weight: 400;
 			}
-
-			:host([large]) p7t-icon {
-				width: 1.1em;
-				height: 1.1em;
-			}
 		`
 	}
 
-	protected override get content() {
-		return html`
-			<span class='celestron'>
-				<span class='value'>${this.value}</span>
-				<p7t-icon icon='starfire'></p7t-icon>
-			</span>
-		`
+	/** The starfire glyph sits after the value, so the reading is "12 ✦". */
+	protected override get bulletIcon(): IconName {
+		return 'starfire'
+	}
+
+	protected override get iconTrailing(): boolean {
+		return true
+	}
+
+	protected override get bulletText() {
+		return html`<span class='value'>${this.value}</span>`
 	}
 
 	protected override get tooltip() {
