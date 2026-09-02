@@ -33,7 +33,7 @@ public sealed class LoosePuckClassificationBugRepros : VaultTestBase
 			$"misparsed as {candidate?.Model.EntityName} PUCK '{candidate?.PathId}' with action {candidate?.SuggestedAction}");
 	}
 
-	[Fact(Skip = "CONFIRMED BUG (dev/phase2a; fix in REFACTOR Alpha phase 4). Reproduced: a Quiet objective's associated-note resolution returns the unrelated 'Objectives/{id} - Old Draft.md' because PuckEntityResolutionService.PathMatchesIdentity accepts the loose-parsed filename prefix (the ' - ' split) as an identity match. A Quiet entity's note must be matched by frontmatter identity only; the loose-parse branch must be notation-gated (and not applied to Quiet storage).")]
+	[Fact] // Phase 4: fixed — PathMatchesIdentity trusts a filename prefix only for Index storage; Quiet entities match by frontmatter.
 	public async Task Note_resolution_ignores_a_coincidentally_prefixed_unrelated_file()
 	{
 		var objective = await Vault.WithScopeAsync(services => services

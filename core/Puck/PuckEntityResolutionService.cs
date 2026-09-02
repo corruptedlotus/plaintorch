@@ -17,6 +17,7 @@ public sealed class PuckEntityResolutionService(
 	PuckRuntimeCompilationCatalog compilationCatalog,
 	PuckTokenizer puckTokenizer,
 	VaultPathSyncModelCatalog pathSyncModelCatalog,
+	VaultEntityModelCatalog entityModelCatalog,
 	VaultEntityGateway entityGateway,
 	MarkdownFrontMatterSerializer markdownSerializer)
 {
@@ -164,16 +165,26 @@ public sealed class PuckEntityResolutionService(
 				&& string.Equals(candidate.Id, id, StringComparison.OrdinalIgnoreCase);
 		}
 
-		// Index storage keeps the PUCK in the filename.
-		var parsed = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(path);
-		if (!string.IsNullOrWhiteSpace(parsed.Id) && string.Equals(parsed.Id, id, StringComparison.OrdinalIgnoreCase))
+		// A filename prefix is trusted as identity only for Index storage, where the PUCK *is* the filename. For Quiet
+		// storage the filename is title-only and the identity lives in frontmatter, so a note whose name merely begins
+		// with "{id} - " is a coincidence, not the entity's note — matching it there mis-associates unrelated files.
+		if (StoragePuckForm(entityType) == VaultPuckStorage.Index)
 		{
-			return true;
+			var parsed = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(path);
+			if (!string.IsNullOrWhiteSpace(parsed.Id) && string.Equals(parsed.Id, id, StringComparison.OrdinalIgnoreCase))
+			{
+				return true;
+			}
 		}
 
 		// Quiet/freeform storage keeps the PUCK in frontmatter, not the filename.
 		return FrontMatterPuckMatches(path, id);
 	}
+
+	private VaultPuckStorage? StoragePuckForm(Type entityType)
+		=> entityModelCatalog.TryGet(entityType, out var model) && model?.Storage is { } storage
+			? storage.PuckStorage
+			: null;
 
 	private bool FrontMatterPuckMatches(string path, string id)
 	{
