@@ -74,6 +74,21 @@ public sealed class WatcherIsolationTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task An_unbegun_implicit_entity_is_never_reflected_onto_a_nonexistent_note()
+	{
+		// Implicit entities exist database-first with no file until a boundary is explicitly begun. The watcher must
+		// never materialize or reflect onto a note that does not exist (philosophy: no reflection for a noteless entity).
+		var objective = await Vault.SeedStandaloneObjectiveAsync("Quiet Goal");
+
+		await Vault.SweepAsync();
+
+		Assert.False(Vault.VaultFileExists("Objectives/Quiet Goal.md"));
+		var stillPresent = await Vault.QueryAsync(context => context.Incentives
+			.AnyAsync(item => item.Id == objective.Id, TestContext.Current.CancellationToken));
+		Assert.True(stillPresent);
+	}
+
+	[Fact]
 	public async Task A_file_with_no_puck_identity_never_creates_an_entity_from_a_freeform_root()
 	{
 		// A self-named directory with a title-only file and no frontmatter PUCK is not a freeform entity: freeform

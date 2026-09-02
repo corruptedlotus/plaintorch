@@ -108,6 +108,20 @@ public sealed class StartupRuntimeParityTests
 	}
 
 	[Fact]
+	public async Task An_unchanged_begun_objective_is_stable_across_a_sweep_and_runtime()
+	{
+		// Idempotence: with no file change, neither a startup sweep nor an incremental reconcile alters the state,
+		// and both leave it identical. A watcher that "reflects" spuriously on an untouched file would diverge here.
+		var (sweep, runtime) = await RunBothWaysAsync(async vault =>
+		{
+			await SeedBegunObjectiveAsync(vault);
+			return new[] { vault.AbsolutePath(ObjectiveRelativePath) };
+		});
+
+		Assert.Equal(sweep, runtime);
+	}
+
+	[Fact]
 	public async Task Editing_a_begun_objective_file_reconciles_identically_at_startup_and_at_runtime()
 	{
 		var (sweep, runtime) = await RunBothWaysAsync(async vault =>

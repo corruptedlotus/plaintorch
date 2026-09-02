@@ -279,12 +279,31 @@ true projection (entity catalog × mode policy) with no imperative residue. The 
 filesystem auto-discovery, init/API-only — is one such policy datum to make explicit here (and the place to
 deliberately decide whether directives should auto-discover at all, a behaviour change held out of phase 3).
 
-**Test gate:** Implicit is already well covered (`ImplicitBoundaryTests`); Freeform via the directive init
-tests. Add a per-mode behavioural matrix for Synced / Enforced / FileFirst / Optional when their branches are
-touched — before, not after.
+**Test gate:** the per-mode decision matrix **now exists** as a regression baseline — `StorageModeDecisionMatrixTests`
+pins Enforced / Synced / FileFirst / Optional across the full fact matrix (36 decisions); Implicit via
+`ImplicitBoundaryTests`, Freeform via directive init. Phase 4 must keep those green (or update them deliberately).
+The `WatcherIsolationTests` and `StartupRuntimeParityTests` suites are the behavioural acceptance gate.
 
 **Risk.** Medium. Mostly mechanical extraction into an existing hierarchy, but authority rules (who wins on
 delete) are load-bearing; matrix tests must pin them first.
+
+**Watcher philosophy + pinned gaps (steering).** The watcher is a **passive interface onto the user's vault** — it
+is *instructed by* files and *reflects* the core back onto them, and its capacity for aggressive inference must be
+**confined to declared territory** (see [`core/Vault/Watcher/.GENESIS.md`](../core/Vault/Watcher/.GENESIS.md) for the
+full philosophy and the policy intent of each mode). Phase 4's policy objects are where this mindset becomes code.
+The concrete gaps between today's code and that philosophy are already pinned as **skipped repro tests** — treat
+them as this phase's acceptance criteria:
+- **Notation-gate identity** — un-gated `" - "` loose-PUCK parsing turns ordinary notes into invalid-PUCK entities
+  (`LoosePuckClassificationBugRepros`: watcher-destroys-`prefix - `, migration aftershock, note-resolution on
+  unrelated files). A prefix/frontmatter value is a PUCK only if it tokenizes against the declared notation, as
+  `VaultFamilyInstantiationResolver` already does.
+- **Confine authority** — an enforced-root directory event synthesizing `<root>/<root>.md` (`PathClassificationTests`);
+  a foreign file in a non-exclusive root raised as an Error rather than a dismissible warning (`WatcherStatusTests`).
+- **Surgical, aftershock-free, state-aware reflection** — one cause raising three issues (`WatcherStatusTests`);
+  no reflection onto a noteless entity and no hierarchy mutilation over invalid frontmatter (the latter still to be
+  pinned for synced nested lore).
+- **Startup/runtime parity** — a begun file deleted while offline orphans its entity at startup
+  (`StartupRuntimeParityTests`); the startup sweep needs an orphan-reconciliation pass.
 
 ## Phase 5 — API kit: policy-derived actions + generic CRUD ⏳
 
