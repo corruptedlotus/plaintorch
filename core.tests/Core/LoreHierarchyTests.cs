@@ -47,19 +47,15 @@ public sealed class LoreHierarchyTests : VaultTestBase
 		Assert.True(eraSurvived);
 	}
 
-	[Fact(Skip = "SURFACED DESIGN QUESTION / likely bug in the hierarchical 'beginning' rules (awaiting operator's intended semantics). Reproduced: LoreIndex.MarkActivePages selects the globally latest-begun page and walks up parents UNCONDITIONALLY, so an era whose Beginning is in the future (not yet begun) is reported active because a past-begun child drags it in. Two root causes: nothing constrains a child's Beginning against its parent's (create/update set it freely), and the active walk-up never checks each ancestor has begun. Open calls: constrain child beginnings to the parent's span? stop the walk-up at un-begun ancestors? compute active by descending the hierarchy (latest-begun era, then its latest-begun chapter, …) instead of picking the global-latest leaf?")]
-	public async Task Active_lore_does_not_report_an_ancestor_whose_beginning_is_still_in_the_future()
+	[Fact(Skip = "DECIDED (design call #1, D17) — pending implementation in phase 4 / the lore write-path. A child's Beginning must fall within its parent's span (>= the parent's Beginning, before the parent's next-sibling boundary). This is the root-cause fix for the hierarchical-beginning weirdness: with it, an un-begun ancestor can never contain a begun child, so LoreIndex.MarkActivePages can no longer drag a future-dated era into the active set via a past-dated child. Pins the invariant at the source — a child dated before its parent is rejected.")]
+	public async Task A_child_beginning_before_its_parent_is_rejected()
 	{
 		var today = System.DateOnly.FromDateTime(System.DateTime.Today);
-
-		// No rule constrains a child's beginning against its parent's, so an era can be dated in the future while a
-		// chapter under it is dated in the past. The chapter has begun; the era has not.
 		var era = await CreateAsync(null, "Future Age", today.AddDays(30));
-		await CreateAsync(era.Puck, "Early Chapter", today.AddDays(-10));
 
-		var index = await LoadIndexAsync(System.DateTime.Today);
-
-		// A not-yet-begun era should not be reported as an active narrative position just because a child drags it in.
-		Assert.DoesNotContain(index.ActivePages, page => page.Id == era.Puck);
+		// A chapter cannot begin before its era: the hierarchy is a nested timeline, so a child's beginning is
+		// constrained to its parent's span.
+		await Assert.ThrowsAsync<System.InvalidOperationException>(() =>
+			CreateAsync(era.Puck, "Early Chapter", today.AddDays(-10)));
 	}
 }
