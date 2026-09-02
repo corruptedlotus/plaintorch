@@ -144,6 +144,42 @@ public sealed class TestVault : IAsyncLifetime
 		});
 	}
 
+	/// <summary>
+	/// Runs the startup sweep: a full discovery scan, then executes every candidate's action in the same priority
+	/// order <c>VaultWatcherService</c> uses at startup. This mirrors the live pipeline, so a one-shot sweep and a
+	/// sequence of incremental <see cref="ReconcileAsync"/> events can be compared for the same final state.
+	/// </summary>
+	public Task<VaultDiscoveryScanResult> SweepAsync()
+	{
+		return WithScopeAsync(async services =>
+		{
+			var discovery = services.GetRequiredService<VaultMarkdownDiscoveryService>();
+			var sync = services.GetRequiredService<VaultWatcherSyncService>();
+			var result = await discovery.ScanAsync("test");
+			var ordered = result.Candidates
+				.OrderBy(candidate => StartupActionPriority(candidate.SuggestedAction))
+				.ThenBy(candidate => candidate.VaultRelativePath, StringComparer.OrdinalIgnoreCase)
+				.ToList();
+			foreach (var candidate in ordered)
+			{
+				await sync.ExecuteAsync(candidate, "test");
+			}
+
+			return result;
+		});
+	}
+
+	private static int StartupActionPriority(VaultSyncAction action) => action switch
+	{
+		VaultSyncAction.UpdateFromFile => 0,
+		VaultSyncAction.RewriteFromDatabase => 0,
+		VaultSyncAction.CreateFromFile => 1,
+		VaultSyncAction.PurgeFile => 2,
+		VaultSyncAction.Conflict => 3,
+		VaultSyncAction.Ignore => 4,
+		_ => 5,
+	};
+
 	/// <inheritdoc />
 	public async ValueTask DisposeAsync()
 	{
