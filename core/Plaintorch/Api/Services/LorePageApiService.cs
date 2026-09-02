@@ -184,9 +184,10 @@ public sealed class LorePageApiService(
 	public async Task<LorePage?> SetIndexAsync(string puck, int index, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(puck);
-		if (index < 1)
+		if (index < 0)
 		{
-			throw new InvalidOperationException("A lore index must be 1 or greater.");
+			// Zero is a valid narrative index (a prologue / "Chapter 0"); only negatives are rejected.
+			throw new InvalidOperationException("A lore index must be 0 or greater.");
 		}
 
 		var page = await context.LorePages.AsNoTracking().FirstOrDefaultAsync(item => item.Id == puck, cancellationToken);

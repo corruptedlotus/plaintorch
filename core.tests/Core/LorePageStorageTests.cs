@@ -131,7 +131,7 @@ public sealed class LorePageStorageTests : VaultTestBase
 			services.GetRequiredService<ILorePageApi>().DeleteAsync("Era1", TestContext.Current.CancellationToken)));
 	}
 
-	[Fact(Skip = "Reported bug (dev/phase2a): a lore index of 0 is rejected by LorePageApiService.SetIndexAsync via the `index < 1` guard. A prologue / Chapter 0 is a legitimate narrative index; the lower bound should be 0, not 1 (and sibling numbering should be able to start there).")]
+	[Fact] // Phase 4: fixed — SetIndexAsync now allows index 0 (a prologue / Chapter 0); only negatives are rejected.
 	public async Task Lore_index_can_be_set_to_zero()
 	{
 		var era = await CreateAsync(null, "First Age"); // Era1
