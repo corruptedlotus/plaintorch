@@ -24,6 +24,10 @@ public abstract class PathBoundVaultStorageModePolicyService : IVaultStorageMode
 	public virtual bool PurgesDesyncedFiles => false;
 
 	/// <inheritdoc />
+	// Path-bound modes always write to the canonical location computed by the storage pipeline.
+	public virtual string ResolveWriteTargetPath(object entity, string defaultPath, string? sourcePath) => defaultPath;
+
+	/// <inheritdoc />
 	public virtual bool TryResolveWatchPath(VaultPathSyncModel model, string fullPath, bool isDirectoryEvent, out string? inspectPath)
 	{
 		ArgumentNullException.ThrowIfNull(model);

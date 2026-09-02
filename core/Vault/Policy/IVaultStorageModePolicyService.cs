@@ -38,6 +38,16 @@ public interface IVaultStorageModePolicyService
 	bool PurgesDesyncedFiles { get; }
 
 	/// <summary>
+	/// Resolves where an entity's markdown should be written. Path-bound modes always use the canonical
+	/// <paramref name="defaultPath"/>; Freeform keeps a user-authored file at its authored location when that is
+	/// allowed. The policy owns this so the storage pipeline never branches on the mode.
+	/// </summary>
+	/// <param name="entity">The entity being written.</param>
+	/// <param name="defaultPath">The canonical target path the storage pipeline computed.</param>
+	/// <param name="sourcePath">The file the write originated from, when any (a user-authored freeform file).</param>
+	string ResolveWriteTargetPath(object entity, string defaultPath, string? sourcePath);
+
+	/// <summary>
 	/// Determines whether a path can be resolved to an inspectable markdown path for this model.
 	/// </summary>
 	bool TryResolveWatchPath(VaultPathSyncModel model, string fullPath, bool isDirectoryEvent, out string? inspectPath);

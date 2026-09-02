@@ -227,7 +227,9 @@ public sealed class PlaintorchMarkdownStorageService(
 		}
 
 		newPath = ResolveInactionPreferredPath(entity, newPath, sourcePath);
-		newPath = ResolveFreeformTargetPath(entity, newPath, sourcePath);
+		// Placement policy: the mode decides whether the file keeps a user-authored location (Freeform) or uses the
+		// canonical path (everyone else). The storage pipeline no longer branches on the mode.
+		newPath = policyEngine.PolicyFor(storage.Mode).ResolveWriteTargetPath(entity, newPath, sourcePath);
 		if (entity is LorePage lorePage && previous is LorePage previousLorePage
 			&& !string.Equals(lorePage.ParentId, previousLorePage.ParentId, StringComparison.OrdinalIgnoreCase))
 		{
@@ -342,94 +344,12 @@ public sealed class PlaintorchMarkdownStorageService(
 		return string.Equals(containingDirectoryName, expectedPartition, StringComparison.OrdinalIgnoreCase);
 	}
 
-	private string ResolveFreeformTargetPath(object entity, string defaultPath, string? sourcePath)
-	{
-		var storage = GetStorageAttribute(entity.GetType());
-		if (storage.Mode != VaultStorageMode.Freeform || string.IsNullOrWhiteSpace(sourcePath))
-		{
-			return defaultPath;
-		}
-
-		var fullSourcePath = Path.GetFullPath(sourcePath);
-		if (!File.Exists(fullSourcePath))
-		{
-			return defaultPath;
-		}
-
-		if (IsAllowedFreeformAssertion(entity.GetType(), fullSourcePath))
-		{
-			return fullSourcePath;
-		}
-
-		return ResolveFreeformFallbackPath(defaultPath);
-	}
-
-	private bool IsAllowedFreeformAssertion(Type entityType, string fullSourcePath)
-	{
-		var sourceDirectory = Path.GetDirectoryName(fullSourcePath);
-		if (string.IsNullOrWhiteSpace(sourceDirectory))
-		{
-			return false;
-		}
-
-		if (IsUnderNonDirectiveManagedRoot(sourceDirectory))
-		{
-			return false;
-		}
-
-		if (entityType == typeof(Directive))
-		{
-			var folder = Path.GetDirectoryName(fullSourcePath)!;
-			var parentDirectory = Directory.GetParent(folder)?.FullName;
-			if (!string.IsNullOrWhiteSpace(parentDirectory) && IsUnderNonDirectiveManagedRoot(parentDirectory))
-			{
-				return false;
-			}
-		}
-
-		return true;
-	}
-
-	private bool IsUnderNonDirectiveManagedRoot(string path)
-	{
-		var fullPath = Path.GetFullPath(path);
-		return IsUnderRoot(fullPath, layout.MetadataRoot)
-			|| IsUnderRoot(fullPath, layout.ObjectivesRoot)
-			|| IsUnderRoot(fullPath, layout.FatesRoot)
-			|| IsUnderRoot(fullPath, layout.DecreesRoot)
-			|| IsUnderRoot(fullPath, layout.OnrushRoot)
-			|| IsUnderRoot(fullPath, layout.JournalRoot)
-			|| IsUnderRoot(fullPath, layout.SagaRoot);
-	}
-
 	private static bool IsUnderRoot(string fullPath, string root)
 	{
 		var normalizedPath = fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 		var normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 		return string.Equals(normalizedPath, normalizedRoot, StringComparison.OrdinalIgnoreCase)
 			|| normalizedPath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-	}
-
-	private static string ResolveFreeformFallbackPath(string defaultPath)
-	{
-		var directory = Path.GetDirectoryName(defaultPath)
-			?? throw new InvalidOperationException("Freeform fallback path does not have a directory.");
-		var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(defaultPath);
-		var extension = Path.GetExtension(defaultPath);
-		var fallbackDirectory = directory;
-		var fallbackFileName = fileNameWithoutExtension;
-		var fallbackPath = defaultPath;
-		var suffix = 2;
-
-		while (File.Exists(fallbackPath) || Directory.Exists(fallbackDirectory))
-		{
-			fallbackDirectory = Path.Combine(Path.GetDirectoryName(directory) ?? directory, $"{Path.GetFileName(directory)} ({suffix})");
-			fallbackFileName = $"{fileNameWithoutExtension} ({suffix})";
-			fallbackPath = Path.Combine(fallbackDirectory, $"{fallbackFileName}{extension}");
-			suffix++;
-		}
-
-		return fallbackPath;
 	}
 
 	private string? TryRelocateSelfNamedDirectory(string? previousPath, string newPath, Type entityType)
