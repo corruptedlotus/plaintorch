@@ -21,7 +21,13 @@ public abstract class PathBoundVaultStorageModePolicyService : IVaultStorageMode
 			return true;
 		}
 
-		if (!isDirectoryEvent || !Directory.Exists(fullPath))
+		// The self-named-directory fallback below synthesizes a "<dir>/<dir>.md" primary for a directory event. That
+		// is only meaningful for a SelfNamedDirectory entity (whose folder *is* its primary file). A SingleFile model
+		// (e.g. PolarisCycle under ./Journal) has no such primary, and applying the fallback made a directory event on
+		// the entity's own scan root synthesize a bogus "<root>/<root>.md" candidate. Gate it by shape.
+		if (!isDirectoryEvent
+			|| model.Shape != VaultStorageShape.SelfNamedDirectory
+			|| !Directory.Exists(fullPath))
 		{
 			inspectPath = null;
 			return false;

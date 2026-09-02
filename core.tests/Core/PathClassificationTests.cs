@@ -31,7 +31,7 @@ public sealed class PathClassificationTests : VaultTestBase
 		Assert.Equal("Directive", entity);
 	}
 
-	[Fact(Skip = "CONFIRMED BUG (fix belongs in REFACTOR Alpha phase 4). PathBoundVaultStorageModePolicyService.TryResolveWatchPath applies its self-named-directory fallback (<dir>/<dir>.md) to every path-bound mode regardless of shape, and to a model's own scan root: a directory event for the enforced ./Journal root resolves to a synthetic Journal/Journal.md as PolarisCycle (a SingleFile model). The fallback should be gated to SelfNamedDirectory shape and must exclude the scan root itself. The catalog's own TryResolveWatchPath already guards by shape; the engine/mode-policy path (what the live watcher uses) does not.")]
+	[Fact] // Phase 4: fixed — PathBoundVaultStorageModePolicyService gates the self-named fallback by SelfNamedDirectory shape.
 	public async Task Enforced_journal_root_directory_is_not_resolved_as_a_self_named_directive()
 	{
 		// A watcher directory event for the enforced ./Journal root must not resolve to a synthetic Journal/Journal.md
