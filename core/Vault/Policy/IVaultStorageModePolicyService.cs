@@ -13,6 +13,31 @@ public interface IVaultStorageModePolicyService
 	VaultStorageMode Mode { get; }
 
 	/// <summary>
+	/// Gets whether belonging is driven by identity (frontmatter PUCK) rather than path: an identity-driven entity's
+	/// file may live anywhere and its title/fields come from frontmatter, not from a canonical filename. True for
+	/// Freeform and Implicit. Pipeline code asks this instead of testing the mode enum.
+	/// </summary>
+	bool IsIdentityDriven { get; }
+
+	/// <summary>
+	/// Gets whether creating an entity materializes its file immediately. False for Implicit, which stays
+	/// database-first until its synchronization boundary is begun; true for every other mode.
+	/// </summary>
+	bool MaterializesOnCreate { get; }
+
+	/// <summary>
+	/// Gets whether a first-appearing file begins a one-time synchronization boundary for the entity, after which the
+	/// file's deletion is authoritative. True only for Implicit.
+	/// </summary>
+	bool BeginsSyncBoundaryOnFirstFile { get; }
+
+	/// <summary>
+	/// Gets whether the mode keeps its root a clean outward interface owned by the core, purging vault files that no
+	/// longer correspond to a live entity (foreign or desynced notes). True only for Enforced.
+	/// </summary>
+	bool PurgesDesyncedFiles { get; }
+
+	/// <summary>
 	/// Determines whether a path can be resolved to an inspectable markdown path for this model.
 	/// </summary>
 	bool TryResolveWatchPath(VaultPathSyncModel model, string fullPath, bool isDirectoryEvent, out string? inspectPath);

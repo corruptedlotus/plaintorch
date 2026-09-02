@@ -224,6 +224,7 @@ public sealed class VaultMarkdownDiscoveryService(
 
 		var fullPath = Path.GetFullPath(resolvedPath);
 		var fileExists = File.Exists(fullPath);
+		var modePolicy = policyEngine.PolicyFor(model.Mode);
 		var markdown = fileExists
 			? await VaultFileAccess.ReadAllTextAsync(fullPath, cancellationToken)
 			: string.Empty;
@@ -276,14 +277,14 @@ public sealed class VaultMarkdownDiscoveryService(
 			: new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var isNewEntity = string.IsNullOrWhiteSpace(pathId) || !knownIds.Contains(pathId);
 		var preserveDefaultsForMissingFields = isNewEntity
-			|| (!model.Mode.IsIdentityDriven() && typeof(IPuckNamedEntity).IsAssignableFrom(model.EntityType));
+			|| (!modePolicy.IsIdentityDriven && typeof(IPuckNamedEntity).IsAssignableFrom(model.EntityType));
 		var issues = DeserializeInto(parsedModel, instantiationType, markdown, preserveDefaultsForMissingFields: preserveDefaultsForMissingFields)
 			.Select(issue => issue)
 			.ToList();
 		ApplyPathAuthorities(parsedModel, fullPath, issues);
 		if (parsedModel is IPuckNamedEntity resolvedNamedEntity)
 		{
-			if (!model.Mode.IsIdentityDriven()
+			if (!modePolicy.IsIdentityDriven
 				&& !string.IsNullOrWhiteSpace(pathDerivedId)
 				&& string.Equals(resolvedNamedEntity.Id, pathDerivedId, StringComparison.OrdinalIgnoreCase))
 			{
@@ -302,7 +303,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		}
 
 		if (parsedModel is Directive freeformDirective
-			&& model.Mode == VaultStorageMode.Freeform)
+			&& modePolicy.IsIdentityDriven)
 		{
 			var assertionViolation = pathPolicy.TryGetFreeformDirectiveAssertionViolation(fullPath);
 			if (assertionViolation is not null)
@@ -333,7 +334,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		}
 
 		var boundaryBegun = true;
-		if (model.Mode == VaultStorageMode.Implicit)
+		if (modePolicy.BeginsSyncBoundaryOnFirstFile)
 		{
 			if (!string.IsNullOrWhiteSpace(pathId))
 			{

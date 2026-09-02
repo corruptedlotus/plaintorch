@@ -11,6 +11,10 @@ public sealed class EnforcedVaultStorageModePolicyService : PathBoundVaultStorag
 	public override VaultStorageMode Mode => VaultStorageMode.Enforced;
 
 	/// <inheritdoc />
+	// Enforced keeps its root a clean outward interface: files that no longer map to a live entity are purged.
+	public override bool PurgesDesyncedFiles => true;
+
+	/// <inheritdoc />
 	public override (VaultSyncAction Action, string Reason) Decide(VaultStorageModeDecisionContext context)
 	{
 		if (string.IsNullOrWhiteSpace(context.PathId) && IsUntitledPlaceholder(context.PathTitle))

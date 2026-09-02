@@ -17,6 +17,19 @@ public sealed class FreeformVaultStorageModePolicyService(
 	public VaultStorageMode Mode => VaultStorageMode.Freeform;
 
 	/// <inheritdoc />
+	// Freeform belonging is by frontmatter identity; a directive's note may live anywhere and materializes on create.
+	public bool IsIdentityDriven => true;
+
+	/// <inheritdoc />
+	public bool MaterializesOnCreate => true;
+
+	/// <inheritdoc />
+	public bool BeginsSyncBoundaryOnFirstFile => false;
+
+	/// <inheritdoc />
+	public bool PurgesDesyncedFiles => false;
+
+	/// <inheritdoc />
 	public bool TryResolveWatchPath(VaultPathSyncModel model, string fullPath, bool isDirectoryEvent, out string? inspectPath)
 	{
 		if (isDirectoryEvent || !string.Equals(Path.GetExtension(fullPath), ".md", StringComparison.OrdinalIgnoreCase))

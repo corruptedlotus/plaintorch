@@ -10,6 +10,12 @@ public sealed class VaultStoragePolicyEngine(
 	VaultStorageModePolicyRouter policyRouter)
 {
 	/// <summary>
+	/// Resolves the storage-mode policy for a mode, so pipeline code can ask the protocol its semantic questions
+	/// (<see cref="IVaultStorageModePolicyService.IsIdentityDriven"/> and friends) instead of testing the mode enum.
+	/// </summary>
+	public IVaultStorageModePolicyService PolicyFor(VaultStorageMode mode) => policyRouter.Resolve(mode);
+
+	/// <summary>
 	/// Resolves a watcher path to an inspectable markdown path and model via mode-specific policies.
 	/// </summary>
 	public bool TryResolveWatchPath(string path, out string? markdownPath, out VaultPathSyncModel? model)

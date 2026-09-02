@@ -24,7 +24,8 @@ public sealed class PlaintorchMarkdownStorageService(
 	VaultWatcherPathPolicy pathPolicy,
 	VaultTemporalDataService temporalDataService,
 	VaultImplicitBoundaryService implicitBoundaryService,
-	VaultWatcherWriteBarrier writeBarrier)
+	VaultWatcherWriteBarrier writeBarrier,
+	VaultStoragePolicyEngine policyEngine)
 {
 	private static readonly MethodInfo FindAsyncMethod = typeof(DbContext)
 		.GetMethods(BindingFlags.Public | BindingFlags.Instance)
@@ -216,11 +217,12 @@ public sealed class PlaintorchMarkdownStorageService(
 			}
 		}
 
-		if (storage.Mode == VaultStorageMode.Implicit
+		if (!policyEngine.PolicyFor(storage.Mode).MaterializesOnCreate
 			&& !beginBoundary
 			&& !await IsImplicitBoundaryMaterializedAsync(entity, previousPath, sourcePath, cancellationToken))
 		{
-			// Implicit entities do not initially sync to a file; withhold materialization until the boundary is begun.
+			// This mode does not materialize a file on create (implicit stays database-first); withhold the write
+			// until the synchronization boundary is begun.
 			return;
 		}
 
@@ -247,7 +249,7 @@ public sealed class PlaintorchMarkdownStorageService(
 		DeleteOldPath(previousPath, newPath, ResolveStorageRoot(entity.GetType()));
 		DeleteSourcePath(sourcePath, newPath);
 
-		if (storage.Mode == VaultStorageMode.Implicit
+		if (policyEngine.PolicyFor(storage.Mode).BeginsSyncBoundaryOnFirstFile
 			&& entity is IPuckNamedEntity boundaryEntity
 			&& !string.IsNullOrWhiteSpace(boundaryEntity.Id)
 			&& File.Exists(newPath))

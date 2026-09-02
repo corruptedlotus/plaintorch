@@ -21,6 +21,17 @@ public sealed class ImplicitVaultStorageModePolicyService(
 	public override VaultStorageMode Mode => VaultStorageMode.Implicit;
 
 	/// <inheritdoc />
+	// Implicit belonging is by frontmatter identity, it stays database-first (no file) until its boundary is begun,
+	// and a first-appearing file begins that boundary — after which deletion of the file is authoritative.
+	public override bool IsIdentityDriven => true;
+
+	/// <inheritdoc />
+	public override bool MaterializesOnCreate => false;
+
+	/// <inheritdoc />
+	public override bool BeginsSyncBoundaryOnFirstFile => true;
+
+	/// <inheritdoc />
 	public override async Task<bool> BelongsToModelAsync(VaultPathSyncModel model, string fullPath, string markdown, CancellationToken cancellationToken)
 	{
 		if (!await base.BelongsToModelAsync(model, fullPath, markdown, cancellationToken))

@@ -6,6 +6,7 @@ using Pleiades.Puck;
 using Pleiades.Saga;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
+using Pleiades.Vault.Policy;
 
 namespace Pleiades.Vault.Watcher;
 
@@ -22,6 +23,7 @@ public sealed class VaultWatcherSyncService(
 	VaultImplicitBoundaryService implicitBoundaryService,
 	VaultWatcherWriteBarrier writeBarrier,
 	VaultEntityGateway entityGateway,
+	VaultStoragePolicyEngine policyEngine,
 	ILogger<VaultWatcherSyncService> logger)
 {
 	/// <summary>
@@ -457,7 +459,7 @@ public sealed class VaultWatcherSyncService(
 	/// </summary>
 	private async Task TryBeginImplicitBoundaryAsync(VaultSyncCandidate candidate, object entity, CancellationToken cancellationToken)
 	{
-		if (candidate.Model.Mode != VaultStorageMode.Implicit
+		if (!policyEngine.PolicyFor(candidate.Model.Mode).BeginsSyncBoundaryOnFirstFile
 			|| !candidate.FileExists
 			|| entity is not IPuckNamedEntity namedEntity
 			|| string.IsNullOrWhiteSpace(namedEntity.Id))

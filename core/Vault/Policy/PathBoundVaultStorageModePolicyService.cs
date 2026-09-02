@@ -11,6 +11,19 @@ public abstract class PathBoundVaultStorageModePolicyService : IVaultStorageMode
 	public abstract VaultStorageMode Mode { get; }
 
 	/// <inheritdoc />
+	// Path-bound modes derive belonging and identity from the path, materialize on create, and have no sync boundary.
+	public virtual bool IsIdentityDriven => false;
+
+	/// <inheritdoc />
+	public virtual bool MaterializesOnCreate => true;
+
+	/// <inheritdoc />
+	public virtual bool BeginsSyncBoundaryOnFirstFile => false;
+
+	/// <inheritdoc />
+	public virtual bool PurgesDesyncedFiles => false;
+
+	/// <inheritdoc />
 	public virtual bool TryResolveWatchPath(VaultPathSyncModel model, string fullPath, bool isDirectoryEvent, out string? inspectPath)
 	{
 		ArgumentNullException.ThrowIfNull(model);
