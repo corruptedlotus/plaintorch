@@ -17,7 +17,7 @@ namespace Pleiades.Tests.Core;
 /// </summary>
 public sealed class LoosePuckClassificationBugRepros : VaultTestBase
 {
-	[Fact(Skip = "CONFIRMED BUG (dev/phase2a; fix in REFACTOR Alpha phase 4). Reproduced: 'Journal/Council Meeting - Q3 Review.md' is classified as a PolarisCycle with the bogus PUCK 'Council Meeting' and SuggestedAction PurgeFile — the watcher destroys the user's non-entity file, and the vault migration resurrects it as an invalid-PUCK entity. Root cause: VaultLoader.ResolveIdentity (Index branch) and discovery trust PuckNamedIdentity.ParseLoose, which splits any ' - ' filename into {id}-{title} with no check that the prefix tokenizes against the model's declared PUCK. Fix: notation-gate the loose parse (PuckTokenizer), as VaultFamilyInstantiationResolver already does.")]
+	[Fact] // Phase 4: fixed — discovery and the migration loader notation-gate a flat Index identity (PuckIdentityGate); a non-tokenizing prefix is treated as identity-less, never an invalid-PUCK entity.
 	public async Task Non_entity_dashed_file_is_not_misparsed_into_a_puck_entity()
 	{
 		// "Council Meeting" is not a valid PolarisCycle {D:p} date; this is a user's ordinary note that merely

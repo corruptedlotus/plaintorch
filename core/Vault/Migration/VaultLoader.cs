@@ -18,6 +18,8 @@ public sealed class VaultLoader(
 	VaultLayout layout,
 	VaultPathSyncModelCatalog modelCatalog,
 	VaultFamilyInstantiationResolver familyInstantiationResolver,
+	VaultEntityModelCatalog entityModelCatalog,
+	PuckIdentityGate identityGate,
 	MarkdownFrontMatterSerializer markdownSerializer)
 {
 	/// <summary>
@@ -74,6 +76,18 @@ public sealed class VaultLoader(
 		var markdown = await File.ReadAllTextAsync(path, cancellationToken);
 		var frontMatter = markdownSerializer.ParseFrontMatter(markdown);
 		var (id, title) = ResolveIdentity(convention, path, frontMatter);
+		if (!string.IsNullOrWhiteSpace(id)
+			&& convention.PuckStorage == VaultPuckStorage.Index
+			&& !IsHierarchicalIdentity(convention.EntityType)
+			&& !identityGate.IsMintable(convention.EntityType, id))
+		{
+			// Notation-gate a flat Index identity: a filename prefix that does not tokenize against the entity's
+			// declared PUCK is a user's ordinary note (its name merely contains " - "), not an entity. Dropping the id
+			// leaves it untouched below rather than migrating it into an invalid-PUCK entity. Hierarchical identities
+			// (lore) are path-composed from the folder tree, not this flat filename token, so they are exempt.
+			id = null;
+		}
+
 		if (string.IsNullOrWhiteSpace(id))
 		{
 			// A file without resolvable identity under these conventions is not a migratable entity (e.g. a
@@ -101,6 +115,13 @@ public sealed class VaultLoader(
 			ExtractBody(markdown),
 			frontMatter);
 	}
+
+	// A hierarchical identity (e.g. lore's "Era{?}/Cha{?}/Act{?}/p{?}") is assembled from the folder tree, so its
+	// flat filename token is only a partial identity and must not be notation-gated as if it were the whole PUCK.
+	private bool IsHierarchicalIdentity(Type entityType)
+		=> entityModelCatalog.TryGet(entityType, out var model)
+			&& model?.PuckDeclaration is { } declaration
+			&& declaration.Contains('/');
 
 	private static (string? Id, string Title) ResolveIdentity(
 		VaultEntityConvention convention,

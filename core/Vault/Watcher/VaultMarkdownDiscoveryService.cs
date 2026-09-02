@@ -28,6 +28,7 @@ public sealed class VaultMarkdownDiscoveryService(
 	PuckEntityResolutionService puckEntityResolutionService,
 	VaultEntityModelCatalog entityModelCatalog,
 	VaultFamilyInstantiationResolver familyInstantiationResolver,
+	PuckIdentityGate identityGate,
 	VaultStoragePathComposer pathComposer)
 {
 	/// <summary>
@@ -249,6 +250,24 @@ public sealed class VaultMarkdownDiscoveryService(
 			if (!string.IsNullOrWhiteSpace(namedEntity.Title))
 			{
 				pathTitle = namedEntity.Title;
+			}
+		}
+
+		// Notation-gate a filename-derived Index identity: a flat "{prefix} - {title}" filename is an identity only if
+		// the prefix tokenizes against the entity's declared PUCK. A user's note whose name merely contains " - " (e.g.
+		// "Council Meeting - Q3") composes a non-tokenizing id, so it is treated as identity-less — an enforced root
+		// then rejects it as a foreign file instead of materializing an invalid-PUCK entity. Quiet storage (frontmatter
+		// identity, trusted) and hierarchical path-composed ids (which carry '/') are left alone.
+		if (!string.IsNullOrWhiteSpace(pathId)
+			&& !pathId.Contains('/')
+			&& entityModelCatalog.TryGet(model.EntityType, out var declaredModel)
+			&& declaredModel?.Storage?.PuckStorage == VaultPuckStorage.Index
+			&& !identityGate.IsMintable(instantiationType, pathId))
+		{
+			pathId = null;
+			if (parsedModel is IPuckNamedEntity gatedEntity)
+			{
+				gatedEntity.Id = string.Empty;
 			}
 		}
 

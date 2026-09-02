@@ -73,6 +73,7 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<EntityLifecycleResolver>();
 		services.AddScoped<VaultEntityGateway>();
 		services.AddSingleton<PuckTokenizer>();
+		services.AddSingleton<PuckIdentityGate>();
 		services.AddSingleton<PuckPathDiscriminabilityService>();
 		services.AddSingleton<PuckSemanticProjector>();
 		services.AddScoped<PuckEntityResolutionService>();
