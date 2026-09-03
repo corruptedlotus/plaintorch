@@ -1,5 +1,6 @@
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Changes;
+using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Api.Services;
 
 namespace Pleiades.Plaintorch.Api.Endpoints;
@@ -55,6 +56,17 @@ public sealed class SystemModule : Module
 		group.MapGet("/watcher/issues-for", async (string path, ISystemApi api, CancellationToken cancellationToken) =>
 		{
 			return Results.Ok(await api.GetWatcherIssuesForPathAsync(path, cancellationToken));
+		});
+
+		// PEP108 dismiss feature: suppress or restore a watcher issue. The result reports whether state changed.
+		group.MapPost("/watcher/issues/dismiss", async (WatcherIssueDismissalRequest request, ISystemApi api, CancellationToken cancellationToken) =>
+		{
+			return Results.Ok(await api.DismissWatcherIssueAsync(request.Key, request.Scope, cancellationToken));
+		});
+
+		group.MapPost("/watcher/issues/restore", async (WatcherIssueDismissalRequest request, ISystemApi api, CancellationToken cancellationToken) =>
+		{
+			return Results.Ok(await api.RestoreWatcherIssueAsync(request.Key, request.Scope, cancellationToken));
 		});
 
 		var legacySystem = endpoints.MapEnrichedGroup("/system");

@@ -4,6 +4,7 @@ using Pleiades.Plaintorch.State;
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Calendar;
 using Pleiades.Diagnostics;
+using Pleiades.Plaintorch.Diagnostics;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Saga;
@@ -24,6 +25,7 @@ public sealed class SystemApiService(
 	VaultLayout layout,
 	VaultPathSyncModelCatalog pathSyncModelCatalog,
 	OperationStatusRegistry statusRegistry,
+	OperationStatusDismissalService dismissalService,
 	PuckEntityResolutionService puckEntityResolutionService,
 	MarkdownFrontMatterSerializer markdownSerializer,
 	ILogger<SystemApiService> logger) : ISystemApi
@@ -48,7 +50,11 @@ public sealed class SystemApiService(
 
 		var activeLorePages = await LoadActiveLorePagesAsync(cancellationToken);
 		var watcherStatus = MapHealthStatus(statusRegistry.GetHealth());
-		var watcherIssues = statusRegistry.GetActiveStatuses();
+		// Dismissed statuses (PEP108 dismiss feature) are excluded from the briefing counts, matching the health rollup.
+		var watcherIssues = statusRegistry.GetActiveStatusesWithDismissal()
+			.Where(item => !item.Dismissed)
+			.Select(item => item.Status)
+			.ToList();
 
 		return new SystemBriefing(
 			"ok",
@@ -184,19 +190,22 @@ public sealed class SystemApiService(
 
 	private WatcherIssueReport BuildWatcherIssueReport(string? scopedAbsolutePath, bool scopedPathIsDirectory)
 	{
-		var allStatuses = statusRegistry.GetActiveStatuses();
+		var allStatuses = statusRegistry.GetActiveStatusesWithDismissal();
 
 		var filtered = scopedAbsolutePath is null
 			? allStatuses
-			: allStatuses.Where(status => MatchesScope(ScopePathOf(status), scopedAbsolutePath, scopedPathIsDirectory)).ToList();
+			: allStatuses.Where(item => MatchesScope(ScopePathOf(item.Status), scopedAbsolutePath, scopedPathIsDirectory)).ToList();
 
-		var issueRecords = filtered.Select(ToWatcherIssueRecord).ToList();
-		var criterionRecords = filtered.Select(ToWatcherCriterionRecord).ToList();
+		// The report carries every active status (dismissed ones flagged) so a client can show a "Dismissed" section,
+		// but the counts and failed criteria — the live problem surface that drives the indicator — exclude dismissed.
+		var issueRecords = filtered.Select(item => ToWatcherIssueRecord(item.Status, item.Dismissed)).ToList();
+		var liveRecords = issueRecords.Where(static issue => !issue.Dismissed).ToList();
+		var criterionRecords = filtered.Where(item => !item.Dismissed).Select(item => ToWatcherCriterionRecord(item.Status)).ToList();
 
 		return new WatcherIssueReport(
 			MapHealthStatus(statusRegistry.GetHealth()),
-			issueRecords.Count,
-			issueRecords.Count(static issue => issue.IsCritical),
+			liveRecords.Count,
+			liveRecords.Count(static issue => issue.IsCritical),
 			criterionRecords.Count,
 			criterionRecords.Count(static criterion => !criterion.Satisfied),
 			scopedAbsolutePath is null ? null : ToVaultRelativePathOrAbsolute(scopedAbsolutePath),
@@ -205,12 +214,12 @@ public sealed class SystemApiService(
 			criterionRecords);
 	}
 
-	private WatcherIssueRecord ToWatcherIssueRecord(OperationStatus status)
+	private WatcherIssueRecord ToWatcherIssueRecord(OperationStatus status, bool dismissed)
 	{
 		var descriptor = WatcherOperations.Describe(status.ReasonCode);
 		var originPath = ScopePathOf(status);
 		return new WatcherIssueRecord(
-			$"{status.OperationId}::{status.ReasonCode}::{status.ScopeKey}",
+			WatcherOperations.ComposeIssueKey(status.OperationId, status.ReasonCode, status.ScopeKey),
 			status.OperationId,
 			descriptor.Category,
 			status.Detail ?? descriptor.Message,
@@ -223,8 +232,51 @@ public sealed class SystemApiService(
 			originPath,
 			ToVaultRelativePathOrNull(originPath),
 			status.FirstRaisedUtc,
-			status.LastObservedUtc);
+			status.LastObservedUtc,
+			dismissed);
 	}
+
+	/// <inheritdoc />
+	public async Task<bool> DismissWatcherIssueAsync(string issueKey, string? scope = null, CancellationToken cancellationToken = default)
+	{
+		if (!TryResolveDismissalTarget(issueKey, scope, out var dismissalScope, out var operationId, out var scopeKey, out var reasonCode))
+		{
+			return false;
+		}
+
+		return await dismissalService.DismissAsync(dismissalScope, operationId, scopeKey, reasonCode, cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public async Task<bool> RestoreWatcherIssueAsync(string issueKey, string? scope = null, CancellationToken cancellationToken = default)
+	{
+		if (!TryResolveDismissalTarget(issueKey, scope, out var dismissalScope, out var operationId, out var scopeKey, out var reasonCode))
+		{
+			return false;
+		}
+
+		return await dismissalService.RestoreAsync(dismissalScope, operationId, scopeKey, reasonCode, cancellationToken);
+	}
+
+	private static bool TryResolveDismissalTarget(
+		string issueKey,
+		string? scope,
+		out OperationStatusDismissalScope dismissalScope,
+		out string operationId,
+		out string scopeKey,
+		out string reasonCode)
+	{
+		dismissalScope = ParseDismissalScope(scope);
+		return WatcherOperations.TryParseIssueKey(issueKey, out operationId, out reasonCode, out scopeKey);
+	}
+
+	private static OperationStatusDismissalScope ParseDismissalScope(string? scope)
+		=> scope?.Trim().ToLowerInvariant() switch
+		{
+			"file" => OperationStatusDismissalScope.File,
+			"reason" => OperationStatusDismissalScope.Reason,
+			_ => OperationStatusDismissalScope.Instance,
+		};
 
 	private WatcherCriterionRecord ToWatcherCriterionRecord(OperationStatus status)
 	{

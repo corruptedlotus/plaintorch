@@ -61,4 +61,42 @@ public static class WatcherOperations
 		=> Descriptors.TryGetValue(reasonCode, out var descriptor)
 			? descriptor
 			: new ReasonDescriptor("runtime", OperationSeverity.Error, reasonCode);
+
+	// The opaque issue key the API exposes on each WatcherIssueRecord and accepts back to dismiss/restore it. It packs
+	// the status identity as operationId::reasonCode::scopeKey; operation ids and reason codes never contain "::", so
+	// the scope key (a path, which may itself contain ':') is unambiguously the remainder after the second separator.
+	private const string IssueKeySeparator = "::";
+
+	/// <summary>Composes the opaque issue key from a status's identity parts.</summary>
+	public static string ComposeIssueKey(string operationId, string reasonCode, string scopeKey)
+		=> string.Concat(operationId, IssueKeySeparator, reasonCode, IssueKeySeparator, scopeKey);
+
+	/// <summary>Parses an opaque issue key back into its identity parts. Returns false when the key is malformed.</summary>
+	public static bool TryParseIssueKey(string key, out string operationId, out string reasonCode, out string scopeKey)
+	{
+		operationId = string.Empty;
+		reasonCode = string.Empty;
+		scopeKey = string.Empty;
+		if (string.IsNullOrWhiteSpace(key))
+		{
+			return false;
+		}
+
+		var first = key.IndexOf(IssueKeySeparator, StringComparison.Ordinal);
+		if (first < 0)
+		{
+			return false;
+		}
+
+		var second = key.IndexOf(IssueKeySeparator, first + IssueKeySeparator.Length, StringComparison.Ordinal);
+		if (second < 0)
+		{
+			return false;
+		}
+
+		operationId = key[..first];
+		reasonCode = key[(first + IssueKeySeparator.Length)..second];
+		scopeKey = key[(second + IssueKeySeparator.Length)..];
+		return operationId.Length > 0 && reasonCode.Length > 0 && scopeKey.Length > 0;
+	}
 }

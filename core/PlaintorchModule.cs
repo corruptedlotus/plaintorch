@@ -93,6 +93,7 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<OperationStatusEventBuffer>();
 		services.AddSingleton<IOperationStatusSink>(provider => provider.GetRequiredService<OperationStatusEventBuffer>());
 		services.AddSingleton<OperationStatusReporter>();
+		services.AddScoped<OperationStatusDismissalService>();
 		services.AddSingleton<WatcherStatusReporter>();
 		services.AddSingleton<VaultStorageTopologyValidator>();
 		services.AddSingleton<PlaintorchVaultLockService>();

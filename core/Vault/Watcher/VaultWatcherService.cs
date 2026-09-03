@@ -81,6 +81,10 @@ public sealed class VaultWatcherService(
 		// An active session clears the standby override so health reflects the derived rollup again (PEP108).
 		statusRegistry.SetHealthOverride(null);
 
+		// Load this vault's durable status dismissals (PEP108 dismiss feature) before the scan re-raises its statuses,
+		// so a snoozed issue stays snoozed across restarts. Matching is by value, so a re-raised status is dismissed.
+		await LoadDismissalsAsync(stoppingToken);
+
 		try
 		{
 			await RunStartupScanAsync(stoppingToken);
@@ -128,6 +132,23 @@ public sealed class VaultWatcherService(
 		finally
 		{
 			DisposeWatchers();
+			// The dismissal set is vault-scoped; drop it when the session ends so a different vault does not inherit it.
+			statusRegistry.ClearDismissals();
+		}
+	}
+
+	/// <summary>Loads the active vault's durable status dismissals into the registry (PEP108 dismiss feature).</summary>
+	private async Task LoadDismissalsAsync(CancellationToken cancellationToken)
+	{
+		try
+		{
+			using var scope = scopeFactory.CreateScope();
+			var dismissals = scope.ServiceProvider.GetRequiredService<Pleiades.Plaintorch.Diagnostics.OperationStatusDismissalService>();
+			await dismissals.LoadIntoRegistryAsync(cancellationToken);
+		}
+		catch (Exception exception)
+		{
+			logger.LogError(exception, "Failed to load durable status dismissals for the active vault. Dismissed issues may resurface until the next activation.");
 		}
 	}
 

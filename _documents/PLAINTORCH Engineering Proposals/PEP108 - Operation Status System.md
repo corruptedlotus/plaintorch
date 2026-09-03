@@ -144,6 +144,20 @@ is building. None of REFACTOR Alpha *blocks* the core (it is new, additive code)
   generalises beyond the watcher as other subsystems adopt the core. _Deferred:_ resolved-timestamp exposure and
   a history-query endpoint (the durable `OperationStatusEvent` log already records the raised→resolved timeline;
   no consumer needs the query yet).
+- **Dismiss feature ✅ — snooze an issue.** A user can dismiss a status so it stops counting toward health and
+  nagging. A dismissal is durable (`OperationStatusDismissalRecord` EF table, loaded into the registry when a vault
+  session activates) and matches **by value**, so it needs no runtime bookkeeping to expire: an `Instance` dismissal
+  captures the status detail as a **fingerprint** and matches only while that holds, so a *different problem* on the
+  same file+reason (the detail changes) — or a resolve→re-raise — lifts the snooze, while an identical problem
+  (including one re-raised after a restart) stays snoozed. `OperationStatusRegistry` gains `Dismiss`/`Restore`/
+  `IsDismissed`/`LoadDismissals` and dismissal-aware `GetHealth`; `OperationStatusDismissalService`
+  (`Pleiades.Plaintorch.Diagnostics`) is the write-through bridge; the API exposes
+  `POST /api/system/watcher/issues/dismiss|restore` (+ SDK), and `WatcherIssueRecord` carries a `dismissed` flag
+  (counts and health exclude dismissed). Dismissal scope is a pinned framework — `Instance` (surfaced) plus reserved
+  `File` ("always ignore this file") and `Reason` ("always ignore this issue"), so those broaden the snooze with a
+  UI + endpoint change, not a schema change. Frontend: the status indicator's hover tooltip became an interactive
+  **`p7t-popover`** (a reusable click-to-open, top-layer, light-dismissing popover) whose rows carry Dismiss/Restore,
+  with dismissed issues in a collapsed section.
 
 ## Core types (`Pleiades.Diagnostics`)
 - `OperationSeverity` — `Info/Warning/Suspended/Error/Critical`.
@@ -154,11 +168,15 @@ is building. None of REFACTOR Alpha *blocks* the core (it is new, additive code)
 - `OperationStatusTransition(Kind, ...)` / `OperationStatusTransitionKind` — Raised/Escalated/De-escalated/Resolved.
 - `OperationHealth` — `Ok/Suspended/Issues/Offline`.
 - `OperationStatusRegistry` (singleton) — `Ingest(report) → transitions`, `GetActive*`, `GetRecentResolved`,
-  `GetHealth`, `SetHealthOverride`.
+  `GetHealth`, `SetHealthOverride`; and the dismiss surface `Dismiss`/`Restore`/`IsDismissed`/`LoadDismissals`/
+  `ClearDismissals` + `GetActiveStatusesWithDismissal`.
+- `OperationStatusDismissal(Scope, OperationId, ScopeKey, ReasonCode, Fingerprint, DismissedUtc)` +
+  `OperationStatusDismissalScope` (`Instance/File/Reason`) — a value-matched dismissal (`Matches(status)`).
 - `IOperationStatusSink` + `OperationStatusReporter` (singleton) — reporter ingests into the registry and
   forwards transitions to the sink.
-- Durable: `OperationStatusEvent` (EF entity, `Pleiades.Vault.Database`), `OperationStatusEventBuffer`
-  (buffered `IOperationStatusSink`) + `OperationStatusPersistenceWorker` (`Pleiades.Plaintorch.Diagnostics`).
+- Durable: `OperationStatusEvent` + `OperationStatusDismissalRecord` (EF entities, `Pleiades.Vault.Database`),
+  `OperationStatusEventBuffer` (buffered `IOperationStatusSink`) + `OperationStatusPersistenceWorker`, and
+  `OperationStatusDismissalService` (write-through dismissal bridge) — all in `Pleiades.Plaintorch.Diagnostics`.
 
 ## Open questions / future
 - **Retention** of the durable log (age/count/milestone-based) — deferred, like the graveyard/audit retention.

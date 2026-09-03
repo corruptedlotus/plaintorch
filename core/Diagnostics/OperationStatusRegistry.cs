@@ -16,6 +16,7 @@ public sealed class OperationStatusRegistry
 
 	private readonly object _gate = new();
 	private readonly Dictionary<(string Operation, string Scope, string Reason), OperationStatus> _active = [];
+	private readonly Dictionary<string, OperationStatusDismissal> _dismissals = new(StringComparer.Ordinal);
 	private readonly Queue<OperationStatusTransition> _recentResolved = new();
 	private OperationHealth? _healthOverride;
 
@@ -51,7 +52,7 @@ public sealed class OperationStatusRegistry
 		return transitions;
 	}
 
-	/// <summary>Gets the active statuses, worst severity and most recent first.</summary>
+	/// <summary>Gets the active statuses, worst severity and most recent first. Includes dismissed statuses.</summary>
 	public IReadOnlyList<OperationStatus> GetActiveStatuses()
 	{
 		lock (_gate)
@@ -59,6 +60,23 @@ public sealed class OperationStatusRegistry
 			return _active.Values
 				.OrderByDescending(status => status.Severity)
 				.ThenByDescending(status => status.LastObservedUtc)
+				.ToList();
+		}
+	}
+
+	/// <summary>
+	/// Gets the active statuses paired with whether each is currently dismissed (PEP108 dismiss feature), worst
+	/// severity and most recent first. A surface that offers a dismiss/restore affordance uses this so it can show
+	/// dismissed statuses separately while excluding them from the health rollup.
+	/// </summary>
+	public IReadOnlyList<(OperationStatus Status, bool Dismissed)> GetActiveStatusesWithDismissal()
+	{
+		lock (_gate)
+		{
+			return _active.Values
+				.OrderByDescending(status => status.Severity)
+				.ThenByDescending(status => status.LastObservedUtc)
+				.Select(status => (status, IsDismissedUnlocked(status)))
 				.ToList();
 		}
 	}
@@ -72,7 +90,11 @@ public sealed class OperationStatusRegistry
 		}
 	}
 
-	/// <summary>Derives subsystem health from active statuses, unless a lifecycle override is set.</summary>
+	/// <summary>
+	/// Derives subsystem health from active statuses, unless a lifecycle override is set. Dismissed statuses (PEP108
+	/// dismiss feature) are excluded from the rollup, so a subsystem whose only remaining statuses are dismissed reads
+	/// <see cref="OperationHealth.Ok"/>.
+	/// </summary>
 	public OperationHealth GetHealth()
 	{
 		lock (_gate)
@@ -82,21 +104,118 @@ public sealed class OperationStatusRegistry
 				return forced;
 			}
 
-			if (_active.Count == 0)
+			var worst = _active.Values
+				.Where(status => !IsDismissedUnlocked(status))
+				.Select(status => (OperationSeverity?)status.Severity)
+				.Max();
+
+			if (worst is not { } severity)
 			{
 				return OperationHealth.Ok;
 			}
 
-			var worst = _active.Values.Max(status => status.Severity);
-			if (worst >= OperationSeverity.Error)
+			if (severity >= OperationSeverity.Error)
 			{
 				return OperationHealth.Issues;
 			}
 
-			return worst == OperationSeverity.Suspended
+			return severity == OperationSeverity.Suspended
 				? OperationHealth.Suspended
 				: OperationHealth.Ok;
 		}
+	}
+
+	/// <summary>
+	/// Replaces the in-memory dismissal set with the supplied durable dismissals (PEP108 dismiss feature). Called when
+	/// a vault session activates, before the startup scan re-raises its statuses, so dismissals apply immediately.
+	/// </summary>
+	public void LoadDismissals(IEnumerable<OperationStatusDismissal> dismissals)
+	{
+		ArgumentNullException.ThrowIfNull(dismissals);
+		lock (_gate)
+		{
+			_dismissals.Clear();
+			foreach (var dismissal in dismissals)
+			{
+				_dismissals[dismissal.Key] = dismissal;
+			}
+		}
+	}
+
+	/// <summary>Clears the in-memory dismissal set (for example when the active vault session ends).</summary>
+	public void ClearDismissals()
+	{
+		lock (_gate)
+		{
+			_dismissals.Clear();
+		}
+	}
+
+	/// <summary>
+	/// Records a dismissal for a status identity and returns the stored record so the caller can persist it. For an
+	/// <see cref="OperationStatusDismissalScope.Instance"/> dismissal the current active status's detail is captured
+	/// as the fingerprint (so the snooze lifts when a different problem arises); this returns <see langword="null"/>
+	/// when no such status is currently active — there is nothing to dismiss. File and Reason dismissals always record.
+	/// </summary>
+	public OperationStatusDismissal? Dismiss(OperationStatusDismissalScope scope, string operationId, string scopeKey, string reasonCode)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(operationId);
+		ArgumentNullException.ThrowIfNull(scopeKey);
+		ArgumentNullException.ThrowIfNull(reasonCode);
+
+		lock (_gate)
+		{
+			string? fingerprint = null;
+			if (scope == OperationStatusDismissalScope.Instance)
+			{
+				if (!_active.TryGetValue((operationId, scopeKey, reasonCode), out var status))
+				{
+					return null;
+				}
+
+				fingerprint = status.Detail;
+			}
+
+			var dismissal = new OperationStatusDismissal(scope, operationId, scopeKey, reasonCode, fingerprint, DateTimeOffset.UtcNow);
+			_dismissals[dismissal.Key] = dismissal;
+			return dismissal;
+		}
+	}
+
+	/// <summary>
+	/// Removes a dismissal, returning the record that was removed, or <see langword="null"/> if none matched. Restoring
+	/// a dismissed status makes it count and surface again.
+	/// </summary>
+	public OperationStatusDismissal? Restore(OperationStatusDismissalScope scope, string operationId, string scopeKey, string reasonCode)
+	{
+		var key = OperationStatusDismissalKey.Compose(scope, operationId, scopeKey, reasonCode);
+		lock (_gate)
+		{
+			return _dismissals.Remove(key, out var removed) ? removed : null;
+		}
+	}
+
+	/// <summary>Determines whether any active dismissal currently suppresses the supplied status.</summary>
+	public bool IsDismissed(OperationStatus status)
+	{
+		ArgumentNullException.ThrowIfNull(status);
+		lock (_gate)
+		{
+			return IsDismissedUnlocked(status);
+		}
+	}
+
+	private bool IsDismissedUnlocked(OperationStatus status)
+	{
+		foreach (var dismissal in _dismissals.Values)
+		{
+			if (dismissal.Matches(status))
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/// <summary>

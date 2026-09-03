@@ -31,4 +31,17 @@ public interface ISystemApi
 	/// Gets watcher diagnostics scoped to a specific vault file or folder path.
 	/// </summary>
 	Task<WatcherIssueReport> GetWatcherIssuesForPathAsync(string scopedPath, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Dismisses a watcher issue (PEP108 dismiss feature) so it stops counting toward health and nagging. Identified by
+	/// the opaque <see cref="WatcherIssueRecord.Key"/>. <paramref name="scope"/> selects the breadth (default
+	/// <c>instance</c>: this exact issue, snoozed until a different problem arises). Returns whether a dismissal was
+	/// recorded.
+	/// </summary>
+	Task<bool> DismissWatcherIssueAsync(string issueKey, string? scope = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Restores (un-dismisses) a watcher issue so it counts and surfaces again. Returns whether a dismissal was removed.
+	/// </summary>
+	Task<bool> RestoreWatcherIssueAsync(string issueKey, string? scope = null, CancellationToken cancellationToken = default);
 }

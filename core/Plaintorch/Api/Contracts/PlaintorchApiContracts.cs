@@ -59,7 +59,8 @@ public sealed record WatcherIssueRecord(
 	string? OriginPath,
 	string? OriginVaultRelativePath,
 	DateTimeOffset? FirstObservedUtc,
-	DateTimeOffset? LastObservedUtc);
+	DateTimeOffset? LastObservedUtc,
+	bool Dismissed = false);
 
 /// <summary>
 /// Represents a watcher criterion evaluation exposed through system diagnostics APIs.
@@ -86,6 +87,13 @@ public sealed record WatcherIssueReport(
 	bool ScopedPathIsDirectory,
 	IReadOnlyList<WatcherIssueRecord> Issues,
 	IReadOnlyList<WatcherCriterionRecord> Criteria);
+
+/// <summary>
+/// Represents a request to dismiss or restore a watcher issue (PEP108 dismiss feature), identified by its opaque
+/// <see cref="WatcherIssueRecord.Key"/>. <see cref="Scope"/> selects the breadth — <c>instance</c> (default), or the
+/// reserved <c>file</c> / <c>reason</c> broader-snooze scopes.
+/// </summary>
+public sealed record WatcherIssueDismissalRequest(string Key, string? Scope = null);
 
 /// <summary>
 /// Represents an in-place edit of a lore page's mutable metadata. Its hierarchy (level and narrative index) stays

@@ -49,6 +49,8 @@ export interface WatcherIssueRecord {
 	originVaultRelativePath: string | undefined
 	firstObservedUtc: string | undefined
 	lastObservedUtc: string | undefined
+	/** Whether the user has dismissed this issue (PEP108): excluded from health and counts, kept for a "Dismissed" view. */
+	dismissed: boolean
 }
 
 export interface WatcherCriterionRecord {

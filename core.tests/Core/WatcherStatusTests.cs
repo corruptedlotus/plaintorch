@@ -201,7 +201,7 @@ public sealed class WatcherStatusTests : VaultTestBase
 		Assert.Equal(WatcherOperations.PuckViolation, Assert.Single(registry.GetActiveStatuses()).ReasonCode);
 	}
 
-	[Fact(Skip = "REFACTOR Alpha phase 4 + dismiss feature: a foreign, unmanaged file in a non-exclusive root is not a system error. The mode policy should classify it as a dismissible warning (and leave it in place), not an Error-severity policy violation to be purged.")]
+	[Fact(Skip = "Foreign-file reclassification (deferred, separate from the dismiss feature which now exists): a foreign, unmanaged file in a non-exclusive root is not a system error. The mode policy should classify it as a Warning left in place, not an Error-severity policy violation to be purged. Only the severity/behavior reclassification remains; a warning is already dismissible via PEP108.")]
 	public void Foreign_file_in_a_non_exclusive_root_should_surface_as_a_warning()
 	{
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();

@@ -147,6 +147,11 @@ public class PlainfraContext : DbContext
 	/// </summary>
 	public DbSet<OperationStatusEvent> OperationStatusEvents => Set<OperationStatusEvent>();
 
+	/// <summary>
+	/// Gets the durable operation-status dismissals (PEP108 dismiss feature).
+	/// </summary>
+	public DbSet<OperationStatusDismissalRecord> OperationStatusDismissals => Set<OperationStatusDismissalRecord>();
+
 	/// <inheritdoc />
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
@@ -161,6 +166,11 @@ public class PlainfraContext : DbContext
 			.HasConversion<string>();
 		modelBuilder.Entity<OperationStatusEvent>()
 			.Property(x => x.PreviousSeverity)
+			.HasConversion<string>();
+
+		// PEP108 dismiss feature: durable dismissals, with the scope enum stored as a readable string.
+		modelBuilder.Entity<OperationStatusDismissalRecord>()
+			.Property(x => x.Scope)
 			.HasConversion<string>();
 
 		var tagsConverter = new ValueConverter<List<string>, string>(
