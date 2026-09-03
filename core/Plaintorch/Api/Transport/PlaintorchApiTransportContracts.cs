@@ -46,9 +46,10 @@ public sealed record CreateDirectiveRequest(
 	string? ParentDirectiveId = null);
 
 /// <summary>
-/// Represents the transport payload used to initialize a directive from an existing vault file.
+/// Represents the transport payload used to initialize an entity from an existing vault file (the policy-derived
+/// <c>init</c> action). Shared across every collection whose mode supports create-from-file.
 /// </summary>
-public sealed record InitDirectiveRequest(string Path);
+public sealed record InitFromFileRequest(string Path);
 
 /// <summary>
 /// Represents the transport payload used to create a lunar (Moonlight) directive (PEP100).

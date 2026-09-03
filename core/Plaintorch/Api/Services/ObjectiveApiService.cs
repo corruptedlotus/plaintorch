@@ -269,6 +269,10 @@ public sealed class ObjectiveApiService(
 		=> (Objective)await lifecycleService.BeginBoundaryAsync(typeof(Objective), objectiveId, cancellationToken);
 
 	/// <inheritdoc />
+	public async Task<Objective> InitializeFromPathAsync(string vaultRelativePath, CancellationToken cancellationToken = default)
+		=> (Objective)await lifecycleService.InitializeFromFileAsync(typeof(Objective), vaultRelativePath, cancellationToken);
+
+	/// <inheritdoc />
 	public async Task DeleteAsync(string objectiveId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(objectiveId);

@@ -59,6 +59,12 @@ public interface IObjectiveApi
 	Task<Objective> BeginBoundaryAsync(string objectiveId, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Initializes an objective from an existing user-authored vault file (the policy-derived <c>init</c> action):
+	/// the file is adopted into a new implicit objective, minting an identity when it carries none.
+	/// </summary>
+	Task<Objective> InitializeFromPathAsync(string vaultRelativePath, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Materializes (or returns) the eventive for an objective's due date — the interaction trigger (PEP100).
 	/// </summary>
 	Task<Eventive> MaterializeDueEventiveAsync(string objectiveId, EventiveMaterialization request, CancellationToken cancellationToken = default);

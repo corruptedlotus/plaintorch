@@ -32,6 +32,10 @@ public sealed class ImplicitVaultStorageModePolicyService(
 	public override bool BeginsSyncBoundaryOnFirstFile => true;
 
 	/// <inheritdoc />
+	// An implicit entity is normally database-first, but init adopts an existing user-authored file into a new entity.
+	public override bool CanCreateFromFile => true;
+
+	/// <inheritdoc />
 	public override async Task<bool> BelongsToModelAsync(VaultPathSyncModel model, string fullPath, string markdown, CancellationToken cancellationToken)
 	{
 		if (!await base.BelongsToModelAsync(model, fullPath, markdown, cancellationToken))

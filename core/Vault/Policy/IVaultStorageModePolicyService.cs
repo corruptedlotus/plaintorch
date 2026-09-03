@@ -38,6 +38,14 @@ public interface IVaultStorageModePolicyService
 	bool PurgesDesyncedFiles { get; }
 
 	/// <summary>
+	/// Gets whether an entity of this mode can be created from an existing user-authored file (the <c>init</c> action).
+	/// True for the identity-driven modes (Freeform and Implicit): a file the user wrote is adopted into a new entity,
+	/// minting a fresh identity when the file carries none. The policy-derived <c>init</c> action is served only where
+	/// this is true, so the pipeline asks this instead of testing the mode enum.
+	/// </summary>
+	bool CanCreateFromFile { get; }
+
+	/// <summary>
 	/// Resolves where an entity's markdown should be written. Path-bound modes always use the canonical
 	/// <paramref name="defaultPath"/>; Freeform keeps a user-authored file at its authored location when that is
 	/// allowed. The policy owns this so the storage pipeline never branches on the mode.

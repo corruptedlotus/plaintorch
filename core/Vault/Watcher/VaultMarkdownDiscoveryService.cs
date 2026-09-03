@@ -140,15 +140,19 @@ public sealed class VaultMarkdownDiscoveryService(
 	}
 
 	/// <summary>
-	/// Inspects an arbitrary markdown path as a directive-init candidate, even when generic path-catalog classification does not apply.
+	/// Inspects an arbitrary markdown path as an init candidate for a specific entity type, even when generic
+	/// path-catalog classification does not apply (an explicit API <c>init</c> points at a specific file, so the
+	/// entity's model is forced and the watcher-ignore / model-belonging policies are relaxed).
 	/// </summary>
 	/// <param name="path">The filesystem path to inspect.</param>
+	/// <param name="entityType">The entity type whose model is forced for classification.</param>
 	/// <param name="origin">The logical source performing inspection.</param>
 	/// <param name="cancellationToken">A token used to cancel inspection.</param>
-	/// <returns>A resolved directive sync candidate, or <see langword="null"/> when the path cannot be treated as a directive markdown candidate.</returns>
-	public async Task<VaultSyncCandidate?> InspectDirectiveInitPathAsync(string path, string origin, CancellationToken cancellationToken = default)
+	/// <returns>A resolved sync candidate, or <see langword="null"/> when the path cannot be treated as a candidate for the type.</returns>
+	public async Task<VaultSyncCandidate?> InspectInitPathAsync(string path, Type entityType, string origin, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(path);
+		ArgumentNullException.ThrowIfNull(entityType);
 		ArgumentException.ThrowIfNullOrWhiteSpace(origin);
 
 		var fullPath = Path.GetFullPath(path);
@@ -158,10 +162,10 @@ public sealed class VaultMarkdownDiscoveryService(
 			return null;
 		}
 
-		var directiveModel = pathSyncModelCatalog
+		var forcedModel = pathSyncModelCatalog
 			.GetModels()
-			.FirstOrDefault(model => model.EntityType == typeof(Directive));
-		if (directiveModel is null)
+			.FirstOrDefault(model => model.EntityType == entityType);
+		if (forcedModel is null)
 		{
 			return null;
 		}
@@ -171,7 +175,7 @@ public sealed class VaultMarkdownDiscoveryService(
 			fullPath,
 			knownIdsByType,
 			cancellationToken,
-			forcedModel: directiveModel,
+			forcedModel: forcedModel,
 			enforceWatcherIgnorePolicy: false,
 			enforceModelBelongingPolicy: false);
 
@@ -199,6 +203,13 @@ public sealed class VaultMarkdownDiscoveryService(
 
 		return candidate;
 	}
+
+	/// <summary>
+	/// Inspects an arbitrary markdown path as a directive-init candidate. Thin wrapper over
+	/// <see cref="InspectInitPathAsync"/> for the directive family anchor.
+	/// </summary>
+	public Task<VaultSyncCandidate?> InspectDirectiveInitPathAsync(string path, string origin, CancellationToken cancellationToken = default)
+		=> InspectInitPathAsync(path, typeof(Directive), origin, cancellationToken);
 
 	/// <summary>
 	/// Performs core inspection flow for a path by classifying, hydrating, validating, and deciding an action.

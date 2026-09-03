@@ -8,9 +8,11 @@ way. Phases build on each other but each lands independently green.
 
 **Status legend:** ✅ done · 🚧 in progress · ⏳ planned · 🅿️ parked (has preconditions)
 
-**Progress context (2026-09-03).** Phases **0–4 are ✅** (phase 4 landed the protocol-first watcher — the mode
-policy owns the pipeline's semantic questions, and the whole enum-leak bug class is fixed; only the #2 dismiss
-feature and #4/PEP108-phase-D remain, both outside the refactor). Earlier snapshot below. Phases **0–3 are ✅** — the entity catalog, the generic gateway, the full
+**Progress context (2026-09-04).** Phases **0–4 are ✅** and **phase 5 §5a is ✅** (the policy-derived `begin`/`init`
+actions — one `VaultEntityLifecycleService` each, dispatched through the phase-4 policy; `init` generalised to implicit
+incentives). Phase 4's follow-ons #2 (dismiss + foreign-file) and #4 (PEP108 phase D) are since closed too, so the
+watcher suite carries zero skips. Only **§5b (generic CRUD kit)** remains, deferred as optional per the plan below.
+Earlier snapshot below. Phases **0–3 are ✅** — the entity catalog, the generic gateway, the full
 shape-strategy composer (forward *and* reverse path composition, including the P2 freeform note-association fix),
 and the polymorphic family descriptor: first-class families, family-aware discovery, **identity-driven concrete-type
 resolution** (the directive family no longer collapses to stellar — see D14), and the path-sync list validated as a
@@ -85,8 +87,8 @@ pre-existing, being fixed separately). PEP108 is a *sibling* system with its own
 | 1 | `VaultEntityGateway` — retire `typeof`/DbSet dispatch, generic snapshots, known-id loaders | ✅ |
 | 2 | Storage shape strategies — collapse `MarkdownFileLocator` / path composition per-type code | ✅ (candidate-enumeration folds into 3) |
 | 3 | Polymorphic family descriptor — first-class TPH families; identity-driven concrete type; catalog-projected path-sync list | ✅ (predicate/scan-root projection folds into 4) |
-| 4 | Storage-mode policy objects — protocol-first watcher: the mode policy owns the pipeline's semantic questions | ✅ (bug class + protocol landed; #2 dismiss + #4 Phase D remain) |
-| 5 | API kit — policy-derived actions (begin-boundary, init-from-file) + optional generic CRUD | ⏳ |
+| 4 | Storage-mode policy objects — protocol-first watcher: the mode policy owns the pipeline's semantic questions | ✅ (bug class + protocol landed; #4 Phase D + #2 dismiss/foreign-file since closed) |
+| 5 | API kit — policy-derived actions (begin-boundary, init-from-file) + optional generic CRUD | ✅ §5a (begin + init are one policy-derived action each); §5b (generic CRUD) deferred as optional |
 | P1 | Retire the base `A{S:6}` directive declaration | 🅿️ |
 | P2 | Entity→note association for directives | ✅ (phase 2) |
 | P3 | Lunar directives symmetric with stellar (was "lunar auto-discovery") | ✅ (phase 3, D14) |
@@ -343,7 +345,20 @@ before anything is genericised (the media triplet adds a fourth flavour: media-a
   explicit (principle 5). The kind-split directive API is the reminder that entity surfaces diverge on purpose.
 - **Mechanical CRUD** — get/list/find/create/delete plumbing.
 
-### §5a — Policy-derived actions (worth doing regardless of §5b)
+### §5a — Policy-derived actions (worth doing regardless of §5b) ✅
+**Landed (2026-09-04).** One `VaultEntityLifecycleService` owns both actions, dispatched through the phase-4 policy:
+`BeginBoundaryAsync(type, id)` (gated on `BeginsSyncBoundaryOnFirstFile`) collapses the three objective/fate/decree
+begins — each per-entity `Begin*BoundaryAsync` is now a one-line delegation, so their existing tests are the parity
+gate. `InitializeFromFileAsync(type, path)` (gated on the new `CanCreateFromFile`) collapses the directive init spine
+and generalises it: the `typeof(Directive)` arm became a type/kind check, the discovery fallback became
+`InspectInitPathAsync(path, type)`, and the manual-no-PUCK override became **structural** (an ignore decision with no
+path identity whose only issues are missing-required-PUCK-input) — deleting the `SuggestedReason` string-sniff. `init`
+now serves implicit incentives too (a new `POST /api/objectives/init` + `IObjectiveApi.InitializeFromPathAsync`),
+minting an identity for a puckless file exactly as directive init does. Audit actions derive from the catalog kind
+(`{kind}.begin-boundary` / `{kind}.init`). The generic `POST /api/{collection}/…` route shape waits on a collection
+registry (§5b); per-entity routes delegate for now. Suite 204/0. _Deferred:_ the objectives SDK gains no `init`/`begin`
+method (it covers no lifecycle action today); a small follow-up if the frontend needs them.
+
 Drive `begin`/`init` off the phase-4 mode policy objects instead of per-entity code. Keep the two actions
 **distinct** — `begin` *adopts a file for an already-created entity*, `init` *creates an entity from an existing
 file*; create-vs-adopt is a real semantic difference — but make both generic across every identity-driven mode:

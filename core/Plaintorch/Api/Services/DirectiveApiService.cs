@@ -21,9 +21,7 @@ public sealed class DirectiveApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
 	PlaintorchMarkdownStorageService markdownFileService,
-	VaultLayout layout,
-	VaultMarkdownDiscoveryService watcherDiscoveryService,
-	VaultWatcherSyncService watcherSyncService,
+	VaultEntityLifecycleService lifecycleService,
 	VaultTemporalDataService temporalDataService,
 	VaultAuditLogService auditLogService,
 	DependencyGateService dependencyGate,
@@ -338,94 +336,11 @@ public sealed class DirectiveApiService(
 	}
 
 	/// <inheritdoc />
+	// Directive init (Freeform) is a policy-derived action: it delegates to the one generic init dispatched through the
+	// mode policy (REFACTOR Alpha phase 5a). The directive-specific pieces it used to carry — the init-path fallback and
+	// the manual-no-PUCK override — are now the generic init's declared behaviour.
 	public async Task<Directive> InitializeFromPathAsync(string vaultRelativePath, CancellationToken cancellationToken = default)
-	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(vaultRelativePath);
-		var normalizedRelativePath = vaultRelativePath
-			.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
-			.TrimStart(Path.DirectorySeparatorChar);
-		var absolutePath = Path.GetFullPath(Path.Combine(layout.VaultRoot, normalizedRelativePath));
-		var normalizedRoot = layout.VaultRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-
-		if (!absolutePath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
-		{
-			throw new InvalidOperationException("Directive init path escapes the active vault root.");
-		}
-
-		var candidate = await watcherDiscoveryService.InspectPathAsync(absolutePath, "api-init", cancellationToken)
-			?? await watcherDiscoveryService.InspectDirectiveInitPathAsync(absolutePath, "api-init-fallback", cancellationToken)
-			?? throw new InvalidOperationException($"Directive init path '{normalizedRelativePath}' is not a directive markdown candidate eligible for freeform initialization.");
-
-		if (candidate.Model.EntityType != typeof(Directive))
-		{
-			throw new InvalidOperationException($"Directive init path '{normalizedRelativePath}' resolved to '{candidate.Model.EntityName}', not Directive.");
-		}
-
-		if (ShouldTreatAsManualFreeformInit(candidate))
-		{
-			candidate = NormalizeManualFreeformInitCandidate(candidate);
-		}
-
-		if (!candidate.IsValid)
-		{
-			var reasons = string.Join("; ", candidate.Issues.Select(issue => $"{issue.FieldPath}: {issue.Message}"));
-			throw new InvalidOperationException($"Directive init path '{normalizedRelativePath}' violates freeform init policy: {reasons}");
-		}
-
-		if (candidate.SuggestedAction != VaultSyncAction.CreateFromFile)
-		{
-			throw new InvalidOperationException(
-				$"Directive init path '{normalizedRelativePath}' is not eligible for initialization. Suggested action '{candidate.SuggestedAction}' indicates this path must be handled by watcher reconciliation policy instead. Reason: {candidate.SuggestedReason ?? "n/a"}");
-		}
-
-		await watcherSyncService.InitializeFromFileAsync(candidate, "api-init", cancellationToken);
-		var created = await context.Directives.FirstOrDefaultAsync(item => item.Id == ((PuckNamedEntity)candidate.ParsedModel).Id, cancellationToken);
-		if (created is null)
-		{
-			throw new InvalidOperationException("Directive initialization completed but the created entity could not be loaded.");
-		}
-
-		await auditLogService.WriteAsync("api", "directive.init", subject: created, details: new { path = normalizedRelativePath }, cancellationToken: cancellationToken);
-		return created;
-	}
-
-	private static bool ShouldTreatAsManualFreeformInit(VaultSyncCandidate candidate)
-	{
-		if (candidate.Model.EntityType != typeof(Directive)
-			|| candidate.Model.Mode != VaultStorageMode.Freeform
-			|| candidate.SuggestedAction != VaultSyncAction.Ignore)
-		{
-			return false;
-		}
-
-		if (string.IsNullOrWhiteSpace(candidate.SuggestedReason)
-			|| !candidate.SuggestedReason.Contains("does not auto-create entities from files without frontmatter PUCK identity", StringComparison.OrdinalIgnoreCase))
-		{
-			return false;
-		}
-
-		return candidate.Issues.All(IsMissingRequiredPuckInputIssue);
-	}
-
-	private static VaultSyncCandidate NormalizeManualFreeformInitCandidate(VaultSyncCandidate candidate)
-	{
-		var filteredIssues = candidate.Issues
-			.Where(issue => !IsMissingRequiredPuckInputIssue(issue))
-			.ToList();
-
-		return candidate with
-		{
-			Issues = filteredIssues,
-			SuggestedAction = VaultSyncAction.CreateFromFile,
-			SuggestedReason = "Manual freeform directive initialization requested from API.",
-		};
-	}
-
-	private static bool IsMissingRequiredPuckInputIssue(MarkdownValidationIssue issue)
-	{
-		return string.Equals(issue.FieldPath, "id", StringComparison.OrdinalIgnoreCase)
-			&& issue.Message.Contains("missing required caller-provided PUCK input", StringComparison.OrdinalIgnoreCase);
-	}
+		=> (Directive)await lifecycleService.InitializeFromFileAsync(typeof(Directive), vaultRelativePath, cancellationToken);
 
 	/// <inheritdoc />
 	public async Task<LunarDirective> CreateLunarAsync(string title, string? codename = null, string? parentDirectiveId = null, CancellationToken cancellationToken = default)

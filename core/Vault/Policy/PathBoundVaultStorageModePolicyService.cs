@@ -24,6 +24,10 @@ public abstract class PathBoundVaultStorageModePolicyService : IVaultStorageMode
 	public virtual bool PurgesDesyncedFiles => false;
 
 	/// <inheritdoc />
+	// Path-bound modes derive identity from the path and are not adopted from an arbitrary user-authored file.
+	public virtual bool CanCreateFromFile => false;
+
+	/// <inheritdoc />
 	// Path-bound modes always write to the canonical location computed by the storage pipeline.
 	public virtual string ResolveWriteTargetPath(object entity, string defaultPath, string? sourcePath) => defaultPath;
 

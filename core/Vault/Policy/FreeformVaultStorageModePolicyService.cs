@@ -30,6 +30,10 @@ public sealed class FreeformVaultStorageModePolicyService(
 	public bool PurgesDesyncedFiles => false;
 
 	/// <inheritdoc />
+	// A freeform entity is adopted from a user-authored file anywhere in the vault, minting an identity when it has none.
+	public bool CanCreateFromFile => true;
+
+	/// <inheritdoc />
 	public bool TryResolveWatchPath(VaultPathSyncModel model, string fullPath, bool isDirectoryEvent, out string? inspectPath)
 	{
 		if (isDirectoryEvent || !string.Equals(Path.GetExtension(fullPath), ".md", StringComparison.OrdinalIgnoreCase))
