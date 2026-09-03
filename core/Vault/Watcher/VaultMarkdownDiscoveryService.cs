@@ -66,6 +66,27 @@ public sealed class VaultMarkdownDiscoveryService(
 			candidates.Add(candidate);
 		}
 
+		// Orphan pass (offline-deletion parity): a boundary-begun file deleted while the daemon was off produces no
+		// filesystem event, so the file scan above never sees it. Reconcile those entities by inspecting each begun
+		// boundary's recorded path — when the file is now absent, discovery recovers the identity and the mode policy
+		// decides the authoritative action (implicit deletes), so a sweep reaches the same state a live delete would.
+		var discoveredPaths = new HashSet<string>(allPaths.Select(Path.GetFullPath), StringComparer.OrdinalIgnoreCase);
+		foreach (var boundary in await implicitBoundaryService.EnumerateBegunBoundariesAsync(cancellationToken))
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			var absolutePath = Path.GetFullPath(Path.Combine(layout.VaultRoot, boundary.VaultRelativePath));
+			if (File.Exists(absolutePath) || discoveredPaths.Contains(absolutePath))
+			{
+				continue;
+			}
+
+			var candidate = await InspectPathCoreAsync(absolutePath, knownIdsByType, cancellationToken);
+			if (candidate is not null)
+			{
+				candidates.Add(candidate);
+			}
+		}
+
 		await auditLogService.WriteAsync(
 			"discovery",
 			"startup-scan",

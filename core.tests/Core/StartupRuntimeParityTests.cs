@@ -137,7 +137,7 @@ public sealed class StartupRuntimeParityTests
 		Assert.Equal(sweep, runtime);
 	}
 
-	[Fact(Skip = "CONFIRMED PARITY GAP (fix in REFACTOR Alpha phase 4 / startup reconciliation). Reproduced: a boundary-begun implicit file deleted while the daemon is offline is authoritatively deleted at runtime (DeleteFromDatabase), but survives a startup sweep as an orphaned entity with no file. The startup scan is file-driven (ScanAsync enumerates existing files), so a deleted file yields no candidate and the orphan is never reconciled — startup and runtime diverge. Fix: the startup sweep needs an orphan-reconciliation pass over known entities whose authoritative files are now absent.")]
+	[Fact] // Phase 4: fixed — ScanAsync's orphan pass reconciles boundary-begun files that vanished while offline.
 	public async Task Deleting_a_begun_objective_file_reconciles_identically_at_startup_and_at_runtime()
 	{
 		var (sweep, runtime) = await RunBothWaysAsync(async vault =>

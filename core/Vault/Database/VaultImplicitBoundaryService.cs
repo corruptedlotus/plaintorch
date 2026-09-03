@@ -102,4 +102,29 @@ public sealed class VaultImplicitBoundaryService(PlainfraContext context, VaultA
 			.Select(entry => entry.SubjectId)
 			.FirstOrDefaultAsync(cancellationToken);
 	}
+
+	/// <summary>
+	/// Enumerates the entities that have begun a synchronization boundary and the vault-relative path each boundary
+	/// was begun at. The startup sweep uses this to reconcile a boundary-begun file that vanished while the daemon was
+	/// off — a change a file-driven scan cannot see — so startup reaches the same state a live deletion would have.
+	/// </summary>
+	public async Task<IReadOnlyList<VaultBoundaryLocation>> EnumerateBegunBoundariesAsync(CancellationToken cancellationToken = default)
+	{
+		var entries = await context.AuditLogEntries
+			.AsNoTracking()
+			.Where(entry => entry.Action == BoundaryBeginAction && entry.TemporalLocation != null)
+			.Select(entry => new { entry.SubjectType, entry.SubjectId, entry.TemporalLocation })
+			.ToListAsync(cancellationToken);
+
+		return entries
+			.Where(entry => !string.IsNullOrWhiteSpace(entry.SubjectType)
+				&& !string.IsNullOrWhiteSpace(entry.SubjectId)
+				&& !string.IsNullOrWhiteSpace(entry.TemporalLocation))
+			.Select(entry => new VaultBoundaryLocation(entry.SubjectType!, entry.SubjectId!, entry.TemporalLocation!))
+			.DistinctBy(entry => (entry.EntityType, entry.EntityId))
+			.ToList();
+	}
 }
+
+/// <summary>An entity that began a synchronization boundary and the vault-relative path it began at.</summary>
+public readonly record struct VaultBoundaryLocation(string EntityType, string EntityId, string VaultRelativePath);
