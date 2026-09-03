@@ -47,7 +47,7 @@ public sealed class LoreHierarchyTests : VaultTestBase
 		Assert.True(eraSurvived);
 	}
 
-	[Fact(Skip = "DECIDED (design call #1, D17) — pending implementation in phase 4 / the lore write-path. A child's Beginning must fall within its parent's span (>= the parent's Beginning, before the parent's next-sibling boundary). This is the root-cause fix for the hierarchical-beginning weirdness: with it, an un-begun ancestor can never contain a begun child, so LoreIndex.MarkActivePages can no longer drag a future-dated era into the active set via a past-dated child. Pins the invariant at the source — a child dated before its parent is rejected.")]
+	[Fact] // Phase 4 (D17): implemented — LorePageApiService constrains a child's Beginning to its parent's span.
 	public async Task A_child_beginning_before_its_parent_is_rejected()
 	{
 		var today = System.DateOnly.FromDateTime(System.DateTime.Today);

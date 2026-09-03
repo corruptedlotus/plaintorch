@@ -66,6 +66,7 @@ public sealed class LorePageApiService(
 				?? throw new InvalidOperationException($"Parent lore page '{request.ParentPuck}' was not found.");
 		}
 
+		await ValidateBeginningWithinParentAsync(request.Beginning, parent, cancellationToken);
 		var (level, discriminator) = ResolveChildLevel(parent);
 		var nextIndex = await ResolveNextSiblingIndexAsync(parent, level, cancellationToken);
 		var id = parent is null ? $"{discriminator}{nextIndex}" : $"{parent.Id}/{discriminator}{nextIndex}";
@@ -120,6 +121,10 @@ public sealed class LorePageApiService(
 
 		if (update.Beginning.IsSet)
 		{
+			var beginningParent = string.IsNullOrWhiteSpace(lorePage.ParentId)
+				? null
+				: await context.LorePages.AsNoTracking().FirstOrDefaultAsync(item => item.Id == lorePage.ParentId, cancellationToken);
+			await ValidateBeginningWithinParentAsync(update.Beginning.Value, beginningParent, cancellationToken);
 			lorePage.Beginning = update.Beginning.Value;
 		}
 
@@ -283,6 +288,35 @@ public sealed class LorePageApiService(
 
 		await auditLogService.WriteAsync("api", "lore.set-index", subject: page, details: new { previousId = oldId, index }, cancellationToken: cancellationToken);
 		return page;
+	}
+
+	/// <summary>
+	/// Enforces the hierarchical beginning invariant (D17): a child lore page's beginning must fall within its
+	/// parent's span — at or after the parent's beginning, and before the parent's own span ends (its next sibling's
+	/// beginning). This keeps the lore hierarchy a coherent nested timeline, so an un-begun ancestor can never
+	/// contain a begun child.
+	/// </summary>
+	private async Task ValidateBeginningWithinParentAsync(DateOnly? beginning, LorePage? parent, CancellationToken cancellationToken)
+	{
+		if (beginning is not { } value || parent is null)
+		{
+			return;
+		}
+
+		if (parent.Beginning is { } parentBeginning && value < parentBeginning)
+		{
+			throw new InvalidOperationException(
+				$"Lore page cannot begin on {value:yyyy-MM-dd}, before its parent '{parent.Id}' begins on {parentBeginning:yyyy-MM-dd}.");
+		}
+
+		var parentSiblings = await context.LorePages.AsNoTracking()
+			.Where(item => item.ParentId == parent.ParentId && item.Id != parent.Id)
+			.ToListAsync(cancellationToken);
+		if (LorePage.ResolveEndingExclusive(parent, parentSiblings) is { } parentEnding && value >= parentEnding)
+		{
+			throw new InvalidOperationException(
+				$"Lore page cannot begin on {value:yyyy-MM-dd}, at or after its parent '{parent.Id}' ends on {parentEnding:yyyy-MM-dd}.");
+		}
 	}
 
 	private static (string Level, string Discriminator) ResolveChildLevel(LorePage? parent)
