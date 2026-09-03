@@ -8,7 +8,9 @@ way. Phases build on each other but each lands independently green.
 
 **Status legend:** ✅ done · 🚧 in progress · ⏳ planned · 🅿️ parked (has preconditions)
 
-**Progress context (2026-08-20).** Phases **0–3 are ✅** — the entity catalog, the generic gateway, the full
+**Progress context (2026-09-03).** Phases **0–4 are ✅** (phase 4 landed the protocol-first watcher — the mode
+policy owns the pipeline's semantic questions, and the whole enum-leak bug class is fixed; only the #2 dismiss
+feature and #4/PEP108-phase-D remain, both outside the refactor). Earlier snapshot below. Phases **0–3 are ✅** — the entity catalog, the generic gateway, the full
 shape-strategy composer (forward *and* reverse path composition, including the P2 freeform note-association fix),
 and the polymorphic family descriptor: first-class families, family-aware discovery, **identity-driven concrete-type
 resolution** (the directive family no longer collapses to stellar — see D14), and the path-sync list validated as a
@@ -83,7 +85,7 @@ pre-existing, being fixed separately). PEP108 is a *sibling* system with its own
 | 1 | `VaultEntityGateway` — retire `typeof`/DbSet dispatch, generic snapshots, known-id loaders | ✅ |
 | 2 | Storage shape strategies — collapse `MarkdownFileLocator` / path composition per-type code | ✅ (candidate-enumeration folds into 3) |
 | 3 | Polymorphic family descriptor — first-class TPH families; identity-driven concrete type; catalog-projected path-sync list | ✅ (predicate/scan-root projection folds into 4) |
-| 4 | Storage-mode policy objects — consolidate Freeform/Implicit/Synced/… conditionals; absorb per-model scan predicates + roots | ⏳ |
+| 4 | Storage-mode policy objects — protocol-first watcher: the mode policy owns the pipeline's semantic questions | ✅ (bug class + protocol landed; #2 dismiss + #4 Phase D remain) |
 | 5 | API kit — policy-derived actions (begin-boundary, init-from-file) + optional generic CRUD | ⏳ |
 | P1 | Retire the base `A{S:6}` directive declaration | 🅿️ |
 | P2 | Entity→note association for directives | ✅ (phase 2) |
@@ -254,9 +256,22 @@ Treat renames as contract changes, not refactors. (Nothing in this phase renamed
 **Risk — retired.** The byte-for-byte concern (reproduce today's 8 models) is pinned by `PathSyncModelCatalogTests`
 (type/mode/shape set + directive fallback) and the full suite (153/153 save the known wall-clock flake).
 
-## Phase 4 — Storage-mode policy objects ⏳
+## Phase 4 — Storage-mode policy objects ✅
 
-**Problem.** `VaultStorageMode` semantics are interpreted by scattered conditionals: `Mode.IsIdentityDriven()`
+**Landed.** The protocol-first watcher is real: `IVaultStorageModePolicyService` now owns the pipeline's semantic
+questions (`IsIdentityDriven`, `MaterializesOnCreate`, `BeginsSyncBoundaryOnFirstFile`, `PurgesDesyncedFiles`) plus
+the `ResolveWriteTargetPath` behaviour, and discovery / sync / storage / consistency ask the protocol
+(`VaultStoragePolicyEngine.PolicyFor`) instead of testing the mode enum. The whole bug class the enum-leak caused is
+fixed and green: notation-gated identity (`PuckIdentityGate`) kills the loose-PUCK misparse (Bug B) and coincidental
+note-resolution (Bug C); the self-named fallback is shape-gated (#3); lore index 0 is allowed (Bug A) and the lore
+`Beginning` is a hierarchical constraint (D17); and `ScanAsync`'s orphan pass gives startup/runtime deletion parity.
+Only two skipped tests remain, both **outside** the mode-policy refactor: **#2** (a foreign file in a non-exclusive
+root should be a *dismissible warning* — needs the dismiss feature's design + persistence) and **#4** (collapse the
+three string-sniffed issue heuristics into one classified reason — **PEP108 phase D**). One recorded constraint: the
+Freeform policy depends on `PuckEntityResolutionService`, so two Freeform-specific behaviours can't move onto the
+policy without a DI cycle (see `core/Vault/Watcher/.GENESIS.md`).
+
+**Problem (original).** `VaultStorageMode` semantics are interpreted by scattered conditionals: `Mode.IsIdentityDriven()`
 (discovery ×2, `VaultWatcherPathPolicy`), freeform special-cases in discovery, implicit-boundary checks in the
 watcher and storage service, enforced/synced branches in reconciliation. A mode-policy split **already exists**
 (`VaultStorageModePolicyRouter` over `Freeform`/`Enforced`/`Optional`/`Synced`/`FileFirst`/`Implicit` services,
