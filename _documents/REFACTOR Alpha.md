@@ -11,8 +11,9 @@ way. Phases build on each other but each lands independently green.
 **Progress context (2026-09-04).** Phases **0–4 are ✅** and **phase 5 §5a is ✅** (the policy-derived `begin`/`init`
 actions — one `VaultEntityLifecycleService` each, dispatched through the phase-4 policy; `init` generalised to implicit
 incentives). Phase 4's follow-ons #2 (dismiss + foreign-file) and #4 (PEP108 phase D) are since closed too, so the
-watcher suite carries zero skips. Only **§5b (generic CRUD kit)** remains, deferred as optional per the plan below.
-Earlier snapshot below. Phases **0–3 are ✅** — the entity catalog, the generic gateway, the full
+watcher suite carries zero skips. Only **§5b (generic CRUD kit + collection registry)** remains — retained as the
+final step toward total platform abstraction (see §5b), deliberately last because it is the most domain-shaped layer.
+See the **Retrospective** section for the close-out assessment. Earlier snapshot below. Phases **0–3 are ✅** — the entity catalog, the generic gateway, the full
 shape-strategy composer (forward *and* reverse path composition, including the P2 freeform note-association fix),
 and the polymorphic family descriptor: first-class families, family-aware discovery, **identity-driven concrete-type
 resolution** (the directive family no longer collapses to stellar — see D14), and the path-sync list validated as a
@@ -88,10 +89,62 @@ pre-existing, being fixed separately). PEP108 is a *sibling* system with its own
 | 2 | Storage shape strategies — collapse `MarkdownFileLocator` / path composition per-type code | ✅ (candidate-enumeration folds into 3) |
 | 3 | Polymorphic family descriptor — first-class TPH families; identity-driven concrete type; catalog-projected path-sync list | ✅ (predicate/scan-root projection folds into 4) |
 | 4 | Storage-mode policy objects — protocol-first watcher: the mode policy owns the pipeline's semantic questions | ✅ (bug class + protocol landed; #4 Phase D + #2 dismiss/foreign-file since closed) |
-| 5 | API kit — policy-derived actions (begin-boundary, init-from-file) + optional generic CRUD | ✅ §5a (begin + init are one policy-derived action each); §5b (generic CRUD) deferred as optional |
+| 5 | API kit — policy-derived actions (begin-boundary, init-from-file) + generic CRUD | ✅ §5a (begin + init are one policy-derived action each); 🅿️ §5b (generic CRUD + collection registry) retained for total platform abstraction |
 | P1 | Retire the base `A{S:6}` directive declaration | 🅿️ |
 | P2 | Entity→note association for directives | ✅ (phase 2) |
 | P3 | Lunar directives symmetric with stellar (was "lunar auto-discovery") | ✅ (phase 3, D14) |
+
+---
+
+## Retrospective — the arc so far (2026-09-04)
+
+**What it did.** REFACTOR Alpha replaced *recognition-by-shape* with *declaration-by-attribute* across the vault core.
+Before, the pipeline knew each entity by hardcoded `typeof`/DbSet chains, per-type path code, hand-kept family
+name-lists, `enum`-tested storage behaviour, and English-string sniffing of reasons and exceptions. After, one entity
+declares its identity and storage as attributes, and every consumer resolves the facts it needs from a queryable
+catalog and a set of mode-policy objects. The realised north-star: **changing an entity's behaviour is now an attribute
+swap** — a new mode's semantics live in one policy object; a new identity-driven entity gets `begin`/`init` for free.
+The layers, bottom-up: the `VaultEntityModelCatalog` (0) and `VaultEntityGateway` (1) end type dispatch; the
+shape-strategy composer (2) ends per-type path code, forward *and* reverse; first-class TPH families (3) make
+polymorphic concrete-type selection identity-driven (lunar and stellar finally symmetric); the mode-policy protocol (4)
+gives the watcher its semantic questions so the pipeline asks the protocol, never the enum; and the policy-derived
+`begin`/`init` (5a) collapse the per-entity onboarding copies into one action each.
+
+**Issues solved.** The refactor was validated by turning a class of real bugs into pinned, now-green repros — the
+watcher suite carries **zero skips** (204/0). Concretely: the watcher no longer destroys `prefix - ` user notes or
+resurrects invalid-PUCK entities (identity is notation-gated, not string-shaped); an enforced root no longer
+synthesizes a bogus `<root>/<root>.md`; note-resolution no longer binds to unrelated files in a folder; lore index 0
+(a prologue / Chapter 0) is allowed; a child lore page can no longer begin before its parent (D17), the root cause of
+the "hierarchy dislodging" weirdness; a boundary-begun file deleted while the daemon was offline is reconciled at
+startup, so **startup and runtime reach the same state** (deletion parity); a foreign, unrecognised-PUCK file in a
+non-exclusive root is now a dismissible *warning left in place*, not an error to purge — aggression is confined to
+enforced (granted) territory. Two sibling systems rode along: **PEP108 phase D** made the watcher's issue
+classification structural (one typed `VaultSyncConcern`, one classified reason), and the **dismiss feature** made a
+status snooze-dismissible with a reusable `p7t-popover`. The through-line: **every string-heuristic in the pipeline is
+gone** — exception classification is typed, policy classification is a typed concern, and the last `SuggestedReason`
+sniff (directive manual-init) fell to phase 5a's structural test.
+
+**Questions raised about the core.** The work surfaced, and left open, several genuine questions:
+- **Where is the mechanical/domain boundary?** §5b exists to abstract "generic CRUD," but the refactor kept revealing
+  that per-entity API code is often *legitimately* domain-shaped. The kit's real test is the collection→type registry:
+  how much of the API surface is truly mechanical vs. a domain interface that only looks repetitive.
+- **Startup does not populate the operation-status registry.** Only live watcher events report statuses; a foreign
+  file or issue present at activation stays invisible until something touches it. Startup/runtime parity holds for the
+  *database and vault* but not (yet) for *diagnostics*. Worth deciding deliberately.
+- **The resolution↔policy DI cycle caps declarativeness.** The Freeform policy needs full PUCK resolution to confirm
+  belonging, so two freeform behaviours can't move onto the policy object and stay documented helpers instead. Some
+  behaviour is declarative-resistant by dependency shape, not by intent.
+- **Is the mode-policy protocol accreting overlapping questions?** `CanCreateFromFile` currently coincides with
+  `IsIdentityDriven`; they answer different questions but the same modes. As the protocol grows, are the semantic
+  questions kept orthogonal, or do they drift into near-synonyms?
+- **Validation issues are still untyped (field + English message).** The one narrow residual sniff
+  (`IsMissingRequiredPuckInputIssue`) survives because `MarkdownValidationIssue` carries no typed reason. A typed
+  issue vocabulary would finish what phase D started.
+- **The legacy `A{S:6}` id-space (P1) still lingers**, kept alive by real vault rows; retiring it needs an id re-mint
+  migration and a discriminability hardening, not just an attribute deletion.
+
+The residual scope is **§5b (total platform abstraction)** and the parked **P1**; everything else in the plan has
+landed. Details below.
 
 ---
 
@@ -382,12 +435,16 @@ generic path; per-kind audit action strings unchanged.
 **Risk (§5a).** Medium — `begin`/`init` feed real file materialization and the implicit boundary. Behaviour-preserve
 the three begins and the directive init byte-for-byte *before* extending `init` to incentives.
 
-### §5b — Generic CRUD kit (still optional; may be dropped)
+### §5b — Generic CRUD kit 🅿️ (retained for total platform abstraction)
 A generic `EntityApiService<TEntity, TUpdate>` + `MapEntityCrud<T>` for the mechanical get/list/find/create/delete,
-leaving domain actions explicit. **Do last or not at all** — this is the layer where per-entity code is most
-legitimately domain-shaped. Revisit after §5a and phases 2–4 show what is still mechanical. Caveat for the kit:
-`Dependency` and `Checkpoint` are DB-only and (for dependencies) not `IPuckNamedEntity`, so they do **not** fit
-the entity-catalog/gateway shape the kit would assume — exclude or special-case them.
+leaving domain actions explicit — **and the collection→type registry that lets the routes generalise to the
+`/api/{collection}/…` shape §5a's per-entity routes stand in for today** (begin/init included). The operator has kept
+this in scope as the last step toward total platform abstraction; it is deliberately *last*, because this is the layer
+where per-entity code is most legitimately domain-shaped, so §5a + phases 2–4 first show what is genuinely mechanical.
+Companion follow-ups that ride with it: the objectives (and other) SDKs gain their `begin`/`init` lifecycle methods,
+which they lack today. Caveat for the kit: `Dependency` and `Checkpoint` are DB-only and (for dependencies) not
+`IPuckNamedEntity`, so they do **not** fit the entity-catalog/gateway shape the kit would assume — exclude or
+special-case them.
 
 **Depends on** phase 4 (the mode policy objects own `BeginsBoundaryOnFirstFile` / `CanCreateFromFile` /
 `MaterializesOnCreate`, which §5a dispatches through).
