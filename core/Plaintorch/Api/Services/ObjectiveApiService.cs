@@ -18,6 +18,7 @@ public sealed class ObjectiveApiService(
 	PlaintorchMarkdownStorageService markdownStorageService,
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
+	VaultEntityLifecycleService lifecycleService,
 	VaultAuditLogService auditLogService) : IObjectiveApi
 {
 	/// <inheritdoc />
@@ -265,15 +266,7 @@ public sealed class ObjectiveApiService(
 
 	/// <inheritdoc />
 	public async Task<Objective> BeginBoundaryAsync(string objectiveId, CancellationToken cancellationToken = default)
-	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(objectiveId);
-		var objective = await context.Objectives.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
-			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
-
-		await markdownStorageService.SaveObjectiveAsync(objective, beginBoundary: true, cancellationToken: cancellationToken);
-		await auditLogService.WriteAsync("api", "objective.begin-boundary", subject: objective, cancellationToken: cancellationToken);
-		return objective;
-	}
+		=> (Objective)await lifecycleService.BeginBoundaryAsync(typeof(Objective), objectiveId, cancellationToken);
 
 	/// <inheritdoc />
 	public async Task DeleteAsync(string objectiveId, CancellationToken cancellationToken = default)

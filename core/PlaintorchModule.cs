@@ -72,6 +72,7 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<ILifecyclePhaseSource, EventiveLifecyclePhaseSource>();
 		services.AddSingleton<EntityLifecycleResolver>();
 		services.AddScoped<VaultEntityGateway>();
+		services.AddScoped<Pleiades.Plaintorch.Api.Services.VaultEntityLifecycleService>();
 		services.AddSingleton<PuckTokenizer>();
 		services.AddSingleton<PuckIdentityGate>();
 		services.AddSingleton<PuckPathDiscriminabilityService>();

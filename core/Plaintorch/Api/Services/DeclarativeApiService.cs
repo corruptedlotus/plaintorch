@@ -30,6 +30,7 @@ public sealed class DeclarativeApiService(
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
 	ProximityMaterializationService materializationService,
+	VaultEntityLifecycleService lifecycleService,
 	VaultAuditLogService auditLogService,
 	ILogger<DeclarativeApiService> logger) : IDeclarativeApi
 {
@@ -217,15 +218,7 @@ public sealed class DeclarativeApiService(
 
 	/// <inheritdoc />
 	public async Task<Fate> BeginFateBoundaryAsync(string fateId, CancellationToken cancellationToken = default)
-	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(fateId);
-		var fate = await context.Fates.FirstOrDefaultAsync(item => item.Id == fateId, cancellationToken)
-			?? throw new InvalidOperationException($"Fate '{fateId}' was not found.");
-
-		await markdownStorageService.SaveFateAsync(fate, beginBoundary: true, cancellationToken: cancellationToken);
-		await auditLogService.WriteAsync("api", "fate.begin-boundary", subject: fate, cancellationToken: cancellationToken);
-		return fate;
-	}
+		=> (Fate)await lifecycleService.BeginBoundaryAsync(typeof(Fate), fateId, cancellationToken);
 
 	/// <inheritdoc />
 	public async Task DeleteFateAsync(string fateId, CancellationToken cancellationToken = default)
@@ -369,15 +362,7 @@ public sealed class DeclarativeApiService(
 
 	/// <inheritdoc />
 	public async Task<Decree> BeginDecreeBoundaryAsync(string decreeId, CancellationToken cancellationToken = default)
-	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(decreeId);
-		var decree = await context.Decrees.FirstOrDefaultAsync(item => item.Id == decreeId, cancellationToken)
-			?? throw new InvalidOperationException($"Decree '{decreeId}' was not found.");
-
-		await markdownStorageService.SaveDecreeAsync(decree, beginBoundary: true, cancellationToken: cancellationToken);
-		await auditLogService.WriteAsync("api", "decree.begin-boundary", subject: decree, cancellationToken: cancellationToken);
-		return decree;
-	}
+		=> (Decree)await lifecycleService.BeginBoundaryAsync(typeof(Decree), decreeId, cancellationToken);
 
 	/// <inheritdoc />
 	public async Task DeleteDecreeAsync(string decreeId, CancellationToken cancellationToken = default)
