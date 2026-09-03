@@ -158,6 +158,13 @@ is building. None of REFACTOR Alpha *blocks* the core (it is new, additive code)
   UI + endpoint change, not a schema change. Frontend: the status indicator's hover tooltip became an interactive
   **`p7t-popover`** (a reusable click-to-open, top-layer, light-dismissing popover) whose rows carry Dismiss/Restore,
   with dismissed issues in a collapsed section.
+- **Foreign-file warning ✅ — the first dismiss-native status.** Its motivating consumer: the identity-driven,
+  non-exclusive modes (Freeform/Implicit) now leave an unrecognised-PUCK file **in place** (`Ignore`) and raise a
+  `foreign-file` **Warning** (`VaultSyncConcern.ForeignFile`) instead of purging it as an Error — aggression stays
+  confined to Enforced (granted) territory. Unlike an actionable reason, this advisory is *standing*: a successful
+  (no-op) sync does not clear it (`ReportSyncSucceeded` excludes it), only a clean re-inspection or a user dismissal
+  does. This closes the last watcher repro (`Foreign_file_in_a_non_exclusive_root_should_surface_as_a_warning`) — the
+  watcher suite now carries zero skips.
 
 ## Core types (`Pleiades.Diagnostics`)
 - `OperationSeverity` — `Info/Warning/Suspended/Error/Critical`.

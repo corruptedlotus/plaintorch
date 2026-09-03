@@ -30,6 +30,7 @@ public static class WatcherOperations
 	public const string MarkdownInvalid = "markdown-invalid";
 	public const string PuckViolation = "puck-violation";
 	public const string PolicyViolation = "policy-violation";
+	public const string ForeignFile = "foreign-file";
 	public const string SyncFailed = "sync-failed";
 	public const string RelocationFailed = "relocation-failed";
 	public const string RootInitFailed = "root-init-failed";
@@ -49,6 +50,7 @@ public static class WatcherOperations
 		[MarkdownInvalid] = new("validation", OperationSeverity.Error, "Watcher detected markdown/frontmatter validation problems for a candidate file."),
 		[PuckViolation] = new("identity", OperationSeverity.Error, "Watcher detected a PUCK identity violation for a candidate file."),
 		[PolicyViolation] = new("policy", OperationSeverity.Error, "Watcher detected a storage policy violation for a candidate file."),
+		[ForeignFile] = new("policy", OperationSeverity.Warning, "Watcher left an unmanaged file in place — it asserts an identity the vault does not recognise and sits outside enforced territory."),
 		[SyncFailed] = new("runtime", OperationSeverity.Error, "Watcher failed to process a discovered candidate sync action."),
 		[RelocationFailed] = new("runtime", OperationSeverity.Error, "Watcher failed to process a relocation candidate."),
 		[RootInitFailed] = new("filesystem", OperationSeverity.Error, "Watcher failed to initialize a filesystem root observer."),

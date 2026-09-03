@@ -106,8 +106,9 @@ public sealed class FreeformVaultStorageModePolicyService(
 		{
 			if (!exists)
 			{
-				// The unknown/unresolvable frontmatter PUCK is the root concern; the validation issues are subsumed.
-				return new(VaultSyncAction.PurgeFile, "Unknown freeform PUCK assertion with validation issues is disallowed by freeform policy.", VaultSyncConcern.PuckViolation);
+				// Freeform is a non-exclusive root: an unrecognised assertion is the user's own file, not the core's to
+				// destroy. Leave it in place with a dismissible foreign-file warning rather than purging it.
+				return new(VaultSyncAction.Ignore, "Unrecognised freeform PUCK assertion (with validation issues) is left in place as an unmanaged file.", VaultSyncConcern.ForeignFile);
 			}
 
 			return new(VaultSyncAction.RewriteFromDatabase, "Freeform candidate has validation issues and must be rewritten from canonical state.", VaultSyncConcern.MarkdownInvalid);
@@ -118,7 +119,7 @@ public sealed class FreeformVaultStorageModePolicyService(
 			return new(VaultSyncAction.UpdateFromFile, "Frontmatter PUCK identity exists in storage and can be synced from file.");
 		}
 
-		return new(VaultSyncAction.PurgeFile, "Freeform storage rejects unknown frontmatter PUCK assertions.", VaultSyncConcern.PuckViolation);
+		return new(VaultSyncAction.Ignore, "Unrecognised freeform PUCK assertion is left in place as an unmanaged file.", VaultSyncConcern.ForeignFile);
 	}
 
 	/// <inheritdoc />

@@ -34,4 +34,12 @@ public enum VaultSyncConcern
 	/// reason code.
 	/// </summary>
 	PolicyViolation,
+
+	/// <summary>
+	/// The candidate asserts an identity the vault does not recognise but sits in a <em>non-exclusive</em> root (a
+	/// non-Enforced, identity-driven mode), so it is the user's own file, not the core's to destroy. The mode leaves it
+	/// in place and raises a dismissible <em>warning</em> rather than purging it — aggression is confined to Enforced
+	/// (granted) territory. Maps to the watcher's <c>foreign-file</c> reason code (Warning severity).
+	/// </summary>
+	ForeignFile,
 }

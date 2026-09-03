@@ -201,22 +201,70 @@ public sealed class WatcherStatusTests : VaultTestBase
 		Assert.Equal(WatcherOperations.PuckViolation, Assert.Single(registry.GetActiveStatuses()).ReasonCode);
 	}
 
-	[Fact(Skip = "Foreign-file reclassification (deferred, separate from the dismiss feature which now exists): a foreign, unmanaged file in a non-exclusive root is not a system error. The mode policy should classify it as a Warning left in place, not an Error-severity policy violation to be purged. Only the severity/behavior reclassification remains; a warning is already dismissible via PEP108.")]
+	[Fact]
 	public void Foreign_file_in_a_non_exclusive_root_should_surface_as_a_warning()
 	{
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
-		// A stray, unmanaged note in a shared implicit root — roots are not required to be exclusive. Today the policy
-		// classifies it as an Error-severity concern to be purged; the dismiss feature should let the mode classify it
-		// as a dismissible Warning and leave it in place.
+		// A stray, unmanaged note in a shared (non-Enforced) root — roots are not required to be exclusive. The mode
+		// leaves it in place (Ignore) and classifies it as a dismissible foreign-file Warning, not an Error to purge.
 		watcher.ReportInspectCandidate(Candidate(
 			"Objectives/My personal note.md",
-			VaultSyncAction.PurgeFile,
-			"Implicit storage rejects unknown frontmatter PUCK assertion.",
-			VaultSyncConcern.PolicyViolation));
+			VaultSyncAction.Ignore,
+			"Unrecognised implicit PUCK assertion is left in place as an unmanaged file.",
+			VaultSyncConcern.ForeignFile));
 
-		Assert.Equal(OperationSeverity.Warning, Assert.Single(registry.GetActiveStatuses()).Severity);
+		var status = Assert.Single(registry.GetActiveStatuses());
+		Assert.Equal(WatcherOperations.ForeignFile, status.ReasonCode);
+		Assert.Equal(OperationSeverity.Warning, status.Severity);
+		Assert.Equal(OperationHealth.Ok, registry.GetHealth()); // a warning alone does not degrade health
+	}
+
+	[Fact]
+	public void A_foreign_file_warning_persists_through_its_own_successful_sync()
+	{
+		// Leaving the file in place IS the successful outcome, so the standing advisory must outlive the (no-op) sync —
+		// unlike an actionable reason, which a successful sync clears.
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		var candidate = Candidate(
+			"Notes/Stray.md",
+			VaultSyncAction.Ignore,
+			"Unrecognised freeform PUCK assertion is left in place as an unmanaged file.",
+			VaultSyncConcern.ForeignFile);
+		watcher.ReportInspectCandidate(candidate);
+		Assert.Equal(WatcherOperations.ForeignFile, Assert.Single(registry.GetActiveStatuses()).ReasonCode);
+
+		watcher.ReportSyncSucceeded(candidate);
+
+		Assert.Equal(WatcherOperations.ForeignFile, Assert.Single(registry.GetActiveStatuses()).ReasonCode);
+	}
+
+	[Fact]
+	public void A_foreign_file_warning_resolves_when_the_file_is_gone_or_becomes_managed()
+	{
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		var foreign = Candidate(
+			"Notes/Stray.md",
+			VaultSyncAction.Ignore,
+			"Unrecognised freeform PUCK assertion is left in place as an unmanaged file.",
+			VaultSyncConcern.ForeignFile);
+
+		// The file vanishes: discovery reports the path as a non-candidate, which clears the advisory.
+		watcher.ReportInspectCandidate(foreign);
+		Assert.Single(registry.GetActiveStatuses());
+		watcher.ReportInspectIgnored(Vault.AbsolutePath("Notes/Stray.md"));
+		Assert.Empty(registry.GetActiveStatuses());
+
+		// The file becomes managed: a clean re-inspection (no concern) clears the advisory.
+		watcher.ReportInspectCandidate(foreign);
+		Assert.Single(registry.GetActiveStatuses());
+		watcher.ReportInspectCandidate(Candidate("Notes/Stray.md"));
+		Assert.Empty(registry.GetActiveStatuses());
 	}
 
 	[Fact]

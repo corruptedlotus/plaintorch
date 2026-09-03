@@ -156,4 +156,22 @@ public sealed class StorageModeDecisionMatrixTests
 		Assert.Equal(VaultSyncConcern.MarkdownInvalid, optional.Decide(Ctx(known: true, hasIssues: true)).Concern);
 		Assert.Equal(VaultSyncConcern.None, optional.Decide(Ctx()).Concern);
 	}
+
+	[Fact]
+	public void The_identity_driven_modes_leave_an_unrecognised_puck_in_place_as_a_foreign_file()
+	{
+		// Freeform and Implicit are non-exclusive, identity-driven roots: an asserted PUCK that resolves to no entity is
+		// the user's own file, so the mode leaves it in place (Ignore) with a dismissible foreign-file Warning rather
+		// than purging it — aggression stays confined to Enforced (granted) territory. Their Decide reads only the
+		// candidate facts (never the injected services), so a bare instance suffices to pin the decision.
+		var freeform = new FreeformVaultStorageModePolicyService(null!, null!, null!);
+		Assert.Equal(VaultSyncAction.Ignore, freeform.Decide(Ctx(pathId: "d00000001")).Action);
+		Assert.Equal(VaultSyncConcern.ForeignFile, freeform.Decide(Ctx(pathId: "d00000001")).Concern);
+		Assert.Equal(VaultSyncConcern.ForeignFile, freeform.Decide(Ctx(pathId: "d00000001", hasIssues: true)).Concern);
+
+		var implicitMode = new ImplicitVaultStorageModePolicyService(null!, null!);
+		Assert.Equal(VaultSyncAction.Ignore, implicitMode.Decide(Ctx(pathId: "d00000001")).Action);
+		Assert.Equal(VaultSyncConcern.ForeignFile, implicitMode.Decide(Ctx(pathId: "d00000001")).Concern);
+		Assert.Equal(VaultSyncConcern.ForeignFile, implicitMode.Decide(Ctx(pathId: "d00000001", hasIssues: true)).Concern);
+	}
 }

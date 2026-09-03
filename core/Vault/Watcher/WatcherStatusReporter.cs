@@ -69,15 +69,16 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 			: null;
 
 		// Phase D: the policy decision carries a single structured concern classifying the root cause, so one bad file
-		// yields one classified reason. A puck or policy concern is that reason and subsumes any incidental validation
-		// issues; markdown-invalid is raised by an explicit markdown concern or, absent a higher concern, by the mere
-		// presence of raw validation issues (the reporter's markdown floor). All three are still reported every run so
-		// the status core resolves whichever was previously raised.
+		// yields one classified reason. A puck/policy/foreign concern is that reason and subsumes any incidental
+		// validation issues; markdown-invalid is raised by an explicit markdown concern or, only when the decision
+		// surfaced no concern at all, by the mere presence of raw validation issues (the reporter's markdown floor).
+		// All checks are reported every run so the status core resolves whichever was previously raised.
 		var concern = candidate.Concern;
 		var puckViolation = concern == VaultSyncConcern.PuckViolation;
 		var policyViolation = concern == VaultSyncConcern.PolicyViolation;
+		var foreignFile = concern == VaultSyncConcern.ForeignFile;
 		var markdownInvalid = concern == VaultSyncConcern.MarkdownInvalid
-			|| (!puckViolation && !policyViolation && candidate.Issues.Count > 0);
+			|| (concern == VaultSyncConcern.None && candidate.Issues.Count > 0);
 
 		Report(
 			WatcherOperations.Reconcile,
@@ -87,21 +88,23 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 			Pass(WatcherOperations.FileInUse),
 			Check(WatcherOperations.MarkdownInvalid, markdownInvalid, validationDetail ?? candidate.SuggestedReason, files: [path], entityId: candidate.PathId),
 			Check(WatcherOperations.PuckViolation, puckViolation, candidate.SuggestedReason ?? firstIssue?.Message, files: [path], entityId: candidate.PathId),
-			Check(WatcherOperations.PolicyViolation, policyViolation, candidate.SuggestedReason, files: [path], entityId: candidate.PathId));
+			Check(WatcherOperations.PolicyViolation, policyViolation, candidate.SuggestedReason, files: [path], entityId: candidate.PathId),
+			Check(WatcherOperations.ForeignFile, foreignFile, candidate.SuggestedReason, files: [path], entityId: candidate.PathId));
 	}
 
 	/// <summary>
-	/// Reports that a candidate synced successfully. A successful sync leaves the path in a policy-consistent state,
-	/// so the *whole* reconcile check-set is reported passing — this resolves any issue an earlier
-	/// <see cref="ReportInspectCandidate"/> raised for the path. It is the only resolution path for a purged file:
-	/// the purge suppresses its own delete through the write barrier, so no later re-inspection will ever clear the
-	/// flag, and a report that passed only <see cref="WatcherOperations.SyncFailed"/> would strand it (a reason code
-	/// absent from a report is left untouched by the status core).
+	/// Reports that a candidate synced successfully. A successful sync clears every <em>actionable</em> reconcile
+	/// reason for the path — this resolves any issue an earlier <see cref="ReportInspectCandidate"/> raised, and is the
+	/// only resolution path for a purged file (the purge suppresses its own delete through the write barrier, so no
+	/// later re-inspection will ever clear the flag; a report that passed only <see cref="WatcherOperations.SyncFailed"/>
+	/// would strand it). It deliberately does <em>not</em> clear <see cref="WatcherOperations.ForeignFile"/>: leaving an
+	/// unmanaged file in place is itself the successful outcome, and the standing advisory persists until the file is
+	/// gone or becomes managed (a clean re-inspection), or the user dismisses it.
 	/// </summary>
 	public void ReportSyncSucceeded(VaultSyncCandidate candidate)
 	{
 		ArgumentNullException.ThrowIfNull(candidate);
-		ReportReconcileHealthy(candidate.AbsolutePath);
+		Report(WatcherOperations.Reconcile, candidate.AbsolutePath, Array.ConvertAll(SyncClearedReasonCodes, Pass));
 	}
 
 	/// <summary>Reports that a candidate's sync execution threw, classified to a concrete cause.</summary>
@@ -112,10 +115,10 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		Report(WatcherOperations.Reconcile, candidate.AbsolutePath, Check(reason, failed: true, exception.Message, files: [candidate.AbsolutePath], entityId: candidate.PathId));
 	}
 
-	// Every reason code the reconcile operation can raise across inspection and sync. A clean outcome reports the
-	// whole set as passing so the status core resolves *any* previously-raised reason for the scope, since a reason
-	// absent from a report is left untouched (see OperationStatusRegistry). Narrower "success" reports would strand
-	// earlier flags — the bug this set closes.
+	// Every reason code the reconcile operation can raise across inspection and sync. A path that no longer resolves to
+	// a candidate reports the whole set as passing so the status core resolves *any* previously-raised reason for the
+	// scope, since a reason absent from a report is left untouched (see OperationStatusRegistry). Narrower reports would
+	// strand earlier flags — the bug this set closes.
 	private static readonly string[] ReconcileReasonCodes =
 	[
 		WatcherOperations.DiscoveryFailed,
@@ -124,8 +127,15 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		WatcherOperations.MarkdownInvalid,
 		WatcherOperations.PuckViolation,
 		WatcherOperations.PolicyViolation,
+		WatcherOperations.ForeignFile,
 		WatcherOperations.SyncFailed,
 	];
+
+	// The subset a successful sync clears: every actionable reason, but NOT foreign-file. A foreign file left in place
+	// is the successful outcome, so its standing advisory outlives the sync; only a clean re-inspection (file gone or
+	// now managed) or an explicit dismissal clears it.
+	private static readonly string[] SyncClearedReasonCodes =
+		[.. ReconcileReasonCodes.Where(static reason => reason != WatcherOperations.ForeignFile)];
 
 	/// <summary>Reports every reconcile reason code as passing for a scope, resolving any active reconcile flag on it.</summary>
 	private void ReportReconcileHealthy(string path)

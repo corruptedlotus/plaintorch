@@ -96,8 +96,9 @@ public sealed class ImplicitVaultStorageModePolicyService(
 		{
 			if (!exists)
 			{
-				// The unknown/unresolvable frontmatter PUCK is the root concern; the validation issues are subsumed.
-				return new(VaultSyncAction.PurgeFile, "Unknown implicit PUCK assertion with validation issues is disallowed by implicit policy.", VaultSyncConcern.PuckViolation);
+				// Implicit belonging is identity-driven in a non-exclusive root: an unrecognised assertion is the user's
+				// own file, not the core's to destroy. Leave it in place with a dismissible foreign-file warning.
+				return new(VaultSyncAction.Ignore, "Unrecognised implicit PUCK assertion (with validation issues) is left in place as an unmanaged file.", VaultSyncConcern.ForeignFile);
 			}
 
 			return new(VaultSyncAction.RewriteFromDatabase, "Implicit candidate has validation issues and must be rewritten from canonical state.", VaultSyncConcern.MarkdownInvalid);
@@ -108,6 +109,6 @@ public sealed class ImplicitVaultStorageModePolicyService(
 			return new(VaultSyncAction.UpdateFromFile, "Frontmatter PUCK identity exists in storage and can be synced from file.");
 		}
 
-		return new(VaultSyncAction.PurgeFile, "Implicit storage rejects unknown frontmatter PUCK assertions.", VaultSyncConcern.PuckViolation);
+		return new(VaultSyncAction.Ignore, "Unrecognised implicit PUCK assertion is left in place as an unmanaged file.", VaultSyncConcern.ForeignFile);
 	}
 }
