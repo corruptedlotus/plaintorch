@@ -122,4 +122,38 @@ public sealed class StorageModeDecisionMatrixTests
 		Assert.Equal(VaultSyncAction.UpdateFromFile, mode.Decide(Ctx(known: true)).Action);
 		Assert.Equal(VaultSyncAction.Ignore, mode.Decide(Ctx()).Action);
 	}
+
+	[Fact]
+	public void Decision_concerns_classify_the_single_root_cause_structurally()
+	{
+		// Phase D: each Decide emits exactly one structured concern so the watcher raises one classified reason per
+		// candidate. A rejection driven by identity is a puck concern; one driven by placement/ownership is a policy
+		// concern (and subsumes any incidental validation issues on an unknown file); a rewrite/conflict driven purely
+		// by a known file's content is a markdown concern; clean and benign decisions carry no concern.
+		var enforced = new EnforcedVaultStorageModePolicyService();
+		Assert.Equal(VaultSyncConcern.PuckViolation, enforced.Decide(Ctx(pathId: null, requiresCallerInput: true)).Concern);
+		Assert.Equal(VaultSyncConcern.PolicyViolation, enforced.Decide(Ctx(pathId: null)).Concern);
+		Assert.Equal(VaultSyncConcern.PolicyViolation, enforced.Decide(Ctx()).Concern);
+		Assert.Equal(VaultSyncConcern.PolicyViolation, enforced.Decide(Ctx(hasIssues: true)).Concern);
+		Assert.Equal(VaultSyncConcern.MarkdownInvalid, enforced.Decide(Ctx(known: true, hasIssues: true)).Concern);
+		Assert.Equal(VaultSyncConcern.None, enforced.Decide(Ctx(known: true)).Concern);
+
+		var synced = new SyncedVaultStorageModePolicyService();
+		Assert.Equal(VaultSyncConcern.PuckViolation, synced.Decide(Ctx(pathId: null, requiresCallerInput: true)).Concern);
+		Assert.Equal(VaultSyncConcern.MarkdownInvalid, synced.Decide(Ctx(hasIssues: true)).Concern);
+		Assert.Equal(VaultSyncConcern.MarkdownInvalid, synced.Decide(Ctx(known: true, hasIssues: true)).Concern);
+		Assert.Equal(VaultSyncConcern.None, synced.Decide(Ctx()).Concern);
+
+		var fileFirst = new FileFirstVaultStorageModePolicyService();
+		Assert.Equal(VaultSyncConcern.PuckViolation, fileFirst.Decide(Ctx(pathId: null, requiresCallerInput: true)).Concern);
+		Assert.Equal(VaultSyncConcern.MarkdownInvalid, fileFirst.Decide(Ctx(hasIssues: true)).Concern);
+		Assert.Equal(VaultSyncConcern.None, fileFirst.Decide(Ctx(known: true)).Concern);
+
+		// Optional passively ignores unknown/invalid standalone files, asserting no concern of its own; only the rewrite
+		// of a known file's local issues is a markdown concern.
+		var optional = new OptionalVaultStorageModePolicyService();
+		Assert.Equal(VaultSyncConcern.None, optional.Decide(Ctx(hasIssues: true)).Concern);
+		Assert.Equal(VaultSyncConcern.MarkdownInvalid, optional.Decide(Ctx(known: true, hasIssues: true)).Concern);
+		Assert.Equal(VaultSyncConcern.None, optional.Decide(Ctx()).Concern);
+	}
 }

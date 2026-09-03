@@ -15,21 +15,21 @@ public sealed class EnforcedVaultStorageModePolicyService : PathBoundVaultStorag
 	public override bool PurgesDesyncedFiles => true;
 
 	/// <inheritdoc />
-	public override (VaultSyncAction Action, string Reason) Decide(VaultStorageModeDecisionContext context)
+	public override VaultSyncDecision Decide(VaultStorageModeDecisionContext context)
 	{
 		if (string.IsNullOrWhiteSpace(context.PathId) && IsUntitledPlaceholder(context.PathTitle))
 		{
-			return (VaultSyncAction.Ignore, "Untitled placeholder file is ignored until the user finalizes naming and identifier.");
+			return new(VaultSyncAction.Ignore, "Untitled placeholder file is ignored until the user finalizes naming and identifier.");
 		}
 
 		if (string.IsNullOrWhiteSpace(context.PathId))
 		{
 			if (context.RequiresCallerInput)
 			{
-				return (VaultSyncAction.PurgeFile, "Path identity is missing required caller-provided PUCK input and enforced storage disallows unresolved files.");
+				return new(VaultSyncAction.PurgeFile, "Path identity is missing required caller-provided PUCK input and enforced storage disallows unresolved files.", VaultSyncConcern.PuckViolation);
 			}
 
-			return (VaultSyncAction.PurgeFile, "Title-only file discovered for an auto-generated PUCK entity; enforced storage disallows unresolved files.");
+			return new(VaultSyncAction.PurgeFile, "Title-only file discovered for an auto-generated PUCK entity; enforced storage disallows unresolved files.", VaultSyncConcern.PolicyViolation);
 		}
 
 		var exists = context.KnownIds.Contains(context.PathId);
@@ -37,27 +37,29 @@ public sealed class EnforcedVaultStorageModePolicyService : PathBoundVaultStorag
 		{
 			if (exists)
 			{
-				return (VaultSyncAction.RewriteFromDatabase, "Enforced storage keeps canonical entities when files are removed and rewrites canonical markdown.");
+				return new(VaultSyncAction.RewriteFromDatabase, "Enforced storage keeps canonical entities when files are removed and rewrites canonical markdown.");
 			}
 
-			return (VaultSyncAction.Ignore, "Missing file does not map to a known entity in enforced storage.");
+			return new(VaultSyncAction.Ignore, "Missing file does not map to a known entity in enforced storage.");
 		}
 
 		if (context.IssueMessages.Count > 0)
 		{
 			if (!exists)
 			{
-				return (VaultSyncAction.PurgeFile, "Unknown file with validation issues is disallowed by enforced storage policy.");
+				// An unknown file is disallowed regardless of content, so the policy rejection is the root concern and
+				// subsumes the incidental validation issues.
+				return new(VaultSyncAction.PurgeFile, "Unknown file with validation issues is disallowed by enforced storage policy.", VaultSyncConcern.PolicyViolation);
 			}
 
-			return (VaultSyncAction.RewriteFromDatabase, "Candidate has validation issues and enforced policy prefers canonical rewrite.");
+			return new(VaultSyncAction.RewriteFromDatabase, "Candidate has validation issues and enforced policy prefers canonical rewrite.", VaultSyncConcern.MarkdownInvalid);
 		}
 
 		if (exists)
 		{
-			return (VaultSyncAction.UpdateFromFile, "Path identity already exists in the database.");
+			return new(VaultSyncAction.UpdateFromFile, "Path identity already exists in the database.");
 		}
 
-		return (VaultSyncAction.PurgeFile, "Unknown file is disallowed by enforced storage policy.");
+		return new(VaultSyncAction.PurgeFile, "Unknown file is disallowed by enforced storage policy.", VaultSyncConcern.PolicyViolation);
 	}
 }

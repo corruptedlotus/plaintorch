@@ -97,12 +97,11 @@ Two stores, per the decision below:
 ## Relationship to REFACTOR Alpha
 The status system's *quality* depends on operations returning structured outcomes — which is what REFACTOR Alpha
 is building. None of REFACTOR Alpha *blocks* the core (it is new, additive code), but:
-- **Phase 4 (storage-mode policy objects)** is the real prerequisite for *clean policy reporting*: today the
-  mode policy's `Decide` returns `(VaultSyncAction, string Reason)`; the status system wants a typed reason +
-  severity + involved paths. Phase 4 is where `Decide` should return structured checks, deleting the
-  `HasPolicyViolation` string-matching. Until then, the watcher adapter ships an **interim** policy-reason
-  mapping, clearly flagged, that Phase 4 swaps out without changing the framework.
-- **Phase 3 (family/classification)** removes the other heuristic (`HasPuckViolation` / name-lists). Secondary.
+- **Phase 4 (storage-mode policy objects)** was the real prerequisite for *clean policy reporting* — **done**:
+  `Decide` now returns a typed `VaultSyncDecision`, and phase D (above) deleted the `HasPolicyViolation`
+  string-matching that the watcher adapter carried as an interim mapping until the policy objects existed.
+- **Phase 3 (family/classification)** removed the other heuristic (`HasPuckViolation` / name-lists) — also folded
+  into the phase-D typed concern.
 - **Phase 2 (path composition)** is independent.
 
 ## Implementation plan
@@ -124,9 +123,19 @@ is building. None of REFACTOR Alpha *blocks* the core (it is new, additive code)
   `VaultFileAccessException.TryClassify` (exception type + OS error code / HResult, not English text), with the
   inspect read routed through `VaultFileAccess.ReadAllTextAsync` so its failures are typed at the boundary.
   Validation issues (`candidate.Issues`) were already checks directly. (The `SuggestedReason` PUCK/policy
-  heuristics remain — they belong to phase D.)
-- **Phase D — Structured policy outcomes.** Co-lands with REFACTOR Alpha Phase 4: the mode-policy `Decide`
-  returns structured checks; the watcher's policy report is built from them.
+  heuristics remained here until phase D replaced them with a typed concern.)
+- **Phase D ✅ — Structured policy outcomes.** The last string-heuristic is gone. The mode-policy `Decide` now
+  returns a `VaultSyncDecision(Action, Reason, Concern)` carrying a typed `VaultSyncConcern`
+  (`None/MarkdownInvalid/PuckViolation/PolicyViolation`) that classifies the single root concern of the decision —
+  a rejection driven by identity is a puck concern, one driven by placement/ownership is a policy concern (subsuming
+  incidental validation issues on an unknown file), a rewrite/conflict driven purely by content is a markdown
+  concern, and clean/benign decisions carry none. The candidate carries the concern; `WatcherStatusReporter`
+  reads it (falling back to a markdown floor when raw validation issues exist under no higher concern) and
+  `HasPuckViolation`/`HasPolicyViolation` — the `SuggestedReason` substring sniffing — are deleted. This realises
+  decision #4: **one root cause yields one classified reason** (the reporter still emits the whole reconcile
+  check-set each run, now derived from the typed concern, so auto-resolution stays exact). The `Reason` string
+  survives only as human-readable detail. Pinned by `StorageModeDecisionMatrixTests` (a per-mode concern matrix) and
+  the un-skipped `WatcherStatusTests.One_bad_file_should_raise_a_single_classified_issue`.
 - **Phase E 🚧 — API + frontend.** _Landed:_ `WatcherIssueRecord` gained graded `severity` and involved `files`
   (C# + SDK), keeping the existing endpoints/contract; and the **Obsidian status-bar indicator**
   (`p7t-watcher-status`) — a health-colored dot (`ok/standby/issues/offline`) + active-issue count, with a hover

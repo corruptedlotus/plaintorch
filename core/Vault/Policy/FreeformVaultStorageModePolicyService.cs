@@ -84,11 +84,11 @@ public sealed class FreeformVaultStorageModePolicyService(
 	}
 
 	/// <inheritdoc />
-	public (VaultSyncAction Action, string Reason) Decide(VaultStorageModeDecisionContext context)
+	public VaultSyncDecision Decide(VaultStorageModeDecisionContext context)
 	{
 		if (string.IsNullOrWhiteSpace(context.PathId))
 		{
-			return (VaultSyncAction.Ignore, "Freeform storage does not auto-create entities from files without frontmatter PUCK identity.");
+			return new(VaultSyncAction.Ignore, "Freeform storage does not auto-create entities from files without frontmatter PUCK identity.");
 		}
 
 		var exists = context.KnownIds.Contains(context.PathId);
@@ -96,28 +96,29 @@ public sealed class FreeformVaultStorageModePolicyService(
 		{
 			if (exists)
 			{
-				return (VaultSyncAction.DeleteFromDatabase, "Freeform storage removes known entities when their asserted file is deleted.");
+				return new(VaultSyncAction.DeleteFromDatabase, "Freeform storage removes known entities when their asserted file is deleted.");
 			}
 
-			return (VaultSyncAction.Ignore, "Missing freeform file does not map to a known PUCK identity.");
+			return new(VaultSyncAction.Ignore, "Missing freeform file does not map to a known PUCK identity.");
 		}
 
 		if (context.IssueMessages.Count > 0)
 		{
 			if (!exists)
 			{
-				return (VaultSyncAction.PurgeFile, "Unknown freeform PUCK assertion with validation issues is disallowed by freeform policy.");
+				// The unknown/unresolvable frontmatter PUCK is the root concern; the validation issues are subsumed.
+				return new(VaultSyncAction.PurgeFile, "Unknown freeform PUCK assertion with validation issues is disallowed by freeform policy.", VaultSyncConcern.PuckViolation);
 			}
 
-			return (VaultSyncAction.RewriteFromDatabase, "Freeform candidate has validation issues and must be rewritten from canonical state.");
+			return new(VaultSyncAction.RewriteFromDatabase, "Freeform candidate has validation issues and must be rewritten from canonical state.", VaultSyncConcern.MarkdownInvalid);
 		}
 
 		if (exists)
 		{
-			return (VaultSyncAction.UpdateFromFile, "Frontmatter PUCK identity exists in storage and can be synced from file.");
+			return new(VaultSyncAction.UpdateFromFile, "Frontmatter PUCK identity exists in storage and can be synced from file.");
 		}
 
-		return (VaultSyncAction.PurgeFile, "Freeform storage rejects unknown frontmatter PUCK assertions.");
+		return new(VaultSyncAction.PurgeFile, "Freeform storage rejects unknown frontmatter PUCK assertions.", VaultSyncConcern.PuckViolation);
 	}
 
 	/// <inheritdoc />

@@ -20,6 +20,7 @@ public sealed class WatcherStatusTests : VaultTestBase
 		string relativePath,
 		VaultSyncAction action = VaultSyncAction.UpdateFromFile,
 		string? reason = null,
+		VaultSyncConcern concern = VaultSyncConcern.None,
 		IReadOnlyList<MarkdownValidationIssue>? issues = null)
 	{
 		var model = Vault.GetSingleton<VaultPathSyncModelCatalog>().GetModels().First(item => item.EntityType == typeof(Objective));
@@ -35,7 +36,8 @@ public sealed class WatcherStatusTests : VaultTestBase
 			LastWriteUtc: DateTimeOffset.UtcNow,
 			FileExists: true,
 			SuggestedAction: action,
-			SuggestedReason: reason);
+			SuggestedReason: reason,
+			Concern: concern);
 	}
 
 	[Fact]
@@ -44,7 +46,7 @@ public sealed class WatcherStatusTests : VaultTestBase
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
-		watcher.ReportInspectCandidate(Candidate("Objectives/Bad.md", VaultSyncAction.Conflict, "freeform ownership disallowed in a managed root"));
+		watcher.ReportInspectCandidate(Candidate("Objectives/Bad.md", VaultSyncAction.Conflict, "freeform ownership disallowed in a managed root", VaultSyncConcern.PolicyViolation));
 
 		var status = Assert.Single(registry.GetActiveStatuses());
 		Assert.Equal(WatcherOperations.PolicyViolation, status.ReasonCode);
@@ -127,7 +129,7 @@ public sealed class WatcherStatusTests : VaultTestBase
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
-		var candidate = Candidate("Objectives/Stray.md", VaultSyncAction.PurgeFile, "Unknown file is disallowed by enforced storage policy.");
+		var candidate = Candidate("Objectives/Stray.md", VaultSyncAction.PurgeFile, "Unknown file is disallowed by enforced storage policy.", VaultSyncConcern.PolicyViolation);
 		watcher.ReportInspectCandidate(candidate);
 		Assert.Equal(WatcherOperations.PolicyViolation, Assert.Single(registry.GetActiveStatuses()).ReasonCode);
 
@@ -147,7 +149,7 @@ public sealed class WatcherStatusTests : VaultTestBase
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
-		watcher.ReportInspectCandidate(Candidate("Objectives/Gone.md", VaultSyncAction.Conflict, "policy violation: unknown file placement"));
+		watcher.ReportInspectCandidate(Candidate("Objectives/Gone.md", VaultSyncAction.Conflict, "policy violation: unknown file placement", VaultSyncConcern.PolicyViolation));
 		Assert.Single(registry.GetActiveStatuses());
 
 		watcher.ReportInspectIgnored(Vault.AbsolutePath("Objectives/Gone.md"));
@@ -156,10 +158,13 @@ public sealed class WatcherStatusTests : VaultTestBase
 	}
 
 	[Fact]
-	public void A_successful_sync_resolves_every_reason_the_inspection_raised()
+	public void A_successful_sync_resolves_the_single_reason_the_inspection_raised()
 	{
-		// The core of the purge-lingering fix: a candidate that trips several reason codes at once must have *all* of
-		// them resolved on a successful sync, not only SyncFailed.
+		// The purge-lingering fix, post phase D: one root cause yields one classified reason, so a candidate that trips
+		// a puck rejection while also carrying a validation issue raises exactly one status — the puck concern subsumes
+		// the issue. The successful-sync report must still pass the *whole* reconcile check-set, because the purge path
+		// suppresses re-inspection and the reporter cannot know which concern was active; a success that passed only
+		// SyncFailed would strand the raised concern.
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
@@ -167,9 +172,10 @@ public sealed class WatcherStatusTests : VaultTestBase
 			"Objectives/Messy.md",
 			VaultSyncAction.PurgeFile,
 			"puck violation and policy rejection",
+			VaultSyncConcern.PuckViolation,
 			issues: [new MarkdownValidationIssue("id", "bad identity")]);
 		watcher.ReportInspectCandidate(candidate);
-		Assert.True(registry.GetActiveStatuses().Count >= 2, "expected the candidate to raise multiple reason codes");
+		Assert.Equal(WatcherOperations.PuckViolation, Assert.Single(registry.GetActiveStatuses()).ReasonCode);
 
 		watcher.ReportSyncSucceeded(candidate);
 
@@ -177,20 +183,22 @@ public sealed class WatcherStatusTests : VaultTestBase
 		Assert.Equal(OperationHealth.Ok, registry.GetHealth());
 	}
 
-	[Fact(Skip = "PEP108 phase D (structured outcomes, with REFACTOR Alpha phase 4): one root cause should yield one classified reason. Today the three string-sniffing heuristics each match independently, so a single file raises MarkdownInvalid + PuckViolation + PolicyViolation.")]
+	[Fact] // Phase D: fixed — the decision carries one structured concern, so one root cause yields one classified reason.
 	public void One_bad_file_should_raise_a_single_classified_issue()
 	{
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
 		// One file, one root cause — a bad PUCK that also trips the policy reject path and carries a validation issue.
+		// The policy classifies this as a single PuckViolation; the incidental validation issue does not raise a second.
 		watcher.ReportInspectCandidate(Candidate(
 			"Objectives/Bad.md",
 			VaultSyncAction.PurgeFile,
 			"Implicit storage rejects unknown frontmatter PUCK assertion.",
+			VaultSyncConcern.PuckViolation,
 			issues: [new MarkdownValidationIssue("id", "puck mismatch")]));
 
-		Assert.Single(registry.GetActiveStatuses());
+		Assert.Equal(WatcherOperations.PuckViolation, Assert.Single(registry.GetActiveStatuses()).ReasonCode);
 	}
 
 	[Fact(Skip = "REFACTOR Alpha phase 4 + dismiss feature: a foreign, unmanaged file in a non-exclusive root is not a system error. The mode policy should classify it as a dismissible warning (and leave it in place), not an Error-severity policy violation to be purged.")]
@@ -199,11 +207,14 @@ public sealed class WatcherStatusTests : VaultTestBase
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
-		// A stray, unmanaged note in a shared implicit root — roots are not required to be exclusive.
+		// A stray, unmanaged note in a shared implicit root — roots are not required to be exclusive. Today the policy
+		// classifies it as an Error-severity concern to be purged; the dismiss feature should let the mode classify it
+		// as a dismissible Warning and leave it in place.
 		watcher.ReportInspectCandidate(Candidate(
 			"Objectives/My personal note.md",
 			VaultSyncAction.PurgeFile,
-			"Implicit storage rejects unknown frontmatter PUCK assertion."));
+			"Implicit storage rejects unknown frontmatter PUCK assertion.",
+			VaultSyncConcern.PolicyViolation));
 
 		Assert.Equal(OperationSeverity.Warning, Assert.Single(registry.GetActiveStatuses()).Severity);
 	}
@@ -212,7 +223,7 @@ public sealed class WatcherStatusTests : VaultTestBase
 	public async Task System_api_report_preserves_the_watcher_contract()
 	{
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
-		watcher.ReportInspectCandidate(Candidate("Objectives/Bad.md", VaultSyncAction.Conflict, "policy violation: unknown file placement"));
+		watcher.ReportInspectCandidate(Candidate("Objectives/Bad.md", VaultSyncAction.Conflict, "policy violation: unknown file placement", VaultSyncConcern.PolicyViolation));
 
 		var report = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<ISystemApi>()

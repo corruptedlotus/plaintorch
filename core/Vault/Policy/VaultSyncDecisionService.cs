@@ -20,8 +20,8 @@ public sealed class VaultSyncDecisionService(
 	/// <param name="knownIds">The known identifiers currently present in storage for the model type.</param>
 	/// <param name="fileExists">Whether the candidate file currently exists on disk.</param>
 	/// <param name="boundaryBegun">Whether an implicit entity's synchronization boundary has begun.</param>
-	/// <returns>A provisional action and explanatory reason for watcher reconciliation.</returns>
-	public (VaultSyncAction Action, string Reason) Decide(VaultPathSyncModel model, string? pathId, string pathTitle, IReadOnlyList<string> issueMessages, ISet<string> knownIds, bool fileExists, bool boundaryBegun = true)
+	/// <returns>A provisional action, explanatory reason, and structured concern for watcher reconciliation.</returns>
+	public VaultSyncDecision Decide(VaultPathSyncModel model, string? pathId, string pathTitle, IReadOnlyList<string> issueMessages, ISet<string> knownIds, bool fileExists, bool boundaryBegun = true)
 	{
 		ArgumentNullException.ThrowIfNull(model);
 		ArgumentException.ThrowIfNullOrWhiteSpace(pathTitle);

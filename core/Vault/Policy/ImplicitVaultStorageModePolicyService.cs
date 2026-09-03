@@ -67,13 +67,13 @@ public sealed class ImplicitVaultStorageModePolicyService(
 	}
 
 	/// <inheritdoc />
-	public override (VaultSyncAction Action, string Reason) Decide(VaultStorageModeDecisionContext context)
+	public override VaultSyncDecision Decide(VaultStorageModeDecisionContext context)
 	{
 		ArgumentNullException.ThrowIfNull(context);
 
 		if (string.IsNullOrWhiteSpace(context.PathId))
 		{
-			return (VaultSyncAction.Ignore, "Implicit storage does not auto-create entities from files without frontmatter PUCK identity.");
+			return new(VaultSyncAction.Ignore, "Implicit storage does not auto-create entities from files without frontmatter PUCK identity.");
 		}
 
 		var exists = context.KnownIds.Contains(context.PathId);
@@ -81,32 +81,33 @@ public sealed class ImplicitVaultStorageModePolicyService(
 		{
 			if (exists && context.BoundaryBegun)
 			{
-				return (VaultSyncAction.DeleteFromDatabase, "Implicit storage removes known entities when their boundary-begun file is deleted.");
+				return new(VaultSyncAction.DeleteFromDatabase, "Implicit storage removes known entities when their boundary-begun file is deleted.");
 			}
 
 			if (exists)
 			{
-				return (VaultSyncAction.Ignore, "Implicit entity has no begun synchronization boundary, so a missing file is not authoritative.");
+				return new(VaultSyncAction.Ignore, "Implicit entity has no begun synchronization boundary, so a missing file is not authoritative.");
 			}
 
-			return (VaultSyncAction.Ignore, "Missing implicit file does not map to a known PUCK identity.");
+			return new(VaultSyncAction.Ignore, "Missing implicit file does not map to a known PUCK identity.");
 		}
 
 		if (context.IssueMessages.Count > 0)
 		{
 			if (!exists)
 			{
-				return (VaultSyncAction.PurgeFile, "Unknown implicit PUCK assertion with validation issues is disallowed by implicit policy.");
+				// The unknown/unresolvable frontmatter PUCK is the root concern; the validation issues are subsumed.
+				return new(VaultSyncAction.PurgeFile, "Unknown implicit PUCK assertion with validation issues is disallowed by implicit policy.", VaultSyncConcern.PuckViolation);
 			}
 
-			return (VaultSyncAction.RewriteFromDatabase, "Implicit candidate has validation issues and must be rewritten from canonical state.");
+			return new(VaultSyncAction.RewriteFromDatabase, "Implicit candidate has validation issues and must be rewritten from canonical state.", VaultSyncConcern.MarkdownInvalid);
 		}
 
 		if (exists)
 		{
-			return (VaultSyncAction.UpdateFromFile, "Frontmatter PUCK identity exists in storage and can be synced from file.");
+			return new(VaultSyncAction.UpdateFromFile, "Frontmatter PUCK identity exists in storage and can be synced from file.");
 		}
 
-		return (VaultSyncAction.PurgeFile, "Implicit storage rejects unknown frontmatter PUCK assertions.");
+		return new(VaultSyncAction.PurgeFile, "Implicit storage rejects unknown frontmatter PUCK assertions.", VaultSyncConcern.PuckViolation);
 	}
 }

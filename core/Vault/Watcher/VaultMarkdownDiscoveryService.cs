@@ -378,7 +378,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		}
 
 		var issueMessages = issues.Select(issue => $"{issue.FieldPath}: {issue.Message}").ToArray();
-		var (action, reason) = decisionService.Decide(model, pathId, pathTitle, issueMessages, knownIds, fileExists, boundaryBegun);
+		var decision = decisionService.Decide(model, pathId, pathTitle, issueMessages, knownIds, fileExists, boundaryBegun);
 
 		return new VaultSyncCandidate(
 			fullPath,
@@ -391,8 +391,9 @@ public sealed class VaultMarkdownDiscoveryService(
 			ComputeHash(ExtractBody(markdown)),
 			fileExists ? File.GetLastWriteTimeUtc(fullPath) : DateTime.UtcNow,
 			fileExists,
-			action,
-			reason);
+			decision.Action,
+			decision.Reason,
+			decision.Concern);
 	}
 
 	/// <summary>

@@ -17,6 +17,10 @@ namespace Pleiades.Vault.Watcher;
 /// <param name="FileExists">A value indicating whether the candidate path currently exists on disk.</param>
 /// <param name="SuggestedAction">The provisional reconciliation action suggested for this candidate.</param>
 /// <param name="SuggestedReason">The human-readable reason explaining the suggested action.</param>
+/// <param name="Concern">
+/// The structured classification of the decision's root concern (PEP108 phase D). The watcher's status reporter reads
+/// this instead of parsing <paramref name="SuggestedReason"/>, so one root cause yields one classified issue.
+/// </param>
 public sealed record VaultSyncCandidate(
 	string AbsolutePath,
 	string VaultRelativePath,
@@ -29,7 +33,8 @@ public sealed record VaultSyncCandidate(
 	DateTimeOffset LastWriteUtc,
 	bool FileExists,
 	VaultSyncAction SuggestedAction,
-	string? SuggestedReason = null)
+	string? SuggestedReason = null,
+	VaultSyncConcern Concern = VaultSyncConcern.None)
 {
 	/// <summary>
 	/// Gets a value indicating whether the candidate mapped without validation issues.

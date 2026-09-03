@@ -9,10 +9,10 @@ namespace Pleiades.Vault.Watcher;
 /// core raises and resolves flags by diffing — the watcher never marks or clears a flag by hand.
 /// </summary>
 /// <remarks>
-/// The exception- and candidate-classification heuristics here (string sniffing of exception messages and
-/// <c>SuggestedReason</c>) are carried over unchanged from the previous issue system to keep this a
-/// behaviour-preserving swap. They are the subject of PEP108 phases C (typed failures) and D (structured policy
-/// outcomes, with REFACTOR Alpha phase 4), which replace them with structured data.
+/// Classification is fully structural (PEP108 phases C and D): inspect/sync failures are classified from typed
+/// exceptions (<see cref="ClassifyOperationalFailure"/>), and an inspected candidate's policy concern is read from the
+/// decision's typed <see cref="VaultSyncConcern"/> rather than by sniffing its reason string. The reason string is
+/// carried through only as human-readable detail.
 /// </remarks>
 public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 {
@@ -67,8 +67,17 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		var validationDetail = candidate.Issues.Count > 0
 			? $"{candidate.Issues.Count} validation issue(s). {firstIssue?.FieldPath}: {firstIssue?.Message}"
 			: null;
-		var puckViolation = HasPuckViolation(candidate);
-		var policyViolation = HasPolicyViolation(candidate);
+
+		// Phase D: the policy decision carries a single structured concern classifying the root cause, so one bad file
+		// yields one classified reason. A puck or policy concern is that reason and subsumes any incidental validation
+		// issues; markdown-invalid is raised by an explicit markdown concern or, absent a higher concern, by the mere
+		// presence of raw validation issues (the reporter's markdown floor). All three are still reported every run so
+		// the status core resolves whichever was previously raised.
+		var concern = candidate.Concern;
+		var puckViolation = concern == VaultSyncConcern.PuckViolation;
+		var policyViolation = concern == VaultSyncConcern.PolicyViolation;
+		var markdownInvalid = concern == VaultSyncConcern.MarkdownInvalid
+			|| (!puckViolation && !policyViolation && candidate.Issues.Count > 0);
 
 		Report(
 			WatcherOperations.Reconcile,
@@ -76,9 +85,9 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 			Pass(WatcherOperations.DiscoveryFailed),
 			Pass(WatcherOperations.PermissionDenied),
 			Pass(WatcherOperations.FileInUse),
-			Check(WatcherOperations.MarkdownInvalid, candidate.Issues.Count > 0, validationDetail, files: [path], entityId: candidate.PathId),
-			Check(WatcherOperations.PuckViolation, puckViolation, puckViolation ? candidate.SuggestedReason ?? firstIssue?.Message : null, files: [path], entityId: candidate.PathId),
-			Check(WatcherOperations.PolicyViolation, policyViolation, policyViolation ? candidate.SuggestedReason : null, files: [path], entityId: candidate.PathId));
+			Check(WatcherOperations.MarkdownInvalid, markdownInvalid, validationDetail ?? candidate.SuggestedReason, files: [path], entityId: candidate.PathId),
+			Check(WatcherOperations.PuckViolation, puckViolation, candidate.SuggestedReason ?? firstIssue?.Message, files: [path], entityId: candidate.PathId),
+			Check(WatcherOperations.PolicyViolation, policyViolation, candidate.SuggestedReason, files: [path], entityId: candidate.PathId));
 	}
 
 	/// <summary>
@@ -154,38 +163,5 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 			VaultFileAccessKind.InUse => WatcherOperations.FileInUse,
 			_ => fallbackReason,
 		};
-	}
-
-	private static bool HasPuckViolation(VaultSyncCandidate candidate)
-	{
-		if (!string.IsNullOrWhiteSpace(candidate.SuggestedReason)
-			&& candidate.SuggestedReason.Contains("puck", StringComparison.OrdinalIgnoreCase))
-		{
-			return true;
-		}
-
-		return candidate.Issues.Any(issue =>
-			issue.FieldPath.Contains("id", StringComparison.OrdinalIgnoreCase)
-			|| issue.Message.Contains("puck", StringComparison.OrdinalIgnoreCase));
-	}
-
-	private static bool HasPolicyViolation(VaultSyncCandidate candidate)
-	{
-		if (candidate.SuggestedAction is not (VaultSyncAction.Conflict or VaultSyncAction.PurgeFile))
-		{
-			return false;
-		}
-
-		if (string.IsNullOrWhiteSpace(candidate.SuggestedReason))
-		{
-			return false;
-		}
-
-		var reason = candidate.SuggestedReason;
-		return reason.Contains("policy", StringComparison.OrdinalIgnoreCase)
-			|| reason.Contains("disallow", StringComparison.OrdinalIgnoreCase)
-			|| reason.Contains("reject", StringComparison.OrdinalIgnoreCase)
-			|| reason.Contains("freeform", StringComparison.OrdinalIgnoreCase)
-			|| reason.Contains("unknown file", StringComparison.OrdinalIgnoreCase);
 	}
 }

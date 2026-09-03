@@ -58,9 +58,10 @@ public interface IVaultStorageModePolicyService
 	Task<bool> BelongsToModelAsync(VaultPathSyncModel model, string fullPath, string markdown, CancellationToken cancellationToken);
 
 	/// <summary>
-	/// Decides watcher reconciliation action for the specified mode.
+	/// Decides watcher reconciliation action for the specified mode, returning the action together with a
+	/// human-readable reason and the structured <see cref="VaultSyncConcern"/> classifying the decision's root concern.
 	/// </summary>
-	(VaultSyncAction Action, string Reason) Decide(VaultStorageModeDecisionContext context);
+	VaultSyncDecision Decide(VaultStorageModeDecisionContext context);
 
 	/// <summary>
 	/// Resolves fallback identity used during relocation reconciliation when the old path lacks direct PUCK identity.

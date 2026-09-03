@@ -76,7 +76,7 @@ public abstract class PathBoundVaultStorageModePolicyService : IVaultStorageMode
 	}
 
 	/// <inheritdoc />
-	public abstract (VaultSyncAction Action, string Reason) Decide(VaultStorageModeDecisionContext context);
+	public abstract VaultSyncDecision Decide(VaultStorageModeDecisionContext context);
 
 	/// <inheritdoc />
 	public virtual string? ResolveRelocationOldIdFallback(VaultPathSyncModel model, string? oldPathId, string? newPathId)
