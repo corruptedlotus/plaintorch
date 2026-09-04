@@ -110,6 +110,14 @@ polymorphic concrete-type selection identity-driven (lunar and stellar finally s
 gives the watcher its semantic questions so the pipeline asks the protocol, never the enum; and the policy-derived
 `begin`/`init` (5a) collapse the per-entity onboarding copies into one action each.
 
+**What we achieved.** The north-star is real: **changing an entity's behaviour is now an attribute swap** — a new
+mode's semantics live in one policy object; a new identity-driven entity gets `begin`/`init` for free by declaring its
+mode. Three begin copies became one `BeginBoundaryAsync`; the directive-only init became one `InitializeFromFileAsync`
+that now also serves implicit incentives. The watcher test suite carries **zero skips** (204/0) — the acceptance
+criteria *were* skipped repros, and every one is green. Two sibling systems rode along on the new structure: PEP108
+phase D (issue classification became a single typed `VaultSyncConcern`) and the dismiss feature (snooze-dismissible
+statuses + a reusable `p7t-popover`).
+
 **Issues solved.** The refactor was validated by turning a class of real bugs into pinned, now-green repros — the
 watcher suite carries **zero skips** (204/0). Concretely: the watcher no longer destroys `prefix - ` user notes or
 resurrects invalid-PUCK entities (identity is notation-gated, not string-shaped); an enforced root no longer
