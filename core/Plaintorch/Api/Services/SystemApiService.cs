@@ -395,6 +395,23 @@ public sealed class SystemApiService(
 		ILogger? logger = null)
 	{
 		var storage = entityType.GetCustomAttribute<VaultStorageAttribute>(inherit: true);
+
+		// Lore identity is composed from the full Era/Cha/Act/p directory hierarchy, not the terminal filename segment,
+		// so it must compose before the flat Index shortcut below — which would otherwise return just "Act9" for the
+		// note whose real identity is "Era3/Cha8/Act9", leaving every nested lore page unresolvable.
+		if (entityType == typeof(LorePage))
+		{
+			var lorePage = new LorePage
+			{
+				Id = string.Empty,
+				Title = string.Empty,
+			};
+
+			return MarkdownFileLocator.ApplyLorePageCompositionFromPath(lorePage, absolutePath, layout.VaultRoot, layout.SagaRoot, logger)
+				? (lorePage.Id, lorePage.Title)
+				: (null, pathTitle);
+		}
+
 		if (storage?.PuckStorage == VaultPuckStorage.Index && !string.IsNullOrWhiteSpace(pathPuck))
 		{
 			return (pathPuck, pathTitle);
@@ -421,21 +438,6 @@ public sealed class SystemApiService(
 		{
 			var cycle = await ResolveSinglePolarisCycleByTitleAsync(pathTitle, cancellationToken);
 			return cycle is null ? (null, pathTitle) : (cycle.Id, cycle.Title);
-		}
-
-		if (entityType == typeof(LorePage))
-		{
-			var lorePage = new LorePage
-			{
-				Id = string.Empty,
-				Title = string.Empty,
-			};
-
-
-			if (MarkdownFileLocator.ApplyLorePageCompositionFromPath(lorePage, absolutePath, layout.VaultRoot, layout.SagaRoot, logger))
-			{
-				return (lorePage.Id, lorePage.Title);
-			}
 		}
 
 		return (null, pathTitle);

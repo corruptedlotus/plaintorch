@@ -47,6 +47,27 @@ public sealed class LoreHierarchyTests : VaultTestBase
 		Assert.True(eraSurvived);
 	}
 
+	[Fact]
+	public async Task Resolves_a_nested_lore_note_to_its_composed_hierarchical_identity()
+	{
+		var era = await CreateAsync(null, "Unyielding Corruption");
+		var chapter = await CreateAsync(era.Puck, "Rebirth of Reality");
+		var act = await CreateAsync(chapter.Puck, "Her Everglow");
+
+		// The act is nested two levels below its era, so its identity is path-composed and carries the hierarchy.
+		Assert.Contains('/', act.Puck);
+
+		var resolution = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<ISystemApi>()
+			.ResolveVaultNoteAsync(act.RelativePath, TestContext.Current.CancellationToken));
+
+		// Resolution must compose the full Era/Cha/Act identity, not the terminal filename segment (which would leave
+		// every nested lore page unresolvable).
+		Assert.True(resolution.Exists);
+		Assert.Equal(act.Puck, resolution.Puck);
+		Assert.Equal("lore-page", resolution.EntityKind);
+	}
+
 	[Fact] // Phase 4 (D17): implemented — LorePageApiService constrains a child's Beginning to its parent's span.
 	public async Task A_child_beginning_before_its_parent_is_rejected()
 	{
