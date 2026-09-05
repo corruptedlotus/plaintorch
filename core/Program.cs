@@ -40,6 +40,10 @@ public static class Program
 		var userLayout = ResolveUserLayout(command, args);
 		var configurationStore = new PlaintorchUserConfigurationStore(userLayout);
 		var vaultPath = TryResolveVaultPath(command, args);
+		if (command == "serve")
+		{
+			ApplyServeVaultOverride(args);
+		}
 
 		var builder = WebApplication.CreateBuilder(args);
 		builder.Host.UseWindowsService();
@@ -393,9 +397,19 @@ public static class Program
 	{
 		if (command is "serve")
 		{
+			// serve starts idle and activates its vault from user settings at runtime, so it registers no VaultOptions.
+			// An explicit `serve --vault` is instead applied as a runtime override (see ApplyServeVaultOverride).
 			return null;
 		}
 
+		return ExtractVaultArgument(args) ?? Directory.GetCurrentDirectory();
+	}
+
+	/// <summary>
+	/// Reads the value of a <c>--vault &lt;path&gt;</c> argument, or <see langword="null"/> when it is absent.
+	/// </summary>
+	private static string? ExtractVaultArgument(IReadOnlyList<string> args)
+	{
 		for (var index = 0; index < args.Count - 1; index++)
 		{
 			if (string.Equals(args[index], "--vault", StringComparison.OrdinalIgnoreCase))
@@ -404,6 +418,23 @@ public static class Program
 			}
 		}
 
-		return Directory.GetCurrentDirectory();
+		return null;
+	}
+
+	/// <summary>
+	/// Applies an explicit <c>serve --vault &lt;path&gt;</c> as a direct runtime vault target. A manual/dev serve is
+	/// meant to serve a specific vault without editing user configuration, so the argument is surfaced through the same
+	/// <c>PLAINTORCH_VAULT_PATH</c> channel that <see cref="PlaintorchCoreService"/> already prefers over the persisted
+	/// active-vault setting — the config is ignored, exactly as a sandbox serve expects.
+	/// </summary>
+	private static void ApplyServeVaultOverride(IReadOnlyList<string> args)
+	{
+		var vaultArgument = ExtractVaultArgument(args);
+		if (string.IsNullOrWhiteSpace(vaultArgument))
+		{
+			return;
+		}
+
+		Environment.SetEnvironmentVariable("PLAINTORCH_VAULT_PATH", Path.GetFullPath(vaultArgument));
 	}
 }
