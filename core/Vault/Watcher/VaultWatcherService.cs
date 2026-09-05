@@ -23,8 +23,18 @@ public sealed class VaultWatcherService(
 	ILogger<VaultWatcherService> logger) : BackgroundService
 {
 	private static readonly TimeSpan DebounceWindow = TimeSpan.FromMilliseconds(500);
+
+	// A file another process holds open (an editor mid-save, a sync client) is a transient, expected condition, not a
+	// reconciliation failure: rather than drop the operation, the path is re-queued with an escalating backoff so it is
+	// retried once the lock is released. Attempts are capped so a genuinely stuck file eventually surfaces as an issue
+	// instead of re-queueing forever.
+	private static readonly TimeSpan InitialRequeueBackoff = TimeSpan.FromSeconds(1);
+	private static readonly TimeSpan MaxRequeueBackoff = TimeSpan.FromSeconds(30);
+	private const int MaxTransientRequeueAttempts = 8;
+
 	private readonly ConcurrentDictionary<string, DateTimeOffset> _pendingPaths = new(StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, (string NewPath, DateTimeOffset DueAt)> _pendingRelocations = new(StringComparer.OrdinalIgnoreCase);
+	private readonly ConcurrentDictionary<string, int> _transientRequeueAttempts = new(StringComparer.OrdinalIgnoreCase);
 	private readonly List<FileSystemWatcher> _watchers = [];
 
 	/// <inheritdoc />
@@ -196,6 +206,13 @@ public sealed class VaultWatcherService(
 			}
 			catch (Exception exception)
 			{
+				// A file held open during the startup sweep is re-queued for the live drain loop (which begins once
+				// this scan returns) rather than lost until its next filesystem event.
+				if (TryRequeueTransient(candidate.AbsolutePath, exception))
+				{
+					continue;
+				}
+
 				logger.LogError(
 					exception,
 					"Watcher failed to process startup candidate '{Path}' for {EntityType}. Processing will continue.",
@@ -315,11 +332,27 @@ public sealed class VaultWatcherService(
 				continue;
 			}
 
-			var handled = await TryProcessRelocationAsync(relocation.OldPath, relocation.NewPath, cancellationToken);
-			if (handled)
+			try
 			{
-				_pendingPaths.TryRemove(relocation.OldPath, out _);
-				_pendingPaths.TryRemove(relocation.NewPath, out _);
+				var handled = await TryProcessRelocationAsync(relocation.OldPath, relocation.NewPath, cancellationToken);
+				if (handled)
+				{
+					_pendingPaths.TryRemove(relocation.OldPath, out _);
+					_pendingPaths.TryRemove(relocation.NewPath, out _);
+					ClearTransientRequeue(relocation.NewPath);
+				}
+			}
+			catch (Exception exception)
+			{
+				// A lock on either endpoint re-queues the new location for a later tick; only a non-transient failure
+				// (or an exhausted retry budget) is surfaced as an error.
+				if (!TryRequeueTransient(relocation.NewPath, exception))
+				{
+					logger.LogError(
+						exception,
+						"Watcher failed to process relocation to '{NewPath}'. Processing will continue.",
+						relocation.NewPath);
+				}
 			}
 		}
 
@@ -474,6 +507,11 @@ public sealed class VaultWatcherService(
 		}
 		catch (Exception exception)
 		{
+			if (TryRequeueTransient(path, exception))
+			{
+				return;
+			}
+
 			statusReporter.ReportInspectFailure(path, exception);
 			logger.LogError(exception, "Watcher discovery failed for path '{Path}'. Processing will continue.", path);
 			return;
@@ -505,15 +543,70 @@ public sealed class VaultWatcherService(
 		{
 			await syncService.ExecuteAsync(candidate, "watcher", cancellationToken);
 			statusReporter.ReportSyncSucceeded(candidate);
+			ClearTransientRequeue(candidate.AbsolutePath);
 		}
 		catch (Exception exception)
 		{
+			if (TryRequeueTransient(candidate.AbsolutePath, exception))
+			{
+				return;
+			}
+
 			statusReporter.ReportSyncFailure(candidate, exception);
 			logger.LogError(
 				exception,
 				"Watcher failed to process candidate '{Path}' for {EntityType}. Processing will continue.",
 				candidate.VaultRelativePath,
 				candidate.Model.EntityName);
+		}
+	}
+
+	/// <summary>
+	/// Re-queues a path for a later drain tick when an operation failed only because the file was transiently held
+	/// open by another process. Returns <see langword="true"/> when the failure was transient and the path was
+	/// re-queued (so the caller should not treat it as a hard failure); <see langword="false"/> otherwise — including
+	/// when the retry budget for the path is exhausted, so a genuinely stuck file surfaces through normal reporting.
+	/// </summary>
+	private bool TryRequeueTransient(string path, Exception exception)
+	{
+		if (string.IsNullOrWhiteSpace(path)
+			|| VaultFileAccessException.TryClassify(exception) != VaultFileAccessKind.InUse)
+		{
+			return false;
+		}
+
+		var fullPath = Path.GetFullPath(path);
+		var attempts = _transientRequeueAttempts.AddOrUpdate(fullPath, 1, static (_, current) => current + 1);
+		if (attempts > MaxTransientRequeueAttempts)
+		{
+			_transientRequeueAttempts.TryRemove(fullPath, out _);
+			logger.LogWarning(
+				"Watcher gave up re-queueing '{Path}' after {Attempts} attempts; the file is still held by another process.",
+				path,
+				attempts - 1);
+			return false;
+		}
+
+		var backoffTicks = Math.Min(
+			MaxRequeueBackoff.Ticks,
+			InitialRequeueBackoff.Ticks * (1L << (attempts - 1)));
+		var dueAt = DateTimeOffset.UtcNow.Add(TimeSpan.FromTicks(backoffTicks));
+		_pendingPaths[fullPath] = dueAt;
+		logger.LogInformation(
+			"Watcher deferred '{Path}' because it is in use by another process; retry {Attempt}/{Max} scheduled in {Backoff}.",
+			path,
+			attempts,
+			MaxTransientRequeueAttempts,
+			TimeSpan.FromTicks(backoffTicks));
+		return true;
+	}
+
+	/// <summary>Clears any transient re-queue budget recorded for a path once it processes cleanly.</summary>
+	private void ClearTransientRequeue(string path)
+	{
+		if (!string.IsNullOrWhiteSpace(path))
+		{
+			_transientRequeueAttempts.TryRemove(Path.GetFullPath(path), out _);
 		}
 	}
 

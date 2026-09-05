@@ -29,7 +29,8 @@ public sealed class VaultMarkdownDiscoveryService(
 	VaultEntityModelCatalog entityModelCatalog,
 	VaultFamilyInstantiationResolver familyInstantiationResolver,
 	PuckIdentityGate identityGate,
-	VaultStoragePathComposer pathComposer)
+	VaultStoragePathComposer pathComposer,
+	ILogger<VaultMarkdownDiscoveryService> logger)
 {
 	/// <summary>
 	/// Scans all catalog-backed markdown paths and produces sync candidates.
@@ -56,7 +57,24 @@ public sealed class VaultMarkdownDiscoveryService(
 				continue;
 			}
 
-			var candidate = await InspectPathCoreAsync(path, knownIdsByType, cancellationToken);
+			VaultSyncCandidate? candidate;
+			try
+			{
+				candidate = await InspectPathCoreAsync(path, knownIdsByType, cancellationToken);
+			}
+			catch (Exception exception) when (exception is not OperationCanceledException)
+			{
+				// One unreadable candidate (a file another process holds open, a permission error) must not abort
+				// discovery of every other file. Skip it — the live watcher re-inspects it on its next filesystem
+				// event, and transient locks are retried at the read boundary — and continue the sweep.
+				missing++;
+				logger.LogWarning(
+					exception,
+					"Vault discovery could not inspect '{Path}' during the scan; skipping it and continuing.",
+					path);
+				continue;
+			}
+
 			if (candidate is null)
 			{
 				ignored++;
@@ -601,7 +619,7 @@ public sealed class VaultMarkdownDiscoveryService(
 				var ancestorId = parsed.Id;
 				if (string.IsNullOrWhiteSpace(ancestorId) && File.Exists(primaryFile))
 				{
-					var frontMatter = markdownSerializer.ParseFrontMatter(await File.ReadAllTextAsync(primaryFile, cancellationToken));
+					var frontMatter = markdownSerializer.ParseFrontMatter(await VaultFileAccess.ReadAllTextAsync(primaryFile, cancellationToken));
 					if (frontMatter.TryGetValue("puck", out var rawPuck) && !string.IsNullOrWhiteSpace(rawPuck))
 					{
 						ancestorId = rawPuck.Trim().Trim('"');

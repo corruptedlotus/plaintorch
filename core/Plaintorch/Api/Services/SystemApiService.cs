@@ -123,7 +123,19 @@ public sealed class SystemApiService(
 			return null;
 		}
 
-		var markdown = await File.ReadAllTextAsync(absolutePath, cancellationToken);
+		string markdown;
+		try
+		{
+			markdown = await VaultFileAccess.ReadAllTextAsync(absolutePath, cancellationToken);
+		}
+		catch (VaultFileAccessException exception)
+		{
+			// The note is momentarily held open by another process; report it as not-yet-resolvable rather than
+			// failing the request, so a note-resolution call never turns into a 500 over a transient lock.
+			logger.LogDebug(exception, "Note '{Path}' is in use; treating it as unresolved for now.", absolutePath);
+			return null;
+		}
+
 		var frontMatter = markdownSerializer.ParseFrontMatter(markdown);
 		if (!frontMatter.TryGetValue("puck", out var rawPuck)
 			|| string.IsNullOrWhiteSpace(rawPuck))

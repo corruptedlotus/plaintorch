@@ -62,16 +62,38 @@ public sealed class VaultFileAccessException : IOException
 /// </summary>
 public static class VaultFileAccess
 {
-	/// <summary>Reads a file's full text, throwing <see cref="VaultFileAccessException"/> on a classified access failure.</summary>
+	// An editor (Obsidian) typically holds a file open only for the few hundred milliseconds of its own save, so a
+	// short bounded retry absorbs the common transient sharing violation before the caller has to requeue the work.
+	private const int MaxInUseAttempts = 4;
+	private static readonly TimeSpan InitialInUseBackoff = TimeSpan.FromMilliseconds(50);
+
+	/// <summary>
+	/// Reads a file's full text, throwing <see cref="VaultFileAccessException"/> on a classified access failure. A
+	/// transient <see cref="VaultFileAccessKind.InUse"/> failure is retried a bounded number of times with a short
+	/// escalating backoff; a lock that outlives the retries surfaces as a typed failure the caller can requeue.
+	/// </summary>
 	public static async Task<string> ReadAllTextAsync(string path, CancellationToken cancellationToken = default)
 	{
-		try
+		var backoff = InitialInUseBackoff;
+		for (var attempt = 1; ; attempt++)
 		{
-			return await File.ReadAllTextAsync(path, cancellationToken);
-		}
-		catch (Exception exception) when (VaultFileAccessException.TryClassify(exception) is { } kind)
-		{
-			throw new VaultFileAccessException(kind, path, exception);
+			try
+			{
+				return await File.ReadAllTextAsync(path, cancellationToken);
+			}
+			catch (Exception exception) when (VaultFileAccessException.TryClassify(exception) is { } kind)
+			{
+				if (kind == VaultFileAccessKind.InUse
+					&& attempt < MaxInUseAttempts
+					&& !cancellationToken.IsCancellationRequested)
+				{
+					await Task.Delay(backoff, cancellationToken);
+					backoff += backoff;
+					continue;
+				}
+
+				throw new VaultFileAccessException(kind, path, exception);
+			}
 		}
 	}
 }

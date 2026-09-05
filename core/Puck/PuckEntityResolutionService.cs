@@ -193,7 +193,21 @@ public sealed class PuckEntityResolutionService(
 			return false;
 		}
 
-		var frontMatter = markdownSerializer.ParseFrontMatter(File.ReadAllText(path));
+		string markdown;
+		try
+		{
+			markdown = File.ReadAllText(path);
+		}
+		catch (Exception exception) when (VaultFileAccessException.TryClassify(exception) is not null)
+		{
+			// Resolving an identity to its associated note is best-effort enrichment that scans candidate files. A
+			// note another process holds open cannot be confirmed as the match right now, so it is treated as a
+			// non-match rather than failing the whole resolution — otherwise a single locked file would abort the
+			// startup discovery scan and turn every note-resolution request into a 500.
+			return false;
+		}
+
+		var frontMatter = markdownSerializer.ParseFrontMatter(markdown);
 		return frontMatter.TryGetValue("puck", out var rawPuck)
 			&& !string.IsNullOrWhiteSpace(rawPuck)
 			&& string.Equals(rawPuck.Trim().Trim('"'), id, StringComparison.OrdinalIgnoreCase);
