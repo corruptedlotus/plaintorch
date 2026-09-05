@@ -29,7 +29,7 @@ public sealed class PlaintorchStateService(
 	{
 		return context.OnrushSprints
 			.AsNoTracking()
-			.Where(sprint => sprint.Id != "0"
+			.Where(sprint => sprint.Id != OnrushSprint.PlanningPlaceholderId
 				&& sprint.StartDate != null
 				&& sprint.EndDate == null)
 			.OrderByDescending(sprint => sprint.StartDate)
@@ -44,7 +44,7 @@ public sealed class PlaintorchStateService(
 	{
 		return await context.OnrushSprints
 			.AsNoTracking()
-			.Where(sprint => sprint.Id == "0")
+			.Where(sprint => sprint.Id == OnrushSprint.PlanningPlaceholderId)
 			.OrderByDescending(sprint => sprint.StartDate)
 			.FirstOrDefaultAsync(cancellationToken);
 	}

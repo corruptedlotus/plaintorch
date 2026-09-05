@@ -47,7 +47,7 @@ public sealed class PlaintorchStatePolicyProcessor(DependencyReconciler dependen
 			.ToList();
 
 		var planningEntries = candidateEntries
-			.Where(entry => string.Equals(entry.Entity.Id, "0", StringComparison.OrdinalIgnoreCase))
+			.Where(entry => string.Equals(entry.Entity.Id, OnrushSprint.PlanningPlaceholderId, StringComparison.OrdinalIgnoreCase))
 			.ToList();
 
 		if (planningEntries.Count > 1)
@@ -59,7 +59,7 @@ public sealed class PlaintorchStatePolicyProcessor(DependencyReconciler dependen
 		{
 			var planningExists = await context.OnrushSprints
 				.AsNoTracking()
-				.AnyAsync(sprint => sprint.Id == "0", cancellationToken);
+				.AnyAsync(sprint => sprint.Id == OnrushSprint.PlanningPlaceholderId, cancellationToken);
 
 			var planningEntry = planningEntries[0];
 			if (planningExists && planningEntry.State == EntityState.Added)
@@ -85,7 +85,7 @@ public sealed class PlaintorchStatePolicyProcessor(DependencyReconciler dependen
 		var activeCandidate = activeCandidates[0].Entity;
 		var activeExists = await context.OnrushSprints
 			.AsNoTracking()
-			.AnyAsync(sprint => sprint.Id != "0"
+			.AnyAsync(sprint => sprint.Id != OnrushSprint.PlanningPlaceholderId
 				&& sprint.Id != activeCandidate.Id
 				&& sprint.StartDate != null
 				&& sprint.EndDate == null,
@@ -368,7 +368,7 @@ public sealed class PlaintorchStatePolicyProcessor(DependencyReconciler dependen
 
 		return await context.OnrushSprints
 			.AsNoTracking()
-			.Where(sprint => sprint.Id != "0" && sprint.StartDate != null && sprint.EndDate == null)
+			.Where(sprint => sprint.Id != OnrushSprint.PlanningPlaceholderId && sprint.StartDate != null && sprint.EndDate == null)
 			.OrderByDescending(sprint => sprint.StartDate)
 			.Select(sprint => sprint.Id)
 			.FirstOrDefaultAsync(cancellationToken);
@@ -376,7 +376,7 @@ public sealed class PlaintorchStatePolicyProcessor(DependencyReconciler dependen
 
 	private static bool IsActiveOnrush(OnrushSprint sprint)
 	{
-		return sprint.Id != "0" && sprint.StartDate != null && sprint.EndDate == null;
+		return sprint.Id != OnrushSprint.PlanningPlaceholderId && sprint.StartDate != null && sprint.EndDate == null;
 	}
 
 	private static bool IsActivePolaris(PolarisCycle cycle)

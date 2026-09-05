@@ -30,7 +30,7 @@ public sealed class OnrushSprintApiService(
 
 		var sprint = new OnrushSprint
 		{
-			Id = "0",
+			Id = OnrushSprint.PlanningPlaceholderId,
 			Title = plan.Title,
 			StartDate = plan.StartDate,
 			EndDate = plan.EndDate,
@@ -78,7 +78,7 @@ public sealed class OnrushSprintApiService(
 			.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
 			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
 
-		if (sprint.StartDate is not null && sprint.EndDate is null && sprint.Id != "0")
+		if (sprint.StartDate is not null && sprint.EndDate is null && sprint.Id != OnrushSprint.PlanningPlaceholderId)
 		{
 			return sprint;
 		}
@@ -86,7 +86,7 @@ public sealed class OnrushSprintApiService(
 		var previous = Clone(sprint);
 		var resolvedStartDate = startDate ?? sprint.StartDate ?? DateOnly.FromDateTime(DateTime.Today);
 
-		if (sprint.Id == "0")
+		if (sprint.Id == OnrushSprint.PlanningPlaceholderId)
 		{
 			var activatedSprint = new OnrushSprint
 			{
@@ -397,7 +397,7 @@ public sealed class OnrushSprintApiService(
 
 		var sprint = await context.OnrushSprints.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
 			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
-		if (sprint.Id == "0")
+		if (sprint.Id == OnrushSprint.PlanningPlaceholderId)
 		{
 			throw new InvalidOperationException("Executive orders cannot be issued against the in-planning placeholder sprint because its final PUCK identity is not assigned yet; begin the sprint first.");
 		}

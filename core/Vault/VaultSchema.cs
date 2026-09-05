@@ -18,7 +18,8 @@ public static class VaultSchema
 
 	/// <summary>
 	/// The vault schema version the current engine emits. A vault stored below this version is migrated at startup.
-	/// Version 2 introduces the PEP091 conventions (quiet objective identity, decoupled PUCK storage form).
+	/// Version 2 introduces the PEP091 conventions (quiet objective identity, decoupled PUCK storage form). Version 3
+	/// renames the in-planning onrush placeholder from the bare sentinel <c>0</c> to the gate-passing PUCK <c>x0000</c>.
 	/// </summary>
-	public const int CurrentVersion = 2;
+	public const int CurrentVersion = 3;
 }

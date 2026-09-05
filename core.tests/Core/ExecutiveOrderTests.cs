@@ -147,7 +147,7 @@ public sealed class ExecutiveOrderTests : VaultTestBase
 
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Vault.WithScopeAsync(services => services
 			.GetRequiredService<IOnrushSprintApi>()
-			.IssueExecutiveOrderAsync("0", new ExecutiveOrderPlan("Too Early"), cancellationToken)));
+			.IssueExecutiveOrderAsync(OnrushSprint.PlanningPlaceholderId, new ExecutiveOrderPlan("Too Early"), cancellationToken)));
 	}
 
 	[Fact]

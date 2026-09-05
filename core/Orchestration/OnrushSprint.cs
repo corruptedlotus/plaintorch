@@ -18,6 +18,14 @@ namespace Pleiades.Orchestration;
 public sealed class OnrushSprint : PuckNamedEntity
 {
 	/// <summary>
+	/// The reserved identity of the in-planning placeholder sprint — the sprint being shaped before it is begun and
+	/// assigned its final date-based identity. It is <c>x0000</c> (the onrush numerator's zero, before the auto-generated
+	/// sequence that starts at 100) so it is a legitimate, gate-passing onrush PUCK rather than a bare sentinel the
+	/// identity system rejects and the watcher purges.
+	/// </summary>
+	public const string PlanningPlaceholderId = "x0000";
+
+	/// <summary>
 	/// Gets or sets the sprint start date.
 	/// </summary>
 	[MarkdownField("startDate")]
