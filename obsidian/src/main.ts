@@ -104,6 +104,14 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 			}
 		})
 
+		this.addCommand({
+			id: "init-objective-from-current-file",
+			name: "Initialize objective from current file",
+			callback: () => {
+				void this.initializeObjectiveFromCurrentFile()
+			}
+		})
+
 		void this.startChangeFeed()
 	}
 
@@ -208,6 +216,29 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 		catch (error) {
 			console.error("Failed to initialize directive from current file", error)
 			new Notice(`Directive initialization failed: ${describeError(error)}`)
+		}
+	}
+
+	private async initializeObjectiveFromCurrentFile(): Promise<void> {
+		const activeFile = this.app.workspace.getActiveFile()
+		if (!activeFile || activeFile.extension.toLowerCase() !== "md") {
+			new Notice("Open a markdown file to initialize an objective")
+			return
+		}
+
+		try {
+			const coreClient = await getPlaintorchNodeCoreClient()
+			const initialized = await coreClient.objectives.init({ path: activeFile.path })
+			if (!initialized) {
+				new Notice("Objective initialization did not return an entity")
+				return
+			}
+
+			new Notice(`Objective initialized: ${initialized.id}`)
+		}
+		catch (error) {
+			console.error("Failed to initialize objective from current file", error)
+			new Notice(`Objective initialization failed: ${describeError(error)}`)
 		}
 	}
 }

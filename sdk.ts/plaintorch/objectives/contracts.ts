@@ -1,6 +1,7 @@
 export type {
 	AddObjectiveToOnrushRequest,
 	CreateObjectiveRequest,
+	InitObjectiveRequest,
 	Objective,
 	ObjectiveCollege,
 	ObjectiveStatus,

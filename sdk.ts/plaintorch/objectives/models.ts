@@ -51,6 +51,10 @@ export interface CreateObjectiveRequest {
 	isEnduring?: boolean
 }
 
+export interface InitObjectiveRequest {
+	path: string
+}
+
 export interface ObjectiveUpdate {
 	title?: string | undefined
 	directiveId?: string | undefined

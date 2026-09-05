@@ -3,6 +3,7 @@ import type { Eventive, EventiveMaterialization } from "../declaratives/models"
 import type {
 	AddObjectiveToOnrushRequest,
 	CreateObjectiveRequest,
+	InitObjectiveRequest,
 	Objective,
 	ObjectiveDetail,
 	ObjectiveUpdate,
@@ -27,6 +28,10 @@ export class PlaintorchObjectivesSdk {
 
 	public async create(request: CreateObjectiveRequest): Promise<Objective | undefined> {
 		return await this.client.postForJson<Objective>("/api/objectives", request)
+	}
+
+	public async init(request: InitObjectiveRequest): Promise<Objective | undefined> {
+		return await this.client.postForJson<Objective>("/api/objectives/init", request)
 	}
 
 	public async update(objectiveId: string, request: ObjectiveUpdate): Promise<Objective | undefined> {
