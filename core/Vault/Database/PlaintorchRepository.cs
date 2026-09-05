@@ -10,33 +10,6 @@ namespace Pleiades.Vault.Database;
 public sealed class PlaintorchRepository(PlainfraContext context)
 {
 	/// <summary>
-	/// Replaces the current lore page index with a newly rebuilt snapshot.
-	/// </summary>
-	/// <param name="entries">The lore pages to persist.</param>
-	public void ReplaceLoreIndexEntries(IReadOnlyCollection<LorePage> entries)
-	{
-		ArgumentNullException.ThrowIfNull(entries);
-
-		context.LorePages.RemoveRange(context.LorePages);
-		context.LorePages.AddRange(entries);
-		context.SaveChanges();
-	}
-
-	/// <summary>
-	/// Replaces the current lore page index with a newly rebuilt snapshot.
-	/// </summary>
-	/// <param name="entries">The lore pages to persist.</param>
-	/// <param name="cancellationToken">The cancellation token.</param>
-	public async Task ReplaceLoreIndexEntriesAsync(IReadOnlyCollection<LorePage> entries, CancellationToken cancellationToken = default)
-	{
-		ArgumentNullException.ThrowIfNull(entries);
-
-		context.LorePages.RemoveRange(context.LorePages);
-		await context.LorePages.AddRangeAsync(entries, cancellationToken);
-		await context.SaveChangesAsync(cancellationToken);
-	}
-
-	/// <summary>
 	/// Gets the current lore page index ordered by PUCK.
 	/// </summary>
 	/// <returns>The indexed lore pages.</returns>

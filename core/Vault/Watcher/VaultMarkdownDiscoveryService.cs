@@ -433,80 +433,11 @@ public sealed class VaultMarkdownDiscoveryService(
 			return;
 		}
 
-		if (model is not LorePage lorePage)
-		{
-			return;
-		}
-
-		var siblings = await context.LorePages
-			.AsNoTracking()
-			.Where(item => item.ParentId == lorePage.ParentId && item.Id != lorePage.Id)
-			.ToListAsync(cancellationToken);
-
-		var ordered = siblings
-			.Append(lorePage)
-			.OrderBy(item => item, LorePage.NarrativeOrderComparer)
-			.ToList();
-
-		var position = ordered.FindIndex(item => string.Equals(item.Id, lorePage.Id, StringComparison.OrdinalIgnoreCase));
-		if (position < 0)
-		{
-			return;
-		}
-
-		if (!string.IsNullOrWhiteSpace(lorePage.ParentId))
-		{
-			var parent = await context.LorePages
-				.AsNoTracking()
-				.FirstOrDefaultAsync(item => item.Id == lorePage.ParentId, cancellationToken);
-
-			if (parent is not null && position == 0 && lorePage.Beginning != parent.Beginning)
-			{
-				issues.Add(new MarkdownValidationIssue(
-					"beginning",
-					$"First child beginning must match parent beginning '{FormatDate(parent.Beginning)}'.",
-					FormatDate(lorePage.Beginning)));
-			}
-		}
-
-		if (lorePage.Beginning is null)
-		{
-			return;
-		}
-
-		var earlierWithLaterBeginning = ordered
-			.Take(position)
-			.FirstOrDefault(item => item.Beginning is not null && item.Beginning.Value > lorePage.Beginning.Value);
-
-		if (earlierWithLaterBeginning is not null)
-		{
-			issues.Add(new MarkdownValidationIssue(
-				"beginning",
-				"Lore beginning cannot be earlier than an earlier-index sibling beginning.",
-				FormatDate(lorePage.Beginning)));
-		}
-
-		var laterWithEarlierBeginning = ordered
-			.Skip(position + 1)
-			.FirstOrDefault(item => item.Beginning is not null && item.Beginning.Value < lorePage.Beginning.Value);
-
-		if (laterWithEarlierBeginning is not null)
-		{
-			issues.Add(new MarkdownValidationIssue(
-				"beginning",
-				"Lore beginning cannot be later than a later-index sibling beginning.",
-				FormatDate(lorePage.Beginning)));
-		}
-	}
-
-	/// <summary>
-	/// Formats a date value for human-readable validation payloads.
-	/// </summary>
-	/// <param name="date">The optional date to format.</param>
-	/// <returns>An ISO yyyy-MM-dd string, or <see langword="null"/>.</returns>
-	private static string? FormatDate(DateOnly? date)
-	{
-		return date?.ToString("yyyy-MM-dd");
+		// Lore is not a special case: its identity, parenting and shape come from the declared telescopic PUCK
+		// (Era{?}/Cha{?}/Act{?}/p{?}) + SelfNamedDirectory storage policy, and its beginning is an ordinary
+		// [MarkdownField] the standard sync owns. The hierarchical beginning invariants are a *domain* rule enforced by
+		// LorePageApiService (D17) on the write path — the passive watcher must not re-enforce them here by cross-reading
+		// database state and rewriting user files, which produced an unresolvable rewrite-churn.
 	}
 
 	/// <summary>

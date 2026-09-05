@@ -79,7 +79,6 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<PuckSemanticProjector>();
 		services.AddScoped<PuckEntityResolutionService>();
 		services.AddScoped<PuckCreationService>();
-		services.AddScoped<LoreIndexer>();
 		services.AddScoped<PuckIdService>();
 		services.AddSingleton<PolarisCycleLifecycle>();
 		services.AddSingleton<MarkdownFrontMatterSerializer>();
