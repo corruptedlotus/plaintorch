@@ -105,11 +105,15 @@ public sealed class SystemApiService(
 
 		if (string.IsNullOrWhiteSpace(resolvedPuck))
 		{
-			// The note is a recognized PLAINTORCH entity kind by path shape, but its identity is not yet
-			// resolvable to a stored entity (for example, an implicit note not yet synced to the database).
-			return new EntityExistence(string.Empty, true, model.EntityType.Name, entityKind, null, normalizedRelativePath);
+			// Stored-only resolution: a note that merely sits in an entity location but carries no identity that
+			// resolves to a stored entity is not itself an entity. Matching the path shape of a kind is not enough —
+			// that is the detached, path-driven heuristic that reported plain notes (a journal entry, a stray folder
+			// under Saga) as type-only "template" entities.
+			return new EntityExistence(normalizedRelativePath, false);
 		}
 
+		// ResolveEntityByPuckAsync reports existence only when the identity maps to a row in the database, so an
+		// identity that composes from the path but has no stored entity behind it also resolves as not-an-entity.
 		return await ResolveEntityByPuckAsync(resolvedPuck, cancellationToken);
 	}
 
