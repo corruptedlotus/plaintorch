@@ -15,6 +15,12 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	private static readonly string? ObjectivePartitionName = ResolvePartitionUnder(typeof(Objective));
 	private static readonly string? FatePartitionName = ResolvePartitionUnder(typeof(Fate));
 	private static readonly string? DecreePartitionName = ResolvePartitionUnder(typeof(Decree));
+	// Whether each incentive kind is identity-driven (freeform/implicit) drives its detection scope: an identity-driven
+	// child is detected anywhere inside its hosting parent, while a location-fixed (path-bound) child must sit in the
+	// partition folder. Read from the declared storage mode rather than hard-coded, so it stays policy-derived.
+	private static readonly bool ObjectiveIdentityDriven = ResolveModeIdentityDriven(typeof(Objective));
+	private static readonly bool FateIdentityDriven = ResolveModeIdentityDriven(typeof(Fate));
+	private static readonly bool DecreeIdentityDriven = ResolveModeIdentityDriven(typeof(Decree));
 	private static readonly HashSet<string> PartitionFolderNames = ResolvePartitionFolderNames();
 
 	private readonly object _modelsGate = new();
@@ -58,13 +64,13 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 			concreteType: typeof(StellarDirective)),
 
 		CreateModel<Objective>(layout, [layout.ObjectivesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
-			IsIncentiveMarkdownFile(path, layout, layout.ObjectivesRoot, ObjectivePartitionName)),
+			IsIncentiveMarkdownFile(path, layout, layout.ObjectivesRoot, ObjectivePartitionName, ObjectiveIdentityDriven)),
 
 		CreateModel<Fate>(layout, [layout.FatesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
-			IsIncentiveMarkdownFile(path, layout, layout.FatesRoot, FatePartitionName)),
+			IsIncentiveMarkdownFile(path, layout, layout.FatesRoot, FatePartitionName, FateIdentityDriven)),
 
 		CreateModel<Decree>(layout, [layout.DecreesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
-			IsIncentiveMarkdownFile(path, layout, layout.DecreesRoot, DecreePartitionName)),
+			IsIncentiveMarkdownFile(path, layout, layout.DecreesRoot, DecreePartitionName, DecreeIdentityDriven)),
 
 		CreateModel<OnrushSprint>(layout, [layout.OnrushRoot], VaultStorageShape.SelfNamedDirectory, path =>
 			IsPrimarySelfNamedEntityFile(path, layout.OnrushRoot)),
@@ -300,7 +306,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	/// <param name="standaloneRoot">The kind's standalone root directory.</param>
 	/// <param name="partitionName">The kind's directive partition folder name.</param>
 	/// <returns><see langword="true"/> when the file is a candidate of this incentive kind.</returns>
-	private static bool IsIncentiveMarkdownFile(string path, VaultLayout layout, string standaloneRoot, string? partitionName)
+	private static bool IsIncentiveMarkdownFile(string path, VaultLayout layout, string standaloneRoot, string? partitionName, bool isIdentityDriven)
 	{
 		if (!string.Equals(Path.GetExtension(path), ".md", StringComparison.OrdinalIgnoreCase))
 		{
@@ -318,64 +324,64 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 			return false;
 		}
 
+		// The kind's own standalone root: an incentive authored directly under it, with no hosting directive.
 		if (string.Equals(parentDirectory, standaloneRoot, StringComparison.OrdinalIgnoreCase))
 		{
 			return true;
 		}
 
-		// Another incentive kind's standalone root or partition folder is never a candidate here;
-		// identity-driven belonging would reject it anyway, but the path gate keeps candidates tight.
-		if (IsForeignIncentiveContainer(parentDirectory, layout, standaloneRoot, partitionName))
-		{
-			return false;
-		}
-
-		if (MarkdownFileLocator.IsSelfNamedDirectory(parentDirectory))
-		{
-			return true;
-		}
-
+		// Otherwise the note must be hosted by a directive — its nearest containing directive owns it.
 		if (string.IsNullOrWhiteSpace(TryResolveContainingDirectiveIdWithOwnershipBoundaries(path, layout, skipCurrentIfSelfNamed: false)))
 		{
 			return false;
 		}
 
-		if (string.IsNullOrWhiteSpace(partitionName))
+		// Kind is disambiguated by the partition folder that encloses the note (at any depth): a note inside a sibling
+		// kind's partition — Fates/… for the objective model — belongs to that sibling, not here.
+		var enclosingPartition = TryFindEnclosingEntityPartition(path);
+		if (enclosingPartition is not null)
 		{
-			return true;
+			return string.Equals(enclosingPartition, partitionName, StringComparison.OrdinalIgnoreCase);
 		}
 
-		var containingDirectoryName = Path.GetFileName(parentDirectory);
-		if (string.Equals(containingDirectoryName, partitionName, StringComparison.OrdinalIgnoreCase))
-		{
-			return true;
-		}
-
-		return false;
+		// Un-partitioned under the directive (directly in it, or in a plain subfolder): an identity-driven child
+		// (freeform/implicit) is detected anywhere inside its parent — it only becomes an entity through
+		// initialisation — while a location-fixed (path-bound) child must sit in its partition folder.
+		return isIdentityDriven;
 	}
 
 	/// <summary>
-	/// Determines whether a directory belongs to a different incentive kind (its standalone root or
-	/// partition folder) than the one being classified.
+	/// Finds the entity partition folder enclosing a markdown path — a declared
+	/// <see cref="VaultStorageAttribute.PartitionUnder"/> name that is a direct child of a self-named entity directory —
+	/// walking up until the hosting entity's own directory. Returns <see langword="null"/> when the note is not inside
+	/// any partition (it sits directly in the hosting entity's folder or a plain subfolder of it).
 	/// </summary>
-	private static bool IsForeignIncentiveContainer(string directory, VaultLayout layout, string ownRoot, string? ownPartition)
+	private static string? TryFindEnclosingEntityPartition(string path)
 	{
-		foreach (var root in new[] { layout.ObjectivesRoot, layout.FatesRoot, layout.DecreesRoot })
+		var currentDirectory = Path.GetDirectoryName(path);
+		while (!string.IsNullOrWhiteSpace(currentDirectory))
 		{
-			if (!string.Equals(root, ownRoot, StringComparison.OrdinalIgnoreCase)
-				&& string.Equals(directory, root, StringComparison.OrdinalIgnoreCase))
+			var directoryName = Path.GetFileName(currentDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+			if (!string.IsNullOrWhiteSpace(directoryName) && PartitionFolderNames.Contains(directoryName))
 			{
-				return true;
+				var container = Directory.GetParent(currentDirectory)?.FullName;
+				if (!string.IsNullOrWhiteSpace(container) && MarkdownFileLocator.IsSelfNamedDirectory(container))
+				{
+					return directoryName;
+				}
 			}
+
+			// The partition, if any, is a direct child of the hosting self-named entity directory; reaching that
+			// directory without having crossed one means the note is un-partitioned.
+			if (MarkdownFileLocator.IsSelfNamedDirectory(currentDirectory))
+			{
+				return null;
+			}
+
+			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
 		}
 
-		var directoryName = Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-		if (string.IsNullOrWhiteSpace(directoryName) || !PartitionFolderNames.Contains(directoryName))
-		{
-			return false;
-		}
-
-		return !string.Equals(directoryName, ownPartition, StringComparison.OrdinalIgnoreCase);
+		return null;
 	}
 
 	/// <summary>
@@ -538,6 +544,18 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 			.GetCustomAttribute<VaultStorageAttribute>()
 			?.PartitionUnder
 			?.Trim();
+	}
+
+	/// <summary>
+	/// Reads whether an entity's declared storage mode is identity-driven, which decides its child-detection scope
+	/// (identity-driven children are detected anywhere inside their parent; location-fixed children only in the
+	/// partition). Derived from the declared mode so the rule stays policy-driven rather than per-kind hard-coding.
+	/// </summary>
+	private static bool ResolveModeIdentityDriven(Type entityType)
+	{
+		var mode = entityType.GetCustomAttribute<VaultStorageAttribute>()?.Mode
+			?? throw new InvalidOperationException($"Type '{entityType.Name}' must declare {nameof(VaultStorageAttribute)} to classify its detection scope.");
+		return mode.IsIdentityDriven();
 	}
 
 	private static HashSet<string> ResolvePartitionFolderNames()

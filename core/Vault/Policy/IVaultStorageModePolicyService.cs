@@ -47,13 +47,16 @@ public interface IVaultStorageModePolicyService
 
 	/// <summary>
 	/// Resolves where an entity's markdown should be written. Path-bound modes always use the canonical
-	/// <paramref name="defaultPath"/>; Freeform keeps a user-authored file at its authored location when that is
-	/// allowed. The policy owns this so the storage pipeline never branches on the mode.
+	/// <paramref name="defaultPath"/>; identity-driven modes keep a user-authored file at its existing location (the
+	/// canonical path is only the default for a brand-new file). The policy owns this so the storage pipeline never
+	/// branches on the mode.
 	/// </summary>
 	/// <param name="entity">The entity being written.</param>
 	/// <param name="defaultPath">The canonical target path the storage pipeline computed.</param>
-	/// <param name="sourcePath">The file the write originated from, when any (a user-authored freeform file).</param>
-	string ResolveWriteTargetPath(object entity, string defaultPath, string? sourcePath);
+	/// <param name="sourcePath">The file the write originated from, when any (a user-authored file).</param>
+	/// <param name="existingPath">The entity's current on-disk location resolved by identity, when it already exists —
+	/// so a write can keep the file where it is rather than relocate it to the canonical path.</param>
+	string ResolveWriteTargetPath(object entity, string defaultPath, string? sourcePath, string? existingPath);
 
 	/// <summary>
 	/// Determines whether a path can be resolved to an inspectable markdown path for this model.

@@ -28,8 +28,9 @@ public abstract class PathBoundVaultStorageModePolicyService : IVaultStorageMode
 	public virtual bool CanCreateFromFile => false;
 
 	/// <inheritdoc />
-	// Path-bound modes always write to the canonical location computed by the storage pipeline.
-	public virtual string ResolveWriteTargetPath(object entity, string defaultPath, string? sourcePath) => defaultPath;
+	// Path-bound modes always write to the canonical location computed by the storage pipeline (a location-fixed child
+	// is relocated to its partition), so the authored/existing location is ignored.
+	public virtual string ResolveWriteTargetPath(object entity, string defaultPath, string? sourcePath, string? existingPath) => defaultPath;
 
 	/// <inheritdoc />
 	public virtual bool TryResolveWatchPath(VaultPathSyncModel model, string fullPath, bool isDirectoryEvent, out string? inspectPath)

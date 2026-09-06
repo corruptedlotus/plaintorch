@@ -36,6 +36,44 @@ public sealed class ImplicitVaultStorageModePolicyService(
 	public override bool CanCreateFromFile => true;
 
 	/// <inheritdoc />
+	public override string ResolveWriteTargetPath(object entity, string defaultPath, string? sourcePath, string? existingPath)
+	{
+		// The canonical path (its partition under the hosting directive) is only the default for a brand-new
+		// materialisation. An implicit note the user authored anywhere valid inside its parent is kept where it is —
+		// the partition is the default location for creation, not an authoritative one detection relocates into. Only
+		// the file name tracks the canonical (title-derived) base name, so a rename still lands beside the original.
+		var anchor = FirstExistingFile(sourcePath, existingPath);
+		if (anchor is null)
+		{
+			return defaultPath;
+		}
+
+		var directory = Path.GetDirectoryName(anchor);
+		return string.IsNullOrWhiteSpace(directory)
+			? defaultPath
+			: Path.Combine(directory, Path.GetFileName(defaultPath));
+	}
+
+	private static string? FirstExistingFile(params string?[] candidatePaths)
+	{
+		foreach (var candidatePath in candidatePaths)
+		{
+			if (string.IsNullOrWhiteSpace(candidatePath))
+			{
+				continue;
+			}
+
+			var fullPath = Path.GetFullPath(candidatePath);
+			if (File.Exists(fullPath))
+			{
+				return fullPath;
+			}
+		}
+
+		return null;
+	}
+
+	/// <inheritdoc />
 	public override async Task<bool> BelongsToModelAsync(VaultPathSyncModel model, string fullPath, string markdown, CancellationToken cancellationToken)
 	{
 		if (!await base.BelongsToModelAsync(model, fullPath, markdown, cancellationToken))

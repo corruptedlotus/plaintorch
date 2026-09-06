@@ -199,6 +199,21 @@ public sealed class PlaintorchMarkdownStorageService(
 		var previousPath = previous is null
 			? await TryResolveExistingPathByIdentityAsync(entity, sourcePath, cancellationToken)
 			: await ResolveCanonicalPathAsync(previous, cancellationToken);
+
+		// Identity-driven entities keep the location the user authored, so the file may live anywhere valid inside its
+		// parent rather than at the canonical path composed from `previous`. Prefer its actual on-disk location (found
+		// by its unchanged identity) so an edit rewrites and cleans up the real file instead of orphaning a copy at the
+		// canonical path. Modes whose file is not identity-locatable (e.g. a freeform directory) find nothing here and
+		// are left on the canonical resolution above.
+		if (policyEngine.PolicyFor(storage.Mode).IsIdentityDriven)
+		{
+			var identityLocatedPath = await TryResolveExistingPathByIdentityAsync(entity, sourcePath, cancellationToken);
+			if (!string.IsNullOrWhiteSpace(identityLocatedPath))
+			{
+				previousPath = identityLocatedPath;
+			}
+		}
+
 		var newPath = await ResolveCanonicalPathAsync(entity, cancellationToken);
 		if (previous is null
 			&& string.IsNullOrWhiteSpace(sourcePath)
@@ -229,7 +244,7 @@ public sealed class PlaintorchMarkdownStorageService(
 		newPath = ResolveInactionPreferredPath(entity, newPath, sourcePath);
 		// Placement policy: the mode decides whether the file keeps a user-authored location (Freeform) or uses the
 		// canonical path (everyone else). The storage pipeline no longer branches on the mode.
-		newPath = policyEngine.PolicyFor(storage.Mode).ResolveWriteTargetPath(entity, newPath, sourcePath);
+		newPath = policyEngine.PolicyFor(storage.Mode).ResolveWriteTargetPath(entity, newPath, sourcePath, previousPath);
 		if (entity is LorePage lorePage && previous is LorePage previousLorePage
 			&& !string.Equals(lorePage.ParentId, previousLorePage.ParentId, StringComparison.OrdinalIgnoreCase))
 		{

@@ -140,24 +140,25 @@ public sealed class FreeformVaultStorageModePolicyService(
 	}
 
 	/// <inheritdoc />
-	public string ResolveWriteTargetPath(object entity, string defaultPath, string? sourcePath)
+	public string ResolveWriteTargetPath(object entity, string defaultPath, string? sourcePath, string? existingPath)
 	{
 		ArgumentNullException.ThrowIfNull(entity);
-		if (string.IsNullOrWhiteSpace(sourcePath))
+		var anchor = !string.IsNullOrWhiteSpace(sourcePath) ? sourcePath : existingPath;
+		if (string.IsNullOrWhiteSpace(anchor))
 		{
 			return defaultPath;
 		}
 
-		var fullSourcePath = Path.GetFullPath(sourcePath);
-		if (!File.Exists(fullSourcePath))
+		var fullAnchor = Path.GetFullPath(anchor);
+		if (!File.Exists(fullAnchor))
 		{
 			return defaultPath;
 		}
 
 		// A freeform file the user authored anywhere is kept at its authored location, unless that location is another
 		// entity's managed root — then it falls back to a free canonical slot rather than intruding on managed space.
-		return IsAllowedFreeformAssertion(entity.GetType(), fullSourcePath)
-			? fullSourcePath
+		return IsAllowedFreeformAssertion(entity.GetType(), fullAnchor)
+			? fullAnchor
 			: ResolveFreeformFallbackPath(defaultPath);
 	}
 
