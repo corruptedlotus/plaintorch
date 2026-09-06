@@ -30,6 +30,17 @@ public sealed class TestVault : IAsyncLifetime
 	public string VaultRoot { get; private set; } = null!;
 
 	/// <summary>
+	/// Writes raw content to a vault file before the vault is initialized (so a startup migration/consistency pass
+	/// sees it as a pre-existing file). The vault root directory is created on demand.
+	/// </summary>
+	public void WritePreExistingVaultFile(string vaultRelativePath, string content)
+	{
+		var path = Path.Combine(VaultRoot, vaultRelativePath.Replace('/', Path.DirectorySeparatorChar));
+		Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+		File.WriteAllText(path, content);
+	}
+
+	/// <summary>
 	/// Gets the resolved vault layout (a singleton, safe to read outside a scope).
 	/// </summary>
 	public VaultLayout Layout => _app.Services.GetRequiredService<VaultLayout>();
@@ -44,9 +55,23 @@ public sealed class TestVault : IAsyncLifetime
 	{
 		VaultRoot = Path.Combine(Path.GetTempPath(), "plaintorch-tests", Guid.NewGuid().ToString("N"));
 		Directory.CreateDirectory(VaultRoot);
+		if (PreExistingFiles is not null)
+		{
+			foreach (var (relativePath, content) in PreExistingFiles)
+			{
+				WritePreExistingVaultFile(relativePath, content);
+			}
+		}
+
 		_app = PlaintorchTestHost.Build(VaultRoot);
 		await WithScopeAsync(services => services.GetRequiredService<PlaintorchEngine>().InitializeVaultAsync());
 	}
+
+	/// <summary>
+	/// Gets or sets files to write into the vault before initialization runs, so startup migrations and the
+	/// consistency pass observe them as pre-existing. Set before <see cref="InitializeAsync"/> runs.
+	/// </summary>
+	public IReadOnlyList<(string RelativePath, string Content)>? PreExistingFiles { get; set; }
 
 	/// <summary>
 	/// Runs an action inside a fresh DI scope and returns its result.
