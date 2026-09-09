@@ -102,9 +102,30 @@ public sealed class VaultStoragePathComposer
 
 		if (entity is IPuckNamedEntity named)
 		{
-			MarkdownFileLocator.ApplyLoosePuckIdentityFromPath(named, path);
+			ApplyFilenameIdentity(named, path);
 			ApplyParentFromPath(entity, path);
 		}
+	}
+
+	/// <summary>
+	/// Reads a PUCK-named entity's identity from its filename, symmetric with <see cref="GetBaseName"/> and driven by the
+	/// entity's declared PUCK storage form. Only <see cref="VaultPuckStorage.Index"/> storage embeds an identity token in
+	/// the filename (<c>{token} - {title}</c>); there the token is loose-parsed (its notation is gated downstream, where
+	/// the discovery pipeline validates it). For <see cref="VaultPuckStorage.Quiet"/> storage the PUCK lives in
+	/// frontmatter and the <em>whole</em> filename is the title — there is no token to split off — so a legitimately
+	/// dashed title (e.g. "Q1 - Ship it") is kept intact rather than mis-split, which would otherwise purge its
+	/// "prefix - " as a phantom token when the entity's title-only file is next rewritten (.GENESIS principle 1: a raw
+	/// " - " split is not an identity).
+	/// </summary>
+	private void ApplyFilenameIdentity(IPuckNamedEntity named, string path)
+	{
+		if (GetStorage(named.GetType()).PuckStorage == VaultPuckStorage.Index)
+		{
+			MarkdownFileLocator.ApplyLoosePuckIdentityFromPath(named, path);
+			return;
+		}
+
+		named.Title = Path.GetFileNameWithoutExtension(path).Trim();
 	}
 
 	private void ApplyParentFromPath(object entity, string path)
