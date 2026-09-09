@@ -44,11 +44,41 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 	public void ReportFatal(string? detail)
 		=> Report(WatcherOperations.Process, WatcherOperations.GlobalScope, Check(WatcherOperations.Fatal, failed: true, detail));
 
-	/// <summary>Reports that discovery threw while inspecting a path, classified to a concrete cause.</summary>
+	/// <summary>
+	/// Reports that the vault or one of its entity roots cannot be reached (tier 2): a whole-of-vault condition the
+	/// watcher answers by going to sleep. It is a single error-level issue on the vault-access operation, keyed on the
+	/// global scope so that whichever root is currently inaccessible, there is exactly one such status; the offending
+	/// path is carried in its files and detail. <see cref="ReportVaultAccessible"/> resolves it once access recovers.
+	/// </summary>
+	public void ReportVaultInaccessible(string offendingPath, string? detail)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(offendingPath);
+		var files = string.Equals(offendingPath, WatcherOperations.GlobalScope, StringComparison.Ordinal)
+			? (IReadOnlyList<string>?)null
+			: [offendingPath];
+		var message = string.IsNullOrWhiteSpace(detail) ? $"'{offendingPath}' is not accessible." : detail;
+		Report(WatcherOperations.VaultAccess, WatcherOperations.GlobalScope, Check(WatcherOperations.VaultInaccessible, failed: true, message, files));
+	}
+
+	/// <summary>Reports that vault access has been restored, resolving the tier-2 issue however it was raised.</summary>
+	public void ReportVaultAccessible()
+		=> Report(WatcherOperations.VaultAccess, WatcherOperations.GlobalScope, Pass(WatcherOperations.VaultInaccessible));
+
+	/// <summary>
+	/// Reports that discovery threw while passively inspecting a path (tier 1). A passive-read failure is advisory: we
+	/// could not read the file this pass, so it is left in place and re-checked. It surfaces at warning severity — it
+	/// does not, on its own, degrade health — and the retry sweep keeps re-inspecting the path until it reads cleanly,
+	/// which resolves the flag. The underlying cause (in use, permission, malformed) is preserved in the reason code.
+	/// </summary>
 	public void ReportInspectFailure(string path, Exception exception)
 	{
+		ArgumentNullException.ThrowIfNull(exception);
 		var reason = ClassifyOperationalFailure(exception, WatcherOperations.DiscoveryFailed);
-		Report(WatcherOperations.Reconcile, path, Check(reason, failed: true, exception.Message, files: [path]));
+		var descriptor = WatcherOperations.Describe(reason);
+		var detail = string.IsNullOrWhiteSpace(exception.Message)
+			? descriptor.Message
+			: $"{descriptor.Message} {exception.Message}";
+		Report(WatcherOperations.Reconcile, path, OperationCheck.Fail(reason, OperationSeverity.Warning, detail, files: [path]));
 	}
 
 	/// <summary>Reports that a path was inspected cleanly but is not a managed candidate: all reconcile checks pass.</summary>

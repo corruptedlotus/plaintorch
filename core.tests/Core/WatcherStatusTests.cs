@@ -77,7 +77,7 @@ public sealed class WatcherStatusTests : VaultTestBase
 	}
 
 	[Fact]
-	public void Typed_permission_failure_maps_to_permission_denied()
+	public void A_passive_read_failure_surfaces_as_a_retryable_warning_keeping_its_cause()
 	{
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
@@ -86,9 +86,16 @@ public sealed class WatcherStatusTests : VaultTestBase
 			Vault.AbsolutePath("Objectives/Denied.md"),
 			new VaultFileAccessException(VaultFileAccessKind.PermissionDenied, "Objectives/Denied.md", new UnauthorizedAccessException()));
 
+		// Tier 1: a passive-read failure is advisory. The underlying cause is preserved in the reason code, but the
+		// severity is a warning that does not, on its own, degrade health — the file is simply left and re-checked.
 		var status = Assert.Single(registry.GetActiveStatuses());
 		Assert.Equal(WatcherOperations.PermissionDenied, status.ReasonCode);
-		Assert.Equal(OperationSeverity.Error, status.Severity);
+		Assert.Equal(OperationSeverity.Warning, status.Severity);
+		Assert.Equal(OperationHealth.Ok, registry.GetHealth());
+
+		// A later clean inspection of the same path resolves the flag through ordinary diff-based reporting.
+		watcher.ReportInspectIgnored(Vault.AbsolutePath("Objectives/Denied.md"));
+		Assert.Empty(registry.GetActiveStatuses());
 	}
 
 	[Fact]
@@ -265,6 +272,37 @@ public sealed class WatcherStatusTests : VaultTestBase
 		Assert.Single(registry.GetActiveStatuses());
 		watcher.ReportInspectCandidate(Candidate("Notes/Stray.md"));
 		Assert.Empty(registry.GetActiveStatuses());
+	}
+
+	[Fact]
+	public void Vault_inaccessibility_is_an_error_that_sleeps_and_resolves_on_recovery()
+	{
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		// Tier 2: a whole-of-vault access failure is an error-level issue (it degrades health to "issues"). It is keyed on
+		// the global scope so there is exactly one such status regardless of which root is currently unreachable; the
+		// offending root is carried in its files. This is the signal the watcher goes to sleep on.
+		var root = Vault.AbsolutePath("Directives");
+		watcher.ReportVaultInaccessible(root, "permission denied");
+
+		var status = Assert.Single(registry.GetActiveStatuses());
+		Assert.Equal(WatcherOperations.VaultInaccessible, status.ReasonCode);
+		Assert.Equal(WatcherOperations.VaultAccess, status.OperationId);
+		Assert.Equal(WatcherOperations.GlobalScope, status.ScopeKey);
+		Assert.Equal(OperationSeverity.Error, status.Severity);
+		Assert.Equal(OperationHealth.Issues, registry.GetHealth());
+		Assert.Contains(status.Files, file => file.Replace('\\', '/').EndsWith("Directives", StringComparison.Ordinal));
+
+		// A different root failing next re-uses the same status rather than stranding the first (the offending root just
+		// moves in the detail/files), so recovery can never leave a ghost tier-2 issue behind.
+		watcher.ReportVaultInaccessible(Vault.AbsolutePath("Saga"), "still down");
+		Assert.Single(registry.GetActiveStatuses());
+
+		// When the watcher re-probes and access is restored, it reports vault access restored, which resolves the issue.
+		watcher.ReportVaultAccessible();
+		Assert.Empty(registry.GetActiveStatuses());
+		Assert.Equal(OperationHealth.Ok, registry.GetHealth());
 	}
 
 	[Fact]

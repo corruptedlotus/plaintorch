@@ -2,6 +2,7 @@ using System.Reflection;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Saga;
+using Pleiades.Vault.Policy;
 
 namespace Pleiades.Vault.Markdown;
 
@@ -35,6 +36,7 @@ public interface IVaultStorageStrategy
 public sealed class VaultStoragePathComposer
 {
 	private readonly VaultEntityModelCatalog _catalog;
+	private readonly VaultWatcherPathPolicy _pathPolicy;
 	private readonly IReadOnlyDictionary<VaultStorageShape, IVaultStorageStrategy> _shapeStrategies;
 	private readonly IReadOnlyDictionary<Type, IVaultStorageStrategy> _typeOverrides;
 
@@ -43,10 +45,12 @@ public sealed class VaultStoragePathComposer
 	/// </summary>
 	/// <param name="layout">The active vault layout used to resolve location roots.</param>
 	/// <param name="catalog">The entity model catalog supplying each type's effective storage policy.</param>
-	public VaultStoragePathComposer(VaultLayout layout, VaultEntityModelCatalog catalog)
+	/// <param name="pathPolicy">The single directive-containment resolver, enforcing directive ownership boundaries.</param>
+	public VaultStoragePathComposer(VaultLayout layout, VaultEntityModelCatalog catalog, VaultWatcherPathPolicy pathPolicy)
 	{
 		Layout = layout ?? throw new ArgumentNullException(nameof(layout));
 		_catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+		_pathPolicy = pathPolicy ?? throw new ArgumentNullException(nameof(pathPolicy));
 		_shapeStrategies = new Dictionary<VaultStorageShape, IVaultStorageStrategy>
 		{
 			[VaultStorageShape.SelfNamedDirectory] = new SelfNamedDirectoryStorageStrategy(),
@@ -102,9 +106,30 @@ public sealed class VaultStoragePathComposer
 
 		if (entity is IPuckNamedEntity named)
 		{
-			MarkdownFileLocator.ApplyLoosePuckIdentityFromPath(named, path);
+			ApplyFilenameIdentity(named, path);
 			ApplyParentFromPath(entity, path);
 		}
+	}
+
+	/// <summary>
+	/// Reads a PUCK-named entity's identity from its filename, symmetric with <see cref="GetBaseName"/> and driven by the
+	/// entity's declared PUCK storage form. Only <see cref="VaultPuckStorage.Index"/> storage embeds an identity token in
+	/// the filename (<c>{token} - {title}</c>); there the token is loose-parsed (its notation is gated downstream, where
+	/// the discovery pipeline validates it). For <see cref="VaultPuckStorage.Quiet"/> storage the PUCK lives in
+	/// frontmatter and the <em>whole</em> filename is the title — there is no token to split off — so a legitimately
+	/// dashed title (e.g. "Q1 - Ship it") is kept intact rather than mis-split, which would otherwise purge its
+	/// "prefix - " as a phantom token when the entity's title-only file is next rewritten (.GENESIS principle 1: a raw
+	/// " - " split is not an identity).
+	/// </summary>
+	private void ApplyFilenameIdentity(IPuckNamedEntity named, string path)
+	{
+		if (GetStorage(named.GetType()).PuckStorage == VaultPuckStorage.Index)
+		{
+			MarkdownFileLocator.ApplyLoosePuckIdentityFromPath(named, path);
+			return;
+		}
+
+		named.Title = Path.GetFileNameWithoutExtension(path).Trim();
 	}
 
 	private void ApplyParentFromPath(object entity, string path)
@@ -118,7 +143,7 @@ public sealed class VaultStoragePathComposer
 		var parentId = storage.ParentEntityType == typeof(OnrushSprint)
 			? MarkdownFileLocator.TryGetContainingOnrushSprintId(path)
 			: storage.ParentEntityType == typeof(Directive)
-				? MarkdownFileLocator.TryGetContainingDirectiveId(path, skipCurrentIfSelfNamed: storage.Shape == VaultStorageShape.SelfNamedDirectory)
+				? _pathPolicy.TryResolveContainingDirectiveId(path, skipCurrentIfSelfNamed: storage.Shape == VaultStorageShape.SelfNamedDirectory)
 				: null;
 
 		if (!string.IsNullOrWhiteSpace(parentId))
