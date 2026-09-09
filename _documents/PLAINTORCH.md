@@ -1,3 +1,8 @@
+---
+puck: A10343136
+status: Planned
+tags: []
+---
 > Pleiades Affairs Intelligence Tristate Orchestrator
 
 > [!CAUTION]

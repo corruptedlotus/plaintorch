@@ -1,4 +1,4 @@
 ---
 assignee: Copilot 🤖
-status: implemented
+status: accepted
 ---
