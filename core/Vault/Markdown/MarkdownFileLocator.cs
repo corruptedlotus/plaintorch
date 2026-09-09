@@ -239,35 +239,10 @@ public sealed class MarkdownFileLocator(VaultStoragePathComposer composer)
 	}
 
 	/// <summary>
-	/// Tries to resolve the nearest containing directive identifier from a markdown path.
+	/// Resolves a directive's frontmatter identity from a directory (its self-named primary file, or any markdown file
+	/// in it). The nearest-containing-directive <em>walk-up</em> lives in one place — <see cref="VaultWatcherPathPolicy"/>
+	/// — so ownership-boundary enforcement is defined once; this is only the per-directory leaf it calls.
 	/// </summary>
-	public static string? TryGetContainingDirectiveId(string? path, bool skipCurrentIfSelfNamed = false)
-	{
-		if (string.IsNullOrWhiteSpace(path))
-		{
-			return null;
-		}
-
-		var currentDirectory = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
-		if (skipCurrentIfSelfNamed && !string.IsNullOrWhiteSpace(currentDirectory) && IsSelfNamedDirectory(currentDirectory))
-		{
-			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
-		}
-
-		while (!string.IsNullOrWhiteSpace(currentDirectory))
-		{
-			var resolved = TryResolveDirectivePuckFromDirectory(currentDirectory);
-			if (!string.IsNullOrWhiteSpace(resolved))
-			{
-				return resolved;
-			}
-
-			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
-		}
-
-		return null;
-	}
-
 	public static string? TryResolveDirectivePuckFromDirectory(string? directoryPath)
 	{
 		if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))

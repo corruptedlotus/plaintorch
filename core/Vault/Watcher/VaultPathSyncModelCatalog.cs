@@ -4,13 +4,14 @@ using Pleiades.Saga;
 using System.Reflection;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Database;
+using Pleiades.Vault.Policy;
 
 namespace Pleiades.Vault.Watcher;
 
 /// <summary>
 /// Centralizes path-based sync model detection for vault-backed entity types.
 /// </summary>
-public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
+public sealed class VaultPathSyncModelCatalog(VaultLayout layout, VaultWatcherPathPolicy pathPolicy)
 {
 	private static readonly string? ObjectivePartitionName = ResolvePartitionUnder(typeof(Objective));
 	private static readonly string? FatePartitionName = ResolvePartitionUnder(typeof(Fate));
@@ -64,13 +65,13 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 			concreteType: typeof(StellarDirective)),
 
 		CreateModel<Objective>(layout, [layout.ObjectivesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
-			IsIncentiveMarkdownFile(path, layout, layout.ObjectivesRoot, ObjectivePartitionName, ObjectiveIdentityDriven)),
+			IsIncentiveMarkdownFile(path, pathPolicy, layout.ObjectivesRoot, ObjectivePartitionName, ObjectiveIdentityDriven)),
 
 		CreateModel<Fate>(layout, [layout.FatesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
-			IsIncentiveMarkdownFile(path, layout, layout.FatesRoot, FatePartitionName, FateIdentityDriven)),
+			IsIncentiveMarkdownFile(path, pathPolicy, layout.FatesRoot, FatePartitionName, FateIdentityDriven)),
 
 		CreateModel<Decree>(layout, [layout.DecreesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
-			IsIncentiveMarkdownFile(path, layout, layout.DecreesRoot, DecreePartitionName, DecreeIdentityDriven)),
+			IsIncentiveMarkdownFile(path, pathPolicy, layout.DecreesRoot, DecreePartitionName, DecreeIdentityDriven)),
 
 		CreateModel<OnrushSprint>(layout, [layout.OnrushRoot], VaultStorageShape.SelfNamedDirectory, path =>
 			IsPrimarySelfNamedEntityFile(path, layout.OnrushRoot)),
@@ -302,11 +303,11 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 	/// directory, or inside its own partition folder within a directive.
 	/// </summary>
 	/// <param name="path">The markdown file path to classify.</param>
-	/// <param name="layout">The active vault layout.</param>
+	/// <param name="pathPolicy">The single directive-containment resolver (ownership-boundary aware).</param>
 	/// <param name="standaloneRoot">The kind's standalone root directory.</param>
 	/// <param name="partitionName">The kind's directive partition folder name.</param>
 	/// <returns><see langword="true"/> when the file is a candidate of this incentive kind.</returns>
-	private static bool IsIncentiveMarkdownFile(string path, VaultLayout layout, string standaloneRoot, string? partitionName, bool isIdentityDriven)
+	private static bool IsIncentiveMarkdownFile(string path, VaultWatcherPathPolicy pathPolicy, string standaloneRoot, string? partitionName, bool isIdentityDriven)
 	{
 		if (!string.Equals(Path.GetExtension(path), ".md", StringComparison.OrdinalIgnoreCase))
 		{
@@ -330,8 +331,9 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 			return true;
 		}
 
-		// Otherwise the note must be hosted by a directive — its nearest containing directive owns it.
-		if (string.IsNullOrWhiteSpace(TryResolveContainingDirectiveIdWithOwnershipBoundaries(path, layout, skipCurrentIfSelfNamed: false)))
+		// Otherwise the note must be hosted by a directive — its nearest containing directive owns it. Resolution goes
+		// through the one shared, ownership-boundary-aware resolver so detection cannot drift from the watcher/composer.
+		if (string.IsNullOrWhiteSpace(pathPolicy.TryResolveContainingDirectiveId(path, skipCurrentIfSelfNamed: false)))
 		{
 			return false;
 		}
@@ -403,93 +405,6 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout)
 		}
 
 		return !string.IsNullOrWhiteSpace(MarkdownFileLocator.TryGetContainingOnrushSprintId(path));
-	}
-
-	private static string? TryResolveContainingDirectiveIdWithOwnershipBoundaries(string? path, VaultLayout layout, bool skipCurrentIfSelfNamed)
-	{
-		if (string.IsNullOrWhiteSpace(path))
-		{
-			return null;
-		}
-
-		var currentDirectory = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
-		if (skipCurrentIfSelfNamed
-			&& !string.IsNullOrWhiteSpace(currentDirectory)
-			&& MarkdownFileLocator.IsSelfNamedDirectory(currentDirectory))
-		{
-			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
-		}
-
-		while (!string.IsNullOrWhiteSpace(currentDirectory))
-		{
-			if (IsDirectiveOwnershipBoundaryDirectory(currentDirectory, layout))
-			{
-				currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
-				continue;
-			}
-
-			var resolved = MarkdownFileLocator.TryResolveDirectivePuckFromDirectory(currentDirectory);
-			if (!string.IsNullOrWhiteSpace(resolved))
-			{
-				return resolved;
-			}
-
-			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
-		}
-
-		return null;
-	}
-
-	private static bool IsDirectiveOwnershipBoundaryDirectory(string directoryPath, VaultLayout layout)
-	{
-		if (string.IsNullOrWhiteSpace(directoryPath))
-		{
-			return true;
-		}
-
-		if (!IsPathUnderRoot(directoryPath, layout.VaultRoot))
-		{
-			return true;
-		}
-
-		if (IsDirectoryEqual(directoryPath, layout.VaultRoot)
-			|| IsDirectoryEqual(directoryPath, layout.DirectivesRoot)
-			|| IsDirectoryEqual(directoryPath, layout.ObjectivesRoot)
-			|| IsDirectoryEqual(directoryPath, layout.FatesRoot)
-			|| IsDirectoryEqual(directoryPath, layout.DecreesRoot)
-			|| IsDirectoryEqual(directoryPath, layout.OnrushRoot)
-			|| IsDirectoryEqual(directoryPath, layout.JournalRoot)
-			|| IsDirectoryEqual(directoryPath, layout.SagaRoot)
-			|| IsDirectoryEqual(directoryPath, layout.MetadataRoot))
-		{
-			return true;
-		}
-
-		var directoryName = Path.GetFileName(directoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-		if (!string.IsNullOrWhiteSpace(directoryName) && PartitionFolderNames.Contains(directoryName))
-		{
-			return true;
-		}
-
-		if (IsPathUnderRoot(directoryPath, layout.ObjectivesRoot)
-			|| IsPathUnderRoot(directoryPath, layout.FatesRoot)
-			|| IsPathUnderRoot(directoryPath, layout.DecreesRoot)
-			|| IsPathUnderRoot(directoryPath, layout.OnrushRoot)
-			|| IsPathUnderRoot(directoryPath, layout.JournalRoot)
-			|| IsPathUnderRoot(directoryPath, layout.SagaRoot)
-			|| IsPathUnderRoot(directoryPath, layout.MetadataRoot))
-		{
-			return true;
-		}
-
-		return false;
-	}
-
-	private static bool IsDirectoryEqual(string path, string other)
-	{
-		var normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-		var normalizedOther = Path.GetFullPath(other).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-		return string.Equals(normalizedPath, normalizedOther, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static bool IsPartitionContainerPrimaryFile(string path)
