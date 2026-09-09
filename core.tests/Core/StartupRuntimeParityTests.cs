@@ -7,12 +7,14 @@ using Xunit;
 namespace Pleiades.Tests.Core;
 
 /// <summary>
-/// Startup/runtime parity: a startup sweep (one-shot discover-and-reconcile of the whole vault) must reach the same
-/// final database and vault state that the equivalent changes would produce as incremental live-watcher events. Any
-/// divergence means a change made while the daemon was offline is reconciled differently at next startup than it
-/// would have been in real time — a data-integrity hazard. Each scenario runs in two fresh, isolated vaults: one
-/// reconciled by <see cref="TestVault.SweepAsync"/>, one by a sequence of <see cref="TestVault.ReconcileAsync"/>
-/// events, and the two final snapshots are compared.
+/// Startup / wakeup / runtime parity: a whole-vault sweep must reach the same final database and vault state as the
+/// equivalent changes reconciled incrementally as live-watcher events — and it must do so whether the sweep runs on a
+/// cold start or when the watcher wakes from a structural-access sleep. The wakeup sweep is not a distinct operation:
+/// the service re-enters the very same startup scan (<c>RunStartupScanAsync</c>) on waking that it runs on boot, which
+/// the harness models with <see cref="TestVault.SweepAsync"/>. So a "wakeup" is a first sweep, then offline drift while
+/// asleep, then a second sweep — and it must land exactly where a cold startup seeing that drift lands, and where
+/// incremental runtime events land. A divergence would mean the watcher reconciles a while-asleep change differently
+/// after waking than it would at boot or in real time — a data-integrity hazard.
 /// </summary>
 public sealed class StartupRuntimeParityTests
 {
@@ -21,34 +23,58 @@ public sealed class StartupRuntimeParityTests
 	private const string ObjectiveRelativePath = "Objectives/Ship it.md";
 
 	/// <summary>
-	/// Runs an arrange step (seed deterministic entities via the API, then author raw file changes needing
-	/// reconciliation, returning the affected absolute paths in event order) in two fresh vaults: the first is
-	/// reconciled by a startup sweep, the second by incremental runtime events. Returns both final snapshots.
+	/// Runs one scenario — a pre-drift <paramref name="seed"/> (authored through the API) and a <paramref name="drift"/>
+	/// applied as raw while-offline file changes (returning the affected paths in event order) — three ways in fresh,
+	/// isolated vaults, and returns the three final snapshots:
+	/// <list type="bullet">
+	/// <item><description><c>Startup</c>: seed, drift, then one cold sweep that sees everything at once.</description></item>
+	/// <item><description><c>Wakeup</c>: seed, an initial sweep (the pre-sleep steady state), then drift, then a second
+	/// sweep — the watcher waking to reconcile changes made while it slept.</description></item>
+	/// <item><description><c>Runtime</c>: seed, drift, then the drift reconciled as incremental live events.</description></item>
+	/// </list>
 	/// </summary>
-	private static async Task<(string Sweep, string Runtime)> RunBothWaysAsync(
-		Func<TestVault, Task<IReadOnlyList<string>>> arrange)
+	private static async Task<(string Startup, string Wakeup, string Runtime)> RunAllWaysAsync(
+		Func<TestVault, Task> seed,
+		Func<TestVault, Task<IReadOnlyList<string>>> drift)
 	{
-		var sweepVault = new TestVault();
+		var startupVault = new TestVault();
+		var wakeupVault = new TestVault();
 		var runtimeVault = new TestVault();
-		await sweepVault.InitializeAsync();
+		await startupVault.InitializeAsync();
+		await wakeupVault.InitializeAsync();
 		await runtimeVault.InitializeAsync();
 		try
 		{
-			await arrange(sweepVault);
-			await sweepVault.SweepAsync();
+			// Cold startup: everything is already on disk when the one and only sweep runs.
+			await seed(startupVault);
+			await drift(startupVault);
+			await startupVault.SweepAsync();
 
-			var runtimeEvents = await arrange(runtimeVault);
-			foreach (var path in runtimeEvents)
+			// Wakeup: sweep once over the clean pre-sleep state, then apply the while-asleep drift, then sweep again.
+			// The first sweep is what makes this a wakeup rather than a boot — any state it leaves behind (begun
+			// boundaries, write-barrier entries, raised statuses) must not change how the second sweep reconciles.
+			await seed(wakeupVault);
+			await wakeupVault.SweepAsync();
+			await drift(wakeupVault);
+			await wakeupVault.SweepAsync();
+
+			// Runtime: the drift arrives as incremental events.
+			await seed(runtimeVault);
+			foreach (var path in await drift(runtimeVault))
 			{
 				await runtimeVault.ReconcileAsync(path);
 			}
 
-			return (await SnapshotAsync(sweepVault), await SnapshotAsync(runtimeVault));
+			return (
+				await SnapshotAsync(startupVault),
+				await SnapshotAsync(wakeupVault),
+				await SnapshotAsync(runtimeVault));
 		}
 		finally
 		{
 			await runtimeVault.DisposeAsync();
-			await sweepVault.DisposeAsync();
+			await wakeupVault.DisposeAsync();
+			await startupVault.DisposeAsync();
 		}
 	}
 
@@ -68,9 +94,9 @@ public sealed class StartupRuntimeParityTests
 			return rows;
 		});
 
-		// Auto-generated PUCK ids are random per vault, so they cannot be compared across the two runs. Map each id
-		// to a placeholder keyed by its stable business identity (type + title), then normalize every occurrence —
-		// including the id embedded in file frontmatter — so parity is asserted on logical state, not on the ids.
+		// Auto-generated PUCK ids are random per vault, so they cannot be compared across the runs. Map each id to a
+		// placeholder keyed by its stable business identity (type + title), then normalize every occurrence — including
+		// the id embedded in file frontmatter — so parity is asserted on logical state, not on the ids.
 		var ordered = entities
 			.OrderBy(entity => entity.Type, StringComparer.Ordinal)
 			.ThenBy(entity => entity.Title, StringComparer.Ordinal)
@@ -100,56 +126,60 @@ public sealed class StartupRuntimeParityTests
 		return string.Join("\n", entityRows.Concat(fileRows).OrderBy(row => row, StringComparer.Ordinal));
 	}
 
-	private static async Task<Objective> SeedBegunObjectiveAsync(TestVault vault)
+	private static async Task SeedBegunObjectiveAsync(TestVault vault)
 	{
 		var objective = await vault.SeedStandaloneObjectiveAsync(ObjectiveTitle, ObjectiveId);
 		await vault.BeginObjectiveBoundaryAsync(objective.Id); // materializes the quiet file on disk
-		return objective;
+	}
+
+	private static IReadOnlyList<string> ObjectivePaths(TestVault vault) => [vault.AbsolutePath(ObjectiveRelativePath)];
+
+	[Fact]
+	public async Task An_unchanged_begun_objective_is_stable_across_startup_wakeup_and_runtime()
+	{
+		// Idempotence: with no file change, none of a cold sweep, a wakeup's second sweep, or an incremental reconcile
+		// alters the state, and all three leave it identical. A watcher that "reflects" spuriously on an untouched file
+		// — or that behaves differently on its second sweep — would diverge here.
+		var (startup, wakeup, runtime) = await RunAllWaysAsync(
+			SeedBegunObjectiveAsync,
+			vault => Task.FromResult(ObjectivePaths(vault)));
+
+		Assert.Equal(startup, wakeup);
+		Assert.Equal(startup, runtime);
 	}
 
 	[Fact]
-	public async Task An_unchanged_begun_objective_is_stable_across_a_sweep_and_runtime()
+	public async Task Editing_a_begun_objective_file_reconciles_identically_at_startup_wakeup_and_runtime()
 	{
-		// Idempotence: with no file change, neither a startup sweep nor an incremental reconcile alters the state,
-		// and both leave it identical. A watcher that "reflects" spuriously on an untouched file would diverge here.
-		var (sweep, runtime) = await RunBothWaysAsync(async vault =>
-		{
-			await SeedBegunObjectiveAsync(vault);
-			return new[] { vault.AbsolutePath(ObjectiveRelativePath) };
-		});
+		var (startup, wakeup, runtime) = await RunAllWaysAsync(
+			SeedBegunObjectiveAsync,
+			async vault =>
+			{
+				// A while-offline edit to the managed file's body.
+				var absolute = vault.AbsolutePath(ObjectiveRelativePath);
+				await File.AppendAllTextAsync(absolute, "Extra body line added while offline." + Environment.NewLine, TestContext.Current.CancellationToken);
+				return ObjectivePaths(vault);
+			});
 
-		Assert.Equal(sweep, runtime);
+		Assert.Equal(startup, wakeup);
+		Assert.Equal(startup, runtime);
 	}
 
 	[Fact]
-	public async Task Editing_a_begun_objective_file_reconciles_identically_at_startup_and_at_runtime()
+	public async Task Deleting_a_begun_objective_file_reconciles_identically_at_startup_wakeup_and_runtime()
 	{
-		var (sweep, runtime) = await RunBothWaysAsync(async vault =>
-		{
-			await SeedBegunObjectiveAsync(vault);
+		// The trickiest wakeup case: the initial sweep confirms the begun boundary, then the file is deleted while the
+		// watcher sleeps. The wakeup sweep's orphan pass must still recover the identity and delete the entity — exactly
+		// as a cold startup or a live delete event would — rather than being thrown off by the earlier sweep's state.
+		var (startup, wakeup, runtime) = await RunAllWaysAsync(
+			SeedBegunObjectiveAsync,
+			vault =>
+			{
+				File.Delete(vault.AbsolutePath(ObjectiveRelativePath));
+				return Task.FromResult(ObjectivePaths(vault));
+			});
 
-			// A while-offline edit to the managed file's body.
-			var absolute = vault.AbsolutePath(ObjectiveRelativePath);
-			await File.AppendAllTextAsync(absolute, "Extra body line added while offline." + Environment.NewLine, TestContext.Current.CancellationToken);
-			return new[] { absolute };
-		});
-
-		Assert.Equal(sweep, runtime);
-	}
-
-	[Fact] // Phase 4: fixed — ScanAsync's orphan pass reconciles boundary-begun files that vanished while offline.
-	public async Task Deleting_a_begun_objective_file_reconciles_identically_at_startup_and_at_runtime()
-	{
-		var (sweep, runtime) = await RunBothWaysAsync(async vault =>
-		{
-			await SeedBegunObjectiveAsync(vault);
-
-			// A while-offline deletion of a boundary-begun file, which is authoritative for implicit entities.
-			var absolute = vault.AbsolutePath(ObjectiveRelativePath);
-			File.Delete(absolute);
-			return new[] { absolute };
-		});
-
-		Assert.Equal(sweep, runtime);
+		Assert.Equal(startup, wakeup);
+		Assert.Equal(startup, runtime);
 	}
 }
