@@ -305,12 +305,9 @@ public sealed class MarkdownFileLocator(VaultStoragePathComposer composer)
 			return null;
 		}
 
-		var parsed = ParseLoosePuckIdentityFromPath(markdownPath).Id;
-		if (!string.IsNullOrWhiteSpace(parsed))
-		{
-			return parsed;
-		}
-
+		// A directive's identity is Quiet — it lives in frontmatter, never in the filename. Loose-parsing the filename
+		// would read a dashed *title* ("2024 - Roadmap") as a phantom prefix ("2024") and orphan any child that resolves
+		// its parent here; the frontmatter PUCK is the only trustworthy directive identity (.GENESIS principle 1).
 		return TryReadFrontMatterPuck(markdownPath);
 	}
 

@@ -615,9 +615,10 @@ public sealed class VaultMarkdownDiscoveryService(
 			if (MarkdownFileLocator.IsSelfNamedDirectory(currentDirectory))
 			{
 				var primaryFile = Path.Combine(currentDirectory, $"{Path.GetFileName(currentDirectory)}.md");
-				var parsed = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(primaryFile);
-				var ancestorId = parsed.Id;
-				if (string.IsNullOrWhiteSpace(ancestorId) && File.Exists(primaryFile))
+				// A directive's identity is Quiet — read it from frontmatter, never by loose-parsing the (possibly
+				// dashed) folder name, which would read the title's "prefix - " as a phantom ancestor PUCK.
+				string? ancestorId = null;
+				if (File.Exists(primaryFile))
 				{
 					var frontMatter = markdownSerializer.ParseFrontMatter(await VaultFileAccess.ReadAllTextAsync(primaryFile, cancellationToken));
 					if (frontMatter.TryGetValue("puck", out var rawPuck) && !string.IsNullOrWhiteSpace(rawPuck))
