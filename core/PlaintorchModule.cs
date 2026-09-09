@@ -95,6 +95,7 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<OperationStatusReporter>();
 		services.AddScoped<OperationStatusDismissalService>();
 		services.AddSingleton<WatcherStatusReporter>();
+		services.AddSingleton<WatcherRetryScheduler>();
 		services.AddSingleton<VaultStorageTopologyValidator>();
 		services.AddSingleton<PlaintorchVaultLockService>();
 		services.AddSingleton<PlaintorchCoreSplashService>();

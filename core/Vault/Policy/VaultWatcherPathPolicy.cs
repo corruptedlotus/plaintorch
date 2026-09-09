@@ -38,6 +38,64 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout)
 	}
 
 	/// <summary>
+	/// Determines whether the vault is structurally reachable: the vault root and every entity root that exists can be
+	/// enumerated. A failure here is a whole-of-vault (tier-2) condition — an unmounted drive, a revoked permission on a
+	/// root — that the watcher answers by going to sleep and periodically re-probing, rather than by retrying a single
+	/// file. A root that simply does not exist yet (never created) is not a failure; only one that exists but cannot be
+	/// accessed is. When it returns <see langword="false"/>, <paramref name="inaccessiblePath"/> names the offending root.
+	/// </summary>
+	public bool IsVaultStructurallyAccessible(out string? inaccessiblePath)
+	{
+		inaccessiblePath = null;
+		var vaultRoot = Path.GetFullPath(layout.VaultRoot);
+		if (!Directory.Exists(vaultRoot) || !CanEnumerate(vaultRoot))
+		{
+			inaccessiblePath = vaultRoot;
+			return false;
+		}
+
+		foreach (var root in EntityRoots())
+		{
+			var fullRoot = Path.GetFullPath(root);
+			if (Directory.Exists(fullRoot) && !CanEnumerate(fullRoot))
+			{
+				inaccessiblePath = fullRoot;
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	private static bool CanEnumerate(string directory)
+	{
+		try
+		{
+			// Directory.Exists hides permission/IO failures behind a bare false; force an actual read of the first entry
+			// so a revoked-access or unmounted root surfaces as the structural failure it is.
+			using var enumerator = Directory.EnumerateFileSystemEntries(directory).GetEnumerator();
+			enumerator.MoveNext();
+			return true;
+		}
+		catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
+		{
+			return false;
+		}
+	}
+
+	private IEnumerable<string> EntityRoots()
+	{
+		yield return layout.DirectivesRoot;
+		yield return layout.ObjectivesRoot;
+		yield return layout.FatesRoot;
+		yield return layout.DecreesRoot;
+		yield return layout.OnrushRoot;
+		yield return layout.JournalRoot;
+		yield return layout.SagaRoot;
+		yield return layout.MetadataRoot;
+	}
+
+	/// <summary>
 	/// Determines whether the watcher should ignore a path for scan and live-event processing.
 	/// </summary>
 	public bool ShouldIgnorePath(string path)
@@ -225,14 +283,7 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout)
 
 	private bool IsEntityRootDirectory(string fullPath)
 	{
-		return IsDirectoryEqual(fullPath, layout.DirectivesRoot)
-			|| IsDirectoryEqual(fullPath, layout.ObjectivesRoot)
-			|| IsDirectoryEqual(fullPath, layout.FatesRoot)
-			|| IsDirectoryEqual(fullPath, layout.DecreesRoot)
-			|| IsDirectoryEqual(fullPath, layout.OnrushRoot)
-			|| IsDirectoryEqual(fullPath, layout.JournalRoot)
-			|| IsDirectoryEqual(fullPath, layout.SagaRoot)
-			|| IsDirectoryEqual(fullPath, layout.MetadataRoot);
+		return EntityRoots().Any(root => IsDirectoryEqual(fullPath, root));
 	}
 
 	private static bool IsDirectoryEqual(string path, string other)

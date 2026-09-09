@@ -20,6 +20,7 @@ public static class WatcherOperations
 	public const string Relocation = "watcher.relocation";
 	public const string Root = "watcher.root";
 	public const string Process = "watcher.process";
+	public const string VaultAccess = "watcher.vault-access";
 
 	// Reason codes.
 	public const string ScanFailed = "scan-failed";
@@ -36,6 +37,7 @@ public static class WatcherOperations
 	public const string RootInitFailed = "root-init-failed";
 	public const string RootError = "root-error";
 	public const string Fatal = "fatal";
+	public const string VaultInaccessible = "vault-inaccessible";
 
 	/// <summary>Describes a reason code: its diagnostic category, default severity, and human-readable message.</summary>
 	public sealed record ReasonDescriptor(string Category, OperationSeverity Severity, string Message);
@@ -56,6 +58,7 @@ public static class WatcherOperations
 		[RootInitFailed] = new("filesystem", OperationSeverity.Error, "Watcher failed to initialize a filesystem root observer."),
 		[RootError] = new("filesystem", OperationSeverity.Warning, "Filesystem watcher reported a root-level runtime error."),
 		[Fatal] = new("runtime", OperationSeverity.Critical, "Watcher encountered a fatal unhandled exception and stopped."),
+		[VaultInaccessible] = new("filesystem", OperationSeverity.Error, "Watcher cannot reach the vault or one of its entity roots and has gone to sleep until access is restored."),
 	};
 
 	/// <summary>Resolves the descriptor for a reason code, defaulting to a runtime error for unknown codes.</summary>
