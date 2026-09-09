@@ -7,7 +7,7 @@ enduring: False
 ---
 # Critical
 - [ ] New Orbit system
-- [ ] New Repo system
+- [ ] New Repo system (Set A)
 # Remaining Work
 - [ ] Watcher Status Icon: icon and drawer style
 - [ ] Grid indentations
@@ -20,11 +20,12 @@ enduring: False
 - [ ] NoteBanner margin block parity @1.5em to prevent CodeMirror desync.
 - [ ] Reload required before and after init commands.
 # Bugs: Core
-- [ ] Fatal context-level crashes are not handled.
+- [x] Fatal context-level crashes are not handled.
 - [ ] Objectives initialised within a directive seem to vanish? circumstances unknown.
 - [ ] The watcher is still extending authority over "prefix - " files. entities assigned to these files do not carry over the prefix.
 # Probably for Phase 2C
 - [ ] Mass-init
+- [ ] New Repo System (Set B)
 - [ ] Convert Directive ↔ Incentive
 - [ ] New PUCK notations
 - [ ] Show active timeframe
