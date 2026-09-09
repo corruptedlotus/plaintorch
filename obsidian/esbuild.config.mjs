@@ -4,7 +4,7 @@ import path from "node:path";
 
 const production = process.argv.includes("production");
 const watch = !production;
-const outputDirectory = "_dist";
+const outputDirectory = !production ? "_dist" : "../bin/obsidian";
 
 console.log("---- FOR THE GLORY OF THE TRILUNE ----")
 console.log("Pleiades Affairs Intelligence & Tristate Orchestrator (PLAINTORCH) Obsidian Plugin")

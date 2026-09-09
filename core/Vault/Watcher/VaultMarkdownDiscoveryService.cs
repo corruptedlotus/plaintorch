@@ -555,10 +555,10 @@ public sealed class VaultMarkdownDiscoveryService(
 				var pathParentId = pathPolicy.TryResolveContainingDirectiveId(path, skipCurrentIfSelfNamed: true);
 				if (!string.Equals(directive.ParentDirectiveId, pathParentId, StringComparison.OrdinalIgnoreCase))
 				{
-					if (!string.IsNullOrWhiteSpace(directive.ParentDirectiveId))
+					/*if (!string.IsNullOrWhiteSpace(directive.ParentDirectiveId))
 					{
 						issues.Add(new MarkdownValidationIssue("parent", "Frontmatter parent relation does not match the path-derived directive parent.", directive.ParentDirectiveId));
-					}
+					}*/
 
 					directive.ParentDirectiveId = pathParentId;
 				}

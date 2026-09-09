@@ -56,7 +56,7 @@ export class PageBannerRenderer {
 
 	readingModeRenderer = (el: HTMLElement, _ctx: MarkdownPostProcessorContext) => {
 		const si = _ctx.getSectionInfo(el) as MarkdownSectionInformation
-		if (si.lineStart !== 0) {
+		if (si?.lineStart !== 0) {
 			return
 		}
 
