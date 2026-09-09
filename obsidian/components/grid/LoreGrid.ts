@@ -1,4 +1,5 @@
 import { component, html, HTMLTemplateResult } from '@a11d/lit'
+import type { EntityTypeName } from '@pleiades/sdk'
 import { core, DerivedRef, ExpandingAction } from '..'
 import { buildLoreRows } from './loreTree'
 import { GridBase } from './GridBase'
@@ -16,6 +17,12 @@ import './LoreGridItem'
 @component('p7t-lore-grid')
 export class LoreGrid extends GridBase {
 	private readonly lore = new DerivedRef(this, core.repos.loreList)
+
+	protected override get observedKinds(): readonly EntityTypeName[] {
+		// The hierarchy is built from lore pages' own parent references, so a reparent restructures the tree
+		// without the listing changing. Both concrete kinds are named, as the core may stamp either.
+		return ['LorePage', 'IndexedLorePage']
+	}
 
 	protected override get rows(): GridRow[] {
 		// Expanded by default so the whole hierarchy shows at once; the toggle set tracks user-collapsed rows.

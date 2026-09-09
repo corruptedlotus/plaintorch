@@ -1,4 +1,5 @@
 import { component, html, HTMLTemplateResult } from '@a11d/lit'
+import type { EntityTypeName } from '@pleiades/sdk'
 import { core, DerivedRef, ExpandingAction } from '..'
 import { creationActions } from './entityActions'
 import { buildGridRows, type GridRow } from './entityTree'
@@ -16,6 +17,12 @@ export class EntityGrid extends GridBase {
 	private readonly objectives = new DerivedRef(this, core.repos.objectiveList)
 	private readonly fates = new DerivedRef(this, core.repos.fateList)
 	private readonly decrees = new DerivedRef(this, core.repos.decreeList)
+
+	protected override get observedKinds(): readonly EntityTypeName[] {
+		// The tree is built from directives and the three incentives; reparenting a directive changes the tree's
+		// shape without any listing changing, so the grid observes exactly those kinds — and nothing else.
+		return ['StellarDirective', 'LunarDirective', 'Objective', 'Fate', 'Decree']
+	}
 
 	protected override get rows(): GridRow[] {
 		return buildGridRows({

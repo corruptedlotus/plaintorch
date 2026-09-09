@@ -1,5 +1,5 @@
 import { Component, css, eventListener, html, HTMLTemplateResult, nothing, repeat, state } from '@a11d/lit'
-import type { EntitySubscription } from '@pleiades/sdk'
+import type { EntitySubscription, EntityTypeName } from '@pleiades/sdk'
 import { core, ExpandingAction } from '..'
 import type { GridRow } from './entityTree'
 
@@ -64,8 +64,9 @@ export abstract class GridBase extends Component {
 	protected override connected() {
 		// The tree's shape comes from parent references on the entities themselves, so it can change without any
 		// listing changing: reparenting leaves every membership intact. No per-entity subscription would report that,
-		// which is why this observes the store as a whole.
-		this.storeSubscription = core.store.subscribeAll(() => this.requestUpdate())
+		// so this observes the kinds the variant is built from — scoped to those types rather than the whole store,
+		// so a change to an unrelated kind never re-runs the grid.
+		this.storeSubscription = core.store.subscribeTypes(this.observedKinds, () => this.requestUpdate())
 	}
 
 	protected override disconnected() {
@@ -109,6 +110,9 @@ export abstract class GridBase extends Component {
 			`}
 		`
 	}
+
+	/** The entity kinds this grid is built from — the store subscription is scoped to exactly these. */
+	protected abstract get observedKinds(): readonly EntityTypeName[]
 
 	/** The flattened rows to render, in order. */
 	protected abstract get rows(): GridRow[]

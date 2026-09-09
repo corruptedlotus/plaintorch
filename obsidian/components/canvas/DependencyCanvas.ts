@@ -366,8 +366,12 @@ export class DependencyCanvas extends Component {
 
 	protected override connected() {
 		// A node's own state — an objective moving to Done — changes nothing about the listings the graph is
-		// built from, so no listing subscription would report it. The same reasoning as the entity grid.
-		this.storeSubscription = core.store.subscribeAll(() => this.requestUpdate())
+		// built from, so no listing subscription would report it. The same reasoning as the entity grid; this
+		// observes the graph's node kinds (its dependency endpoints) and no others.
+		this.storeSubscription = core.store.subscribeTypes(
+			['StellarDirective', 'LunarDirective', 'Objective', 'Fate', 'Checkpoint'],
+			() => this.requestUpdate()
+		)
 		// A node grows when its title is edited or its content loads, and that is not a canvas render on its own —
 		// the observer is what keeps the edges attached to it through changes the canvas never hears about.
 		this.resizeObserver = new ResizeObserver(entries => this.onNodesResized(entries))

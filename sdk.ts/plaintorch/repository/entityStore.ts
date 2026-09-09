@@ -245,6 +245,20 @@ export class EntityStore {
 		}
 	}
 
+	/**
+	 * Observes several types at once under one subscription — for a structural view built from a fixed set of
+	 * kinds, such as the entity grid's directives and incentives or the dependency graph's node types. The
+	 * scoped alternative to {@link subscribeAll}: a change to a kind the view does not show never reaches it.
+	 */
+	public subscribeTypes(typeNames: readonly EntityTypeName[], subscriber: EntitySubscriber): EntitySubscription {
+		const subscriptions = typeNames.map((typeName) => this.subscribeType(typeName, subscriber))
+		return () => {
+			for (const unsubscribe of subscriptions) {
+				unsubscribe()
+			}
+		}
+	}
+
 	/** Every resolved entity of a type currently held, for a query to scan and filter. */
 	public entitiesOfType<T>(typeName: EntityTypeName): T[] {
 		const keys = this.typeIndex.get(typeName)
