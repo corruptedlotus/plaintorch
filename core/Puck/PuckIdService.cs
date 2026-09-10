@@ -75,6 +75,40 @@ public sealed class PuckIdService(PlainfraContext context, PuckNotationParser no
 		return id;
 	}
 
+	/// <summary>
+	/// Composes the identifier a type WOULD receive for the given deterministic segments, WITHOUT minting or registering
+	/// it — so it can be used to look one up by its deterministic id. Only valid when every segment is deterministic
+	/// (date-stamp, manual, or static discriminator); a declaration with a random or incremental segment cannot be
+	/// composed ahead of minting and throws.
+	/// </summary>
+	public string ComposeIdFor(Type entityType, IReadOnlyList<PuckSegmentInput>? segments = null)
+	{
+		ArgumentNullException.ThrowIfNull(entityType);
+		var compiled = compilationCatalog.GetCompiled(entityType);
+		var notation = notationParser.Parse(compiled.Declaration);
+		var inputs = segments ?? [];
+		var renderedSegments = new List<string>();
+		for (var index = 0; index < notation.Segments.Count; index++)
+		{
+			var segmentPattern = notation.Segments[index];
+			var input = index < inputs.Count ? inputs[index] : new PuckSegmentInput();
+			var discriminator = segmentPattern.UsesDynamicDiscriminator
+				? input.Discriminator ?? throw new InvalidOperationException("Dynamic discriminator value missing for PUCK composition.")
+				: segmentPattern.StaticDiscriminator ?? string.Empty;
+
+			var numerator = segmentPattern.Numerator.Kind switch
+			{
+				PuckNumeratorKind.Manual => input.Numerator ?? throw new InvalidOperationException("Manual numerator missing for PUCK composition."),
+				PuckNumeratorKind.DateStamp => PuckDateStampCodec.Format(input.Date ?? DateOnly.FromDateTime(DateTime.UtcNow), segmentPattern.Numerator.DateStampKind),
+				_ => throw new InvalidOperationException($"PUCK id for '{entityType.Name}' cannot be composed ahead of minting: segment {index} is non-deterministic ({segmentPattern.Numerator.Kind})."),
+			};
+
+			renderedSegments.Add($"{discriminator}{numerator}");
+		}
+
+		return JoinSegments(notation, renderedSegments);
+	}
+
 	private string GenerateSpiritgem(PlainfraContext context, int width)
 	{
 		while (true)

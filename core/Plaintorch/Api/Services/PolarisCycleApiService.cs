@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
@@ -43,16 +42,34 @@ public sealed class PolarisCycleApiService(
 	/// <inheritdoc />
 	public async Task<PolarisCycle> BeginAsync(string? polarisCycleId = null, DateTimeOffset? startTime = null, CancellationToken cancellationToken = default)
 	{
-		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, requireTodayFallback: true, cancellationToken)
+		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, cancellationToken)
 			?? throw new InvalidOperationException("No Polaris cycle is available to begin.");
 
+		return await ActivateAsync(cycle, startTime ?? DateTimeOffset.UtcNow, cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public async Task<PolarisCycle> StartNewAsync(DateTimeOffset? startTime = null, string? body = null, CancellationToken cancellationToken = default)
+	{
+		// "Start new" is really "ensure today's cycle is active": a cycle planned for the day is activated in place
+		// rather than duplicated (its id IS the day, so a second would collide), and one is created only when none
+		// exists. All activation routes through the same path (Fix 1).
+		return await EnsureActiveCycleAsync(startTime, cancellationToken);
+	}
+
+	/// <summary>
+	/// The single activation path — begin, start-new, and the auto-start when adding to the current cycle all route
+	/// here. Begins the cycle unless it is already active, materializes its proximity items, and persists.
+	/// </summary>
+	private async Task<PolarisCycle> ActivateAsync(PolarisCycle cycle, DateTimeOffset startTime, CancellationToken cancellationToken)
+	{
 		if (cycle.StartTime is not null && cycle.EndTime is null)
 		{
 			return cycle;
 		}
 
 		var previous = Clone(cycle);
-		var started = lifecycle.Start(cycle, startTime ?? DateTimeOffset.UtcNow);
+		var started = lifecycle.Start(cycle, startTime);
 		ApplyCycle(cycle, started);
 		await context.SaveChangesAsync(cancellationToken);
 		await materializationService.MaterializeForCycleAsync(cycle, cancellationToken);
@@ -61,24 +78,45 @@ public sealed class PolarisCycleApiService(
 		return cycle;
 	}
 
-	/// <inheritdoc />
-	public async Task<PolarisCycle> StartNewAsync(DateTimeOffset? startTime = null, string? body = null, CancellationToken cancellationToken = default)
+	/// <summary>
+	/// Gets the active Polaris cycle, activating or creating one for the day when none is active. A cycle already
+	/// planned for the day is activated in place (never duplicated, since its id is the day); a day with no cycle yet
+	/// gets a fresh one created and activated. This is the shared primitive behind start-new and add-to-current.
+	/// </summary>
+	private async Task<PolarisCycle> EnsureActiveCycleAsync(DateTimeOffset? startTime, CancellationToken cancellationToken)
 	{
 		var resolvedStartTime = startTime ?? DateTimeOffset.UtcNow;
-		var targetDate = DateOnly.FromDateTime(resolvedStartTime.LocalDateTime);
-		var cycle = new PolarisCycle
+
+		var active = await context.PolarisCycles
+			.FirstOrDefaultAsync(item => item.StartTime != null && item.EndTime == null, cancellationToken);
+		if (active is not null)
 		{
+			return active;
+		}
+
+		var targetDate = DateOnly.FromDateTime(resolvedStartTime.LocalDateTime);
+		// Compose (do NOT mint) the deterministic day id to look up an existing cycle; minting here would register a
+		// duplicate PUCK registry entry for a date whose cycle already exists.
+		var dayId = puckCreationService.ComposeIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: targetDate)]);
+
+		var dayCycle = await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == dayId, cancellationToken);
+		if (dayCycle is not null)
+		{
+			// Planned for today → activate in place; already started (and now ended) → leave it as it is.
+			return dayCycle.StartTime is null
+				? await ActivateAsync(dayCycle, resolvedStartTime, cancellationToken)
+				: dayCycle;
+		}
+
+		var created = new PolarisCycle
+		{
+			// No cycle exists for the day, so mint (register) the id now.
 			Id = puckCreationService.CreateIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: targetDate)]),
 			Title = PlaintorchDefaultTitleFactory.CreatePolarisTitle(targetDate),
-			StartTime = resolvedStartTime,
 		};
-
-		context.PolarisCycles.Add(cycle);
+		context.PolarisCycles.Add(created);
 		await context.SaveChangesAsync(cancellationToken);
-		await materializationService.MaterializeForCycleAsync(cycle, cancellationToken);
-		await markdownFileService.SavePolarisCycleAsync(cycle, cancellationToken: cancellationToken);
-		await auditLogService.WriteAsync("api", "polaris.start-new", subject: cycle, cancellationToken: cancellationToken);
-		return cycle;
+		return await ActivateAsync(created, resolvedStartTime, cancellationToken);
 	}
 
 	/// <inheritdoc />
@@ -105,7 +143,7 @@ public sealed class PolarisCycleApiService(
 	/// <inheritdoc />
 	public async Task<PolarisCycle> EndAsync(string? polarisCycleId = null, DateTimeOffset? endTime = null, CancellationToken cancellationToken = default)
 	{
-		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, requireTodayFallback: false, cancellationToken)
+		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, cancellationToken)
 			?? throw new InvalidOperationException("No Polaris cycle is available to end.");
 
 		var previous = Clone(cycle);
@@ -163,8 +201,7 @@ public sealed class PolarisCycleApiService(
 	public async Task<PolarisExecutivePlanResult> PlanExecutiveAsync(PolarisExecutivePlan plan, string? polarisCycleId = null, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(plan);
-		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, requireTodayFallback: false, cancellationToken)
-			?? throw new InvalidOperationException("No Polaris cycle is available for executive planning.");
+		var cycle = await ResolveOrStartCurrentAsync(polarisCycleId, cancellationToken);
 
 		Objective? objective = null;
 		string? executiveTitle;
@@ -317,7 +354,7 @@ public sealed class PolarisCycleApiService(
 	/// <inheritdoc />
 	public async Task<PolarisCycleInclusions> GetInclusionsAsync(string? polarisCycleId = null, CancellationToken cancellationToken = default)
 	{
-		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, requireTodayFallback: false, cancellationToken)
+		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, cancellationToken)
 			?? throw new InvalidOperationException("No Polaris cycle is available for inclusion listing.");
 
 		if (cycle.StartTime is null)
@@ -400,8 +437,7 @@ public sealed class PolarisCycleApiService(
 		ArgumentNullException.ThrowIfNull(request);
 		ArgumentException.ThrowIfNullOrWhiteSpace(request.DecreeId);
 
-		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, requireTodayFallback: false, cancellationToken)
-			?? throw new InvalidOperationException("No Polaris cycle is available for attentive planning.");
+		var cycle = await ResolveOrStartCurrentAsync(polarisCycleId, cancellationToken);
 		var decree = await context.Decrees.AsNoTracking().FirstOrDefaultAsync(item => item.Id == request.DecreeId, cancellationToken)
 			?? throw new InvalidOperationException($"Decree '{request.DecreeId}' was not found.");
 		if (decree.Status != DecreeStatus.Active)
@@ -452,8 +488,7 @@ public sealed class PolarisCycleApiService(
 			throw new ArgumentOutOfRangeException(nameof(request), "At least one reflective must be requested.");
 		}
 
-		var cycle = await ResolveCycleForMutationAsync(request.PolarisCycleId, requireTodayFallback: false, cancellationToken)
-			?? throw new InvalidOperationException("No Polaris cycle is available for reflective drawing.");
+		var cycle = await ResolveOrStartCurrentAsync(request.PolarisCycleId, cancellationToken);
 
 		var existingCount = await context.Set<Reflective>()
 			.CountAsync(item => item.PolarisCycleId == cycle.Id, cancellationToken);
@@ -517,7 +552,12 @@ public sealed class PolarisCycleApiService(
 		return reflective;
 	}
 
-	private async Task<PolarisCycle?> ResolveCycleForMutationAsync(string? cycleId, bool requireTodayFallback, CancellationToken cancellationToken)
+	/// <summary>
+	/// Resolves a cycle to mutate/read WITHOUT creating one: the cycle with the given id, else the active cycle, else
+	/// today's cycle (in whatever state). Returns <see langword="null"/> when nothing matches. Callers that should
+	/// start a cycle when none is current use <see cref="ResolveOrStartCurrentAsync"/> instead.
+	/// </summary>
+	private async Task<PolarisCycle?> ResolveCycleForMutationAsync(string? cycleId, CancellationToken cancellationToken)
 	{
 		if (!string.IsNullOrWhiteSpace(cycleId))
 		{
@@ -531,12 +571,23 @@ public sealed class PolarisCycleApiService(
 			return active;
 		}
 
-		if (!requireTodayFallback)
+		var todayId = puckCreationService.ComposeIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: DateOnly.FromDateTime(DateTime.Today))]);
+		return await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == todayId, cancellationToken);
+	}
+
+	/// <summary>
+	/// Resolves the target cycle for an add-to-current operation: an explicit id must resolve to an existing cycle,
+	/// but "the current cycle" with none active starts one for today and returns it (Fix 2).
+	/// </summary>
+	private async Task<PolarisCycle> ResolveOrStartCurrentAsync(string? cycleId, CancellationToken cancellationToken)
+	{
+		if (!string.IsNullOrWhiteSpace(cycleId))
 		{
-			return await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == DateOnly.FromDateTime(DateTime.Today).ToString("yyyyMMdd", CultureInfo.InvariantCulture), cancellationToken);
+			return await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == cycleId, cancellationToken)
+				?? throw new InvalidOperationException($"Polaris cycle '{cycleId}' was not found.");
 		}
 
-		return await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == DateOnly.FromDateTime(DateTime.Today).ToString("yyyyMMdd", CultureInfo.InvariantCulture), cancellationToken);
+		return await EnsureActiveCycleAsync(startTime: null, cancellationToken);
 	}
 
 

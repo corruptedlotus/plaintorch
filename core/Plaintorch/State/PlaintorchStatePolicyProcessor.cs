@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.DependencyInjection;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Materialization;
+using Pleiades.Puck;
 using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch.State;
@@ -503,6 +504,17 @@ public sealed class PlaintorchStatePolicyProcessor(
 
 	private static bool TryParseCycleDate(string cycleId, out DateOnly date)
 	{
-		return DateOnly.TryParseExact(cycleId, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+		// A Polaris cycle id is a Pleiadean date stamp ({D:p}); parsing it as Gregorian yyyyMMdd always failed, silently
+		// disabling forecast supersession (an activated cycle is meant to drop stale forecasts on or before its date).
+		try
+		{
+			date = PuckDateStampCodec.Parse(cycleId, PuckDateStampKind.Pleiadean);
+			return true;
+		}
+		catch (Exception exception) when (exception is FormatException or ArgumentException or OverflowException)
+		{
+			date = default;
+			return false;
+		}
 	}
 }

@@ -60,6 +60,24 @@ public sealed class PuckCreationService(
 		return puckIdService.GenerateIdFor(entityType, mergedInputs);
 	}
 
+	/// <summary>
+	/// Composes the identifier a type WOULD receive for the given deterministic system segments, WITHOUT minting or
+	/// registering it — for looking an entity up by its deterministic id (e.g. a date-stamped Polaris cycle). Throws for
+	/// declarations with a random or incremental segment, which cannot be composed ahead of minting.
+	/// </summary>
+	public string ComposeIdFor<T>(IReadOnlyList<PuckSegmentInput>? systemSegments = null)
+	{
+		return ComposeIdFor(typeof(T), systemSegments);
+	}
+
+	/// <summary>
+	/// Composes the identifier a type WOULD receive for the given deterministic system segments, without minting it.
+	/// </summary>
+	public string ComposeIdFor(Type entityType, IReadOnlyList<PuckSegmentInput>? systemSegments = null)
+	{
+		return puckIdService.ComposeIdFor(entityType, systemSegments);
+	}
+
 	private static IReadOnlyList<PuckSegmentInput> MergeInputs(
 		PuckNotation notation,
 		PuckTokenization requestedTokens,

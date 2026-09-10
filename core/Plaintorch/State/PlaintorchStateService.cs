@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orchestration;
+using Pleiades.Puck;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
 
@@ -65,7 +66,9 @@ public sealed class PlaintorchStateService(
 			return active;
 		}
 
-		var todayId = DateOnly.FromDateTime(DateTime.Today).ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+		// A Polaris cycle id is a Pleiadean date stamp ({D:p}), not Gregorian yyyyMMdd — computing the today id the wrong
+		// way silently never matched, so this fallback never found today's cycle.
+		var todayId = PuckDateStampCodec.Format(DateOnly.FromDateTime(DateTime.Today), PuckDateStampKind.Pleiadean);
 		return await context.PolarisCycles
 			.AsNoTracking()
 			.FirstOrDefaultAsync(cycle => cycle.Id == todayId, cancellationToken);
