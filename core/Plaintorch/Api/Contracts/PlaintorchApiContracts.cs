@@ -488,6 +488,39 @@ public sealed record AttentiveUpdate(
 	Optional<int?> Maximum = default);
 
 /// <summary>
+/// Addresses a single eventive occurrence by its owner UID (a fate or objective id) and RECURRENCE-ID
+/// (Strategy 1): the recurrence-id resolves a projected occurrence and its hardened twin identically, so an
+/// interaction hardens the occurrence and applies to it without ever needing a database row id.
+/// </summary>
+public sealed record EventiveOccurrenceRef(
+	string OwnerId,
+	DateOnly RecurrenceDate,
+	TimeOnly? RecurrenceTime = null);
+
+/// <summary>
+/// Addresses a single attentive occurrence by its decree and RECURRENCE-ID. An unbound occurrence
+/// (<paramref name="PolarisCycleId"/> null) is hardened on interaction; a Polaris-bound one names its cycle to
+/// disambiguate it from an unbound occurrence that shares the same slot.
+/// </summary>
+public sealed record AttentiveOccurrenceRef(
+	string DecreeId,
+	DateOnly RecurrenceDate,
+	TimeOnly? RecurrenceTime = null,
+	string? PolarisCycleId = null);
+
+/// <summary>
+/// The request body for updating an eventive occurrence over the wire: the occurrence to address plus the
+/// update to apply.
+/// </summary>
+public sealed record EventiveUpdateRequest(EventiveOccurrenceRef Occurrence, EventiveUpdate Update);
+
+/// <summary>
+/// The request body for updating an attentive occurrence over the wire: the occurrence to address plus the
+/// update to apply.
+/// </summary>
+public sealed record AttentiveUpdateRequest(AttentiveOccurrenceRef Occurrence, AttentiveUpdate Update);
+
+/// <summary>
 /// Represents the data required to manually add a decree to a Polaris cycle, creating a Polaris-bound
 /// attentive (PEP100).
 /// </summary>

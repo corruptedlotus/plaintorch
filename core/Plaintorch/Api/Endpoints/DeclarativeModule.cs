@@ -93,15 +93,15 @@ public sealed class DeclarativeModule : Module
 		eventives.MapGet("/", async (string? fateId, string? objectiveId, IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListEventivesAsync(fateId, objectiveId, cancellationToken)));
 
-		eventives.MapPut("/{eventiveId:long}", async (long eventiveId, EventiveUpdate request, IDeclarativeApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.UpdateEventiveAsync(eventiveId, request, cancellationToken)));
+		eventives.MapPut("/", async (EventiveUpdateRequest request, IDeclarativeApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.UpdateEventiveAsync(request.Occurrence, request.Update, cancellationToken)));
 
 		var attentives = endpoints.MapEnrichedGroup("/api/attentives");
 
 		attentives.MapGet("/", async (string? decreeId, IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListAttentivesAsync(decreeId, cancellationToken)));
 
-		attentives.MapPut("/{attentiveId:long}", async (long attentiveId, AttentiveUpdate request, IDeclarativeApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.UpdateAttentiveAsync(attentiveId, request, cancellationToken)));
+		attentives.MapPut("/", async (AttentiveUpdateRequest request, IDeclarativeApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.UpdateAttentiveAsync(request.Occurrence, request.Update, cancellationToken)));
 	}
 }

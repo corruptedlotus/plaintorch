@@ -7,35 +7,31 @@ using Pleiades.Vault.Database;
 namespace Pleiades.Plaintorch.Materialization;
 
 /// <summary>
-/// Materializes backlog instances by proximity (PEP100): dated and orbit-scheduled fates ensure their
-/// eventives, objective due dates ensure their eventives, orbit-scheduled decrees ensure their unbound
-/// attentives, and lunar-hierarchy reflect-decrees generate cycle-bound reflectives.
+/// Hardens declarative occurrences into persisted rows on the two non-interactive triggers (Strategy 1 / soft
+/// agenda, PEP100). <see cref="MaterializeForCycleAsync"/> runs at Polaris cycle begin and generates the
+/// cycle-bound reflectives of matching lunar reflect-decrees. <see cref="MaterializeForNowAsync"/> is the
+/// rolling harden-on-time pass: when time is treated as an interaction it advances each schedule's cursor to
+/// <c>now</c> and hardens the occurrences whose time has arrived, so history becomes durable rows while every
+/// still-future occurrence stays a live projection (see <see cref="AgendaProjectionService"/>).
 /// </summary>
 /// <remarks>
-/// One materializer serves two triggers. <see cref="MaterializeForCycleAsync"/> runs when a Polaris cycle
-/// begins, anchored on the cycle's 24h window and generating its bound reflectives. <see cref="MaterializeForNowAsync"/>
-/// runs on the hourly rolling pass (and on a declarative change), anchored on now and independent of any
-/// cycle, so the agenda's attentives and upcoming eventives exist as rows without waiting for a cycle to be
-/// begun. Orbit resolution SEEKS (advances the persisted schedule state); instance identity is the occurrence
-/// date/time, so already interacted instances are recognized rather than duplicated.
+/// An occurrence's RECURRENCE-ID (owner id + original date/time) is its identity, so an occurrence already
+/// hardened by interaction is recognized rather than duplicated, and the pass is idempotent. When
+/// <see cref="MaterializationPolicyOptions.TimeIsInteraction"/> is <see langword="false"/> the rolling pass
+/// hardens nothing — past occurrences stay projections and recompute when their schedule changes.
 /// </remarks>
 public sealed class ProximityMaterializationService(
 	PlainfraContext context,
 	PlaintorchOrbitService orbitService,
 	DependencyGateService dependencyGate,
 	TimeframeAffinityResolver affinityResolver,
+	MaterializationPolicyOptions policy,
 	VaultAuditLogService auditLogService)
 {
 	/// <summary>
-	/// How many days ahead the rolling pass fills fate and objective eventives, so the agenda's upcoming list
-	/// has rows to read. Decree attentives are never pre-created past the next 24h (see
-	/// <see cref="MaterializeForNowAsync"/>).
-	/// </summary>
-	public const int DefaultEventiveHorizonDays = 7;
-
-	/// <summary>
-	/// Materializes the proximity instances for a beginning cycle: its 24h window plus the cycle-bound
-	/// reflectives of matching lunar reflect-decrees. Returns the number of instances created.
+	/// Generates the cycle-bound reflectives for a beginning cycle from its matching lunar reflect-decrees. The
+	/// cycle's other inclusions are projected on read, so nothing else is hardened here. Returns the number of
+	/// reflectives created.
 	/// </summary>
 	public async Task<int> MaterializeForCycleAsync(PolarisCycle cycle, CancellationToken cancellationToken = default)
 	{
@@ -45,17 +41,51 @@ public sealed class ProximityMaterializationService(
 			return 0;
 		}
 
-		var (windowStart, windowEnd) = InclusionWindow.Resolve(cycle);
-		var windowEndDayExclusive = DateOnly.FromDateTime(windowEnd).AddDays(windowEnd.TimeOfDay > TimeSpan.Zero ? 1 : 0);
+		var startDay = DateOnly.FromDateTime(cycle.StartTime.Value.LocalDateTime);
+		var created = 0;
 
-		var created = await MaterializeCoreAsync(
-			windowStart,
-			windowEnd,
-			fateSeekThroughExclusive: windowEndDayExclusive,
-			decreeSeekThroughExclusive: windowEndDayExclusive,
-			cycle: cycle,
-			cancellationToken);
+		// Lunar reflect-decrees resolve at day granularity against the cycle's start day and bind their
+		// reflective to the cycle. Seeking advances the schedule state so the same occurrence is not re-emitted;
+		// the rolling harden-on-time pass deliberately leaves reflect-decrees alone, so cycle begin is the only
+		// place their cursor advances.
+		var reflectDecrees = await context.Decrees
+			.IgnoreAutoIncludes()
+			.Where(decree => decree.Status == DecreeStatus.Active && decree.Orbit != null && decree.Reflect)
+			.ToListAsync(cancellationToken);
 
+		foreach (var decree in reflectDecrees)
+		{
+			if (!await orbitService.IsInLunarHierarchyAsync(decree.DirectiveId, cancellationToken))
+			{
+				continue;
+			}
+
+			var occurrences = await orbitService.SeekOccurrencesAsync(decree, decree.Orbit!, startDay.AddDays(1), cancellationToken);
+			if (!occurrences.Any(occurrence => occurrence.Date <= startDay && startDay < occurrence.PeriodEndExclusive))
+			{
+				continue;
+			}
+
+			var reflectiveExists = await context.Set<Reflective>()
+				.AnyAsync(item => item.PolarisCycleId == cycle.Id && item.DecreeId == decree.Id, cancellationToken);
+			if (reflectiveExists)
+			{
+				continue;
+			}
+
+			// Auto-inclusion: a cycle-bound reflective inherits its affinity from the originating decree's college.
+			context.Add(new Reflective
+			{
+				Description = decree.Title,
+				PolarisCycleId = cycle.Id,
+				DecreeId = decree.Id,
+				Executed = false,
+				AffinityTimeframeId = await affinityResolver.ResolveForCollegeAsync(decree.College, cancellationToken),
+			});
+			created++;
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
 		if (created > 0)
 		{
 			await auditLogService.WriteAsync(
@@ -72,185 +102,83 @@ public sealed class ProximityMaterializationService(
 	}
 
 	/// <summary>
-	/// Materializes the due instances relative to <paramref name="now"/>, independently of any cycle: unbound
-	/// decree attentives across the next 24 hours, and fate/objective eventives across the upcoming horizon so
-	/// the agenda can list them. Reflect-decrees are left untouched — their reflectives are cycle-bound and
-	/// belong to cycle begin. Returns the number of instances created.
+	/// Harden-on-time: hardens every occurrence whose time has arrived at or before <paramref name="now"/>.
+	/// Orbit fates and decrees are seeked through the instant (their cursor advances to <paramref name="now"/>),
+	/// dated fates and due objectives harden once their occurrence is reached. Does nothing when time is not
+	/// treated as an interaction. Returns the number of rows hardened.
 	/// </summary>
-	/// <remarks>
-	/// "Due" means the next 24h, not the calendar day: run hourly, this rolling window keeps today's remaining
-	/// occurrences and any that fall in the coming hours materialized without pinning to midnight. Decrees are
-	/// never seeked past the 24h window, so future routine instances are not pre-created (a later orbit change
-	/// would otherwise strand them); only fate/objective eventives look further ahead to fill the horizon.
-	/// </remarks>
-	public async Task<int> MaterializeForNowAsync(DateTimeOffset now, int eventiveHorizonDays, CancellationToken cancellationToken = default)
+	public async Task<int> MaterializeForNowAsync(DateTimeOffset now, CancellationToken cancellationToken = default)
 	{
-		var start = now.LocalDateTime;
-		var startDay = DateOnly.FromDateTime(start);
-
-		var attentiveEnd = start.AddHours(24);
-		var decreeSeekThroughExclusive = DateOnly.FromDateTime(attentiveEnd).AddDays(attentiveEnd.TimeOfDay > TimeSpan.Zero ? 1 : 0);
-
-		var eventiveWindowEnd = startDay.AddDays(eventiveHorizonDays).ToDateTime(new TimeOnly(23, 59, 59));
-		var fateSeekThroughExclusive = startDay.AddDays(eventiveHorizonDays + 1);
-
-		var created = await MaterializeCoreAsync(
-			start,
-			eventiveWindowEnd,
-			fateSeekThroughExclusive: fateSeekThroughExclusive,
-			decreeSeekThroughExclusive: decreeSeekThroughExclusive,
-			cycle: null,
-			cancellationToken);
-
-		if (created > 0)
+		if (!policy.TimeIsInteraction)
 		{
-			await auditLogService.WriteAsync(
-				"daemon",
-				"rolling.materialize",
-				subjectType: nameof(PolarisCycle),
-				details: new { created, from = start.ToString("yyyy-MM-dd HH:mm") },
-				cancellationToken: cancellationToken);
+			return 0;
 		}
 
-		return created;
-	}
-
-	private async Task<int> MaterializeCoreAsync(
-		DateTime windowStart,
-		DateTime eventiveWindowEnd,
-		DateOnly fateSeekThroughExclusive,
-		DateOnly decreeSeekThroughExclusive,
-		PolarisCycle? cycle,
-		CancellationToken cancellationToken)
-	{
-		var candidateDates = InclusionWindow.EnumerateDates(windowStart, eventiveWindowEnd);
-		var startDay = DateOnly.FromDateTime(windowStart);
+		var localNow = now.LocalDateTime;
+		var today = DateOnly.FromDateTime(localNow);
 		var created = 0;
 
-		// Dated fates: collide by their explicit time specification.
-		var datedFates = await context.Fates
-			.AsNoTracking()
-			.IgnoreAutoIncludes()
-			.Where(fate => fate.Status == FateStatus.Active && fate.Date != null && candidateDates.Contains(fate.Date.Value))
-			.ToListAsync(cancellationToken);
-
-		foreach (var fate in datedFates)
-		{
-			if (!InclusionWindow.Intersects(fate.Date!.Value, fate.StartTime, fate.EndTime, windowStart, eventiveWindowEnd))
-			{
-				continue;
-			}
-
-			created += await EnsureFateEventiveAsync(fate, fate.Date.Value, cancellationToken) ? 1 : 0;
-		}
-
-		// Orbit-scheduled fates: seek their (Gregorian-calendar) schedules through the window end, catching up
-		// on anything pending since the last seek. Span-format orbits carry the eventive length themselves.
+		// Orbit fates: seek through now (instant), hardening occurrences whose time has already arrived; the
+		// still-future occurrences of today are left for a later tick.
 		var orbitFates = await context.Fates
 			.IgnoreAutoIncludes()
 			.Where(fate => fate.Status == FateStatus.Active && fate.Orbit != null)
 			.ToListAsync(cancellationToken);
-
 		foreach (var fate in orbitFates)
 		{
-			foreach (var occurrence in await orbitService.SeekOccurrencesAsync(fate, fate.Orbit!, fateSeekThroughExclusive, cancellationToken))
+			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(fate, fate.Orbit!, localNow, cancellationToken))
 			{
 				created += await EnsureFateEventiveAsync(fate, occurrence, cancellationToken) ? 1 : 0;
 			}
 		}
 
-		// Orbit-scheduled decrees resolve on the Pleiadean calendar. Lunar reflect-decrees resolve at day
-		// granularity against the cycle's start day and generate cycle-bound reflectives (cycle begin only);
-		// every other decree materializes unbound attentives — timed for sub-day granularities, period-spanning
-		// for super-day granularities (so multiple cycles can collide with one instance).
+		// Orbit decrees (non-reflect): seek through now, hardening crossed attentives. Reflect-decrees are
+		// cycle-bound; their schedule state is not advanced here.
 		var orbitDecrees = await context.Decrees
 			.IgnoreAutoIncludes()
 			.Where(decree => decree.Status == DecreeStatus.Active && decree.Orbit != null)
 			.ToListAsync(cancellationToken);
-
 		foreach (var decree in orbitDecrees)
 		{
-			var reflects = decree.Reflect && await orbitService.IsInLunarHierarchyAsync(decree.DirectiveId, cancellationToken);
-			if (reflects)
+			if (decree.Reflect && await orbitService.IsInLunarHierarchyAsync(decree.DirectiveId, cancellationToken))
 			{
-				// Reflectives are cycle-bound. A cycle-less (daily) pass leaves the reflect-decree entirely
-				// alone — its schedule state is not advanced here — so the next cycle begin still generates it.
-				if (cycle is null)
-				{
-					continue;
-				}
-
-				var occurrences = await orbitService.SeekOccurrencesAsync(decree, decree.Orbit!, startDay.AddDays(1), cancellationToken);
-				if (occurrences.Any(occurrence => occurrence.Date <= startDay && startDay < occurrence.PeriodEndExclusive))
-				{
-					var reflectiveExists = await context.Set<Reflective>()
-						.AnyAsync(item => item.PolarisCycleId == cycle.Id && item.DecreeId == decree.Id, cancellationToken);
-					if (!reflectiveExists)
-					{
-						// Auto-inclusion: a cycle-bound reflective inherits its affinity from the originating
-						// decree's college (PEP100 patch).
-						context.Add(new Reflective
-						{
-							Description = decree.Title,
-							PolarisCycleId = cycle.Id,
-							DecreeId = decree.Id,
-							Executed = false,
-							AffinityTimeframeId = await affinityResolver.ResolveForCollegeAsync(decree.College, cancellationToken),
-						});
-						created++;
-					}
-				}
-
 				continue;
 			}
 
-			foreach (var occurrence in await orbitService.SeekOccurrencesAsync(decree, decree.Orbit!, decreeSeekThroughExclusive, cancellationToken))
+			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(decree, decree.Orbit!, localNow, cancellationToken))
 			{
-				var attentiveExists = await context.Attentives.AnyAsync(
-					item => item.DecreeId == decree.Id
-						&& item.Date == occurrence.Date
-						&& item.Time == occurrence.StartTime
-						&& item.PolarisCycleId == null,
-					cancellationToken);
-				if (attentiveExists)
-				{
-					continue;
-				}
-
-				var attentive = new Attentive
-				{
-					DecreeId = decree.Id,
-					Date = occurrence.Date,
-					Time = occurrence.StartTime,
-					PeriodEndDate = occurrence.PeriodEndExclusive > occurrence.Date.AddDays(1)
-						? occurrence.PeriodEndExclusive
-						: null,
-					Estimation = decree.DefaultLength,
-				};
-				attentive.Normalize();
-				context.Attentives.Add(attentive);
-				created++;
+				created += await EnsureDecreeAttentiveAsync(decree, occurrence, cancellationToken) ? 1 : 0;
 			}
 		}
 
+		// Dated fates whose occurrence instant has arrived (only those still missing their eventive are loaded).
+		var datedFates = await context.Fates
+			.AsNoTracking()
+			.IgnoreAutoIncludes()
+			.Where(fate => fate.Status == FateStatus.Active && fate.Date != null && fate.Date <= today
+				&& !context.Eventives.Any(eventive =>
+					eventive.FateId == fate.Id && eventive.RecurrenceDate == fate.Date && eventive.RecurrenceTime == fate.StartTime))
+			.ToListAsync(cancellationToken);
+		foreach (var fate in datedFates)
+		{
+			if (fate.Date!.Value.ToDateTime(fate.StartTime ?? TimeOnly.MinValue) <= localNow)
+			{
+				created += await EnsureFateEventiveAsync(fate, fate.Date.Value, cancellationToken) ? 1 : 0;
+			}
+		}
+
+		// Due objectives whose due date has arrived.
 		var dueObjectives = await context.Objectives
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
-			.Where(objective => objective.Due != null
-				&& candidateDates.Contains(objective.Due.Value)
+			.Where(objective => objective.Due != null && objective.Due <= today
 				&& objective.Status != ObjectiveStatus.Done
 				&& objective.Status != ObjectiveStatus.Archived
-				&& objective.Status != ObjectiveStatus.Failed)
+				&& objective.Status != ObjectiveStatus.Failed
+				&& !context.Eventives.Any(eventive => eventive.ObjectiveId == objective.Id && eventive.RecurrenceDate == objective.Due))
 			.ToListAsync(cancellationToken);
-
 		foreach (var objective in dueObjectives)
 		{
-			var exists = await context.Eventives.AnyAsync(item => item.ObjectiveId == objective.Id && item.RecurrenceDate == objective.Due!.Value, cancellationToken);
-			if (exists)
-			{
-				continue;
-			}
-
 			context.Eventives.Add(new Eventive
 			{
 				ObjectiveId = objective.Id,
@@ -260,9 +188,54 @@ public sealed class ProximityMaterializationService(
 			created++;
 		}
 
-		// Advanced orbit states persist even when no new instances were created.
+		// The advanced orbit cursors persist even when no new rows were created.
 		await context.SaveChangesAsync(cancellationToken);
+		if (created > 0)
+		{
+			await auditLogService.WriteAsync(
+				"daemon",
+				"rolling.materialize",
+				subjectType: nameof(PolarisCycle),
+				details: new { created, from = localNow.ToString("yyyy-MM-dd HH:mm") },
+				cancellationToken: cancellationToken);
+		}
+
 		return created;
+	}
+
+	/// <summary>
+	/// Hardens an orbit decree's unbound attentive for an occurrence, returning whether one was created. The
+	/// RECURRENCE-ID (decree + original slot) is the identity, so an already-hardened occurrence — including one
+	/// that was rescheduled — is recognized rather than duplicated.
+	/// </summary>
+	private async Task<bool> EnsureDecreeAttentiveAsync(Decree decree, OrbitOccurrenceInstance occurrence, CancellationToken cancellationToken)
+	{
+		var exists = await context.Attentives.AnyAsync(
+			item => item.DecreeId == decree.Id
+				&& item.RecurrenceDate == occurrence.Date
+				&& item.RecurrenceTime == occurrence.StartTime
+				&& item.PolarisCycleId == null,
+			cancellationToken);
+		if (exists)
+		{
+			return false;
+		}
+
+		var attentive = new Attentive
+		{
+			DecreeId = decree.Id,
+			Date = occurrence.Date,
+			Time = occurrence.StartTime,
+			RecurrenceDate = occurrence.Date,
+			RecurrenceTime = occurrence.StartTime,
+			PeriodEndDate = occurrence.PeriodEndExclusive > occurrence.Date.AddDays(1)
+				? occurrence.PeriodEndExclusive
+				: null,
+			Estimation = decree.DefaultLength,
+		};
+		attentive.Normalize();
+		context.Attentives.Add(attentive);
+		return true;
 	}
 
 	/// <summary>

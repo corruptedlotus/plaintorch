@@ -69,6 +69,10 @@ export interface Eventive {
 	date: string
 	startTime: string | undefined
 	endTime: string | undefined
+	/** Original occurrence slot date — the stable RECURRENCE-ID; unlike `date` it survives a reschedule. */
+	recurrenceDate: string
+	/** Original occurrence slot time; undefined for an all-day slot. With `recurrenceDate` forms the RECURRENCE-ID. */
+	recurrenceTime: string | undefined
 	resolution: EventiveResolution
 	estimation: number | undefined
 	minimum: number | undefined
@@ -85,6 +89,10 @@ export interface Attentive {
 	date: string
 	/** Time of day for sub-day orbit granularities; unbound attentives may carry any time and date. */
 	time: string | undefined
+	/** Original occurrence slot date — the stable RECURRENCE-ID; unlike `date` it survives a reschedule. */
+	recurrenceDate: string
+	/** Original occurrence slot time; undefined for an all-day slot. With `recurrenceDate` forms the RECURRENCE-ID. */
+	recurrenceTime: string | undefined
 	/**
 	 * Exclusive period end date for super-day orbit granularities (week/month/year). A week-born attentive
 	 * occupies its whole week, so multiple Polaris cycles can collide with it. Null means single-day.
@@ -185,4 +193,25 @@ export interface AttentiveUpdate {
 	estimation?: number | null | undefined
 	minimum?: number | null | undefined
 	maximum?: number | null | undefined
+}
+
+/**
+ * Addresses a single eventive occurrence by its owner UID (a fate or objective id) and RECURRENCE-ID
+ * (Strategy 1). Interacting with the occurrence hardens it, so a projected occurrence needs no row id.
+ */
+export interface EventiveOccurrenceRef {
+	ownerId: string
+	recurrenceDate: string
+	recurrenceTime?: string | null | undefined
+}
+
+/**
+ * Addresses a single attentive occurrence by its decree and RECURRENCE-ID. Omit `polarisCycleId` for an
+ * unbound occurrence (hardened on interaction); set it to name the cycle of a Polaris-bound occurrence.
+ */
+export interface AttentiveOccurrenceRef {
+	decreeId: string
+	recurrenceDate: string
+	recurrenceTime?: string | null | undefined
+	polarisCycleId?: string | null | undefined
 }

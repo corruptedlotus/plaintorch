@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Pleiades.Vault.Database;
 
@@ -10,9 +11,11 @@ using Pleiades.Vault.Database;
 namespace plaintorch.Vault.Database.Migrations
 {
     [DbContext(typeof(PlainfraContext))]
-    partial class PlainfraContextModelSnapshot : ModelSnapshot
+    [Migration("20260908224915_AttentiveRecurrenceId")]
+    partial class AttentiveRecurrenceId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
@@ -765,93 +768,6 @@ namespace plaintorch.Vault.Database.Migrations
                         .IsUnique();
 
                     b.ToTable("FileGraveyardEntries");
-                });
-
-            modelBuilder.Entity("Pleiades.Vault.Database.OperationStatusDismissalRecord", b =>
-                {
-                    b.Property<string>("Key")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("DismissedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Fingerprint")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("OperationId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReasonCode")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Scope")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ScopeKey")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Key");
-
-                    b.HasIndex("Scope");
-
-                    b.ToTable("OperationStatusDismissals");
-                });
-
-            modelBuilder.Entity("Pleiades.Vault.Database.OperationStatusEvent", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Detail")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("EntityId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("FilesJson")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("OccurredUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("OccurrenceCount")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("OperationId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PreviousSeverity")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReasonCode")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ScopeKey")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Severity")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Transition")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OccurredUtc");
-
-                    b.HasIndex("OperationId", "ScopeKey");
-
-                    b.ToTable("OperationStatusEvents");
                 });
 
             modelBuilder.Entity("Pleiades.Vault.Database.VaultMigrationHistory", b =>

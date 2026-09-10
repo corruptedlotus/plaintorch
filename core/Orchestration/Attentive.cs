@@ -13,7 +13,7 @@ namespace Pleiades.Orchestration;
 /// attentive can only be done, skipped, or moved to another Polaris cycle. Its Celestron reward is
 /// predefined on the owning decree and granted on each execution.
 /// </remarks>
-public sealed class Attentive : ITimeAllocated
+public sealed class Attentive : ITimeAllocated, IOccurrenceInstance
 {
 	[Key]
 	/// <summary>
@@ -56,6 +56,28 @@ public sealed class Attentive : ITimeAllocated
 	/// fill this from the occurrence instant; unbound attentives may carry any time and date.
 	/// </summary>
 	public TimeOnly? Time { get; set; }
+
+	/// <summary>
+	/// Gets or sets the original occurrence slot date (iCalendar <c>RECURRENCE-ID</c>). Unlike <see cref="Date"/>
+	/// (which is mutable — an unbound attentive can be rescheduled), this stays fixed at the occurrence's
+	/// original slot, so orbit dedup and the agenda projection resolve to the same occurrence after a reschedule.
+	/// Set at materialization.
+	/// </summary>
+	public DateOnly RecurrenceDate { get; set; }
+
+	/// <summary>
+	/// Gets or sets the original occurrence slot time; <see langword="null"/> for an all-day slot. Together with
+	/// <see cref="RecurrenceDate"/> it forms the stable <c>RECURRENCE-ID</c>.
+	/// </summary>
+	public TimeOnly? RecurrenceTime { get; set; }
+
+	/// <inheritdoc />
+	[NotMapped]
+	public string RecurrenceOwnerUid => DecreeId;
+
+	/// <inheritdoc />
+	[NotMapped]
+	public RecurrenceId RecurrenceId => new(RecurrenceDate, RecurrenceTime);
 
 	/// <summary>
 	/// Gets or sets the exclusive end date of the occurrence's period for super-day orbit granularities

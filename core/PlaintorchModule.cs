@@ -120,6 +120,9 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<IVaultMigration, OnrushPlanningPlaceholderRenameMigration>();
 		services.AddScoped<PlaintorchEngine>();
 		services.AddScoped<TimeframeAffinityResolver>();
+		services.AddSingleton<MaterializationPolicyOptions>();
+		services.AddScoped<OccurrenceHardeningService>();
+		services.AddScoped<AgendaProjectionService>();
 		services.AddScoped<ProximityMaterializationService>();
 		services.AddHostedService<PlaintorchCoreService>();
 		services.AddHostedService<VaultWatcherService>();

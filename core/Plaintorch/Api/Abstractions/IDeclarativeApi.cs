@@ -91,12 +91,14 @@ public interface IDeclarativeApi
 	Task<IReadOnlyList<Attentive>> ListAttentivesAsync(string? decreeId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Applies a mutable update to an eventive occurrence.
+	/// Applies a mutable update to an eventive occurrence addressed by its owner and RECURRENCE-ID, hardening a
+	/// still-projected occurrence first.
 	/// </summary>
-	Task<Eventive> UpdateEventiveAsync(long eventiveId, EventiveUpdate update, CancellationToken cancellationToken = default);
+	Task<Eventive> UpdateEventiveAsync(EventiveOccurrenceRef occurrence, EventiveUpdate update, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Applies a mutable update to an attentive occurrence, honouring the bound/unbound mobility rules.
+	/// Applies a mutable update to an attentive occurrence addressed by its decree and RECURRENCE-ID (and cycle,
+	/// when bound), honouring the bound/unbound mobility rules and hardening a still-projected unbound occurrence.
 	/// </summary>
-	Task<Attentive> UpdateAttentiveAsync(long attentiveId, AttentiveUpdate update, CancellationToken cancellationToken = default);
+	Task<Attentive> UpdateAttentiveAsync(AttentiveOccurrenceRef occurrence, AttentiveUpdate update, CancellationToken cancellationToken = default);
 }

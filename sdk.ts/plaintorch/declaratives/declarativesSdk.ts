@@ -2,12 +2,14 @@ import type { PlaintorchCoreClient } from "../coreClient"
 import type {
 	Attentive,
 	AttentiveMaterialization,
+	AttentiveOccurrenceRef,
 	AttentiveUpdate,
 	Decree,
 	DecreePlan,
 	DecreeUpdate,
 	Eventive,
 	EventiveMaterialization,
+	EventiveOccurrenceRef,
 	EventiveUpdate,
 	Fate,
 	FatePlan,
@@ -97,11 +99,11 @@ export class PlaintorchDeclarativesSdk {
 		return (await this.client.getJson<Attentive[]>(`/api/attentives${suffix}`)) ?? []
 	}
 
-	public async updateEventive(eventiveId: number, update: EventiveUpdate): Promise<Eventive | undefined> {
-		return await this.client.putForJson<Eventive>(`/api/eventives/${eventiveId}`, update)
+	public async updateEventive(occurrence: EventiveOccurrenceRef, update: EventiveUpdate): Promise<Eventive | undefined> {
+		return await this.client.putForJson<Eventive>(`/api/eventives`, { occurrence, update })
 	}
 
-	public async updateAttentive(attentiveId: number, update: AttentiveUpdate): Promise<Attentive | undefined> {
-		return await this.client.putForJson<Attentive>(`/api/attentives/${attentiveId}`, update)
+	public async updateAttentive(occurrence: AttentiveOccurrenceRef, update: AttentiveUpdate): Promise<Attentive | undefined> {
+		return await this.client.putForJson<Attentive>(`/api/attentives`, { occurrence, update })
 	}
 }

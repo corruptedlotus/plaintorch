@@ -130,16 +130,30 @@ public static class OrbitDays
 	/// </summary>
 	public static (IReadOnlyList<OrbitOccurrenceInstance> Occurrences, string AdvancedState) SeekOccurrencesThrough(
 		string state, DateOnly endExclusive, IOrbitCalendar calendar)
+		=> SeekThroughMs(state, ToMs(endExclusive), calendar);
+
+	/// <summary>
+	/// SEEKING to an exact instant: resolves and consumes every pending occurrence strictly before
+	/// <paramref name="endExclusive"/> — an instant, not a whole day — and advances the state to it. This is how
+	/// the harden-on-time pass catches up occurrences whose time has already arrived without also consuming the
+	/// still-future occurrences of the same day.
+	/// </summary>
+	public static (IReadOnlyList<OrbitOccurrenceInstance> Occurrences, string AdvancedState) SeekOccurrencesThroughInstant(
+		string state, DateTime endExclusive, IOrbitCalendar calendar)
+		=> SeekThroughMs(state, ToMs(endExclusive), calendar);
+
+	private static (IReadOnlyList<OrbitOccurrenceInstance> Occurrences, string AdvancedState) SeekThroughMs(
+		string state, long endExclusiveMs, IOrbitCalendar calendar)
 	{
 		var snapshot = OrbitSnapshot.FromJson(state);
 		if (IsSpanFormat(snapshot.Notation))
 		{
 			// Span engines re-resolve from the epoch; the cursor is tracked in the snapshot manually.
-			return SeekSpansThrough(snapshot, endExclusive, calendar);
+			return SeekSpansThroughMs(snapshot, endExclusiveMs, calendar);
 		}
 
 		var engine = OrbitEngine.Resume(snapshot, calendar);
-		var entries = engine.NextWithin(long.MinValue, ToMs(endExclusive));
+		var entries = engine.NextWithin(long.MinValue, endExclusiveMs);
 		return (ToOccurrences(entries, calendar), engine.Serialize().ToJson());
 	}
 
@@ -168,8 +182,8 @@ public static class OrbitDays
 			.Any(occurrence => occurrence.Date <= day && day < occurrence.PeriodEndExclusive);
 	}
 
-	private static (IReadOnlyList<OrbitOccurrenceInstance> Occurrences, string AdvancedState) SeekSpansThrough(
-		OrbitSnapshot snapshot, DateOnly endExclusive, IOrbitCalendar calendar)
+	private static (IReadOnlyList<OrbitOccurrenceInstance> Occurrences, string AdvancedState) SeekSpansThroughMs(
+		OrbitSnapshot snapshot, long endMs, IOrbitCalendar calendar)
 	{
 		if (!JsDate.TryParseIso(snapshot.Epoch, out var epochMs))
 		{
@@ -184,7 +198,6 @@ public static class OrbitDays
 		}
 
 		var engine = OrbitEngine.FromNotation(snapshot.Notation, epochMs, calendar, (uint)snapshot.Seed);
-		var endMs = ToMs(endExclusive);
 		var entries = engine.ResolveWithin(cursorMs, endMs);
 		snapshot.Cursor = JsDate.ToIsoString(Math.Max(cursorMs, endMs));
 		return (ToOccurrences(entries, calendar), snapshot.ToJson());
@@ -229,6 +242,13 @@ public static class OrbitDays
 	private static long ToMs(DateOnly day)
 	{
 		return JsDate.DaysFromCivil(day.Year, day.Month, day.Day) * JsDate.MsPerDay;
+	}
+
+	private static long ToMs(DateTime localInstant)
+	{
+		// The engine works in calendar-naive civil milliseconds, and occurrence times of day round-trip as local
+		// wall time, so a local wall-clock instant maps to civil midnight plus its time of day.
+		return ToMs(DateOnly.FromDateTime(localInstant)) + (long)localInstant.TimeOfDay.TotalMilliseconds;
 	}
 
 	private static DateOnly ToDate(long ms)
