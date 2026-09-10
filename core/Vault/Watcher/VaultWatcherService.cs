@@ -313,66 +313,16 @@ public sealed class VaultWatcherService(
 	}
 
 	/// <summary>
-	/// Runs startup scan reconciliation once before live filesystem observation begins.
+	/// Runs startup scan reconciliation once before live filesystem observation begins, through the same reconciler the
+	/// live path uses — so a sweep emits the same issues a sequence of live events would. A structural discovery failure
+	/// propagates (for the caller to classify as tier 2); per-candidate failures are reported and skipped.
 	/// </summary>
 	/// <param name="cancellationToken">A token used to cancel startup processing.</param>
 	private async Task RunStartupScanAsync(CancellationToken cancellationToken)
 	{
 		using var scope = scopeFactory.CreateScope();
-		var discovery = scope.ServiceProvider.GetRequiredService<VaultMarkdownDiscoveryService>();
-		var syncService = scope.ServiceProvider.GetRequiredService<VaultWatcherSyncService>();
-		var result = await discovery.ScanAsync("startup", cancellationToken);
-		logger.LogInformation(
-			"Vault discovery completed: {CandidateCount} candidates, {InvalidCount} invalid, {IgnoredCount} ignored.",
-			result.Candidates.Count,
-			result.InvalidCount,
-			result.IgnoredPaths);
-		var orderedCandidates = result.Candidates
-			.OrderBy(candidate => StartupActionPriority(candidate.SuggestedAction))
-			.ThenBy(candidate => candidate.VaultRelativePath, StringComparer.OrdinalIgnoreCase)
-			.ToList();
-
-		foreach (var candidate in orderedCandidates)
-		{
-			cancellationToken.ThrowIfCancellationRequested();
-			logger.LogInformation(
-				"Startup discovery candidate {Path} for {EntityType} suggested action {Action}.",
-				candidate.VaultRelativePath,
-				candidate.Model.EntityName,
-				candidate.SuggestedAction);
-
-			if (!candidate.IsValid)
-			{
-				logger.LogWarning(
-					"Startup candidate {Path} for {EntityType} has {IssueCount} issue(s). Suggested action: {Action}.",
-					candidate.VaultRelativePath,
-					candidate.Model.EntityName,
-					candidate.Issues.Count,
-					candidate.SuggestedAction);
-			}
-
-			try
-			{
-				await syncService.ExecuteAsync(candidate, "startup", cancellationToken);
-				statusReporter.ReportSyncSucceeded(candidate);
-			}
-			catch (OperationCanceledException)
-			{
-				throw;
-			}
-			catch (Exception exception)
-			{
-				// A candidate that fails during the startup sweep (a held file, a write error) is flagged as a tier-3
-				// issue rather than lost. The live drain loop's retry sweep — which begins once this scan returns —
-				// re-queues it from the issue set until it reconciles.
-				statusReporter.ReportSyncFailure(candidate, exception);
-				logger.LogError(
-					exception,
-					"Watcher failed to process startup candidate '{Path}' for {EntityType}; flagged for retry. Processing will continue.",
-					candidate.VaultRelativePath,
-					candidate.Model.EntityName);
-			}
-		}
+		var reconciler = scope.ServiceProvider.GetRequiredService<VaultWatcherReconciler>();
+		await reconciler.ReconcileSweepAsync("startup", cancellationToken);
 	}
 
 	/// <summary>
@@ -699,69 +649,8 @@ public sealed class VaultWatcherService(
 		}
 
 		using var scope = scopeFactory.CreateScope();
-		var discovery = scope.ServiceProvider.GetRequiredService<VaultMarkdownDiscoveryService>();
-		var syncService = scope.ServiceProvider.GetRequiredService<VaultWatcherSyncService>();
-		VaultSyncCandidate? candidate;
-		try
-		{
-			candidate = await discovery.InspectPathAsync(path, "watcher", cancellationToken);
-		}
-		catch (OperationCanceledException)
-		{
-			throw;
-		}
-		catch (Exception exception)
-		{
-			// Tier 1: a passive-read failure is advisory and left to the retry sweep, which keeps re-checking the path
-			// from the issue set until it reads cleanly (which resolves the flag).
-			statusReporter.ReportInspectFailure(path, exception);
-			logger.LogWarning(exception, "Watcher discovery failed for path '{Path}'; flagged for retry. Processing will continue.", path);
-			return;
-		}
-
-		if (candidate is null)
-		{
-			statusReporter.ReportInspectIgnored(path);
-			logger.LogDebug("Watcher ignored path '{Path}'.", path);
-			return;
-		}
-
-		logger.LogInformation(
-			"Watcher observed {EntityType} candidate '{Path}' with suggested action {Action}.",
-			candidate.Model.EntityName,
-			candidate.VaultRelativePath,
-			candidate.SuggestedAction);
-		if (!candidate.IsValid)
-		{
-			logger.LogWarning(
-				"Watcher candidate '{Path}' has {IssueCount} validation issue(s).",
-				candidate.VaultRelativePath,
-				candidate.Issues.Count);
-		}
-
-		statusReporter.ReportInspectCandidate(candidate);
-
-		try
-		{
-			await syncService.ExecuteAsync(candidate, "watcher", cancellationToken);
-			statusReporter.ReportSyncSucceeded(candidate);
-		}
-		catch (OperationCanceledException)
-		{
-			throw;
-		}
-		catch (Exception exception)
-		{
-			// Tier 3: applying the change to this entity file failed. Flag it and leave it to the retry sweep, which
-			// re-inspects it indefinitely — so if the file is later gone, no longer in violation, or the entity has
-			// changed, the recomputed decision resolves or supersedes the flag.
-			statusReporter.ReportSyncFailure(candidate, exception);
-			logger.LogError(
-				exception,
-				"Watcher failed to process candidate '{Path}' for {EntityType}; flagged for retry. Processing will continue.",
-				candidate.VaultRelativePath,
-				candidate.Model.EntityName);
-		}
+		var reconciler = scope.ServiceProvider.GetRequiredService<VaultWatcherReconciler>();
+		await reconciler.ReconcilePathAsync(path, "watcher", cancellationToken);
 	}
 
 	/// <summary>
@@ -775,19 +664,5 @@ public sealed class VaultWatcherService(
 		}
 
 		_watchers.Clear();
-	}
-
-	private static int StartupActionPriority(VaultSyncAction action)
-	{
-		return action switch
-		{
-			VaultSyncAction.UpdateFromFile => 0,
-			VaultSyncAction.RewriteFromDatabase => 0,
-			VaultSyncAction.CreateFromFile => 1,
-			VaultSyncAction.PurgeFile => 2,
-			VaultSyncAction.Conflict => 3,
-			VaultSyncAction.Ignore => 4,
-			_ => 5,
-		};
 	}
 }

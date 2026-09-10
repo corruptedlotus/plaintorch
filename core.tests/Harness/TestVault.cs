@@ -185,6 +185,20 @@ public sealed class TestVault : IAsyncLifetime
 	}
 
 	/// <summary>
+	/// Runs a startup sweep through the real <see cref="VaultWatcherReconciler"/>, emitting operation-status issues
+	/// exactly as the hosted watcher does on boot. Use this (not <see cref="SweepAsync"/>) to assert issue emission.
+	/// </summary>
+	public Task SweepWithIssuesAsync()
+		=> WithScopeAsync(services => services.GetRequiredService<VaultWatcherReconciler>().ReconcileSweepAsync("test-sweep"));
+
+	/// <summary>
+	/// Reconciles a single path through the real <see cref="VaultWatcherReconciler"/>, emitting operation-status issues
+	/// exactly as a live filesystem event does. Use this (not <see cref="ReconcileAsync"/>) to assert issue emission.
+	/// </summary>
+	public Task ReconcileWithIssuesAsync(string absolutePath)
+		=> WithScopeAsync(services => services.GetRequiredService<VaultWatcherReconciler>().ReconcilePathAsync(absolutePath, "test-runtime"));
+
+	/// <summary>
 	/// Runs the startup sweep: a full discovery scan, then executes every candidate's action in the same priority
 	/// order <c>VaultWatcherService</c> uses at startup. This mirrors the live pipeline, so a one-shot sweep and a
 	/// sequence of incremental <see cref="ReconcileAsync"/> events can be compared for the same final state.
