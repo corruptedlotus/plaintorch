@@ -1,6 +1,7 @@
 ---
 status: implemented
 assignee: Copilot 🤖
+phase: "1"
 ---
 # Abstraction
 This proposal is about entities that have a parent/nested storage system, and how parent entities link to relocation.

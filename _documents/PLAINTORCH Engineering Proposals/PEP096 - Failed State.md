@@ -1,6 +1,7 @@
 ---
 status: implemented
 assignee: Copilot 🤖
+phase: 2A
 ---
 # New Objective State: Failed
 Add a new objective state "Failed".

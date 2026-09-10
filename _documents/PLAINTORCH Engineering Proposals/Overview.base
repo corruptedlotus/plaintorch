@@ -12,12 +12,15 @@ properties:
     displayName: Title
   note.assignee:
     displayName: Assignee
+  note.phase:
+    displayName: Phase
 views:
   - type: table
     name: Table
     order:
       - file.name
       - status
+      - phase
     sort:
       - property: file.name
         direction: ASC
@@ -32,8 +35,27 @@ views:
     indentProperties: true
     markers: none
     columnSize:
-      file.name: 522
-      note.status: 117
+      file.name: 511
+      note.status: 109
+      note.phase: 77
+  - type: list
+    name: p2a
+    filters:
+      and:
+        - phase == "2A"
+    order:
+      - file.name
+      - status
+    markers: none
+  - type: list
+    name: p1
+    filters:
+      and:
+        - phase == "1"
+    order:
+      - file.name
+      - status
+    markers: none
   - type: list
     name: Patches
     order:
@@ -43,9 +65,6 @@ views:
     markers: none
   - type: table
     name: Open
-    filters:
-      and:
-        - status != "implemented"
     order:
       - file.name
       - status
@@ -65,3 +84,45 @@ views:
     columnSize:
       file.name: 439
       note.status: 117
+  - type: list
+    name: Phases
+    order:
+      - file.name
+    markers: none
+    indentProperties: true
+  - type: list
+    name: p3c
+    filters:
+      and:
+        - phase == "3C"
+    order:
+      - file.name
+      - status
+    markers: none
+  - type: list
+    name: p3d
+    filters:
+      and:
+        - phase == "3D"
+    order:
+      - file.name
+      - status
+    markers: none
+  - type: list
+    name: p4q
+    filters:
+      and:
+        - phase == "4Q"
+    order:
+      - file.name
+      - status
+    markers: none
+  - type: list
+    name: p4s
+    filters:
+      and:
+        - phase == "4S"
+    order:
+      - file.name
+      - status
+    markers: none

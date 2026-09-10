@@ -1,6 +1,7 @@
 ---
 status: implemented
 assignee: Soraya 🧙‍♀️
+phase: 2A
 ---
 # Executive Orders
 Each Onrush Sprint can have a collection of Executive Orders. These orders are special constraints or directions that shape the way an onrush is moved through.

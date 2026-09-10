@@ -5,6 +5,7 @@ patches:
   - Patch105.2 - Directive Icons & Banners
   - Patch105.3 - Editable Media & the Media Domain
 assignee: Soraya 🧙‍♀️
+phase: 2A
 ---
 # Patches
 Directives gain a custom **icon** and a **banner** image. The title says "directive", but the machinery is not directive-shaped: what a directive references is a general **media subsystem** that any entity can later attach an image to. So this lands in two layers — the subsystem first, then directives as its first consumer.

@@ -1,6 +1,7 @@
 ---
 status: implemented
 assignee: Copilot 🤖
+phase: 2A
 ---
 # Storage Policy: PUCK Storage
 This PEP introduces a new vault storage policy parameter: PUCK Storage.

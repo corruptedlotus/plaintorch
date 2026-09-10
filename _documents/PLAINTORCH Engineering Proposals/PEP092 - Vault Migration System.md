@@ -1,6 +1,7 @@
 ---
 status: implemented
 assignee: Copilot 🤖
+phase: 2A
 ---
 # Vault Migration System
 PLAINTORCH keeps state in two coupled places: the EF Core database inside `.plaintorch-data`, and the human-authored markdown files of the vault itself. Database schema changes are already handled through EF Core migrations. Vault changes are not.
