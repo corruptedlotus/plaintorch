@@ -222,6 +222,7 @@ export class TimeframesEditor extends Component {
 						<span class='caption'>Icon</span>
 						<p7t-editable-media
 							icon
+							style="width: 1.8em; height: 1.8em;"
 							.media=${timeframe.iconMedia}
 							.value=${timeframe.icon ?? ''}
 							@change=${(e: Event) => this.saveIcon(timeframe.id, e)}>
