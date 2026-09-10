@@ -284,7 +284,10 @@ public sealed class VaultMarkdownDiscoveryService(
 			return null;
 		}
 
-		var (pathId, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(fullPath);
+		// Storage-aware, symmetric with how the file is written: only Index storage carries a filename identity token;
+		// a Quiet filename is a whole title, so a legitimately dashed title ("Q1 - Ship it") is not mis-read as a phantom
+		// "{prefix} - {title}" identity that the mode would then reject as an unrecognised PUCK assertion.
+		var (pathId, pathTitle) = pathComposer.ReadFilenameIdentity(model.EntityType, fullPath);
 		var pathDerivedId = pathId;
 		var pathDerivedTitle = pathTitle;
 		var instantiationType = familyInstantiationResolver.ResolveInstantiationType(

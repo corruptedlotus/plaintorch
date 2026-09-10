@@ -209,13 +209,14 @@ public sealed class WatcherStatusTests : VaultTestBase
 	}
 
 	[Fact]
-	public void Foreign_file_in_a_non_exclusive_root_should_surface_as_a_warning()
+	public void An_unrecognised_identity_assertion_surfaces_as_an_error()
 	{
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
-		// A stray, unmanaged note in a shared (non-Enforced) root — roots are not required to be exclusive. The mode
-		// leaves it in place (Ignore) and classifies it as a dismissible foreign-file Warning, not an Error to purge.
+		// A file asserting a PUCK the vault does not recognise is illegal, not merely foreign: it is still left in place
+		// (Ignore, not purged), but it is an error demanding manual resolution — it degrades health rather than sitting
+		// as a silent advisory.
 		watcher.ReportInspectCandidate(Candidate(
 			"Objectives/My personal note.md",
 			VaultSyncAction.Ignore,
@@ -224,15 +225,15 @@ public sealed class WatcherStatusTests : VaultTestBase
 
 		var status = Assert.Single(registry.GetActiveStatuses());
 		Assert.Equal(WatcherOperations.ForeignFile, status.ReasonCode);
-		Assert.Equal(OperationSeverity.Warning, status.Severity);
-		Assert.Equal(OperationHealth.Ok, registry.GetHealth()); // a warning alone does not degrade health
+		Assert.Equal(OperationSeverity.Error, status.Severity);
+		Assert.Equal(OperationHealth.Issues, registry.GetHealth());
 	}
 
 	[Fact]
-	public void A_foreign_file_warning_persists_through_its_own_successful_sync()
+	public void An_unrecognised_assertion_persists_through_its_own_successful_sync()
 	{
-		// Leaving the file in place IS the successful outcome, so the standing advisory must outlive the (no-op) sync —
-		// unlike an actionable reason, which a successful sync clears.
+		// Leaving the file in place IS the (no-op) sync outcome, so the standing error must outlive it — unlike an
+		// actionable reason, which a successful sync clears. It resolves only when the user acts on the file.
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
@@ -250,7 +251,7 @@ public sealed class WatcherStatusTests : VaultTestBase
 	}
 
 	[Fact]
-	public void A_foreign_file_warning_resolves_when_the_file_is_gone_or_becomes_managed()
+	public void An_unrecognised_assertion_resolves_when_the_file_is_gone_or_becomes_managed()
 	{
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();

@@ -110,8 +110,9 @@ public sealed class FreeformVaultStorageModePolicyService(
 		{
 			if (!exists)
 			{
-				// Freeform is a non-exclusive root: an unrecognised assertion is the user's own file, not the core's to
-				// destroy. Leave it in place with a dismissible foreign-file warning rather than purging it.
+				// Freeform is a non-exclusive root: the core does not destroy the file, but asserting a PUCK it does not
+				// recognise is illegal — left in place, flagged as an error for the user to resolve (dismissible), not
+				// purged.
 				return new(VaultSyncAction.Ignore, "Unrecognised freeform PUCK assertion (with validation issues) is left in place as an unmanaged file.", VaultSyncConcern.ForeignFile);
 			}
 

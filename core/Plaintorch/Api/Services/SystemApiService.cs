@@ -88,33 +88,32 @@ public sealed class SystemApiService(
 			throw new InvalidOperationException("Resolved note path escaped the active vault root.");
 		}
 
-		if (!pathSyncModelCatalog.TryResolve(absolutePath, out var model) || model is null)
+		// Fast path: when the path shape classifies to a PUCK-backed kind, resolve that kind's identity from the path
+		// (Index kinds carry the PUCK in the filename; title-driven kinds resolve by title/parent) and return it only
+		// when a stored entity stands behind it.
+		if (pathSyncModelCatalog.TryResolve(absolutePath, out var model)
+			&& model is not null
+			&& PuckEntityAttribute.ResolveKind(model.EntityType) is not null)
 		{
-			var freeformResolution = await ResolveByFrontMatterPuckAsync(absolutePath, cancellationToken);
-			return freeformResolution ?? new EntityExistence(normalizedRelativePath, false);
+			var (pathPuck, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(absolutePath);
+			var (resolvedPuck, _) = await ResolveEntityIdentityAsync(model.EntityType, absolutePath, pathPuck, pathTitle, cancellationToken, logger);
+			if (!string.IsNullOrWhiteSpace(resolvedPuck))
+			{
+				var byPath = await ResolveEntityByPuckAsync(resolvedPuck, cancellationToken);
+				if (byPath.Exists)
+				{
+					return byPath;
+				}
+			}
 		}
 
-		var entityKind = PuckEntityAttribute.ResolveKind(model.EntityType);
-		if (entityKind is null)
-		{
-			return new EntityExistence(normalizedRelativePath, false);
-		}
-
-		var (pathPuck, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(absolutePath);
-		var (resolvedPuck, _) = await ResolveEntityIdentityAsync(model.EntityType, absolutePath, pathPuck, pathTitle, cancellationToken, logger);
-
-		if (string.IsNullOrWhiteSpace(resolvedPuck))
-		{
-			// Stored-only resolution: a note that merely sits in an entity location but carries no identity that
-			// resolves to a stored entity is not itself an entity. Matching the path shape of a kind is not enough —
-			// that is the detached, path-driven heuristic that reported plain notes (a journal entry, a stray folder
-			// under Saga) as type-only "template" entities.
-			return new EntityExistence(normalizedRelativePath, false);
-		}
-
-		// ResolveEntityByPuckAsync reports existence only when the identity maps to a row in the database, so an
-		// identity that composes from the path but has no stored entity behind it also resolves as not-an-entity.
-		return await ResolveEntityByPuckAsync(resolvedPuck, cancellationToken);
+		// Authoritative fallback: the note's OWN asserted frontmatter identity. This resolves identity-driven notes the
+		// path shape does not — or mis- — claim: a freeform directive note whose folder is read as a containing
+		// directive, or any freeform/implicit note outside the canonical layout. It stays stored-only — existence is
+		// reported only when the asserted identity maps to a stored entity — so a note carrying no stored identity is
+		// still not an entity (the removed path-shape "template entity" phantom is not re-introduced).
+		var frontMatterResolution = await ResolveByFrontMatterPuckAsync(absolutePath, cancellationToken);
+		return frontMatterResolution ?? new EntityExistence(normalizedRelativePath, false);
 	}
 
 	private async Task<EntityExistence?> ResolveByFrontMatterPuckAsync(
@@ -159,7 +158,10 @@ public sealed class SystemApiService(
 			return null;
 		}
 
-		return ToEntityExistence(resolved);
+		// This note asserts this identity, so it IS the entity's associated note — authoritative over the self-named
+		// enumeration inside ResolveAsync, which does not locate a freeform note whose file name differs from its folder.
+		var relativeNote = Path.GetRelativePath(layout.VaultRoot, absolutePath).Replace(Path.DirectorySeparatorChar, '/');
+		return ToEntityExistence(resolved) with { AssociatedNote = relativeNote };
 	}
 
 	private static string NormalizeFrontMatterPuck(string rawPuck)

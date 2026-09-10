@@ -121,15 +121,38 @@ public sealed class VaultStoragePathComposer
 	/// "prefix - " as a phantom token when the entity's title-only file is next rewritten (.GENESIS principle 1: a raw
 	/// " - " split is not an identity).
 	/// </summary>
-	private void ApplyFilenameIdentity(IPuckNamedEntity named, string path)
+	/// <summary>
+	/// Reads the identity a filename carries for an entity type, storage-aware and symmetric with <see cref="GetBaseName"/>:
+	/// only <see cref="VaultPuckStorage.Index"/> embeds a <c>{token} - {title}</c> identity in the filename; for
+	/// <see cref="VaultPuckStorage.Quiet"/> (the default) — and any type whose storage the catalog does not declare, such
+	/// as an abstract family anchor — the PUCK lives in frontmatter and the whole filename is the title, so no token is
+	/// split off (a raw " - " split is not an identity, .GENESIS principle 1). This is the single reader both path→model
+	/// composition and discovery's identity derivation use, so they cannot disagree on what a Quiet filename means.
+	/// </summary>
+	public (string? Id, string Title) ReadFilenameIdentity(Type entityType, string path)
 	{
-		if (GetStorage(named.GetType()).PuckStorage == VaultPuckStorage.Index)
+		ArgumentNullException.ThrowIfNull(entityType);
+		ArgumentException.ThrowIfNullOrWhiteSpace(path);
+		var fileName = Path.GetFileNameWithoutExtension(path);
+
+		if (_catalog.TryGet(entityType, out var declared)
+			&& declared?.Storage?.PuckStorage == VaultPuckStorage.Index)
 		{
-			MarkdownFileLocator.ApplyLoosePuckIdentityFromPath(named, path);
-			return;
+			return PuckNamedIdentity.ParseLoose(fileName);
 		}
 
-		named.Title = Path.GetFileNameWithoutExtension(path).Trim();
+		return (null, fileName.Trim());
+	}
+
+	private void ApplyFilenameIdentity(IPuckNamedEntity named, string path)
+	{
+		var (id, title) = ReadFilenameIdentity(named.GetType(), path);
+		if (!string.IsNullOrWhiteSpace(id))
+		{
+			named.Id = id!;
+		}
+
+		named.Title = title;
 	}
 
 	private void ApplyParentFromPath(object entity, string path)
