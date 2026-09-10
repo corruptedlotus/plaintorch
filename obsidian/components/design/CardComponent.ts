@@ -20,7 +20,7 @@ export class CardComponent extends Component {
 				background-color: var(--background-primary-alt);
 
 				color: var(--text-normal);
-				font-weight: 700;
+				/*font-weight: 700;*/
 				margin-bottom: .5rem;
 				position: relative;
 				box-sizing: border-box;

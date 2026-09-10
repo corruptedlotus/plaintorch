@@ -4,7 +4,7 @@ import { Objective, PolarisCycle } from '@pleiades/sdk'
 import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
 import { OnrushSprint } from "@pleiades/sdk"
 import { App, Notice, SuggestModal } from "obsidian"
-import { core, IconItem, IconName, ReactiveBinder, SelectCollegeModal, SelectObjectiveStatusModal } from ".."
+import { core, getApp, IconItem, IconName, ReactiveBinder, SelectCollegeModal, SelectObjectiveStatusModal } from ".."
 
 @component('p7t-objective-banner')
 export class ObjectiveBanner extends EntityBanner<Objective> {
@@ -51,7 +51,7 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 	}
 
 	pickOnrush = () => {
-		new AddToOnrushModal(this.app!, this).open()
+		new AddToOnrushModal(getApp(), this).open()
 	}
 
 	addToPolaris = async () => {
@@ -204,7 +204,7 @@ class AddToOnrushModal extends SuggestModal<OnrushSprint | null> {
 			return
 		}
 		el.createEl('div', { text: sprint.title })
-		el.createEl('small', { text: (sprint.id === '0' ? 'Planning' : 'Active') + ' Onrush' })
+		el.createEl('small', { text: (sprint.id === 'x0000' ? 'In-Planning' : 'Active') + ' Onrush' })
 	}
 
 	override async onChooseSuggestion(item: OnrushSprint | null, evt: MouseEvent | KeyboardEvent) {
@@ -219,7 +219,7 @@ class AddToOnrushModal extends SuggestModal<OnrushSprint | null> {
 
 		new Notice(!item
 			? 'Removed from Onrush.'
-			: `Added to ${(item.id === '0' ? 'planning' : 'active')} Onrush.`)
+			: `Added to ${(item.id === 'x0000' ? 'planning' : 'active')} Onrush.`)
 		await core.repos.objectives.refresh(objectiveId)
 	}
 

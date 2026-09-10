@@ -28,9 +28,9 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 			p7t-editable-media.banner {
 				display: flex;
 				width: auto;
-				min-height: auto;
+				min-height: 0;
 				border-radius: 8px;
-				margin-block: -.6em .4em;
+				margin-block: -.6em 0;
 				margin-inline: 0 -.5em;
 				overflow: hidden;
 				box-sizing: border-box;
@@ -44,14 +44,9 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 					inset: 0;
 					border-radius: 16px;
 					z-index: 0;
-					mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .6) -10%, rgba(0, 0, 0, 0) 95%);
+					mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .5) -10%, rgba(0, 0, 0, .1) 95%);
 					pointer-events: none;
 				}
-			}
-
-			/* While empty, the banner reads as an affordance to add one rather than a blank strip. */
-			p7t-editable-media.banner.empty {
-				border: 2px dashed color-mix(in srgb, var(--text-normal) 22%, transparent);
 			}
 
 			.top-wrapper {
@@ -61,6 +56,7 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 				z-index: 0;
 
 				& .stamp {
+					height: auto;
 					z-index: 1;
 				}
 			}

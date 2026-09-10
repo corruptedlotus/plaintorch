@@ -20,6 +20,10 @@ export class OccurrenceItem extends Component {
 	static override get styles() {
 		return css`
 			${itemLayoutStyles}
+
+			.toplane {
+				font-size: .9em;
+			}
 		`
 	}
 

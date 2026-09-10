@@ -145,7 +145,7 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 			}
 
 			:host::part(pre-heading) {
-				color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 60%, transparent);
+				color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 70%, transparent);
 				font-size: .8em;
 				line-height: .8;
 			}
@@ -180,6 +180,42 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 					border-top: 2px solid var(--p7t-flare-accent, var(--interactive-accent));
 					align-self: start;
 					margin: .8em 1em;
+
+					& .notch-icon {
+						position: absolute;
+						height: 1em;
+						width: 1em;
+						margin-block: -.51em -.5em;
+						inset-inline-start: -.6em;
+						color: var(--p7t-flare-accent, var(--interactive-accent));
+					}
+
+					& .notch-start,
+					& .notch-end {
+
+						&::before, &::after {
+							content: '';
+							position: absolute;
+							height: 1.5em;
+							border-inline-start: 1px solid var(--p7t-flare-accent, var(--interactive-accent));
+							inset-inline-start: -.16em;
+						}
+
+						&::before {
+							margin-top: 1.5em;
+						}
+	
+						&::after {
+							margin-top: -3em;
+						}
+					}
+
+					& .notch-end {
+						&::before, &::after {
+							inset-inline-start: unset;
+							inset-inline-end: -.16em;
+						}
+					}
 				}
 
 				& .secondary {
@@ -265,7 +301,11 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 				${this.iconTemplate}
 				${this.headerTemplate}
 
-				<span class='indicator'></span>
+				<span class='indicator'>
+					<span class='notch-start'></span>
+					<p7t-icon class='notch-icon' icon='lucide:sparkle'></p7t-icon>
+					<span class='notch-end'></span>
+				</span>
 				<div class='secondary'>
 					${this.secondary}
 				</div>

@@ -15,10 +15,8 @@ export class BriefingHero extends CardComponent {
 			${super.styles}
 
 			:host {
-				background: linear-gradient(
-					color-mix(in srgb, var(--interactive-accent) 20%, black),
-					color-mix(in srgb, var(--interactive-accent) 20%, black)
-				), url('${unsafeCSS(bannerBg)}') no-repeat center/cover, var(--background-primary);
+				padding: 0;
+				background: none;
 				background-blend-mode: color, luminosity;
 			}
 
@@ -204,14 +202,13 @@ export class BriefingHero extends CardComponent {
 			.mask {
 				position: absolute;
 				z-index: 0;
-				height: 90%;
-				width: auto;
-				top: 10%;
-				inset-inline-end: 15%;
+				height: 120%;
+				width: 100%;
+				top: -10%;
 			}
 
 			.x-star {
-				fill: var(--background-primary);
+				fill: var(--background-primary-alt);
 			}
 
 			.x-stem {
@@ -268,18 +265,10 @@ export class BriefingHero extends CardComponent {
 		const act = this.briefing?.activeLorePages.find(page => page.level === 'Act')
 		const phase = this.briefing?.activeLorePages.find(page => page.level === 'p')
 		return html`
-			<svg class="mask" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 275.45 277.57">
+			<svg class="mask" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 275.45 200.57">
 				<path
 					d="M166.68,68.67,202.75,85a2.64,2.64,0,0,1,0,4.81l-36.07,16.29a20.51,20.51,0,0,0-10.26,10.26l-16.29,36.07a2.64,2.64,0,0,1-4.81,0L119,116.32a20.55,20.55,0,0,0-10.26-10.26L72.7,89.77a2.64,2.64,0,0,1,0-4.81l36.07-16.29A20.59,20.59,0,0,0,119,58.41l16.29-36.07a2.64,2.64,0,0,1,4.81,0l16.29,36.07A20.55,20.55,0,0,0,166.68,68.67Z"
 					class='x-star' />
-				<path d="M134.89,289.56c6-24.79-5.29-50.11-15.69-73.41s-20.29-49.7-11.54-73.67"
-					class='x-stem' />
-				<path d="M144.22,301a128.48,128.48,0,0,1,9.12-97.77c10.2-19.11,25.29-35.64,32.67-56s3.77-47.53-15.58-57.25"
-					class='x-stem' />
-				<path d="M141.61,275.11c-3.5-14.18,3.1-29,11.81-40.73s19.68-21.83,27-34.48,10.36-29.34,2.32-41.54"
-					class='x-stem' />
-				<path d="M138,282c-5.95-13-20.73-19.5-29.08-31.08-9.23-12.81-9.32-30.57-3.61-45.29s16.46-26.91,27.82-37.88"
-					class='x-stem' />
 				<path
 					d="M145.94,82.05,156,86.61a.83.83,0,0,1,0,1.51l-10.09,4.55A5.87,5.87,0,0,0,143,95.59l-4.55,10.08a.83.83,0,0,1-1.51,0l-4.56-10.08a5.83,5.83,0,0,0-2.91-2.92l-10.09-4.55a.83.83,0,0,1,0-1.51l10.09-4.56a5.77,5.77,0,0,0,2.91-2.91L137,69.05a.83.83,0,0,1,1.51,0L143,79.14A5.81,5.81,0,0,0,145.94,82.05Z"
 					style="fill:#21d3ca" />

@@ -84,7 +84,7 @@ export class LoreBanner extends EntityBanner<LorePage> {
 	protected override get actions() {
 		return html`
 			<div class="date-span">
-				<span class='label'>Begins</span>
+				<span class='label'>Began on</span>
 				<p7t-editable-date ${this.binder.bind('beginning')}></p7t-editable-date>
 			</div>
 		`

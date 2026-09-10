@@ -52,7 +52,7 @@ export class Button extends Component {
 				}
 
 				:host([large]) & {
-					padding-inline: 16px;
+					padding-inline: .8em;
 				}
 
 				& p7t-icon {

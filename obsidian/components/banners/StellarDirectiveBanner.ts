@@ -106,7 +106,7 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 		`
 	}
 
-	protected override get info() {
+	protected override get actions() {
 		// The scheduling period (start/end) is intentionally withheld for now; only the due date is surfaced.
 		return html`
 			<div class='due'>
