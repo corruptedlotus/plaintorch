@@ -52,7 +52,7 @@ public static class WatcherOperations
 		[MarkdownInvalid] = new("validation", OperationSeverity.Error, "Watcher detected markdown/frontmatter validation problems for a candidate file."),
 		[PuckViolation] = new("identity", OperationSeverity.Error, "Watcher detected a PUCK identity violation for a candidate file."),
 		[PolicyViolation] = new("policy", OperationSeverity.Error, "Watcher detected a storage policy violation for a candidate file."),
-		[ForeignFile] = new("policy", OperationSeverity.Warning, "Watcher left an unmanaged file in place — it asserts an identity the vault does not recognise and sits outside enforced territory."),
+		[ForeignFile] = new("policy", OperationSeverity.Error, "Watcher found a file asserting a PUCK identity the vault does not recognise. It is left in place — not purged — but flagged as an error for you to resolve: correct the identity, initialise it, or remove the assertion."),
 		[SyncFailed] = new("runtime", OperationSeverity.Error, "Watcher failed to process a discovered candidate sync action."),
 		[RelocationFailed] = new("runtime", OperationSeverity.Error, "Watcher failed to process a relocation candidate."),
 		[RootInitFailed] = new("filesystem", OperationSeverity.Error, "Watcher failed to initialize a filesystem root observer."),
