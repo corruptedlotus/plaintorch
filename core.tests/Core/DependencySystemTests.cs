@@ -373,8 +373,9 @@ public sealed class DependencySystemTests : VaultTestBase
 			api.ShiftStellarWorkflowAsync(target.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Active), Ct)));
 
 		// Move the occurrence (its current date changes) then resolve it: the reference still matches by slot.
-		await Declarative(api => api.UpdateEventiveAsync(eventive.Id, new EventiveUpdate(Date: slot.AddDays(10)), Ct));
-		await Declarative(api => api.UpdateEventiveAsync(eventive.Id, new EventiveUpdate(Resolution: EventiveResolution.Missed), Ct));
+		var eventiveRef = new EventiveOccurrenceRef(eventive.RecurrenceOwnerUid, eventive.RecurrenceDate, eventive.RecurrenceTime);
+		await Declarative(api => api.UpdateEventiveAsync(eventiveRef, new EventiveUpdate(Date: slot.AddDays(10)), Ct));
+		await Declarative(api => api.UpdateEventiveAsync(eventiveRef, new EventiveUpdate(Resolution: EventiveResolution.Missed), Ct));
 
 		var openView = await Deps(api => api.GetLockAsync(target.Id, Ct));
 		Assert.False(openView.BlockedBegin);

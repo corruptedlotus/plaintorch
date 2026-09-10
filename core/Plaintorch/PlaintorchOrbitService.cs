@@ -126,6 +126,23 @@ public sealed class PlaintorchOrbitService(PlainfraContext context)
 	}
 
 	/// <summary>
+	/// SEEKING to an instant: resolves and consumes every pending occurrence of the declarative's orbit strictly
+	/// before <paramref name="endExclusive"/> (an instant, not a whole day), advancing and persisting the
+	/// schedule state. This is the harden-on-time catch-up — it hardens occurrences whose time has already
+	/// arrived without consuming the still-future occurrences of the same day.
+	/// </summary>
+	public async Task<IReadOnlyList<OrbitOccurrenceInstance>> SeekOccurrencesThroughInstantAsync(
+		Incentive incentive, string orbit, DateTime endExclusive, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(incentive);
+		var state = await GetOrCreateStateAsync(incentive, orbit, DateOnly.FromDateTime(DateTime.Today), cancellationToken);
+		var (occurrences, advanced) = OrbitDays.SeekOccurrencesThroughInstant(state.StateJson, endExclusive, ResolveCalendar(incentive));
+		state.StateJson = advanced;
+		state.UpdatedUtc = DateTimeOffset.UtcNow;
+		return occurrences;
+	}
+
+	/// <summary>
 	/// PREVIEW: the declarative's orbit occurrences whose period covers the given day, without pushing the
 	/// schedule state forward.
 	/// </summary>
@@ -147,6 +164,24 @@ public sealed class PlaintorchOrbitService(PlainfraContext context)
 	public async Task<bool> MatchesDayAsync(Incentive incentive, string orbit, DateOnly day, CancellationToken cancellationToken = default)
 	{
 		return (await PreviewDayOccurrencesAsync(incentive, orbit, day, cancellationToken)).Count > 0;
+	}
+
+	/// <summary>
+	/// PREVIEW: the declarative's orbit occurrences whose period overlaps <c>[startInclusive, endExclusive)</c>,
+	/// resolved from the epoch without pushing the schedule state forward. A super-day occurrence whose period
+	/// began before the window is included, so weekly/monthly instances that merely span the window are caught.
+	/// </summary>
+	public async Task<IReadOnlyList<OrbitOccurrenceInstance>> PreviewOccurrencesAsync(
+		Incentive incentive, string orbit, DateOnly startInclusive, DateOnly endExclusive, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(incentive);
+		var today = DateOnly.FromDateTime(DateTime.Today);
+		// Look back far enough that a super-day period starting earlier can still cover the window.
+		var lookbackStart = startInclusive.AddDays(-400);
+		var state = await GetOrCreateStateAsync(incentive, orbit, lookbackStart < today ? lookbackStart : today, cancellationToken);
+		return OrbitDays.PreviewOccurrencesWithin(state.StateJson, lookbackStart, endExclusive, ResolveCalendar(incentive))
+			.Where(occurrence => occurrence.Date < endExclusive && occurrence.PeriodEndExclusive > startInclusive)
+			.ToList();
 	}
 
 	/// <summary>

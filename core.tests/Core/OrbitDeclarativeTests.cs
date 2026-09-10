@@ -71,7 +71,7 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Cycle_begin_seeks_orbit_schedules_into_instances()
+	public async Task Cycle_begin_projects_orbit_schedules_into_its_inclusions()
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var today = DateOnly.FromDateTime(DateTime.Today);
@@ -83,15 +83,16 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 			.GetRequiredService<IPolarisCycleApi>()
 			.StartNewAsync(cancellationToken: cancellationToken));
 
-		// The 24h collision window spans into tomorrow, so a daily orbit materializes both days.
-		var eventive = await Vault.QueryAsync(context => context.Eventives.SingleAsync(item => item.FateId == fate.Id && item.Date == today, cancellationToken));
-		Assert.Equal(45, eventive.Estimation);
-		var eventiveCount = await Vault.QueryAsync(context => context.Eventives.CountAsync(item => item.FateId == fate.Id, cancellationToken));
-		Assert.InRange(eventiveCount, 1, 2);
+		// Strategy 1: cycle begin persists no orbit instances — the 24h window is projected. The daily fate's
+		// eventive and the daily decree's unbound attentive appear in the cycle's inclusions, not as rows.
+		var inclusions = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IPolarisCycleApi>()
+			.GetInclusionsAsync(null, cancellationToken));
+		Assert.Contains(inclusions.Eventives, item => item.FateId == fate.Id && item.Date == today && item.Estimation == 45);
+		Assert.Contains(inclusions.Attentives, item => item.DecreeId == decree.Id && item.Date == today && item.Estimation == 20 && item.PolarisCycleId == null);
 
-		var attentive = await Vault.QueryAsync(context => context.Attentives.SingleAsync(item => item.DecreeId == decree.Id && item.Date == today, cancellationToken));
-		Assert.Null(attentive.PolarisCycleId);
-		Assert.Equal(20, attentive.Estimation);
+		var persistedEventives = await Vault.QueryAsync(context => context.Eventives.CountAsync(item => item.FateId == fate.Id, cancellationToken));
+		Assert.Equal(0, persistedEventives);
 	}
 
 	[Fact]
@@ -121,14 +122,15 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 		Assert.Equal(cycle.Id, reflective.PolarisCycleId);
 		Assert.False(reflective.Executed);
 
-		// Stellar hierarchies cannot participate in moonlight reflection: the decree materializes an
-		// unbound attentive instead.
+		// Stellar hierarchies cannot participate in moonlight reflection: the decree projects an unbound
+		// attentive into the cycle instead (Strategy 1 — projected, not hardened).
 		var stellarReflectives = await Vault.QueryAsync(context => context.Set<Reflective>()
 			.CountAsync(item => item.DecreeId == stellarDecree.Id, cancellationToken));
 		Assert.Equal(0, stellarReflectives);
-		var stellarAttentive = await Vault.QueryAsync(context => context.Attentives
-			.FirstAsync(item => item.DecreeId == stellarDecree.Id, cancellationToken));
-		Assert.Null(stellarAttentive.PolarisCycleId);
+		var inclusions = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IPolarisCycleApi>()
+			.GetInclusionsAsync(null, cancellationToken));
+		Assert.Contains(inclusions.Attentives, item => item.DecreeId == stellarDecree.Id && item.PolarisCycleId == null);
 	}
 
 	[Fact]

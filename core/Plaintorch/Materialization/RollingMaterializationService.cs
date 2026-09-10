@@ -46,10 +46,10 @@ public sealed class RollingMaterializationService(
 			using var scope = scopeFactory.CreateScope();
 			var materialization = scope.ServiceProvider.GetRequiredService<ProximityMaterializationService>();
 			var now = DateTimeOffset.Now;
-			var created = await materialization.MaterializeForNowAsync(now, ProximityMaterializationService.DefaultEventiveHorizonDays, cancellationToken);
+			var created = await materialization.MaterializeForNowAsync(now, cancellationToken);
 			if (created > 0)
 			{
-				logger.LogInformation("Rolling materialization created {Created} instance(s) at {Now:yyyy-MM-dd HH:mm}.", created, now);
+				logger.LogInformation("Rolling harden-on-time created {Created} instance(s) at {Now:yyyy-MM-dd HH:mm}.", created, now);
 			}
 		}
 		catch (OperationCanceledException)

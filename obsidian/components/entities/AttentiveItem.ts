@@ -64,7 +64,15 @@ export class AttentiveItem extends OccurrenceItem {
 		if (!attentive) return
 
 		const resolution = this.done ? AttentiveResolution.Pending : AttentiveResolution.Done
-		const updated = await core.declaratives.updateAttentive(attentive.id, { resolution })
+		// Address the occurrence by its RECURRENCE-ID (plus cycle when bound) so a still-projected agenda item
+		// hardens on interaction instead of failing on an absent row id.
+		const occurrence = {
+			decreeId: attentive.decreeId,
+			recurrenceDate: attentive.recurrenceDate,
+			recurrenceTime: attentive.recurrenceTime,
+			polarisCycleId: attentive.polarisCycleId
+		}
+		const updated = await core.declaratives.updateAttentive(occurrence, { resolution })
 		if (!updated) {
 			new Notice('Failed to update attentive.')
 			return

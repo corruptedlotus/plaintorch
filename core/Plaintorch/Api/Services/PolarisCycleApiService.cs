@@ -23,6 +23,7 @@ public sealed class PolarisCycleApiService(
 	PlaintorchMarkdownStorageService markdownFileService,
 	ProximityMaterializationService materializationService,
 	TimeframeAffinityResolver affinityResolver,
+	AgendaProjectionService projectionService,
 	VaultAuditLogService auditLogService) : IPolarisCycleApi
 {
 	/// <inheritdoc />
@@ -325,32 +326,18 @@ public sealed class PolarisCycleApiService(
 		}
 
 		var (windowStart, windowEnd) = InclusionWindow.Resolve(cycle);
-		var candidateDates = InclusionWindow.EnumerateDates(windowStart, windowEnd);
 
-		var eventives = await context.Eventives
-			.AsNoTracking()
-			.Where(item => candidateDates.Contains(item.Date))
-			.OrderBy(item => item.Date)
-			.ThenBy(item => item.StartTime)
-			.ToListAsync(cancellationToken);
-
-		// Super-day attentives (week/month/year occurrences) occupy their whole period, so an instance whose
-		// period covers this window collides even when its start date is well before it — this is how a
-		// single attentive collides with multiple Polaris cycles.
-		var minCandidate = candidateDates[0];
-		var maxCandidateExclusive = candidateDates[^1].AddDays(1);
-		var attentives = await context.Attentives
-			.AsNoTracking()
-			.Where(item => item.PolarisCycleId == null
-				&& (candidateDates.Contains(item.Date)
-					|| (item.PeriodEndDate != null && item.Date < maxCandidateExclusive && item.PeriodEndDate > minCandidate)))
-			.OrderBy(item => item.Date)
-			.ThenBy(item => item.Time)
-			.ToListAsync(cancellationToken);
+		// Projection ⊔ hardened over the window's days; the intersect filters then trim to the exact 24h span.
+		// Super-day attentives whose period covers the window are included by the projection even when their
+		// start date is well before it — this is how a single attentive collides with multiple Polaris cycles.
+		var projection = await projectionService.ProjectAsync(
+			DateOnly.FromDateTime(windowStart),
+			DateOnly.FromDateTime(windowEnd),
+			cancellationToken);
 
 		return new PolarisCycleInclusions(
-			eventives.Where(item => InclusionWindow.Intersects(item.Date, item.StartTime, item.EndTime, windowStart, windowEnd)).ToList(),
-			attentives.Where(item => InclusionWindow.AttentiveIntersects(item, windowStart, windowEnd)).ToList());
+			projection.Eventives.Where(item => InclusionWindow.Intersects(item.Date, item.StartTime, item.EndTime, windowStart, windowEnd)).ToList(),
+			projection.Attentives.Where(item => item.PolarisCycleId == null && InclusionWindow.AttentiveIntersects(item, windowStart, windowEnd)).ToList());
 	}
 
 	/// <inheritdoc />
@@ -359,45 +346,50 @@ public sealed class PolarisCycleApiService(
 		var today = DateOnly.FromDateTime(DateTime.Today);
 		var horizon = today.AddDays(7);
 		// "Requiring attention" spans the next 24h, so at day granularity that is today plus tomorrow, alongside
-		// anything overdue. This mirrors what the rolling materialization pass writes for the same window.
+		// anything overdue.
 		var attentiveThrough = today.AddDays(1);
 		var now = DateTimeOffset.UtcNow;
 		var resolvedSince = now.AddHours(-1);
 
-		// Requiring attention: unbound, still pending, and due within the next 24h or overdue (same-day/24h and
-		// previous unattended), plus unbound attentives completed in the past hour. SQLite
-		// does not provide reliable translated comparison semantics for DateTimeOffset, so that rolling comparison
-		// is applied after materialization. Including the decree pulls its directive through the auto-include, so
-		// each item can show its relevant lunar directive.
-		var attentiveCandidates = await context.Attentives
+		// Projection ⊔ hardened over the horizon: untouched occurrences are projected live from their schedules,
+		// while interacted/resolved ones carry their persisted state.
+		var projection = await projectionService.ProjectAsync(today, horizon, cancellationToken);
+
+		// Overdue pending unbound attentives sit before the projected window (a direct query over hardened rows).
+		var overdueAttentives = await context.Attentives
 			.AsNoTracking()
 			.Include(item => item.Decree)
 			.Where(item => item.PolarisCycleId == null
-				&& ((item.Resolution == AttentiveResolution.Pending && item.Date <= attentiveThrough)
-					|| item.ResolvedOn != null))
+				&& item.Date < today
+				&& item.Resolution == AttentiveResolution.Pending)
 			.ToListAsync(cancellationToken);
 
-		var attentives = attentiveCandidates
-			.Where(item => (item.PolarisCycleId == null
-					&& item.Resolution == AttentiveResolution.Pending
-					&& item.Date <= attentiveThrough)
-				|| (item.PolarisCycleId == null && item.ResolvedOn >= resolvedSince && item.ResolvedOn <= now))
+		// Recently-resolved unbound attentives are retained for an hour regardless of their date, so they are
+		// fetched independently of the projection window. SQLite lacks reliable translated DateTimeOffset
+		// comparison, so the resolved-since window is applied after materialization.
+		var recentlyResolved = await context.Attentives
+			.AsNoTracking()
+			.Include(item => item.Decree)
+			.Where(item => item.PolarisCycleId == null && item.ResolvedOn != null)
+			.ToListAsync(cancellationToken);
+
+		var attentives = projection.Attentives
+			.Concat(overdueAttentives)
+			.Where(item => item.PolarisCycleId == null
+				&& item.Resolution == AttentiveResolution.Pending
+				&& item.Date <= attentiveThrough)
+			.Concat(recentlyResolved.Where(item => item.ResolvedOn >= resolvedSince && item.ResolvedOn <= now))
 			.OrderBy(item => item.Date)
 			.ThenBy(item => item.Time)
 			.ToList();
 
-		// Upcoming eventives within the horizon that have not yet resolved. Fate and objective are included so
-		// the occurrence can name its owner and surface that owner's directive.
-		var eventives = await context.Eventives
-			.AsNoTracking()
-			.Include(item => item.Fate)
-			.Include(item => item.Objective)
+		var eventives = projection.Eventives
 			.Where(item => item.Resolution == EventiveResolution.Pending
 				&& item.Date >= today
 				&& item.Date <= horizon)
 			.OrderBy(item => item.Date)
 			.ThenBy(item => item.StartTime)
-			.ToListAsync(cancellationToken);
+			.ToList();
 
 		return new PolarisAgenda(attentives, eventives);
 	}
@@ -417,12 +409,15 @@ public sealed class PolarisCycleApiService(
 			throw new InvalidOperationException($"Decree '{decree.Id}' is {decree.Status} and cannot be added to a Polaris cycle.");
 		}
 
+		var attentiveDate = request.Date ?? ResolveCycleDate(cycle);
 		var attentive = new Attentive
 		{
 			DecreeId = decree.Id,
 			PolarisCycleId = cycle.Id,
-			Date = request.Date ?? ResolveCycleDate(cycle),
+			Date = attentiveDate,
 			Time = request.Time,
+			RecurrenceDate = attentiveDate,
+			RecurrenceTime = request.Time,
 			Estimation = request.Estimation ?? decree.DefaultLength,
 			Minimum = request.Minimum,
 			Maximum = request.Maximum,

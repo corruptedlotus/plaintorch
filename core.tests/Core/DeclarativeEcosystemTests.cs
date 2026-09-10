@@ -220,11 +220,13 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		Assert.Null(attentive.PolarisCycleId);
 		Assert.Equal(15, attentive.Estimation);
 
-		// Eventives can always be moved because they are never Polaris-bound.
-		var moved = await WithApi(api => api.UpdateEventiveAsync(eventive.Id, new EventiveUpdate(Date: new DateOnly(2026, 8, 2)), cancellationToken));
+		// Eventives can always be moved because they are never Polaris-bound. Addressed by recurrence-id, which
+		// stays stable across the move.
+		var eventiveRef = new EventiveOccurrenceRef(eventive.RecurrenceOwnerUid, eventive.RecurrenceDate, eventive.RecurrenceTime);
+		var moved = await WithApi(api => api.UpdateEventiveAsync(eventiveRef, new EventiveUpdate(Date: new DateOnly(2026, 8, 2)), cancellationToken));
 		Assert.Equal(new DateOnly(2026, 8, 2), moved.Date);
 
-		var missed = await WithApi(api => api.UpdateEventiveAsync(eventive.Id, new EventiveUpdate(Resolution: EventiveResolution.Missed), cancellationToken));
+		var missed = await WithApi(api => api.UpdateEventiveAsync(eventiveRef, new EventiveUpdate(Resolution: EventiveResolution.Missed), cancellationToken));
 		Assert.Equal(EventiveResolution.Missed, missed.Resolution);
 	}
 
@@ -236,11 +238,12 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		var decree = await WithApi(api => api.CreateDecreeAsync(new DecreePlan("Tidy up", DefaultLength: 10), cancellationToken));
 		var unbound = await WithApi(api => api.MaterializeAttentiveAsync(decree.Id, new AttentiveMaterialization(Date: new DateOnly(2026, 8, 1)), cancellationToken));
 
-		// Unbound: reschedule allowed, cycle moves rejected.
-		var delayed = await WithApi(api => api.UpdateAttentiveAsync(unbound.Id, new AttentiveUpdate(Date: new DateOnly(2026, 8, 3)), cancellationToken));
+		// Unbound: reschedule allowed, cycle moves rejected. Addressed by recurrence-id (stable across reschedule).
+		var unboundRef = new AttentiveOccurrenceRef(unbound.DecreeId, unbound.RecurrenceDate, unbound.RecurrenceTime);
+		var delayed = await WithApi(api => api.UpdateAttentiveAsync(unboundRef, new AttentiveUpdate(Date: new DateOnly(2026, 8, 3)), cancellationToken));
 		Assert.Equal(new DateOnly(2026, 8, 3), delayed.Date);
 		await Assert.ThrowsAsync<InvalidOperationException>(() =>
-			WithApi(api => api.UpdateAttentiveAsync(unbound.Id, new AttentiveUpdate(MoveToPolarisCycleId: "20260801"), cancellationToken)));
+			WithApi(api => api.UpdateAttentiveAsync(unboundRef, new AttentiveUpdate(MoveToPolarisCycleId: "20260801"), cancellationToken)));
 
 		// Bound: created by manually adding the decree to a cycle; reschedule rejected, move allowed.
 		var cycle = await Vault.WithScopeAsync(services => services
@@ -252,13 +255,15 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		Assert.Equal(cycle.Id, bound.PolarisCycleId);
 		Assert.Equal(10, bound.Estimation);
 
+		// A Polaris-bound attentive is addressed by its recurrence-id plus its cycle.
+		var boundRef = new AttentiveOccurrenceRef(bound.DecreeId, bound.RecurrenceDate, bound.RecurrenceTime, bound.PolarisCycleId);
 		await Assert.ThrowsAsync<InvalidOperationException>(() =>
-			WithApi(api => api.UpdateAttentiveAsync(bound.Id, new AttentiveUpdate(Date: new DateOnly(2026, 8, 4)), cancellationToken)));
+			WithApi(api => api.UpdateAttentiveAsync(boundRef, new AttentiveUpdate(Date: new DateOnly(2026, 8, 4)), cancellationToken)));
 
 		var forecast = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
 			.PlanAsync(DateOnly.FromDateTime(DateTime.Today), 2, cancellationToken: cancellationToken));
-		var movedAttentive = await WithApi(api => api.UpdateAttentiveAsync(bound.Id, new AttentiveUpdate(MoveToPolarisCycleId: forecast.Id), cancellationToken));
+		var movedAttentive = await WithApi(api => api.UpdateAttentiveAsync(boundRef, new AttentiveUpdate(MoveToPolarisCycleId: forecast.Id), cancellationToken));
 		Assert.Equal(forecast.Id, movedAttentive.PolarisCycleId);
 	}
 
@@ -271,9 +276,11 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		var first = await WithApi(api => api.MaterializeAttentiveAsync(decree.Id, new AttentiveMaterialization(Date: new DateOnly(2026, 8, 1)), cancellationToken));
 		var second = await WithApi(api => api.MaterializeAttentiveAsync(decree.Id, new AttentiveMaterialization(Date: new DateOnly(2026, 8, 2)), cancellationToken));
 
+		var firstRef = new AttentiveOccurrenceRef(first.DecreeId, first.RecurrenceDate, first.RecurrenceTime);
+		var secondRef = new AttentiveOccurrenceRef(second.DecreeId, second.RecurrenceDate, second.RecurrenceTime);
 		var beforeResolution = DateTimeOffset.UtcNow;
-		var resolvedFirst = await WithApi(api => api.UpdateAttentiveAsync(first.Id, new AttentiveUpdate(Resolution: AttentiveResolution.Done), cancellationToken));
-		var resolvedSecond = await WithApi(api => api.UpdateAttentiveAsync(second.Id, new AttentiveUpdate(Resolution: AttentiveResolution.Done), cancellationToken));
+		var resolvedFirst = await WithApi(api => api.UpdateAttentiveAsync(firstRef, new AttentiveUpdate(Resolution: AttentiveResolution.Done), cancellationToken));
+		var resolvedSecond = await WithApi(api => api.UpdateAttentiveAsync(secondRef, new AttentiveUpdate(Resolution: AttentiveResolution.Done), cancellationToken));
 		var afterResolution = DateTimeOffset.UtcNow;
 		Assert.NotNull(resolvedFirst.ResolvedOn);
 		Assert.NotNull(resolvedSecond.ResolvedOn);
@@ -287,7 +294,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		Assert.All(transactions, transaction => Assert.Equal(3, transaction.Amount));
 
 		// Undoing an execution revokes exactly that occurrence's reward.
-		var unresolvedSecond = await WithApi(api => api.UpdateAttentiveAsync(second.Id, new AttentiveUpdate(Resolution: AttentiveResolution.Skipped), cancellationToken));
+		var unresolvedSecond = await WithApi(api => api.UpdateAttentiveAsync(secondRef, new AttentiveUpdate(Resolution: AttentiveResolution.Skipped), cancellationToken));
 		Assert.Null(unresolvedSecond.ResolvedOn);
 		var remaining = await Vault.QueryAsync(context => context.CelestronLedger
 			.Where(item => item.SourcePuck == decree.Id)
@@ -360,14 +367,15 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 			.GetRequiredService<IPolarisCycleApi>()
 			.StartNewAsync(startTime: cycleStart, cancellationToken: cancellationToken));
 
-		var eventives = await Vault.QueryAsync(context => context.Eventives.ToListAsync(cancellationToken));
-		Assert.Contains(eventives, item => item.FateId == fate.Id && item.Estimation == 30);
-		Assert.Contains(eventives, item => item.ObjectiveId == objective.Id);
+		// Strategy 1: the fate and objective occurrences are projected into the cycle, not hardened — cycle begin
+		// persists no eventive rows for them (the decree's attentive was hardened above, by interaction).
+		var persistedEventives = await Vault.QueryAsync(context => context.Eventives.CountAsync(cancellationToken));
+		Assert.Equal(0, persistedEventives);
 
 		var inclusions = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
 			.GetInclusionsAsync(null, cancellationToken));
-		Assert.Contains(inclusions.Eventives, item => item.FateId == fate.Id);
+		Assert.Contains(inclusions.Eventives, item => item.FateId == fate.Id && item.Estimation == 30);
 		Assert.Contains(inclusions.Eventives, item => item.ObjectiveId == objective.Id);
 		Assert.Contains(inclusions.Attentives, item => item.DecreeId == decree.Id);
 

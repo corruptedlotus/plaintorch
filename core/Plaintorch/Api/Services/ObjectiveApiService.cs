@@ -4,6 +4,7 @@ using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
+using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 
@@ -18,6 +19,7 @@ public sealed class ObjectiveApiService(
 	PlaintorchMarkdownStorageService markdownStorageService,
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
+	OccurrenceHardeningService hardeningService,
 	VaultAuditLogService auditLogService) : IObjectiveApi
 {
 	/// <inheritdoc />
@@ -157,49 +159,8 @@ public sealed class ObjectiveApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<Eventive> MaterializeDueEventiveAsync(string objectiveId, EventiveMaterialization request, CancellationToken cancellationToken = default)
-	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(objectiveId);
-		ArgumentNullException.ThrowIfNull(request);
-
-		var objective = await context.Objectives
-			.AsNoTracking()
-			.IgnoreAutoIncludes()
-			.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
-			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
-
-		var date = request.Date
-			?? objective.Due
-			?? throw new InvalidOperationException($"Objective '{objectiveId}' has no due date; supply a date to materialize its eventive.");
-
-		var existing = await context.Eventives.FirstOrDefaultAsync(item => item.ObjectiveId == objective.Id && item.RecurrenceDate == date, cancellationToken);
-		if (existing is not null)
-		{
-			return existing;
-		}
-
-		var eventive = new Eventive
-		{
-			ObjectiveId = objective.Id,
-			Date = date,
-			StartTime = request.StartTime,
-			EndTime = request.EndTime,
-			RecurrenceDate = date,
-			RecurrenceTime = request.StartTime,
-		};
-		eventive.Normalize();
-
-		context.Eventives.Add(eventive);
-		await context.SaveChangesAsync(cancellationToken);
-		await auditLogService.WriteAsync(
-			"api",
-			"objective.materialize-eventive",
-			subjectType: nameof(Eventive),
-			subjectId: eventive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-			details: new { objectiveId = objective.Id, date = date.ToString("yyyy-MM-dd") },
-			cancellationToken: cancellationToken);
-		return eventive;
-	}
+	public Task<Eventive> MaterializeDueEventiveAsync(string objectiveId, EventiveMaterialization request, CancellationToken cancellationToken = default)
+		=> hardeningService.HardenObjectiveOccurrenceAsync(objectiveId, request, cancellationToken);
 
 	/// <inheritdoc />
 	public async Task<Objective> ShiftWorkflowAsync(string objectiveId, ObjectiveWorkflowShift shift, CancellationToken cancellationToken = default)

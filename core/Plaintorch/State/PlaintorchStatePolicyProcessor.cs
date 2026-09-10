@@ -1,7 +1,9 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.Extensions.DependencyInjection;
 using Pleiades.Orchestration;
+using Pleiades.Plaintorch.Materialization;
 using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch.State;
@@ -9,7 +11,15 @@ namespace Pleiades.Plaintorch.State;
 /// <summary>
 /// Applies reusable PLAINTORCH state rules to tracked EF entities before they are persisted.
 /// </summary>
-public sealed class PlaintorchStatePolicyProcessor(DependencyReconciler dependencyReconciler)
+/// <remarks>
+/// <see cref="OccurrenceHardeningService"/> is resolved lazily from the scope rather than injected: it depends
+/// on the <see cref="PlainfraContext"/> whose options wire this processor's interceptor, so a constructor
+/// dependency would form a resolution cycle. The scoped context already exists by the time
+/// <see cref="ApplyAsync"/> runs, so the lazy resolution binds to the same unit of work.
+/// </remarks>
+public sealed class PlaintorchStatePolicyProcessor(
+	DependencyReconciler dependencyReconciler,
+	IServiceProvider serviceProvider)
 {
 	private const string ObjectiveSettlementDescriptionPrefix = "PLAINTORCH objective settlement";
 	private const string AttentiveExecutionDescriptionPrefix = "PLAINTORCH attentive execution";
@@ -28,16 +38,94 @@ public sealed class PlaintorchStatePolicyProcessor(DependencyReconciler dependen
 	{
 		ArgumentNullException.ThrowIfNull(context);
 
+		await ResetChangedScheduleCursorsAsync(context, cancellationToken);
 		await EnforceOnrushRulesAsync(context, cancellationToken);
 		var supersededForecasts = await EnforcePolarisRulesAsync(context, cancellationToken);
 		await ApplyObjectiveSettlementRulesAsync(context, cancellationToken);
 		await ApplyAttentiveResolutionRulesAsync(context, cancellationToken);
 		await ApplyReflectiveCollectionRewardRulesAsync(context, cancellationToken);
+		await HardenReferencedOccurrencesAsync(context, cancellationToken);
 		await dependencyReconciler.ReconcileAsync(context, cancellationToken);
 
 		return supersededForecasts.Count == 0
 			? PlaintorchStatePolicyResult.Empty
 			: new PlaintorchStatePolicyResult(supersededForecasts);
+	}
+
+	/// <summary>
+	/// Deep-interception enforcement (Strategy 1 / PEP101): a reference to an occurrence must harden it. Every
+	/// dependency added in this unit of work — from any write pathway (API, CLI, scheduler, markdown watcher) —
+	/// has each of its eventive endpoints hardened into the same save, so the reconciler resolves a real row
+	/// rather than reading an absent projection as unsatisfied.
+	/// </summary>
+	/// <summary>
+	/// Deep-interception schedule-change rule (Strategy 1): when a fate or decree is created with, or changed
+	/// to, a different orbit, its seek cursor is reset to a fresh state anchored today. Riding the save hook
+	/// covers every write pathway — API, CLI, scheduler, and the markdown watcher — so editing an orbit in
+	/// frontmatter resets the cursor exactly as an API edit does, and the projection recomputes on the new orbit
+	/// while already-hardened occurrences persist untouched.
+	/// </summary>
+	private async Task ResetChangedScheduleCursorsAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var toReset = new List<(Incentive Incentive, string? Orbit)>();
+		foreach (var entry in context.ChangeTracker.Entries<Fate>())
+		{
+			if (OrbitCursorNeedsReset(entry, entry.Entity.Orbit))
+			{
+				toReset.Add((entry.Entity, entry.Entity.Orbit));
+			}
+		}
+
+		foreach (var entry in context.ChangeTracker.Entries<Decree>())
+		{
+			if (OrbitCursorNeedsReset(entry, entry.Entity.Orbit))
+			{
+				toReset.Add((entry.Entity, entry.Entity.Orbit));
+			}
+		}
+
+		if (toReset.Count == 0)
+		{
+			return;
+		}
+
+		var orbitService = serviceProvider.GetRequiredService<PlaintorchOrbitService>();
+		var today = DateOnly.FromDateTime(DateTime.Today);
+		foreach (var (incentive, orbit) in toReset)
+		{
+			await orbitService.ResetStateAsync(incentive, orbit, today, cancellationToken);
+		}
+	}
+
+	private static bool OrbitCursorNeedsReset(EntityEntry entry, string? orbit)
+	{
+		return entry.State switch
+		{
+			// A new orbit-bearing schedule establishes its cursor; a new orbit-less one has nothing to seek.
+			EntityState.Added => !string.IsNullOrWhiteSpace(orbit),
+			// An orbit edit (set, changed, or cleared) re-anchors the cursor.
+			EntityState.Modified => entry.Property(nameof(Fate.Orbit)).IsModified,
+			_ => false,
+		};
+	}
+
+	private async Task HardenReferencedOccurrencesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var addedDependencies = context.ChangeTracker.Entries<Dependency>()
+			.Where(entry => entry.State == EntityState.Added)
+			.Select(entry => entry.Entity)
+			.ToList();
+		if (addedDependencies.Count == 0)
+		{
+			return;
+		}
+
+		var hardeningService = serviceProvider.GetRequiredService<OccurrenceHardeningService>();
+		foreach (var dependency in addedDependencies)
+		{
+			await hardeningService.EnsureReferencedEventiveAsync(dependency.Source, cancellationToken);
+			await hardeningService.EnsureReferencedEventiveAsync(dependency.Target, cancellationToken);
+		}
 	}
 
 	private static async Task EnforceOnrushRulesAsync(PlainfraContext context, CancellationToken cancellationToken)

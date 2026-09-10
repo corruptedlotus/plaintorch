@@ -12,7 +12,7 @@ namespace Pleiades.Orchestration;
 /// Because they are unbound, eventives can be moved (their time specification changed). They carry no
 /// Celestron reward.
 /// </remarks>
-public sealed class Eventive : ITimeAllocated
+public sealed class Eventive : ITimeAllocated, IOccurrenceInstance
 {
 	[Key]
 	/// <summary>
@@ -72,6 +72,14 @@ public sealed class Eventive : ITimeAllocated
 	/// all-day slot. Together with <see cref="RecurrenceDate"/> it forms the stable <c>RECURRENCE-ID</c>.
 	/// </summary>
 	public TimeOnly? RecurrenceTime { get; set; }
+
+	/// <inheritdoc />
+	[NotMapped]
+	public string RecurrenceOwnerUid => FateId ?? ObjectiveId ?? string.Empty;
+
+	/// <inheritdoc />
+	[NotMapped]
+	public RecurrenceId RecurrenceId => new(RecurrenceDate, RecurrenceTime);
 
 	/// <summary>
 	/// Gets or sets how the occurrence resolved. Passing is temporal rather than stateful:

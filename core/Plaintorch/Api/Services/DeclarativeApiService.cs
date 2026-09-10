@@ -26,42 +26,11 @@ public sealed class DeclarativeApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
 	PlaintorchMarkdownStorageService markdownStorageService,
-	PlaintorchOrbitService orbitService,
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
-	ProximityMaterializationService materializationService,
-	VaultAuditLogService auditLogService,
-	ILogger<DeclarativeApiService> logger) : IDeclarativeApi
+	OccurrenceHardeningService hardeningService,
+	VaultAuditLogService auditLogService) : IDeclarativeApi
 {
-	/// <summary>
-	/// Re-runs the day's materialization after a declarative changed, so a new or changed orbit's due
-	/// instances (attentives today, eventives across the horizon) appear immediately rather than only on the
-	/// next daily pass. Best-effort: the declarative is already committed and the daily pass is the backstop,
-	/// so a materialization hiccup must not fail the create/update.
-	/// </summary>
-	private async Task RecheckMaterializationAsync(CancellationToken cancellationToken)
-	{
-		try
-		{
-			// Catch up the next 24h's due instances only. The recheck is about immediacy — a decree's attentive
-			// or a fate's imminent eventive appearing the moment its orbit is set — while filling the upcoming
-			// eventive horizon stays the rolling background pass's remit, so an edit does not front-run a week of
-			// occurrences.
-			await materializationService.MaterializeForNowAsync(
-				DateTimeOffset.Now,
-				eventiveHorizonDays: 0,
-				cancellationToken);
-		}
-		catch (OperationCanceledException)
-		{
-			throw;
-		}
-		catch (Exception exception)
-		{
-			logger.LogWarning(exception, "Materialization recheck after a declarative change failed; the daily pass will retry.");
-		}
-	}
-
 	/// <inheritdoc />
 	public Task<Fate?> GetFateAsync(string fateId, CancellationToken cancellationToken = default)
 	{
@@ -110,11 +79,9 @@ public sealed class DeclarativeApiService(
 		}
 
 		context.Fates.Add(fate);
-		await orbitService.ResetStateAsync(fate, fate.Orbit, DateOnly.FromDateTime(DateTime.Today), cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveFateAsync(fate, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "fate.create", subject: fate, cancellationToken: cancellationToken);
-		await RecheckMaterializationAsync(cancellationToken);
 		return fate;
 	}
 
@@ -127,7 +94,6 @@ public sealed class DeclarativeApiService(
 		var fate = await context.Fates.FirstOrDefaultAsync(item => item.Id == fateId, cancellationToken)
 			?? throw new InvalidOperationException($"Fate '{fateId}' was not found.");
 		var previous = CloneFate(fate);
-		var previousOrbit = fate.Orbit;
 
 		if (!string.IsNullOrWhiteSpace(update.Title))
 		{
@@ -203,15 +169,10 @@ public sealed class DeclarativeApiService(
 		}
 
 		ValidateEventWindow(fate.StartTime, fate.EndTime);
-		if (!string.Equals(previousOrbit, fate.Orbit, StringComparison.Ordinal))
-		{
-			await orbitService.ResetStateAsync(fate, fate.Orbit, DateOnly.FromDateTime(DateTime.Today), cancellationToken);
-		}
 
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveFateAsync(fate, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "fate.update", subject: fate, cancellationToken: cancellationToken);
-		await RecheckMaterializationAsync(cancellationToken);
 		return fate;
 	}
 
@@ -297,11 +258,9 @@ public sealed class DeclarativeApiService(
 		};
 
 		context.Decrees.Add(decree);
-		await orbitService.ResetStateAsync(decree, decree.Orbit, DateOnly.FromDateTime(DateTime.Today), cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveDecreeAsync(decree, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "decree.create", subject: decree, cancellationToken: cancellationToken);
-		await RecheckMaterializationAsync(cancellationToken);
 		return decree;
 	}
 
@@ -314,7 +273,6 @@ public sealed class DeclarativeApiService(
 		var decree = await context.Decrees.FirstOrDefaultAsync(item => item.Id == decreeId, cancellationToken)
 			?? throw new InvalidOperationException($"Decree '{decreeId}' was not found.");
 		var previous = CloneDecree(decree);
-		var previousOrbit = decree.Orbit;
 
 		if (!string.IsNullOrWhiteSpace(update.Title))
 		{
@@ -355,15 +313,9 @@ public sealed class DeclarativeApiService(
 		// Validate the resulting combination: reflecting decrees demand day-granularity orbits.
 		PlaintorchOrbitService.ValidateDecreeOrbit(decree.Orbit, decree.Reflect);
 
-		if (!string.Equals(previousOrbit, decree.Orbit, StringComparison.Ordinal))
-		{
-			await orbitService.ResetStateAsync(decree, decree.Orbit, DateOnly.FromDateTime(DateTime.Today), cancellationToken);
-		}
-
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveDecreeAsync(decree, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "decree.update", subject: decree, cancellationToken: cancellationToken);
-		await RecheckMaterializationAsync(cancellationToken);
 		return decree;
 	}
 
@@ -405,147 +357,12 @@ public sealed class DeclarativeApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<Eventive> MaterializeEventiveAsync(string fateId, EventiveMaterialization request, CancellationToken cancellationToken = default)
-	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(fateId);
-		ArgumentNullException.ThrowIfNull(request);
-
-		var fate = await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == fateId, cancellationToken)
-			?? throw new InvalidOperationException($"Fate '{fateId}' was not found.");
-		if (fate.Status != FateStatus.Active)
-		{
-			throw new InvalidOperationException($"Fate '{fateId}' is {fate.Status} and does not materialize eventives.");
-		}
-
-		var date = request.Date
-			?? fate.Date
-			?? throw new InvalidOperationException($"Fate '{fateId}' has no occurrence date; supply one to materialize its eventive.");
-
-		// Interaction with an orbit occurrence resolves in preview (non-seeking) mode: a future instance must
-		// never advance the schedule state. The occurrence date (and time) is the instance identity, so the
-		// later seeking pass recognizes this instance instead of re-creating it. Span-format fate orbits
-		// supply the occurrence's own start/end/length, so no duration override is needed.
-		Pleiades.Orbits.OrbitOccurrenceInstance? occurrence = null;
-		if (!string.IsNullOrWhiteSpace(fate.Orbit))
-		{
-			var dayOccurrences = await orbitService.PreviewDayOccurrencesAsync(fate, fate.Orbit, date, cancellationToken);
-			if (dayOccurrences.Count == 0)
-			{
-				throw new InvalidOperationException($"Fate '{fateId}' has no orbit occurrence on {date:yyyy-MM-dd}.");
-			}
-
-			occurrence = request.StartTime is not null
-				? dayOccurrences.FirstOrDefault(item => item.StartTime == request.StartTime) ?? dayOccurrences[0]
-				: dayOccurrences[0];
-		}
-
-		var startTime = occurrence?.StartTime ?? request.StartTime ?? fate.StartTime;
-
-		// PEP101: a locked whole-fate freezes all materialization; a locked single occurrence blocks just itself.
-		if (await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, date, startTime, cancellationToken))
-		{
-			throw new InvalidOperationException($"Fate '{fateId}' occurrence on {date:yyyy-MM-dd} is blocked by unmet dependencies and cannot be materialized.");
-		}
-
-		var existing = await context.Eventives.FirstOrDefaultAsync(
-			item => item.FateId == fate.Id && item.RecurrenceDate == date && item.RecurrenceTime == startTime,
-			cancellationToken);
-		if (existing is not null)
-		{
-			return existing;
-		}
-
-		var eventive = new Eventive
-		{
-			FateId = fate.Id,
-			Date = date,
-			StartTime = startTime,
-			EndTime = occurrence?.EndTime ?? request.EndTime ?? fate.EndTime,
-			RecurrenceDate = date,
-			RecurrenceTime = startTime,
-			Estimation = occurrence?.DurationMinutes ?? fate.ResolveEventiveDuration(),
-		};
-		eventive.Normalize();
-
-		context.Eventives.Add(eventive);
-		await context.SaveChangesAsync(cancellationToken);
-		await auditLogService.WriteAsync(
-			"api",
-			"fate.materialize-eventive",
-			subjectType: nameof(Eventive),
-			subjectId: eventive.Id.ToString(CultureInfo.InvariantCulture),
-			details: new { fateId = fate.Id, date = date.ToString("yyyy-MM-dd") },
-			cancellationToken: cancellationToken);
-		return eventive;
-	}
+	public Task<Eventive> MaterializeEventiveAsync(string fateId, EventiveMaterialization request, CancellationToken cancellationToken = default)
+		=> hardeningService.HardenFateOccurrenceAsync(fateId, request, cancellationToken);
 
 	/// <inheritdoc />
-	public async Task<Attentive> MaterializeAttentiveAsync(string decreeId, AttentiveMaterialization request, CancellationToken cancellationToken = default)
-	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(decreeId);
-		ArgumentNullException.ThrowIfNull(request);
-
-		var decree = await context.Decrees.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == decreeId, cancellationToken)
-			?? throw new InvalidOperationException($"Decree '{decreeId}' was not found.");
-		if (decree.Status != DecreeStatus.Active)
-		{
-			throw new InvalidOperationException($"Decree '{decreeId}' is {decree.Status} and does not materialize attentives.");
-		}
-
-		var date = request.Date ?? DateOnly.FromDateTime(DateTime.Today);
-
-		// Interaction with an orbit occurrence resolves in preview (non-seeking) mode; see the fate flow.
-		// Decrees resolve on the Pleiadean calendar. Without an orbit, an unbound attentive may sit at any
-		// time and date the caller chooses.
-		Pleiades.Orbits.OrbitOccurrenceInstance? occurrence = null;
-		if (!string.IsNullOrWhiteSpace(decree.Orbit))
-		{
-			var dayOccurrences = await orbitService.PreviewDayOccurrencesAsync(decree, decree.Orbit, date, cancellationToken);
-			if (dayOccurrences.Count == 0)
-			{
-				throw new InvalidOperationException($"Decree '{decreeId}' has no orbit occurrence on {date:yyyy-MM-dd}.");
-			}
-
-			occurrence = request.Time is not null
-				? dayOccurrences.FirstOrDefault(item => item.StartTime == request.Time) ?? dayOccurrences[0]
-				: dayOccurrences[0];
-		}
-
-		var occurrenceDate = occurrence?.Date ?? date;
-		var occurrenceTime = occurrence?.StartTime ?? request.Time;
-		var existing = await context.Attentives.FirstOrDefaultAsync(
-			item => item.DecreeId == decree.Id && item.Date == occurrenceDate && item.Time == occurrenceTime && item.PolarisCycleId == null,
-			cancellationToken);
-		if (existing is not null)
-		{
-			return existing;
-		}
-
-		var attentive = new Attentive
-		{
-			DecreeId = decree.Id,
-			Date = occurrenceDate,
-			Time = occurrenceTime,
-			PeriodEndDate = occurrence is not null && occurrence.PeriodEndExclusive > occurrence.Date.AddDays(1)
-				? occurrence.PeriodEndExclusive
-				: null,
-			Estimation = request.Estimation ?? decree.DefaultLength,
-			Minimum = request.Minimum,
-			Maximum = request.Maximum,
-		};
-		attentive.Normalize();
-
-		context.Attentives.Add(attentive);
-		await context.SaveChangesAsync(cancellationToken);
-		await auditLogService.WriteAsync(
-			"api",
-			"decree.materialize-attentive",
-			subjectType: nameof(Attentive),
-			subjectId: attentive.Id.ToString(CultureInfo.InvariantCulture),
-			details: new { decreeId = decree.Id, date = date.ToString("yyyy-MM-dd") },
-			cancellationToken: cancellationToken);
-		return attentive;
-	}
+	public Task<Attentive> MaterializeAttentiveAsync(string decreeId, AttentiveMaterialization request, CancellationToken cancellationToken = default)
+		=> hardeningService.HardenDecreeOccurrenceAsync(decreeId, request, cancellationToken);
 
 	/// <inheritdoc />
 	public async Task<IReadOnlyList<Eventive>> ListEventivesAsync(string? fateId = null, string? objectiveId = null, CancellationToken cancellationToken = default)
@@ -583,11 +400,17 @@ public sealed class DeclarativeApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<Eventive> UpdateEventiveAsync(long eventiveId, EventiveUpdate update, CancellationToken cancellationToken = default)
+	public async Task<Eventive> UpdateEventiveAsync(EventiveOccurrenceRef occurrence, EventiveUpdate update, CancellationToken cancellationToken = default)
 	{
+		ArgumentNullException.ThrowIfNull(occurrence);
 		ArgumentNullException.ThrowIfNull(update);
-		var eventive = await context.Eventives.FirstOrDefaultAsync(item => item.Id == eventiveId, cancellationToken)
-			?? throw new InvalidOperationException($"Eventive '{eventiveId}' was not found.");
+
+		// Harden-first: a projected occurrence has no row until it is interacted with. The recurrence-id both
+		// hardens the occurrence and identifies its hardened twin, so an interaction never needs a row id.
+		var eventive = await hardeningService.HardenEventiveOccurrenceAsync(
+			occurrence.OwnerId,
+			new EventiveMaterialization(Date: occurrence.RecurrenceDate, StartTime: occurrence.RecurrenceTime),
+			cancellationToken);
 
 		// Eventives are never Polaris-bound, so moving their time specification is always allowed.
 		if (update.Date is not null)
@@ -623,11 +446,31 @@ public sealed class DeclarativeApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<Attentive> UpdateAttentiveAsync(long attentiveId, AttentiveUpdate update, CancellationToken cancellationToken = default)
+	public async Task<Attentive> UpdateAttentiveAsync(AttentiveOccurrenceRef occurrence, AttentiveUpdate update, CancellationToken cancellationToken = default)
 	{
+		ArgumentNullException.ThrowIfNull(occurrence);
 		ArgumentNullException.ThrowIfNull(update);
-		var attentive = await context.Attentives.FirstOrDefaultAsync(item => item.Id == attentiveId, cancellationToken)
-			?? throw new InvalidOperationException($"Attentive '{attentiveId}' was not found.");
+
+		Attentive attentive;
+		if (string.IsNullOrWhiteSpace(occurrence.PolarisCycleId))
+		{
+			// Unbound: harden-first — the agenda item may still be a projection.
+			attentive = await hardeningService.HardenDecreeOccurrenceAsync(
+				occurrence.DecreeId,
+				new AttentiveMaterialization(Date: occurrence.RecurrenceDate, Time: occurrence.RecurrenceTime),
+				cancellationToken);
+		}
+		else
+		{
+			// Polaris-bound: an existing cycle-bound row, addressed by its recurrence-id within the cycle.
+			attentive = await context.Attentives.FirstOrDefaultAsync(
+				item => item.DecreeId == occurrence.DecreeId
+					&& item.RecurrenceDate == occurrence.RecurrenceDate
+					&& item.RecurrenceTime == occurrence.RecurrenceTime
+					&& item.PolarisCycleId == occurrence.PolarisCycleId,
+				cancellationToken)
+				?? throw new InvalidOperationException($"No Polaris-bound attentive for decree '{occurrence.DecreeId}' on {occurrence.RecurrenceDate:yyyy-MM-dd} in cycle '{occurrence.PolarisCycleId}' was found.");
+		}
 
 		if (update.Date is not null)
 		{
