@@ -143,15 +143,15 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 
 		// The orbit anchors today, so tomorrow is off-phase: interaction must reject it.
 		await Assert.ThrowsAsync<InvalidOperationException>(() =>
-			WithApi(api => api.MaterializeAttentiveAsync(decree.Id, new AttentiveMaterialization(Date: today.AddDays(1)), cancellationToken)));
+			WithApi(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, today.AddDays(1)), new AttentiveUpdate(), cancellationToken)));
 
-		// A future on-phase occurrence materializes through preview without advancing the schedule.
-		var future = await WithApi(api => api.MaterializeAttentiveAsync(decree.Id, new AttentiveMaterialization(Date: today.AddDays(2)), cancellationToken));
+		// A future on-phase occurrence resolves through preview without advancing the schedule.
+		var future = await WithApi(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, today.AddDays(2)), new AttentiveUpdate(), cancellationToken));
 		Assert.Equal(today.AddDays(2), future.Date);
 
 		// Interacting with today's occurrence too, then beginning a cycle: the seeking pass must recognize
-		// the already-materialized instance by its date instead of duplicating it.
-		await WithApi(api => api.MaterializeAttentiveAsync(decree.Id, new AttentiveMaterialization(Date: today), cancellationToken));
+		// the already-hardened instance by its date instead of duplicating it.
+		await WithApi(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, today), new AttentiveUpdate(), cancellationToken));
 		await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
 			.StartNewAsync(cancellationToken: cancellationToken));

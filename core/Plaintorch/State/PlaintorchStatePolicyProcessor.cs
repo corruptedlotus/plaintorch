@@ -302,13 +302,16 @@ public sealed class PlaintorchStatePolicyProcessor(
 	/// <summary>
 	/// Records completion time and grants the decree-predefined Celestron reward for each attentive execution
 	/// (PEP100). Completion time and reward are recorded when an attentive transitions to Done; both are
-	/// cleared or revoked when it leaves Done. Rewards are keyed per attentive instance so repeated occurrences
-	/// of the same decree reward independently.
+	/// cleared or revoked when it leaves Done. Rewards are keyed by occurrence identity (its RECURRENCE-ID, plus
+	/// cycle when bound) so repeated occurrences of the same decree reward independently — and, unlike the row id,
+	/// that key is already available when an occurrence hardens and resolves in a single save.
 	/// </summary>
 	private static async Task ApplyAttentiveResolutionRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
+		// Added covers the Strategy 1 case where interacting with a projected occurrence hardens it and applies the
+		// resolution in one save; Modified covers editing an already-hardened row.
 		var attentiveEntries = context.ChangeTracker.Entries<Attentive>()
-			.Where(entry => entry.State == EntityState.Modified)
+			.Where(entry => entry.State is EntityState.Added or EntityState.Modified)
 			.ToList();
 
 		if (attentiveEntries.Count == 0)
@@ -319,13 +322,20 @@ public sealed class PlaintorchStatePolicyProcessor(
 		foreach (var entry in attentiveEntries)
 		{
 			var current = entry.Entity;
-			var previousResolution = entry.OriginalValues.GetValue<AttentiveResolution>(nameof(Attentive.Resolution));
+			// A single-save harden-and-resolve enters as Added already carrying its resolution; its prior state is
+			// the projected Pending. An existing row edits in as Modified.
+			var previousResolution = entry.State == EntityState.Added
+				? AttentiveResolution.Pending
+				: entry.OriginalValues.GetValue<AttentiveResolution>(nameof(Attentive.Resolution));
 			var wasDone = previousResolution == AttentiveResolution.Done;
 			var isDone = current.Resolution == AttentiveResolution.Done;
 
 			if (!wasDone && isDone)
 			{
-				current.ResolvedOn = DateTimeOffset.UtcNow;
+				// Stamp the completion time only when the transition did not carry one. A Modified Pending→Done
+				// arrives with ResolvedOn cleared, so this assigns now; a directly-inserted or seeded Done row that
+				// already knows when it resolved keeps its own timestamp.
+				current.ResolvedOn ??= DateTimeOffset.UtcNow;
 			}
 			else if (!isDone)
 			{
@@ -337,7 +347,7 @@ public sealed class PlaintorchStatePolicyProcessor(
 				continue;
 			}
 
-			var executionDescription = $"{AttentiveExecutionDescriptionPrefix} (attentive {current.Id.ToString(CultureInfo.InvariantCulture)})";
+			var executionDescription = $"{AttentiveExecutionDescriptionPrefix} ({DescribeOccurrence(current)})";
 			var existingTransactions = await context.CelestronLedger
 				.Where(item => item.SourcePuck == current.DecreeId && item.Description == executionDescription)
 				.ToListAsync(cancellationToken);
@@ -440,6 +450,20 @@ public sealed class PlaintorchStatePolicyProcessor(
 				context.CelestronLedger.RemoveRange(existingTransactions);
 			}
 		}
+	}
+
+	/// <summary>
+	/// Describes an attentive occurrence by its RECURRENCE-ID (and cycle when bound) for a stable, row-id-free
+	/// reward ledger key — the occurrence's identity survives a reschedule and is known before the row is saved.
+	/// </summary>
+	private static string DescribeOccurrence(Attentive attentive)
+	{
+		var slot = attentive.RecurrenceTime is { } time
+			? $"{attentive.RecurrenceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}T{time.ToString("HH\\:mm", CultureInfo.InvariantCulture)}"
+			: attentive.RecurrenceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+		return attentive.PolarisCycleId is { } cycle
+			? $"attentive {cycle}:{slot}"
+			: $"attentive {slot}";
 	}
 
 	private static async Task<string?> ResolveActiveOnrushIdAsync(PlainfraContext context, CancellationToken cancellationToken)

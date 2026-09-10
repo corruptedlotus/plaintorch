@@ -70,17 +70,6 @@ public interface IDeclarativeApi
 	Task<Decree> BeginDecreeBoundaryAsync(string decreeId, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Materializes (or returns) the eventive for a fate occurrence — the interaction trigger.
-	/// The created instance is never Polaris-bound.
-	/// </summary>
-	Task<Eventive> MaterializeEventiveAsync(string fateId, EventiveMaterialization request, CancellationToken cancellationToken = default);
-
-	/// <summary>
-	/// Materializes (or returns) the unbound attentive for a decree occurrence — the interaction trigger.
-	/// </summary>
-	Task<Attentive> MaterializeAttentiveAsync(string decreeId, AttentiveMaterialization request, CancellationToken cancellationToken = default);
-
-	/// <summary>
 	/// Lists eventive occurrences, optionally filtered by owning fate or objective.
 	/// </summary>
 	Task<IReadOnlyList<Eventive>> ListEventivesAsync(string? fateId = null, string? objectiveId = null, CancellationToken cancellationToken = default);
@@ -91,14 +80,16 @@ public interface IDeclarativeApi
 	Task<IReadOnlyList<Attentive>> ListAttentivesAsync(string? decreeId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Applies a mutable update to an eventive occurrence addressed by its owner and RECURRENCE-ID, hardening a
-	/// still-projected occurrence first.
+	/// Applies a mutable update to an eventive occurrence addressed by its owner and RECURRENCE-ID. A
+	/// still-projected occurrence is resolved into the same save, so the materialization and the interaction
+	/// persist together and the state-policy pass enforces hardening centrally.
 	/// </summary>
 	Task<Eventive> UpdateEventiveAsync(EventiveOccurrenceRef occurrence, EventiveUpdate update, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Applies a mutable update to an attentive occurrence addressed by its decree and RECURRENCE-ID (and cycle,
-	/// when bound), honouring the bound/unbound mobility rules and hardening a still-projected unbound occurrence.
+	/// Applies a mutable update to an attentive occurrence, honouring the bound/unbound mobility rules. An unbound
+	/// occurrence is addressed by its decree + RECURRENCE-ID and resolved into the same save when still projected;
+	/// a Polaris-bound occurrence — which has no meaningful recurrence-id — is addressed by its row id.
 	/// </summary>
 	Task<Attentive> UpdateAttentiveAsync(AttentiveOccurrenceRef occurrence, AttentiveUpdate update, CancellationToken cancellationToken = default);
 }

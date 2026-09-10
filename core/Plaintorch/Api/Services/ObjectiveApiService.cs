@@ -20,7 +20,6 @@ public sealed class ObjectiveApiService(
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
 	VaultEntityLifecycleService lifecycleService,
-	OccurrenceHardeningService hardeningService,
 	VaultAuditLogService auditLogService) : IObjectiveApi
 {
 	/// <inheritdoc />
@@ -158,10 +157,6 @@ public sealed class ObjectiveApiService(
 		await auditLogService.WriteAsync("api", "objective.update", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}
-
-	/// <inheritdoc />
-	public Task<Eventive> MaterializeDueEventiveAsync(string objectiveId, EventiveMaterialization request, CancellationToken cancellationToken = default)
-		=> hardeningService.HardenObjectiveOccurrenceAsync(objectiveId, request, cancellationToken);
 
 	/// <inheritdoc />
 	public async Task<Objective> ShiftWorkflowAsync(string objectiveId, ObjectiveWorkflowShift shift, CancellationToken cancellationToken = default)

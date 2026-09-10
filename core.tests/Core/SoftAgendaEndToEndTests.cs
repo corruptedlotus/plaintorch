@@ -74,7 +74,7 @@ public sealed class SoftAgendaEndToEndTests : VaultTestBase
 		Assert.Equal(0, persistedBefore);
 
 		// 3a. Modify a far-future occurrence: interacting hardens the decree's day+20 attentive into a row.
-		var farAttentive = await Declarative(api => api.MaterializeAttentiveAsync(decree.Id, new AttentiveMaterialization(Date: farAttentiveDay), Ct));
+		var farAttentive = await Declarative(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, farAttentiveDay), new AttentiveUpdate(), Ct));
 		Assert.Equal(new TimeOnly(9, 0), farAttentive.RecurrenceTime);
 
 		// 3b. Reference another far-future occurrence: a dependency hardens the fate's day+25 eventive.

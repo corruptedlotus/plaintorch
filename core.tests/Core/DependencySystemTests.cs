@@ -344,13 +344,15 @@ public sealed class DependencySystemTests : VaultTestBase
 	{
 		var source = await Directive(api => api.CreateStandaloneAsync("Fate prereq", cancellationToken: Ct));
 		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Solstice", Date: DateOnly.FromDateTime(DateTime.Today).AddDays(30)), Ct));
+		var occurrenceRef = new EventiveOccurrenceRef(fate.Id, fate.Date!.Value, fate.StartTime);
 
 		await Deps(api => api.CreateAsync(DirectiveRef(source.Id), new EndpointRef(DependencyEndpointKind.Fate, fate.Id), cancellationToken: Ct));
 
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Declarative(api => api.MaterializeEventiveAsync(fate.Id, new EventiveMaterialization(), Ct)));
+		// Interacting with the gated occurrence refuses to resolve it into a hardened row (PEP101).
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Declarative(api => api.UpdateEventiveAsync(occurrenceRef, new EventiveUpdate(), Ct)));
 
 		await Directive(api => api.ShiftStellarWorkflowAsync(source.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
-		var eventive = await Declarative(api => api.MaterializeEventiveAsync(fate.Id, new EventiveMaterialization(), Ct));
+		var eventive = await Declarative(api => api.UpdateEventiveAsync(occurrenceRef, new EventiveUpdate(), Ct));
 		Assert.True(eventive.Id > 0);
 	}
 
@@ -360,7 +362,7 @@ public sealed class DependencySystemTests : VaultTestBase
 		var target = await Directive(api => api.CreateStandaloneAsync("Downstream", cancellationToken: Ct));
 		var slot = DateOnly.FromDateTime(DateTime.Today).AddDays(30);
 		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Occurrence", Date: slot), Ct));
-		var eventive = await Declarative(api => api.MaterializeEventiveAsync(fate.Id, new EventiveMaterialization(), Ct));
+		var eventive = await Declarative(api => api.UpdateEventiveAsync(new EventiveOccurrenceRef(fate.Id, slot), new EventiveUpdate(), Ct));
 		Assert.Equal(slot, eventive.RecurrenceDate);
 
 		await Deps(api => api.CreateAsync(

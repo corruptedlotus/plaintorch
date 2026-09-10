@@ -1,13 +1,11 @@
 export type {
 	Attentive,
-	AttentiveMaterialization,
 	AttentiveOccurrenceRef,
 	AttentiveUpdate,
 	Decree,
 	DecreePlan,
 	DecreeUpdate,
 	Eventive,
-	EventiveMaterialization,
 	EventiveOccurrenceRef,
 	EventiveUpdate,
 	Fate,

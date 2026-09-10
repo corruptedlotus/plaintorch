@@ -82,7 +82,8 @@ public sealed class PolarisAgendaTests : VaultTestBase
 			context.Attentives.AddRange(
 				new Attentive { DecreeId = decree.Id, Date = today, Resolution = AttentiveResolution.Pending },
 				new Attentive { DecreeId = decree.Id, Date = today.AddDays(-1), Resolution = AttentiveResolution.Pending },
-				new Attentive { DecreeId = decree.Id, Date = today, Resolution = AttentiveResolution.Done },
+				// Resolved two hours ago: Done and outside the one-hour retention window, so it stays excluded.
+				new Attentive { DecreeId = decree.Id, Date = today, Resolution = AttentiveResolution.Done, ResolvedOn = DateTimeOffset.UtcNow.AddHours(-2) },
 				new Attentive { DecreeId = decree.Id, Date = today.AddDays(2), Resolution = AttentiveResolution.Pending },
 				new Attentive { DecreeId = decree.Id, Date = today, Resolution = AttentiveResolution.Pending, PolarisCycleId = cycle.Id });
 

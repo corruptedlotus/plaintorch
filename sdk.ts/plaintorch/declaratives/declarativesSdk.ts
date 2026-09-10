@@ -1,14 +1,12 @@
 import type { PlaintorchCoreClient } from "../coreClient"
 import type {
 	Attentive,
-	AttentiveMaterialization,
 	AttentiveOccurrenceRef,
 	AttentiveUpdate,
 	Decree,
 	DecreePlan,
 	DecreeUpdate,
 	Eventive,
-	EventiveMaterialization,
 	EventiveOccurrenceRef,
 	EventiveUpdate,
 	Fate,
@@ -38,13 +36,6 @@ export class PlaintorchDeclarativesSdk {
 		return await this.client.delete(`/api/fates/${encodeURIComponent(fateId)}`)
 	}
 
-	public async materializeEventive(
-		fateId: string,
-		request: EventiveMaterialization = {}
-	): Promise<Eventive | undefined> {
-		return await this.client.postForJson<Eventive>(`/api/fates/${encodeURIComponent(fateId)}/eventive`, request)
-	}
-
 	/** Materializes the implicit fate's markdown file and begins its synchronization boundary. */
 	public async beginFate(fateId: string): Promise<Fate | undefined> {
 		return await this.client.postForJson<Fate>(`/api/fates/${encodeURIComponent(fateId)}/begin`, {})
@@ -68,13 +59,6 @@ export class PlaintorchDeclarativesSdk {
 
 	public async deleteDecree(decreeId: string): Promise<boolean> {
 		return await this.client.delete(`/api/decrees/${encodeURIComponent(decreeId)}`)
-	}
-
-	public async materializeAttentive(
-		decreeId: string,
-		request: AttentiveMaterialization = {}
-	): Promise<Attentive | undefined> {
-		return await this.client.postForJson<Attentive>(`/api/decrees/${encodeURIComponent(decreeId)}/attentive`, request)
 	}
 
 	/** Materializes the implicit decree's markdown file and begins its synchronization boundary. */

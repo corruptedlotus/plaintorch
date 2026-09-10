@@ -153,13 +153,6 @@ export interface DecreeUpdate {
 	reflect?: boolean | undefined
 }
 
-/** Occurrence details for interaction-triggered materialization. */
-export interface EventiveMaterialization {
-	date?: string | undefined
-	startTime?: string | undefined
-	endTime?: string | undefined
-}
-
 export interface EventiveUpdate {
 	date?: string | undefined
 	/** Times: omit to keep, a value to set, `null` to clear. */
@@ -170,15 +163,6 @@ export interface EventiveUpdate {
 	estimation?: number | null | undefined
 	minimum?: number | null | undefined
 	maximum?: number | null | undefined
-}
-
-/** Occurrence details for interaction-triggered materialization. */
-export interface AttentiveMaterialization {
-	date?: string | undefined
-	time?: string | undefined
-	estimation?: number | undefined
-	minimum?: number | undefined
-	maximum?: number | undefined
 }
 
 export interface AttentiveUpdate {
@@ -206,12 +190,14 @@ export interface EventiveOccurrenceRef {
 }
 
 /**
- * Addresses a single attentive occurrence by its decree and RECURRENCE-ID. Omit `polarisCycleId` for an
- * unbound occurrence (hardened on interaction); set it to name the cycle of a Polaris-bound occurrence.
+ * Addresses a single attentive occurrence one of two ways (Strategy 1). An unbound occurrence uses its decree +
+ * RECURRENCE-ID (`decreeId` + `recurrenceDate` + `recurrenceTime`): interacting with it hardens the projected
+ * occurrence, so no row id is needed. A Polaris-bound occurrence has no meaningful recurrence-id — it was placed
+ * into a cycle by hand and always exists as a row — so it is addressed by its database `id` instead.
  */
 export interface AttentiveOccurrenceRef {
-	decreeId: string
-	recurrenceDate: string
+	decreeId?: string | undefined
+	recurrenceDate?: string | undefined
 	recurrenceTime?: string | null | undefined
-	polarisCycleId?: string | null | undefined
+	id?: number | undefined
 }

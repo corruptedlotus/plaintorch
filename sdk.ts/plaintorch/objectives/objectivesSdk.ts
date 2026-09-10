@@ -1,5 +1,4 @@
 import type { PlaintorchCoreClient } from "../coreClient"
-import type { Eventive, EventiveMaterialization } from "../declaratives/models"
 import type {
 	AddObjectiveToOnrushRequest,
 	CreateObjectiveRequest,
@@ -67,15 +66,5 @@ export class PlaintorchObjectivesSdk {
 
 	public async delete(objectiveId: string): Promise<boolean> {
 		return await this.client.delete(`/api/objectives/${encodeURIComponent(objectiveId)}`)
-	}
-
-	public async materializeDueEventive(
-		objectiveId: string,
-		request: EventiveMaterialization = {}
-	): Promise<Eventive | undefined> {
-		return await this.client.postForJson<Eventive>(
-			`/api/objectives/${encodeURIComponent(objectiveId)}/eventive`,
-			request
-		)
 	}
 }

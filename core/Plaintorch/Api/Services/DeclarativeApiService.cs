@@ -15,12 +15,15 @@ namespace Pleiades.Plaintorch.Api.Services;
 /// Implements the declarative-facing PLAINTORCH application API (PEP100).
 /// </summary>
 /// <remarks>
-/// Declaratives are event-like: they are never acted on directly. Interaction with a single occurrence
-/// materializes its instance first (an eventive for fates, an attentive for decrees) and the change is then
-/// applied to that instance. Instances created here are never Polaris-bound; binding only happens by
-/// manually adding a decree to a Polaris cycle through the Polaris API. Interaction with an orbit-scheduled
-/// occurrence is validated through preview (non-seeking) resolution so a future instance never pushes the
-/// schedule state forward; its occurrence date is its identity, so the later seeking pass recognizes it.
+/// Declaratives are event-like: they are never acted on directly. Interacting with a single occurrence
+/// addresses it by its RECURRENCE-ID (an eventive for fates/objectives, an unbound attentive for decrees);
+/// the occurrence is resolved into the same unit of work and the interaction applied, so a projected occurrence
+/// hardens as the guaranteed consequence of the single save rather than through a separate materialize verb.
+/// Instances resolved here are never Polaris-bound; binding only happens by manually adding a decree to a
+/// Polaris cycle through the Polaris API, and a bound attentive — having no meaningful recurrence-id — is
+/// addressed by its row id instead. Interaction with an orbit-scheduled occurrence is resolved through preview
+/// (non-seeking) resolution so a future instance never pushes the schedule state forward; its recurrence-id is
+/// its identity, so the later seeking pass recognizes it.
 /// </remarks>
 public sealed class DeclarativeApiService(
 	PlainfraContext context,
@@ -29,41 +32,9 @@ public sealed class DeclarativeApiService(
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
 	OccurrenceHardeningService hardeningService,
-	VaultAuditLogService auditLogService,
-	ProximityMaterializationService materializationService,
 	VaultEntityLifecycleService lifecycleService,
-	VaultAuditLogService auditLogService,
-	ILogger<DeclarativeApiService> logger) : IDeclarativeApi
+	VaultAuditLogService auditLogService) : IDeclarativeApi
 {
-	/// <summary>
-	/// Re-runs the day's materialization after a declarative changed, so a new or changed orbit's due
-	/// instances (attentives today, eventives across the horizon) appear immediately rather than only on the
-	/// next daily pass. Best-effort: the declarative is already committed and the daily pass is the backstop,
-	/// so a materialization hiccup must not fail the create/update.
-	/// </summary>
-	private async Task RecheckMaterializationAsync(CancellationToken cancellationToken)
-	{
-		try
-		{
-			// Catch up the next 24h's due instances only. The recheck is about immediacy — a decree's attentive
-			// or a fate's imminent eventive appearing the moment its orbit is set — while filling the upcoming
-			// eventive horizon stays the rolling background pass's remit, so an edit does not front-run a week of
-			// occurrences.
-			await materializationService.MaterializeForNowAsync(
-				DateTimeOffset.Now,
-				eventiveHorizonDays: 0,
-				cancellationToken);
-		}
-		catch (OperationCanceledException)
-		{
-			throw;
-		}
-		catch (Exception exception)
-		{
-			logger.LogWarning(exception, "Materialization recheck after a declarative change failed; the daily pass will retry.");
-		}
-	}
-
 	/// <inheritdoc />
 	public Task<Fate?> GetFateAsync(string fateId, CancellationToken cancellationToken = default)
 	{
@@ -374,14 +345,6 @@ public sealed class DeclarativeApiService(
 	}
 
 	/// <inheritdoc />
-	public Task<Eventive> MaterializeEventiveAsync(string fateId, EventiveMaterialization request, CancellationToken cancellationToken = default)
-		=> hardeningService.HardenFateOccurrenceAsync(fateId, request, cancellationToken);
-
-	/// <inheritdoc />
-	public Task<Attentive> MaterializeAttentiveAsync(string decreeId, AttentiveMaterialization request, CancellationToken cancellationToken = default)
-		=> hardeningService.HardenDecreeOccurrenceAsync(decreeId, request, cancellationToken);
-
-	/// <inheritdoc />
 	public async Task<IReadOnlyList<Eventive>> ListEventivesAsync(string? fateId = null, string? objectiveId = null, CancellationToken cancellationToken = default)
 	{
 		var query = context.Eventives.AsNoTracking();
@@ -422,9 +385,11 @@ public sealed class DeclarativeApiService(
 		ArgumentNullException.ThrowIfNull(occurrence);
 		ArgumentNullException.ThrowIfNull(update);
 
-		// Harden-first: a projected occurrence has no row until it is interacted with. The recurrence-id both
-		// hardens the occurrence and identifies its hardened twin, so an interaction never needs a row id.
-		var eventive = await hardeningService.HardenEventiveOccurrenceAsync(
+		// Resolve the occurrence into the current unit of work (evaluate the orbit, find its hardened twin, or
+		// build the projected row) without a save of its own; the single SaveChanges below persists the
+		// materialization together with this interaction, and the state-policy pass runs over it centrally. The
+		// recurrence-id resolves a projected occurrence and its hardened twin identically, so no row id is needed.
+		var eventive = await hardeningService.EnsureEventiveIntoContextAsync(
 			occurrence.OwnerId,
 			new EventiveMaterialization(Date: occurrence.RecurrenceDate, StartTime: occurrence.RecurrenceTime),
 			cancellationToken);
@@ -469,24 +434,27 @@ public sealed class DeclarativeApiService(
 		ArgumentNullException.ThrowIfNull(update);
 
 		Attentive attentive;
-		if (string.IsNullOrWhiteSpace(occurrence.PolarisCycleId))
+		if (occurrence.Id is long id)
 		{
-			// Unbound: harden-first — the agenda item may still be a projection.
-			attentive = await hardeningService.HardenDecreeOccurrenceAsync(
-				occurrence.DecreeId,
-				new AttentiveMaterialization(Date: occurrence.RecurrenceDate, Time: occurrence.RecurrenceTime),
-				cancellationToken);
+			// By row id: a Polaris-bound occurrence (placed into a cycle by hand) has no meaningful recurrence-id, so
+			// it is addressed directly. The row already exists, so no materialization is involved.
+			attentive = await context.Attentives.FirstOrDefaultAsync(item => item.Id == id, cancellationToken)
+				?? throw new InvalidOperationException($"Attentive '{id}' was not found.");
 		}
 		else
 		{
-			// Polaris-bound: an existing cycle-bound row, addressed by its recurrence-id within the cycle.
-			attentive = await context.Attentives.FirstOrDefaultAsync(
-				item => item.DecreeId == occurrence.DecreeId
-					&& item.RecurrenceDate == occurrence.RecurrenceDate
-					&& item.RecurrenceTime == occurrence.RecurrenceTime
-					&& item.PolarisCycleId == occurrence.PolarisCycleId,
-				cancellationToken)
-				?? throw new InvalidOperationException($"No Polaris-bound attentive for decree '{occurrence.DecreeId}' on {occurrence.RecurrenceDate:yyyy-MM-dd} in cycle '{occurrence.PolarisCycleId}' was found.");
+			if (string.IsNullOrWhiteSpace(occurrence.DecreeId) || occurrence.RecurrenceDate is not DateOnly recurrenceDate)
+			{
+				throw new ArgumentException("An attentive occurrence must be addressed by row id, or by decree and recurrence date.", nameof(occurrence));
+			}
+
+			// By recurrence-id: an unbound occurrence, possibly still a projection. Resolve it into the current unit
+			// of work without a save of its own; the single SaveChanges below persists the materialization together
+			// with this interaction, and the state-policy pass runs over it centrally.
+			attentive = await hardeningService.EnsureDecreeAttentiveIntoContextAsync(
+				occurrence.DecreeId,
+				new AttentiveMaterialization(Date: recurrenceDate, Time: occurrence.RecurrenceTime),
+				cancellationToken);
 		}
 
 		if (update.Date is not null)

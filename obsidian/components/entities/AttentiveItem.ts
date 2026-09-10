@@ -43,14 +43,16 @@ export class AttentiveItem extends OccurrenceItem {
 		if (!attentive) return
 
 		const resolution = this.done ? AttentiveResolution.Pending : AttentiveResolution.Done
-		// Address the occurrence by its RECURRENCE-ID (plus cycle when bound) so a still-projected agenda item
-		// hardens on interaction instead of failing on an absent row id.
-		const occurrence = {
-			decreeId: attentive.decreeId,
-			recurrenceDate: attentive.recurrenceDate,
-			recurrenceTime: attentive.recurrenceTime,
-			polarisCycleId: attentive.polarisCycleId
-		}
+		// A Polaris-bound occurrence has no meaningful recurrence-id and always exists as a row, so it is addressed
+		// by its id; an unbound one is addressed by its RECURRENCE-ID so a still-projected agenda item hardens on
+		// interaction instead of failing on an absent row id.
+		const occurrence = attentive.polarisCycleId
+			? { id: attentive.id }
+			: {
+				decreeId: attentive.decreeId,
+				recurrenceDate: attentive.recurrenceDate,
+				recurrenceTime: attentive.recurrenceTime
+			}
 		const updated = await core.declaratives.updateAttentive(occurrence, { resolution })
 		if (!updated) {
 			new Notice('Failed to update attentive.')

@@ -65,9 +65,6 @@ public sealed class ObjectiveModule : Module
 		group.MapPost("/init", async (InitFromFileRequest request, IObjectiveApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.InitializeFromPathAsync(request.Path, cancellationToken)));
 
-		group.MapPost("/{objectiveId}/eventive", async (string objectiveId, EventiveMaterialization request, IObjectiveApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.MaterializeDueEventiveAsync(objectiveId, request, cancellationToken)));
-
 		group.MapDelete("/{objectiveId}", async (string objectiveId, IObjectiveApi api, CancellationToken cancellationToken) =>
 		{
 			await api.DeleteAsync(objectiveId, cancellationToken);

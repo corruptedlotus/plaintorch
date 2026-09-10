@@ -50,9 +50,6 @@ public sealed class DeclarativeModule : Module
 			return Results.NoContent();
 		});
 
-		fates.MapPost("/{fateId}/eventive", async (string fateId, EventiveMaterialization request, IDeclarativeApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.MaterializeEventiveAsync(fateId, request, cancellationToken)));
-
 		fates.MapPost("/{fateId}/begin", async (string fateId, IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.BeginFateBoundaryAsync(fateId, cancellationToken)));
 
@@ -81,9 +78,6 @@ public sealed class DeclarativeModule : Module
 			await api.DeleteDecreeAsync(decreeId, cancellationToken);
 			return Results.NoContent();
 		});
-
-		decrees.MapPost("/{decreeId}/attentive", async (string decreeId, AttentiveMaterialization request, IDeclarativeApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.MaterializeAttentiveAsync(decreeId, request, cancellationToken)));
 
 		decrees.MapPost("/{decreeId}/begin", async (string decreeId, IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.BeginDecreeBoundaryAsync(decreeId, cancellationToken)));

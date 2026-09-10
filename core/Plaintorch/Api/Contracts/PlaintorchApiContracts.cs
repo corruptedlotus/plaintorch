@@ -498,15 +498,26 @@ public sealed record EventiveOccurrenceRef(
 	TimeOnly? RecurrenceTime = null);
 
 /// <summary>
-/// Addresses a single attentive occurrence by its decree and RECURRENCE-ID. An unbound occurrence
-/// (<paramref name="PolarisCycleId"/> null) is hardened on interaction; a Polaris-bound one names its cycle to
-/// disambiguate it from an unbound occurrence that shares the same slot.
+/// Addresses a single attentive occurrence one of two ways (Strategy 1). An unbound occurrence is addressed by
+/// its decree + RECURRENCE-ID (<paramref name="DecreeId"/> + <paramref name="RecurrenceDate"/> +
+/// <paramref name="RecurrenceTime"/>): the recurrence-id resolves a projected occurrence and its hardened twin
+/// identically, so an interaction hardens it without needing a row id. A Polaris-bound occurrence has no
+/// meaningful recurrence-id — it was placed into a cycle by hand and always exists as a row — so it is addressed
+/// by its database <paramref name="Id"/> instead. Supplying <paramref name="Id"/> selects the by-id mode;
+/// otherwise the recurrence-id mode applies.
 /// </summary>
 public sealed record AttentiveOccurrenceRef(
-	string DecreeId,
-	DateOnly RecurrenceDate,
+	string? DecreeId = null,
+	DateOnly? RecurrenceDate = null,
 	TimeOnly? RecurrenceTime = null,
-	string? PolarisCycleId = null);
+	long? Id = null)
+{
+	/// <summary>
+	/// Gets a value indicating whether this reference addresses the attentive by its database row id (the mode
+	/// used for a Polaris-bound occurrence) rather than by decree + recurrence-id.
+	/// </summary>
+	public bool AddressesById => Id is not null;
+}
 
 /// <summary>
 /// The request body for updating an eventive occurrence over the wire: the occurrence to address plus the

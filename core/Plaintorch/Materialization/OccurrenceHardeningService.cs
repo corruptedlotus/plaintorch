@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
@@ -9,55 +8,63 @@ using Pleiades.Vault.Database;
 namespace Pleiades.Plaintorch.Materialization;
 
 /// <summary>
-/// The single choke point that hardens a declarative occurrence into a persisted row (Strategy 1 / soft
-/// agenda, PEP100/PEP101). Every interaction with — and every reference to — an occurrence routes through
-/// here, so a projected agenda item becomes a durable <see cref="Eventive"/>/<see cref="Attentive"/> the
-/// moment it is acted on.
+/// The centralized choke point that resolves a declarative occurrence into the current unit of work as a
+/// hardened row (Strategy 1 / soft agenda, PEP100/PEP101). Every interaction with — and every reference to —
+/// an occurrence routes through here, so a projected agenda item becomes a durable <see cref="Eventive"/>/
+/// <see cref="Attentive"/> the moment it is acted on.
 /// </summary>
 /// <remarks>
+/// Every entry point is SAVE-FREE: it finds the already-hardened row or builds a new one and tracks it into the
+/// caller's <see cref="PlainfraContext"/>, and the single <see cref="PlainfraContext.SaveChanges()"/> is left to
+/// the caller — an interaction endpoint, or the state-policy save pass that guarantees a referenced occurrence
+/// hardens. Materialization is thus never a standalone verb; it is the guaranteed consequence of touching an
+/// occurrence, enforced centrally on the save.
+/// <para>
 /// Orbit occurrences resolve in PREVIEW (non-seeking) mode: interacting with a future occurrence must never
-/// advance the schedule cursor. The occurrence's RECURRENCE-ID (owner id + date + time) is its identity, so
-/// the seeking/harden pass recognizes an already-hardened occurrence instead of duplicating it, and a
-/// re-harden is idempotent. The interactive entry points save; <see cref="EnsureReferencedEventiveAsync"/>
-/// hardens into the current unit of work without saving, for the state-policy enforcement rule.
+/// advance the schedule cursor. The occurrence's RECURRENCE-ID (owner id + date + time) is its identity, so an
+/// already-hardened occurrence — including one that was rescheduled — is recognized rather than duplicated, and
+/// a re-resolve is idempotent.
+/// </para>
 /// </remarks>
 public sealed class OccurrenceHardeningService(
 	PlainfraContext context,
 	PlaintorchOrbitService orbitService,
-	DependencyGateService dependencyGate,
-	VaultAuditLogService auditLogService)
+	DependencyGateService dependencyGate)
 {
 	/// <summary>
-	/// Hardens a fate's eventive for an occurrence, returning the existing row when already hardened.
+	/// Resolves the eventive an owner (a fate or an objective, auto-detected) owns for an occurrence into the
+	/// current unit of work, returning the existing row when already hardened. The dependency gate is respected:
+	/// a locked occurrence refuses to harden (PEP101). No save — the caller's <see cref="PlainfraContext.SaveChanges()"/>
+	/// persists it. The entry point for interacting with a projected eventive by its recurrence-id.
 	/// </summary>
-	public async Task<Eventive> HardenFateOccurrenceAsync(string fateId, EventiveMaterialization request, CancellationToken cancellationToken = default)
+	public async Task<Eventive> EnsureEventiveIntoContextAsync(string ownerId, EventiveMaterialization request, CancellationToken cancellationToken = default)
 	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(fateId);
+		ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
 		ArgumentNullException.ThrowIfNull(request);
 
-		var fate = await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == fateId, cancellationToken)
-			?? throw new InvalidOperationException($"Fate '{fateId}' was not found.");
-
-		var (eventive, created) = await EnsureFateEventiveIntoContextAsync(fate, request, respectDependencyGate: true, cancellationToken);
-		if (created)
+		var fate = await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == ownerId, cancellationToken);
+		if (fate is not null)
 		{
-			await context.SaveChangesAsync(cancellationToken);
-			await auditLogService.WriteAsync(
-				"api",
-				"fate.materialize-eventive",
-				subjectType: nameof(Eventive),
-				subjectId: eventive.Id.ToString(CultureInfo.InvariantCulture),
-				details: new { fateId = fate.Id, date = eventive.RecurrenceDate.ToString("yyyy-MM-dd") },
-				cancellationToken: cancellationToken);
+			var (eventive, _) = await EnsureFateEventiveIntoContextAsync(fate, request, respectDependencyGate: true, cancellationToken);
+			return eventive;
 		}
 
-		return eventive;
+		var objective = await context.Objectives.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == ownerId, cancellationToken);
+		if (objective is not null)
+		{
+			var (eventive, _) = await EnsureObjectiveEventiveIntoContextAsync(objective, request, cancellationToken);
+			return eventive;
+		}
+
+		throw new InvalidOperationException($"No fate or objective '{ownerId}' owns an eventive.");
 	}
 
 	/// <summary>
-	/// Hardens a decree's unbound attentive for an occurrence, returning the existing row when already hardened.
+	/// Resolves a decree's unbound attentive for an occurrence into the current unit of work, returning the
+	/// existing row when already hardened. No save — the caller's <see cref="PlainfraContext.SaveChanges()"/>
+	/// persists it. The entry point for interacting with a projected unbound attentive by its recurrence-id.
 	/// </summary>
-	public async Task<Attentive> HardenDecreeOccurrenceAsync(string decreeId, AttentiveMaterialization request, CancellationToken cancellationToken = default)
+	public async Task<Attentive> EnsureDecreeAttentiveIntoContextAsync(string decreeId, AttentiveMaterialization request, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(decreeId);
 		ArgumentNullException.ThrowIfNull(request);
@@ -71,9 +78,8 @@ public sealed class OccurrenceHardeningService(
 
 		var date = request.Date ?? DateOnly.FromDateTime(DateTime.Today);
 
-		// Interaction with an orbit occurrence resolves in preview (non-seeking) mode; see the fate flow.
-		// Decrees resolve on the Pleiadean calendar. Without an orbit, an unbound attentive may sit at any
-		// time and date the caller chooses.
+		// Interaction with an orbit occurrence resolves in preview (non-seeking) mode. Decrees resolve on the
+		// Pleiadean calendar. Without an orbit, an unbound attentive may sit at any time and date the caller chooses.
 		OrbitOccurrenceInstance? occurrence = null;
 		if (!string.IsNullOrWhiteSpace(decree.Orbit))
 		{
@@ -113,67 +119,8 @@ public sealed class OccurrenceHardeningService(
 			Maximum = request.Maximum,
 		};
 		attentive.Normalize();
-
 		context.Attentives.Add(attentive);
-		await context.SaveChangesAsync(cancellationToken);
-		await auditLogService.WriteAsync(
-			"api",
-			"decree.materialize-attentive",
-			subjectType: nameof(Attentive),
-			subjectId: attentive.Id.ToString(CultureInfo.InvariantCulture),
-			details: new { decreeId = decree.Id, date = date.ToString("yyyy-MM-dd") },
-			cancellationToken: cancellationToken);
 		return attentive;
-	}
-
-	/// <summary>
-	/// Hardens an objective's due-date eventive, returning the existing row when already hardened.
-	/// </summary>
-	public async Task<Eventive> HardenObjectiveOccurrenceAsync(string objectiveId, EventiveMaterialization request, CancellationToken cancellationToken = default)
-	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(objectiveId);
-		ArgumentNullException.ThrowIfNull(request);
-
-		var objective = await context.Objectives
-			.AsNoTracking()
-			.IgnoreAutoIncludes()
-			.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
-			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
-
-		var (eventive, created) = await EnsureObjectiveEventiveIntoContextAsync(objective, request, cancellationToken);
-		if (created)
-		{
-			await context.SaveChangesAsync(cancellationToken);
-			await auditLogService.WriteAsync(
-				"api",
-				"objective.materialize-eventive",
-				subjectType: nameof(Eventive),
-				subjectId: eventive.Id.ToString(CultureInfo.InvariantCulture),
-				details: new { objectiveId = objective.Id, date = eventive.RecurrenceDate.ToString("yyyy-MM-dd") },
-				cancellationToken: cancellationToken);
-		}
-
-		return eventive;
-	}
-
-	/// <summary>
-	/// Hardens the eventive an owner (fate or objective) owns for an occurrence, auto-detecting the owner kind.
-	/// The entry point for interacting with a projected eventive by its recurrence-id.
-	/// </summary>
-	public async Task<Eventive> HardenEventiveOccurrenceAsync(string ownerId, EventiveMaterialization request, CancellationToken cancellationToken = default)
-	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
-		if (await context.Fates.AsNoTracking().AnyAsync(item => item.Id == ownerId, cancellationToken))
-		{
-			return await HardenFateOccurrenceAsync(ownerId, request, cancellationToken);
-		}
-
-		if (await context.Objectives.AsNoTracking().AnyAsync(item => item.Id == ownerId, cancellationToken))
-		{
-			return await HardenObjectiveOccurrenceAsync(ownerId, request, cancellationToken);
-		}
-
-		throw new InvalidOperationException($"No fate or objective '{ownerId}' owns an eventive.");
 	}
 
 	/// <summary>
