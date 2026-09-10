@@ -31,7 +31,7 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 	protected override get offlineTemplate() {
 		return html`
 			<span class='no-data'>Celestial Brazier Idle</span>
-			<p7t-button @click=${() => this.begin()} class='start-button' icon='onrush'>Begin Onrush</p7t-button>
+			<p7t-button @click=${() => this.begin()} large class='start-button' icon='onrush'>Begin Onrush</p7t-button>
 		`
 	}
 

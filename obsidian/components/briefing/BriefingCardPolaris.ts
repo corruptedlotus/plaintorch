@@ -91,7 +91,7 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 	protected override get offlineTemplate() {
 		return html`
 			<span class='no-data'>The Polaris Rests in the Void</span>
-			<p7t-button @click=${() => this.begin()} class='start-button' icon='polaris'>Begin Cycle</p7t-button>
+			<p7t-button @click=${() => this.begin()} large class='start-button' icon='polaris'>Begin Cycle</p7t-button>
 		`
 	}
 

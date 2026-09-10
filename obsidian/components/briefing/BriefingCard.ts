@@ -17,8 +17,8 @@ export class BriefingCard<T> extends CardComponent {
 				background:
 					/*url('${unsafeCSS(GrungeNoise)}'),*/
 					radial-gradient(
-						color-mix(in srgb, black 90%, transparent) 38%,
-						color-mix(in srgb, var(--p7t-flare-accent) 40%, black) 70%,
+						var(--background-primary-alt) 38%,
+						color-mix(in srgb, var(--p7t-flare-accent) 20%, black) 70%,
 						transparent 94%);
 				background-size: /*contain,*/ 95vw 95vw;
 				background-blend-mode: soft-light;
@@ -85,7 +85,7 @@ export class BriefingCard<T> extends CardComponent {
 			}
 
 			.start-button {
-				font-size: 1em;
+				font-size: 1.05em;
 			}
 
 			.no-data {
@@ -134,7 +134,6 @@ export class BriefingCard<T> extends CardComponent {
 						color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 4%, transparent)
 						url('${EverglowBanner}') center/cover
 						!important;
-					border-style: dashed !important;
 					display: flex !important;
 					flex-direction: column !important;
 					align-items: center !important;

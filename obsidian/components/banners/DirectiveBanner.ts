@@ -30,8 +30,8 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 				width: auto;
 				min-height: auto;
 				border-radius: 8px;
-				margin-block: -.4em .4em;
-				margin-inline: 0 -.6em;
+				margin-block: -.6em .4em;
+				margin-inline: 0 -.5em;
 				overflow: hidden;
 				box-sizing: border-box;
 
@@ -43,8 +43,9 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 					object-position: center;
 					inset: 0;
 					border-radius: 16px;
-					z-index: -1;
-					mask-image: linear-gradient(to bottom, white -10%, rgba(0, 0, 0, 0) 95%);
+					z-index: 0;
+					mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .6) -10%, rgba(0, 0, 0, 0) 95%);
+					pointer-events: none;
 				}
 			}
 
@@ -56,6 +57,16 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 			.top-wrapper {
 				display: flex;
 				justify-content: space-between;
+				align-items: center;
+				z-index: 0;
+
+				& .stamp {
+					z-index: 1;
+				}
+			}
+
+			.render-grid {
+				z-index: 1;
 			}
 		`
 	}

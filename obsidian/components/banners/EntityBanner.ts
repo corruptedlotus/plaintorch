@@ -145,9 +145,13 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 			}
 
 			:host::part(pre-heading) {
-				color: color-mix(in srgb, currentColor 60%, transparent);
+				color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 60%, transparent);
 				font-size: .8em;
 				line-height: .8;
+			}
+
+			:host::part(sub-heading) {
+				color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 50%, var(--text-normal));
 			}
 
 			.render-grid {
@@ -173,12 +177,13 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 				& .indicator {
 					grid-area: horizon;
 					display: block;
-					border-top: 2px solid var(--text-normal);
+					border-top: 2px solid var(--p7t-flare-accent, var(--interactive-accent));
 					align-self: start;
-					margin: .8em .6em;
+					margin: .8em 1em;
 				}
 
 				& .secondary {
+					color: var(--p7t-flare-accent, var(--interactive-accent));
 					grid-area: secondary;
 					display: flex;
 					flex-direction: column;

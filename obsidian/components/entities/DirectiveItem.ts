@@ -23,14 +23,14 @@ export class DirectiveItem extends InfoItem {
 			${super.styles}
 
 			.info-bullet {
-				opacity: .6;
+				opacity: .7;
 				font-weight: 400;
 				font-size: .9em;
 				line-height: .9;
 			}
 
 			.placeholder {
-				opacity: .4;
+				opacity: .5;
 				font-weight: 400;
 				font-size: .9em;
 				line-height: .9;
@@ -41,31 +41,32 @@ export class DirectiveItem extends InfoItem {
 				align-items: center;
 				gap: .6em;
 				min-width: 12em;
-			}
 
-			.mini-banner .crest {
-				width: 2.4em;
-				height: 2.4em;
-				flex: 0 0 auto;
-			}
-
-			.mini-banner .meta {
-				display: flex;
-				flex-direction: column;
-				gap: .2em;
-			}
-
-			.mini-banner .title {
-				font-weight: 600;
-			}
-
-			.mini-banner .codename {
-				opacity: .6;
-				font-size: .85em;
-			}
-
-			.mini-banner p7t-status-item {
-				font-size: .8em;
+				& .crest {
+					width: 2.6em;
+					height: 2.6em;
+					flex: 0 0 auto;
+				}
+	
+				& .meta {
+					display: flex;
+					flex-direction: column;
+					gap: 0;
+				}
+	
+				& .title {
+					font-weight: 500;
+					font-size: 1.2em;
+				}
+	
+				& .codename {
+					opacity: .6;
+					font-size: .85em;
+				}
+	
+				& p7t-status-item {
+					font-size: .8em;
+				}
 			}
 		`
 	}
@@ -97,6 +98,19 @@ export class DirectiveItem extends InfoItem {
 		return super.content
 	}
 
+	protected get crestIconTemplate() {
+		const directive = this.directive
+
+		return !directive ? nothing : html`
+			<p7t-media
+				class='crest'
+				icon
+				.media=${directive.iconMedia}
+				.default=${this.kindIcon}>
+			</p7t-media>
+		`
+	}
+
 	protected override get tooltip() {
 		const directive = this.directive
 		if (!directive) {
@@ -105,10 +119,9 @@ export class DirectiveItem extends InfoItem {
 
 		return html`
 			<div class='mini-banner'>
-				<p7t-icon class='crest' icon=${this.kindIcon}></p7t-icon>
+				${this.crestIconTemplate}
 				<div class='meta'>
 					<div class='title'>${directive.title}</div>
-					${!directive.codename ? nothing : html`<div class='codename'>${directive.codename}</div>`}
 					<p7t-status-item .status=${this.statusName}></p7t-status-item>
 				</div>
 			</div>

@@ -10,13 +10,14 @@ export class CardComponent extends Component {
 				align-items: stretch;
 				margin: 0 0 1rem;
 				padding: 0.9rem 0.9rem;
-				border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
-				border-radius: 20px;
-				background: linear-gradient(
+				/*border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);*/
+				border-radius: 16px;
+				/*background: linear-gradient(
 					40deg,
 					color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 50%, transparent) -30%,
 					color-mix(in srgb, black 80%, transparent) 80%
-				);
+				);*/
+				background-color: var(--background-primary-alt);
 
 				color: var(--text-normal);
 				font-weight: 700;

@@ -16,9 +16,8 @@ export class BriefingHero extends CardComponent {
 
 			:host {
 				background: linear-gradient(
-					40deg,
-					color-mix(in srgb, var(--interactive-accent) 75%, black) -20%,
-					color-mix(in srgb, black 80%, transparent) 80%
+					color-mix(in srgb, var(--interactive-accent) 20%, black),
+					color-mix(in srgb, var(--interactive-accent) 20%, black)
 				), url('${unsafeCSS(bannerBg)}') no-repeat center/cover, var(--background-primary);
 				background-blend-mode: color, luminosity;
 			}
