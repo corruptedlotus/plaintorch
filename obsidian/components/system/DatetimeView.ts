@@ -6,7 +6,7 @@ import { localeTimeLabel } from "./TimeView"
 import "./PleiadeanDateView"
 import "./TimeView"
 import "../PleiadesIcon"
-import "../design/Tooltip"
+import { tooltip } from "../design/Tooltip"
 
 /**
  * When set, the moment is flagged the error colour with a clock-alert icon on its designated condition: `past`
@@ -86,12 +86,10 @@ export class DatetimeView extends Component {
 		const pleiadean = this.pleiadean
 		const warning = this.isWarning
 		return html`
-			<p7t-tooltip .text=${this.unifiedLabel(pleiadean)}>
-				<span class='moment ${warning ? 'warn' : ''}'>
-					${this.faceTemplate(pleiadean)}
-					${warning ? html`<p7t-icon class='warn-icon' icon='lucide:clock-alert'></p7t-icon>` : nothing}
-				</span>
-			</p7t-tooltip>
+			<span class='moment ${warning ? 'warn' : ''}' ${tooltip(this.unifiedLabel(pleiadean))}>
+				${this.faceTemplate(pleiadean)}
+				${warning ? html`<p7t-icon class='warn-icon' icon='lucide:clock-alert'></p7t-icon>` : nothing}
+			</span>
 		`
 	}
 

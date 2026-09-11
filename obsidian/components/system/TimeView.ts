@@ -1,6 +1,6 @@
 import { Component, component, css, html, property } from "@a11d/lit"
 import { nullGlyphStyle, nullGlyphTemplate } from "../design/nullGlyph"
-import "../design/Tooltip"
+import { tooltip } from "../design/Tooltip"
 
 /** A 'HH:MM[:SS]' time in the device's default locale (often 12-hour) — the tooltip counterpart to the 24-hour face. */
 export function localeTimeLabel(time: string | undefined): string {
@@ -31,10 +31,6 @@ export class TimeView extends Component {
 				font-variant-numeric: tabular-nums;
 			}
 
-			p7t-tooltip {
-				display: inline;
-			}
-
 			${nullGlyphStyle}
 		`
 	}
@@ -44,8 +40,10 @@ export class TimeView extends Component {
 			return nullGlyphTemplate()
 		}
 
-		const face = html`<span>${this.time.slice(0, 5)}</span>`
-		return this.bare ? face : html`<p7t-tooltip .text=${localeTimeLabel(this.time)}>${face}</p7t-tooltip>`
+		const face = this.time.slice(0, 5)
+		return this.bare
+			? html`<span>${face}</span>`
+			: html`<span ${tooltip(localeTimeLabel(this.time))}>${face}</span>`
 	}
 }
 

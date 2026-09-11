@@ -1,7 +1,7 @@
 import { Component, component, css, html, property } from "@a11d/lit"
 import { PleiadeanDate } from "@pleiades/sdk"
 import { getOrdinalSuffix } from "@pleiades/sdk/helpers"
-import "../design/Tooltip"
+import { tooltip } from "../design/Tooltip"
 
 /**
  * The day in the device's default calendar and locale, spelled out in full — the Gregorian counterpart to the
@@ -41,10 +41,6 @@ export class PleiadeanDateView extends Component {
 			:host {
 				display: inline;
 				font-weight: 250;
-			}
-
-			p7t-tooltip {
-				display: inline;
 			}
 
 			.day-suffix {
@@ -90,7 +86,10 @@ export class PleiadeanDateView extends Component {
 			`}
 		`
 
-		return this.bare ? face : html`<p7t-tooltip .text=${gregorianDateLabel(this.date)}>${face}</p7t-tooltip>`
+		// The face is several inline pieces, so a single inline span groups them as the one element the tooltip
+		// directive tethers to (the host itself can't carry the directive) — the lightweight stand-in for the old
+		// wrapper element, with none of its shadow or slots.
+		return this.bare ? face : html`<span ${tooltip(gregorianDateLabel(this.date))}>${face}</span>`
 	}
 }
 

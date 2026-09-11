@@ -1,4 +1,5 @@
 import { Component, component, css, html, nothing, property } from "@a11d/lit";
+import { tooltip } from "./Tooltip";
 
 @component('p7t-card')
 export class CardComponent extends Component {
@@ -139,17 +140,18 @@ export class CardComponent extends Component {
 	}
 
 	protected get collapseToggleTemplate() {
+		// Content passed as a function (rather than a plain string) so the directive leaves the button's own, more
+		// descriptive aria-label ('Expand card'/'Collapse card') intact instead of naming it with the terse hint.
 		return html`
-			<p7t-tooltip text=${this.collapsed ? 'Expand' : 'Collapse'}>
-				<button
-					class='collapse-chevron ${this.collapsed ? 'collapsed' : ''}'
-					part='collapse-toggle'
-					aria-label=${this.collapsed ? 'Expand card' : 'Collapse card'}
-					aria-expanded=${!this.collapsed}
-					@click=${() => this.dispatchEvent(new CustomEvent('collapsetoggle', { bubbles: true, composed: true }))}>
-					<p7t-icon icon='lucide:chevron-down'></p7t-icon>
-				</button>
-			</p7t-tooltip>
+			<button
+				class='collapse-chevron ${this.collapsed ? 'collapsed' : ''}'
+				part='collapse-toggle'
+				aria-label=${this.collapsed ? 'Expand card' : 'Collapse card'}
+				aria-expanded=${!this.collapsed}
+				@click=${() => this.dispatchEvent(new CustomEvent('collapsetoggle', { bubbles: true, composed: true }))}
+				${tooltip(() => this.collapsed ? 'Expand' : 'Collapse')}>
+				<p7t-icon icon='lucide:chevron-down'></p7t-icon>
+			</button>
 		`
 	}
 

@@ -1,5 +1,6 @@
 import { Component, component, css, html, nothing, state } from "@a11d/lit"
 import { core, IconName } from ".."
+import { tooltip } from "../design/Tooltip"
 
 type WatcherIssueReport = NonNullable<Awaited<ReturnType<typeof core.system.getWatcherIssues>>>
 type WatcherIssueRecord = WatcherIssueReport["issues"][number]
@@ -172,11 +173,9 @@ export class WatcherStatusView extends Component {
 		const busy = this.busyKeys.has(issue.key)
 		return html`
 			<div class="issue ${issue.dismissed ? 'is-dismissed' : ''}">
-				<p7t-tooltip text="${this.severityName(issue.severity)}">
-					<span class="badge ${issue.severity}">
-						<p7t-icon icon=${this.severityIcon(issue.severity)}></p7t-icon>
-					</span>
-				</p7t-tooltip>
+				<span class="badge ${issue.severity}" ${tooltip(this.severityName(issue.severity))}>
+					<p7t-icon icon=${this.severityIcon(issue.severity)}></p7t-icon>
+				</span>
 				<span class="msg">${issue.message}</span>
 				<p7t-button
 					class='dismiss-button'

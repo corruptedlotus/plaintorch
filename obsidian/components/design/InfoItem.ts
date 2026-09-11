@@ -2,7 +2,7 @@ import { Component, css, html, HTMLTemplateResult, nothing, property } from '@a1
 import { IconName } from 'components/PleiadesIcon'
 import { defaultNullGlyph, nullGlyphStyle, nullGlyphTemplate } from './nullGlyph'
 import '../PleiadesIcon'
-import './Tooltip'
+import { tooltip } from './Tooltip'
 
 /**
  * Base for the info chips — the small, unified displays of one bit of an entity (its Celestron, its college, its
@@ -21,8 +21,8 @@ import './Tooltip'
  *
  * **Tooltip.** Every chip carries a built-in tooltip register: a subclass overrides {@link tooltip} to hand back the
  * extra a hover should reveal — a descriptor or name, a directive's mini-banner, an allocation's progress summary —
- * and the base wraps the visible content in a {@link Tooltip}. A string becomes plain text; anything else is rendered
- * as rich markup; `nothing` leaves the chip tooltip-less.
+ * and the base tethers a {@link tooltip} to the visible content. A string becomes plain text; anything else is
+ * rendered as rich markup; `nothing` leaves the chip tooltip-less.
  */
 export abstract class InfoItem extends Component {
 	/**
@@ -52,7 +52,7 @@ export abstract class InfoItem extends Component {
 				align-items: center;
 			}
 
-			p7t-tooltip {
+			.info-anchor {
 				display: inline-flex;
 				align-items: center;
 			}
@@ -150,14 +150,14 @@ export abstract class InfoItem extends Component {
 
 	protected override get template() {
 		const tip = this.tooltip
-		const text = typeof tip === 'string' ? tip : ''
-		const rich = tip !== nothing && tip !== undefined && tip !== null && typeof tip !== 'string'
-		const hasTooltip = text.length > 0 || rich
+		// A string is plain text, a template is rich, `nothing` (etc.) leaves the chip tooltip-less. The content
+		// is handed to the directive as a function so it assigns no aria-label — the chip content keeps its own
+		// accessible name, exactly as the old inert wrapper left it.
+		const hasTooltip = typeof tip === 'string' ? tip.length > 0 : (tip !== nothing && tip !== undefined && tip !== null)
 		return html`
-			<p7t-tooltip ?disabled=${!hasTooltip} .text=${text}>
+			<span class='info-anchor' ${hasTooltip ? tooltip(() => tip as string | HTMLTemplateResult) : nothing}>
 				${this.content}
-				${rich ? html`<div slot='tooltip'>${tip}</div>` : nothing}
-			</p7t-tooltip>
+			</span>
 		`
 	}
 }

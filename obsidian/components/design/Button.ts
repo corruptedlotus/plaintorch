@@ -1,6 +1,6 @@
 import { Component, component, css, eventListener, html, nothing, property } from "@a11d/lit"
 import { IconName } from 'components'
-import './Tooltip'
+import { tooltip } from './Tooltip'
 
 /**
  * @attr large
@@ -104,18 +104,15 @@ export class Button extends Component {
 
 
 	protected override get template() {
-		const button = html`
-			<button part='button' aria-label=${this.label ?? nothing}>
+		// The label is the tooltip too — through the tooltip directive, not a native title, so it reads the same as
+		// every other tooltip in the app. Only borne when there is a label (icon-only buttons); text buttons render
+		// bare. The directive also names the button (aria-label) from the same string, so no separate binding is needed.
+		return html`
+			<button part='button' ${this.label ? tooltip(this.label) : nothing}>
 				${this.icon ? html`<p7t-icon part='icon' .icon=${this.icon}></p7t-icon>` : ''}
 				${![...this.childNodes].filter(x => x.nodeType === Node.ELEMENT_NODE || (x.nodeType === Node.TEXT_NODE && x.textContent?.trim())).length ? nothing : html`<slot part='text'></slot>`}
 			</button>
 		`
-
-		// The label is the tooltip too — through p7t-tooltip, not a native title, so it reads the same as every
-		// other tooltip in the app. Only wrapped when there is a label (icon-only buttons); text buttons render bare.
-		return this.label
-			? html`<p7t-tooltip .text=${this.label}>${button}</p7t-tooltip>`
-			: button
 	}
 }
 

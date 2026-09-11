@@ -1,10 +1,10 @@
-import { component, css, event, eventListener, html, nothing, property, state } from "@a11d/lit"
+import { component, css, event, eventListener, html, HTMLTemplateResult, nothing, property, state } from "@a11d/lit"
 import { ScheduleItem } from "../entities/ScheduleItem"
 import { EditablePart } from "./EditableDataLink"
 import "./EditableOrbit"
 import "./EditableDate"
 import "./EditableTime"
-import "../design/Tooltip"
+import { tooltip } from "../design/Tooltip"
 
 export type ScheduleMode = 'orbit' | 'datetime'
 
@@ -158,35 +158,36 @@ export class EditableSchedule extends ScheduleItem {
 		const mode = this.editMode
 		const icon = mode === 'orbit' ? 'lucide:repeat' : 'lucide:calendar-clock'
 
-		// The composed schedule tooltip is surrogated by this chip, not by the inner fields: idle it wraps the whole
-		// control in the one tooltip {@link ScheduleItem} builds (the orbit reading, or the Gregorian date + time),
-		// and the inert fields draw no tooltip of their own. While editing it steps aside for the live fields.
+		// The composed schedule tooltip is surrogated by this chip, not by the inner fields: idle it tips the whole
+		// control with the one {@link ScheduleItem} builds (the orbit reading, or the Gregorian date + time), and
+		// the inert fields draw none. Editing, the control's tip steps aside for the live fields, and only the
+		// switch button carries one — the two are never active at once, so their directives never both fire.
 		const tip = this.editing ? nothing : this.tooltip
 		const tipText = typeof tip === 'string' ? tip : ''
 		const tipRich = tip !== nothing && tip !== undefined && tip !== null && typeof tip !== 'string'
 		const hasTip = tipText.length > 0 || tipRich
+		// Rich content is deferred as a function (which also leaves the control unnamed); plain text names it.
+		const tipContent = tipRich ? (() => tip as HTMLTemplateResult) : tipText
 
 		return html`
-			<p7t-tooltip ?disabled=${!hasTip} .text=${tipText}>
-				<div class='control ${this.editing ? 'editing' : ''}' @click=${() => this.onControlClick()}>
-					${this.editing ? html`
-						<p7t-tooltip
-							text=${mode === 'orbit' ? 'Recurring schedule — switch to a fixed date' : 'Fixed date — switch to a recurring schedule'}
-						>
-							<button class='switch' aria-label='Switch schedule type' @click=${() => this.switchMode()}>
-								<p7t-icon icon=${icon}></p7t-icon>
-							</button>
-						</p7t-tooltip>
-					` : html`
-						<!-- Idle the mode reads as the same dimmed glyph the plain schedule chip shows; arming swaps it for the accent switch. -->
-						<p7t-icon class='mode-glyph' icon=${icon}></p7t-icon>
-					`}
-					<span class='fields'>
-						${mode === 'orbit' ? this.orbitTemplate() : html`${this.dateTemplate()}${this.timeTemplate()}`}
-					</span>
-				</div>
-				${tipRich ? html`<div slot='tooltip'>${tip}</div>` : nothing}
-			</p7t-tooltip>
+			<div class='control ${this.editing ? 'editing' : ''}' @click=${() => this.onControlClick()} ${hasTip ? tooltip(tipContent) : nothing}>
+				${this.editing ? html`
+					<button
+						class='switch'
+						aria-label='Switch schedule type'
+						@click=${() => this.switchMode()}
+						${tooltip(() => mode === 'orbit' ? 'Recurring schedule — switch to a fixed date' : 'Fixed date — switch to a recurring schedule')}
+					>
+						<p7t-icon icon=${icon}></p7t-icon>
+					</button>
+				` : html`
+					<!-- Idle the mode reads as the same dimmed glyph the plain schedule chip shows; arming swaps it for the accent switch. -->
+					<p7t-icon class='mode-glyph' icon=${icon}></p7t-icon>
+				`}
+				<span class='fields'>
+					${mode === 'orbit' ? this.orbitTemplate() : html`${this.dateTemplate()}${this.timeTemplate()}`}
+				</span>
+			</div>
 		`
 	}
 

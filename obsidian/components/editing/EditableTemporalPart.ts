@@ -1,6 +1,6 @@
-import { css, html } from "@a11d/lit"
+import { css, html, nothing } from "@a11d/lit"
 import { EditablePart } from "./EditableDataLink"
-import "../design/Tooltip"
+import { tooltip } from "../design/Tooltip"
 
 /**
  * Base for type-specific temporal editables (date, time) built on a **native input** rather than free text —
@@ -63,16 +63,14 @@ export abstract class EditableTemporalPart extends EditablePart<string> {
 			`
 		}
 
-		const display = html`
-			<span class='display ${this.value ? '' : 'empty'}' @click=${() => this.beginEdit()}>
-				${this.toDisplayText(this.value)}
-			</span>
-		`
-
 		// A subclass whose reading is in one calendar can offer the same moment in another as a tooltip — but an
 		// inert field draws none, leaving a composing chip (e.g. the editable schedule) to surrogate the one tooltip.
 		const tip = this.disabled ? '' : this.idleTooltip
-		return !tip ? display : html`<p7t-tooltip .text=${tip}>${display}</p7t-tooltip>`
+		return html`
+			<span class='display ${this.value ? '' : 'empty'}' @click=${() => this.beginEdit()} ${tip ? tooltip(tip) : nothing}>
+				${this.toDisplayText(this.value)}
+			</span>
+		`
 	}
 
 	/** An optional hover reading of the idle value — e.g. the date the same day in the device's default calendar. */

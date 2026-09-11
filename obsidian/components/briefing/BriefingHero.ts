@@ -1,7 +1,7 @@
 import { component, css, html, nothing, property, unsafeCSS } from "@a11d/lit"
 import { ExecutiveOrder, SystemBriefing } from "@pleiades/sdk";
 import { toRomanNumeral } from "@pleiades/sdk/helpers";
-import { CardComponent } from "components/design"
+import { CardComponent, tooltip } from "components/design"
 import { 'plaintorch-bgx-png' as bannerBg } from 'assets/design'
 
 @component('p7t-briefing-hero')
@@ -132,11 +132,6 @@ export class BriefingHero extends CardComponent {
 				font-weight: 500;
 			}
 
-			.exec-orders p7t-tooltip {
-				display: block;
-				cursor: help;
-			}
-
 			.exec-order {
 				display: flex;
 				align-items: center;
@@ -145,6 +140,7 @@ export class BriefingHero extends CardComponent {
 				font-weight: 400;
 				font-family: var(--font-text);
 				line-height: .9;
+				cursor: help;
 
 				& p7t-icon {
 					width: 18px;
@@ -154,7 +150,7 @@ export class BriefingHero extends CardComponent {
 				}
 			}
 
-			/* Slotted into p7t-tooltip's overlay, but styled here where the markup lives. */
+			/* Rendered into the tooltip overlay by the directive, but styled here where the markup lives. */
 			.eo-tip {
 				display: flex;
 				flex-direction: column;
@@ -310,8 +306,8 @@ export class BriefingHero extends CardComponent {
 						<div class='exec-orders'>
 							Executive Orders in Effect
 							${this.activeExecutiveOrders.map(order => html`
-								<p7t-tooltip>
-									<div slot='tooltip' class='eo-tip'>
+								<div class='exec-order' ${tooltip(() => html`
+									<div class='eo-tip'>
 										<div class='eo-tip-head'>
 											<p7t-icon icon='exec-order'></p7t-icon>
 											<span class='eo-tip-id'>Executive Order ${order.id}</span>
@@ -320,11 +316,10 @@ export class BriefingHero extends CardComponent {
 										<div class='eo-tip-window'>${this.effectiveWindowLabel(order)}</div>
 										${!order.summary ? nothing : html`<div class='eo-tip-summary'>${order.summary}</div>`}
 									</div>
-									<div class='exec-order'>
-										<p7t-icon icon='exec-order'></p7t-icon>
-										<span>${order.id}: ${order.title}</span>
-									</div>
-								</p7t-tooltip>
+								`)}>
+									<p7t-icon icon='exec-order'></p7t-icon>
+									<span>${order.id}: ${order.title}</span>
+								</div>
 							`)}
 						</div>
 					`}
