@@ -5,15 +5,20 @@ import { Tooltip as MoTooltip, TooltipPlacement } from "@3mo/tooltip"
 /*
  * Force @3mo/popover onto its Floating UI position controller instead of CSS anchor positioning.
  *
- * `mo-tooltip` clamps a tip against the viewport edges via a `shift({ crossAxis: true })` middleware — but that
- * middleware only exists on the Floating UI controller. When the engine reports anchor-positioning support,
- * `mo-popover` uses the CSS-anchor controller instead, and edge-fitting falls to the browser's
- * `position-area` / `position-try`: those *flip* to the opposite side but do not reliably *shift* a
- * center-aligned tip back inside the viewport near an edge, so tips could overflow — a regression from both the
- * old hand-rolled tooltip (which JS-clamped) and @3mo's own pre-anchor-positioning behaviour. Pre-seeding the
- * controller's cached support probe to `false` (a private static, hence the cast) selects Floating UI for every
- * `mo-popover`, restoring reliable shift+flip clamping. Must run before the first `mo-popover` is constructed —
- * tips materialize lazily on first hover, long after this module loads.
+ * `mo-popover` has two position controllers and picks one from a runtime probe: CSS anchor positioning when the
+ * engine reports support, else Floating UI. Only the Floating UI path carries `mo-tooltip`'s viewport-edge
+ * `shift({ crossAxis: true })` clamp; the CSS-anchor path leaves edge-fitting to the browser's `position-area` /
+ * `position-try`, which *flips* but does not reliably *shift* a center-aligned tip back inside the viewport — so
+ * near an edge the tip overflows (a regression from both the old hand-rolled tooltip, which JS-clamped, and
+ * @3mo's own pre-anchor-positioning behaviour). Pre-seeding the controller's cached probe to `false` (a private
+ * static, hence the cast) selects Floating UI, whose JS `left`/`top` clamps correctly.
+ *
+ * This alone is not enough: the probe is also read when `mo-popover`'s styles are first *finalised*, which can
+ * happen before this line runs, baking the CSS-anchor `position-area` rules into the element. Those rules then
+ * override the Floating UI controller's JS `left`/`top` (a grid `position-area` wins over `inset`), so the tip
+ * still lands where anchor positioning put it — off-screen on Chromium builds whose `position-area` doesn't
+ * clamp a centered box (e.g. Electron's Chrome 142; it happens to clamp on 152/Edge, which masked this). The
+ * companion neutraliser is in {@link Tooltip}'s styles: `position-area: none` on `mo-popover`, so JS wins.
  */
 ;(PopoverCssAnchorPositionController as unknown as { implicitAnchorSupported?: boolean }).implicitAnchorSupported = false
 
@@ -70,6 +75,13 @@ export class Tooltip extends MoTooltip {
 	static override get styles() {
 		return css`
 			mo-popover {
+				/*
+				 * Neutralise any CSS anchor-positioning @3mo baked into mo-popover (see the controller force at the
+				 * top of this module): a live position-area overrides the Floating UI controller's JS left/top, re-
+				 * centering the tip on its anchor and overflowing the viewport on some Chromium builds. Off, the JS
+				 * insets — which clamp correctly — take effect.
+				 */
+				position-area: none;
 				box-sizing: border-box;
 				max-width: 24rem;
 				padding: .55em .7em;
