@@ -129,6 +129,12 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 				border: none;
 				margin-bottom: 0;
 				user-select: auto;
+
+				& .notch-icon,
+				& .notch-start,
+				& .notch-end {
+					display: none;
+				}
 			}
 
 			.banner-image {
@@ -177,7 +183,7 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 				& .indicator {
 					grid-area: horizon;
 					display: block;
-					border-top: 2px solid var(--p7t-flare-accent, var(--interactive-accent));
+					border-top: 1px solid var(--p7t-flare-accent, var(--interactive-accent));
 					align-self: start;
 					margin: .8em 1em;
 
@@ -185,8 +191,8 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 						position: absolute;
 						height: 1em;
 						width: 1em;
-						margin-block: -.51em -.5em;
-						inset-inline-start: -.6em;
+						margin-block: -.52em -.5em;
+						inset-inline-start: -.7em;
 						color: var(--p7t-flare-accent, var(--interactive-accent));
 					}
 
@@ -198,7 +204,7 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 							position: absolute;
 							height: 1.5em;
 							border-inline-start: 1px solid var(--p7t-flare-accent, var(--interactive-accent));
-							inset-inline-start: -.16em;
+							inset-inline-start: -.26em;
 						}
 
 						&::before {
@@ -213,7 +219,7 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 					& .notch-end {
 						&::before, &::after {
 							inset-inline-start: unset;
-							inset-inline-end: -.16em;
+							inset-inline-end: -.26em;
 						}
 					}
 				}

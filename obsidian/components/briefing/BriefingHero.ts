@@ -22,6 +22,7 @@ export class BriefingHero extends CardComponent {
 
 			.grid {
 				display: grid;
+				z-index: 1;
 				grid-template-rows: auto auto;
 				grid-template-columns: 1fr auto;
 				grid-template-areas:

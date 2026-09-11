@@ -30,10 +30,20 @@ export class Briefing extends Component {
 			}
 
 			.navbar {
-				
 				display: flex;
+				justify-content: center;
 				padding-inline: .5em;
+				margin-block: -1em .5em;
+				align-items: center;
 				gap: .3em;
+
+				&::before, &::after {
+					content: '';
+					flex: 1;
+					height: 1px;
+					margin-inline: 1em;
+					background-color: var(--text-faint);
+				}
 			}
 		`
 	}

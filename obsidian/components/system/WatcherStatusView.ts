@@ -1,5 +1,5 @@
 import { Component, component, css, html, nothing, state } from "@a11d/lit"
-import { core } from ".."
+import { core, IconName } from ".."
 
 type WatcherIssueReport = NonNullable<Awaited<ReturnType<typeof core.system.getWatcherIssues>>>
 type WatcherIssueRecord = WatcherIssueReport["issues"][number]
@@ -40,16 +40,13 @@ export class WatcherStatusView extends Component {
 		}
 	}
 
-	/** Fetches the current watcher status report. A transient failure keeps the last-known status on screen. */
 	public async refresh(): Promise<void> {
 		try {
 			const report = await core.system.getWatcherIssues()
-			if (report) {
-				this.report = report
-			}
+			this.report = report ?? undefined
 		}
 		catch {
-			// Leave the last-known status rather than blanking the indicator on a dropped request.
+			this.report = undefined
 		}
 	}
 
@@ -59,63 +56,74 @@ export class WatcherStatusView extends Component {
 
 			.indicator { display: inline-flex; align-items: center; gap: .35em; }
 			.dot {
-				width: .7em;
-				height: .7em;
-				border-radius: 50%;
-				background-color: var(--dot-color, var(--text-muted));
-				box-shadow: 0 0 0 1px color-mix(in srgb, var(--dot-color, var(--text-muted)) 45%, transparent);
+				width: 1.6em;
+				height: 1.6em;
+				margin-block: -.25em;
+				margin-inline: 0 .1em;
+				color: var(--dot-color, var(--text-muted));
 			}
 			.indicator.ok { --dot-color: var(--color-green); }
-			.indicator.standby { --dot-color: var(--color-yellow); }
-			.indicator.issues { --dot-color: var(--color-red); }
+			.indicator.standby { --dot-color: var(--color-red); }
+			.indicator.issues { --dot-color: var(--color-yellow); }
 			.indicator.offline { --dot-color: var(--text-faint); }
-			.indicator.offline .dot { background-color: transparent; box-shadow: inset 0 0 0 1.5px var(--text-faint); }
 			.count { font-variant-numeric: tabular-nums; font-size: .85em; color: var(--text-muted); }
 
 			.body { display: flex; flex-direction: column; gap: .5em; min-width: 15em; }
-			.title { font-weight: 600; }
+			.title {
+				font-weight: 600;
+				display: flex;
+				align-items: baseline;
+				gap: .8ch;
+
+				.status {
+					font-weight: 400;
+					color: var(--text-muted);
+					background-color: color-mix(in srgb, currentColor 10%, transparent);
+					padding: .05em .5em;
+					border-radius: .25em;
+
+					&.ok {
+						color: var(--color-green);
+					}
+					&.standby {
+						color: var(--color-red);
+					}
+					&.issues {
+						color: var(--color-yellow);
+					}
+					&.offline {
+						color: var(--text-faint);
+					}
+				}
+			}
 			.empty { color: var(--text-muted); }
 
 			.issue {
 				display: grid;
 				grid-template-columns: auto 1fr auto;
 				gap: .15em .5em;
-				align-items: baseline;
+				align-items: flex-start;
 			}
 			.issue.is-dismissed { opacity: .6; }
 			.badge {
 				justify-self: start;
 				text-transform: uppercase;
-				font-size: .62em;
 				letter-spacing: .05em;
 				font-weight: 700;
-				padding: .12em .45em;
-				border-radius: 5px;
-				color: var(--badge-fg, var(--text-on-accent, #fff));
-				background-color: var(--badge-bg, var(--text-muted));
+				padding: .12em;
+				display: inline-flex;
+				flex-direction: column;
+				align-items: center;
+				gap: .1em;
+
+				& p7t-icon { font-size: 1.4em; }
 			}
-			.badge.critical, .badge.error { --badge-bg: var(--color-red); }
-			.badge.suspended, .badge.warning { --badge-bg: var(--color-yellow); --badge-fg: #000; }
-			.badge.info { --badge-bg: var(--text-muted); }
+			.badge.critical, .badge.error { color: var(--color-red); }
+			.badge.suspended, .badge.warning { color: var(--color-yellow); }
+			.badge.info { color: var(--text-muted); }
+
 			.msg { min-width: 0; }
 			.path { grid-column: 2; font-size: .82em; color: var(--text-muted); word-break: break-all; }
-
-			.action {
-				grid-row: 1;
-				grid-column: 3;
-				align-self: center;
-				padding: .12em .5em;
-				border: 1px solid color-mix(in srgb, var(--text-normal) 20%, transparent);
-				border-radius: 6px;
-				background: transparent;
-				color: var(--text-muted);
-				font-family: inherit;
-				font-size: .72em;
-				cursor: pointer;
-				white-space: nowrap;
-			}
-			.action:hover:not(:disabled) { color: var(--text-normal); background-color: color-mix(in srgb, var(--text-normal) 8%, transparent); }
-			.action:disabled { opacity: .5; cursor: default; }
 
 			.dismissed-header {
 				margin-top: .1em;
@@ -130,7 +138,7 @@ export class WatcherStatusView extends Component {
 	}
 
 	protected override get template() {
-		const status = this.report?.status ?? "ok"
+		const status = this.report?.status ?? "offline"
 		const issues = this.report?.issues ?? []
 		const live = issues.filter(issue => !issue.dismissed)
 		const dismissed = issues.filter(issue => issue.dismissed)
@@ -139,13 +147,13 @@ export class WatcherStatusView extends Component {
 		return html`
 			<p7t-popover placement="top">
 				<span class="indicator ${status}">
-					<span class="dot"></span>
+					<p7t-icon class='dot' icon='watcher'></p7t-icon>
 					${live.length > 0 ? html`<span class="count">${live.length}</span>` : nothing}
 				</span>
 				<div slot="content" class="body">
-					<div class="title">Watcher · ${label}</div>
+					<div class="title">Watcher <span class="status ${status}">${label}</span></div>
 					${live.length === 0 && dismissed.length === 0
-						? html`<div class="empty">No active issues.</div>`
+						? status === "offline" ? html`<div class="empty">The PLAINTORCH core is offline for this user and vault.</div>` : html`<div class="empty">No active issues.</div>`
 						: nothing}
 					${live.map(issue => this.renderIssue(issue))}
 					${dismissed.length > 0
@@ -164,17 +172,50 @@ export class WatcherStatusView extends Component {
 		const busy = this.busyKeys.has(issue.key)
 		return html`
 			<div class="issue ${issue.dismissed ? 'is-dismissed' : ''}">
-				<span class="badge ${issue.severity}">${issue.severity}</span>
+				<p7t-tooltip text="${this.severityName(issue.severity)}">
+					<span class="badge ${issue.severity}">
+						<p7t-icon icon=${this.severityIcon(issue.severity)}></p7t-icon>
+					</span>
+				</p7t-tooltip>
 				<span class="msg">${issue.message}</span>
-				<button
-					class="action"
+				<p7t-button
+					class='dismiss-button'
+					ghost
+					danger
 					?disabled=${busy}
-					@click=${() => void this.toggleDismissal(issue)}>
-					${issue.dismissed ? 'Restore' : 'Dismiss'}
-				</button>
+					@click=${() => void this.toggleDismissal(issue)}
+					icon=${issue.dismissed ? 'lucide:undo-2' : 'lucide:ban'}>
+				</p7t-button>
 				${path ? html`<span class="path">${path.replaceAll("\\", "/")}</span>` : nothing}
 			</div>
 		`
+	}
+
+	private severityIcon(severity: string): IconName {
+		switch (severity) {
+			case 'info': return 'lucide:info';
+
+			case 'warning': return 'lucide:circle-alert';
+			case 'suspended': return 'lucide:circle-pause';
+
+			case 'error': return 'lucide:octagon-alert';
+			case 'critical': return 'lucide:octagon-x';
+
+			default: return 'lucide:badge-question-mark';
+		}
+	}
+
+	private severityName(severity: string): string {
+		switch (severity) {
+			case 'info': return 'Info';
+
+			case 'warning': return 'Warning';
+			case 'suspended': return 'Suspended';
+
+			case 'error': return 'Error';
+			case 'critical': return 'Critical';
+			default: return 'Unknown';
+		}
 	}
 
 	/** Dismisses a live issue or restores a dismissed one, then refreshes so the split reflects the new state. */

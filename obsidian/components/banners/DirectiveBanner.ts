@@ -68,7 +68,7 @@ export abstract class DirectiveBanner extends EntityBanner<Directive> {
 			:host(.plaintorch-modal-content) p7t-editable-media.banner::part(media) {
 				margin: -3.5em -1em;
 				width: calc(100% + 2em) !important;
-				height: calc(100% + 5em) !important;
+				height: calc(100% + 4em) !important;
 			}
 		`
 	}
