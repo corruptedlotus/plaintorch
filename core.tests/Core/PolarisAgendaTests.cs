@@ -58,6 +58,44 @@ public sealed class PolarisAgendaTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task Agenda_projects_orbit_occurrences_carrying_their_owning_directive()
+	{
+		// A projected occurrence (never hardened) still has to surface its owner's directive: the plugin renders
+		// the directive line from decree.directive / fate.directive. The projection reads its owners with
+		// IgnoreAutoIncludes, so the directive must be re-included explicitly or it comes back null.
+		var ct = TestContext.Current.CancellationToken;
+
+		var directive = await Vault.WithScopeAsync(s => s.GetRequiredService<IDirectiveApi>()
+			.CreateStandaloneAsync("Ops", cancellationToken: ct));
+
+		// A daily orbit decree projects an unbound attentive today; a daily orbit fate projects eventives across
+		// the horizon. Neither is hardened, so both exercise the projected read path.
+		await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
+			.CreateDecreeAsync(new DecreePlan("Check inbox", DirectiveId: directive.Id, Orbit: "d"), ct));
+		await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
+			.CreateFateAsync(new FatePlan("Daily sync", DirectiveId: directive.Id, Orbit: "d"), ct));
+
+		var agenda = await Vault.WithScopeAsync(s => s.GetRequiredService<IPolarisCycleApi>()
+			.GetAgendaAsync(ct));
+
+		Assert.NotEmpty(agenda.Attentives);
+		Assert.All(agenda.Attentives, attentive =>
+		{
+			Assert.NotNull(attentive.Decree);
+			Assert.NotNull(attentive.Decree!.Directive);
+			Assert.Equal(directive.Id, attentive.Decree!.Directive!.Id);
+		});
+
+		Assert.NotEmpty(agenda.Eventives);
+		Assert.All(agenda.Eventives, eventive =>
+		{
+			Assert.NotNull(eventive.Fate);
+			Assert.NotNull(eventive.Fate!.Directive);
+			Assert.Equal(directive.Id, eventive.Fate!.Directive!.Id);
+		});
+	}
+
+	[Fact]
 	public async Task Agenda_lists_unbound_pending_due_attentives_and_upcoming_eventives()
 	{
 		var ct = TestContext.Current.CancellationToken;

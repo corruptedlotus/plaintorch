@@ -51,10 +51,13 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		var eventiveKeys = eventives.Select(OccurrenceKey).ToHashSet();
 		var attentiveKeys = attentives.Select(OccurrenceKey).ToHashSet();
 
-		// Dated fates: a single fixed occurrence.
+		// Dated fates: a single fixed occurrence. Every projected owner (fate/decree/objective) drops its
+		// auto-includes to keep the bulk read lean, then re-adds only the owning Directive explicitly — a
+		// projected occurrence must still carry its owner's directive for the agenda to surface it (PEP100).
 		var datedFates = await context.Fates
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
+			.Include(fate => fate.Directive)
 			.Where(fate => fate.Status == FateStatus.Active && fate.Date != null
 				&& fate.Date >= startInclusive && fate.Date <= endInclusive)
 			.ToListAsync(cancellationToken);
@@ -67,6 +70,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		var orbitFates = await context.Fates
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
+			.Include(fate => fate.Directive)
 			.Where(fate => fate.Status == FateStatus.Active && fate.Orbit != null)
 			.ToListAsync(cancellationToken);
 		foreach (var fate in orbitFates)
@@ -86,6 +90,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		var dueObjectives = await context.Objectives
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
+			.Include(objective => objective.Directive)
 			.Where(objective => objective.Due != null
 				&& objective.Due >= startInclusive && objective.Due <= endInclusive
 				&& objective.Status != ObjectiveStatus.Done
@@ -110,6 +115,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		var orbitDecrees = await context.Decrees
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
+			.Include(decree => decree.Directive)
 			.Where(decree => decree.Status == DecreeStatus.Active && decree.Orbit != null)
 			.ToListAsync(cancellationToken);
 		foreach (var decree in orbitDecrees)
