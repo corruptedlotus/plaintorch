@@ -1,10 +1,9 @@
 import { component, css, html, nothing, property } from '@a11d/lit'
 import { ObjectiveCollege, TimeframeInclusion, type MediaReference } from '@pleiades/sdk'
 import { IconName } from 'components/PleiadesIcon'
-import { humanizeOrbit } from 'orbits'
 import { getApp, resolveMediaIcon } from '..'
 import { InfoItem } from '../design/InfoItem'
-import { collegeDescriptorOf } from './collegeDescriptors'
+import './TimeframeDetails'
 
 /** The subset of a timeframe (or a directive-timeframe record) the chip reads. */
 export interface TimeframeLike {
@@ -18,13 +17,11 @@ export interface TimeframeLike {
 	autoInclusionColleges?: ObjectiveCollege[]
 }
 
-/** 'HH:MM[:SS]' → 'HH:MM'. */
-const hhmm = (time: string | undefined): string => (time ?? '').slice(0, 5)
-
 /**
  * A timeframe (PEP100) drawn one unified way — its icon, and (in `named` mode) its title. The built-in tooltip is
- * the timeframe's detail: its window, the cycles it scopes to (an Orbit, or every cycle), and the college it
- * auto-includes. `icon` mode is the compact form an affined executive shows in place of its Celestron.
+ * the timeframe's detail (see {@link TimeframeDetails}): its window, the cycles it scopes to (an Orbit, or every
+ * cycle), and the college it auto-includes. `icon` mode is the compact form an affined executive shows in place of
+ * its Celestron.
  */
 @component('p7t-timeframe-item')
 export class TimeframeItem extends InfoItem {
@@ -44,30 +41,6 @@ export class TimeframeItem extends InfoItem {
 
 			.info-bullet {
 				font-weight: 400;
-			}
-
-			.details {
-				display: flex;
-				flex-direction: column;
-				gap: .25em;
-				min-width: 12em;
-			}
-
-			.details .title {
-				font-weight: 600;
-			}
-
-			.details .row {
-				display: flex;
-				align-items: center;
-				gap: .5ch;
-				opacity: .85;
-			}
-
-			.details .row p7t-icon {
-				width: 1.1em;
-				height: 1.1em;
-				opacity: .7;
 			}
 		`
 	}
@@ -117,28 +90,10 @@ export class TimeframeItem extends InfoItem {
 			return timeframe ? `${timeframe.title} Affinity` : 'No Affinity'
 		}
 
-		if (!timeframe) {
-			return nothing
-		}
-
-		const window = timeframe.startTime && timeframe.endTime
-			? `${hhmm(timeframe.startTime)} – ${hhmm(timeframe.endTime)}`
-			: undefined
-		// No Orbit means the timeframe applies to every Polaris cycle (PEP100).
-		const scope = timeframe.orbit ? (humanizeOrbit(timeframe.orbit).text || timeframe.orbit) : 'Every cycle'
-		const colleges = timeframe.autoInclusion === TimeframeInclusion.College
-			? (timeframe.autoInclusionColleges ?? []).map(collegeDescriptorOf)
-			: []
-		const [primaryCollege] = colleges
-
-		return html`
-			<div class='details'>
-				<div class='title'>${timeframe.title}</div>
-				${!window ? nothing : html`<div class='row'><p7t-icon icon='lucide:clock'></p7t-icon><span>${window}</span></div>`}
-				<div class='row'><p7t-icon icon='lucide:repeat'></p7t-icon><span>${scope}</span></div>
-				${!primaryCollege ? nothing : html`<div class='row'><p7t-icon icon=${primaryCollege.icon}></p7t-icon><span>Includes ${colleges.map(descriptor => descriptor.name).join(', ')}</span></div>`}
-			</div>
-		`
+		// The full timeframe detail is a self-contained element so it survives the tooltip system's shadow isolation.
+		return timeframe
+			? html`<p7t-timeframe-details .timeframe=${timeframe}></p7t-timeframe-details>`
+			: nothing
 	}
 }
 

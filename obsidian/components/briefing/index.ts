@@ -1,5 +1,6 @@
 export * from './NavigationItem'
 export * from "./BriefingHero"
+export * from './ExecutiveOrderDetails'
 export * from './ThroneView'
 export * from "./Briefing"
 export * from './BriefingCard'

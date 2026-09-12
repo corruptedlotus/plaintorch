@@ -80,17 +80,6 @@ export class ScheduleItem extends InfoItem {
 				flex: 0 0 auto;
 			}
 
-			.tip-phrase {
-				font-weight: 400;
-			}
-
-			.tip-raw {
-				display: block;
-				margin-block-start: .35em;
-				font-family: var(--font-monospace);
-				font-size: .9em;
-				opacity: .6;
-			}
 		`
 	}
 
@@ -165,7 +154,17 @@ export class ScheduleItem extends InfoItem {
 			// The full humanized reading (never truncated) over the raw notation it stands for.
 			const { text, invalid } = humanizeOrbit(this.orbit)
 			return html`
-				<div>
+				<style>
+					.schedule-tip .tip-phrase { font-weight: 400; }
+					.schedule-tip .tip-raw {
+						display: block;
+						margin-block-start: .35em;
+						font-family: var(--font-monospace);
+						font-size: .9em;
+						opacity: .6;
+					}
+				</style>
+				<div class='schedule-tip'>
 					${!text || invalid ? nothing : html`<div class='tip-phrase'>${text}</div>`}
 					<code class='tip-raw'>${this.orbit}</code>
 				</div>

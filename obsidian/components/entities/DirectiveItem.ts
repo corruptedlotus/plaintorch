@@ -1,16 +1,16 @@
 import { component, css, html, nothing, property } from '@a11d/lit'
-import { Directive, DirectiveStatus, LunarDirectiveStatus } from '@pleiades/sdk'
+import { Directive } from '@pleiades/sdk'
 import { IconName } from 'components/PleiadesIcon'
 import { InfoItem } from '../design/InfoItem'
-import type { Status } from './StatusItem'
+import './DirectiveCard'
 
 /**
  * The directive an entity belongs to (PEP100) — its kind glyph beside its title — drawn one unified way in the
  * items, banners, and occurrence rows that used to hand-format it. A lunar and a stellar directive read apart by
  * their glyph. With no directive it shows a placeholder (an objective with none is a "World Quest").
  *
- * The built-in tooltip is a mini-banner: the crest, the title, the codename, and the workflow state — the gist of
- * the directive's own banner, without leaving the surface the chip sits on.
+ * The built-in tooltip is a mini-banner (see {@link DirectiveCard}): the crest, the title, and the workflow state —
+ * the gist of the directive's own banner, without leaving the surface the chip sits on.
  */
 @component('p7t-directive-item')
 export class DirectiveItem extends InfoItem {
@@ -35,55 +35,11 @@ export class DirectiveItem extends InfoItem {
 				font-size: .9em;
 				line-height: .9;
 			}
-
-			.mini-banner {
-				display: flex;
-				align-items: flex-start;
-				gap: .6em;
-				min-width: 12em;
-
-				& .crest {
-					width: 2.6em;
-					height: 2.6em;
-					flex: 0 0 auto;
-				}
-	
-				& .meta {
-					display: flex;
-					flex-direction: column;
-					gap: 0;
-				}
-	
-				& .title {
-					font-weight: 500;
-					font-size: 1.2em;
-				}
-	
-				& .codename {
-					opacity: .6;
-					font-size: .85em;
-				}
-
-				& .due {
-					opacity: .6;
-					font-size: .85em;
-				}
-	
-				& p7t-status-item {
-					font-size: .8em;
-				}
-			}
 		`
 	}
 
 	private get kindIcon(): IconName {
 		return this.directive?.isLunar ? 'directive-lunar' : 'directive'
-	}
-
-	private get statusName(): Status {
-		const directive = this.directive!
-		const name = directive.isLunar ? LunarDirectiveStatus[directive.status] : DirectiveStatus[directive.status]
-		return (name ?? 'Planned') as Status
 	}
 
 	protected override get bulletIcon(): IconName | undefined {
@@ -103,35 +59,10 @@ export class DirectiveItem extends InfoItem {
 		return super.content
 	}
 
-	protected get crestIconTemplate() {
-		const directive = this.directive
-
-		return !directive ? nothing : html`
-			<p7t-media
-				class='crest'
-				icon
-				.media=${directive.iconMedia}
-				.default=${this.kindIcon}>
-			</p7t-media>
-		`
-	}
-
 	protected override get tooltip() {
-		const directive = this.directive
-		if (!directive) {
-			return nothing
-		}
-
-		return html`
-			<div class='mini-banner'>
-				${this.crestIconTemplate}
-				<div class='meta'>
-					<div class='title'>${directive.title}</div>
-					${!directive.due ? nothing : html`<div class='due'>Due <p7t-datetime-view relative .date=${directive.due}></p7t-datetime-view></div>`}
-					<p7t-status-item small .status=${this.statusName}></p7t-status-item>
-				</div>
-			</div>
-		`
+		return this.directive
+			? html`<p7t-directive-card .directive=${this.directive}></p7t-directive-card>`
+			: nothing
 	}
 }
 

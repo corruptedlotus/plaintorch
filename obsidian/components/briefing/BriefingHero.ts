@@ -1,7 +1,8 @@
-import { component, css, html, nothing, property, unsafeCSS } from "@a11d/lit"
+import { component, css, html, nothing, property } from "@a11d/lit"
 import { ExecutiveOrder, SystemBriefing } from "@pleiades/sdk";
 import { toRomanNumeral } from "@pleiades/sdk/helpers";
 import { CardComponent, tooltip } from "components/design"
+import './ExecutiveOrderDetails'
 
 @component('p7t-briefing-hero')
 export class BriefingHero extends CardComponent {
@@ -149,52 +150,6 @@ export class BriefingHero extends CardComponent {
 				}
 			}
 
-			/* Rendered into the tooltip overlay by the directive, but styled here where the markup lives. */
-			.eo-tip {
-				display: flex;
-				flex-direction: column;
-				gap: .25em;
-			}
-
-			.eo-tip-head {
-				display: flex;
-				align-items: center;
-				gap: .45ch;
-				color: #ffd23f;
-
-				& p7t-icon {
-					width: 18px;
-					height: 18px;
-				}
-			}
-
-			.eo-tip-id {
-				font-size: .78em;
-				font-weight: 600;
-				text-transform: uppercase;
-				letter-spacing: .04em;
-			}
-
-			.eo-tip-title {
-				font-size: 1.05em;
-				font-weight: 500;
-				line-height: 1.15;
-			}
-
-			.eo-tip-window {
-				font-size: .8em;
-				font-weight: 500;
-				opacity: .7;
-			}
-
-			.eo-tip-summary {
-				margin-top: .15em;
-				font-size: .9em;
-				font-weight: 400;
-				line-height: 1.35;
-				opacity: .85;
-			}
-
 			.mask {
 				position: absolute;
 				z-index: 0;
@@ -227,33 +182,6 @@ export class BriefingHero extends CardComponent {
 	 */
 	private get activeExecutiveOrders(): ExecutiveOrder[] {
 		return (this.briefing?.currentOnrush?.executiveOrders ?? []).filter(order => order.isActive)
-	}
-
-	/**
-	 * A compact "when it started / when it ends" line for an order's effective window. A timeless order is
-	 * Onrush-bound, so each unset bound resolves against the current onrush and the line says so.
-	 */
-	private effectiveWindowLabel(order: ExecutiveOrder): string {
-		const onrush = this.briefing?.currentOnrush
-		const from = order.effectiveFrom ?? onrush?.startDate
-		const until = order.effectiveUntil ?? onrush?.endDate
-
-		const parts: string[] = []
-		if (order.isOnrushBound) {
-			parts.push('Onrush-bound')
-		}
-		else if (from) {
-			parts.push(`Since ${formatShortDate(from)}`)
-		}
-
-		if (until) {
-			const days = daysFromToday(until)
-			parts.push(days < 0
-				? `Ended ${formatShortDate(until)}`
-				: days === 0 ? 'Ends today' : `Ends in ${days}d`)
-		}
-
-		return parts.join(' · ')
 	}
 
 	override get template() {
@@ -305,17 +233,7 @@ export class BriefingHero extends CardComponent {
 						<div class='exec-orders'>
 							Executive Orders in Effect
 							${this.activeExecutiveOrders.map(order => html`
-								<div class='exec-order' ${tooltip(() => html`
-									<div class='eo-tip'>
-										<div class='eo-tip-head'>
-											<p7t-icon icon='exec-order'></p7t-icon>
-											<span class='eo-tip-id'>Executive Order ${order.id}</span>
-										</div>
-										<div class='eo-tip-title'>${order.title}</div>
-										<div class='eo-tip-window'>${this.effectiveWindowLabel(order)}</div>
-										${!order.summary ? nothing : html`<div class='eo-tip-summary'>${order.summary}</div>`}
-									</div>
-								`)}>
+								<div class='exec-order' ${tooltip(() => html`<p7t-executive-order-details .order=${order} .onrush=${this.briefing?.currentOnrush}></p7t-executive-order-details>`)}>
 									<p7t-icon icon='exec-order'></p7t-icon>
 									<span>${order.id}: ${order.title}</span>
 								</div>
@@ -332,21 +250,6 @@ export class BriefingHero extends CardComponent {
 			<p7t-date-view></p7t-date-view>
 		`
 	}
-}
-
-/** 'YYYY-MM-DD' → a short 'Aug 12' label, parsed as local time so the day never shifts across a timezone. */
-function formatShortDate(date: string): string {
-	const parsed = new Date(`${date}T00:00:00`)
-	return Number.isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
-
-/** Whole days from local midnight today to the given 'YYYY-MM-DD' date (negative when past). */
-function daysFromToday(date: string): number {
-	const target = new Date(`${date}T00:00:00`)
-	if (Number.isNaN(target.getTime())) return 0
-	const now = new Date()
-	const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-	return Math.round((target.getTime() - startOfToday.getTime()) / 86_400_000)
 }
 
 declare global {
