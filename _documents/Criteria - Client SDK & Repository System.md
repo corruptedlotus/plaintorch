@@ -79,6 +79,26 @@ Tests live beside their subject as `plaintorch/**/*.test.ts` and run under **Vit
 | Rolls back **and rethrows** on a thrown operation, guard still released | fault | ✅ | `mutation.test.ts` |
 | Honours a custom success predicate | edge | ✅ | `mutation.test.ts` |
 
+## Change-ledger prune — `prune.test.ts`
+The `changedAt` ledger grows one marker per locally edited identity. A marker at revision _r_ only ever discards a response _issued before r_, so once no in-flight read predates it, it can never drop a response again and is pruned. `beginRead`/`endRead` bracket every response-absorbing request; the oldest in-flight read is the prune cutoff (the low-water mark). The overriding invariant is that pruning must **never** strand an edit a slower read could clobber.
+
+| Behaviour / Invariant | Kind | Status | Test ref |
+|---|---|---|---|
+| `beginRead` stamps a read with the current revision (parity with the old capture) | happy | ✅ | `prune.test.ts` |
+| Concurrent reads at one revision are a multiset — each released independently | edge | ✅ | `prune.test.ts` |
+| `endRead` for a revision never opened is a no-op | fault | ✅ | `prune.test.ts` |
+| The ledger clears once the last read settles with nothing else in flight | happy | ✅ | `prune.test.ts` |
+| Prune is read-driven — a change lingers until a read settles, then is swept | edge | ✅ | `prune.test.ts` |
+| Only markers at or below the oldest in-flight read are pruned (low-water mark) | happy | ✅ | `prune.test.ts` |
+| A marker is held while an older read is in flight, so its stale response is dropped | fault | ✅ | `prune.test.ts` (revert-guard) |
+| Held until the **last** reader at the oldest revision settles (multiset is load-bearing) | fault | ✅ | `prune.test.ts` (revert-guard) |
+| Once pruned, a genuinely newer read applies normally | edge | ✅ | `prune.test.ts` |
+| A read taken mid-write is discarded by the end-of-write marker, then pruned | fault | ✅ | `prune.test.ts` |
+| Overlapping reads — newer wins, older dropped, neither reverts the edit | happy/fault | ✅ | `prune.test.ts` |
+| A sparse merge under an in-flight read is unaffected by the prune | edge | ✅ | `prune.test.ts` |
+| E2e — get, edit + commit, a concurrent stale list dropped, then the ledger empties | happy | ✅ | `prune.test.ts` |
+| E2e — a throwing read still deregisters and prunes (the client's `finally`) | fault | ✅ | `prune.test.ts` |
+
 ## Invalidation — `invalidation.test.ts`
 | Behaviour / Invariant | Kind | Status | Test ref |
 |---|---|---|---|
@@ -144,4 +164,4 @@ Tests live beside their subject as `plaintorch/**/*.test.ts` and run under **Vit
 - **Socket pinning** — an undrained response body over the keep-alive pool exhausts it and looks like the core hanging; to be guarded by the Tier-3 transport suite.
 - **Hung request / dedup poisoning** — an unanswered request must settle as a bounded failure rather than poisoning an identity's in-flight entry forever; Tier-3.
 - **Invalidation settling / overlap** — `settled()` must not resolve before the flush, and flushes must not overlap; guarded by `invalidation.test.ts`.
-- **Unbounded growth** — the store never evicts and `changedAt` never prunes (MikroORM's identity-map warning); eviction is the outstanding Patch106.1 groundwork, untested until it lands.
+- **Unbounded growth** — MikroORM's identity-map warning, one level down. `changedAt` now prunes on a low-water mark of in-flight reads — a marker is spent once no read predates it — bounding the ledger without ever reverting an edit a slower read could clobber; guarded by `prune.test.ts`. Store-*entity* eviction (dropping records with no subscribers) remains the outstanding Patch106.1 groundwork: the subtle half, gated by the canonical-instance guarantee.

@@ -61,6 +61,16 @@ export class EntityStore {
 	private readonly changedAt = new Map<EntityKey, number>()
 	/** Identities with a write in flight, held so a revalidation does not refetch over an edit mid-write. */
 	private readonly writing = new Set<EntityKey>()
+	/**
+	 * Response-absorbing reads currently in flight, counted by the revision they were issued at (a multiset:
+	 * several reads can share one revision, and each must be released on its own).
+	 *
+	 * A {@link changedAt} marker at revision r only ever discards a response *issued before* r. So once no
+	 * in-flight read was issued before r, that marker can never drop a response again — new reads capture the
+	 * current, higher revision, so none will ever be older. The oldest revision here is therefore the ledger's
+	 * prune cutoff; this is what keeps `changedAt` bounded over a long-lived session.
+	 */
+	private readonly outstandingReads = new Map<number, number>()
 
 	/**
 	 * Registers or merges a value and returns the canonical instance for its identity.
@@ -154,6 +164,83 @@ export class EntityStore {
 	/** The current revision, to be captured before a request is issued. */
 	public get currentRevision(): number {
 		return this.revision
+	}
+
+	/** How many local changes are still tracked for supersession — a long-session growth diagnostic. */
+	public get pendingChangeCount(): number {
+		return this.changedAt.size
+	}
+
+	/** How many response-absorbing reads are currently in flight — a diagnostic, and the prune's cutoff input. */
+	public get inFlightReadCount(): number {
+		let total = 0
+		for (const count of this.outstandingReads.values()) {
+			total += count
+		}
+
+		return total
+	}
+
+	/**
+	 * Opens a read: returns the revision to stamp it with (as {@link AbsorptionContext.issuedAt}) and records
+	 * it as in flight. Bracket every request whose response is absorbed — a GET, or a write that returns the
+	 * updated entity — with this and {@link endRead}, so the store knows the oldest response that could still
+	 * arrive. This is {@link currentRevision} plus the bookkeeping that lets the change ledger be pruned.
+	 */
+	public beginRead(): number {
+		const issuedAt = this.revision
+		this.outstandingReads.set(issuedAt, (this.outstandingReads.get(issuedAt) ?? 0) + 1)
+		return issuedAt
+	}
+
+	/**
+	 * Closes a read opened by {@link beginRead}, whether it landed, was superseded, or failed — call it from a
+	 * `finally`. Releasing the oldest in-flight read is what advances the prune cutoff, so this is where spent
+	 * markers are dropped.
+	 */
+	public endRead(issuedAt: number): void {
+		const count = this.outstandingReads.get(issuedAt)
+		if (count === undefined) {
+			return
+		}
+
+		if (count <= 1) {
+			this.outstandingReads.delete(issuedAt)
+		}
+		else {
+			this.outstandingReads.set(issuedAt, count - 1)
+		}
+
+		this.pruneSettledChanges()
+	}
+
+	/**
+	 * Drops every change marker that can no longer supersede a response.
+	 *
+	 * A marker at revision r discards only responses issued before r. The oldest read still in flight is the
+	 * cutoff: any marker at or below it is one no in-flight read predates, so it can never drop a response
+	 * again. With no read in flight the cutoff is infinite and the whole ledger clears — safe, because a
+	 * future read captures the current revision, which is at or above every marker already here.
+	 */
+	private pruneSettledChanges(): void {
+		const cutoff = this.oldestInFlightRead()
+		for (const [key, changedAt] of this.changedAt) {
+			if (changedAt <= cutoff) {
+				this.changedAt.delete(key)
+			}
+		}
+	}
+
+	/** The revision of the oldest read still in flight, or `Infinity` when none is. */
+	private oldestInFlightRead(): number {
+		let oldest = Infinity
+		for (const issuedAt of this.outstandingReads.keys()) {
+			if (issuedAt < oldest) {
+				oldest = issuedAt
+			}
+		}
+
+		return oldest
 	}
 
 	/**

@@ -86,39 +86,55 @@ export class PlaintorchCoreClient {
 	 * out.
 	 */
 	public async getJson<T>(path: string, context?: AbsorptionContext): Promise<T | undefined> {
-		// Captured before the request leaves, so a change made while it is in flight supersedes it.
-		const issuedAt = this.store.currentRevision
-		return await this.readJsonResponse<T>(
-			await this.send({
-				method: "GET",
-				path
-			}),
-			{ issuedAt, ...context }
-		)
+		// Opened before the request leaves, so a change made while it is in flight supersedes it; closed in the
+		// finally so the store can prune the change ledger once this response — and everything older — settles.
+		const issuedAt = this.store.beginRead()
+		try {
+			return await this.readJsonResponse<T>(
+				await this.send({
+					method: "GET",
+					path
+				}),
+				{ issuedAt, ...context }
+			)
+		}
+		finally {
+			this.store.endRead(issuedAt)
+		}
 	}
 
 	public async postForJson<T>(path: string, body: unknown): Promise<T | undefined> {
-		const issuedAt = this.store.currentRevision
-		return await this.readJsonResponse<T>(
-			await this.send({
-				method: "POST",
-				path,
-				body
-			}),
-			{ issuedAt }
-		)
+		const issuedAt = this.store.beginRead()
+		try {
+			return await this.readJsonResponse<T>(
+				await this.send({
+					method: "POST",
+					path,
+					body
+				}),
+				{ issuedAt }
+			)
+		}
+		finally {
+			this.store.endRead(issuedAt)
+		}
 	}
 
 	public async putForJson<T>(path: string, body: unknown): Promise<T | undefined> {
-		const issuedAt = this.store.currentRevision
-		return await this.readJsonResponse<T>(
-			await this.send({
-				method: "PUT",
-				path,
-				body
-			}),
-			{ issuedAt }
-		)
+		const issuedAt = this.store.beginRead()
+		try {
+			return await this.readJsonResponse<T>(
+				await this.send({
+					method: "PUT",
+					path,
+					body
+				}),
+				{ issuedAt }
+			)
+		}
+		finally {
+			this.store.endRead(issuedAt)
+		}
 	}
 
 	public async delete(path: string): Promise<boolean> {
