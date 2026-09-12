@@ -117,6 +117,7 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 
 	public override onunload(): void {
 		cachedCoreClient?.repos.changeFeed.stop()
+		cachedCoreClient?.repos.stopEvictionSweep()
 		this.app.workspace.detachLeavesOfType(PLAINTORCH_BRIEFING_VIEW_TYPE)
 		this.app.workspace.detachLeavesOfType(PLAINTORCH_CANVAS_VIEW_TYPE)
 	}
@@ -131,6 +132,9 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 	private async startChangeFeed(): Promise<void> {
 		const coreClient = await getPlaintorchNodeCoreClient()
 		coreClient.repos.changeFeed.start()
+		// Bound the identity map over a long session. Housekeeping, so it rides the same session lifecycle as
+		// the feed rather than earning its own; stopped in onunload.
+		coreClient.repos.startEvictionSweep()
 
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => {
 			if (!coreClient.repos.changeFeed.connected) {

@@ -116,6 +116,8 @@ The identity map is bounded by a reachability sweep. `collectEntityKeys` walks a
 | A held entity stays the same instance; an unheld one evicts and refetches fresh | fault | ✅ | `eviction.test.ts` (canonical-instance guard) |
 | `PlaintorchRepositories.sweep` keeps what a resolved listing holds, evicts the rest | happy | ✅ | `eviction.test.ts` |
 | `PlaintorchRepositories.sweep` keeps a subscribed entity absent from every listing | edge | ✅ | `eviction.test.ts` |
+| Periodic sweep runs each interval; not before the first; stop halts it; start is idempotent | happy/edge | ✅ | `eviction.test.ts` |
+| A periodic tick actually evicts an unheld entity | happy | ✅ | `eviction.test.ts` |
 
 ## Invalidation — `invalidation.test.ts`
 | Behaviour / Invariant | Kind | Status | Test ref |
@@ -182,4 +184,4 @@ The identity map is bounded by a reachability sweep. `collectEntityKeys` walks a
 - **Socket pinning** — an undrained response body over the keep-alive pool exhausts it and looks like the core hanging; to be guarded by the Tier-3 transport suite.
 - **Hung request / dedup poisoning** — an unanswered request must settle as a bounded failure rather than poisoning an identity's in-flight entry forever; Tier-3.
 - **Invalidation settling / overlap** — `settled()` must not resolve before the flush, and flushes must not overlap; guarded by `invalidation.test.ts`.
-- **Unbounded growth** — MikroORM's identity-map warning, one level down. `changedAt` prunes on a low-water mark of in-flight reads — a marker is spent once no read predates it — bounding the ledger without ever reverting an edit a slower read could clobber; guarded by `prune.test.ts`. Store-*entity* eviction is a reachability sweep (`PlaintorchRepositories.sweep`) that drops only records neither observed nor reachable from a live view, respecting the canonical-instance guarantee; guarded by `eviction.test.ts`. The remaining lever is the sweep's *trigger* cadence (idle / periodic / memory-pressure), and further gains would need bounding the derived caches themselves — both deliberately left as follow-ups.
+- **Unbounded growth** — MikroORM's identity-map warning, one level down. `changedAt` prunes on a low-water mark of in-flight reads — a marker is spent once no read predates it — bounding the ledger without ever reverting an edit a slower read could clobber; guarded by `prune.test.ts`. Store-*entity* eviction is a reachability sweep (`PlaintorchRepositories.sweep`) that drops only records neither observed nor reachable from a live view, respecting the canonical-instance guarantee; guarded by `eviction.test.ts`. It runs on a host-started periodic interval this version; three other triggers (idle-detected, on-refresh, memory-threshold) are recorded in PEP106 for a later pass, and further gains would need bounding the derived caches themselves.

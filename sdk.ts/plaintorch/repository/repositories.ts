@@ -29,6 +29,12 @@ import "../dependencies/models"
 /** Key under which the single briefing record is cached. */
 export const briefingRecordKey = ""
 
+/**
+ * How often the periodic eviction sweep runs once started. Eviction is housekeeping with no urgency — a
+ * long session only needs the identity map bounded, not trimmed to the second — so the default is coarse.
+ */
+export const defaultEvictionSweepIntervalMs = 60_000
+
 export interface PlaintorchRepositoriesOptions {
 	/** How long a resolved note or PUCK lookup is served before it is revalidated. */
 	resolutionFreshnessMs?: number
@@ -114,6 +120,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	public readonly entityResolution: DerivedRepository<EntityExistence>
 
 	private readonly byTypeName = new Map<EntityTypeName, EntityRepository<never>>()
+	private evictionTimer?: ReturnType<typeof setInterval>
 
 	public constructor(private readonly client: PlaintorchCoreClient, options: PlaintorchRepositoriesOptions = {}) {
 		const store = client.store
@@ -273,6 +280,41 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		}
 
 		return this.client.store.sweep(reachable)
+	}
+
+	/**
+	 * Starts sweeping on a periodic interval — the trigger chosen for this version.
+	 *
+	 * Host-started like the change feed: the mechanism is here, the host decides when a session is live enough
+	 * to want it. Idempotent — a second start is ignored rather than stacking a second interval. The first
+	 * sweep runs one interval in, not immediately, since nothing has accumulated at start.
+	 *
+	 * Other triggers were considered and are recorded in PEP106 (idle-detected, on listing refresh,
+	 * memory-threshold); this one is the simplest that bounds a long session.
+	 */
+	public startEvictionSweep(intervalMs: number = defaultEvictionSweepIntervalMs): void {
+		if (this.evictionTimer !== undefined) {
+			return
+		}
+
+		this.evictionTimer = setInterval(() => this.sweep(), intervalMs)
+		// Housekeeping alone should never hold a Node process alive; harmless where unref does not exist.
+		;(this.evictionTimer as { unref?: () => void }).unref?.()
+	}
+
+	/** Stops the periodic eviction sweep. Safe to call when it is not running. */
+	public stopEvictionSweep(): void {
+		if (this.evictionTimer === undefined) {
+			return
+		}
+
+		clearInterval(this.evictionTimer)
+		this.evictionTimer = undefined
+	}
+
+	/** Whether the periodic eviction sweep is currently running. */
+	public get evictionSweepRunning(): boolean {
+		return this.evictionTimer !== undefined
 	}
 
 	/** Marks everything as needing revalidation, without fetching anything. */
