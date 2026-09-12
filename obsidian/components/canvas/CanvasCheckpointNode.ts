@@ -76,8 +76,8 @@ export class CanvasCheckpointNode extends CanvasNodeItem {
 					color-mix(in srgb, var(--background-modifier-message) 90%, transparent);
 				padding: .2em .5em;
 				border-radius: 4em;
-				font-size: 1.1em;
-				line-height: 1.1em;
+				font-size: 1.02em;
+				line-height: 1.02em;
 			}
 
 			.toplane {

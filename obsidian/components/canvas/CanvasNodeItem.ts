@@ -1,6 +1,6 @@
 import { component, css, event, html, property, PropertyValues } from '@a11d/lit'
-import { DependencyEndpointKind, DirectiveStatus, ObjectiveStatus } from '@pleiades/sdk'
-import { EntityItem, IconName, statusDescriptors } from '..'
+import { DependencyEndpointKind, Directive, DirectiveStatus, ObjectiveStatus } from '@pleiades/sdk'
+import { EntityItem, IconName, statusDescriptors, tooltip } from '..'
 import type { CanvasEntity } from './graphModel'
 
 /** What each endpoint kind is drawn with, matching the icons the grid and banners already use. */
@@ -198,22 +198,32 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 				display: flex;
 				align-items: center;
 				gap: 3px;
-				font-size: .85em;
 				line-height: .9;
 
 				& p7t-icon {
 					width: 1.1em;
 					height: 1.1em;
 				}
+
+				&.blocked {
+					color: color-mix(in srgb, var(--text-error, crimson) 80%, var(--text-normal));
+				}
+	
+				&.raced {
+					color: color-mix(in srgb, var(--text-warning, goldenrod) 80%, var(--text-normal));
+				}
 			}
 
-			.lock-badge.blocked {
-				color: color-mix(in srgb, var(--text-error, crimson) 80%, var(--text-normal));
+			p7t-directive-item {
+				margin-inline-start: -.8em;
+				opacity: .7;
+				font-size: .9em;
 			}
 
-			.lock-badge.raced {
-				color: color-mix(in srgb, var(--text-warning, goldenrod) 80%, var(--text-normal));
+			.title {
+				font-size: .98em;
 			}
+
 		`
 	}
 
@@ -234,28 +244,34 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 	}
 
 	protected override get preTitle() {
-		return html`
-			<div class='kind'>
-				<span>${kindLabels[this.kind]}</span>
-			</div>
-		`
+		switch (this.kind) {
+			case DependencyEndpointKind.Objective:
+			case DependencyEndpointKind.Fate:
+				return html`
+					<p7t-directive-item small .directive=${(this.entity as { directive?: Directive }).directive}></p7t-directive-item>
+				`
+			default:
+				return html`
+					<div class='kind'>
+						<span>${kindLabels[this.kind]}</span>
+					</div>
+				`
+		}
 	}
 
 	protected override get info() {
 		if (this.lock === 'blocked') {
 			return html`
-				<div class='lock-badge blocked'>
+				<div class='lock-badge blocked' ${tooltip('Blocked')}>
 					<p7t-icon icon='state-blocked'></p7t-icon>
-					<span>Blocked</span>
 				</div>
 			`
 		}
 
 		if (this.lock === 'raced') {
 			return html`
-				<div class='lock-badge raced'>
+				<div class='lock-badge raced' ${tooltip('Raced')}>
 					<p7t-icon icon='state-raced'></p7t-icon>
-					<span>Raced</span>
 				</div>
 			`
 		}
