@@ -32,9 +32,9 @@ export abstract class GridBase extends Component {
 				 * taking whatever is left: the trailing tracks size to their content, so an unbounded title track is
 				 * the one that collapses in a narrow pane. Below the floor the grid scrolls sideways instead.
 				 */
-				grid-template-columns: auto auto minmax(7em, 1fr) auto auto auto auto;
+				grid-template-columns: [main] minmax(7em, 1fr) [special] auto [status] auto [opener] auto [action] auto;
 				align-content: start;
-				overflow: auto;
+				max-height: max-content;
 				padding-block: .4em;
 			}
 

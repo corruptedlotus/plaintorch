@@ -1,4 +1,4 @@
-import { component, css, html, HTMLTemplateResult, ifDefined } from "@a11d/lit"
+import { component, css, html, HTMLTemplateResult, ifDefined, PropertyValues } from "@a11d/lit"
 import { popover, PopoverCssAnchorPositionController } from "@3mo/popover"
 import { Tooltip as MoTooltip, TooltipPlacement } from "@3mo/tooltip"
 
@@ -106,6 +106,19 @@ export class Tooltip extends MoTooltip {
 				--mo-color-transparent-gray-3: color-mix(in srgb, var(--text-normal) 18%, transparent);
 			}
 		`
+	}
+	/*
+	 * Make the tooltip transparent to clicks on its trigger. mo-popover subscribes a click handler to the anchor
+	 * that, while the tip is open, light-dismisses it AND stopPropagation()s the click — swallowing the trigger’s
+	 * own behaviour (a button’s action, a delegated/parent handler). A tooltip is inert and driven solely by the
+	 * interest controller (hover + focus), so it must never react to clicks: no-op its mo-popover’s handleClick.
+	 */
+	override firstUpdated(props: PropertyValues) {
+		super.firstUpdated(props)
+		const moPopover = this.renderRoot.querySelector('mo-popover') as (Element & { handleClick?: (event: Event) => void }) | null
+		if (moPopover) {
+			moPopover.handleClick = () => {}
+		}
 	}
 }
 

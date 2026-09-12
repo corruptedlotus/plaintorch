@@ -6,22 +6,24 @@ starfire: 0
 enduring: False
 ---
 # Critical
-- [x] New Orbit system
-- [ ] New Repo system
+- [x] Orbit system: Soft Materialisation
+- [ ] Repo system v2 
 # Remaining Work
 - [x] Watcher status Icon: icon and drawer style
 - [ ] Grid indentations
-- [ ] Grid-mode media modals
+- [ ] Graph nodes `Objective.Directive`
+- [x] Grid-mode media modals
 - [x] Directives mini-card
 - [x] Banner items positioning
 - [x] Relative date view: weird font style
 - [x] Modal items weird paddings
-- [ ] ~~Banner switcher modal paddings~~ (huh?)
+- [ ] Banner switcher modal paddings
 # Issues & Bugs: Plugin
 - [x] Watcher status: offline
 - [x] Add to Onrush not working
 - [x] Note banner margin block parity @1.5em to prevent CodeMirror desync.
 - [x] Reload required before and after init commands.
+- [ ] Expanding actions not expanding
 # Issues: Core
 - [x] Create Polaris on ATP if none
 - [x] API not sending down Decree/Fate's Directive

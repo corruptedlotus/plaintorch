@@ -140,13 +140,14 @@ export class ExpandingActions extends Component {
 
 	private onTriggerClick(e: MouseEvent) {
 		// The grid row underneath treats a click as navigation, and the trigger is not that.
-		e.stopPropagation()
+		console.log('Trigger clicked', e)
 		if (this.actions.length === 0) {
 			return
 		}
-
+		
 		this.panelElement.showPopover()
 		this.place()
+		e.stopPropagation()
 	}
 
 	private async choose(action: ExpandingAction) {

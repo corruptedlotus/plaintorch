@@ -5,7 +5,7 @@ import {
 	SelectDirectiveStatusModal, SelectLunarDirectiveStatusModal, SelectObjectiveStatusModal
 } from '..'
 import {
-	directiveActions, entityIcon, entityKindOf, isDirectiveKind,
+	directiveActions, entityIcon, entityKindLabel, entityKindOf, isDirectiveKind,
 	objectiveActions, saveEntityField, saveFateSchedule, type EditableField
 } from './entityActions'
 import { GridItemBase } from './GridItemBase'
@@ -45,6 +45,10 @@ export class GridItem extends GridItemBase {
 
 	protected override get kindIcon(): IconName {
 		return entityIcon(this.row!.entity as GridEntity)
+	}
+
+	protected override get kindName() {
+		return entityKindLabel(entityKindOf(this.row!.entity as GridEntity))
 	}
 
 	/**
