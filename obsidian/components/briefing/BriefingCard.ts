@@ -51,8 +51,12 @@ export class BriefingCard<T> extends CardComponent {
 					mask-position: right;
 				}
 
-				:host([collapsed]) &::part(icon-frame) {
-					margin-top: -1em;
+				:host([collapsed]) & {
+					color: color-mix(in srgb, var(--p7t-flare-accent) 30%, transparent);
+
+					&::part(icon-frame) {
+						margin-top: -1em;
+					}
 				}
 			}
 

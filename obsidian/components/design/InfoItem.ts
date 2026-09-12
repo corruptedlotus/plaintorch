@@ -38,6 +38,8 @@ export abstract class InfoItem extends Component {
 	/** Draws the glyph at the compact size — the dense form a tight row or inline mention wants. */
 	@property({ type: Boolean, reflect: true }) small = false
 
+	@property({ type: Boolean, reflect: true }) thumbnail = false
+
 	static override get styles() {
 		return css`
 			/*
@@ -50,11 +52,8 @@ export abstract class InfoItem extends Component {
 			:host {
 				display: inline-flex;
 				align-items: center;
-			}
-
-			.info-anchor {
-				display: inline-flex;
-				align-items: center;
+				min-width: 0;
+				max-width: 100%;
 			}
 
 			.info-bullet {
@@ -78,6 +77,25 @@ export abstract class InfoItem extends Component {
 
 			.info-text {
 				min-width: 0;
+			}
+
+			:host([thumbnail]) .info-bullet {
+				flex-direction: column;
+				gap: .5em;
+
+				& .info-icon {
+					scale: 1.2;
+				}
+
+				& .info-text {
+					text-align: center;
+					overflow: hidden;
+					text-overflow: ellipsis;
+					font-size: .85em;
+					line-height: .85;
+					max-width: 100%;
+					padding-block: .15em .05em;
+				}
 			}
 
 			${nullGlyphStyle}
@@ -134,30 +152,25 @@ export abstract class InfoItem extends Component {
 	 * {@link bulletText}; a chip with a non-bullet shape overrides this wholesale (and may still call `super.content`
 	 * for its plain rows).
 	 */
-	protected get content(): unknown {
+	protected get content() {
+		const tip = this.tooltip
+		const hasTooltip = typeof tip === 'string' ? tip.length > 0 : (tip !== nothing && tip !== undefined && tip !== null)
+
 		const iconTemplate = this.iconTemplate()
 		if (this.textHidden) {
-			return html`<span class='info-bullet'>${iconTemplate}</span>`
+			return html`<span ${hasTooltip ? tooltip(() => tip as string | HTMLTemplateResult) : nothing} class='info-bullet'>${iconTemplate}</span>`
 		}
 
 		const textTemplate = html`<span class='info-text'>${this.bulletText}</span>`
+
 		return html`
-			<span class='info-bullet'>
+			<span class='info-bullet' ${hasTooltip ? tooltip(() => tip as string | HTMLTemplateResult) : nothing}>
 				${this.iconTrailing ? html`${textTemplate}${iconTemplate}` : html`${iconTemplate}${textTemplate}`}
 			</span>
 		`
 	}
 
 	protected override get template() {
-		const tip = this.tooltip
-		// A string is plain text, a template is rich, `nothing` (etc.) leaves the chip tooltip-less. The content
-		// is handed to the directive as a function so it assigns no aria-label — the chip content keeps its own
-		// accessible name, exactly as the old inert wrapper left it.
-		const hasTooltip = typeof tip === 'string' ? tip.length > 0 : (tip !== nothing && tip !== undefined && tip !== null)
-		return html`
-			<span class='info-anchor' ${hasTooltip ? tooltip(() => tip as string | HTMLTemplateResult) : nothing}>
-				${this.content}
-			</span>
-		`
+		return this.content
 	}
 }

@@ -183,7 +183,8 @@ export class WatcherStatusView extends Component {
 					danger
 					?disabled=${busy}
 					@click=${() => void this.toggleDismissal(issue)}
-					icon=${issue.dismissed ? 'lucide:undo-2' : 'lucide:ban'}>
+					icon=${issue.dismissed ? 'lucide:undo-2' : 'lucide:ban'}
+					label=${issue.dismissed ? 'Undo' : 'Dismiss'}>
 				</p7t-button>
 				${path ? html`<span class="path">${path.replaceAll("\\", "/")}</span>` : nothing}
 			</div>

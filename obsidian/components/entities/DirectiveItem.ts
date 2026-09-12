@@ -38,7 +38,7 @@ export class DirectiveItem extends InfoItem {
 
 			.mini-banner {
 				display: flex;
-				align-items: center;
+				align-items: flex-start;
 				gap: .6em;
 				min-width: 12em;
 
@@ -60,6 +60,11 @@ export class DirectiveItem extends InfoItem {
 				}
 	
 				& .codename {
+					opacity: .6;
+					font-size: .85em;
+				}
+
+				& .due {
 					opacity: .6;
 					font-size: .85em;
 				}
@@ -122,7 +127,8 @@ export class DirectiveItem extends InfoItem {
 				${this.crestIconTemplate}
 				<div class='meta'>
 					<div class='title'>${directive.title}</div>
-					<p7t-status-item .status=${this.statusName}></p7t-status-item>
+					${!directive.due ? nothing : html`<div class='due'>Due <p7t-datetime-view relative .date=${directive.due}></p7t-datetime-view></div>`}
+					<p7t-status-item small .status=${this.statusName}></p7t-status-item>
 				</div>
 			</div>
 		`

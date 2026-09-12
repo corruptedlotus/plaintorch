@@ -9,18 +9,22 @@ enduring: False
 - [x] New Orbit system
 - [ ] New Repo system
 # Remaining Work
-- [ ] Watcher status Icon: icon and drawer style
-- [ ] Watcher status: offline
+- [x] Watcher status Icon: icon and drawer style
 - [ ] Grid indentations
-- [ ] Modal items weird paddings
 - [ ] Grid-mode media modals
-- [ ] Banner switcher modal paddings
 - [x] Directives mini-card
-- [ ] Banner items positioning
-- [ ] Relative date view: weird font style
-# Issues: Plugin
-- [x] NoteBanner margin block parity @1.5em to prevent CodeMirror desync.
+- [x] Banner items positioning
+- [x] Relative date view: weird font style
+- [x] Modal items weird paddings
+- [ ] ~~Banner switcher modal paddings~~ (huh?)
+# Issues & Bugs: Plugin
+- [x] Watcher status: offline
+- [x] Add to Onrush not working
+- [x] Note banner margin block parity @1.5em to prevent CodeMirror desync.
 - [x] Reload required before and after init commands.
+# Issues: Core
+- [x] Create Polaris on ATP if none
+- [x] API not sending down Decree/Fate's Directive
 # Bugs: Core
 - [x] Fatal context-level crashes are not handled.
 - [x] Objectives initialised within a directive seem to vanish? circumstances unknown.
@@ -29,6 +33,7 @@ enduring: False
 - [x] Attentive update endpoint not working anymore.
 # Probably for Phase 3C
 - [ ] Improve issue descriptions and names + dismissed pane
+- [ ] Bug: Today resolves to yesterday in Pleiadean
 - [ ] Directive breadcrumb
 - [ ] Core domain sanity
 - [ ] User preferences

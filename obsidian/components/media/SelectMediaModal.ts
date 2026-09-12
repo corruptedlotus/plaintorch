@@ -4,6 +4,7 @@ import { core, getApp } from '..'
 import { IconName } from 'components/PleiadesIcon'
 import { ASSET_FOLDER, pickImageFile, resolveMediaUrl } from './mediaAssets'
 import { searchIconKeys } from './iconCatalog'
+import { html } from '@a11d/lit'
 
 /**
  * Identifies the entity a media field belongs to, for entity-level (`media:`) uploads and browsing. Omit it for a
@@ -50,8 +51,9 @@ export class SelectMediaModal extends SuggestModal<MediaItem> {
 	 */
 	static prompt = (entity?: MediaEntityRef): Promise<string | null | undefined> => {
 		const modal = new SelectMediaModal(getApp())
+		modal.resultContainerEl.addClass('plaintorch-media-selector')
 		modal.entity = entity
-		modal.setPlaceholder('Media, icon, or a media:/vault: file…')
+		modal.setPlaceholder('Pleiadean icon, Ludice icon, or custom media...')
 		modal.dpe = createDeferredExecutor()
 		modal.open()
 		return new Promise(modal.dpe)
@@ -108,6 +110,7 @@ export class SelectMediaModal extends SuggestModal<MediaItem> {
 
 	override renderSuggestion(item: MediaItem, el: HTMLElement) {
 		const row = el.createEl('p7t-icon-item')
+		row.thumbnail = true
 		switch (item.kind) {
 			case 'nav':
 				row.icon = asIcon(item.icon)
@@ -131,7 +134,7 @@ export class SelectMediaModal extends SuggestModal<MediaItem> {
 			}
 			case 'icon':
 				row.icon = asIcon(item.key)
-				row.text = item.key
+				row.innerHTML = item.key.startsWith('lucide:') ? `<small>lucide:</small>${item.key.substring(7)}` : item.key
 				return
 		}
 	}

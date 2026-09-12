@@ -1,5 +1,12 @@
 import { Component, component, css, html, property, query, state } from "@a11d/lit"
 
+import { PopoverHost } from '@3mo/popover/dist/PopoverHost'
+PopoverHost.elementStyles.concat(css`
+	:host {
+		display: none;
+	}
+`)
+
 /**
  * An interactive click-to-open popover. Wraps a trigger (its default slot) and reveals an overlay panel of rich,
  * *interactive* content (its `content` slot) beside it — unlike {@link Tooltip}, whose overlay is inert and hover-only.
@@ -168,6 +175,7 @@ export class Popover extends Component {
 		this.panel.style.left = `${Math.round(left)}px`
 	}
 }
+
 
 declare global {
 	interface HTMLElementTagNameMap {
