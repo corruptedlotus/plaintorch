@@ -91,6 +91,24 @@ export class DerivedRepository<T> {
 		return !!record && record.subscribers.size > 0
 	}
 
+	/**
+	 * Every resolved cached value, observed or not.
+	 *
+	 * A cached view holds its entities' canonical instances for as long as the cache does, so eviction must
+	 * treat all of these as roots — even an unobserved listing still pins what it contains, and dropping a
+	 * store entity it holds would strand a divergent copy.
+	 */
+	public resolvedValues(): T[] {
+		const values: T[] = []
+		for (const record of this.records.values()) {
+			if (record.resolved && record.value !== undefined) {
+				values.push(record.value)
+			}
+		}
+
+		return values
+	}
+
 	/** Marks a record — or every record — as needing revalidation. */
 	public invalidate(key?: string): void {
 		if (key === undefined) {

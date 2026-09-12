@@ -11,7 +11,7 @@ import { EntityRepository, type EntityFetcher } from "./entityRepository"
 import { DerivedRepository } from "./derivedRepository"
 import { InvalidationScheduler, type InvalidationTarget } from "./invalidation"
 import { PlaintorchChangeFeed } from "./changeFeed"
-import { entityKey, type EntityKey, type EntityTypeName } from "./identity"
+import { collectEntityKeys, entityKey, type EntityKey, type EntityTypeName } from "./identity"
 import { ModelValueConstructor } from "@a11d/api-dotnet"
 
 // Imported for their load-time `@model` registration side effect: absorption can reconstruct an entity into
@@ -250,6 +250,29 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	 */
 	public acceptAuthority(typeName: string, id: string): void {
 		this.client.store.acceptAuthority(entityKey(typeName, id))
+	}
+
+	/**
+	 * Evicts entities the identity map no longer needs, bounding it over a long-lived session.
+	 *
+	 * The reachable set is everything a live view still holds — walked from every resolved derived record,
+	 * whose cached value pins its entities' canonical instances whether or not it is observed. The store adds
+	 * its own subscribed entities (and their nested references) and evicts the rest. This is the entity half
+	 * of the eviction policy; the change-ledger half prunes itself as reads settle.
+	 *
+	 * Only entities held nowhere are dropped — one fetched for a banner since closed, or one dropped from a
+	 * listing that has since refreshed. Anything a derived view or subscription still reaches is kept, so no
+	 * surface can be left holding an instance a later fetch would duplicate. Returns how many were evicted.
+	 */
+	public sweep(): number {
+		const reachable = new Set<EntityKey>()
+		for (const record of this.records) {
+			for (const value of record.resolvedValues()) {
+				collectEntityKeys(value, reachable)
+			}
+		}
+
+		return this.client.store.sweep(reachable)
 	}
 
 	/** Marks everything as needing revalidation, without fetching anything. */

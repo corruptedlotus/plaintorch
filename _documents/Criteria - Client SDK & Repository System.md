@@ -99,6 +99,24 @@ The `changedAt` ledger grows one marker per locally edited identity. A marker at
 | E2e — get, edit + commit, a concurrent stale list dropped, then the ledger empties | happy | ✅ | `prune.test.ts` |
 | E2e — a throwing read still deregisters and prunes (the client's `finally`) | fault | ✅ | `prune.test.ts` |
 
+## Entity eviction — `eviction.test.ts`
+The identity map is bounded by a reachability sweep. `collectEntityKeys` walks a value graph for the entities it holds; `PlaintorchRepositories.sweep()` gathers what every resolved derived view reaches and hands it to `EntityStore.sweep`, which keeps the observed, the reachable, and anything mid-write, and drops the rest. The overriding invariant is the canonical-instance guarantee: an entity a live view still holds must never be evicted, or a later fetch mints a divergent second instance.
+
+| Behaviour / Invariant | Kind | Status | Test ref |
+|---|---|---|---|
+| `collectEntityKeys` collects a flat entity, and descends arrays + nested objects | happy | ✅ | `eviction.test.ts` |
+| `collectEntityKeys` terminates on an entity-reference cycle | edge | ✅ | `eviction.test.ts` |
+| `collectEntityKeys` ignores non-entities (no-title value objects, numeric keys, primitives) | fault | ✅ | `eviction.test.ts` |
+| Evicts an unsubscribed entity nothing holds — record, type-index, and ledger entry all gone | happy | ✅ | `eviction.test.ts` |
+| Keeps a subscribed entity even when no view holds it | happy | ✅ | `eviction.test.ts` |
+| Keeps an entity a live view reaches (external root) | happy | ✅ | `eviction.test.ts` |
+| Keeps the entities a subscribed entity nests (closure over subscribed roots) | fault | ✅ | `eviction.test.ts` (canonical-instance guard) |
+| Keeps an entity with a write in flight | edge | ✅ | `eviction.test.ts` |
+| Keeps a subscribed placeholder; no choke on its undefined value | edge | ✅ | `eviction.test.ts` |
+| A held entity stays the same instance; an unheld one evicts and refetches fresh | fault | ✅ | `eviction.test.ts` (canonical-instance guard) |
+| `PlaintorchRepositories.sweep` keeps what a resolved listing holds, evicts the rest | happy | ✅ | `eviction.test.ts` |
+| `PlaintorchRepositories.sweep` keeps a subscribed entity absent from every listing | edge | ✅ | `eviction.test.ts` |
+
 ## Invalidation — `invalidation.test.ts`
 | Behaviour / Invariant | Kind | Status | Test ref |
 |---|---|---|---|
@@ -164,4 +182,4 @@ The `changedAt` ledger grows one marker per locally edited identity. A marker at
 - **Socket pinning** — an undrained response body over the keep-alive pool exhausts it and looks like the core hanging; to be guarded by the Tier-3 transport suite.
 - **Hung request / dedup poisoning** — an unanswered request must settle as a bounded failure rather than poisoning an identity's in-flight entry forever; Tier-3.
 - **Invalidation settling / overlap** — `settled()` must not resolve before the flush, and flushes must not overlap; guarded by `invalidation.test.ts`.
-- **Unbounded growth** — MikroORM's identity-map warning, one level down. `changedAt` now prunes on a low-water mark of in-flight reads — a marker is spent once no read predates it — bounding the ledger without ever reverting an edit a slower read could clobber; guarded by `prune.test.ts`. Store-*entity* eviction (dropping records with no subscribers) remains the outstanding Patch106.1 groundwork: the subtle half, gated by the canonical-instance guarantee.
+- **Unbounded growth** — MikroORM's identity-map warning, one level down. `changedAt` prunes on a low-water mark of in-flight reads — a marker is spent once no read predates it — bounding the ledger without ever reverting an edit a slower read could clobber; guarded by `prune.test.ts`. Store-*entity* eviction is a reachability sweep (`PlaintorchRepositories.sweep`) that drops only records neither observed nor reachable from a live view, respecting the canonical-instance guarantee; guarded by `eviction.test.ts`. The remaining lever is the sweep's *trigger* cadence (idle / periodic / memory-pressure), and further gains would need bounding the derived caches themselves — both deliberately left as follow-ups.

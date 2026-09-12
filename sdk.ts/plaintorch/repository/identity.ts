@@ -74,3 +74,40 @@ export function identify(value: unknown): EntityKey | undefined {
 export function isEntity(value: unknown): value is object {
 	return identify(value) !== undefined
 }
+
+/**
+ * Collects the identities of every tracked entity reachable from a value, descending through arrays and own
+ * enumerable properties into the object graph.
+ *
+ * Eviction uses this to learn what a live view still holds — a listing array, or a subscribed entity and the
+ * entities nested within it. Because the values walked are canonical instances, walking one reaches the whole
+ * live graph hanging off it, so an entity kept alive only as a nested reference is still found. The `visited`
+ * set is what makes it terminate on the cycles entity references form: an objective points at its sprint,
+ * which lists the objective.
+ */
+export function collectEntityKeys(value: unknown, into: Set<EntityKey>, visited: WeakSet<object> = new WeakSet()): void {
+	if (value === null || typeof value !== "object") {
+		return
+	}
+
+	if (visited.has(value)) {
+		return
+	}
+	visited.add(value)
+
+	const key = identify(value)
+	if (key !== undefined) {
+		into.add(key)
+	}
+
+	if (Array.isArray(value)) {
+		for (const item of value) {
+			collectEntityKeys(item, into, visited)
+		}
+		return
+	}
+
+	for (const child of Object.values(value as Record<string, unknown>)) {
+		collectEntityKeys(child, into, visited)
+	}
+}

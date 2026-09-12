@@ -1,4 +1,4 @@
-import { identify, typeNameFromKey, type EntityKey, type EntityTypeName } from "./identity"
+import { collectEntityKeys, identify, typeNameFromKey, type EntityKey, type EntityTypeName } from "./identity"
 import { isEquivalent } from "./equivalence"
 
 /** Notified when the canonical instance behind an identity changes. */
@@ -179,6 +179,11 @@ export class EntityStore {
 		}
 
 		return total
+	}
+
+	/** How many entities the identity map currently holds — a long-session growth diagnostic. */
+	public get recordCount(): number {
+		return this.records.size
 	}
 
 	/**
@@ -376,6 +381,42 @@ export class EntityStore {
 	}
 
 	/**
+	 * Evicts entities nothing needs any more, bounding the identity map over a long-lived session.
+	 *
+	 * An entity is kept when it is observed (has subscribers), has a write in flight, or is still reachable.
+	 * `externalRoots` are the keys a live view holds — a listing array, the briefing — which only the caller
+	 * (the repositories) can see; the store adds the closure over its own subscribed entities, so a banner
+	 * holding a sprint keeps the checkpoints nested inside it that no listing need carry. Everything else is
+	 * dropped, with its type-index and change-ledger entries.
+	 *
+	 * Keeping the reachable *is* the canonical-instance guarantee: evicting an entity a live view still holds
+	 * would let a later fetch mint a divergent second instance — the very bug the store exists to prevent.
+	 * Returns how many entities were evicted.
+	 */
+	public sweep(externalRoots: ReadonlySet<EntityKey> = new Set()): number {
+		const retained = new Set<EntityKey>(externalRoots)
+		for (const record of this.records.values()) {
+			if (record.subscribers.size > 0 && record.value) {
+				collectEntityKeys(record.value, retained)
+			}
+		}
+
+		let evicted = 0
+		for (const [key, record] of this.records) {
+			if (record.subscribers.size > 0 || this.writing.has(key) || retained.has(key)) {
+				continue
+			}
+
+			this.records.delete(key)
+			this.removeFromIndex(key)
+			this.changedAt.delete(key)
+			evicted++
+		}
+
+		return evicted
+	}
+
+	/**
 	 * Announces that the canonical instance of an identity was changed in place.
 	 *
 	 * Two-way bindings write straight through to the instance they were handed, so the change is already
@@ -488,6 +529,20 @@ export class EntityStore {
 		}
 
 		keys.add(key)
+	}
+
+	/** Removes a key from its type bucket, dropping the bucket once it empties, so eviction leaves no trace. */
+	private removeFromIndex(key: EntityKey): void {
+		const typeName = typeNameFromKey(key)
+		const keys = this.typeIndex.get(typeName)
+		if (!keys) {
+			return
+		}
+
+		keys.delete(key)
+		if (keys.size === 0) {
+			this.typeIndex.delete(typeName)
+		}
 	}
 
 	/**
