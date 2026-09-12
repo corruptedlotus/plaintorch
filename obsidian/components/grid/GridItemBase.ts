@@ -79,7 +79,7 @@ export abstract class GridItemBase extends Component {
 			/* A row on the active lore spine keeps a subtle accented wash so the current era/chapter/act/phase reads
 			 * at a glance; hover deepens it like any other row. Variants that never mark a row active never see it. */
 			:host([active]) {
-				background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+				color: color-mix(in srgb, var(--interactive-accent) 60%, var(--text-normal));
 			}
 
 			:host([active]:hover) {
@@ -214,7 +214,9 @@ export abstract class GridItemBase extends Component {
 	protected abstract get kindIcon(): IconName
 
 	/** The name of the entity's own kind, shown as a tooltip on the kind icon. */
-	protected abstract get kindName(): string | undefined
+	protected get kindName(): string | undefined {
+		return undefined
+	}
 
 	/** An optional label between the notch and the title (lore's level and index). Empty for variants without one. */
 	protected get leadingCell(): HTMLTemplateResult | typeof nothing {

@@ -7,11 +7,11 @@ enduring: False
 ---
 # Critical
 - [x] Orbit system: Soft Materialisation
-- [ ] Repo system v2 
+- [x] Repo system v2 
 # Remaining Work
 - [x] Watcher status Icon: icon and drawer style
-- [ ] Grid indentations
-- [ ] Graph nodes `Objective.Directive`
+- [x] Grid cleanup and retouch
+- [ ] Graph nodes add `Objective.Directive` and compact
 - [x] Grid-mode media modals
 - [x] Directives mini-card
 - [x] Banner items positioning
@@ -23,7 +23,8 @@ enduring: False
 - [x] Add to Onrush not working
 - [x] Note banner margin block parity @1.5em to prevent CodeMirror desync.
 - [x] Reload required before and after init commands.
-- [ ] Expanding actions not expanding
+- [x] Expanding actions not expanding
+- [ ] Global tooltip host
 # Issues: Core
 - [x] Create Polaris on ATP if none
 - [x] API not sending down Decree/Fate's Directive

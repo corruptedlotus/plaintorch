@@ -101,12 +101,13 @@ export function buildGridRows(source: EntityTreeSource, expanded: ReadonlySet<st
 	const visiting = new Set<string>()
 
 	const emitIncentive = (entity: GridEntity, guides: readonly GridGuide[]) => {
+		const isWorld = (guides.length === 0)
 		rows.push({
 			key: gridRowKey(entity),
 			entity,
-			kind: 'incentive',
-			depth: guides.length,
-			guides,
+			kind: isWorld ? 'world' : 'incentive',
+			depth: isWorld ? 1 : guides.length,
+			guides: isWorld ? ['world'] : guides,
 			expandable: false,
 			expanded: false
 		})
@@ -155,6 +156,17 @@ export function buildGridRows(source: EntityTreeSource, expanded: ReadonlySet<st
 
 	// Incentives with no directive are first-level citizens rather than being hidden or grouped under a
 	// synthetic parent.
+	if (rootIncentives.length > 0) {
+		rows.push({
+			key: 'world-incentives',
+			entity: null!,
+			kind: 'root',
+			depth: 0,
+			guides: [],
+			expandable: false,
+			expanded: false
+		})
+	}
 	for (const incentive of [...rootIncentives].sort(byTitle)) {
 		emitIncentive(incentive, [])
 	}

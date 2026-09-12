@@ -2,7 +2,6 @@ import { component, css, html, nothing, property, unsafeCSS } from "@a11d/lit"
 import { ExecutiveOrder, SystemBriefing } from "@pleiades/sdk";
 import { toRomanNumeral } from "@pleiades/sdk/helpers";
 import { CardComponent, tooltip } from "components/design"
-import { 'plaintorch-bgx-png' as bannerBg } from 'assets/design'
 
 @component('p7t-briefing-hero')
 export class BriefingHero extends CardComponent {

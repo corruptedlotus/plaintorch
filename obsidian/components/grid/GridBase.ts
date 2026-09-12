@@ -108,7 +108,13 @@ export abstract class GridBase extends Component {
 					.actions=${this.fabActions}>
 				</p7t-expanding-actions>
 			`}
+			${this.appendageTemplate}
+
 		`
+	}
+
+	protected get appendageTemplate(): HTMLTemplateResult {
+		return html``
 	}
 
 	/** The entity kinds this grid is built from — the store subscription is scoped to exactly these. */

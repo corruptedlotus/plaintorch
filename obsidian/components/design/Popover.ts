@@ -1,11 +1,9 @@
 import { Component, component, css, html, property, query, state } from "@a11d/lit"
-
 import { PopoverHost } from '@3mo/popover/dist/PopoverHost'
-PopoverHost.elementStyles.concat(css`
-	:host {
-		display: none;
-	}
-`)
+
+const popoverHost = document.createElement('mo-popover-host')
+document.body.appendChild(popoverHost)
+PopoverHost.get = () => popoverHost
 
 /**
  * An interactive click-to-open popover. Wraps a trigger (its default slot) and reveals an overlay panel of rich,

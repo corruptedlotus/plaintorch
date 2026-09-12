@@ -1,4 +1,4 @@
-import { component, css, html, HTMLTemplateResult, nothing } from '@a11d/lit'
+import { component, css, html, HTMLTemplateResult, nothing, property, PropertyValues } from '@a11d/lit'
 import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, type Directive } from '@pleiades/sdk'
 import {
 	getApp, IconName, LunarDirectiveModal, type ScheduleValue,
@@ -21,6 +21,8 @@ import type { GridEntity } from './entityTree'
  */
 @component('p7t-grid-item')
 export class GridItem extends GridItemBase {
+	@property({ type: Boolean, reflect: true }) root = false
+
 	static override get styles() {
 		return css`
 			${super.styles}
@@ -35,10 +37,29 @@ export class GridItem extends GridItemBase {
 				border-inline-start-color: color-mix(in srgb, var(--text-normal) 45%, transparent);
 			}
 
+			.lane[data-guide='world'] {
+				border-inline-start-style: solid;
+				border-inline-start-color: color-mix(in srgb, var(--interactive-accent) 80%, transparent);
+			}
+
 			/* The state icons are sized for a banner; a row wants them at text scale. */
 			p7t-status-item::part(icon) {
 				height: 1.4em;
 				width: 1.4em;
+			}
+
+			:host([root]) {
+				pointer-events: none;
+				color: color-mix(in srgb, var(--interactive-accent) 80%, transparent);
+				text-transform: uppercase;
+			}
+			
+			.root {
+				
+				& .title {
+					font-weight: 500;
+					font-size: .85em;
+				}
 			}
 		`
 	}
@@ -142,6 +163,23 @@ export class GridItem extends GridItemBase {
 
 	protected override async persistField(keyPath: string): Promise<void> {
 		await saveEntityField(this.row!.entity as GridEntity, keyPath as EditableField)
+	}
+
+	override get template() {
+		return this.row?.kind !== 'root' ? super.template : html`
+			<div class='cell lead root'>
+				<p7t-icon class='notch' icon='lucide:astroid'></p7t-icon>
+				<div class='leading'>${this.leadingCell}</div>
+				<span class='title'>World Quests & Events</span>
+			</div>
+		`
+	}
+
+	protected override firstUpdated(props: PropertyValues): void {
+		if (this.row?.kind === 'root') {
+			this.root = true
+		}
+		super.firstUpdated(props)
 	}
 }
 
