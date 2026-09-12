@@ -1,6 +1,7 @@
 import { Component, css, event, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
 import {
 	ContextMenuController, entityContextMenu, EntityWatch, ExpandingAction, IconName, ReactiveBinder,
+	tooltip,
 	type ContextMenuSpec, type InteractableEntity
 } from '..'
 import { openEntityNote } from './entityActions'
@@ -99,23 +100,22 @@ export abstract class GridItemBase extends Component {
 				margin-inline-start: var(--p7t-grid-lane-width);
 				flex: 0 0 var(--p7t-grid-lane-width);
 				width: var(--p7t-grid-lane-width);
-				border-inline-start: 2px solid transparent;
-				margin-block: -.2em;
+				border-inline-start: 1px solid transparent;
+				height: calc(100% + .4em);
 			}
 
 			.notch {
 				display: flex;
 				align-items: center;
 				justify-content: center;
-				flex: 0 0 1.9em;
-				width: 1.9em;
+				flex: 0 0 calc(2 * var(--p7t-grid-lane-width));
+				width: calc(2 * var(--p7t-grid-lane-width));
 				padding-block: .4em;
-				border-radius: 6px;
+				border-radius: 8px;
 			}
 
 			.notch p7t-icon {
-				width: 1.4em;
-				height: 1.4em;
+				font-size: 1em;
 			}
 
 			.notch.expandable {
@@ -124,24 +124,6 @@ export abstract class GridItemBase extends Component {
 
 			.notch.expandable:hover {
 				background-color: color-mix(in srgb, var(--text-normal) 14%, transparent);
-			}
-
-			/*
-			 * The type icon gives way to a chevron once the row is open, and while the row is hovered before it is —
-			 * otherwise a collapsed parent gives no sign that it holds anything.
-			 */
-			.notch .chevron {
-				display: none;
-			}
-
-			:host(:hover) .notch.expandable .kind,
-			.notch.open .kind {
-				display: none;
-			}
-
-			:host(:hover) .notch.expandable .chevron,
-			.notch.open .chevron {
-				display: block;
 			}
 
 			.title {
@@ -182,6 +164,11 @@ export abstract class GridItemBase extends Component {
 			.cell.actions:focus-within {
 				opacity: 1;
 			}
+
+			.kind {
+				height: 1.7em;
+				width: calc(2 * var(--p7t-grid-lane-width));
+			}
 		`
 	}
 
@@ -198,20 +185,18 @@ export abstract class GridItemBase extends Component {
 		}
 
 		return html`
-			<div class='lead'>
+			<div class='cell lead'>
 				${row.guides.map(guide => html`<span class='lane' data-guide=${guide}></span>`)}
 				<div
 					class='notch ${row.expandable ? 'expandable' : ''} ${row.expanded ? 'open' : ''}'
 					@click=${() => this.toggleExpansion()}>
-					<p7t-icon class='kind' .icon=${this.kindIcon}></p7t-icon>
 					${!row.expandable ? '' : html`
 						<p7t-icon class='chevron' icon=${row.expanded ? 'lucide:chevron-down' : 'lucide:chevron-right'}></p7t-icon>
 					`}
 				</div>
-			</div>
-			<div class='cell leading'>${this.leadingCell}</div>
-			<div class='title'>
-				<p7t-editable-plaintext required label='Title' placeholder='Untitled' ${this.binder.bind('title')}></p7t-editable-plaintext>
+				<p7t-icon class='kind' ${!this.kindName ? nothing : tooltip(this.kindName)} .icon=${this.kindIcon}></p7t-icon>
+				<div class='leading'>${this.leadingCell}</div>
+				<span class='title'>${this.boundEntity!['title']}</span>
 			</div>
 			${this.middleCells.map(cell => html`<div class='cell'>${cell}</div>`)}
 			<div class='cell actions'>
@@ -227,6 +212,9 @@ export abstract class GridItemBase extends Component {
 
 	/** The icon of the entity's own kind, shown while the row is closed. */
 	protected abstract get kindIcon(): IconName
+
+	/** The name of the entity's own kind, shown as a tooltip on the kind icon. */
+	protected abstract get kindName(): string | undefined
 
 	/** An optional label between the notch and the title (lore's level and index). Empty for variants without one. */
 	protected get leadingCell(): HTMLTemplateResult | typeof nothing {

@@ -25,18 +25,21 @@ export class LoreGridItem extends GridItemBase {
 				border-inline-start-color: color-mix(in srgb, var(--text-normal) 30%, transparent);
 			}
 
-			.cell.leading {
+			.leading {
+				display: flex;
+				align-items: center;
+				margin-inline: .4em;
 				gap: .35em;
 			}
 
-			.cell.leading .level {
+			.leading .level {
 				opacity: .55;
 				text-transform: uppercase;
 				letter-spacing: .05em;
 				font-size: .8em;
 			}
 
-			.cell.leading .index {
+			.leading .index {
 				font-weight: 500;
 				min-width: 1ch;
 			}
@@ -105,7 +108,7 @@ export class LoreGridItem extends GridItemBase {
 	/** A read-only marker shown only on a row that is part of the active lore spine. */
 	protected get activeCell(): HTMLTemplateResult | typeof nothing {
 		return this.row?.active
-			? html`<p7t-icon class='active-marker' icon='lucide:circle-dot' aria-label='Active'></p7t-icon>`
+			? html`<p7t-icon class='active-marker' icon='lucide:astroid' aria-label='Active'></p7t-icon>`
 			: nothing
 	}
 
