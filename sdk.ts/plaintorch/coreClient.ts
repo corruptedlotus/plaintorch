@@ -10,6 +10,7 @@ import { PlaintorchDeclarativesSdk } from "./declaratives/declarativesSdk"
 import { PlaintorchObjectivesSdk } from "./objectives/objectivesSdk"
 import { PlaintorchOnrushSdk } from "./onrush/onrushSdk"
 import { PlaintorchPolarisSdk } from "./polaris/polarisSdk"
+import { PlaintorchActivitiesSdk } from "./activities/activitiesSdk"
 import { PlaintorchLoreSdk } from "./lore/loreSdk"
 import { PlaintorchDependenciesSdk } from "./dependencies/dependenciesSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
@@ -49,6 +50,8 @@ export class PlaintorchCoreClient {
 	public readonly declaratives: PlaintorchDeclarativesSdk
 	public readonly onrush: PlaintorchOnrushSdk
 	public readonly polaris: PlaintorchPolarisSdk
+	/** One-shot search over the objectives and decrees a Polaris cycle accepts. */
+	public readonly activities: PlaintorchActivitiesSdk
 	public readonly lore: PlaintorchLoreSdk
 	public readonly dependencies: PlaintorchDependenciesSdk
 	public constructor(options: PlaintorchCoreClientOptions = {}) {
@@ -70,6 +73,7 @@ export class PlaintorchCoreClient {
 		this.declaratives = new PlaintorchDeclarativesSdk(this)
 		this.onrush = new PlaintorchOnrushSdk(this)
 		this.polaris = new PlaintorchPolarisSdk(this)
+		this.activities = new PlaintorchActivitiesSdk(this)
 		this.lore = new PlaintorchLoreSdk(this)
 		this.dependencies = new PlaintorchDependenciesSdk(this)
 		// Constructed last: the repositories delegate to the SDKs above.

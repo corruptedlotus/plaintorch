@@ -128,6 +128,26 @@ public sealed record LorePageRenumberRequest(
 public sealed record SearchRequest(string Query, int? Take = null);
 
 /// <summary>
+/// A searchable activity — something that can be added to a Polaris cycle — unifying the two incentive kinds a
+/// cycle accepts: an objective (which becomes an executive) or a decree (which materializes an attentive). Exactly
+/// one of <paramref name="Objective"/> / <paramref name="Decree"/> is populated, matching <paramref name="Kind"/>.
+/// </summary>
+/// <param name="Kind">The discriminator: <c>objective</c> or <c>decree</c>.</param>
+/// <param name="Objective">The objective, when <paramref name="Kind"/> is <c>objective</c>.</param>
+/// <param name="Decree">The decree, when <paramref name="Kind"/> is <c>decree</c>.</param>
+public sealed record Activity(string Kind, Objective? Objective = null, Decree? Decree = null)
+{
+	/// <summary>The activity's title, taken from whichever incentive it wraps — used for ordering and display.</summary>
+	public string Title => Objective?.Title ?? Decree?.Title ?? string.Empty;
+
+	/// <summary>Wraps an objective as an activity.</summary>
+	public static Activity ForObjective(Objective objective) => new("objective", Objective: objective);
+
+	/// <summary>Wraps a decree as an activity.</summary>
+	public static Activity ForDecree(Decree decree) => new("decree", Decree: decree);
+}
+
+/// <summary>
 /// Identifies which directive kind an action targets or filters (PEP100).
 /// </summary>
 public enum DirectiveKind
@@ -223,7 +243,6 @@ public sealed record ObjectiveUpdate(
 	string? OnrushSprintId = null,
 	ObjectiveCollege? College = null,
 	int? CelestronValue = null,
-	bool? IsEnduring = null,
 	Optional<DateOnly?> Due = default,
 	Optional<string?> ParentIncentiveId = default);
 
@@ -332,7 +351,6 @@ public sealed record PolarisExecutivePlan(
 	string? OnrushSprintId = null,
 	ObjectiveCollege? College = null,
 	int? CelestronValue = null,
-	bool ObjectiveIsEnduring = false,
 	int? Estimation = null,
 	int? Minimum = null,
 	int? Maximum = null);

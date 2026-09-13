@@ -42,8 +42,8 @@ public sealed class ObjectiveModule : Module
 		group.MapPost("/", async (CreateObjectiveRequest request, IObjectiveApi api, CancellationToken cancellationToken) =>
 		{
 			var objective = string.IsNullOrWhiteSpace(request.DirectiveId)
-				? await api.CreateStandaloneAsync(request.Title, request.IsEnduring, request.Id, cancellationToken)
-				: await api.CreateFromDirectiveAsync(request.DirectiveId, request.Title, request.OnrushSprintId, request.IsEnduring, request.Id, cancellationToken);
+				? await api.CreateStandaloneAsync(request.Title, request.Id, cancellationToken)
+				: await api.CreateFromDirectiveAsync(request.DirectiveId, request.Title, request.OnrushSprintId, request.Id, cancellationToken);
 			return Results.Created($"/api/objectives/{objective.Id}", objective);
 		});
 

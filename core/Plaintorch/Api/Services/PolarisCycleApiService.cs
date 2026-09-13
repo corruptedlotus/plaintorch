@@ -214,14 +214,14 @@ public sealed class PolarisCycleApiService(
 
 			case PolarisExecutivePlanningMode.Standalone:
 				ArgumentException.ThrowIfNullOrWhiteSpace(plan.Title);
-				objective = await CreateObjectiveAsync(plan.Title!, null, plan.OnrushSprintId, plan.College, plan.CelestronValue, plan.ObjectiveIsEnduring, cancellationToken);
+				objective = await CreateObjectiveAsync(plan.Title!, null, plan.OnrushSprintId, plan.College, plan.CelestronValue, cancellationToken);
 				executiveTitle = plan.ExecutiveTitle ?? objective.Title;
 				break;
 
 			case PolarisExecutivePlanningMode.FromDirective:
 				ArgumentException.ThrowIfNullOrWhiteSpace(plan.DirectiveId);
 				ArgumentException.ThrowIfNullOrWhiteSpace(plan.Title);
-				objective = await CreateObjectiveAsync(plan.Title!, plan.DirectiveId, plan.OnrushSprintId, plan.College, plan.CelestronValue, plan.ObjectiveIsEnduring, cancellationToken);
+				objective = await CreateObjectiveAsync(plan.Title!, plan.DirectiveId, plan.OnrushSprintId, plan.College, plan.CelestronValue, cancellationToken);
 				executiveTitle = plan.ExecutiveTitle ?? objective.Title;
 				break;
 
@@ -591,7 +591,7 @@ public sealed class PolarisCycleApiService(
 	}
 
 
-	private async Task<Objective> CreateObjectiveAsync(string title, string? directiveId, string? onrushSprintId, ObjectiveCollege? college, int? celestronValue, bool isEnduring, CancellationToken cancellationToken)
+	private async Task<Objective> CreateObjectiveAsync(string title, string? directiveId, string? onrushSprintId, ObjectiveCollege? college, int? celestronValue, CancellationToken cancellationToken)
 	{
 		var objective = new Objective
 		{
@@ -601,7 +601,6 @@ public sealed class PolarisCycleApiService(
 			OnrushSprintId = onrushSprintId,
 			College = college ?? ObjectiveCollege.Unspecified,
 			CelestronValue = celestronValue ?? 0,
-			IsEnduring = isEnduring,
 			Status = ObjectiveStatus.Polaris,
 		};
 

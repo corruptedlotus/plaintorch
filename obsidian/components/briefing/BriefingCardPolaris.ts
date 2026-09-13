@@ -1,6 +1,6 @@
 import { component, css, eventListener, html, nothing, state } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
-import { Attentive, Objective, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
+import { Activity, Attentive, DecreeStatus, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
 import { core } from ".."
 import { App, SuggestModal } from "obsidian"
 
@@ -103,9 +103,9 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 				<p7t-objective-item-exec interactive .entity=${executive.objective} .executive=${executive}></p7t-objective-item-exec>
 			`)}
 			${(this.data!.attentives ?? []).map(attentive => html`
-				<p7t-attentive-item interactive .attentive=${attentive}></p7t-attentive-item>
+				<p7t-decree-item-attentive interactive .attentive=${attentive}></p7t-decree-item-attentive>
 			`)}
-			<p7t-button @click=${() => this.addObjective()} icon='lucide:plus' class='add-button'>Add Objective</p7t-button>
+			<p7t-button @click=${() => this.addActivity()} icon='lucide:plus' class='add-button'>Add Activity</p7t-button>
 		`
 	}
 
@@ -181,30 +181,54 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		})
 	}
 
-	private addObjective() {
+	private addActivity() {
 		if (!this.data) return
-		new AddObjectiveModal((window as any).app! as App, this).open()
+		new AddActivityModal((window as any).app! as App, this).open()
 	}
 }
 
-class AddObjectiveModal extends SuggestModal<Objective> {
+/**
+ * Adds an activity — an objective or a decree — to the current Polaris cycle. It searches the unified activity
+ * endpoint, keeps only what can still be added (a live objective or an active decree), and routes the choice to the
+ * right path: an objective becomes an executive, a decree materializes a bound attentive.
+ */
+class AddActivityModal extends SuggestModal<Activity> {
 	constructor(app: App, protected readonly host: BriefingCardPolaris) {
 		super(app);
 	}
 
 	override async getSuggestions(query: string) {
-		const results = query.length > 2 ? await core.objectives.search(query) : await core.objectives.list()
-		return results.filter(objective => objective.status < ObjectiveStatus.Archived)
+		const results = query.length > 2 ? await core.activities.search(query) : await core.activities.list()
+		return results.filter(activity => activity.kind === 'decree'
+			? activity.decree?.status === DecreeStatus.Active
+			: (activity.objective?.status ?? ObjectiveStatus.Archived) < ObjectiveStatus.Archived)
 	}
 
-	renderSuggestion(objective: Objective, el: HTMLElement) {
-		const item = el.createEl('p7t-objective-item')
-		item.entity = objective
+	renderSuggestion(activity: Activity, el: HTMLElement) {
+		if (activity.kind === 'decree' && activity.decree) {
+			const item = el.createEl('p7t-decree-item')
+			item.entity = activity.decree
+		} else if (activity.objective) {
+			const item = el.createEl('p7t-objective-item')
+			item.entity = activity.objective
+		}
 	}
 
-	override async onChooseSuggestion(item: Objective, _: MouseEvent | KeyboardEvent) {
-		const added = await core.repos.objectives.mutate(item.id, async () =>
-			await core.polaris.addObjectiveToCurrent(item.id))
+	override async onChooseSuggestion(activity: Activity, _: MouseEvent | KeyboardEvent) {
+		if (activity.kind === 'decree' && activity.decree) {
+			const added = await core.polaris.addAttentive({ decreeId: activity.decree.id })
+			if (added) {
+				// The new attentive rides on the owning cycle and the briefing; nudge both so it appears.
+				await core.repos.polaris.revalidateObserved()
+				await core.repos.briefing.revalidateIfObserved()
+			}
+			return
+		}
+
+		const objective = activity.objective
+		if (!objective) return
+		const added = await core.repos.objectives.mutate(objective.id, async () =>
+			await core.polaris.addObjectiveToCurrent(objective.id))
 		if (added) {
 			// The objective and briefing ride on the mutate above; only the owning cycle needs a nudge.
 			await core.repos.polaris.revalidateObserved()

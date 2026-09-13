@@ -142,7 +142,6 @@ public sealed class PlaintorchRepository(PlainfraContext context)
 			existing.College = objective.College;
 			existing.Status = objective.Status;
 			existing.CelestronValue = objective.CelestronValue;
-			existing.IsEnduring = objective.IsEnduring;
 		}
 
 		context.SaveChanges();

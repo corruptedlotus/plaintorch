@@ -106,7 +106,6 @@ export interface PolarisExecutivePlan {
 	onrushSprintId?: string | undefined
 	college?: ObjectiveCollege | undefined
 	celestronValue?: number | undefined
-	objectiveIsEnduring?: boolean
 	/** Primary time allocation to seed on the planned executive, as a whole-minute working time unit. */
 	estimation?: number | undefined
 	/** Minimum time allocation to seed on the planned executive, as a whole-minute working time unit. */

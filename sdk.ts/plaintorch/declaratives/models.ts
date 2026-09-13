@@ -1,6 +1,6 @@
 import { model } from "@a11d/api-dotnet"
 import type { Directive } from "../directives/models"
-import type { Objective } from "../objectives/models"
+import { ObjectiveCollege, type Objective } from "../objectives/models"
 import type { PolarisCycle } from "../polaris/models"
 
 export enum FateStatus {
@@ -59,6 +59,7 @@ export class Decree {
 	activeCelestron: number = 0
 	/** Whether the decree participates in daily reflective generation (lunar hierarchies only). */
 	reflect: boolean = false
+	college: ObjectiveCollege = ObjectiveCollege.Unspecified
 	attentives?: Attentive[]
 }
 

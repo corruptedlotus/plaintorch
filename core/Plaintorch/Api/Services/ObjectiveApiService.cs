@@ -62,13 +62,13 @@ public sealed class ObjectiveApiService(
 	}
 
 	/// <inheritdoc />
-	public Task<Objective> CreateStandaloneAsync(string title, bool isEnduring = false, string? requestedId = null, CancellationToken cancellationToken = default)
+	public Task<Objective> CreateStandaloneAsync(string title, string? requestedId = null, CancellationToken cancellationToken = default)
 	{
-		return CreateInternalAsync(title, null, null, isEnduring, requestedId, cancellationToken);
+		return CreateInternalAsync(title, null, null, requestedId, cancellationToken);
 	}
 
 	/// <inheritdoc />
-	public async Task<Objective> CreateFromDirectiveAsync(string directiveId, string title, string? onrushSprintId = null, bool isEnduring = false, string? requestedId = null, CancellationToken cancellationToken = default)
+	public async Task<Objective> CreateFromDirectiveAsync(string directiveId, string title, string? onrushSprintId = null, string? requestedId = null, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
 		var directiveExists = await context.Directives.AnyAsync(directive => directive.Id == directiveId, cancellationToken);
@@ -86,7 +86,7 @@ public sealed class ObjectiveApiService(
 			}
 		}
 
-		return await CreateInternalAsync(title, directiveId, onrushSprintId, isEnduring, requestedId, cancellationToken);
+		return await CreateInternalAsync(title, directiveId, onrushSprintId, requestedId, cancellationToken);
 	}
 
 	/// <inheritdoc />
@@ -122,11 +122,6 @@ public sealed class ObjectiveApiService(
 		if (update.CelestronValue is not null)
 		{
 			objective.CelestronValue = update.CelestronValue.Value;
-		}
-
-		if (update.IsEnduring is not null)
-		{
-			objective.IsEnduring = update.IsEnduring.Value;
 		}
 
 		if (update.Due.IsSet)
@@ -260,7 +255,7 @@ public sealed class ObjectiveApiService(
 			cancellationToken: cancellationToken);
 	}
 
-	private async Task<Objective> CreateInternalAsync(string title, string? directiveId, string? onrushSprintId, bool isEnduring, string? requestedId, CancellationToken cancellationToken)
+	private async Task<Objective> CreateInternalAsync(string title, string? directiveId, string? onrushSprintId, string? requestedId, CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(title);
 
@@ -270,7 +265,6 @@ public sealed class ObjectiveApiService(
 			Title = title,
 			DirectiveId = directiveId,
 			OnrushSprintId = onrushSprintId,
-			IsEnduring = isEnduring,
 		};
 
 		context.Objectives.Add(objective);
@@ -291,7 +285,6 @@ public sealed class ObjectiveApiService(
 			College = objective.College,
 			Status = objective.Status,
 			CelestronValue = objective.CelestronValue,
-			IsEnduring = objective.IsEnduring,
 		};
 	}
 }

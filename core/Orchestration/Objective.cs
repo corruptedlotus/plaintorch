@@ -60,12 +60,6 @@ public sealed class Objective : Incentive
 	public int CelestronValue { get; set; }
 
 	/// <summary>
-	/// Gets or sets a value indicating whether the objective is enduring or repeating rather than one-and-done.
-	/// </summary>
-	[MarkdownField("enduring")]
-	public bool IsEnduring { get; set; }
-
-	/// <summary>
 	/// Gets the execution records linked to this objective.
 	/// </summary>
 	[InverseProperty(nameof(Executive.Objective))]

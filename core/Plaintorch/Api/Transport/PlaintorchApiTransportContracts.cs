@@ -66,8 +66,7 @@ public sealed record CreateObjectiveRequest(
 	string Title,
 	string? Id = null,
 	string? DirectiveId = null,
-	string? OnrushSprintId = null,
-	bool IsEnduring = false);
+	string? OnrushSprintId = null);
 
 /// <summary>
 /// Represents the transport payload used to assign an objective to onrush.

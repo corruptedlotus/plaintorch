@@ -35,7 +35,6 @@ export class Objective {
 	college: ObjectiveCollege = ObjectiveCollege.Unspecified
 	status: ObjectiveStatus = ObjectiveStatus.Standby
 	celestronValue: number = 0
-	isEnduring: boolean = false
 	executives: Executive[] = []
 
 	get statusName() {
@@ -48,7 +47,6 @@ export interface CreateObjectiveRequest {
 	id?: string | undefined
 	directiveId?: string | undefined
 	onrushSprintId?: string | undefined
-	isEnduring?: boolean
 }
 
 export interface InitObjectiveRequest {
@@ -61,7 +59,6 @@ export interface ObjectiveUpdate {
 	onrushSprintId?: string | undefined
 	college?: ObjectiveCollege | undefined
 	celestronValue?: number | undefined
-	isEnduring?: boolean | undefined
 	/** Due date. Omit to keep, a value to set, `null` to clear. */
 	due?: string | null | undefined
 	/** Parent incentive. Omit to keep, an id to set, `null` to clear. */

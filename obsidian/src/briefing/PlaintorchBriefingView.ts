@@ -104,7 +104,7 @@ export class PlaintorchBriefingView extends ItemView {
 			this.createObjectiveCollectionCard(this.contentEl, `${this.capitalize(briefing.currentOnrush.selectionMode)} onrush objectives`, briefing.currentOnrush.objectives.map((objective) => ({
 				puck: objective.id,
 				headline: `${objective.id} — ${objective.title}`,
-				detail: `Status: ${objective.status} • College: ${objective.college} • Celestron: ${objective.celestronValue}${objective.isEnduring ? " • Enduring" : ""}`
+				detail: `Status: ${objective.status} • College: ${objective.college} • Celestron: ${objective.celestronValue}`
 			})))
 		}
 

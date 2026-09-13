@@ -21,7 +21,6 @@ public sealed class SerializerRoundTripTests : VaultTestBase
 			College = ObjectiveCollege.Lore,
 			Status = ObjectiveStatus.Onrush,
 			CelestronValue = 7,
-			IsEnduring = true,
 		};
 
 		var markdown = serializer.Serialize(objective, "My precious body.");
@@ -37,7 +36,6 @@ public sealed class SerializerRoundTripTests : VaultTestBase
 		Assert.Equal(ObjectiveCollege.Lore, result.Model.College);
 		Assert.Equal(ObjectiveStatus.Onrush, result.Model.Status);
 		Assert.Equal(7, result.Model.CelestronValue);
-		Assert.True(result.Model.IsEnduring);
 	}
 
 	[Fact]

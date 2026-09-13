@@ -26,12 +26,12 @@ public interface IObjectiveApi
 	/// <summary>
 	/// Creates a standalone objective.
 	/// </summary>
-	Task<Objective> CreateStandaloneAsync(string title, bool isEnduring = false, string? requestedId = null, CancellationToken cancellationToken = default);
+	Task<Objective> CreateStandaloneAsync(string title, string? requestedId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Creates an objective beneath a directive.
 	/// </summary>
-	Task<Objective> CreateFromDirectiveAsync(string directiveId, string title, string? onrushSprintId = null, bool isEnduring = false, string? requestedId = null, CancellationToken cancellationToken = default);
+	Task<Objective> CreateFromDirectiveAsync(string directiveId, string title, string? onrushSprintId = null, string? requestedId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Applies a generic update to an objective.
