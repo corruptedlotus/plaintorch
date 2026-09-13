@@ -110,7 +110,7 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 
 	protected override get secondary() {
 		return html`
-			<p7t-directive-item placeholder='Constellation Directive' .directive=${this.entity!.parentDirective}></p7t-directive-item>
+			<p7t-directive-breadcrumb placeholder='Constellation Directive' .rootId=${this.entity!.parentDirectiveId}></p7t-directive-breadcrumb>
 		`
 	}
 
