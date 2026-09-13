@@ -6,7 +6,8 @@ import type { GridRow } from './entityTree'
  *
  * Lore is a strict Era → Chapter → Act → Phase hierarchy of one entity, so the shape comes entirely from each page's
  * `parentId`. Siblings are ordered by narrative index, and a page whose parent is missing is surfaced as a root
- * rather than dropped. Each row also carries whether it is {@link GridRow.active} — see {@link markActive}.
+ * rather than dropped. Whether a row is {@link GridRow.active} is read from the page's `isActive` flag, which the API
+ * stamps from the one active definition (the core's LoreIndex) — the grid no longer re-derives its own spine.
  */
 export function buildLoreRows(pages: readonly LorePage[], toggled: ReadonlySet<string>, expandedByDefault = false): GridRow[] {
 	const known = new Set(pages.map(page => page.id))
@@ -27,8 +28,6 @@ export function buildLoreRows(pages: readonly LorePage[], toggled: ReadonlySet<s
 		siblings.sort(compareNarrative)
 	}
 
-	const active = markActive(roots, byParent)
-
 	const rows: GridRow[] = []
 	const emit = (page: LorePage, guides: string[]) => {
 		const children = byParent.get(page.id) ?? []
@@ -46,7 +45,7 @@ export function buildLoreRows(pages: readonly LorePage[], toggled: ReadonlySet<s
 			guides,
 			expandable,
 			expanded: isExpanded,
-			active: active.has(page.id)
+			active: page.isActive ?? false
 		})
 
 		if (!isExpanded) {
@@ -68,35 +67,6 @@ export function buildLoreRows(pages: readonly LorePage[], toggled: ReadonlySet<s
 /** Identifies a lore row, and the page behind it, in the entity store. */
 export function loreRowKey(page: LorePage): string {
 	return identify(page) ?? `LorePage:${page.id}`
-}
-
-/**
- * Marks the active lore "spine": a page is active when it is the latest of its siblings (last in narrative order) and
- * either it is top-level or its parent is itself active. That yields a single path — the latest Era, then its latest
- * Chapter, its latest Act, its latest Phase — each highlighted as the current lore.
- */
-function markActive(roots: readonly LorePage[], byParent: ReadonlyMap<string, LorePage[]>): ReadonlySet<string> {
-	const active = new Set<string>()
-
-	const walk = (siblings: readonly LorePage[], parentActive: boolean, isTop: boolean) => {
-		if (siblings.length === 0) {
-			return
-		}
-
-		// Siblings are sorted ascending, so the latest is the last one (length checked just above).
-		const latest = siblings[siblings.length - 1]!
-		for (const page of siblings) {
-			const pageActive = page.id === latest.id && (isTop || parentActive)
-			if (pageActive) {
-				active.add(page.id)
-			}
-
-			walk(byParent.get(page.id) ?? [], pageActive, false)
-		}
-	}
-
-	walk(roots, true, true)
-	return active
 }
 
 /** Orders lore siblings by narrative index (era, chapter, act, phase), falling back to the terminal identifier. */

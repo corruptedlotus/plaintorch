@@ -5,7 +5,8 @@ namespace Pleiades.Saga;
 
 public class IndexedLorePage : LorePage
 {
-	public bool IsActive { get; set; } = false;
+	// IsActive is inherited from LorePage (a transient projection flag), so both the structured index and the plain
+	// list report active-ness from the one LoreIndex calculation.
 	public IReadOnlyList<IndexedLorePage>? Children { get; set; } = null;
 
 	public IndexedLorePage WithChildrenFrom(List<IndexedLorePage> pool)

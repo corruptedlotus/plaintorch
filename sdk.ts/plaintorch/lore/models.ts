@@ -20,12 +20,16 @@ export class LorePage {
 	phase?: number
 	indexedUtc!: string
 	parent?: LorePage
+	/**
+	 * Whether the page is on the current active lore spine, stamped by the API from the one active definition
+	 * (the core's LoreIndex). Read this rather than re-deriving "active" on the client.
+	 */
+	isActive?: boolean
 }
 
-/** A lore page within the chronology index: the page plus whether it is currently active and, when the index is structured, its child pages. */
+/** A lore page within the chronology index: the page (with its inherited {@link LorePage.isActive}) plus, when the index is structured, its child pages. */
 @model("IndexedLorePage")
 export class IndexedLorePage extends LorePage {
-	isActive: boolean = false
 	children?: IndexedLorePage[]
 }
 

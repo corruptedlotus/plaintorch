@@ -80,7 +80,9 @@ export class LoreGridItem extends GridItemBase {
 	protected async commitIndex(raw: string | undefined) {
 		const page = this.row!.entity as LorePage
 		const value = Number.parseInt((raw ?? '').trim(), 10)
-		if (!Number.isInteger(value) || value < 1 || value === loreOwnIndex(page)) {
+		// The core accepts index 0 (a prologue — Chapter 0 / Act 0); only negatives are rejected. Guarding `< 1` here
+		// silently dropped a "0" as if it were unset, so the renumber never reached the API.
+		if (!Number.isInteger(value) || value < 0 || value === loreOwnIndex(page)) {
 			this.requestUpdate()
 			return
 		}
@@ -136,6 +138,9 @@ export class LoreGridItem extends GridItemBase {
 				break
 			case 'beginning':
 				await core.lore.update(page.id, { beginning: page.beginning ?? null })
+				// The beginning date is what decides the active spine, so an edit can move "active" to a different page;
+				// re-read the listing so every row's server-stamped `isActive` reflects the new spine, not just this one.
+				await core.repos.loreList.refresh()
 				break
 		}
 	}

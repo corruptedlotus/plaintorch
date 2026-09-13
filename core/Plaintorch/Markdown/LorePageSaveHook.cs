@@ -12,6 +12,12 @@ namespace Pleiades.Plaintorch.Markdown;
 /// its stored relative path updated. Extracted from the central storage service so lore's per-type placement rule
 /// lives with lore rather than as a special case in the generic save.
 /// </summary>
+/// <remarks>
+/// LATENT: this reassignment path is not currently reachable through the API — <c>LorePageApiService.UpdateAsync</c>
+/// does not change <c>ParentId</c>, and <c>SetIndexAsync</c> re-keys ids without passing a <c>previous</c> snapshot —
+/// so the hook fires only if a future reparent operation saves a lore page with a changed parent. The logic is
+/// preserved and correct, just not yet wired to a caller.
+/// </remarks>
 public sealed class LorePageSaveHook(PlainfraContext context, VaultLayout layout) : EntitySaveHook<LorePage>
 {
 	/// <inheritdoc />

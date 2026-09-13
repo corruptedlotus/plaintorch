@@ -103,6 +103,14 @@ public class LorePage : PuckNamedEntity
 	public LorePage? Parent { get; set; }
 
 	/// <summary>
+	/// Gets or sets whether the page is part of the current active lore spine (<see cref="LoreIndex"/>). Transient:
+	/// stamped on the way out from the single active-spine calculation so every surface reads one definition, never
+	/// persisted to the database or frontmatter.
+	/// </summary>
+	[NotMapped]
+	public bool IsActive { get; set; }
+
+	/// <summary>
 	/// Gets the terminal PUCK segment.
 	/// </summary>
 	[NotMapped]
