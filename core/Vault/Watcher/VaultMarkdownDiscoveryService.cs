@@ -115,6 +115,77 @@ public sealed class VaultMarkdownDiscoveryService(
 	}
 
 	/// <summary>
+	/// Groups the candidates of an identity-driven scan by the identity they assert and returns those asserted by more
+	/// than one file — an ambiguous duplicate the core will not silently resolve. Only identity-driven entities that
+	/// exist on disk with a resolved id participate; path-bound modes cannot have two files for one entity, and an
+	/// identity-less file is not an assertion. Used by the sweep, which already has every candidate in hand.
+	/// </summary>
+	public IReadOnlyDictionary<string, IReadOnlyList<string>> FindDuplicateIdentities(IEnumerable<VaultSyncCandidate> candidates)
+	{
+		ArgumentNullException.ThrowIfNull(candidates);
+		return candidates
+			.Where(IsIdentityAssertion)
+			.GroupBy(candidate => candidate.PathId!, StringComparer.OrdinalIgnoreCase)
+			.Select(group => (Id: group.Key, Files: DistinctPaths(group.Select(candidate => candidate.AbsolutePath))))
+			.Where(entry => entry.Files.Count > 1)
+			.ToDictionary(entry => entry.Id, entry => entry.Files, StringComparer.OrdinalIgnoreCase);
+	}
+
+	/// <summary>
+	/// Finds every file across a model's full territory that asserts a given identity, resolving each the same way the
+	/// scan does. Used by a live single-path reconcile to detect (and, once resolved, clear) a duplicate identity
+	/// without a whole-vault sweep.
+	/// </summary>
+	public async Task<IReadOnlyList<string>> FindFilesAssertingIdentityAsync(VaultPathSyncModel model, string id, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(model);
+		ArgumentException.ThrowIfNullOrWhiteSpace(id);
+		var matches = new List<string>();
+		foreach (var path in policyEngine.EnumerateCandidateMarkdownPaths(model))
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			if (await AssertsIdentityAsync(path, id, cancellationToken))
+			{
+				matches.Add(Path.GetFullPath(path));
+			}
+		}
+
+		return DistinctPaths(matches);
+	}
+
+	/// <summary>Whether a candidate is a live identity assertion: an identity-driven entity that exists with a resolved id.</summary>
+	private bool IsIdentityAssertion(VaultSyncCandidate candidate)
+		=> candidate.FileExists
+			&& !string.IsNullOrWhiteSpace(candidate.PathId)
+			&& policyEngine.PolicyFor(candidate.Model.Mode).IsIdentityDriven;
+
+	private async Task<bool> AssertsIdentityAsync(string markdownPath, string id, CancellationToken cancellationToken)
+	{
+		if (!File.Exists(markdownPath))
+		{
+			return false;
+		}
+
+		var looseId = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(markdownPath).Id;
+		if (!string.IsNullOrWhiteSpace(looseId) && string.Equals(looseId, id, StringComparison.OrdinalIgnoreCase))
+		{
+			return true;
+		}
+
+		var markdown = await VaultFileAccess.ReadAllTextAsync(markdownPath, cancellationToken);
+		var frontMatter = markdownSerializer.ParseFrontMatter(markdown);
+		return frontMatter.TryGetValue("puck", out var rawPuck)
+			&& string.Equals(rawPuck?.Trim().Trim('"'), id, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static IReadOnlyList<string> DistinctPaths(IEnumerable<string> paths)
+		=> paths
+			.Select(Path.GetFullPath)
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+			.ToList();
+
+	/// <summary>
 	/// Inspects a single path after a watcher event and returns a validated sync candidate when applicable.
 	/// </summary>
 	/// <param name="path">The filesystem path to inspect.</param>

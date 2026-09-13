@@ -52,16 +52,34 @@ public sealed class VaultStoragePolicyEngine(
 		var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		foreach (var model in modelCatalog.GetModels())
 		{
-			var policy = policyRouter.Resolve(model.Mode);
-			foreach (var root in model.ScanRoots.Where(Directory.Exists))
+			foreach (var path in EnumerateCandidateMarkdownPaths(model))
 			{
-				foreach (var markdown in Directory.EnumerateFiles(root, "*.md", SearchOption.AllDirectories))
+				results.Add(path);
+			}
+		}
+
+		return results.ToList();
+	}
+
+	/// <summary>
+	/// Enumerates the existing markdown candidates for a single model, across its full territory, using the mode
+	/// policy's watch check — the same resolution the discovery scan uses. This is how an identity-driven entity's
+	/// file is located wherever the user placed it, so a read (discovery) and a write (canonical save location) agree
+	/// on where the entity lives rather than the write path assuming the canonical root.
+	/// </summary>
+	public IReadOnlyList<string> EnumerateCandidateMarkdownPaths(VaultPathSyncModel model)
+	{
+		ArgumentNullException.ThrowIfNull(model);
+		var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var policy = policyRouter.Resolve(model.Mode);
+		foreach (var root in model.ScanRoots.Where(Directory.Exists))
+		{
+			foreach (var markdown in Directory.EnumerateFiles(root, "*.md", SearchOption.AllDirectories))
+			{
+				if (policy.TryResolveWatchPath(model, markdown, isDirectoryEvent: false, out var resolved)
+					&& !string.IsNullOrWhiteSpace(resolved))
 				{
-					if (policy.TryResolveWatchPath(model, markdown, isDirectoryEvent: false, out var resolved)
-						&& !string.IsNullOrWhiteSpace(resolved))
-					{
-						results.Add(Path.GetFullPath(resolved));
-					}
+					results.Add(Path.GetFullPath(resolved));
 				}
 			}
 		}

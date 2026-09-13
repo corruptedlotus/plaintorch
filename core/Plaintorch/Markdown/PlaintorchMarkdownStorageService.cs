@@ -25,7 +25,8 @@ public sealed class PlaintorchMarkdownStorageService(
 	VaultTemporalDataService temporalDataService,
 	VaultImplicitBoundaryService implicitBoundaryService,
 	VaultWatcherWriteBarrier writeBarrier,
-	VaultStoragePolicyEngine policyEngine)
+	VaultStoragePolicyEngine policyEngine,
+	IEnumerable<IEntitySaveHook> saveHooks)
 {
 	private static readonly MethodInfo FindAsyncMethod = typeof(DbContext)
 		.GetMethods(BindingFlags.Public | BindingFlags.Instance)
@@ -245,11 +246,18 @@ public sealed class PlaintorchMarkdownStorageService(
 		// Placement policy: the mode decides whether the file keeps a user-authored location (Freeform) or uses the
 		// canonical path (everyone else). The storage pipeline no longer branches on the mode.
 		newPath = policyEngine.PolicyFor(storage.Mode).ResolveWriteTargetPath(entity, newPath, sourcePath, previousPath);
-		if (entity is LorePage lorePage && previous is LorePage previousLorePage
-			&& !string.Equals(lorePage.ParentId, previousLorePage.ParentId, StringComparison.OrdinalIgnoreCase))
+		// Opt-in per-type shaping (e.g. a lore page re-homing under a reassigned parent). A type with no registered
+		// hook keeps the resolved path; the storage pipeline no longer branches on the entity type.
+		var saveHook = saveHooks.FirstOrDefault(hook => hook.CanHandle(entity.GetType()));
+		if (saveHook is not null)
 		{
-			newPath = await ResolveLoreParentReassignmentPathAsync(lorePage, cancellationToken);
-			lorePage.RelativePath = Path.GetRelativePath(layout.VaultRoot, newPath);
+			var overridePath = await saveHook.ResolveWritePathAsync(
+				new EntitySaveContext(entity, previous, newPath, ResolveCanonicalPathAsync),
+				cancellationToken);
+			if (!string.IsNullOrWhiteSpace(overridePath))
+			{
+				newPath = overridePath;
+			}
 		}
 
 		previousPath = TryRelocateSelfNamedDirectory(previousPath, newPath, entity.GetType());
@@ -405,65 +413,6 @@ public sealed class PlaintorchMarkdownStorageService(
 		return previousPath;
 	}
 
-	private async Task<string> ResolveLoreParentReassignmentPathAsync(LorePage lorePage, CancellationToken cancellationToken)
-	{
-		ArgumentNullException.ThrowIfNull(lorePage);
-
-		var folderName = PuckNamedIdentity.FormatFileName(lorePage.EffectiveIdentifier, lorePage.Title);
-		if (string.IsNullOrWhiteSpace(lorePage.ParentId))
-		{
-			if (string.Equals(lorePage.Level, "Cha", StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(lorePage.Level, "Act", StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(lorePage.Level, "p", StringComparison.OrdinalIgnoreCase))
-			{
-				throw new InvalidOperationException($"Lore page '{lorePage.Id}' cannot be reassigned vertically without a valid parent for level '{lorePage.Level}'.");
-			}
-
-			return Path.Combine(layout.SagaRoot, folderName, $"{folderName}.md");
-		}
-
-		var parent = await context.LorePages
-			.AsNoTracking()
-			.FirstOrDefaultAsync(item => item.Id == lorePage.ParentId, cancellationToken)
-			?? throw new InvalidOperationException($"Lore parent '{lorePage.ParentId}' was not found during reassignment sync.");
-
-		ValidateLoreParentReassignment(lorePage, parent);
-
-		var parentPath = await ResolveCanonicalPathAsync(parent, cancellationToken);
-		var parentDirectory = Path.GetDirectoryName(parentPath)
-			?? throw new InvalidOperationException($"Lore parent '{parent.Id}' canonical path does not have a valid directory.");
-
-		return Path.Combine(parentDirectory, folderName, $"{folderName}.md");
-	}
-
-	private static void ValidateLoreParentReassignment(LorePage lorePage, LorePage parent)
-	{
-		var expectedParentLevel = lorePage.Level.Trim().ToLowerInvariant() switch
-		{
-			"era" => null,
-			"cha" => "Era",
-			"act" => "Cha",
-			"p" => "Act",
-			_ => null,
-		};
-
-		if (expectedParentLevel is null)
-		{
-			if (string.Equals(lorePage.Level, "era", StringComparison.OrdinalIgnoreCase))
-			{
-				throw new InvalidOperationException($"Lore page '{lorePage.Id}' is level '{lorePage.Level}' and cannot be reassigned under parent '{parent.Id}'.");
-			}
-
-			return;
-		}
-
-		if (!string.Equals(parent.Level, expectedParentLevel, StringComparison.OrdinalIgnoreCase))
-		{
-			throw new InvalidOperationException(
-				$"Lore reassignment from '{lorePage.Id}' to parent '{parent.Id}' is vertical and not supported by the static nesting pattern. Expected parent level '{expectedParentLevel}', but found '{parent.Level}'.");
-		}
-	}
-
 	private async Task<FileGraveyardEntry?> DeleteEntityPathAsync(object entity, CancellationToken cancellationToken)
 	{
 		var canonicalPath = await ResolveCanonicalPathAsync(entity, cancellationToken);
@@ -521,13 +470,19 @@ public sealed class PlaintorchMarkdownStorageService(
 
 	private IEnumerable<string> EnumerateIdentityCandidatePaths(Type entityType)
 	{
-		var model = pathSyncModelCatalog
-			.GetModels()
-			.FirstOrDefault(candidate => candidate.EntityType == entityType);
+		// Resolve the sync model for this entity, matching a polymorphic family by assignability: a concrete
+		// StellarDirective/LunarDirective is served by the abstract Directive family model, so an exact-type lookup
+		// would miss it and fall through to a canonical-root-only scan — the bug that orphaned a copy of an
+		// out-of-root directive at the default location.
+		var model = pathSyncModelCatalog.GetModels().FirstOrDefault(candidate => candidate.EntityType == entityType)
+			?? pathSyncModelCatalog.GetModels().FirstOrDefault(candidate => candidate.EntityType.IsAssignableFrom(entityType));
 
 		if (model is not null)
 		{
-			return pathSyncModelCatalog.EnumerateCandidateMarkdownPaths(model);
+			// Locate the file across the entity's full territory via the mode policy — the same resolution discovery
+			// uses on read — so the write path finds a freeform entity wherever the user actually placed it, instead
+			// of assuming the canonical root and writing a duplicate there.
+			return policyEngine.EnumerateCandidateMarkdownPaths(model);
 		}
 
 		var root = ResolveStorageRoot(entityType);

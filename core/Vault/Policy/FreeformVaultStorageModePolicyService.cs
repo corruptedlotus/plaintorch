@@ -11,7 +11,8 @@ namespace Pleiades.Vault.Policy;
 public sealed class FreeformVaultStorageModePolicyService(
 	VaultLayout layout,
 	MarkdownFrontMatterSerializer markdownSerializer,
-	PuckEntityResolutionService puckEntityResolutionService) : IVaultStorageModePolicyService
+	PuckEntityResolutionService puckEntityResolutionService,
+	VaultEntityModelCatalog entityModelCatalog) : IVaultStorageModePolicyService
 {
 	/// <inheritdoc />
 	public VaultStorageMode Mode => VaultStorageMode.Freeform;
@@ -81,7 +82,12 @@ public sealed class FreeformVaultStorageModePolicyService(
 		var resolved = await puckEntityResolutionService.ResolveAsync(puck, cancellationToken);
 		if (resolved.Exists)
 		{
-			return string.Equals(resolved.EntityType, model.EntityName, StringComparison.Ordinal);
+			// A polymorphic family (Directive → Stellar/Lunar) resolves to its CONCRETE member, so an exact name match
+			// against the abstract family model would reject every directive file — the watcher would ignore directive
+			// files entirely, never adopting an edit and never flagging a duplicate. Accept a resolved concrete type
+			// that is a member of the model's family (the family check subsumes the anchor-name match); this is the
+			// read-side twin of the family-aware write-target resolution.
+			return entityModelCatalog.IsFamilyMember(model.EntityType, resolved.EntityType);
 		}
 
 		return true;

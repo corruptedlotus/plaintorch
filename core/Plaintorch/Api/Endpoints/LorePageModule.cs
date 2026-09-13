@@ -1,6 +1,7 @@
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Api.Services;
+using Pleiades.Plaintorch.Markdown;
 
 namespace Pleiades.Plaintorch.Api.Endpoints;
 
@@ -13,6 +14,9 @@ public sealed class LorePageModule : Module
 	public override void ConfigureServices(IServiceCollection services)
 	{
 		services.AddScoped<ILorePageApi, LorePageApiService>();
+		// Lore's per-type save behavior (re-homing a page under a reassigned parent) is an opt-in save hook rather than
+		// a special case in the central markdown storage service.
+		services.AddScoped<IEntitySaveHook, LorePageSaveHook>();
 	}
 
 	/// <inheritdoc />

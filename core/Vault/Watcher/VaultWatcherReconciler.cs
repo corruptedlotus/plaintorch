@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Pleiades.Vault.Markdown;
+using Pleiades.Vault.Policy;
 
 namespace Pleiades.Vault.Watcher;
 
@@ -19,9 +20,13 @@ namespace Pleiades.Vault.Watcher;
 public sealed class VaultWatcherReconciler(
 	VaultMarkdownDiscoveryService discovery,
 	VaultWatcherSyncService syncService,
+	VaultStoragePolicyEngine policyEngine,
 	WatcherStatusReporter statusReporter,
 	ILogger<VaultWatcherReconciler> logger)
 {
+	private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> NoDuplicates =
+		new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+
 	/// <summary>
 	/// Runs a whole-vault sweep: discover every candidate and reconcile each in startup-priority order. Per-candidate
 	/// failures are reported and skipped; a structural discovery failure propagates.
@@ -41,10 +46,14 @@ public sealed class VaultWatcherReconciler(
 			.ThenBy(candidate => candidate.VaultRelativePath, StringComparer.OrdinalIgnoreCase)
 			.ToList();
 
+		// One identity map for the whole sweep — computed once from the candidates already in hand — so duplicate
+		// detection is O(candidates), not a territory rescan per file.
+		var duplicateIdentities = discovery.FindDuplicateIdentities(result.Candidates);
+
 		foreach (var candidate in orderedCandidates)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
-			await ReconcileCandidateAsync(candidate, origin, cancellationToken);
+			await ReconcileCandidateCoreAsync(candidate, duplicateIdentities, origin, cancellationToken);
 		}
 	}
 
@@ -95,6 +104,18 @@ public sealed class VaultWatcherReconciler(
 		ArgumentNullException.ThrowIfNull(candidate);
 		ArgumentException.ThrowIfNullOrWhiteSpace(origin);
 
+		// A lone candidate (a live event) resolves its own identity map by a targeted territory scan, so a runtime
+		// reconcile detects — and, once resolved, clears — a duplicate identity the same way the sweep does.
+		var duplicateIdentities = await ResolveDuplicateIdentitiesForAsync(candidate, cancellationToken);
+		await ReconcileCandidateCoreAsync(candidate, duplicateIdentities, origin, cancellationToken);
+	}
+
+	private async Task ReconcileCandidateCoreAsync(
+		VaultSyncCandidate candidate,
+		IReadOnlyDictionary<string, IReadOnlyList<string>> duplicateIdentities,
+		string origin,
+		CancellationToken cancellationToken)
+	{
 		if (!candidate.IsValid)
 		{
 			logger.LogWarning(
@@ -106,6 +127,7 @@ public sealed class VaultWatcherReconciler(
 		}
 
 		statusReporter.ReportInspectCandidate(candidate);
+		ReportIdentityStatus(candidate, duplicateIdentities);
 
 		try
 		{
@@ -128,6 +150,48 @@ public sealed class VaultWatcherReconciler(
 				candidate.VaultRelativePath,
 				candidate.Model.EntityName);
 		}
+	}
+
+	/// <summary>
+	/// Reports the identity check for a candidate: a duplicate-identity error when more than one file asserts its id,
+	/// otherwise a pass that resolves any earlier duplicate flag once the ambiguity is gone. Only live identity
+	/// assertions (an identity-driven entity that exists with a resolved id) participate — nothing else can be a
+	/// duplicate. Keyed on the identity, so the sweep and a live reconcile raise the one same error for the conflict.
+	/// </summary>
+	private void ReportIdentityStatus(VaultSyncCandidate candidate, IReadOnlyDictionary<string, IReadOnlyList<string>> duplicateIdentities)
+	{
+		if (!candidate.FileExists
+			|| string.IsNullOrWhiteSpace(candidate.PathId)
+			|| !policyEngine.PolicyFor(candidate.Model.Mode).IsIdentityDriven)
+		{
+			return;
+		}
+
+		var id = candidate.PathId!;
+		if (duplicateIdentities.TryGetValue(id, out var files) && files.Count > 1)
+		{
+			var detail = $"asserted by {files.Count} files: {string.Join(", ", files)}";
+			statusReporter.ReportDuplicateIdentity(id, files, detail);
+		}
+		else
+		{
+			statusReporter.ReportIdentityUnique(id);
+		}
+	}
+
+	private async Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> ResolveDuplicateIdentitiesForAsync(VaultSyncCandidate candidate, CancellationToken cancellationToken)
+	{
+		if (!candidate.FileExists
+			|| string.IsNullOrWhiteSpace(candidate.PathId)
+			|| !policyEngine.PolicyFor(candidate.Model.Mode).IsIdentityDriven)
+		{
+			return NoDuplicates;
+		}
+
+		var files = await discovery.FindFilesAssertingIdentityAsync(candidate.Model, candidate.PathId!, cancellationToken);
+		return files.Count > 1
+			? new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { [candidate.PathId!] = files }
+			: NoDuplicates;
 	}
 
 	private static int StartupActionPriority(VaultSyncAction action)

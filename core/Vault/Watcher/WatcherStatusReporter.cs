@@ -65,6 +65,26 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		=> Report(WatcherOperations.VaultAccess, WatcherOperations.GlobalScope, Pass(WatcherOperations.VaultInaccessible));
 
 	/// <summary>
+	/// Reports that more than one file asserts the same entity identity — an ambiguous duplicate the core will not
+	/// silently pick a winner for. The issue is keyed on the <em>identity</em> (not a file path), so the sweep and a
+	/// live reconcile raise the one same error for the conflict however they find it, and the conflicting files are
+	/// carried in its <paramref name="files"/> for the user to resolve. <see cref="ReportIdentityUnique"/> resolves it
+	/// once only one file asserts the identity again.
+	/// </summary>
+	public void ReportDuplicateIdentity(string entityId, IReadOnlyList<string> files, string? detail = null)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(entityId);
+		Report(WatcherOperations.Identity, entityId, Check(WatcherOperations.DuplicateIdentity, failed: true, detail, files, entityId));
+	}
+
+	/// <summary>Reports that an identity is asserted by a single file, resolving any duplicate-identity flag for it.</summary>
+	public void ReportIdentityUnique(string entityId)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(entityId);
+		Report(WatcherOperations.Identity, entityId, Pass(WatcherOperations.DuplicateIdentity));
+	}
+
+	/// <summary>
 	/// Reports that discovery threw while passively inspecting a path (tier 1). A passive-read failure is advisory: we
 	/// could not read the file this pass, so it is left in place and re-checked. It surfaces at warning severity — it
 	/// does not, on its own, degrade health — and the retry sweep keeps re-inspecting the path until it reads cleanly,
