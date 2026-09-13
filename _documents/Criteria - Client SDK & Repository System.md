@@ -69,6 +69,18 @@ Tests live beside their subject as `plaintorch/**/*.test.ts` and run under **Vit
 | A nested `[null]`-holed array is withheld (IgnoreCycles hole) | fault | ✅ | `absorption.test.ts` |
 | A nested entity still merges its populated arrays and scalars | happy | ✅ | `absorption.test.ts` |
 
+## Navigation properties — `navigationProperties.test.ts`
+A null single-reference navigation (`directive`, `parentDirective`) is withheld unless the same payload also nulls its `<field>Id` — an id still set beside a null nav is incoherent, the signature of a nav that was not loaded rather than genuinely cleared. Closes the field-trial regressions where an objective update erased its directive and a directive banner lost its parent (while the tree, reading the scalar id, held).
+
+| Behaviour / Invariant | Kind | Status | Test ref |
+|---|---|---|---|
+| A lean update carrying `directive:null` (id still set) keeps the populated directive | fault | ✅ | `navigationProperties.test.ts` (nav-erasure regression) |
+| A summary `get` carrying `parentDirective:null` (id still set) keeps the parent | fault | ✅ | `navigationProperties.test.ts` (nav-erasure regression) |
+| A response that omits the nav key keeps it (omitted keys never merge) | edge | ✅ | `navigationProperties.test.ts` |
+| A nested null single-reference is withheld like an empty collection | fault | ✅ | `navigationProperties.test.ts` |
+| A genuine clear (FK and nav both null) still propagates | happy | ✅ | `navigationProperties.test.ts` |
+| Eviction retains a nav record via the closure and never nulls a field | edge | ✅ | `navigationProperties.test.ts` (rules out the eviction hypothesis) |
+
 ## Write cycle — `mutation.test.ts`
 | Behaviour / Invariant | Kind | Status | Test ref |
 |---|---|---|---|
@@ -180,6 +192,7 @@ The identity map is bounded by a reachability sweep. `collectEntityKeys` walks a
 - **Value-object false-tracking** — a reference carrying another entity's id (an endpoint) must never be tracked as an entity; guarded by `identity.test.ts`.
 - **Sparse-payload erasure** — a response that omits a field must not overwrite the cached value with a default; guarded by `entityStore.test.ts`.
 - **Include back-reference wipe** — a nested, unloaded collection (empty or `[null]`-holed) must not blank a collection a direct fetch populated; guarded by `absorption.test.ts`.
+- **Unloaded single-reference erasure** — a null single-reference nav (id still set) from a lean write or a summary must not blank a nav a listing populated; the FK's coherence tells an unloaded nav from a genuine clear; guarded by `navigationProperties.test.ts`.
 - **Sync reverting an edit** — a response issued before a local change must be discarded, not applied; guarded by `entityStore.test.ts` (supersede ordering).
 - **Socket pinning** — an undrained response body over the keep-alive pool exhausts it and looks like the core hanging; to be guarded by the Tier-3 transport suite.
 - **Hung request / dedup poisoning** — an unanswered request must settle as a bounded failure rather than poisoning an identity's in-flight entry forever; Tier-3.

@@ -30,26 +30,55 @@ export function createAbsorbingReviver(
 /**
  * The fields a payload is allowed to merge onto the canonical instance.
  *
- * The root of a response speaks for the entity it fetched, collections and all — a directly fetched onrush's
- * `checkpoints: []` is a genuine emptying and must apply. A *nested* entity does not: it is a back-reference
- * dragged in by an `Include`, and its navigations were not loaded, so the core serializes an unloaded
- * collection as an empty array and a cycle back-reference as a `[null]` hole (`ReferenceHandler.IgnoreCycles`
- * writes `null` where an object would recur). Either, merged, would wipe the collection a direct fetch had
- * populated — which is how a checkpoint vanished the moment an objective beside it was refetched, since the
- * objective carries the sprint as a back-reference. So a nested entity withholds its empty and holed arrays,
- * keeping only a genuinely populated one, while its scalar and single-reference fields merge as before.
+ * Two kinds of field are withheld, both because a lean or nested response carries them not as "this is
+ * cleared" but as "this was not loaded":
+ *
+ * **Unloaded collections.** The root of a response speaks for the entity it fetched — a directly fetched
+ * onrush's `checkpoints: []` is a genuine emptying and must apply. A *nested* entity does not: it is a
+ * back-reference dragged in by an `Include`, and its navigations were not loaded, so the core serializes an
+ * unloaded collection as an empty array and a cycle back-reference as a `[null]` hole
+ * (`ReferenceHandler.IgnoreCycles` writes `null` where an object would recur). Either, merged, would wipe the
+ * collection a direct fetch had populated — which is how a checkpoint vanished the moment an objective beside
+ * it was refetched. So a nested entity withholds its empty and holed arrays, keeping only a populated one.
+ *
+ * **Unloaded single references.** A navigation like `directive` serializes as `null` both when it is genuinely
+ * absent and when it was simply not loaded — a lean write (`objectives.update` returning a base objective) or a
+ * summary (`directives.get`) returns the entity with the nav `null` but its foreign key still set. Merged, that
+ * `null` wipes the nav a listing populated, while the `directiveId` beside it survives — the exact asymmetry a
+ * field trial hit (a banner's directive vanished on save while the tree, which reads the id, held). A genuine
+ * clear nulls the foreign key too, so the two are told apart by coherence: a null single reference is withheld
+ * unless the same payload also nulls its `<field>Id`. This applies to root and nested alike, since the lean
+ * write returns the entity as the root. A plain nullable scalar (no `<field>Id` companion, like a `due` date)
+ * is not a reference and always applies.
  *
  * Root is told from nested by the reviver key: `JSON.parse` calls the reviver for the whole document last,
  * under the empty key. Everything reached under a property name or an array index is nested.
  */
 function authoritativeKeys(key: string, payload: Record<string, unknown>): string[] {
-	const keys = Object.keys(payload)
-	if (key === '') {
-		return keys
-	}
-
-	return keys.filter(field => {
+	const isRoot = key === ''
+	return Object.keys(payload).filter(field => {
 		const value = payload[field]
-		return !Array.isArray(value) || (value.length > 0 && !value.some(item => item === null))
+
+		if (value === null) {
+			return !isUnloadedReference(field, payload)
+		}
+
+		if (Array.isArray(value)) {
+			return isRoot || (value.length > 0 && !value.some(item => item === null))
+		}
+
+		return true
 	})
+}
+
+/**
+ * Whether a null field is a navigation reference that was not loaded, rather than one genuinely cleared.
+ *
+ * Its foreign key tells them apart: an id still pointing somewhere beside a null nav is incoherent — the nav
+ * was not loaded. A genuine clear nulls the id too. A field with no `<field>Id` companion in the payload is a
+ * plain scalar, not a reference, and is never withheld on this account.
+ */
+function isUnloadedReference(field: string, payload: Record<string, unknown>): boolean {
+	const foreignKeyField = `${field}Id`
+	return foreignKeyField in payload && payload[foreignKeyField] !== null
 }
