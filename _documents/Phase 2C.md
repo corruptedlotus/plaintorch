@@ -7,3 +7,4 @@
 - [ ] show dependencies in onrush briefing
 - [x] updating a directive located outside the entity root causes it to be recreated inside the entity root as well
 - [x] remove enduring + normalise decree ATP
+- [ ] Directives render as PUCK when rendered in global planning as imported dependency

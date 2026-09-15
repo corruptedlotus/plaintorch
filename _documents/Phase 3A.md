@@ -1,6 +1,6 @@
 # Probably for Phase 3
-- [ ] Bug: Today resolves to yesterday in Pleiadean
-- [ ] Rework occurrence timing system 
+- [ ] Bug: Today resolves to yesterday in Pleiadean, sometimes?
+- [ ] Rework occurrence timing system
 - [ ] Orbits/Agenda number warning on overdue
 - [ ] Improve issue descriptions and names + dismissed pane
 - [ ] Improved Orbit human translation

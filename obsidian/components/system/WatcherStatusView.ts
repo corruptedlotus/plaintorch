@@ -124,7 +124,7 @@ export class WatcherStatusView extends Component {
 			.badge.info { color: var(--text-muted); }
 
 			.msg { min-width: 0; }
-			.path { grid-column: 2; font-size: .82em; color: var(--text-muted); word-break: break-all; }
+			.path { grid-column: 2; font-size: .8em; color: var(--text-accent); word-break: break-all; opacity: .7 }
 
 			.dismissed-header {
 				margin-top: .1em;

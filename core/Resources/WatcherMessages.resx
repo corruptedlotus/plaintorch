@@ -28,37 +28,37 @@
     <value>Watcher pending-drain tick failed.</value>
   </data>
   <data name="Reasons.DiscoveryFailed" xml:space="preserve">
-    <value>Watcher candidate discovery failed for an inspected path.</value>
+    <value>Candidate discovery failed for an inspected path.</value>
   </data>
   <data name="Reasons.PermissionDenied" xml:space="preserve">
-    <value>Watcher could not access a file due to filesystem permissions.</value>
+    <value>Could not access a file due to filesystem permissions.</value>
   </data>
   <data name="Reasons.FileInUse" xml:space="preserve">
-    <value>Watcher could not access a file because it is currently in use by another process.</value>
+    <value>Could not access a file because it is currently in use by another process.</value>
   </data>
   <data name="Reasons.MarkdownInvalid" xml:space="preserve">
-    <value>Watcher detected markdown/frontmatter validation problems for a candidate file.</value>
+    <value>Detected markdown/frontmatter validation problems for a candidate file.</value>
   </data>
   <data name="Reasons.PuckViolation" xml:space="preserve">
-    <value>Watcher detected a PUCK identity violation for a candidate file.</value>
+    <value>Detected a PUCK identity violation for a candidate file.</value>
   </data>
   <data name="Reasons.PolicyViolation" xml:space="preserve">
-    <value>Watcher detected a storage policy violation for a candidate file.</value>
+    <value>Detected a storage policy violation for a candidate file.</value>
   </data>
   <data name="Reasons.ForeignFile" xml:space="preserve">
-    <value>Watcher found a file asserting a PUCK identity the vault does not recognise. It is left in place — not purged — but flagged as an error for you to resolve: correct the identity, initialise it, or remove the assertion.</value>
+    <value>Found a file asserting a PUCK identity the vault does not recognise. Correct or remove the assertion.</value>
   </data>
   <data name="Reasons.SyncFailed" xml:space="preserve">
-    <value>Watcher failed to process a discovered candidate sync action.</value>
+    <value>Failed to process a discovered candidate sync action.</value>
   </data>
   <data name="Reasons.RelocationFailed" xml:space="preserve">
-    <value>Watcher failed to process a relocation candidate.</value>
+    <value>Failed to process a relocation candidate.</value>
   </data>
   <data name="Reasons.RootInitFailed" xml:space="preserve">
-    <value>Watcher failed to initialize a filesystem root observer.</value>
+    <value>Failed to initialize a filesystem root observer.</value>
   </data>
   <data name="Reasons.RootError" xml:space="preserve">
-    <value>Filesystem watcher reported a root-level runtime error.</value>
+    <value>Watcher reported a root-level runtime error.</value>
   </data>
   <data name="Reasons.Fatal" xml:space="preserve">
     <value>Watcher encountered a fatal unhandled exception and stopped.</value>
@@ -67,12 +67,12 @@
     <value>Watcher cannot reach the vault or one of its entity roots and has gone to sleep until access is restored.</value>
   </data>
   <data name="Reasons.DuplicateIdentity" xml:space="preserve">
-    <value>Watcher found more than one file asserting the same entity identity. Only one file may own an identity; resolve the ambiguity by removing or re-identifying the extra file(s).</value>
+    <value>Watcher found more than one file asserting the same entity identity.</value>
   </data>
 
   <!-- Details: parameterised detail lines appended to a reason message. -->
   <data name="Details.DuplicateIdentity" xml:space="preserve">
-    <value>asserted by {0} files: {1}</value>
+    <value>Asserted by {0} files: {1}</value>
   </data>
   <data name="Details.ValidationIssues" xml:space="preserve">
     <value>{0} validation issue(s). {1}: {2}</value>
@@ -89,7 +89,7 @@
 
   <!-- Decisions: the reason a storage-mode policy gives for its reconciliation action. -->
   <data name="Decisions.UntitledPlaceholderIgnored" xml:space="preserve">
-    <value>Untitled placeholder file is ignored until the user finalizes naming and identifier.</value>
+    <value>Untitled placeholder file is ignored until further change.</value>
   </data>
   <data name="Decisions.MissingRequiredPuckInputConflict" xml:space="preserve">
     <value>Path identity is missing required caller-provided PUCK input.</value>
@@ -104,7 +104,7 @@
     <value>Frontmatter PUCK identity exists in storage and can be synced from file.</value>
   </data>
   <data name="Decisions.ManualInitializationFromFile" xml:space="preserve">
-    <value>Manual initialization from a file without a frontmatter PUCK, requested through the API.</value>
+    <value>Manual initialization from a file without a frontmatter PUCK via API.</value>
   </data>
 
   <data name="Decisions.FreeformNoIdentityIgnored" xml:space="preserve">
