@@ -1,7 +1,7 @@
 import { component, css, event, html, nothing } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
 import { DependencyEndpointKind, Objective, ObjectiveStatus, OnrushSprint } from "@pleiades/sdk"
-import { core, DerivedRef } from ".."
+import { core, DerivedRef, tooltip } from ".."
 import { endpointKey, unresolvedPrerequisites } from "../canvas/graphModel"
 import { App, SuggestModal } from "obsidian"
 
@@ -46,6 +46,13 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 				font-variant-numeric: tabular-nums;
 				opacity: .8;
 			}
+
+			/* When the count hides non-objective prerequisites, mark it as hoverable for their tooltip. */
+			.dependency-count[data-detail] {
+				cursor: help;
+				text-decoration: underline dotted;
+				text-underline-offset: 2px;
+			}
 		`
 	}
 
@@ -89,7 +96,13 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 				<div class='dependency-group'>
 					<div class='dependency-group-heading'>
 						<span class='dependency-group-title'>${group.title}</span>
-						<span class='dependency-count'>${group.total}</span>
+						<span
+							class='dependency-count'
+							?data-detail=${group.nonObjectiveCount > 0}
+							${group.nonObjectiveCount > 0
+								? tooltip(() => html`<p7t-endpoint-list .endpoints=${group.refs} filter='non-objective'></p7t-endpoint-list>`)
+								: nothing}
+						>${group.total}</span>
 					</div>
 					${group.objectives.map(objective => html`
 						<p7t-objective-item interactive .entity=${objective}></p7t-objective-item>
@@ -129,7 +142,8 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 				.filter(ref => ref.kind === DependencyEndpointKind.Objective)
 				.map(ref => this.objectiveFor(ref.id))
 				.filter(hasId)
-			return [{ title: member.title, total: refs.length, objectives }]
+			const nonObjectiveCount = refs.filter(ref => ref.kind !== DependencyEndpointKind.Objective).length
+			return [{ title: member.title, total: refs.length, objectives, refs, nonObjectiveCount }]
 		})
 	}
 
