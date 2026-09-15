@@ -1,13 +1,26 @@
-import { component, css, event, html } from "@a11d/lit"
+import { component, css, html } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
 import { Objective, ObjectiveStatus, OnrushSprint } from "@pleiades/sdk"
-import { core } from ".."
+import { core, TransferController } from ".."
 import { App, SuggestModal } from "obsidian"
 
 @component('p7t-briefing-onrush')
 export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 	override readonly icon = 'onrush'
 	override readonly preHeading = 'Active Onrush'
+
+	/**
+	 * Offers the sprint's objectives to any host taking objectives — dragging one onto the Polaris card adds it
+	 * to the cycle. Outbound is `clone`: an objective planned into the cycle stays in the sprint. Source-only
+	 * for now — receiving would mean an add-to-onrush translation, and the default receive (appending to the
+	 * bag) must not touch an array the repository owns, so nothing is accepted rather than something wrong.
+	 */
+	protected readonly transfer = new TransferController<Objective>(this, {
+		kind: 'Objective',
+		accepts: [],
+		bag: () => this.data?.objectives,
+		outbound: 'clone',
+	})
 
 	static override get styles() {
 		return css`
@@ -42,7 +55,7 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 	protected override get listContent() {
 		return html`
 			${this.data!.objectives.map(objective => html`
-				<p7t-objective-item interactive .entity=${objective}></p7t-objective-item>
+				<p7t-objective-item interactive .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
 			`)}
 			<p7t-button @click=${() => this.addObjective()} icon='lucide:plus' class='add-button'>Add Objective</p7t-button>
 		`

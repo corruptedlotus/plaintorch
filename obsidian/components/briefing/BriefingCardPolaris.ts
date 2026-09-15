@@ -1,7 +1,7 @@
 import { component, css, eventListener, html, nothing, state } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
-import { Activity, Attentive, DecreeStatus, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
-import { core } from ".."
+import { Activity, Attentive, DecreeStatus, Objective, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
+import { core, TransferController } from ".."
 import { App, SuggestModal } from "obsidian"
 
 @component('p7t-briefing-polaris')
@@ -14,12 +14,42 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 
 	@state() private reflectivesExpanded = false
 
+	/**
+	 * Takes objectives dropped from any host offering them (the Onrush card). The receive is translated: rather
+	 * than the default append into a bag, an accepted objective is planned into the current cycle through the
+	 * same add-to-polaris path the picker and the item fly-out use, so the repository — not this card — owns
+	 * what the cycle then shows. Candidacy is decided at drag start: a cycle must be running, and the objective
+	 * must be live and not already an executive of it.
+	 */
+	protected readonly transfer = new TransferController<Objective>(this, {
+		accepts: ['Objective'],
+		canAccept: objective => !!this.data
+			&& objective.status < ObjectiveStatus.Archived
+			&& !this.data.executives.some(executive => executive.objectiveId === objective.id),
+		accept: objective => this.addObjectiveActivity(objective),
+	})
+
 	static override get styles() {
 		return css`
 			${super.styles}
 
 			:host {
 				--p7t-flare-accent: var(--p7t-accent-polaris);
+				outline: 2px dashed transparent;
+				outline-offset: -2px;
+				transition: outline-color .3s ease, box-shadow .3s ease;
+			}
+
+			/* A compatible objective is in the air: show the card as a place it can land. */
+			:host([transfer-target]) {
+				outline-color: color-mix(in srgb, var(--p7t-flare-accent) 55%, transparent);
+			}
+
+			/* ...and it is over the card. */
+			:host([transfer-over]) {
+				outline-style: solid;
+				outline-color: var(--p7t-flare-accent);
+				box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--p7t-flare-accent) 8%, transparent);
 			}
 
 			.add-button {
@@ -185,6 +215,21 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		if (!this.data) return
 		new AddActivityModal((window as any).app! as App, this).open()
 	}
+
+	/**
+	 * Plans an objective into the current cycle as an executive — the one add-to-polaris path, shared by the
+	 * picker and the transfer receive. The objective and briefing ride on the mutate; only the owning cycle
+	 * needs a nudge afterwards. Resolves to whether the core took it.
+	 */
+	async addObjectiveActivity(objective: Objective): Promise<boolean> {
+		if (!this.data) return false
+		const added = await core.repos.objectives.mutate(objective.id, async () =>
+			await core.polaris.addObjectiveToCurrent(objective.id))
+		if (added) {
+			await core.repos.polaris.revalidateObserved()
+		}
+		return added
+	}
 }
 
 /**
@@ -227,12 +272,7 @@ class AddActivityModal extends SuggestModal<Activity> {
 
 		const objective = activity.objective
 		if (!objective) return
-		const added = await core.repos.objectives.mutate(objective.id, async () =>
-			await core.polaris.addObjectiveToCurrent(objective.id))
-		if (added) {
-			// The objective and briefing ride on the mutate above; only the owning cycle needs a nudge.
-			await core.repos.polaris.revalidateObserved()
-		}
+		await this.host.addObjectiveActivity(objective)
 	}
 }
 
