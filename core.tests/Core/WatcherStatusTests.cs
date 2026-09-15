@@ -327,4 +327,31 @@ public sealed class WatcherStatusTests : VaultTestBase
 		Assert.Equal("error", record.Severity);
 		Assert.Contains(record.Files, file => file.Replace('\\', '/') == "Objectives/Bad.md");
 	}
+
+	[Fact]
+	public async Task The_wire_carries_the_reason_message_and_the_occurrence_detail_separately()
+	{
+		// The status keeps only the specific detail (here, the policy's reason); the generic descriptor message is a
+		// function of the reason code and is resolved when the record is built. The client gets both halves apart so it
+		// can show, fold, or hide the detail on its own — and the Instance-dismiss fingerprint stays about the problem.
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+		const string reason = "policy violation: unknown file placement";
+
+		watcher.ReportInspectCandidate(Candidate("Objectives/Bad.md", VaultSyncAction.Conflict, reason, VaultSyncConcern.PolicyViolation));
+		Assert.Equal(reason, Assert.Single(registry.GetActiveStatuses()).Detail);
+
+		var report = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<ISystemApi>()
+			.GetWatcherIssuesAsync(TestContext.Current.CancellationToken));
+		var record = Assert.Single(report.Issues);
+		Assert.Equal(WatcherOperations.Describe(WatcherOperations.PolicyViolation).Message, record.Message);
+		Assert.Equal(reason, record.Detail);
+
+		// A reason with nothing specific to add carries no detail at all, rather than repeating its message.
+		watcher.ReportInspectCandidate(Candidate("Objectives/Bad.md"));
+		watcher.ReportStartupScan(succeeded: false);
+		var scan = Assert.Single(registry.GetActiveStatuses());
+		Assert.Null(scan.Detail);
+	}
 }

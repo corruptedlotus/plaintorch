@@ -95,10 +95,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 	{
 		ArgumentNullException.ThrowIfNull(exception);
 		var reason = ClassifyOperationalFailure(exception, WatcherOperations.DiscoveryFailed);
-		var descriptor = WatcherOperations.Describe(reason);
-		var detail = string.IsNullOrWhiteSpace(exception.Message)
-			? descriptor.Message
-			: $"{descriptor.Message} {exception.Message}";
+		var detail = string.IsNullOrWhiteSpace(exception.Message) ? null : exception.Message;
 		Report(WatcherOperations.Reconcile, path, OperationCheck.Fail(reason, OperationSeverity.Warning, detail, files: [path]));
 	}
 
@@ -197,6 +194,11 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 
 	private static OperationCheck Pass(string reasonCode) => OperationCheck.Pass(reasonCode);
 
+	// A failing check carries ONLY the specific detail (the policy's reason, an exception message, a composed line) — never
+	// the reason's descriptor message. The descriptor message is a function of the reason code and is resolved where the
+	// status is presented (the system API looks it up per request), so the wire carries the two halves separately and a
+	// client can show, fold, or hide the detail independently. It also keeps the Instance-dismiss fingerprint (which is
+	// the detail) about the specific problem rather than the generic prose.
 	private static OperationCheck Check(string reasonCode, bool failed, string? detail = null, IReadOnlyList<string>? files = null, string? entityId = null)
 	{
 		if (!failed)
@@ -205,10 +207,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		}
 
 		var descriptor = WatcherOperations.Describe(reasonCode);
-		var message = string.IsNullOrWhiteSpace(detail)
-			? descriptor.Message
-			: $"{descriptor.Message} {detail}";
-		return OperationCheck.Fail(reasonCode, descriptor.Severity, message, files, entityId);
+		return OperationCheck.Fail(reasonCode, descriptor.Severity, string.IsNullOrWhiteSpace(detail) ? null : detail, files, entityId);
 	}
 
 	private static string ClassifyOperationalFailure(Exception exception, string fallbackReason)

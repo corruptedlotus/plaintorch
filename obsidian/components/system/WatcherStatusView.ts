@@ -124,7 +124,9 @@ export class WatcherStatusView extends Component {
 			.badge.info { color: var(--text-muted); }
 
 			.msg { min-width: 0; }
+			
 			.path { grid-column: 2; font-size: .8em; color: var(--text-accent); word-break: break-all; opacity: .7 }
+			.detail { grid-column: 2; font-size: .86em; color: var(--text-muted); }
 
 			.dismissed-header {
 				margin-top: .1em;
@@ -186,6 +188,7 @@ export class WatcherStatusView extends Component {
 					icon=${issue.dismissed ? 'lucide:undo-2' : 'lucide:ban'}
 					label=${issue.dismissed ? 'Undo' : 'Dismiss'}>
 				</p7t-button>
+				${issue.detail ? html`<span class="detail">${issue.detail}</span>` : nothing}
 				${path ? html`<span class="path">${path.replaceAll("\\", "/")}</span>` : nothing}
 			</div>
 		`

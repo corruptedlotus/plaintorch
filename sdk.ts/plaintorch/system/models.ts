@@ -36,7 +36,13 @@ export interface WatcherIssueRecord {
 	key: string
 	type: string
 	category: string
+	/** The reason's generic descriptor message — what this kind of issue means. */
 	message: string
+	/**
+	 * The specific detail of this occurrence (the policy's reason, an exception message, the offending files), or
+	 * undefined when the reason alone says it all. Separate from `message` so a surface can show, fold, or hide it.
+	 */
+	detail: string | undefined
 	isCritical: boolean
 	/** Graded severity: `info` | `warning` | `suspended` | `error` | `critical` (PEP108). */
 	severity: string

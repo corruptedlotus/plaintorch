@@ -45,11 +45,18 @@ public sealed record EntityExistence(
 /// <summary>
 /// Represents a watcher issue record exposed through system diagnostics APIs.
 /// </summary>
+/// <param name="Message">The reason's generic descriptor message (what this kind of issue means), resolved per request.</param>
+/// <param name="Detail">
+/// The specific detail of this occurrence — the policy's reason, an exception message, the offending files — or
+/// <see langword="null"/> when the reason alone says it all. Kept apart from <paramref name="Message"/> so a client can
+/// present, fold, or hide it independently.
+/// </param>
 public sealed record WatcherIssueRecord(
 	string Key,
 	string Type,
 	string Category,
 	string Message,
+	string? Detail,
 	bool IsCritical,
 	string Severity,
 	IReadOnlyList<string> Files,
