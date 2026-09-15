@@ -6,6 +6,7 @@ import {
 } from '..'
 import { openEntityNote } from './entityActions'
 import type { GridRow } from './entityTree'
+import { MediaReference } from '@pleiades/sdk'
 
 /**
  * The shared body of one grid line, for every grid variant.
@@ -194,9 +195,9 @@ export abstract class GridItemBase extends Component {
 						<p7t-icon class='chevron' icon=${row.expanded ? 'lucide:chevron-down' : 'lucide:chevron-right'}></p7t-icon>
 					`}
 				</div>
-				<p7t-icon class='kind' ${!this.kindName ? nothing : tooltip(this.kindName)} .icon=${this.kindIcon}></p7t-icon>
+				<p7t-media icon class='kind' .media=${this.entityIcon} ${!this.kindName ? nothing : tooltip(this.kindName)} .default=${this.kindIcon}></p7t-media>
 				<div class='leading'>${this.leadingCell}</div>
-				<span class='title'>${this.boundEntity!['title']}</span>
+				<p7t-editable-plaintext required class='title' ${this.binder.bind('title')}></p7t-editable-plaintext>
 			</div>
 			${this.middleCells.map(cell => html`<div class='cell'>${cell}</div>`)}
 			<div class='cell actions'>
@@ -212,6 +213,10 @@ export abstract class GridItemBase extends Component {
 
 	/** The icon of the entity's own kind, shown while the row is closed. */
 	protected abstract get kindIcon(): IconName
+
+	protected get entityIcon(): MediaReference | undefined {
+		return undefined
+	}
 
 	/** The name of the entity's own kind, shown as a tooltip on the kind icon. */
 	protected get kindName(): string | undefined {

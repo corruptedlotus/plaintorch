@@ -185,6 +185,7 @@ export class PlaintorchCoreClient {
 		for (const transport of this.transports) {
 			const response = await transport.send(request)
 			if (response?.ok) {
+				Promise.resolve().then(async () => console.log('PLAINTORCH called', request.path, JSON.parse(await response.text())))
 				return response
 			}
 		}

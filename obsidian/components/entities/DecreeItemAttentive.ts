@@ -30,29 +30,6 @@ export class DecreeItemAttentive extends DecreeItem {
 		return this.done
 	}
 
-	/** The affinity/Celestron slot is replaced with the occurrence's timing — due while pending, resolved once done. */
-	protected override get info() {
-		const attentive = this.attentive
-		if (!attentive) {
-			return html``
-		}
-
-		// While pending, the relative chip ticks live and flags an overdue occurrence red via warn="past".
-		if (!this.done) {
-			return html`
-				<p7t-datetime-view relative warn='past' .date=${attentive.date} .time=${attentive.time}></p7t-datetime-view>
-			`
-		}
-
-		if (!attentive.resolvedOn) {
-			return html``
-		}
-
-		return html`
-			<p7t-datetime-view relative .date=${attentive.resolvedOn}></p7t-datetime-view>
-		`
-	}
-
 	protected override get extraActionTemplate() {
 		// Already bound to this cycle, so there is nothing to add — the add affordance belongs to the bare decree item.
 		return undefined

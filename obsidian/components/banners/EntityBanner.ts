@@ -126,7 +126,7 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 			}
 
 			:host::part(pre-heading) {
-				color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 70%, transparent);
+				color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 80%, transparent);
 				font-size: .8em;
 				line-height: .8;
 			}
@@ -208,6 +208,7 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 					font-size: 1.1em;
 					font-family: var(--font-interface);
 					align-items: flex-start;
+					opacity: .9;
 				}
 
 				& .info {

@@ -1,0 +1,9 @@
+- [x] updating entities causes their navigation properties to evict?
+- [x] directives not showing their parents at all
+- [x] optional in-grid editable title
+- [ ] lore grid incorrect active lore detection
+- [x] entity grid directive icons
+- [x] Directive breadcrumb
+- [ ] show dependencies in onrush briefing
+- [x] updating a directive located outside the entity root causes it to be recreated inside the entity root as well
+- [x] remove enduring + normalise decree ATP

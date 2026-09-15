@@ -30,7 +30,7 @@ export class LorePage {
 /** A lore page within the chronology index: the page (with its inherited {@link LorePage.isActive}) plus, when the index is structured, its child pages. */
 @model("IndexedLorePage")
 export class IndexedLorePage extends LorePage {
-	children?: IndexedLorePage[]
+	children?: IndexedLorePage[] = undefined
 }
 
 /** In-place edit of a lore page's frontmatter-backed metadata (its title/hierarchy are path-derived, not editable). */

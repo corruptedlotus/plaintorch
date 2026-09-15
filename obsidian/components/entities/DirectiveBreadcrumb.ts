@@ -69,6 +69,11 @@ export class DirectiveBreadcrumb extends Component {
 				flex: 0 0 auto;
 				opacity: .5;
 			}
+
+			p7t-directive-item[small] {
+				font-size: .96em;
+				opacity: .8;
+			}
 		`
 	}
 
@@ -81,9 +86,7 @@ export class DirectiveBreadcrumb extends Component {
 		return html`
 			${repeat(chain, directive => directive.id, (directive, index) => html`
 				${index === 0 ? nothing : html`<p7t-icon class='chevron' part='chevron' icon='lucide:chevron-left'></p7t-icon>`}
-				<span class='crumb' part='crumb' role='link' @click=${() => void navigateToEntity(directive.id)}>
-					<p7t-directive-item .directive=${directive}></p7t-directive-item>
-				</span>
+				<p7t-directive-item ?small=${index > 0} @click=${() => void navigateToEntity(directive.id)} .directive=${directive}></p7t-directive-item>
 			`)}
 		`
 	}

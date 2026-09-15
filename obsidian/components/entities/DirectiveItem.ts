@@ -23,14 +23,13 @@ export class DirectiveItem extends InfoItem {
 			${super.styles}
 
 			.info-bullet {
-				opacity: .7;
 				font-weight: 400;
 				font-size: .9em;
 				line-height: .9;
 			}
 
 			.placeholder {
-				opacity: .5;
+				opacity: .7;
 				font-weight: 400;
 				font-size: .9em;
 				line-height: .9;

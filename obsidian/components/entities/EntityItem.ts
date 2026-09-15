@@ -100,6 +100,7 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 				</div>
 				<div class='title'>
 					<span @click=${() => this.titleAction()}>${this.entity?.title}</span>
+					${this.titleSuffix}
 				</div>
 			</div>
 			${this.highlightInfo}
@@ -114,6 +115,10 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 	}
 
 	protected get preTitle() {
+		return html``
+	}
+
+	protected get titleSuffix() {
 		return html``
 	}
 

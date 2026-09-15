@@ -1,7 +1,7 @@
 import { component, css, html, HTMLTemplateResult } from "@a11d/lit"
 import { EntityItem } from "./EntityItem"
 import { Decree, DecreeStatus } from "@pleiades/sdk"
-import { core } from ".."
+import { core, tooltip } from ".."
 
 /**
  * List-row for a decree, the decree-side twin of {@link ObjectiveItem}: its toplane carries the directive glyph and
@@ -26,6 +26,17 @@ export class DecreeItem extends EntityItem<Decree> {
 				align-items: center;
 				justify-content: center;
 			}
+
+			.attentive-indicator {
+				background-color: color-mix(in srgb, var(--p7t-flare-accent) 16%, transparent);
+				border-radius: 6px;
+				font-size: .96em;
+				color: color-mix(in srgb, var(--p7t-flare-accent) 70%, var(--text-normal));
+			}
+
+			p7t-celestron-item {
+				color: color-mix(in srgb, var(--p7t-flare-accent) 70%, var(--text-normal));
+			}
 		`
 	}
 
@@ -37,9 +48,17 @@ export class DecreeItem extends EntityItem<Decree> {
 		return html`<p7t-directive-item small .directive=${this.decree!.directive}></p7t-directive-item>`
 	}
 
+	protected override get titleSuffix() {
+		return html`
+			<p7t-icon ${tooltip('Attentive')} class='attentive-indicator' icon='attentive'></p7t-icon>
+		`
+	}
+
 	protected override get info() {
 		// A decree's reward is its per-attentive active Celestron, granted on each execution.
-		return html`<p7t-celestron-item small .value=${this.decree!.activeCelestron}></p7t-celestron-item>`
+		return html`
+			<p7t-celestron-item small .value=${this.decree!.activeCelestron}></p7t-celestron-item>
+		`
 	}
 
 	protected override get extraActionTemplate(): HTMLTemplateResult | undefined {

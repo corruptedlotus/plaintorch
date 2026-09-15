@@ -94,6 +94,7 @@ export const itemLayoutStyles = css`
 		align-items: center;
 		justify-content: flex-start;
 		cursor: pointer;
+		gap: .4ch;
 	}
 
 	.part {
@@ -104,6 +105,10 @@ export const itemLayoutStyles = css`
 		&:hover {
 			border-color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 60%, transparent);
 		}
+	}
+	
+	p7t-directive-item {
+		opacity: .6;
 	}
 
 	.grid.disabled,

@@ -1,0 +1,23 @@
+# Probably for Phase 3
+- [ ] Bug: Today resolves to yesterday in Pleiadean
+- [ ] Rework occurrence timing system 
+- [ ] Orbits/Agenda number warning on overdue
+- [ ] Improve issue descriptions and names + dismissed pane
+- [ ] Improved Orbit human translation
+- [ ] Core domain sanity
+- [ ] Mass-init + context-menu initialisation
+- [ ] Convert Directive ↔ Incentive
+- [ ] New PUCK notations
+- [ ] Show active timeframe
+- [ ] assess the possibility and requirements of adding entire directives to an onrush as well, with the law in mind that "a directive is automatically dependent on all of its children and incentives without requiring any definition".
+- [ ] [[PEP097 - Filename Constraints & Conversions]]
+- [ ] [[PEP104 - Reflective Generation Engine]]
+- [ ] [[PEP107 - Forecast View & Agenda Display (Mitra)]]
+- [ ] Markdown parent override + solidify parent option/command (Patch for [[PEP083 - Parent Folder Partitioning]])
+- [ ] Manual Eventive instances + Instance agenda view for scheduled entities (Patch for [[PEP100 - Moonlight Directives, The Declarative Ecosystem & Timeframes]])
+- [ ] Unify "extra view parts" as an extension to the note banner system (eg. what we currently have for Timeframes and ExecutiveOrders)
+- [ ] User preferences
+- [ ] Controlled logging
+- [ ] Separate Orbit library
+- [ ] Launcher process
+- [ ] Package

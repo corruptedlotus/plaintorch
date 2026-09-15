@@ -103,7 +103,7 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 				<p7t-objective-item-exec interactive .entity=${executive.objective} .executive=${executive}></p7t-objective-item-exec>
 			`)}
 			${(this.data!.attentives ?? []).map(attentive => html`
-				<p7t-decree-item-attentive interactive .attentive=${attentive}></p7t-decree-item-attentive>
+				<p7t-decree-item-attentive interactive .entity=${attentive.decree} .attentive=${attentive}></p7t-decree-item-attentive>
 			`)}
 			<p7t-button @click=${() => this.addActivity()} icon='lucide:plus' class='add-button'>Add Activity</p7t-button>
 		`

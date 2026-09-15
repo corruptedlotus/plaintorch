@@ -1,5 +1,5 @@
 import { component, css, html, HTMLTemplateResult, nothing, property, PropertyValues } from '@a11d/lit'
-import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, type Directive } from '@pleiades/sdk'
+import { DecreeStatus, Directive, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus } from '@pleiades/sdk'
 import {
 	getApp, IconName, LunarDirectiveModal, type ScheduleValue,
 	SelectDirectiveStatusModal, SelectLunarDirectiveStatusModal, SelectObjectiveStatusModal
@@ -70,6 +70,15 @@ export class GridItem extends GridItemBase {
 
 	protected override get kindName() {
 		return entityKindLabel(entityKindOf(this.row!.entity as GridEntity))
+	}
+
+	protected override get entityIcon() {
+		const entity = this.row?.entity
+		if (entity instanceof Directive) {
+			return entity.iconMedia
+		}
+
+		return undefined
 	}
 
 	/**
