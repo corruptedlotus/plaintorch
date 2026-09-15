@@ -7,14 +7,20 @@ public sealed class CoreCommandForwarder
 {
 	public Task<int> ForwardAsync(string commandName, string? vaultPath = null)
 	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
-		var arguments = new List<string> { commandName };
+		var arguments = new List<string>();
 		if (!string.IsNullOrWhiteSpace(vaultPath))
 		{
 			arguments.Add("--vault");
 			arguments.Add(vaultPath);
 		}
 
-		return Pleiades.Plaintorch.Program.Main(arguments.ToArray());
+		return ForwardAsync(commandName, arguments);
+	}
+
+	public Task<int> ForwardAsync(string commandName, IReadOnlyList<string> coreArguments)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+		ArgumentNullException.ThrowIfNull(coreArguments);
+		return Pleiades.Plaintorch.Program.Main([commandName, .. coreArguments]);
 	}
 }

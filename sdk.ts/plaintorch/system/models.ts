@@ -28,8 +28,25 @@ export interface SystemBriefing {
 	activeLorePages: IndexedLorePage[]
 }
 
+/** The core's lifecycle phase, as `PlaintorchHostPhase` serializes it. */
+export type CorePhase = "Starting" | "Idle" | "Activating" | "Active" | "Failed" | "Stopping"
+
 export interface HealthStatus {
 	status: string
+	/** `idle` while no vault is served, `active` once one is. */
+	mode: "idle" | "active"
+	/** The vault being served, when any. */
+	activeVault?: string
+	/** The finer lifecycle phase behind `mode`, observable even while a vault is still activating or has failed to. */
+	phase: CorePhase
+	/** A human-readable line describing the phase. */
+	message?: string
+	/** The vault the phase concerns, when any (a failed activation names the vault that failed). */
+	vault?: string
+	/** The transport endpoint the core answered on. */
+	endpoint: string
+	/** When the current phase began. */
+	since: string
 }
 
 export interface WatcherIssueRecord {

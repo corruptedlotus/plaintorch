@@ -6,6 +6,7 @@ using Pleiades.Puck;
 using Pleiades.Diagnostics;
 using Pleiades.Plaintorch.Api.Changes;
 using Pleiades.Plaintorch.Diagnostics;
+using Pleiades.Plaintorch.Hosting;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.Media;
 using Pleiades.Plaintorch.State;
@@ -32,6 +33,7 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<PlaintorchUserConfigurationStore>();
 		services.AddSingleton<PlaintorchVaultActivationService>();
 		services.AddSingleton<ActiveVaultSession>();
+		services.AddSingleton<PlaintorchHostState>();
 		services.AddSingleton<VaultLayout>(serviceProvider =>
 			serviceProvider.GetService<VaultOptions>() is { } vaultOptions
 				? new VaultLayout(vaultOptions)
@@ -98,7 +100,6 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<WatcherRetryScheduler>();
 		services.AddSingleton<VaultStorageTopologyValidator>();
 		services.AddSingleton<PlaintorchVaultLockService>();
-		services.AddSingleton<PlaintorchCoreSplashService>();
 		services.AddSingleton<PlaintorchServiceBootstrapper>();
 		services.AddScoped<IVaultStorageModePolicyService, FreeformVaultStorageModePolicyService>();
 		services.AddScoped<IVaultStorageModePolicyService, ImplicitVaultStorageModePolicyService>();
