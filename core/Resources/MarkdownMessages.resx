@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Frontmatter validation and conversion messages (the text of a MarkdownValidationIssue), keyed by the accessor that
+  reads them (MarkdownMessages.cs). These surface inside watcher issues and API validation errors alike, so they live
+  in their own sheet rather than under the watcher's. Format placeholders are positional ({0}, {1}).
+  To localise, add a culture sheet beside this one (MarkdownMessages.<culture>.resx) with the same keys.
+-->
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="FieldRequired" xml:space="preserve">
+    <value>Field is required.</value>
+  </data>
+  <data name="FieldEmpty" xml:space="preserve">
+    <value>Field cannot be empty.</value>
+  </data>
+  <data name="EnumValueUndefined" xml:space="preserve">
+    <value>Value '{0}' is not a defined {1} state.</value>
+  </data>
+  <data name="EnumValueInvalid" xml:space="preserve">
+    <value>Value '{0}' is not a valid {1} state. Expected one of: {2}.</value>
+  </data>
+  <data name="RelatedPuckInvalid" xml:space="preserve">
+    <value>Value '{0}' is not a valid {1} PUCK: {2}</value>
+  </data>
+  <data name="MissingRequiredPuckInput" xml:space="preserve">
+    <value>Path identity is missing required caller-provided PUCK input.</value>
+  </data>
+  <data name="ExecutiveOrderSprintUnresolved" xml:space="preserve">
+    <value>Executive order path does not resolve to a known owning onrush sprint.</value>
+  </data>
+  <data name="DirectiveRelationMismatch" xml:space="preserve">
+    <value>Frontmatter directive relation does not match the path-derived directive container.</value>
+  </data>
+</root>

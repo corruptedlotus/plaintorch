@@ -1,3 +1,4 @@
+using Pleiades.Resources;
 using Pleiades.Vault.Watcher;
 
 namespace Pleiades.Vault.Policy;
@@ -15,17 +16,17 @@ public sealed class SyncedVaultStorageModePolicyService : PathBoundVaultStorageM
 	{
 		if (string.IsNullOrWhiteSpace(context.PathId) && IsUntitledPlaceholder(context.PathTitle))
 		{
-			return new(VaultSyncAction.Ignore, "Untitled placeholder file is ignored until the user finalizes naming and identifier.");
+			return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.UntitledPlaceholderIgnored);
 		}
 
 		if (string.IsNullOrWhiteSpace(context.PathId))
 		{
 			if (context.RequiresCallerInput)
 			{
-				return new(VaultSyncAction.Conflict, "Path identity is missing required caller-provided PUCK input.", VaultSyncConcern.PuckViolation);
+				return new(VaultSyncAction.Conflict, WatcherMessages.Decisions.MissingRequiredPuckInputConflict, VaultSyncConcern.PuckViolation);
 			}
 
-			return new(VaultSyncAction.CreateFromFile, "Title-only file discovered for an auto-generated PUCK entity; synced storage allows file-originated creation.");
+			return new(VaultSyncAction.CreateFromFile, WatcherMessages.Decisions.SyncedTitleOnlyCreated);
 		}
 
 		var exists = context.KnownIds.Contains(context.PathId);
@@ -33,27 +34,27 @@ public sealed class SyncedVaultStorageModePolicyService : PathBoundVaultStorageM
 		{
 			if (exists)
 			{
-				return new(VaultSyncAction.DeleteFromDatabase, "Synced storage removes known entities when their file is deleted.");
+				return new(VaultSyncAction.DeleteFromDatabase, WatcherMessages.Decisions.SyncedDeletedFileRemovesEntity);
 			}
 
-			return new(VaultSyncAction.Ignore, "Missing file does not map to a known entity in synced storage.");
+			return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.SyncedMissingFileUnknownEntity);
 		}
 
 		if (context.IssueMessages.Count > 0)
 		{
 			if (!exists)
 			{
-				return new(VaultSyncAction.Conflict, "Candidate has validation issues that require reconciliation.", VaultSyncConcern.MarkdownInvalid);
+				return new(VaultSyncAction.Conflict, WatcherMessages.Decisions.InvalidCandidateConflict, VaultSyncConcern.MarkdownInvalid);
 			}
 
-			return new(VaultSyncAction.RewriteFromDatabase, "Candidate has validation issues and synced policy prefers canonical rewrite.", VaultSyncConcern.MarkdownInvalid);
+			return new(VaultSyncAction.RewriteFromDatabase, WatcherMessages.Decisions.SyncedInvalidCandidateRewritten, VaultSyncConcern.MarkdownInvalid);
 		}
 
 		if (exists)
 		{
-			return new(VaultSyncAction.UpdateFromFile, "Path identity already exists in the database.");
+			return new(VaultSyncAction.UpdateFromFile, WatcherMessages.Decisions.PathIdentityExists);
 		}
 
-		return new(VaultSyncAction.CreateFromFile, "Synced storage allows file-originated creation.");
+		return new(VaultSyncAction.CreateFromFile, WatcherMessages.Decisions.SyncedFileOriginatedCreation);
 	}
 }

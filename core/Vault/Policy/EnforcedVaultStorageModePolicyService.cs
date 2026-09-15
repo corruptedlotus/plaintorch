@@ -1,3 +1,4 @@
+using Pleiades.Resources;
 using Pleiades.Vault.Watcher;
 
 namespace Pleiades.Vault.Policy;
@@ -19,17 +20,17 @@ public sealed class EnforcedVaultStorageModePolicyService : PathBoundVaultStorag
 	{
 		if (string.IsNullOrWhiteSpace(context.PathId) && IsUntitledPlaceholder(context.PathTitle))
 		{
-			return new(VaultSyncAction.Ignore, "Untitled placeholder file is ignored until the user finalizes naming and identifier.");
+			return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.UntitledPlaceholderIgnored);
 		}
 
 		if (string.IsNullOrWhiteSpace(context.PathId))
 		{
 			if (context.RequiresCallerInput)
 			{
-				return new(VaultSyncAction.PurgeFile, "Path identity is missing required caller-provided PUCK input and enforced storage disallows unresolved files.", VaultSyncConcern.PuckViolation);
+				return new(VaultSyncAction.PurgeFile, WatcherMessages.Decisions.EnforcedMissingRequiredPuckInputPurged, VaultSyncConcern.PuckViolation);
 			}
 
-			return new(VaultSyncAction.PurgeFile, "Title-only file discovered for an auto-generated PUCK entity; enforced storage disallows unresolved files.", VaultSyncConcern.PolicyViolation);
+			return new(VaultSyncAction.PurgeFile, WatcherMessages.Decisions.EnforcedTitleOnlyPurged, VaultSyncConcern.PolicyViolation);
 		}
 
 		var exists = context.KnownIds.Contains(context.PathId);
@@ -37,10 +38,10 @@ public sealed class EnforcedVaultStorageModePolicyService : PathBoundVaultStorag
 		{
 			if (exists)
 			{
-				return new(VaultSyncAction.RewriteFromDatabase, "Enforced storage keeps canonical entities when files are removed and rewrites canonical markdown.");
+				return new(VaultSyncAction.RewriteFromDatabase, WatcherMessages.Decisions.EnforcedDeletedFileRewritten);
 			}
 
-			return new(VaultSyncAction.Ignore, "Missing file does not map to a known entity in enforced storage.");
+			return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.EnforcedMissingFileUnknownEntity);
 		}
 
 		if (context.IssueMessages.Count > 0)
@@ -49,17 +50,17 @@ public sealed class EnforcedVaultStorageModePolicyService : PathBoundVaultStorag
 			{
 				// An unknown file is disallowed regardless of content, so the policy rejection is the root concern and
 				// subsumes the incidental validation issues.
-				return new(VaultSyncAction.PurgeFile, "Unknown file with validation issues is disallowed by enforced storage policy.", VaultSyncConcern.PolicyViolation);
+				return new(VaultSyncAction.PurgeFile, WatcherMessages.Decisions.EnforcedUnknownFileWithIssuesPurged, VaultSyncConcern.PolicyViolation);
 			}
 
-			return new(VaultSyncAction.RewriteFromDatabase, "Candidate has validation issues and enforced policy prefers canonical rewrite.", VaultSyncConcern.MarkdownInvalid);
+			return new(VaultSyncAction.RewriteFromDatabase, WatcherMessages.Decisions.EnforcedInvalidCandidateRewritten, VaultSyncConcern.MarkdownInvalid);
 		}
 
 		if (exists)
 		{
-			return new(VaultSyncAction.UpdateFromFile, "Path identity already exists in the database.");
+			return new(VaultSyncAction.UpdateFromFile, WatcherMessages.Decisions.PathIdentityExists);
 		}
 
-		return new(VaultSyncAction.PurgeFile, "Unknown file is disallowed by enforced storage policy.", VaultSyncConcern.PolicyViolation);
+		return new(VaultSyncAction.PurgeFile, WatcherMessages.Decisions.EnforcedUnknownFilePurged, VaultSyncConcern.PolicyViolation);
 	}
 }

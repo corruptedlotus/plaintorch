@@ -1,3 +1,4 @@
+using Pleiades.Resources;
 using Pleiades.Vault.Watcher;
 
 namespace Pleiades.Vault.Policy;
@@ -15,17 +16,17 @@ public sealed class OptionalVaultStorageModePolicyService : PathBoundVaultStorag
 	{
 		if (string.IsNullOrWhiteSpace(context.PathId) && IsUntitledPlaceholder(context.PathTitle))
 		{
-			return new(VaultSyncAction.Ignore, "Untitled placeholder file is ignored until the user finalizes naming and identifier.");
+			return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.UntitledPlaceholderIgnored);
 		}
 
 		if (string.IsNullOrWhiteSpace(context.PathId))
 		{
 			if (context.RequiresCallerInput)
 			{
-				return new(VaultSyncAction.Ignore, "Path identity is missing required caller-provided PUCK input and optional storage cannot create entities from this file.");
+				return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.OptionalMissingRequiredPuckInputIgnored);
 			}
 
-			return new(VaultSyncAction.Ignore, "Optional storage does not create new title-only files by default.");
+			return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.OptionalTitleOnlyIgnored);
 		}
 
 		var exists = context.KnownIds.Contains(context.PathId);
@@ -33,10 +34,10 @@ public sealed class OptionalVaultStorageModePolicyService : PathBoundVaultStorag
 		{
 			if (exists)
 			{
-				return new(VaultSyncAction.DeleteFromDatabase, "Optional storage removes known entities when their file is deleted.");
+				return new(VaultSyncAction.DeleteFromDatabase, WatcherMessages.Decisions.OptionalDeletedFileRemovesEntity);
 			}
 
-			return new(VaultSyncAction.Ignore, "Missing file does not map to a known entity in optional storage.");
+			return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.OptionalMissingFileUnknownEntity);
 		}
 
 		if (context.IssueMessages.Count > 0)
@@ -45,17 +46,17 @@ public sealed class OptionalVaultStorageModePolicyService : PathBoundVaultStorag
 			{
 				// Optional storage passively ignores unknown standalone files; a validation issue on such a file is still
 				// surfaced by the reporter's markdown floor, but the mode itself asserts no policy/identity concern here.
-				return new(VaultSyncAction.Ignore, "Optional storage does not create new entities from invalid standalone files.");
+				return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.OptionalInvalidStandaloneIgnored);
 			}
 
-			return new(VaultSyncAction.RewriteFromDatabase, "Candidate has validation issues and optional policy prefers canonical rewrite.", VaultSyncConcern.MarkdownInvalid);
+			return new(VaultSyncAction.RewriteFromDatabase, WatcherMessages.Decisions.OptionalInvalidCandidateRewritten, VaultSyncConcern.MarkdownInvalid);
 		}
 
 		if (exists)
 		{
-			return new(VaultSyncAction.UpdateFromFile, "Path identity already exists in the database.");
+			return new(VaultSyncAction.UpdateFromFile, WatcherMessages.Decisions.PathIdentityExists);
 		}
 
-		return new(VaultSyncAction.Ignore, "Optional storage does not create new entities from standalone files by default.");
+		return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.OptionalStandaloneIgnored);
 	}
 }

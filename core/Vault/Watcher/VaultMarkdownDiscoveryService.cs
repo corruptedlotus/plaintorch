@@ -4,6 +4,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
+using Pleiades.Resources;
 using Pleiades.Saga;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
@@ -454,7 +455,7 @@ public sealed class VaultMarkdownDiscoveryService(
 
 		if (string.IsNullOrWhiteSpace(pathId) && puckCreationService.RequiresCallerInputFor(instantiationType))
 		{
-			issues.Add(new MarkdownValidationIssue("id", "Path identity is missing required caller-provided PUCK input."));
+			issues.Add(new MarkdownValidationIssue("id", MarkdownMessages.MissingRequiredPuckInput, Code: MarkdownValidationCodes.MissingRequiredPuckInput));
 		}
 
 		var boundaryBegun = true;
@@ -518,7 +519,7 @@ public sealed class VaultMarkdownDiscoveryService(
 			{
 				issues.Add(new MarkdownValidationIssue(
 					"onrush",
-					"Executive order path does not resolve to a known owning onrush sprint.",
+					MarkdownMessages.ExecutiveOrderSprintUnresolved,
 					order.OnrushSprintId));
 			}
 
@@ -662,7 +663,7 @@ public sealed class VaultMarkdownDiscoveryService(
 				{
 					if (!string.IsNullOrWhiteSpace(incentive.DirectiveId))
 					{
-						issues.Add(new MarkdownValidationIssue("directive", "Frontmatter directive relation does not match the path-derived directive container.", incentive.DirectiveId));
+						issues.Add(new MarkdownValidationIssue("directive", MarkdownMessages.DirectiveRelationMismatch, incentive.DirectiveId));
 					}
 
 					incentive.DirectiveId = pathDirectiveId;

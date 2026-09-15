@@ -26,6 +26,15 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<!-- Message sheets (Pleiades.Resources.*): embedded, so they need no file beside the binary and read through
+		     ResourceManager with culture fallback. The logical name pins the manifest name the accessors resolve
+		     (Pleiades.Resources.<Sheet>[.<culture>].resources) independently of the assembly's root namespace. -->
+		<EmbeddedResource Update="Resources\*.resx">
+			<LogicalName>Pleiades.Resources.%(Filename).resources</LogicalName>
+		</EmbeddedResource>
+	</ItemGroup>
+
+	<ItemGroup>
 		<Content Include="Assets\**\*">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Reflection;
+using Pleiades.Resources;
 using Pleiades.Vault.Markdown;
 
 using Pleiades.Vault.Watcher;
@@ -143,50 +144,50 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout)
 	{
 		if (string.IsNullOrWhiteSpace(path))
 		{
-			return "Path is empty.";
+			return WatcherMessages.PathViolations.PathEmpty;
 		}
 
 		var fullPath = Path.GetFullPath(path);
 		if (!IsUnderVaultRoot(fullPath))
 		{
-			return "Path is outside the active vault root.";
+			return WatcherMessages.PathViolations.PathOutsideVaultRoot;
 		}
 
 		if (!string.Equals(Path.GetExtension(fullPath), ".md", StringComparison.OrdinalIgnoreCase))
 		{
-			return "Path is not a markdown file.";
+			return WatcherMessages.PathViolations.PathNotMarkdown;
 		}
 
 		var directory = Path.GetDirectoryName(fullPath);
 		if (string.IsNullOrWhiteSpace(directory))
 		{
-			return "Path does not resolve to a directory.";
+			return WatcherMessages.PathViolations.PathHasNoDirectory;
 		}
 
 		if (IsVaultRootDirectory(directory))
 		{
-			return "Freeform directive cannot assert ownership of the vault root directory.";
+			return WatcherMessages.PathViolations.CannotOwnVaultRoot;
 		}
 
 		if (IsEntityRootDirectory(directory))
 		{
-			return "Freeform directive cannot assert ownership of an entity root directory.";
+			return WatcherMessages.PathViolations.CannotOwnEntityRoot;
 		}
 
 		if (IsPartitionDirectory(directory))
 		{
-			return "Freeform directive cannot assert ownership of a partition directory.";
+			return WatcherMessages.PathViolations.CannotOwnPartition;
 		}
 
 		if (IsUnderNonDirectiveManagedRoot(directory))
 		{
-			return "Freeform directive path is under a managed root reserved for non-directive entities.";
+			return WatcherMessages.PathViolations.UnderNonDirectiveRoot;
 		}
 
 		var parent = Directory.GetParent(directory)?.FullName;
 		if (!string.IsNullOrWhiteSpace(parent) && IsUnderNonDirectiveManagedRoot(parent))
 		{
-			return "Freeform directive parent directory is under a managed root reserved for non-directive entities.";
+			return WatcherMessages.PathViolations.ParentUnderNonDirectiveRoot;
 		}
 
 		return null;

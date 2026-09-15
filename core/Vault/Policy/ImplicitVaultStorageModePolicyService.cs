@@ -1,4 +1,5 @@
 using Pleiades.Puck;
+using Pleiades.Resources;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Watcher;
 
@@ -115,7 +116,7 @@ public sealed class ImplicitVaultStorageModePolicyService(
 
 		if (string.IsNullOrWhiteSpace(context.PathId))
 		{
-			return new(VaultSyncAction.Ignore, "Implicit storage does not auto-create entities from files without frontmatter PUCK identity.");
+			return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.ImplicitNoIdentityIgnored);
 		}
 
 		var exists = context.KnownIds.Contains(context.PathId);
@@ -123,15 +124,15 @@ public sealed class ImplicitVaultStorageModePolicyService(
 		{
 			if (exists && context.BoundaryBegun)
 			{
-				return new(VaultSyncAction.DeleteFromDatabase, "Implicit storage removes known entities when their boundary-begun file is deleted.");
+				return new(VaultSyncAction.DeleteFromDatabase, WatcherMessages.Decisions.ImplicitDeletedFileRemovesEntity);
 			}
 
 			if (exists)
 			{
-				return new(VaultSyncAction.Ignore, "Implicit entity has no begun synchronization boundary, so a missing file is not authoritative.");
+				return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.ImplicitBoundaryNotBegun);
 			}
 
-			return new(VaultSyncAction.Ignore, "Missing implicit file does not map to a known PUCK identity.");
+			return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.ImplicitMissingFileUnknownIdentity);
 		}
 
 		if (context.IssueMessages.Count > 0)
@@ -141,17 +142,17 @@ public sealed class ImplicitVaultStorageModePolicyService(
 				// Implicit belonging is identity-driven in a non-exclusive root: the core does not destroy the file, but
 				// asserting a PUCK it does not recognise is illegal — left in place, flagged as an error for the user to
 				// resolve (dismissible), not silently purged.
-				return new(VaultSyncAction.Ignore, "Unrecognised implicit PUCK assertion (with validation issues) is left in place as an unmanaged file.", VaultSyncConcern.ForeignFile);
+				return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.ImplicitUnrecognisedAssertionWithIssues, VaultSyncConcern.ForeignFile);
 			}
 
-			return new(VaultSyncAction.RewriteFromDatabase, "Implicit candidate has validation issues and must be rewritten from canonical state.", VaultSyncConcern.MarkdownInvalid);
+			return new(VaultSyncAction.RewriteFromDatabase, WatcherMessages.Decisions.ImplicitInvalidCandidateRewritten, VaultSyncConcern.MarkdownInvalid);
 		}
 
 		if (exists)
 		{
-			return new(VaultSyncAction.UpdateFromFile, "Frontmatter PUCK identity exists in storage and can be synced from file.");
+			return new(VaultSyncAction.UpdateFromFile, WatcherMessages.Decisions.FrontmatterIdentityExists);
 		}
 
-		return new(VaultSyncAction.Ignore, "Unrecognised implicit PUCK assertion is left in place as an unmanaged file.", VaultSyncConcern.ForeignFile);
+		return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.ImplicitUnrecognisedAssertion, VaultSyncConcern.ForeignFile);
 	}
 }

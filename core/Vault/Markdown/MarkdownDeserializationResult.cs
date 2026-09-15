@@ -4,9 +4,22 @@ namespace Pleiades.Vault.Markdown;
 /// Describes a markdown validation or deserialization problem for a specific field path.
 /// </summary>
 /// <param name="FieldPath">The logical field path, such as <c>status</c> or <c>forecast.forecastTarget</c>.</param>
-/// <param name="Message">The validation or conversion message.</param>
+/// <param name="Message">The validation or conversion message (operator-facing prose from <c>MarkdownMessages</c>; never parsed).</param>
 /// <param name="RawValue">The raw frontmatter value when available.</param>
-public sealed record MarkdownValidationIssue(string FieldPath, string Message, string? RawValue = null);
+/// <param name="Code">
+/// A stable <see cref="MarkdownValidationCodes"/> code for the issue kinds code needs to recognise structurally, so
+/// classification never sniffs the (localisable) message text. <see langword="null"/> for issues nothing classifies.
+/// </param>
+public sealed record MarkdownValidationIssue(string FieldPath, string Message, string? RawValue = null, string? Code = null);
+
+/// <summary>
+/// The stable codes a <see cref="MarkdownValidationIssue"/> can carry for the issue kinds code recognises structurally.
+/// </summary>
+public static class MarkdownValidationCodes
+{
+	/// <summary>The path resolves no identity and the entity's PUCK needs caller input (cannot be auto-generated).</summary>
+	public const string MissingRequiredPuckInput = "missing-required-puck-input";
+}
 
 /// <summary>
 /// Captures the result of mapping markdown frontmatter into a CLR model.

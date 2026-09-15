@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Pleiades.Diagnostics;
 using Pleiades.Orchestration;
+using Pleiades.Resources;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Policy;
 
@@ -154,7 +155,7 @@ public sealed class VaultWatcherService(
 		}
 
 		var scope = inaccessiblePath ?? WatcherOperations.GlobalScope;
-		statusReporter.ReportVaultInaccessible(scope, $"Vault path '{scope}' is not accessible.");
+		statusReporter.ReportVaultInaccessible(scope, WatcherMessages.Details.VaultPathNotAccessible(scope));
 		logger.LogWarning("Vault watcher is asleep: '{Path}' is not accessible. It will re-probe until access is restored.", scope);
 
 		using var timer = new PeriodicTimer(StructuralReprobeInterval);
@@ -229,7 +230,7 @@ public sealed class VaultWatcherService(
 						if (!pathPolicy.IsVaultStructurallyAccessible(out var inaccessiblePath))
 						{
 							var scope = inaccessiblePath ?? WatcherOperations.GlobalScope;
-							statusReporter.ReportVaultInaccessible(scope, $"Vault path '{scope}' became inaccessible.");
+							statusReporter.ReportVaultInaccessible(scope, WatcherMessages.Details.VaultPathBecameInaccessible(scope));
 							logger.LogWarning("Vault watcher lost access to '{Path}' mid-session; going to sleep.", scope);
 							return LiveSessionExit.LostAccess;
 						}

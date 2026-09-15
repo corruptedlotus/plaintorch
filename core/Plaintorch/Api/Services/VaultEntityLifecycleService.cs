@@ -1,5 +1,6 @@
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Puck;
+using Pleiades.Resources;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
@@ -147,10 +148,10 @@ public sealed class VaultEntityLifecycleService(
 		{
 			Issues = candidate.Issues.Where(issue => !IsMissingRequiredPuckInputIssue(issue)).ToList(),
 			SuggestedAction = VaultSyncAction.CreateFromFile,
-			SuggestedReason = "Manual initialization from a file without a frontmatter PUCK, requested through the API.",
+			SuggestedReason = WatcherMessages.Decisions.ManualInitializationFromFile,
 		};
 
+	// Recognised by its structural code, never by its (localisable) message text.
 	private static bool IsMissingRequiredPuckInputIssue(MarkdownValidationIssue issue)
-		=> string.Equals(issue.FieldPath, "id", StringComparison.OrdinalIgnoreCase)
-			&& issue.Message.Contains("missing required caller-provided PUCK input", StringComparison.OrdinalIgnoreCase);
+		=> string.Equals(issue.Code, MarkdownValidationCodes.MissingRequiredPuckInput, StringComparison.Ordinal);
 }

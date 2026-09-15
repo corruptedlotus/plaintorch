@@ -3,6 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using System.Reflection;
 using System.Text.Json;
 using Pleiades.Puck;
+using Pleiades.Resources;
 using Pleiades.Vault;
 
 namespace Pleiades.Vault.Markdown;
@@ -220,7 +221,7 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 
 		if (string.IsNullOrWhiteSpace(rawPuck))
 		{
-			issues.Add(new MarkdownValidationIssue(QuietPuckFieldName, "Field cannot be empty.", rawPuck));
+			issues.Add(new MarkdownValidationIssue(QuietPuckFieldName, MarkdownMessages.FieldEmpty, rawPuck));
 			return;
 		}
 
@@ -301,7 +302,7 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 			{
 				if (validateMissingFields && !CanBeNull(property))
 				{
-					issues.Add(new MarkdownValidationIssue(fieldPath, "Field is required."));
+					issues.Add(new MarkdownValidationIssue(fieldPath, MarkdownMessages.FieldRequired));
 				}
 
 				continue;
@@ -333,7 +334,7 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 			{
 				if (!CanBeNull(property) && !string.IsNullOrWhiteSpace(pathPrefix))
 				{
-					issues.Add(new MarkdownValidationIssue(fieldPath, "Field is required."));
+					issues.Add(new MarkdownValidationIssue(fieldPath, MarkdownMessages.FieldRequired));
 				}
 
 				continue;
@@ -342,7 +343,7 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 			var propertyType = UnwrapNullableType(property.PropertyType);
 			if (propertyType.IsEnum && !Enum.IsDefined(propertyType, propertyValue))
 			{
-				issues.Add(new MarkdownValidationIssue(fieldPath, $"Value '{propertyValue}' is not a defined {propertyType.Name} state.", Convert.ToString(propertyValue, CultureInfo.InvariantCulture)));
+				issues.Add(new MarkdownValidationIssue(fieldPath, MarkdownMessages.EnumValueUndefined(propertyValue, propertyType.Name), Convert.ToString(propertyValue, CultureInfo.InvariantCulture)));
 				continue;
 			}
 
@@ -379,7 +380,7 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 			}
 
 			convertedValue = null;
-			issue = new MarkdownValidationIssue(fieldPath, "Field cannot be empty.", rawValue);
+			issue = new MarkdownValidationIssue(fieldPath, MarkdownMessages.FieldEmpty, rawValue);
 			return false;
 		}
 
@@ -401,7 +402,7 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 					convertedValue = null;
 					issue = new MarkdownValidationIssue(
 						fieldPath,
-						$"Value '{normalizedValue}' is not a valid {propertyType.Name} state. Expected one of: {string.Join(", ", Enum.GetNames(propertyType))}.",
+						MarkdownMessages.EnumValueInvalid(normalizedValue, propertyType.Name, string.Join(", ", Enum.GetNames(propertyType))),
 						rawValue);
 					return false;
 				}
@@ -443,7 +444,7 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		}
 		catch (Exception exception) when (exception is FormatException or InvalidOperationException or NotSupportedException)
 		{
-			issues.Add(new MarkdownValidationIssue(fieldPath, $"Value '{relationalId}' is not a valid {relatedEntityType.Name} PUCK: {exception.Message}", relationalId));
+			issues.Add(new MarkdownValidationIssue(fieldPath, MarkdownMessages.RelatedPuckInvalid(relationalId, relatedEntityType.Name, exception.Message), relationalId));
 		}
 	}
 

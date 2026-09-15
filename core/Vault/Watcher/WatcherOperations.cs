@@ -1,4 +1,5 @@
 using Pleiades.Diagnostics;
+using Pleiades.Resources;
 
 namespace Pleiades.Vault.Watcher;
 
@@ -6,7 +7,9 @@ namespace Pleiades.Vault.Watcher;
 /// The declarative catalog of watcher operations and the reason codes each can raise (PEP108), with their default
 /// severity, diagnostic category, and message. This is the watcher's adapter onto the domain-neutral
 /// operation-status core: instrumentation references these names instead of ad-hoc strings, and both the reporter
-/// and the system API read severity/category/message from here so there is one source of truth.
+/// and the system API read severity/category/message from here so there is one source of truth. The message text
+/// itself lives on the <see cref="WatcherMessages"/> sheet — the catalog only names the entry — so prose is
+/// centralised and localisable without touching the catalog.
 /// </summary>
 public static class WatcherOperations
 {
@@ -41,30 +44,46 @@ public static class WatcherOperations
 	public const string VaultInaccessible = "vault-inaccessible";
 	public const string DuplicateIdentity = "duplicate-identity";
 
-	/// <summary>Describes a reason code: its diagnostic category, default severity, and human-readable message.</summary>
-	public sealed record ReasonDescriptor(string Category, OperationSeverity Severity, string Message);
+	/// <summary>
+	/// Describes a reason code: its diagnostic category, default severity, and the <see cref="WatcherMessages.Reasons"/>
+	/// entry carrying its human-readable message.
+	/// </summary>
+	/// <param name="Category">The diagnostic category the reason belongs to.</param>
+	/// <param name="Severity">The severity a failing check on this reason records by default.</param>
+	/// <param name="MessageKey">The <see cref="WatcherMessages.Reasons"/> accessor name whose sheet entry is the message.</param>
+	public sealed record ReasonDescriptor(string Category, OperationSeverity Severity, string MessageKey)
+	{
+		/// <summary>The human-readable message, resolved from the watcher message sheet for the current UI culture.</summary>
+		public string Message => WatcherMessages.Reasons.Resolve(MessageKey);
+	}
 
 	private static readonly IReadOnlyDictionary<string, ReasonDescriptor> Descriptors = new Dictionary<string, ReasonDescriptor>(StringComparer.Ordinal)
 	{
-		[ScanFailed] = new("startup", OperationSeverity.Error, "Startup discovery scan failed and watcher is operating in degraded startup mode."),
-		[TickFailed] = new("runtime", OperationSeverity.Error, "Watcher pending-drain tick failed."),
-		[DiscoveryFailed] = new("runtime", OperationSeverity.Error, "Watcher candidate discovery failed for an inspected path."),
-		[PermissionDenied] = new("filesystem", OperationSeverity.Error, "Watcher could not access a file due to filesystem permissions."),
-		[FileInUse] = new("filesystem", OperationSeverity.Suspended, "Watcher could not access a file because it is currently in use by another process."),
-		[MarkdownInvalid] = new("validation", OperationSeverity.Error, "Watcher detected markdown/frontmatter validation problems for a candidate file."),
-		[PuckViolation] = new("identity", OperationSeverity.Error, "Watcher detected a PUCK identity violation for a candidate file."),
-		[PolicyViolation] = new("policy", OperationSeverity.Error, "Watcher detected a storage policy violation for a candidate file."),
-		[ForeignFile] = new("policy", OperationSeverity.Error, "Watcher found a file asserting a PUCK identity the vault does not recognise. It is left in place — not purged — but flagged as an error for you to resolve: correct the identity, initialise it, or remove the assertion."),
-		[SyncFailed] = new("runtime", OperationSeverity.Error, "Watcher failed to process a discovered candidate sync action."),
-		[RelocationFailed] = new("runtime", OperationSeverity.Error, "Watcher failed to process a relocation candidate."),
-		[RootInitFailed] = new("filesystem", OperationSeverity.Error, "Watcher failed to initialize a filesystem root observer."),
-		[RootError] = new("filesystem", OperationSeverity.Warning, "Filesystem watcher reported a root-level runtime error."),
-		[Fatal] = new("runtime", OperationSeverity.Critical, "Watcher encountered a fatal unhandled exception and stopped."),
-		[VaultInaccessible] = new("filesystem", OperationSeverity.Error, "Watcher cannot reach the vault or one of its entity roots and has gone to sleep until access is restored."),
-		[DuplicateIdentity] = new("identity", OperationSeverity.Error, "Watcher found more than one file asserting the same entity identity. Only one file may own an identity; resolve the ambiguity by removing or re-identifying the extra file(s)."),
+		[ScanFailed] = new("startup", OperationSeverity.Error, nameof(WatcherMessages.Reasons.ScanFailed)),
+		[TickFailed] = new("runtime", OperationSeverity.Error, nameof(WatcherMessages.Reasons.TickFailed)),
+		[DiscoveryFailed] = new("runtime", OperationSeverity.Error, nameof(WatcherMessages.Reasons.DiscoveryFailed)),
+		[PermissionDenied] = new("filesystem", OperationSeverity.Error, nameof(WatcherMessages.Reasons.PermissionDenied)),
+		[FileInUse] = new("filesystem", OperationSeverity.Suspended, nameof(WatcherMessages.Reasons.FileInUse)),
+		[MarkdownInvalid] = new("validation", OperationSeverity.Error, nameof(WatcherMessages.Reasons.MarkdownInvalid)),
+		[PuckViolation] = new("identity", OperationSeverity.Error, nameof(WatcherMessages.Reasons.PuckViolation)),
+		[PolicyViolation] = new("policy", OperationSeverity.Error, nameof(WatcherMessages.Reasons.PolicyViolation)),
+		[ForeignFile] = new("policy", OperationSeverity.Error, nameof(WatcherMessages.Reasons.ForeignFile)),
+		[SyncFailed] = new("runtime", OperationSeverity.Error, nameof(WatcherMessages.Reasons.SyncFailed)),
+		[RelocationFailed] = new("runtime", OperationSeverity.Error, nameof(WatcherMessages.Reasons.RelocationFailed)),
+		[RootInitFailed] = new("filesystem", OperationSeverity.Error, nameof(WatcherMessages.Reasons.RootInitFailed)),
+		[RootError] = new("filesystem", OperationSeverity.Warning, nameof(WatcherMessages.Reasons.RootError)),
+		[Fatal] = new("runtime", OperationSeverity.Critical, nameof(WatcherMessages.Reasons.Fatal)),
+		[VaultInaccessible] = new("filesystem", OperationSeverity.Error, nameof(WatcherMessages.Reasons.VaultInaccessible)),
+		[DuplicateIdentity] = new("identity", OperationSeverity.Error, nameof(WatcherMessages.Reasons.DuplicateIdentity)),
 	};
 
-	/// <summary>Resolves the descriptor for a reason code, defaulting to a runtime error for unknown codes.</summary>
+	/// <summary>Every catalogued reason code (the keys of the descriptor table).</summary>
+	public static IReadOnlyCollection<string> ReasonCodes => Descriptors.Keys.ToArray();
+
+	/// <summary>
+	/// Resolves the descriptor for a reason code, defaulting to a runtime error for unknown codes (whose message is the
+	/// code itself, since no sheet entry names it).
+	/// </summary>
 	public static ReasonDescriptor Describe(string reasonCode)
 		=> Descriptors.TryGetValue(reasonCode, out var descriptor)
 			? descriptor

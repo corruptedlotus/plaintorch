@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Pleiades.Resources;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Policy;
 
@@ -170,7 +171,7 @@ public sealed class VaultWatcherReconciler(
 		var id = candidate.PathId!;
 		if (duplicateIdentities.TryGetValue(id, out var files) && files.Count > 1)
 		{
-			var detail = $"asserted by {files.Count} files: {string.Join(", ", files)}";
+			var detail = WatcherMessages.Details.DuplicateIdentity(files.Count, string.Join(", ", files));
 			statusReporter.ReportDuplicateIdentity(id, files, detail);
 		}
 		else

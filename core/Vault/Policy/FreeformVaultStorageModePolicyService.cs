@@ -1,5 +1,6 @@
 using Pleiades.Orchestration;
 using Pleiades.Puck;
+using Pleiades.Resources;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Watcher;
 
@@ -98,7 +99,7 @@ public sealed class FreeformVaultStorageModePolicyService(
 	{
 		if (string.IsNullOrWhiteSpace(context.PathId))
 		{
-			return new(VaultSyncAction.Ignore, "Freeform storage does not auto-create entities from files without frontmatter PUCK identity.");
+			return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.FreeformNoIdentityIgnored);
 		}
 
 		var exists = context.KnownIds.Contains(context.PathId);
@@ -106,10 +107,10 @@ public sealed class FreeformVaultStorageModePolicyService(
 		{
 			if (exists)
 			{
-				return new(VaultSyncAction.DeleteFromDatabase, "Freeform storage removes known entities when their asserted file is deleted.");
+				return new(VaultSyncAction.DeleteFromDatabase, WatcherMessages.Decisions.FreeformDeletedFileRemovesEntity);
 			}
 
-			return new(VaultSyncAction.Ignore, "Missing freeform file does not map to a known PUCK identity.");
+			return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.FreeformMissingFileUnknownIdentity);
 		}
 
 		if (context.IssueMessages.Count > 0)
@@ -119,18 +120,18 @@ public sealed class FreeformVaultStorageModePolicyService(
 				// Freeform is a non-exclusive root: the core does not destroy the file, but asserting a PUCK it does not
 				// recognise is illegal — left in place, flagged as an error for the user to resolve (dismissible), not
 				// purged.
-				return new(VaultSyncAction.Ignore, "Unrecognised freeform PUCK assertion (with validation issues) is left in place as an unmanaged file.", VaultSyncConcern.ForeignFile);
+				return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.FreeformUnrecognisedAssertionWithIssues, VaultSyncConcern.ForeignFile);
 			}
 
-			return new(VaultSyncAction.RewriteFromDatabase, "Freeform candidate has validation issues and must be rewritten from canonical state.", VaultSyncConcern.MarkdownInvalid);
+			return new(VaultSyncAction.RewriteFromDatabase, WatcherMessages.Decisions.FreeformInvalidCandidateRewritten, VaultSyncConcern.MarkdownInvalid);
 		}
 
 		if (exists)
 		{
-			return new(VaultSyncAction.UpdateFromFile, "Frontmatter PUCK identity exists in storage and can be synced from file.");
+			return new(VaultSyncAction.UpdateFromFile, WatcherMessages.Decisions.FrontmatterIdentityExists);
 		}
 
-		return new(VaultSyncAction.Ignore, "Unrecognised freeform PUCK assertion is left in place as an unmanaged file.", VaultSyncConcern.ForeignFile);
+		return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.FreeformUnrecognisedAssertion, VaultSyncConcern.ForeignFile);
 	}
 
 	/// <inheritdoc />

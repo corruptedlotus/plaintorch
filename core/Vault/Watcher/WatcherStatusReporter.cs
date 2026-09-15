@@ -1,4 +1,5 @@
 using Pleiades.Diagnostics;
+using Pleiades.Resources;
 using Pleiades.Vault.Markdown;
 
 namespace Pleiades.Vault.Watcher;
@@ -56,7 +57,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		var files = string.Equals(offendingPath, WatcherOperations.GlobalScope, StringComparison.Ordinal)
 			? (IReadOnlyList<string>?)null
 			: [offendingPath];
-		var message = string.IsNullOrWhiteSpace(detail) ? $"'{offendingPath}' is not accessible." : detail;
+		var message = string.IsNullOrWhiteSpace(detail) ? WatcherMessages.Details.PathNotAccessible(offendingPath) : detail;
 		Report(WatcherOperations.VaultAccess, WatcherOperations.GlobalScope, Check(WatcherOperations.VaultInaccessible, failed: true, message, files));
 	}
 
@@ -115,7 +116,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		var path = candidate.AbsolutePath;
 		var firstIssue = candidate.Issues.FirstOrDefault();
 		var validationDetail = candidate.Issues.Count > 0
-			? $"{candidate.Issues.Count} validation issue(s). {firstIssue?.FieldPath}: {firstIssue?.Message}"
+			? WatcherMessages.Details.ValidationIssues(candidate.Issues.Count, firstIssue?.FieldPath, firstIssue?.Message)
 			: null;
 
 		// Phase D: the policy decision carries a single structured concern classifying the root cause, so one bad file

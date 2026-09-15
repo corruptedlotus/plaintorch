@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The watcher's operator-facing message sheet: every piece of prose a watcher issue (PEP108) can carry lives here,
+  keyed by the accessor that reads it (WatcherMessages.cs). Groups: Reasons (the per-reason-code descriptor message),
+  Details (composed, parameterised detail lines), Decisions (a storage-mode policy's reason for its action), and
+  PathViolations (freeform directive ownership-boundary rejections). Format placeholders are positional ({0}, {1}).
+  To localise, add a culture sheet beside this one (WatcherMessages.<culture>.resx) with the same keys.
+-->
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Reasons: the descriptor message for each WatcherOperations reason code. -->
+  <data name="Reasons.ScanFailed" xml:space="preserve">
+    <value>Startup discovery scan failed and watcher is operating in degraded startup mode.</value>
+  </data>
+  <data name="Reasons.TickFailed" xml:space="preserve">
+    <value>Watcher pending-drain tick failed.</value>
+  </data>
+  <data name="Reasons.DiscoveryFailed" xml:space="preserve">
+    <value>Watcher candidate discovery failed for an inspected path.</value>
+  </data>
+  <data name="Reasons.PermissionDenied" xml:space="preserve">
+    <value>Watcher could not access a file due to filesystem permissions.</value>
+  </data>
+  <data name="Reasons.FileInUse" xml:space="preserve">
+    <value>Watcher could not access a file because it is currently in use by another process.</value>
+  </data>
+  <data name="Reasons.MarkdownInvalid" xml:space="preserve">
+    <value>Watcher detected markdown/frontmatter validation problems for a candidate file.</value>
+  </data>
+  <data name="Reasons.PuckViolation" xml:space="preserve">
+    <value>Watcher detected a PUCK identity violation for a candidate file.</value>
+  </data>
+  <data name="Reasons.PolicyViolation" xml:space="preserve">
+    <value>Watcher detected a storage policy violation for a candidate file.</value>
+  </data>
+  <data name="Reasons.ForeignFile" xml:space="preserve">
+    <value>Watcher found a file asserting a PUCK identity the vault does not recognise. It is left in place — not purged — but flagged as an error for you to resolve: correct the identity, initialise it, or remove the assertion.</value>
+  </data>
+  <data name="Reasons.SyncFailed" xml:space="preserve">
+    <value>Watcher failed to process a discovered candidate sync action.</value>
+  </data>
+  <data name="Reasons.RelocationFailed" xml:space="preserve">
+    <value>Watcher failed to process a relocation candidate.</value>
+  </data>
+  <data name="Reasons.RootInitFailed" xml:space="preserve">
+    <value>Watcher failed to initialize a filesystem root observer.</value>
+  </data>
+  <data name="Reasons.RootError" xml:space="preserve">
+    <value>Filesystem watcher reported a root-level runtime error.</value>
+  </data>
+  <data name="Reasons.Fatal" xml:space="preserve">
+    <value>Watcher encountered a fatal unhandled exception and stopped.</value>
+  </data>
+  <data name="Reasons.VaultInaccessible" xml:space="preserve">
+    <value>Watcher cannot reach the vault or one of its entity roots and has gone to sleep until access is restored.</value>
+  </data>
+  <data name="Reasons.DuplicateIdentity" xml:space="preserve">
+    <value>Watcher found more than one file asserting the same entity identity. Only one file may own an identity; resolve the ambiguity by removing or re-identifying the extra file(s).</value>
+  </data>
+
+  <!-- Details: parameterised detail lines appended to a reason message. -->
+  <data name="Details.DuplicateIdentity" xml:space="preserve">
+    <value>asserted by {0} files: {1}</value>
+  </data>
+  <data name="Details.ValidationIssues" xml:space="preserve">
+    <value>{0} validation issue(s). {1}: {2}</value>
+  </data>
+  <data name="Details.PathNotAccessible" xml:space="preserve">
+    <value>'{0}' is not accessible.</value>
+  </data>
+  <data name="Details.VaultPathNotAccessible" xml:space="preserve">
+    <value>Vault path '{0}' is not accessible.</value>
+  </data>
+  <data name="Details.VaultPathBecameInaccessible" xml:space="preserve">
+    <value>Vault path '{0}' became inaccessible.</value>
+  </data>
+
+  <!-- Decisions: the reason a storage-mode policy gives for its reconciliation action. -->
+  <data name="Decisions.UntitledPlaceholderIgnored" xml:space="preserve">
+    <value>Untitled placeholder file is ignored until the user finalizes naming and identifier.</value>
+  </data>
+  <data name="Decisions.MissingRequiredPuckInputConflict" xml:space="preserve">
+    <value>Path identity is missing required caller-provided PUCK input.</value>
+  </data>
+  <data name="Decisions.PathIdentityExists" xml:space="preserve">
+    <value>Path identity already exists in the database.</value>
+  </data>
+  <data name="Decisions.InvalidCandidateConflict" xml:space="preserve">
+    <value>Candidate has validation issues that require reconciliation.</value>
+  </data>
+  <data name="Decisions.FrontmatterIdentityExists" xml:space="preserve">
+    <value>Frontmatter PUCK identity exists in storage and can be synced from file.</value>
+  </data>
+  <data name="Decisions.ManualInitializationFromFile" xml:space="preserve">
+    <value>Manual initialization from a file without a frontmatter PUCK, requested through the API.</value>
+  </data>
+
+  <data name="Decisions.FreeformNoIdentityIgnored" xml:space="preserve">
+    <value>Freeform storage does not auto-create entities from files without frontmatter PUCK identity.</value>
+  </data>
+  <data name="Decisions.FreeformDeletedFileRemovesEntity" xml:space="preserve">
+    <value>Freeform storage removes known entities when their asserted file is deleted.</value>
+  </data>
+  <data name="Decisions.FreeformMissingFileUnknownIdentity" xml:space="preserve">
+    <value>Missing freeform file does not map to a known PUCK identity.</value>
+  </data>
+  <data name="Decisions.FreeformUnrecognisedAssertionWithIssues" xml:space="preserve">
+    <value>Unrecognised freeform PUCK assertion (with validation issues) is left in place as an unmanaged file.</value>
+  </data>
+  <data name="Decisions.FreeformInvalidCandidateRewritten" xml:space="preserve">
+    <value>Freeform candidate has validation issues and must be rewritten from canonical state.</value>
+  </data>
+  <data name="Decisions.FreeformUnrecognisedAssertion" xml:space="preserve">
+    <value>Unrecognised freeform PUCK assertion is left in place as an unmanaged file.</value>
+  </data>
+
+  <data name="Decisions.ImplicitNoIdentityIgnored" xml:space="preserve">
+    <value>Implicit storage does not auto-create entities from files without frontmatter PUCK identity.</value>
+  </data>
+  <data name="Decisions.ImplicitDeletedFileRemovesEntity" xml:space="preserve">
+    <value>Implicit storage removes known entities when their boundary-begun file is deleted.</value>
+  </data>
+  <data name="Decisions.ImplicitBoundaryNotBegun" xml:space="preserve">
+    <value>Implicit entity has no begun synchronization boundary, so a missing file is not authoritative.</value>
+  </data>
+  <data name="Decisions.ImplicitMissingFileUnknownIdentity" xml:space="preserve">
+    <value>Missing implicit file does not map to a known PUCK identity.</value>
+  </data>
+  <data name="Decisions.ImplicitUnrecognisedAssertionWithIssues" xml:space="preserve">
+    <value>Unrecognised implicit PUCK assertion (with validation issues) is left in place as an unmanaged file.</value>
+  </data>
+  <data name="Decisions.ImplicitInvalidCandidateRewritten" xml:space="preserve">
+    <value>Implicit candidate has validation issues and must be rewritten from canonical state.</value>
+  </data>
+  <data name="Decisions.ImplicitUnrecognisedAssertion" xml:space="preserve">
+    <value>Unrecognised implicit PUCK assertion is left in place as an unmanaged file.</value>
+  </data>
+
+  <data name="Decisions.EnforcedMissingRequiredPuckInputPurged" xml:space="preserve">
+    <value>Path identity is missing required caller-provided PUCK input and enforced storage disallows unresolved files.</value>
+  </data>
+  <data name="Decisions.EnforcedTitleOnlyPurged" xml:space="preserve">
+    <value>Title-only file discovered for an auto-generated PUCK entity; enforced storage disallows unresolved files.</value>
+  </data>
+  <data name="Decisions.EnforcedDeletedFileRewritten" xml:space="preserve">
+    <value>Enforced storage keeps canonical entities when files are removed and rewrites canonical markdown.</value>
+  </data>
+  <data name="Decisions.EnforcedMissingFileUnknownEntity" xml:space="preserve">
+    <value>Missing file does not map to a known entity in enforced storage.</value>
+  </data>
+  <data name="Decisions.EnforcedUnknownFileWithIssuesPurged" xml:space="preserve">
+    <value>Unknown file with validation issues is disallowed by enforced storage policy.</value>
+  </data>
+  <data name="Decisions.EnforcedInvalidCandidateRewritten" xml:space="preserve">
+    <value>Candidate has validation issues and enforced policy prefers canonical rewrite.</value>
+  </data>
+  <data name="Decisions.EnforcedUnknownFilePurged" xml:space="preserve">
+    <value>Unknown file is disallowed by enforced storage policy.</value>
+  </data>
+
+  <data name="Decisions.OptionalMissingRequiredPuckInputIgnored" xml:space="preserve">
+    <value>Path identity is missing required caller-provided PUCK input and optional storage cannot create entities from this file.</value>
+  </data>
+  <data name="Decisions.OptionalTitleOnlyIgnored" xml:space="preserve">
+    <value>Optional storage does not create new title-only files by default.</value>
+  </data>
+  <data name="Decisions.OptionalDeletedFileRemovesEntity" xml:space="preserve">
+    <value>Optional storage removes known entities when their file is deleted.</value>
+  </data>
+  <data name="Decisions.OptionalMissingFileUnknownEntity" xml:space="preserve">
+    <value>Missing file does not map to a known entity in optional storage.</value>
+  </data>
+  <data name="Decisions.OptionalInvalidStandaloneIgnored" xml:space="preserve">
+    <value>Optional storage does not create new entities from invalid standalone files.</value>
+  </data>
+  <data name="Decisions.OptionalInvalidCandidateRewritten" xml:space="preserve">
+    <value>Candidate has validation issues and optional policy prefers canonical rewrite.</value>
+  </data>
+  <data name="Decisions.OptionalStandaloneIgnored" xml:space="preserve">
+    <value>Optional storage does not create new entities from standalone files by default.</value>
+  </data>
+
+  <data name="Decisions.SyncedTitleOnlyCreated" xml:space="preserve">
+    <value>Title-only file discovered for an auto-generated PUCK entity; synced storage allows file-originated creation.</value>
+  </data>
+  <data name="Decisions.SyncedDeletedFileRemovesEntity" xml:space="preserve">
+    <value>Synced storage removes known entities when their file is deleted.</value>
+  </data>
+  <data name="Decisions.SyncedMissingFileUnknownEntity" xml:space="preserve">
+    <value>Missing file does not map to a known entity in synced storage.</value>
+  </data>
+  <data name="Decisions.SyncedInvalidCandidateRewritten" xml:space="preserve">
+    <value>Candidate has validation issues and synced policy prefers canonical rewrite.</value>
+  </data>
+  <data name="Decisions.SyncedFileOriginatedCreation" xml:space="preserve">
+    <value>Synced storage allows file-originated creation.</value>
+  </data>
+
+  <data name="Decisions.FileFirstTitleOnlyCreated" xml:space="preserve">
+    <value>Title-only file discovered for an auto-generated PUCK entity; file-first storage requires file-originated creation.</value>
+  </data>
+  <data name="Decisions.FileFirstDeletedFileRemovesEntity" xml:space="preserve">
+    <value>File-first storage removes known entities when their file is deleted.</value>
+  </data>
+  <data name="Decisions.FileFirstMissingFileUnknownEntity" xml:space="preserve">
+    <value>Missing file does not map to a known entity in file-first storage.</value>
+  </data>
+  <data name="Decisions.FileFirstFileOriginatedCreation" xml:space="preserve">
+    <value>File-first storage requires file-originated creation.</value>
+  </data>
+
+  <!-- PathViolations: why a freeform directive may not assert ownership at a path. -->
+  <data name="PathViolations.PathEmpty" xml:space="preserve">
+    <value>Path is empty.</value>
+  </data>
+  <data name="PathViolations.PathOutsideVaultRoot" xml:space="preserve">
+    <value>Path is outside the active vault root.</value>
+  </data>
+  <data name="PathViolations.PathNotMarkdown" xml:space="preserve">
+    <value>Path is not a markdown file.</value>
+  </data>
+  <data name="PathViolations.PathHasNoDirectory" xml:space="preserve">
+    <value>Path does not resolve to a directory.</value>
+  </data>
+  <data name="PathViolations.CannotOwnVaultRoot" xml:space="preserve">
+    <value>Freeform directive cannot assert ownership of the vault root directory.</value>
+  </data>
+  <data name="PathViolations.CannotOwnEntityRoot" xml:space="preserve">
+    <value>Freeform directive cannot assert ownership of an entity root directory.</value>
+  </data>
+  <data name="PathViolations.CannotOwnPartition" xml:space="preserve">
+    <value>Freeform directive cannot assert ownership of a partition directory.</value>
+  </data>
+  <data name="PathViolations.UnderNonDirectiveRoot" xml:space="preserve">
+    <value>Freeform directive path is under a managed root reserved for non-directive entities.</value>
+  </data>
+  <data name="PathViolations.ParentUnderNonDirectiveRoot" xml:space="preserve">
+    <value>Freeform directive parent directory is under a managed root reserved for non-directive entities.</value>
+  </data>
+</root>
