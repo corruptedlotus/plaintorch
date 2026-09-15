@@ -158,6 +158,67 @@ export function wouldCycle(edges: readonly CanvasEdge[], source: string, target:
 	return false
 }
 
+/**
+ * The transitive unmet prerequisites of each root, walked to a fixpoint.
+ *
+ * Only the edges that still block are followed — a `satisfied` edge is left out of the adjacency, so the walk
+ * stops at a met dependency: a prerequisite already satisfied holds nothing back, and whatever blocked *it* is
+ * no longer part of what blocks the root. The adjacency runs dependant → prerequisite, the same direction
+ * {@link wouldCycle} walks, so from a member the walk reaches the blocker, then the blocker's own blocker, and
+ * on down the unmet chain.
+ *
+ * Returned per root, so a surface can attribute each prerequisite to the member it ultimately holds back (the
+ * briefing card groups by it); a graph that only wants the whole set unions the values. Deduplicated within a
+ * root by endpoint key, and guarded by a per-root visited set against a cycle the core is meant to forbid.
+ */
+export function unresolvedPrerequisites(
+	dependencies: readonly Dependency[],
+	roots: ReadonlySet<string>
+): Map<string, EndpointRef[]> {
+	const blockers = new Map<string, EndpointRef[]>()
+	for (const dependency of dependencies) {
+		if (dependency.satisfied) {
+			continue
+		}
+
+		const target = endpointKey(targetRef(dependency))
+		const known = blockers.get(target)
+		if (known) {
+			known.push(sourceRef(dependency))
+		}
+		else {
+			blockers.set(target, [sourceRef(dependency)])
+		}
+	}
+
+	const reachable = new Map<string, EndpointRef[]>()
+	for (const root of roots) {
+		const collected = new Map<string, EndpointRef>()
+		const visited = new Set<string>([root])
+		const pending = [root]
+		while (pending.length > 0) {
+			const current = pending.pop()!
+			for (const source of blockers.get(current) ?? []) {
+				const key = endpointKey(source)
+				if (!collected.has(key)) {
+					collected.set(key, source)
+				}
+
+				// Descend into each prerequisite once, so its own unmet prerequisites join the chain.
+				if (visited.add(key)) {
+					pending.push(key)
+				}
+			}
+		}
+
+		if (collected.size > 0) {
+			reachable.set(root, [...collected.values()])
+		}
+	}
+
+	return reachable
+}
+
 /** The trigger an edge acts on, resolving the empty value the core leaves for a checkpoint source. */
 export function effectiveTrigger(dependency: Dependency): DependencyTrigger {
 	return dependency.trigger ?? DependencyTrigger.OnFinish

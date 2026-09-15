@@ -1,5 +1,5 @@
 import { DependencyEndpointKind, type Checkpoint, type Dependency, type EndpointHit, type Objective, type OnrushSprint } from '@pleiades/sdk'
-import { endpointKey, resolveEdges, sourceRef, targetRef, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
+import { endpointKey, resolveEdges, sourceRef, targetRef, unresolvedPrerequisites, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
 
 /**
  * Which slice of the backlog the canvas is showing.
@@ -29,11 +29,12 @@ export type EndpointResolver = (kind: DependencyEndpointKind, id: string) => Can
  * context the canvas shows the sprint, and a member with no dependencies is still part of it. The milestone is
  * one of the checkpoints, flagged.
  *
- * Beyond the members, the graph pulls in the prerequisites *outside* the sprint that hold a member back — an
- * unmet dependency whose blocking end is not itself in the sprint. Those are drawn ghostly: shown so the block
- * is visible, but not part of the sprint, so not removable, and gone once the block resolves (they simply stop
- * being pulled in). An eventive endpoint names its owner under a different kind, so an edge to one occurrence
- * of a recurring entity is not an edge to the entity and is left out.
+ * Beyond the members, the graph pulls in the prerequisites *outside* the sprint that hold a member back — and
+ * not only the immediate ones: the whole unmet chain, each blocker's own blocker on down, so a member held
+ * back at two removes shows what is really holding it. Those are drawn ghostly: shown so the block is visible,
+ * but not part of the sprint, so not removable, and gone once the block resolves (they simply stop being
+ * pulled in). An eventive endpoint names its owner under a different kind, so an edge to one occurrence of a
+ * recurring entity is not an edge to the entity and is left out.
  */
 export function onrushContext(
 	sprint: OnrushSprint | undefined,
@@ -57,11 +58,13 @@ export function onrushContext(
 }
 
 /**
- * The out-of-context prerequisites blocking a member (PEP102).
+ * The out-of-context prerequisites blocking a member, transitively (PEP102).
  *
- * One per unsatisfied edge whose dependant is a member and whose blocking source is not, resolved to whatever
- * the source names. A source that cannot be resolved still appears, labelled by its id, so a block is never
- * silently hidden. Deduplicated: one ghostly node however many members a single blocker holds back.
+ * The unmet chain reachable from the members — every blocker of a member, every blocker of one of those, and
+ * on down (see {@link unresolvedPrerequisites}) — minus the members themselves, which are already nodes. Each
+ * is resolved to whatever it names; one that cannot be resolved still appears, labelled by its id, so a block
+ * is never silently hidden. Deduplicated: one ghostly node however many members, or other ghosts, a single
+ * blocker holds back.
  */
 function ghostlyBlockers(
 	dependencies: readonly Dependency[],
@@ -69,20 +72,16 @@ function ghostlyBlockers(
 	resolve: EndpointResolver
 ): CanvasNode[] {
 	const ghosts = new Map<string, CanvasNode>()
-	for (const dependency of dependencies) {
-		if (dependency.satisfied) {
-			continue
-		}
+	for (const refs of unresolvedPrerequisites(dependencies, memberKeys).values()) {
+		for (const source of refs) {
+			const sourceId = endpointKey(source)
+			if (memberKeys.has(sourceId) || ghosts.has(sourceId)) {
+				continue
+			}
 
-		const target = endpointKey(targetRef(dependency))
-		const source = sourceRef(dependency)
-		const sourceId = endpointKey(source)
-		if (!memberKeys.has(target) || memberKeys.has(sourceId) || ghosts.has(sourceId)) {
-			continue
+			const entity = resolve(source.kind, source.id) ?? { id: source.id, title: source.id }
+			ghosts.set(sourceId, { key: sourceId, ref: source, entity, ghostly: true })
 		}
-
-		const entity = resolve(source.kind, source.id) ?? { id: source.id, title: source.id }
-		ghosts.set(sourceId, { key: sourceId, ref: source, entity, ghostly: true })
 	}
 
 	return [...ghosts.values()]
