@@ -1,6 +1,6 @@
 import { Notice } from 'obsidian'
-import { Directive, typeNameOf } from '@pleiades/sdk'
-import { core, ExpandingAction, IconName, PromptTextModal, type ScheduleValue } from '..'
+import { Directive, Objective, typeNameOf } from '@pleiades/sdk'
+import { addObjectiveToPolaris, core, ExpandingAction, IconName, PromptTextModal, type ScheduleValue } from '..'
 import type { GridEntity } from './entityTree'
 
 /** What kind of thing a row holds, resolved from the runtime type the core stamped on it. */
@@ -209,20 +209,15 @@ export function directiveActions(directive: Directive): ExpandingAction[] {
 }
 
 /** The choices offered on an objective row. */
-export function objectiveActions(objectiveId: string): ExpandingAction[] {
+export function objectiveActions(objective: Objective): ExpandingAction[] {
+	const objectiveId = objective.id
 	return [
 		{
 			key: 'polaris',
 			icon: 'polaris',
 			label: 'Add to Polaris',
 			run: async () => {
-				const added = await core.repos.objectives.mutate(objectiveId, async () =>
-					await core.polaris.addObjectiveToCurrent(objectiveId))
-				new Notice(added ? 'Added to active Polaris cycle.' : 'Could not add to Polaris.')
-				if (added) {
-					// The briefing rides on the mutate above; only the owning cycle needs a nudge.
-					await core.repos.polaris.revalidateObserved()
-				}
+				await addObjectiveToPolaris(objective)
 			}
 		},
 		{

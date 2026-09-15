@@ -25,10 +25,6 @@ export class ObjectiveItemExecutive extends ObjectiveItem {
 		return html`<p7t-timeframe-item affinity small mode='icon' .timeframe=${this.executive?.affinityTimeframe}></p7t-timeframe-item>`
 	}
 
-	protected override get extraActionTemplate() {
-		return undefined
-	}
-
 	protected override async notchAction() {
 		if (!this.executive) return
 		new ExecutiveModal(getApp(), this.executive, executive => {

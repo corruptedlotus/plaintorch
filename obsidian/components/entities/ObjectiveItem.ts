@@ -1,8 +1,8 @@
-import { component, css, html, HTMLTemplateResult } from "@a11d/lit"
+import { component, css, html } from "@a11d/lit"
 import { EntityItem } from "./EntityItem"
 import { Objective, ObjectiveStatus } from "@pleiades/sdk"
 import { App } from "obsidian"
-import { ChangeStateModal, core } from 'components'
+import { ChangeStateModal } from 'components'
 
 @component('p7t-objective-item')
 export class ObjectiveItem extends EntityItem<Objective> {
@@ -41,22 +41,6 @@ export class ObjectiveItem extends EntityItem<Objective> {
 
 	protected override get info() {
 		return html`<p7t-celestron-item small .value=${this.objective!.celestronValue}></p7t-celestron-item>`
-	}
-
-	protected override get extraActionTemplate(): HTMLTemplateResult | undefined {
-		return html`
-			<p7t-icon class='notch-icon' icon='lucide:chevron-right'></p7t-icon>
-		`
-	}
-
-	protected override async extraAction() {
-		const objectiveId = this.objective!.id
-		const added = await core.repos.objectives.mutate(objectiveId, async () =>
-			await core.polaris.addObjectiveToCurrent(objectiveId))
-		if (added) {
-			// The objective and briefing ride on the mutate above; only the owning cycle needs a nudge.
-			await core.repos.polaris.revalidateObserved()
-		}
 	}
 
 	protected override get notchTemplate() {

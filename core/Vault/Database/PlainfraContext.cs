@@ -354,5 +354,12 @@ public class PlainfraContext : DbContext
 		modelBuilder.Entity<Executive>()
 			.Navigation(x => x.AffinityTimeframe)
 			.AutoInclude();
+
+		// A Polaris cycle holds at most one executive per objective. One-shot executives carry no objective and
+		// are exempt, hence the filter.
+		modelBuilder.Entity<Executive>()
+			.HasIndex(x => new { x.PolarisCycleId, x.ObjectiveId })
+			.IsUnique()
+			.HasFilter("\"ObjectiveId\" IS NOT NULL");
 	}
 }

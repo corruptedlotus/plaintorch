@@ -229,6 +229,7 @@ public sealed class PolarisCycleApiService(
 				ArgumentException.ThrowIfNullOrWhiteSpace(plan.ObjectiveId);
 				objective = await context.Objectives.FirstOrDefaultAsync(item => item.Id == plan.ObjectiveId, cancellationToken)
 					?? throw new InvalidOperationException($"Objective '{plan.ObjectiveId}' was not found.");
+				await EnsureObjectiveNotInCycleAsync(cycle.Id, objective.Id, cancellationToken);
 				if (plan.College is not null)
 				{
 					objective.College = plan.College.Value;
@@ -294,8 +295,9 @@ public sealed class PolarisCycleApiService(
 
 		// The executive's objective can be reassigned but never cleared — an executive without an objective has
 		// nothing to work at.
-		if (!string.IsNullOrWhiteSpace(update.ObjectiveId))
+		if (!string.IsNullOrWhiteSpace(update.ObjectiveId) && update.ObjectiveId != executive.ObjectiveId)
 		{
+			await EnsureObjectiveNotInCycleAsync(executive.PolarisCycleId, update.ObjectiveId, cancellationToken);
 			executive.ObjectiveId = update.ObjectiveId;
 		}
 
@@ -470,6 +472,21 @@ public sealed class PolarisCycleApiService(
 			details: new { cycleId = cycle.Id, decreeId = decree.Id, date = attentive.Date.ToString("yyyy-MM-dd") },
 			cancellationToken: cancellationToken);
 		return attentive;
+	}
+
+	/// <summary>
+	/// Enforces that a Polaris cycle holds at most one executive per objective: planning an objective already in the
+	/// cycle, or reassigning an executive onto one, is refused rather than producing a second instance. The unique
+	/// index on <c>(PolarisCycleId, ObjectiveId)</c> is the last line of defence; this is the one that speaks.
+	/// </summary>
+	private async Task EnsureObjectiveNotInCycleAsync(string polarisCycleId, string objectiveId, CancellationToken cancellationToken)
+	{
+		var alreadyPlanned = await context.Set<Executive>()
+			.AnyAsync(item => item.PolarisCycleId == polarisCycleId && item.ObjectiveId == objectiveId, cancellationToken);
+		if (alreadyPlanned)
+		{
+			throw new InvalidOperationException($"Objective '{objectiveId}' is already an executive of Polaris cycle '{polarisCycleId}'.");
+		}
 	}
 
 	private static DateOnly ResolveCycleDate(PolarisCycle cycle)
