@@ -4,7 +4,7 @@ import { Objective, PolarisCycle } from '@pleiades/sdk'
 import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
 import { OnrushSprint } from "@pleiades/sdk"
 import { App, Notice, SuggestModal } from "obsidian"
-import { core, getApp, IconItem, IconName, SelectCollegeModal, SelectObjectiveStatusModal } from ".."
+import { addObjectiveToPolaris, core, getApp, IconItem, IconName, isObjectiveInCycle, SelectCollegeModal, SelectObjectiveStatusModal } from ".."
 
 @component('p7t-objective-banner')
 export class ObjectiveBanner extends EntityBanner<Objective> {
@@ -40,9 +40,7 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 	}
 
 	protected get isInActivePolaris() {
-		if (!this.activePolaris) return false
-		if (!this.entity) return false
-		return this.activePolaris.executives.some(exec => exec.objective!.id === this.entity!.id)
+		return !!this.entity && isObjectiveInCycle(this.entity.id, this.activePolaris)
 	}
 
 	pickOnrush = () => {
@@ -50,15 +48,8 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 	}
 
 	addToPolaris = async () => {
-		if (this.isInActivePolaris) return
-		const objectiveId = this.entity!.id
-		const added = await core.repos.objectives.mutate(objectiveId, async () =>
-			await core.polaris.addObjectiveToCurrent(objectiveId))
-		if (added) {
-			new Notice('Added to active Polaris cycle.')
-			// The objective and the briefing are already covered by the mutate above; only the owning cycle
-			// needs a manual nudge (the feed reaches it too — this just keeps it prompt when the feed is down).
-			await core.repos.polaris.revalidateObserved()
+		if (!this.entity || this.isInActivePolaris) return
+		if (await addObjectiveToPolaris(this.entity)) {
 			this.activePolaris = await core.polaris.getCurrent()
 		}
 	}

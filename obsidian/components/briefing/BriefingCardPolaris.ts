@@ -1,7 +1,7 @@
 import { component, css, eventListener, html, nothing, state } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
 import { Activity, Attentive, DecreeStatus, Objective, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
-import { core, TransferController } from ".."
+import { addObjectiveToPolaris, core, isObjectiveInCycle, TransferController } from ".."
 import { App, SuggestModal } from "obsidian"
 
 @component('p7t-briefing-polaris')
@@ -17,16 +17,16 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 	/**
 	 * Takes objectives dropped from any host offering them (the Onrush card). The receive is translated: rather
 	 * than the default append into a bag, an accepted objective is planned into the current cycle through the
-	 * same add-to-polaris path the picker and the item fly-out use, so the repository — not this card — owns
-	 * what the cycle then shows. Candidacy is decided at drag start: a cycle must be running, and the objective
-	 * must be live and not already an executive of it.
+	 * one add-to-polaris path every surface shares, so the repository — not this card — owns what the cycle
+	 * then shows. Candidacy is decided at drag start: a cycle must be running, and the objective must be live
+	 * and not already in it (a cycle holds one instance of an objective).
 	 */
 	protected readonly transfer = new TransferController<Objective>(this, {
 		accepts: ['Objective'],
 		canAccept: objective => !!this.data
 			&& objective.status < ObjectiveStatus.Archived
-			&& !this.data.executives.some(executive => executive.objectiveId === objective.id),
-		accept: objective => this.addObjectiveActivity(objective),
+			&& !isObjectiveInCycle(objective.id, this.data),
+		accept: objective => addObjectiveToPolaris(objective),
 	})
 
 	static override get styles() {
@@ -215,21 +215,6 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		if (!this.data) return
 		new AddActivityModal((window as any).app! as App, this).open()
 	}
-
-	/**
-	 * Plans an objective into the current cycle as an executive — the one add-to-polaris path, shared by the
-	 * picker and the transfer receive. The objective and briefing ride on the mutate; only the owning cycle
-	 * needs a nudge afterwards. Resolves to whether the core took it.
-	 */
-	async addObjectiveActivity(objective: Objective): Promise<boolean> {
-		if (!this.data) return false
-		const added = await core.repos.objectives.mutate(objective.id, async () =>
-			await core.polaris.addObjectiveToCurrent(objective.id))
-		if (added) {
-			await core.repos.polaris.revalidateObserved()
-		}
-		return added
-	}
 }
 
 /**
@@ -244,9 +229,11 @@ class AddActivityModal extends SuggestModal<Activity> {
 
 	override async getSuggestions(query: string) {
 		const results = query.length > 2 ? await core.activities.search(query) : await core.activities.list()
+		// An objective already in the cycle is not offered again: a cycle holds one instance of an objective.
 		return results.filter(activity => activity.kind === 'decree'
 			? activity.decree?.status === DecreeStatus.Active
-			: (activity.objective?.status ?? ObjectiveStatus.Archived) < ObjectiveStatus.Archived)
+			: (activity.objective?.status ?? ObjectiveStatus.Archived) < ObjectiveStatus.Archived
+				&& !isObjectiveInCycle(activity.objective!.id, this.host.data))
 	}
 
 	renderSuggestion(activity: Activity, el: HTMLElement) {
@@ -272,7 +259,7 @@ class AddActivityModal extends SuggestModal<Activity> {
 
 		const objective = activity.objective
 		if (!objective) return
-		await this.host.addObjectiveActivity(objective)
+		await addObjectiveToPolaris(objective)
 	}
 }
 

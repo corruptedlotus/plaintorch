@@ -1,5 +1,5 @@
 import { component, css, html, HTMLTemplateResult, nothing, property, PropertyValues } from '@a11d/lit'
-import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, type Directive } from '@pleiades/sdk'
+import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, type Directive, type Objective } from '@pleiades/sdk'
 import {
 	getApp, IconName, LunarDirectiveModal, type ScheduleValue,
 	SelectDirectiveStatusModal, SelectLunarDirectiveStatusModal, SelectObjectiveStatusModal
@@ -158,7 +158,7 @@ export class GridItem extends GridItemBase {
 			return directiveActions(entity as Directive)
 		}
 
-		return kind === 'objective' ? objectiveActions(entity.id) : []
+		return kind === 'objective' ? objectiveActions(entity as Objective) : []
 	}
 
 	protected override async persistField(keyPath: string): Promise<void> {
