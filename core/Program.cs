@@ -1,12 +1,6 @@
-﻿global using A11d.Module;
-using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Hosting.Systemd;
-using Microsoft.Extensions.Hosting.WindowsServices;
-using System.Net.Sockets;
-using System.Text.Json.Serialization;
-using System.Text.Json.Serialization.Metadata;
+global using A11d.Module;
 using Pleiades.Calendar;
-using Pleiades.Plaintorch.Api.Contracts;
+using Pleiades.Plaintorch.Hosting;
 using Pleiades.Vault;
 
 namespace Pleiades.Plaintorch;
@@ -19,10 +13,19 @@ namespace Pleiades.Plaintorch;
 public sealed class PLAINTORCH { }
 
 /// <summary>
-/// Provides the console entry point for initializing and exercising the PLAINTORCH workspace.
+/// Provides the console entry point of the PLAINTORCH core: one-shot vault commands and the long-lived <c>serve</c> host.
 /// </summary>
+/// <remarks>
+/// The composition root lives in <see cref="PlaintorchHostFactory"/>; this class only maps a command line onto host
+/// options and runs the selected command against the built host.
+/// </remarks>
 public static class Program
 {
+	/// <summary>
+	/// Exit code returned when <c>serve</c> finds another core already serving the same profile.
+	/// </summary>
+	public const int AlreadyRunningExitCode = 3;
+
 	/// <summary>
 	/// Runs the PLAINTORCH command-line shell.
 	/// </summary>
@@ -30,132 +33,47 @@ public static class Program
 	/// <returns>A process exit code.</returns>
 	public static async Task<int> Main(string[] args)
 	{
-		var command = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal))?.ToLowerInvariant() ?? "init";
-		if (command is not ("init" or "activate" or "deactivate" or "serve" or "bootstrap-service"))
+		var launch = PlaintorchLaunchArguments.TryParse(args);
+		if (launch is null)
 		{
-			Console.Error.WriteLine("Unknown command. Supported commands: init, activate, deactivate, serve, bootstrap-service.");
+			Console.Error.WriteLine($"Unknown command. Supported commands: {PlaintorchLaunchArguments.SupportedCommands}.");
 			return 1;
 		}
 
-		var userLayout = ResolveUserLayout(command, args);
-		var configurationStore = new PlaintorchUserConfigurationStore(userLayout);
-		var vaultPath = TryResolveVaultPath(command, args);
-		if (command == "serve")
+		var userLayout = launch.ResolveUserLayout();
+		var launchMode = launch.ResolveLaunchMode();
+		if (launch.IsServe)
 		{
-			ApplyServeVaultOverride(args);
+			ApplyServeVaultOverride(launch);
+			if (await PlaintorchInstanceProbe.TryDetectAsync(userLayout) is { } running)
+			{
+				ReportAlreadyRunning(running, launchMode);
+				return AlreadyRunningExitCode;
+			}
 		}
 
-		var builder = WebApplication.CreateBuilder(args);
-		builder.Host.UseWindowsService();
-		builder.Host.UseSystemd();
-		builder.Services.ConfigureHttpJsonOptions(options =>
+		var app = PlaintorchHostFactory.Create(new PlaintorchHostOptions
 		{
-			options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-			// Tri-state update fields: a present key (value or explicit null) applies; an omitted key leaves unchanged.
-			options.SerializerOptions.Converters.Add(new OptionalJsonConverterFactory());
-			options.SerializerOptions.TypeInfoResolver = new DefaultJsonTypeInfoResolver
-			{
-				Modifiers =
-				{
-					AddRuntimeTypeNameProperty,
-				},
-			};
-		});
-		builder.Services.AddCors(options =>
-		{
-			options.AddPolicy("PlaintorchGlobalCors", policy =>
-				policy
-					.AllowAnyOrigin()
-					.AllowAnyHeader()
-					.AllowAnyMethod());
-		});
-		if (vaultPath is not null)
-		{
-			builder.Services.AddSingleton(new VaultOptions
-			{
-				VaultPath = vaultPath,
-			});
-		}
-		builder.Services.AddSingleton(userLayout);
-		if (OperatingSystem.IsWindows())
-		{
-			// A Node client on Windows resolves a socket path to a named pipe, not an AF_UNIX socket, so register the
-			// named-pipe transport alongside the default socket transport (which still serves the opt-in loopback endpoint).
-			builder.WebHost.UseNamedPipes();
-		}
-
-		builder.WebHost.ConfigureKestrel(options =>
-		{
-			userLayout.EnsureExists();
-			if (userLayout.LoopbackEnabled)
-			{
-				options.ListenLocalhost(userLayout.LoopbackPort, listenOptions =>
-				{
-					listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1;
-				});
-			}
-
-			if (OperatingSystem.IsWindows())
-			{
-				// Windows clients reach the core over this named pipe; a .NET AF_UNIX socket is unreachable from Node there.
-				options.ListenNamedPipe(userLayout.PipeName, listenOptions =>
-				{
-					listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1;
-				});
-			}
-			else
-			{
-				TryDeleteStaleSocket(userLayout.SocketPath);
-				options.ListenUnixSocket(userLayout.SocketPath, listenOptions =>
-				{
-					listenOptions.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http1;
-				});
-			}
+			UserLayout = userLayout,
+			LaunchMode = launchMode,
+			VaultPath = launch.ResolveCommandVaultPath(),
+			Arguments = args,
 		});
 
-		var app = builder.Install<PLAINTORCH>().Build();
-		app.UseRouting();
-		app.UseCors("PlaintorchGlobalCors");
-		app.Configure<PLAINTORCH>();
-
-		if (command == "serve")
+		if (launch.IsServe && launchMode != PlaintorchLaunchMode.Spawn)
 		{
-			Console.WriteLine($"PLAINTORCH endpoint: {userLayout.EndpointDisplay}");
-			if (userLayout.LoopbackEnabled)
-			{
-				Console.WriteLine($"PLAINTORCH loopback: {userLayout.LoopbackBaseUrl}");
-			}
-
-			if (userLayout.IsEphemeral)
-			{
-				Console.WriteLine("PLAINTORCH environment: ephemeral (dev)");
-			}
-			else if (userLayout.IsDevProfile)
-			{
-				Console.WriteLine("PLAINTORCH environment: dev sub-profile (persistent; pass --daemon to run the real per-user profile)");
-			}
+			RenderServeBanner(userLayout);
 		}
 
-		switch (command)
+		return launch.Command switch
 		{
-			case "init":
-				return await RunInitializeAsync(app, vaultPath!);
-
-			case "activate":
-				return RunActivate(app, vaultPath!);
-
-			case "deactivate":
-				return RunDeactivate(app);
-
-			case "serve":
-				return await RunServeAsync(app);
-
-			case "bootstrap-service":
-				return RunBootstrapService(app);
-
-			default:
-					return 1;
-		}
+			"init" => await RunInitializeAsync(app, launch.ResolveCommandVaultPath()!),
+			"activate" => RunActivate(app, launch.ResolveCommandVaultPath()!),
+			"deactivate" => RunDeactivate(app),
+			"serve" => await RunServeAsync(app, launchMode),
+			"bootstrap-service" => RunBootstrapService(app),
+			_ => 1,
+		};
 	}
 
 	/// <summary>
@@ -204,17 +122,16 @@ public static class Program
 	}
 
 	/// <summary>
-	/// Runs the long-lived PLAINTORCH host for Windows service or systemd execution.
+	/// Runs the long-lived PLAINTORCH host.
 	/// </summary>
 	/// <remarks>
 	/// The host starts idle without a vault. Vault activation, lock ownership, and vault initialization are
 	/// coordinated at runtime by <see cref="PlaintorchCoreService"/> in response to user settings, so that a
-	/// vault can be activated and deactivated without restarting the host.
+	/// vault can be activated and deactivated without restarting the host. In spawn mode a startup failure is
+	/// also reported on the status stream before the process exits, so the shell can show it.
 	/// </remarks>
-	private static async Task<int> RunServeAsync(WebApplication application, bool daemon = false)
+	private static async Task<int> RunServeAsync(WebApplication application, PlaintorchLaunchMode launchMode)
 	{
-		var splashService = application.Services.GetRequiredService<PlaintorchCoreSplashService>();
-
 		try
 		{
 			await application.RunAsync();
@@ -222,8 +139,21 @@ public static class Program
 		}
 		catch (Exception exception)
 		{
-			await splashService.ShowErrorAsync("PLAINTORCH core failed to start.", exception);
-			Console.Error.WriteLine(exception.Message);
+			// The host is already disposed here, and its status stream with it, so the failure is written directly.
+			var failure = new PlaintorchHostStatus(
+				PlaintorchHostPhase.Failed,
+				$"PLAINTORCH core failed to start.{Environment.NewLine}{exception.Message}",
+				null,
+				DateTimeOffset.UtcNow);
+			if (launchMode == PlaintorchLaunchMode.Spawn)
+			{
+				PlaintorchHostStatusStream.WriteStandalone(PlaintorchHostStatusStream.ToEvent(failure));
+			}
+			else
+			{
+				Console.Error.WriteLine(exception.Message);
+			}
+
 			return 1;
 		}
 	}
@@ -252,44 +182,8 @@ public static class Program
 		return 0;
 	}
 
-	private static void TryDeleteStaleSocket(string socketPath)
-	{
-		try
-		{
-			if (File.Exists(socketPath))
-			{
-				File.Delete(socketPath);
-			}
-		}
-		catch (SocketException)
-		{
-		}
-		catch (IOException)
-		{
-		}
-	}
-
-	private static void AddRuntimeTypeNameProperty(JsonTypeInfo jsonTypeInfo)
-	{
-		if (jsonTypeInfo.Kind != JsonTypeInfoKind.Object)
-		{
-			return;
-		}
-
-		if (jsonTypeInfo.Properties.Any(property => string.Equals(property.Name, "@type", StringComparison.Ordinal)))
-		{
-			return;
-		}
-
-		var runtimeTypeProperty = jsonTypeInfo.CreateJsonPropertyInfo(typeof(string), "@type");
-		runtimeTypeProperty.Get = value => value?.GetType().Name;
-		runtimeTypeProperty.Set = null;
-		runtimeTypeProperty.Order = int.MinValue;
-		jsonTypeInfo.Properties.Add(runtimeTypeProperty);
-	}
-
 	/// <summary>
-	/// Generates service bootstrap assets for the current operating system.
+	/// Generates headless service bootstrap assets for the current operating system.
 	/// </summary>
 	private static int RunBootstrapService(WebApplication application)
 	{
@@ -315,6 +209,50 @@ public static class Program
 	}
 
 	/// <summary>
+	/// Tells the launcher that another core already owns the profile. In spawn mode the shell reads it as a
+	/// status line; otherwise it is plain console output.
+	/// </summary>
+	private static void ReportAlreadyRunning(PlaintorchInstanceProbe.RunningInstance running, PlaintorchLaunchMode launchMode)
+	{
+		if (launchMode == PlaintorchLaunchMode.Spawn)
+		{
+			PlaintorchHostStatusStream.WriteStandalone(new
+			{
+				@event = "already-running",
+				endpoint = running.Endpoint,
+				mode = running.Mode,
+				vault = running.ActiveVault,
+			});
+			return;
+		}
+
+		var vaultSuffix = running.ActiveVault is null ? string.Empty : $", vault {running.ActiveVault}";
+		Console.Error.WriteLine($"A PLAINTORCH core is already serving this profile at {running.Endpoint} ({running.Mode}{vaultSuffix}).");
+	}
+
+	/// <summary>
+	/// Writes the serve banner describing the bound endpoint and profile.
+	/// </summary>
+	private static void RenderServeBanner(PlaintorchUserLayout userLayout)
+	{
+		Console.WriteLine($"PLAINTORCH endpoint: {userLayout.EndpointDisplay}");
+		if (userLayout.LoopbackEnabled)
+		{
+			Console.WriteLine($"PLAINTORCH loopback: {userLayout.LoopbackBaseUrl}");
+		}
+
+		Console.WriteLine($"PLAINTORCH logs: {userLayout.LogsRootPath}");
+		if (userLayout.IsEphemeral)
+		{
+			Console.WriteLine("PLAINTORCH environment: ephemeral (dev)");
+		}
+		else if (userLayout.IsDevProfile)
+		{
+			Console.WriteLine("PLAINTORCH environment: dev sub-profile (persistent; pass --daemon to run the real per-user profile)");
+		}
+	}
+
+	/// <summary>
 	/// Writes a short banner describing the current vault and calendar date.
 	/// </summary>
 	private static void RenderHeader(VaultLayout layout)
@@ -327,114 +265,18 @@ public static class Program
 	}
 
 	/// <summary>
-	/// Determines whether a boolean command-line flag is present.
-	/// </summary>
-	private static bool HasArgumentFlag(IReadOnlyList<string> args, string flag)
-	{
-		foreach (var argument in args)
-		{
-			if (string.Equals(argument, flag, StringComparison.OrdinalIgnoreCase))
-			{
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/// <summary>
-	/// Determines whether the process is running under the installed service runner (Windows Service or systemd).
-	/// </summary>
-	private static bool IsRunningAsService()
-	{
-		return WindowsServiceHelpers.IsWindowsService() || SystemdHelpers.IsSystemdService();
-	}
-
-	/// <summary>
-	/// Resolves the per-user host layout for the current command and flags.
-	/// </summary>
-	private static PlaintorchUserLayout ResolveUserLayout(string command, IReadOnlyList<string> args)
-	{
-		var layout = ResolveUserLayoutRoot(command, args);
-		layout.LoopbackEnabled = HasArgumentFlag(args, "--loopback");
-		return layout;
-	}
-
-	/// <summary>
-	/// Selects which per-user host profile a command should run against.
-	/// </summary>
-	/// <remarks>
-	/// Only <c>serve</c> has development profiles. <c>serve --ephemeral</c> gets a throwaway temp profile; an ordinary
-	/// manual <c>serve</c> gets the current user's persistent development sub-profile (<c>~/.pleiades/plaintorch-dev</c>)
-	/// so a sandbox never collides with a real installed daemon and no separate OS account is required. The installed
-	/// service runner, and any manual <c>serve --daemon</c> for a developer building their own background daemon, use the
-	/// real per-user profile. Every non-<c>serve</c> command also uses the real per-user profile.
-	/// </remarks>
-	private static PlaintorchUserLayout ResolveUserLayoutRoot(string command, IReadOnlyList<string> args)
-	{
-		if (command != "serve")
-		{
-			return PlaintorchUserLayout.CreateDefault();
-		}
-
-		if (HasArgumentFlag(args, "--ephemeral"))
-		{
-			return PlaintorchUserLayout.CreateEphemeral();
-		}
-
-		if (!IsRunningAsService() && !HasArgumentFlag(args, "--daemon"))
-		{
-			return PlaintorchUserLayout.CreateDevProfile();
-		}
-
-		return PlaintorchUserLayout.CreateDefault();
-	}
-
-	/// <summary>
-	/// Resolves the vault path from command-line arguments or environment variables.
-	/// </summary>
-	private static string? TryResolveVaultPath(string command, IReadOnlyList<string> args)
-	{
-		if (command is "serve")
-		{
-			// serve starts idle and activates its vault from user settings at runtime, so it registers no VaultOptions.
-			// An explicit `serve --vault` is instead applied as a runtime override (see ApplyServeVaultOverride).
-			return null;
-		}
-
-		return ExtractVaultArgument(args) ?? Directory.GetCurrentDirectory();
-	}
-
-	/// <summary>
-	/// Reads the value of a <c>--vault &lt;path&gt;</c> argument, or <see langword="null"/> when it is absent.
-	/// </summary>
-	private static string? ExtractVaultArgument(IReadOnlyList<string> args)
-	{
-		for (var index = 0; index < args.Count - 1; index++)
-		{
-			if (string.Equals(args[index], "--vault", StringComparison.OrdinalIgnoreCase))
-			{
-				return args[index + 1];
-			}
-		}
-
-		return null;
-	}
-
-	/// <summary>
 	/// Applies an explicit <c>serve --vault &lt;path&gt;</c> as a direct runtime vault target. A manual/dev serve is
 	/// meant to serve a specific vault without editing user configuration, so the argument is surfaced through the same
 	/// <c>PLAINTORCH_VAULT_PATH</c> channel that <see cref="PlaintorchCoreService"/> already prefers over the persisted
 	/// active-vault setting — the config is ignored, exactly as a sandbox serve expects.
 	/// </summary>
-	private static void ApplyServeVaultOverride(IReadOnlyList<string> args)
+	private static void ApplyServeVaultOverride(PlaintorchLaunchArguments launch)
 	{
-		var vaultArgument = ExtractVaultArgument(args);
-		if (string.IsNullOrWhiteSpace(vaultArgument))
+		if (string.IsNullOrWhiteSpace(launch.VaultArgument))
 		{
 			return;
 		}
 
-		Environment.SetEnvironmentVariable("PLAINTORCH_VAULT_PATH", Path.GetFullPath(vaultArgument));
+		Environment.SetEnvironmentVariable("PLAINTORCH_VAULT_PATH", Path.GetFullPath(launch.VaultArgument));
 	}
 }

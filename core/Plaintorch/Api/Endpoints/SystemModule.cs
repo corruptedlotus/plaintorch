@@ -2,6 +2,7 @@ using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Changes;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Api.Services;
+using Pleiades.Plaintorch.Hosting;
 
 namespace Pleiades.Plaintorch.Api.Endpoints;
 
@@ -75,11 +76,22 @@ public sealed class SystemModule : Module
 			return Results.Ok(await api.ResolveEntityByPuckAsync(id, cancellationToken));
 		});
 
-		endpoints.MapGet("/healthz", (ActiveVaultSession session) => Results.Ok(new
+		// Answers without touching vault state, so idle versus serving (and the phase behind it) is observable
+		// even while a vault is still being activated or has failed to.
+		endpoints.MapGet("/healthz", (ActiveVaultSession session, PlaintorchHostState hostState, PlaintorchUserLayout userLayout) =>
 		{
-			status = "ok",
-			mode = session.IsActive ? "active" : "idle",
-			activeVault = session.ActiveVaultPath,
-		}));
+			var status = hostState.Current;
+			return Results.Ok(new
+			{
+				status = "ok",
+				mode = session.IsActive ? "active" : "idle",
+				activeVault = session.ActiveVaultPath,
+				phase = status.Phase,
+				message = status.Message,
+				vault = status.VaultPath,
+				endpoint = userLayout.EndpointDisplay,
+				since = status.At,
+			});
+		});
 	}
 }

@@ -5,54 +5,50 @@ using System.Text;
 namespace Pleiades.Plaintorch;
 
 /// <summary>
-/// Generates host-service bootstrap assets for Windows and Linux deployments of PLAINTORCH.
+/// Generates headless service bootstrap assets for dedicated-server deployments of the PLAINTORCH core.
 /// </summary>
+/// <remarks>
+/// Only a Linux systemd <em>user</em> unit is generated. A Windows machine service was dropped on purpose: it ran as
+/// LocalSystem, so the "per-user" profile resolved to the system account and no user's client could reach the pipe.
+/// On a desktop the standalone shell owns per-user autostart instead; on a Windows server, run <c>serve --daemon</c>
+/// from the user's own scheduled task or session.
+/// </remarks>
 public sealed class PlaintorchServiceBootstrapper(PlaintorchUserLayout userLayout)
 {
-	private const string ServiceName = "PlaintorchCore";
-
 	/// <summary>
 	/// Creates bootstrap assets for the current platform.
 	/// </summary>
 	/// <returns>A summary of generated files.</returns>
 	public PlaintorchServiceBootstrapResult Bootstrap()
 	{
+		if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+		{
+			throw new PlatformNotSupportedException(
+				"PLAINTORCH service bootstrap assets are generated for Linux systemd user services only. "
+				+ "On a desktop, per-user autostart is managed by the PLAINTORCH standalone app; on Windows servers run 'serve --daemon' under the user's own session or scheduled task.");
+		}
+
 		userLayout.EnsureExists();
 		var serviceRoot = Path.Combine(userLayout.RootPath, "service");
 		Directory.CreateDirectory(serviceRoot);
 
 		var launchCommand = BuildLaunchCommand();
-		var generatedFiles = new List<string>();
-
-		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+		var generatedFiles = new List<string>
 		{
-			generatedFiles.Add(WriteWindowsInstallScript(serviceRoot, launchCommand));
-			generatedFiles.Add(WriteWindowsUninstallScript(serviceRoot));
-		}
-		else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-		{
-			generatedFiles.Add(WriteSystemdUnit(serviceRoot, launchCommand));
-			generatedFiles.Add(WriteSystemdInstallScript(serviceRoot));
-		}
-		else
-		{
-			throw new PlatformNotSupportedException("PLAINTORCH service bootstrap assets are currently prepared only for Windows and Linux.");
-		}
+			WriteSystemdUnit(serviceRoot, launchCommand),
+			WriteSystemdInstallScript(serviceRoot),
+		};
 
 		return new PlaintorchServiceBootstrapResult(serviceRoot, generatedFiles);
 	}
-
-	private static string EscapeDoubleQuotes(string value) => value.Replace("\"", "\"\"");
-
-	private static string EscapeSingleQuotes(string value) => value.Replace("'", "'\"'\"'");
 
 	private static string BuildLaunchCommand()
 	{
 		var processPath = Environment.ProcessPath ?? throw new InvalidOperationException("Unable to determine the current process path.");
 		var entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
 
-		// The installed service is the real per-user daemon, so it must bind the real ~/.pleiades/plaintorch profile.
-		// Service-context detection already routes it there, and `--daemon` makes that explicit and detection-independent.
+		// The installed unit is the real per-user daemon, so it must bind the real ~/.pleiades/plaintorch profile.
+		// Systemd detection already routes it there, and `--daemon` makes that explicit and detection-independent.
 		if (Path.GetFileName(processPath).StartsWith("dotnet", StringComparison.OrdinalIgnoreCase)
 			&& !string.IsNullOrWhiteSpace(entryAssemblyPath))
 		{
@@ -60,54 +56,6 @@ public sealed class PlaintorchServiceBootstrapper(PlaintorchUserLayout userLayou
 		}
 
 		return $"\"{processPath}\" serve --daemon";
-	}
-
-	private static string WriteWindowsInstallScript(string serviceRoot, string launchCommand)
-	{
-		var path = Path.Combine(serviceRoot, "install-windows-service.ps1");
-		var script = $$"""
-$ErrorActionPreference = 'Stop'
-
-$serviceName = '{{ServiceName}}'
-$binaryPath = '"{{EscapeSingleQuotes(launchCommand)}}"'
-
-if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
-    Write-Host "Service '$serviceName' already exists."
-    exit 0
-}
-
-New-Service -Name $serviceName -BinaryPathName $binaryPath -DisplayName 'PLAINTORCH Core' -Description 'PLAINTORCH background core service' -StartupType Automatic
-Start-Service -Name $serviceName
-Write-Host "Installed and started $serviceName."
-""";
-
-		File.WriteAllText(path, script + Environment.NewLine, Encoding.UTF8);
-		return path;
-	}
-
-	private static string WriteWindowsUninstallScript(string serviceRoot)
-	{
-		var path = Path.Combine(serviceRoot, "uninstall-windows-service.ps1");
-		var script = $$"""
-$ErrorActionPreference = 'Stop'
-
-$serviceName = '{{ServiceName}}'
-$service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-if (-not $service) {
-    Write-Host "Service '$serviceName' does not exist."
-    exit 0
-}
-
-if ($service.Status -ne 'Stopped') {
-    Stop-Service -Name $serviceName -Force
-}
-
-sc.exe delete $serviceName | Out-Null
-Write-Host "Removed $serviceName."
-""";
-
-		File.WriteAllText(path, script + Environment.NewLine, Encoding.UTF8);
-		return path;
 	}
 
 	private static string WriteSystemdUnit(string serviceRoot, string launchCommand)

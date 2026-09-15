@@ -1,0 +1,73 @@
+# PLAINTORCH desktop installers. Invoked by build.mjs, which publishes the core for the target runtime first and
+# picks the flavour; do not run electron-builder directly against this file without that step.
+#
+# Update flow ("run the new installer"): electron-updater downloads the next installer from `publish.url` and runs
+# it after the shell has stopped its core. The URL is the dedicated web repository; winget comes later and reuses
+# the same installer artefacts.
+
+appId: pleiades.plaintorch
+productName: PLAINTORCH
+copyright: Pleiades
+directories:
+  app: ../standalone
+  output: ../bin/installer/${env.PLAINTORCH_FLAVOR}
+  buildResources: ../standalone/assets
+
+# Only the built bundle, its static files, and the runtime dependency (electron-updater) ship; sources and the
+# bundled devDependencies do not.
+files:
+  - dist/**
+  - package.json
+  - "!**/*.map"
+
+# The published core lands beside the app as resources/core (standalone flavour only; build.mjs clears it for the
+# client flavour).
+extraResources:
+  - from: core-dist
+    to: core
+    filter:
+      - "**/*"
+
+artifactName: ${productName}-${env.PLAINTORCH_FLAVOR}-${version}-${os}-${arch}.${ext}
+
+publish:
+  provider: generic
+  url: https://updates.pleiades.example/plaintorch/${env.PLAINTORCH_FLAVOR}
+  channel: latest
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: icon.png
+  # Sign before shipping: SmartScreen warns on every unsigned installer and electron-updater refuses to apply an
+  # update whose signature differs from the running app's.
+  # signtoolOptions: { certificateSubjectName: "..." }
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+  shortcutName: PLAINTORCH
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  category: public.app-category.productivity
+  icon: icon.png
+  # Notarization is required for the updater on macOS; supply APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID.
+  hardenedRuntime: true
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  category: Utility
+  icon: icon.png
+  desktop:
+    entry:
+      Name: PLAINTORCH
+      Comment: PLAINTORCH background core

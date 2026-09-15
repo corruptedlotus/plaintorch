@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; font-src 'self' data:">
+	<title>PLAINTORCH</title>
+	<style>
+		:root {
+			color-scheme: dark;
+			--pt-bg: #1f1a22;
+			--pt-panel: #2a232e;
+			--pt-line: #3d3342;
+			--pt-text: #f2ebe4;
+			--pt-muted: #a89ca4;
+			--pt-accent: #e7793e;
+			--pt-accent-soft: #f2b28a;
+			--pt-ok: #7cc48f;
+			--pt-warn: #e6b45a;
+			--pt-bad: #e26d6d;
+		}
+		html, body { margin: 0; height: 100%; background: transparent; }
+		body { font: 14px/1.45 "Segoe UI", system-ui, sans-serif; color: var(--pt-text); }
+		body.status { background: var(--pt-bg); }
+	</style>
+</head>
+<body>
+	<pt-app></pt-app>
+	<script src="renderer.js"></script>
+</body>
+</html>

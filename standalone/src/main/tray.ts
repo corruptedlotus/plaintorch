@@ -1,0 +1,105 @@
+import path from "node:path"
+import { Menu, Tray, nativeImage, type MenuItemConstructorOptions } from "electron"
+import type { ShellStatus } from "../shared/contracts"
+import { hostsCore } from "./flavor"
+
+export interface TrayActions {
+	openStatus(): void
+	activateVault(): void
+	deactivateVault(): void
+	setAutostart(enabled: boolean): void
+	openLogs(): void
+	restartCore(): void
+	checkForUpdates(): void
+	installUpdate(): void
+	quit(): void
+}
+
+/**
+ * The tray icon and its menu, rebuilt from every status so the phase line, the vault entries, and the update entry
+ * always reflect the shell's state.
+ */
+export class ShellTray {
+	private tray?: Tray
+
+	public constructor(private readonly actions: TrayActions) { }
+
+	/** Creates the tray icon. */
+	public create(): void {
+		const icon = nativeImage.createFromPath(path.join(__dirname, "assets", "tray.png"))
+		this.tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
+		this.tray.setToolTip("PLAINTORCH")
+		this.tray.on("click", () => this.actions.openStatus())
+		this.tray.on("double-click", () => this.actions.openStatus())
+	}
+
+	/** Rebuilds the menu and tooltip for a status. */
+	public update(status: ShellStatus): void {
+		if (!this.tray || this.tray.isDestroyed()) {
+			return
+		}
+
+		this.tray.setToolTip(`PLAINTORCH: ${describe(status)}`)
+		this.tray.setContextMenu(Menu.buildFromTemplate(this.template(status)))
+	}
+
+	/** Removes the tray icon. */
+	public destroy(): void {
+		this.tray?.destroy()
+		this.tray = undefined
+	}
+
+	private template(status: ShellStatus): MenuItemConstructorOptions[] {
+		const items: MenuItemConstructorOptions[] = [
+			{ label: describe(status), enabled: false },
+			{ label: status.vault ? `Vault: ${status.vault}` : "No vault active", enabled: false },
+			{ type: "separator" },
+			{ label: "Open status", click: () => this.actions.openStatus() },
+			{ label: "Activate vault...", click: () => this.actions.activateVault() },
+			{ label: "Deactivate vault", enabled: !!status.activeVaultSetting, click: () => this.actions.deactivateVault() },
+			{ type: "separator" },
+			{ label: "Start at login", type: "checkbox", checked: status.autostart, click: item => this.actions.setAutostart(item.checked) },
+			{ label: "Open logs folder", click: () => this.actions.openLogs() }
+		]
+		if (hostsCore) {
+			items.push({ label: "Restart core", click: () => this.actions.restartCore() })
+		}
+
+		items.push({ type: "separator" }, this.updateItem(status), { type: "separator" }, { label: "Quit PLAINTORCH", click: () => this.actions.quit() })
+		return items
+	}
+
+	private updateItem(status: ShellStatus): MenuItemConstructorOptions {
+		const update = status.updateState
+		switch (update.kind) {
+			case "available":
+				return { label: `Download update ${update.version}...`, click: () => this.actions.installUpdate() }
+			case "ready":
+				return { label: `Install update ${update.version} and restart`, click: () => this.actions.installUpdate() }
+			case "downloading":
+				return { label: `Downloading update (${update.percent}%)`, enabled: false }
+			case "checking":
+				return { label: "Checking for updates...", enabled: false }
+			case "unavailable":
+				return { label: "Check for updates...", enabled: false }
+			default:
+				return { label: "Check for updates...", click: () => this.actions.checkForUpdates() }
+		}
+	}
+}
+
+/** One line for the tooltip and the first menu entry. */
+export function describe(status: ShellStatus): string {
+	switch (status.attachment) {
+		case "absent":
+			return "no core running"
+		case "exited":
+			return "core exited"
+		case "starting":
+			return "core starting"
+		case "attached":
+			return `attached, ${status.phase.toLowerCase()}`
+		default:
+			return status.phase.toLowerCase()
+	}
+}

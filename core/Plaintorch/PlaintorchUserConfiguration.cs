@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Pleiades.Vault;
 
 namespace Pleiades.Plaintorch;
@@ -64,19 +65,9 @@ public sealed class PlaintorchUserLayout
 	public string LoopbackBaseUrl => $"http://127.0.0.1:{LoopbackPort}";
 
 	/// <summary>
-	/// Gets the directory that stores optional splash-screen assets and runtime state.
+	/// Gets the directory that receives the daily log files of a daemon or spawned core.
 	/// </summary>
-	public string SplashRootPath => Path.Combine(RootPath, "splash");
-
-	/// <summary>
-	/// Gets the runtime state file path used by the interactive splash popup.
-	/// </summary>
-	public string SplashStatePath => Path.Combine(SplashRootPath, "state.json");
-
-	/// <summary>
-	/// Gets the generated PowerShell script path used to render the interactive splash popup.
-	/// </summary>
-	public string SplashScriptPath => Path.Combine(SplashRootPath, "plaintorch-core-splash.ps1");
+	public string LogsRootPath => Path.Combine(RootPath, "logs");
 
 	/// <summary>
 	/// Gets a value indicating whether this layout is an ephemeral, user-independent development profile.
@@ -169,12 +160,22 @@ public sealed class PlaintorchUserLayout
 /// <summary>
 /// Represents the per-user PLAINTORCH host configuration stored outside the vault.
 /// </summary>
+/// <remarks>
+/// The file is shared with the desktop shell, which owns keys the core has no model for (autostart, window
+/// placement). Those ride along in <see cref="AdditionalSettings"/> so a core-side save never drops them.
+/// </remarks>
 public sealed class PlaintorchUserConfiguration
 {
 	/// <summary>
 	/// Gets or sets the currently active PLAINTORCH vault path.
 	/// </summary>
 	public string? ActiveVaultPath { get; set; }
+
+	/// <summary>
+	/// Gets or sets the keys other writers of the file own, preserved verbatim across a core-side save.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? AdditionalSettings { get; set; }
 }
 
 /// <summary>
@@ -204,7 +205,8 @@ public sealed class PlaintorchUserConfigurationStore(PlaintorchUserLayout layout
 	}
 
 	/// <summary>
-	/// Saves the per-user configuration.
+	/// Saves the per-user configuration atomically: the file is written beside its target and moved into place, so
+	/// a reader (the core's configuration watcher, the desktop shell) never observes a partial write.
 	/// </summary>
 	/// <param name="configuration">The configuration to persist.</param>
 	public void Save(PlaintorchUserConfiguration configuration)
@@ -212,7 +214,9 @@ public sealed class PlaintorchUserConfigurationStore(PlaintorchUserLayout layout
 		ArgumentNullException.ThrowIfNull(configuration);
 		layout.EnsureExists();
 		var json = JsonSerializer.Serialize(configuration, SerializerOptions);
-		File.WriteAllText(layout.ConfigurationPath, json + Environment.NewLine);
+		var temporaryPath = layout.ConfigurationPath + ".tmp";
+		File.WriteAllText(temporaryPath, json + Environment.NewLine);
+		File.Move(temporaryPath, layout.ConfigurationPath, overwrite: true);
 	}
 }
 

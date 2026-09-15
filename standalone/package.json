@@ -1,0 +1,32 @@
+{
+	"name": "@pleiades/plaintorch-standalone",
+	"version": "0.1.0",
+	"private": true,
+	"description": "PLAINTORCH desktop shell: a per-user tray app that hosts (standalone flavour) or attaches to (client flavour) the core.",
+	"main": "dist/main.cjs",
+	"type": "module",
+	"scripts": {
+		"build": "node esbuild.config.mjs --flavor standalone --production",
+		"build:client": "node esbuild.config.mjs --flavor client --production",
+		"dev": "node esbuild.config.mjs --flavor standalone",
+		"dev:client": "node esbuild.config.mjs --flavor client",
+		"start": "electron .",
+		"typecheck": "tsc -p tsconfig.json --noEmit",
+		"make-icons": "electron scripts/make-icons.mjs"
+	},
+	"devDependencies": {
+		"@a11d/lit": "^0.11.1",
+		"@pleiades/sdk": "file:../sdk.ts",
+		"@types/node": "^22.15.17",
+		"electron": "^39.2.0",
+		"electron-builder": "^26.0.12",
+		"esbuild": "^0.25.4",
+		"typescript": "^5.9.3"
+	},
+	"dependencies": {
+		"electron-updater": "^6.6.2"
+	},
+	"allowScripts": {
+		"electron@39.8.10": true
+	}
+}

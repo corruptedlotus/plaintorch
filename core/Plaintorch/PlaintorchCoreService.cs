@@ -1,3 +1,4 @@
+using Pleiades.Plaintorch.Hosting;
 using Pleiades.Vault;
 using Pleiades.Puck;
 
@@ -23,7 +24,7 @@ public sealed class PlaintorchCoreService(
 	VaultLayout layout,
 	ActiveVaultSession session,
 	PlaintorchVaultLockService lockService,
-	PlaintorchCoreSplashService splashService,
+	PlaintorchHostState hostState,
 	PuckRuntimeCompilationCatalog puckRuntimeCompilationCatalog) : BackgroundService
 {
 	private static readonly TimeSpan ReconcileInterval = TimeSpan.FromSeconds(2);
@@ -38,6 +39,7 @@ public sealed class PlaintorchCoreService(
 	{
 		userLayout.EnsureExists();
 		logger.LogInformation("PLAINTORCH core started in idle daemon mode. Watching user settings for an active vault.");
+		hostState.Report(PlaintorchHostPhase.Idle, "Waiting for a vault to be activated.");
 
 		using var configurationWatcher = CreateConfigurationWatcher();
 
@@ -81,6 +83,11 @@ public sealed class PlaintorchCoreService(
 			// Either nothing is configured or the configured vault is not servable; ResolveDesiredVaultPath
 			// has already logged and recorded that so it is not repeated every reconcile.
 			logger.LogInformation("No servable vault configured. PLAINTORCH core is idle and waiting for activation.");
+			if (_failedVaultPath is null)
+			{
+				hostState.Report(PlaintorchHostPhase.Idle, "Waiting for a vault to be activated.");
+			}
+
 			return;
 		}
 
@@ -112,6 +119,7 @@ public sealed class PlaintorchCoreService(
 			if (!string.Equals(fullPath, _failedVaultPath, StringComparison.OrdinalIgnoreCase))
 			{
 				logger.LogWarning("Configured active vault '{VaultPath}' is not initialized. PLAINTORCH core will remain idle.", fullPath);
+				hostState.Report(PlaintorchHostPhase.Failed, "The configured vault is not initialized for PLAINTORCH.", fullPath);
 			}
 
 			_failedVaultPath = fullPath;
@@ -131,13 +139,13 @@ public sealed class PlaintorchCoreService(
 
 		try
 		{
-			await splashService.ShowLoadingAsync("Acquiring vault lock...", stoppingToken);
+			hostState.Report(PlaintorchHostPhase.Activating, "Acquiring vault lock...", vaultPath);
 			_lockHandle = await lockService.AcquireAsync(stoppingToken);
 
 			using (var scope = scopeFactory.CreateScope())
 			{
 				var engine = scope.ServiceProvider.GetRequiredService<PlaintorchEngine>();
-				await splashService.ShowLoadingAsync("Initializing vault layout, database, and indexes...", stoppingToken);
+				hostState.Report(PlaintorchHostPhase.Activating, "Initializing vault layout, database, and indexes...", vaultPath);
 				await engine.InitializeVaultAsync(stoppingToken);
 			}
 
@@ -145,8 +153,7 @@ public sealed class PlaintorchCoreService(
 			_activeVaultPath = vaultPath;
 			_failedVaultPath = null;
 
-			await splashService.ShowLoadingAsync("Core ready. Serving vault.", stoppingToken);
-			await splashService.CloseAsync(stoppingToken);
+			hostState.Report(PlaintorchHostPhase.Active, "Core ready. Serving vault.", vaultPath);
 			logger.LogInformation("PLAINTORCH core is now serving vault '{VaultPath}'.", vaultPath);
 		}
 		catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -158,7 +165,7 @@ public sealed class PlaintorchCoreService(
 		{
 			await ReleaseVaultAsync();
 			_failedVaultPath = vaultPath;
-			await splashService.ShowErrorAsync($"Failed to activate vault '{vaultPath}'.", exception, stoppingToken);
+			hostState.Report(PlaintorchHostPhase.Failed, $"Failed to activate vault '{vaultPath}'.{Environment.NewLine}{exception.Message}", vaultPath);
 			logger.LogError(exception, "Failed to activate vault '{VaultPath}'. PLAINTORCH core will remain idle until the vault is reconfigured.", vaultPath);
 		}
 	}
@@ -179,6 +186,7 @@ public sealed class PlaintorchCoreService(
 		if (releasedVaultPath is not null)
 		{
 			logger.LogInformation("PLAINTORCH core released vault '{VaultPath}' and returned to idle.", releasedVaultPath);
+			hostState.Report(PlaintorchHostPhase.Idle, "Vault released. Waiting for a vault to be activated.");
 		}
 	}
 
