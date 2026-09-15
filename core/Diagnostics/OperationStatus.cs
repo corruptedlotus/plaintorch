@@ -11,7 +11,8 @@ namespace Pleiades.Diagnostics;
 /// <param name="Severity">The current severity.</param>
 /// <param name="Files">The files involved.</param>
 /// <param name="EntityId">The entity identity involved, when known.</param>
-/// <param name="Detail">The latest human-readable detail.</param>
+/// <param name="Detail">The latest human-readable detail (presentation only).</param>
+/// <param name="Fingerprint">The structural identity of the current problem, as reported by the last failing check; what an Instance dismissal matches on.</param>
 /// <param name="OccurrenceCount">How many times the failing condition has been observed since it was first raised.</param>
 /// <param name="FirstRaisedUtc">When the status was first raised.</param>
 /// <param name="LastObservedUtc">When the status was most recently observed.</param>
@@ -23,6 +24,7 @@ public sealed record OperationStatus(
 	IReadOnlyList<string> Files,
 	string? EntityId,
 	string? Detail,
+	string? Fingerprint,
 	int OccurrenceCount,
 	DateTimeOffset FirstRaisedUtc,
 	DateTimeOffset LastObservedUtc)

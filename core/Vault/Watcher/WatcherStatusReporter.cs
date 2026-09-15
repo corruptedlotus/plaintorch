@@ -31,11 +31,11 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 
 	/// <summary>Reports that a filesystem root observer failed to initialize.</summary>
 	public void ReportRootInitializationFailed(string root, string? detail)
-		=> Report(WatcherOperations.Root, root, Check(WatcherOperations.RootInitFailed, failed: true, detail, files: [root]));
+		=> Report(WatcherOperations.Root, root, Check(WatcherOperations.RootInitFailed, failed: true, detail, files: [root], fingerprint: root));
 
 	/// <summary>Reports a runtime error raised by a filesystem root observer.</summary>
 	public void ReportRootError(string root, string? detail)
-		=> Report(WatcherOperations.Root, root, Check(WatcherOperations.RootError, failed: true, detail, files: [root]));
+		=> Report(WatcherOperations.Root, root, Check(WatcherOperations.RootError, failed: true, detail, files: [root], fingerprint: root));
 
 	/// <summary>Reports that a relocation candidate synced successfully.</summary>
 	public void ReportRelocationSucceeded(string newPath)
@@ -58,7 +58,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 			? (IReadOnlyList<string>?)null
 			: [offendingPath];
 		var message = string.IsNullOrWhiteSpace(detail) ? WatcherMessages.Details.PathNotAccessible(offendingPath) : detail;
-		Report(WatcherOperations.VaultAccess, WatcherOperations.GlobalScope, Check(WatcherOperations.VaultInaccessible, failed: true, message, files));
+		Report(WatcherOperations.VaultAccess, WatcherOperations.GlobalScope, Check(WatcherOperations.VaultInaccessible, failed: true, message, files, fingerprint: offendingPath));
 	}
 
 	/// <summary>Reports that vault access has been restored, resolving the tier-2 issue however it was raised.</summary>
@@ -75,7 +75,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 	public void ReportDuplicateIdentity(string entityId, IReadOnlyList<string> files, string? detail = null)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(entityId);
-		Report(WatcherOperations.Identity, entityId, Check(WatcherOperations.DuplicateIdentity, failed: true, detail, files, entityId));
+		Report(WatcherOperations.Identity, entityId, Check(WatcherOperations.DuplicateIdentity, failed: true, detail, files, entityId, Fingerprint([entityId, ..files])));
 	}
 
 	/// <summary>Reports that an identity is asserted by a single file, resolving any duplicate-identity flag for it.</summary>
@@ -96,7 +96,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		ArgumentNullException.ThrowIfNull(exception);
 		var reason = ClassifyOperationalFailure(exception, WatcherOperations.DiscoveryFailed);
 		var detail = string.IsNullOrWhiteSpace(exception.Message) ? null : exception.Message;
-		Report(WatcherOperations.Reconcile, path, OperationCheck.Fail(reason, OperationSeverity.Warning, detail, files: [path]));
+		Report(WatcherOperations.Reconcile, path, OperationCheck.Fail(reason, OperationSeverity.Warning, detail, files: [path], fingerprint: exception.GetType().Name));
 	}
 
 	/// <summary>Reports that a path was inspected cleanly but is not a managed candidate: all reconcile checks pass.</summary>
@@ -128,16 +128,27 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		var markdownInvalid = concern == VaultSyncConcern.MarkdownInvalid
 			|| (concern == VaultSyncConcern.None && candidate.Issues.Count > 0);
 
+		// What makes this the *same* problem next time: the classified concern, the action it led to, and which fields
+		// are wrong (with their offending values) — never the reason's prose, which is localisable and presentational.
+		var fingerprint = Fingerprint(
+		[
+			concern.ToString(),
+			candidate.SuggestedAction.ToString(),
+			..candidate.Issues
+				.Select(static issue => issue.RawValue is null ? $"{issue.FieldPath}:{issue.Code}" : $"{issue.FieldPath}:{issue.Code}={issue.RawValue}")
+				.Order(StringComparer.Ordinal),
+		]);
+
 		Report(
 			WatcherOperations.Reconcile,
 			path,
 			Pass(WatcherOperations.DiscoveryFailed),
 			Pass(WatcherOperations.PermissionDenied),
 			Pass(WatcherOperations.FileInUse),
-			Check(WatcherOperations.MarkdownInvalid, markdownInvalid, validationDetail ?? candidate.SuggestedReason, files: [path], entityId: candidate.PathId),
-			Check(WatcherOperations.PuckViolation, puckViolation, candidate.SuggestedReason ?? firstIssue?.Message, files: [path], entityId: candidate.PathId),
-			Check(WatcherOperations.PolicyViolation, policyViolation, candidate.SuggestedReason, files: [path], entityId: candidate.PathId),
-			Check(WatcherOperations.ForeignFile, foreignFile, candidate.SuggestedReason, files: [path], entityId: candidate.PathId));
+			Check(WatcherOperations.MarkdownInvalid, markdownInvalid, validationDetail ?? candidate.SuggestedReason, files: [path], entityId: candidate.PathId, fingerprint),
+			Check(WatcherOperations.PuckViolation, puckViolation, candidate.SuggestedReason ?? firstIssue?.Message, files: [path], entityId: candidate.PathId, fingerprint),
+			Check(WatcherOperations.PolicyViolation, policyViolation, candidate.SuggestedReason, files: [path], entityId: candidate.PathId, fingerprint),
+			Check(WatcherOperations.ForeignFile, foreignFile, candidate.SuggestedReason, files: [path], entityId: candidate.PathId, fingerprint));
 	}
 
 	/// <summary>
@@ -160,7 +171,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 	{
 		ArgumentNullException.ThrowIfNull(candidate);
 		var reason = ClassifyOperationalFailure(exception, WatcherOperations.SyncFailed);
-		Report(WatcherOperations.Reconcile, candidate.AbsolutePath, Check(reason, failed: true, exception.Message, files: [candidate.AbsolutePath], entityId: candidate.PathId));
+		Report(WatcherOperations.Reconcile, candidate.AbsolutePath, Check(reason, failed: true, exception.Message, files: [candidate.AbsolutePath], entityId: candidate.PathId, fingerprint: exception.GetType().Name));
 	}
 
 	// Every reason code the reconcile operation can raise across inspection and sync. A path that no longer resolves to
@@ -197,9 +208,9 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 	// A failing check carries ONLY the specific detail (the policy's reason, an exception message, a composed line) — never
 	// the reason's descriptor message. The descriptor message is a function of the reason code and is resolved where the
 	// status is presented (the system API looks it up per request), so the wire carries the two halves separately and a
-	// client can show, fold, or hide the detail independently. It also keeps the Instance-dismiss fingerprint (which is
-	// the detail) about the specific problem rather than the generic prose.
-	private static OperationCheck Check(string reasonCode, bool failed, string? detail = null, IReadOnlyList<string>? files = null, string? entityId = null)
+	// client can show, fold, or hide the detail independently. The detail is presentation only: what identifies *this*
+	// problem for an Instance dismissal is the structural, culture-invariant fingerprint composed from facts.
+	private static OperationCheck Check(string reasonCode, bool failed, string? detail = null, IReadOnlyList<string>? files = null, string? entityId = null, string? fingerprint = null)
 	{
 		if (!failed)
 		{
@@ -207,8 +218,12 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		}
 
 		var descriptor = WatcherOperations.Describe(reasonCode);
-		return OperationCheck.Fail(reasonCode, descriptor.Severity, string.IsNullOrWhiteSpace(detail) ? null : detail, files, entityId);
+		return OperationCheck.Fail(reasonCode, descriptor.Severity, string.IsNullOrWhiteSpace(detail) ? null : detail, files, entityId, fingerprint);
 	}
+
+	/// <summary>Composes a structural fingerprint from its parts (order-significant, unit-separated).</summary>
+	private static string Fingerprint(IEnumerable<string?> parts)
+		=> string.Join('\u001F', parts.Select(static part => part ?? string.Empty));
 
 	private static string ClassifyOperationalFailure(Exception exception, string fallbackReason)
 	{

@@ -153,8 +153,8 @@ public sealed class OperationStatusRegistry
 
 	/// <summary>
 	/// Records a dismissal for a status identity and returns the stored record so the caller can persist it. For an
-	/// <see cref="OperationStatusDismissalScope.Instance"/> dismissal the current active status's detail is captured
-	/// as the fingerprint (so the snooze lifts when a different problem arises); this returns <see langword="null"/>
+	/// <see cref="OperationStatusDismissalScope.Instance"/> dismissal the current active status's structural fingerprint is
+	/// captured (so the snooze lifts when a different problem arises); this returns <see langword="null"/>
 	/// when no such status is currently active — there is nothing to dismiss. File and Reason dismissals always record.
 	/// </summary>
 	public OperationStatusDismissal? Dismiss(OperationStatusDismissalScope scope, string operationId, string scopeKey, string reasonCode)
@@ -173,7 +173,7 @@ public sealed class OperationStatusRegistry
 					return null;
 				}
 
-				fingerprint = status.Detail;
+				fingerprint = status.Fingerprint;
 			}
 
 			var dismissal = new OperationStatusDismissal(scope, operationId, scopeKey, reasonCode, fingerprint, DateTimeOffset.UtcNow);
@@ -244,6 +244,7 @@ public sealed class OperationStatusRegistry
 				Files = check.Files ?? existing.Files,
 				EntityId = check.EntityId ?? existing.EntityId,
 				Detail = check.Detail,
+				Fingerprint = check.Fingerprint,
 				OccurrenceCount = existing.OccurrenceCount + 1,
 				LastObservedUtc = now,
 			};
@@ -269,6 +270,7 @@ public sealed class OperationStatusRegistry
 			check.Files ?? [],
 			check.EntityId,
 			check.Detail,
+			check.Fingerprint,
 			OccurrenceCount: 1,
 			FirstRaisedUtc: now,
 			LastObservedUtc: now);

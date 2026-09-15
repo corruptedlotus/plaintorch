@@ -11,7 +11,7 @@ namespace Pleiades.Tests.Core;
 /// <summary>
 /// The status-dismissal feature (PEP108): a user can snooze an issue so it stops counting toward health and nagging.
 /// Matching is by value, so an <see cref="OperationStatusDismissalScope.Instance"/> snooze self-expires when a
-/// <em>different</em> problem arises on the same key (its detail fingerprint changes), never permanently blinding the
+/// <em>different</em> problem arises on the same key (its structural fingerprint changes), never permanently blinding the
 /// user to a new problem, and it re-applies to a status re-raised after a restart. File and Reason scopes are the
 /// reserved broader-snooze framework.
 /// </summary>
@@ -21,8 +21,9 @@ public sealed class OperationStatusDismissalRegistryTests
 	private const string Scope = "Objectives/Ship it.md";
 	private const string Reason = "policy-violation";
 
-	private static OperationReport Fail(string detail, string scope = Scope, string reason = Reason)
-		=> new(Operation, scope, [OperationCheck.Fail(reason, OperationSeverity.Error, detail)]);
+	// A failing check whose fingerprint (what an Instance dismissal matches on) doubles as its detail text unless given.
+	private static OperationReport Fail(string problem, string scope = Scope, string reason = Reason, string? detail = null)
+		=> new(Operation, scope, [OperationCheck.Fail(reason, OperationSeverity.Error, detail ?? problem, fingerprint: problem)]);
 
 	private static bool DismissedFlag(OperationStatusRegistry registry, string scope = Scope, string reason = Reason)
 		=> registry.GetActiveStatusesWithDismissal()
@@ -64,7 +65,12 @@ public sealed class OperationStatusDismissalRegistryTests
 		Assert.True(DismissedFlag(registry));
 		Assert.Equal(OperationHealth.Ok, registry.GetHealth());
 
-		// A materially different problem on the same file+reason (the detail changes): the snooze lifts.
+		// The same problem described differently (only the presentational detail changes — a reworded or translated
+		// message): still the same fingerprint, so the snooze holds. Text is never what a dismissal is matched on.
+		registry.Ingest(Fail("Unknown file.", detail: "Fichier inconnu."));
+		Assert.True(DismissedFlag(registry));
+
+		// A materially different problem on the same file+reason (the fingerprint changes): the snooze lifts.
 		registry.Ingest(Fail("Now it also fails frontmatter validation."));
 		Assert.False(DismissedFlag(registry));
 		Assert.Equal(OperationHealth.Issues, registry.GetHealth());
@@ -148,6 +154,7 @@ public sealed class OperationStatusDismissalDurabilityTests : VaultTestBase
 	private const string Scope = "Objectives/Stray.md";
 	private const string Reason = "policy-violation";
 	private const string Detail = "Unknown file is disallowed by enforced storage policy.";
+	private const string Fingerprint = "PolicyViolation\u001FPurgeFile";
 
 	[Fact]
 	public async Task A_dismissal_persists_and_reapplies_across_a_reload()
@@ -155,7 +162,7 @@ public sealed class OperationStatusDismissalDurabilityTests : VaultTestBase
 		var reporter = Vault.GetSingleton<OperationStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
-		reporter.Report(new OperationReport(Operation, Scope, [OperationCheck.Fail(Reason, OperationSeverity.Error, Detail)]));
+		reporter.Report(new OperationReport(Operation, Scope, [OperationCheck.Fail(Reason, OperationSeverity.Error, Detail, fingerprint: Fingerprint)]));
 		Assert.Equal(OperationHealth.Issues, registry.GetHealth());
 
 		var dismissed = await Vault.WithScopeAsync(services => services
@@ -166,7 +173,7 @@ public sealed class OperationStatusDismissalDurabilityTests : VaultTestBase
 
 		var rows = await Vault.QueryAsync(context => context.OperationStatusDismissals
 			.ToListAsync(TestContext.Current.CancellationToken));
-		Assert.Equal(Detail, Assert.Single(rows).Fingerprint);
+		Assert.Equal(Fingerprint, Assert.Single(rows).Fingerprint);
 
 		// Simulate a restart: drop the in-memory set and resolve the live status, so nothing is snoozed and nothing
 		// is active — the state a fresh process starts in.
@@ -178,7 +185,7 @@ public sealed class OperationStatusDismissalDurabilityTests : VaultTestBase
 		await Vault.WithScopeAsync(services => services
 			.GetRequiredService<OperationStatusDismissalService>()
 			.LoadIntoRegistryAsync(TestContext.Current.CancellationToken));
-		reporter.Report(new OperationReport(Operation, Scope, [OperationCheck.Fail(Reason, OperationSeverity.Error, Detail)]));
+		reporter.Report(new OperationReport(Operation, Scope, [OperationCheck.Fail(Reason, OperationSeverity.Error, Detail, fingerprint: Fingerprint)]));
 
 		Assert.Equal(OperationHealth.Ok, registry.GetHealth());
 

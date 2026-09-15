@@ -9,8 +9,8 @@ namespace Pleiades.Diagnostics;
 public enum OperationStatusDismissalScope
 {
 	/// <summary>
-	/// Dismisses one exact status — a single <c>(operation, scope, reason)</c> whose detail fingerprint still matches.
-	/// It self-expires when a <em>different</em> problem arises on that key (the detail changes) or the status
+	/// Dismisses one exact status — a single <c>(operation, scope, reason)</c> whose structural fingerprint still matches.
+	/// It self-expires when a <em>different</em> problem arises on that key (the fingerprint changes) or the status
 	/// resolves and later re-raises, so the snooze never permanently blinds the user to a new problem.
 	/// </summary>
 	Instance,
@@ -25,7 +25,7 @@ public enum OperationStatusDismissalScope
 /// <summary>
 /// A durable, user-made decision to suppress an operation status (PEP108 dismiss feature). Matching is a pure function
 /// of the dismissal and a live status, so a dismissal needs no runtime bookkeeping to "expire": an
-/// <see cref="OperationStatusDismissalScope.Instance"/> dismissal stops matching the moment the status's detail
+/// <see cref="OperationStatusDismissalScope.Instance"/> dismissal stops matching the moment the status's structural
 /// fingerprint changes (a different problem) or the status resolves and re-raises. File and Reason dismissals are
 /// standing. Because matching is by value, a dismissal restored from the database on the next run applies to the
 /// re-raised status automatically.
@@ -35,8 +35,9 @@ public enum OperationStatusDismissalScope
 /// <param name="ScopeKey">The status scope key — typically a file path (Instance and File scope).</param>
 /// <param name="ReasonCode">The failing condition's reason code (Instance and Reason scope).</param>
 /// <param name="Fingerprint">
-/// The status detail captured at dismiss time. An Instance dismissal matches only while the live status's detail still
-/// equals it, so a materially different problem on the same key resurfaces. Null for File/Reason scope.
+/// The status's structural fingerprint captured at dismiss time (see <see cref="OperationStatus.Fingerprint"/>). An
+/// Instance dismissal matches only while the live status's fingerprint still equals it, so a materially different
+/// problem on the same key resurfaces. Never the (localisable) detail text. Null for File/Reason scope.
 /// </param>
 /// <param name="DismissedUtc">When the dismissal was made.</param>
 public sealed record OperationStatusDismissal(
@@ -60,7 +61,7 @@ public sealed record OperationStatusDismissal(
 				string.Equals(OperationId, status.OperationId, StringComparison.Ordinal)
 				&& string.Equals(ScopeKey, status.ScopeKey, StringComparison.Ordinal)
 				&& string.Equals(ReasonCode, status.ReasonCode, StringComparison.Ordinal)
-				&& string.Equals(Fingerprint, status.Detail, StringComparison.Ordinal),
+				&& string.Equals(Fingerprint, status.Fingerprint, StringComparison.Ordinal),
 			OperationStatusDismissalScope.File =>
 				string.Equals(ScopeKey, status.ScopeKey, StringComparison.Ordinal),
 			OperationStatusDismissalScope.Reason =>

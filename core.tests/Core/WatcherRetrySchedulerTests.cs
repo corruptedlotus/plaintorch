@@ -28,6 +28,7 @@ public sealed class WatcherRetrySchedulerTests
 			Files: [scopeKey],
 			EntityId: null,
 			Detail: null,
+			Fingerprint: null,
 			OccurrenceCount: occurrenceCount,
 			FirstRaisedUtc: lastObserved,
 			LastObservedUtc: lastObserved);

@@ -29,8 +29,8 @@ public sealed class OperationStatusDismissalRecord
 	/// <summary>Gets or sets the failing condition's reason code (Instance and Reason scope).</summary>
 	public required string ReasonCode { get; set; }
 
-	/// <summary>Gets or sets the status detail captured at dismiss time; an Instance dismissal matches only while the
-	/// live status's detail still equals it. Null for File/Reason scope.</summary>
+	/// <summary>Gets or sets the status's structural fingerprint captured at dismiss time (never its detail text); an
+	/// Instance dismissal matches only while the live status's fingerprint still equals it. Null for File/Reason scope.</summary>
 	public string? Fingerprint { get; set; }
 
 	/// <summary>Gets or sets when the dismissal was made.</summary>

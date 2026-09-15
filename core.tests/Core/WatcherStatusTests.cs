@@ -354,4 +354,30 @@ public sealed class WatcherStatusTests : VaultTestBase
 		var scan = Assert.Single(registry.GetActiveStatuses());
 		Assert.Null(scan.Detail);
 	}
+
+	[Fact]
+	public void The_dismiss_fingerprint_is_structural_not_the_message_text()
+	{
+		// What identifies "the same problem" for an Instance dismissal is composed from facts — the classified concern,
+		// the action, the offending fields and values — so a reworded or translated message leaves it untouched, while a
+		// genuinely different problem (another field goes bad) changes it.
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		VaultSyncCandidate Invalid(string reason, MarkdownValidationIssue issue)
+			=> Candidate("Objectives/Bad.md", VaultSyncAction.Conflict, reason, VaultSyncConcern.MarkdownInvalid, issues: [issue]);
+
+		watcher.ReportInspectCandidate(Invalid("Candidate has validation issues.", new("status", "Unknown enum value.", "Nope")));
+		var first = Assert.Single(registry.GetActiveStatuses()).Fingerprint;
+		Assert.NotNull(first);
+		Assert.DoesNotContain("validation", first, StringComparison.OrdinalIgnoreCase);
+
+		// Same facts, different words: the same problem.
+		watcher.ReportInspectCandidate(Invalid("Le candidat est invalide.", new("status", "Valeur inconnue.", "Nope")));
+		Assert.Equal(first, Assert.Single(registry.GetActiveStatuses()).Fingerprint);
+
+		// Another field goes bad: a different problem.
+		watcher.ReportInspectCandidate(Invalid("Candidate has validation issues.", new("forecast", "Field is required.")));
+		Assert.NotEqual(first, Assert.Single(registry.GetActiveStatuses()).Fingerprint);
+	}
 }
