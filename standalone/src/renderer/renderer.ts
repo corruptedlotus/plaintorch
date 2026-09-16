@@ -49,6 +49,10 @@ function phaseLabel(status: ShellStatus): string {
 		return "Core exited"
 	}
 
+	if (status.sweeping) {
+		return "Sweeping"
+	}
+
 	return status.phase
 }
 
@@ -202,13 +206,14 @@ export class Status extends Component {
 	}
 
 	private async refreshBriefing() {
-		const key = `${this.status.attachment}|${this.status.phase}|${this.status.vault}`
+		const key = `${this.status.attachment}|${this.status.phase}|${this.status.sweeping}|${this.status.vault}`
 		if (key === this.lastBriefingKey) {
 			return
 		}
 
 		this.lastBriefingKey = key
-		if (this.status.phase !== "Active") {
+		// Wait for the startup sweep to finish before reading vault data, so the briefing reflects a settled vault.
+		if (this.status.phase !== "Active" || this.status.sweeping) {
 			this.briefing = undefined
 			this.briefingError = undefined
 			return
@@ -225,7 +230,9 @@ export class Status extends Component {
 
 	protected override get template() {
 		const status = this.status
-		const tone = status.attachment === "absent" || status.attachment === "exited" ? "bad" : phaseTone[status.phase]
+		const tone = status.attachment === "absent" || status.attachment === "exited"
+			? "bad"
+			: status.sweeping ? "warn" : phaseTone[status.phase]
 		return html`
 			<header>
 				<h1>PLAINTORCH</h1>
@@ -300,6 +307,10 @@ export class Status extends Component {
 	}
 
 	private briefingTemplate() {
+		if (this.status.sweeping) {
+			return html`<section><h2>Vault</h2><div class="hint">Running the startup sweep… vault data appears once it finishes.</div></section>`
+		}
+
 		if (this.status.phase !== "Active") {
 			return html`<section><h2>Vault</h2><div class="hint">Vault data appears once a vault is active.</div></section>`
 		}

@@ -11,7 +11,7 @@ export type CorePhase = "Starting" | "Idle" | "Activating" | "Active" | "Failed"
 /** One line of the spawn-mode stdout stream. */
 export type CoreEvent =
 	| { event: "hello", pid: number, profile: string, endpoint: string, loopback?: string }
-	| { event: "status", phase: CorePhase, message?: string, vault?: string, at: string }
+	| { event: "status", phase: CorePhase, message?: string, vault?: string, sweeping?: boolean, at: string }
 	| { event: "listening", endpoint: string, loopback?: string }
 	| { event: "stopping" }
 	| { event: "already-running", endpoint: string, mode?: string, vault?: string }
@@ -24,6 +24,7 @@ export interface CoreHealth {
 	phase: CorePhase
 	message?: string
 	vault?: string
+	sweeping?: boolean
 	endpoint: string
 	since: string
 }
@@ -53,6 +54,8 @@ export interface ShellStatus {
 	logsPath: string
 	attachment: CoreAttachment
 	phase: CorePhase
+	/** Whether the core's startup sweep is still running (Active and serving meanwhile). A status surface holds its splash while true. */
+	sweeping: boolean
 	message?: string
 	vault?: string
 	activeVaultSetting?: string

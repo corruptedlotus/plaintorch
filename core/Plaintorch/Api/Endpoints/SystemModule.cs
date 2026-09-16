@@ -89,6 +89,7 @@ public sealed class SystemModule : Module
 				phase = status.Phase,
 				message = status.Message,
 				vault = status.VaultPath,
+				sweeping = status.Sweeping,
 				endpoint = userLayout.EndpointDisplay,
 				since = status.At,
 			});

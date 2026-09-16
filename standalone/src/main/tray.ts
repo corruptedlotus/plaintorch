@@ -90,6 +90,10 @@ export class ShellTray {
 
 /** One line for the tooltip and the first menu entry. */
 export function describe(status: ShellStatus): string {
+	if (status.sweeping) {
+		return status.attachment === "attached" ? "attached, startup sweep" : "startup sweep"
+	}
+
 	switch (status.attachment) {
 		case "absent":
 			return "no core running"

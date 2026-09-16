@@ -29,6 +29,7 @@ public sealed class VaultWatcherService(
 	OperationStatusRegistry statusRegistry,
 	WatcherRetryScheduler retryScheduler,
 	Pleiades.Plaintorch.ActiveVaultSession session,
+	Pleiades.Plaintorch.Hosting.PlaintorchHostState hostState,
 	ILogger<VaultWatcherService> logger) : BackgroundService
 {
 	private static readonly TimeSpan DebounceWindow = TimeSpan.FromMilliseconds(500);
@@ -155,7 +156,9 @@ public sealed class VaultWatcherService(
 		}
 
 		var scope = inaccessiblePath ?? WatcherOperations.GlobalScope;
-		statusReporter.ReportVaultInaccessible(scope, WatcherMessages.Details.VaultPathNotAccessible(scope));
+		// Inaccessible before the first sweep even runs: the core is serving, so stop holding a splash on the sweep.
+		hostState.EndSweep("Serving vault (watcher waiting for vault files).");
+		statusReporter.ReportVaultInaccessible(scope, $"Vault path '{scope}' is not accessible.");
 		logger.LogWarning("Vault watcher is asleep: '{Path}' is not accessible. It will re-probe until access is restored.", scope);
 
 		using var timer = new PeriodicTimer(StructuralReprobeInterval);
@@ -198,6 +201,8 @@ public sealed class VaultWatcherService(
 		{
 			if (IsStructuralFailure(out var scope))
 			{
+				// The sweep will not complete this span; the core still serves, so release any splash held on the sweep.
+				hostState.EndSweep("Serving vault (watcher sleeping until vault files are reachable).");
 				statusReporter.ReportVaultInaccessible(scope, exception.Message);
 				logger.LogWarning(exception, "Vault startup scan failed because '{Path}' is inaccessible; watcher will sleep and re-probe.", scope);
 				return LiveSessionExit.LostAccess;
@@ -207,6 +212,8 @@ public sealed class VaultWatcherService(
 			logger.LogError(exception, "Vault startup discovery scan failed. Watcher will continue with live filesystem observation.");
 		}
 
+		// The startup sweep is done (or was skipped past); clear the sweep flag so a status surface stops waiting on it.
+		hostState.EndSweep("Serving vault.");
 		InitializeWatchers();
 
 		using var timer = new PeriodicTimer(DrainInterval);

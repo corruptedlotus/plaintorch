@@ -115,6 +115,7 @@ public sealed class PlaintorchHostStatusStream : IHostedService, IDisposable
 			phase = status.Phase,
 			message = status.Message,
 			vault = status.VaultPath,
+			sweeping = status.Sweeping,
 			at = status.At,
 		};
 	}

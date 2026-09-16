@@ -23,6 +23,7 @@ export class Shell extends EventEmitter<{ status: [ShellStatus], log: [string] }
 	private readonly core?: CoreProcess
 	private attachment: CoreAttachment = hostsCore ? "starting" : "absent"
 	private phase: CorePhase = "Starting"
+	private sweeping = false
 	private message?: string
 	private vault?: string
 	private exitCode?: number
@@ -45,6 +46,7 @@ export class Shell extends EventEmitter<{ status: [ShellStatus], log: [string] }
 				}
 
 				this.attachment = willRestart ? "starting" : "exited"
+				this.sweeping = false
 				if (!this.quitting) {
 					this.phase = "Failed"
 					this.message = willRestart
@@ -68,6 +70,7 @@ export class Shell extends EventEmitter<{ status: [ShellStatus], log: [string] }
 			logsPath: this.profile.logsPath,
 			attachment: this.attachment,
 			phase: this.phase,
+			sweeping: this.sweeping,
 			message: this.message,
 			vault: this.vault,
 			activeVaultSetting: this.configuration.load().ActiveVaultPath ?? undefined,
@@ -78,9 +81,12 @@ export class Shell extends EventEmitter<{ status: [ShellStatus], log: [string] }
 		}
 	}
 
-	/** Whether the core is in a phase worth a splash: it is still coming up. */
+	/**
+	 * Whether the core is still coming up and a splash should stay: a starting/activating phase, or an Active core
+	 * whose startup sweep has not finished yet.
+	 */
 	public get isCoreStarting(): boolean {
-		return this.attachment === "starting" || this.phase === "Starting" || this.phase === "Activating"
+		return this.attachment === "starting" || this.phase === "Starting" || this.phase === "Activating" || this.sweeping
 	}
 
 	/** Brings the shell up: watches the configuration, starts or finds the core, prepares the updater. */
@@ -133,6 +139,7 @@ export class Shell extends EventEmitter<{ status: [ShellStatus], log: [string] }
 		clearInterval(this.pollTimer)
 		this.attachment = "starting"
 		this.phase = "Starting"
+		this.sweeping = false
 		this.message = "Restarting PLAINTORCH core..."
 		this.exitCode = undefined
 		this.publish()
@@ -150,6 +157,7 @@ export class Shell extends EventEmitter<{ status: [ShellStatus], log: [string] }
 		}
 
 		this.phase = "Stopping"
+		this.sweeping = false
 		this.message = "Stopping PLAINTORCH core..."
 		this.publish()
 		await this.core.stop()
@@ -163,6 +171,7 @@ export class Shell extends EventEmitter<{ status: [ShellStatus], log: [string] }
 				break
 			case "status":
 				this.phase = event.phase
+				this.sweeping = event.sweeping ?? false
 				this.message = event.message
 				this.vault = event.vault
 				break
@@ -171,6 +180,7 @@ export class Shell extends EventEmitter<{ status: [ShellStatus], log: [string] }
 				break
 			case "stopping":
 				this.phase = "Stopping"
+				this.sweeping = false
 				break
 			case "already-running":
 				this.attachment = "attached"
@@ -189,23 +199,25 @@ export class Shell extends EventEmitter<{ status: [ShellStatus], log: [string] }
 		clearInterval(this.pollTimer)
 		const poll = async () => {
 			const health = await this.transport.probeHealth()
-			const previous = `${this.attachment}|${this.phase}|${this.message}|${this.vault}`
+			const previous = `${this.attachment}|${this.phase}|${this.sweeping}|${this.message}|${this.vault}`
 			if (health) {
 				this.attachment = "attached"
 				this.phase = health.phase
+				this.sweeping = health.sweeping ?? false
 				this.message = health.message
 				this.vault = health.vault ?? health.activeVault
 			}
 			else {
 				this.attachment = "absent"
 				this.phase = "Failed"
+				this.sweeping = false
 				this.message = hostsCore
 					? "No PLAINTORCH core answers on this profile. Restart it from the tray."
 					: "No PLAINTORCH core is running for this profile. Start the standalone app or the console daemon."
 				this.vault = undefined
 			}
 
-			if (previous !== `${this.attachment}|${this.phase}|${this.message}|${this.vault}`) {
+			if (previous !== `${this.attachment}|${this.phase}|${this.sweeping}|${this.message}|${this.vault}`) {
 				this.publish()
 			}
 		}

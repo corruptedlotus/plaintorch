@@ -29,6 +29,9 @@ public sealed class PlaintorchCoreService(
 {
 	private static readonly TimeSpan ReconcileInterval = TimeSpan.FromSeconds(2);
 
+	/// <summary>How long the sweep flag may stay set with no word from the watcher before the coordinator clears it.</summary>
+	private static readonly TimeSpan SweepBackstopTimeout = TimeSpan.FromSeconds(30);
+
 	private readonly SemaphoreSlim _reconcileSignal = new(0, int.MaxValue);
 	private string? _activeVaultPath;
 	private string? _failedVaultPath;
@@ -149,11 +152,16 @@ public sealed class PlaintorchCoreService(
 				await engine.InitializeVaultAsync(stoppingToken);
 			}
 
+			// Hand off to Active with the sweep flag already set, before MarkReady lets the watcher start, so a status
+			// surface (the desktop splash) keeps waiting through the startup sweep with no window where it sees a
+			// bare Active and closes early. The watcher clears the flag when its startup sweep ends (EndSweep); the
+			// backstop below clears it if the watcher never gets there, so the flag can never wedge a splash open.
+			hostState.Report(PlaintorchHostPhase.Active, "Vault ready. Running startup sweep...", vaultPath, sweeping: true);
 			session.MarkReady(vaultPath);
 			_activeVaultPath = vaultPath;
 			_failedVaultPath = null;
+			ScheduleSweepBackstop(vaultPath);
 
-			hostState.Report(PlaintorchHostPhase.Active, "Core ready. Serving vault.", vaultPath);
 			logger.LogInformation("PLAINTORCH core is now serving vault '{VaultPath}'.", vaultPath);
 		}
 		catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -191,11 +199,29 @@ public sealed class PlaintorchCoreService(
 	}
 
 	/// <summary>
+	/// Clears the startup-sweep flag after a bounded wait if the watcher never did, so a status surface can never be
+	/// held on the sweep indefinitely (a watcher that faulted or was disabled). The normal path is the watcher's own
+	/// <see cref="PlaintorchHostState.EndSweep"/> the moment its startup sweep finishes, long before this fires.
+	/// </summary>
+	private void ScheduleSweepBackstop(string vaultPath)
+	{
+		_ = Task.Delay(SweepBackstopTimeout).ContinueWith(_ =>
+		{
+			// Only clear if this same activation is still the one serving; a later deactivate/activate owns its own sweep.
+			if (string.Equals(_activeVaultPath, vaultPath, StringComparison.OrdinalIgnoreCase) && hostState.Current.Sweeping)
+			{
+				hostState.EndSweep("Serving vault.");
+			}
+		}, TaskScheduler.Default);
+	}
+
+	/// <summary>
 	/// Returns the core to idle: signals the session idle so vault-scoped work stops, releases the vault lock,
 	/// unbinds the vault layout, and purges cached vault-scoped state.
 	/// </summary>
 	private async Task ReleaseVaultAsync()
 	{
+		hostState.EndSweep();
 		session.MarkIdle();
 		_activeVaultPath = null;
 

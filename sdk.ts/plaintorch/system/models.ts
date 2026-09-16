@@ -43,6 +43,8 @@ export interface HealthStatus {
 	message?: string
 	/** The vault the phase concerns, when any (a failed activation names the vault that failed). */
 	vault?: string
+	/** Whether the watcher's startup sweep is still running (the core is Active and serving while it does). */
+	sweeping?: boolean
 	/** The transport endpoint the core answered on. */
 	endpoint: string
 	/** When the current phase began. */
