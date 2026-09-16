@@ -294,16 +294,15 @@ export class DependencyCanvas extends Component {
 				padding: 1em;
 			}
 
-			.fab {
+			/* The two FABs, bottom-right, in a row: the smaller create-FAB beside the main add-FAB. */
+			.fabs {
 				position: absolute;
 				inset-block-end: 1em;
 				inset-inline-end: 1em;
 				z-index: 5;
-			}
-
-			/* The create-FAB sits above the add-FAB: imports below, brand-new entities above. */
-			.create-fab {
-				inset-block-end: 4.6em;
+				display: flex;
+				align-items: center;
+				gap: .6em;
 			}
 
 			/* The empty-state offer: buttons live in the notice, so their layer takes clicks the notice waives. */
@@ -567,18 +566,19 @@ export class DependencyCanvas extends Component {
 				${graph.nodes.length > 0 ? nothing : this.emptyOverlay}
 					${this.sprint || this.mode === 'global' ? this.trayTemplate : nothing}
 					${this.sprint || this.mode === 'global' ? html`
-						<p7t-expanding-actions
-							class='fab'
-							large
-							actionLabel='Add to the canvas'
-							.actions=${this.additions}>
-						</p7t-expanding-actions>
-						<p7t-expanding-actions
-							class='fab create-fab'
-							icon='lucide:sparkles'
-							actionLabel='Create on the canvas'
-							.actions=${this.creations}>
-						</p7t-expanding-actions>
+						<div class='fabs'>
+							<p7t-expanding-actions
+								large='secondary'
+								icon='lucide:sparkles'
+								actionLabel='Create on the canvas'
+								.actions=${this.creations}>
+							</p7t-expanding-actions>
+							<p7t-expanding-actions
+								large
+								actionLabel='Add to the canvas'
+								.actions=${this.additions}>
+							</p7t-expanding-actions>
+						</div>
 					` : nothing}
 			</div>
 		`

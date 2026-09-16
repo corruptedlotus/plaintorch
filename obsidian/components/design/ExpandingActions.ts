@@ -1,6 +1,9 @@
 import { Component, component, css, html, nothing, property, query, state } from '@a11d/lit'
 import { IconName } from 'components/PleiadesIcon'
 
+/** How prominently the trigger floats: not at all, as the main FAB, or as a smaller secondary one beside it. */
+export type ExpandingActionsSize = false | 'main' | 'secondary'
+
 /** One choice offered when an expanding action opens. */
 export interface ExpandingAction {
 	readonly key: string
@@ -25,7 +28,18 @@ export class ExpandingActions extends Component {
 	@property() icon: IconName = 'lucide:plus'
 	/** Optional text on the trigger. Without it the trigger is icon-only. */
 	@property() label?: string
-	@property({ type: Boolean, reflect: true }) large = false
+	/**
+	 * The floating-button presentation: `'main'` is the full-size accent FAB, `'secondary'` a smaller one to sit
+	 * beside it. Reflected as the `large` attribute so `[large]` selectors match either; the bare attribute
+	 * (`large` with no value, the long-standing form) reads as `'main'`.
+	 */
+	@property({
+		reflect: true,
+		converter: {
+			fromAttribute: (value: string | null): ExpandingActionsSize => value === null ? false : value === 'secondary' ? 'secondary' : 'main',
+			toAttribute: (value: ExpandingActionsSize) => value === false ? null : value
+		}
+	}) large: ExpandingActionsSize = false
 	@property() actionLabel = 'Add'
 
 	@state() private stacked = false
@@ -84,6 +98,14 @@ export class ExpandingActions extends Component {
 				}
 			}
 
+			/* The secondary FAB: the main one's face at a smaller size, to sit beside it without competing. */
+			:host([large='secondary']) .trigger::part(button) {
+				min-width: 2.3em;
+				min-height: 2.3em;
+				padding: .3em;
+				box-shadow: 0 3px 10px rgb(0 0 0 / .3);
+			}
+
 
 			.panel {
 				position: fixed;
@@ -120,7 +142,7 @@ export class ExpandingActions extends Component {
 		return html`
 			<p7t-button
 				ghost
-				?large=${this.large}
+				?large=${this.large === 'main'}
 				class='trigger'
 				aria-label=${this.actionLabel}
 				label=${this.actionLabel}
