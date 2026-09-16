@@ -36,7 +36,7 @@ export class SelectEndpointModal extends SuggestModal<EndpointHit> {
 		const modal = new SelectEndpointModal(getApp())
 		modal.excluded = excluded
 		modal.dpe = createDeferredExecutor()
-		modal.setPlaceholder('Search directives, objectives, fates…')
+		modal.setPlaceholder('Search directives, objectives, fates, checkpoints…')
 		modal.open()
 		return new Promise(modal.dpe)
 	}

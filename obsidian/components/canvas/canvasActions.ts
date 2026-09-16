@@ -2,6 +2,7 @@ import {
 	DependencyConstraint,
 	DependencyEndpointKind,
 	DependencyTrigger,
+	type Checkpoint,
 	type DependencyEndpointRequest,
 	type EndpointHit,
 	type EndpointRef,
@@ -152,33 +153,34 @@ export async function removeObjectiveFromOnrush(objectiveId: string): Promise<bo
 }
 
 /**
- * Adds a new checkpoint the sprint tracks, asking for its title first.
+ * Creates a new checkpoint, asking for its title first.
  *
- * Created already bound to the sprint, so it appears on the canvas as one of the sprint's checkpoints beside
- * its milestone. A dismissed prompt is not a failure and does nothing.
+ * With a sprint it is created already bound to it, so it appears on the canvas as one of the sprint's
+ * checkpoints beside its milestone; without one it is created free, for a global context to pin. Resolves to
+ * the new checkpoint, or nothing when the prompt was dismissed (not a failure) or the core refused.
  */
-export async function addCheckpointToOnrush(sprint: OnrushSprint): Promise<boolean> {
+export async function createCheckpoint(sprint?: OnrushSprint): Promise<Checkpoint | undefined> {
 	let title: string | undefined
 	try {
 		title = await PromptTextModal.prompt('New Checkpoint', 'Title')
 	}
 	catch {
-		return false
+		return undefined
 	}
 
 	if (!title) {
-		return false
+		return undefined
 	}
 
-	const created = await core.dependencies.createCheckpoint({ title, onrushSprintId: sprint.id })
+	const created = await core.dependencies.createCheckpoint({ title, onrushSprintId: sprint?.id })
 	if (!created) {
 		new Notice('PLAINTORCH could not create that checkpoint.')
-		return false
+		return undefined
 	}
 
 	new Notice(`Checkpoint added: ${title}`)
-	await refreshOnrush()
-	return true
+	await (sprint ? refreshOnrush() : core.repos.checkpointList.refresh())
+	return created
 }
 
 /**

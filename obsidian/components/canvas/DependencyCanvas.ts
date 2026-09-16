@@ -2,12 +2,12 @@ import { Component, component, css, event, eventListener, html, nothing, propert
 import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
 import { Notice } from 'obsidian'
 import { ContextMenu, core, DerivedRef, getApp, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
-import { activatePlanningOnrush, addCheckpointToOnrush, addObjectiveToOnrush, concludeOnrush, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
+import { activatePlanningOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
 import { OnrushDetailModal } from './OnrushDetailModal'
 import { contextModeLabels, edgeEndpoints, globalContext, onrushContext, type CanvasContextMode, type EndpointResolver } from './graphContext'
 import { edgeCurve, entryPoint, exitPoint, layoutGraph, parsePositions, serializePositions, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
-import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpointTypeName, sourceRef, targetRef, wouldCycle, type CanvasEdge, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
+import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpointTypeNames, sourceRef, targetRef, wouldCycle, type CanvasEdge, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
 import { SelectObjectiveModal } from './SelectObjectiveModal'
 import { SelectEndpointModal } from './SelectEndpointModal'
 import type { CanvasNodePointer, NodeLock } from './CanvasNodeItem'
@@ -107,6 +107,10 @@ export class DependencyCanvas extends Component {
 	// checkpoint outside the sprint that no other surface here has loaded.
 	private readonly objectiveList = new DerivedRef(this, core.repos.objectiveList)
 	private readonly checkpointList = new DerivedRef(this, core.repos.checkpointList)
+	// The other two kinds a global context pins, so a directive or fate neighbour pulled in along an edge
+	// resolves to its title rather than standing under its id.
+	private readonly directiveList = new DerivedRef(this, core.repos.directiveList)
+	private readonly fateList = new DerivedRef(this, core.repos.fateList)
 	// Each sprint is only observed while its mode is the one on screen: an undefined key makes the ref
 	// release its subscription and fetch nothing, so the canvas never fetches or revalidates the sprint it
 	// is not showing. Switching mode re-subscribes the other.
@@ -297,6 +301,11 @@ export class DependencyCanvas extends Component {
 				z-index: 5;
 			}
 
+			/* The create-FAB sits above the add-FAB: imports below, brand-new entities above. */
+			.create-fab {
+				inset-block-end: 4.6em;
+			}
+
 			/* The empty-state offer: buttons live in the notice, so their layer takes clicks the notice waives. */
 			.empty-state {
 				flex-direction: column;
@@ -405,25 +414,20 @@ export class DependencyCanvas extends Component {
 	 * leaves the blocker to be labelled by its id, which is enough to say what is holding a member back.
 	 */
 	private readonly resolveEndpoint: EndpointResolver = (kind, id) => {
-		const typeName = endpointTypeName(kind)
-		if (typeName === undefined) {
-			return undefined
+		for (const typeName of endpointTypeNames(kind)) {
+			const stored = core.store.peek<CanvasEntity>(entityKey(typeName, id))
+			if (stored) {
+				return stored
+			}
 		}
 
-		const stored = core.store.peek<CanvasEntity>(entityKey(typeName, id))
-		if (stored) {
-			return stored
+		switch (kind) {
+			case DependencyEndpointKind.Objective: return this.objectiveList.value?.find(objective => objective.id === id)
+			case DependencyEndpointKind.Checkpoint: return this.checkpointList.value?.find(checkpoint => checkpoint.id === id)
+			case DependencyEndpointKind.Directive: return this.directiveList.value?.find(directive => directive.id === id)
+			case DependencyEndpointKind.Fate: return this.fateList.value?.find(fate => fate.id === id)
+			default: return undefined
 		}
-
-		if (kind === DependencyEndpointKind.Objective) {
-			return this.objectiveList.value?.find(objective => objective.id === id)
-		}
-
-		if (kind === DependencyEndpointKind.Checkpoint) {
-			return this.checkpointList.value?.find(checkpoint => checkpoint.id === id)
-		}
-
-		return undefined
 	}
 
 	private get loading() {
@@ -569,6 +573,12 @@ export class DependencyCanvas extends Component {
 							actionLabel='Add to the canvas'
 							.actions=${this.additions}>
 						</p7t-expanding-actions>
+						<p7t-expanding-actions
+							class='fab create-fab'
+							icon='lucide:sparkles'
+							actionLabel='Create on the canvas'
+							.actions=${this.creations}>
+						</p7t-expanding-actions>
 					` : nothing}
 			</div>
 		`
@@ -589,7 +599,7 @@ export class DependencyCanvas extends Component {
 		if (this.mode === 'global') {
 			return html`
 				<div class='notice empty-state'>
-					<span>Nothing here yet — add directives, objectives or fates to plan across the whole backlog.</span>
+					<span>Nothing here yet — add directives, objectives, fates or checkpoints to plan across the whole backlog.</span>
 					<div class='empty-actions'>
 						<p7t-button emphasis icon='lucide:plus' @click=${() => void this.addEndpoint()}>
 							<span>Add a node</span>
@@ -987,12 +997,22 @@ export class DependencyCanvas extends Component {
 				icon: 'objective',
 				label: 'Add objective',
 				run: async () => await this.addObjective()
-			},
+			}
+		]
+	}
+
+	/**
+	 * What the create-FAB offers: brand-new entities, as opposed to the add-FAB's imports of existing ones. The
+	 * same in every mode — a checkpoint is the one kind made here for now; in an onrush it is created bound to
+	 * the sprint, in a global context it is created free and pinned into the view.
+	 */
+	private get creations(): ExpandingAction[] {
+		return [
 			{
 				key: 'checkpoint',
 				icon: 'checkpoint',
-				label: 'Add checkpoint',
-				run: async () => await this.addCheckpoint()
+				label: 'New checkpoint',
+				run: async () => await this.createCheckpoint()
 			}
 		]
 	}
@@ -1067,14 +1087,27 @@ export class DependencyCanvas extends Component {
 		}
 	}
 
-	private async addCheckpoint() {
+	/**
+	 * Creates a checkpoint where the canvas is looking: bound to the sprint in an onrush context, or free and
+	 * pinned into a global one — a global context has no membership, so showing the new node *is* the add.
+	 */
+	private async createCheckpoint() {
+		if (this.mode === 'global') {
+			const created = await createCheckpoint()
+			if (created) {
+				this.pinned = [...this.pinned, { kind: DependencyEndpointKind.Checkpoint, id: created.id, title: created.title }]
+				this.emitContextChanged()
+			}
+			return
+		}
+
 		const sprint = this.sprint
 		if (!sprint) {
 			new Notice(`There is no ${contextModeLabels[this.mode].toLowerCase()} to add to.`)
 			return
 		}
 
-		await addCheckpointToOnrush(sprint)
+		await createCheckpoint(sprint)
 	}
 
 	/**
@@ -1104,7 +1137,10 @@ export class DependencyCanvas extends Component {
 					: targetKey === key ? { key: sourceKey, hit: ends.source }
 						: undefined
 				if (neighbour && !present.has(neighbour.key) && !additions.has(neighbour.key)) {
-					additions.set(neighbour.key, neighbour.hit)
+					// The edge only knows the neighbour's id; name it from what is loaded so the pin — and the file it
+					// may be saved to — carries a title rather than a PUCK.
+					const entity = this.resolveEndpoint(neighbour.hit.kind, neighbour.hit.id)
+					additions.set(neighbour.key, entity ? { ...neighbour.hit, title: entity.title } : neighbour.hit)
 				}
 			}
 		}

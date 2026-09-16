@@ -80,6 +80,7 @@ public sealed class DependencyApiService(
 		// kind and unioned. An empty query returns a bounded slice rather than everything, so the picker opens
 		// usefully before anything is typed. Only stellar directives take part — the OfType filter is what
 		// excludes lunar directives — and decrees and Polaris-level records are simply never queried.
+		// Checkpoints take part too, whichever sprint (or none) they belong to: a global context may pin one.
 		var query = search.Query?.Trim();
 		var hasQuery = !string.IsNullOrWhiteSpace(query);
 		var perKind = search.Take is > 0 ? search.Take.Value : hasQuery ? 50 : 20;
@@ -106,10 +107,18 @@ public sealed class DependencyApiService(
 			.Take(perKind)
 			.Select(fate => new EndpointHit(DependencyEndpointKind.Fate, fate.Id, fate.Title));
 
+		var checkpoints = context.Checkpoints
+			.AsNoTracking()
+			.Where(checkpoint => !hasQuery || checkpoint.Id.Contains(query!) || checkpoint.Title.Contains(query!))
+			.OrderBy(checkpoint => checkpoint.Title)
+			.Take(perKind)
+			.Select(checkpoint => new EndpointHit(DependencyEndpointKind.Checkpoint, checkpoint.Id, checkpoint.Title));
+
 		var hits = new List<EndpointHit>();
 		hits.AddRange(await directives.ToListAsync(cancellationToken));
 		hits.AddRange(await objectives.ToListAsync(cancellationToken));
 		hits.AddRange(await fates.ToListAsync(cancellationToken));
+		hits.AddRange(await checkpoints.ToListAsync(cancellationToken));
 		return hits;
 	}
 

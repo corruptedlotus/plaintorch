@@ -38,12 +38,14 @@ public sealed class DependencySystemTests : VaultTestBase
 		// None of these may appear: a lunar directive and a decree are not endpoint kinds at all.
 		var lunar = await Directive(api => api.CreateLunarAsync("Searchable Moon Law", cancellationToken: Ct));
 		var decree = await Declarative(api => api.CreateDecreeAsync(new DecreePlan("Searchable Decree"), Ct));
+		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Searchable Gate", cancellationToken: Ct));
 
 		var hits = await Deps(api => api.SearchEndpointsAsync(new SearchRequest("Searchable"), Ct));
 
 		Assert.Contains(hits, hit => hit.Kind == DependencyEndpointKind.Directive && hit.Id == directive.Id);
 		Assert.Contains(hits, hit => hit.Kind == DependencyEndpointKind.Objective && hit.Id == objective.Id);
 		Assert.Contains(hits, hit => hit.Kind == DependencyEndpointKind.Fate && hit.Id == fate.Id);
+		Assert.Contains(hits, hit => hit.Kind == DependencyEndpointKind.Checkpoint && hit.Id == checkpoint.Id);
 		Assert.DoesNotContain(hits, hit => hit.Id == lunar.Id);
 		Assert.DoesNotContain(hits, hit => hit.Id == decree.Id);
 	}

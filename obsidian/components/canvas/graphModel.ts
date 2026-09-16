@@ -22,15 +22,22 @@ export interface CanvasNode {
 	readonly milestone?: boolean
 }
 
-/** The runtime type name under which the store tracks an entity of each endpoint kind, for resolution. */
-export function endpointTypeName(kind: DependencyEndpointKind): string | undefined {
+/**
+ * The runtime type names under which the store may track an entity of each endpoint kind, for resolution.
+ *
+ * A directive endpoint is a stellar directive (the search only offers those), and the core stamps the
+ * *concrete* type name — `StellarDirective`, never the base `Directive` — so that is what the store keys on.
+ * A lunar one is listed too, since an edge written elsewhere could name one. Looking `Directive` up was how a
+ * pinned directive stayed unresolved and drew its PUCK for a title.
+ */
+export function endpointTypeNames(kind: DependencyEndpointKind): readonly string[] {
 	switch (kind) {
-		case DependencyEndpointKind.Directive: return 'Directive'
-		case DependencyEndpointKind.Objective: return 'Objective'
-		case DependencyEndpointKind.Fate: return 'Fate'
-		case DependencyEndpointKind.Checkpoint: return 'Checkpoint'
+		case DependencyEndpointKind.Directive: return ['StellarDirective', 'LunarDirective']
+		case DependencyEndpointKind.Objective: return ['Objective']
+		case DependencyEndpointKind.Fate: return ['Fate']
+		case DependencyEndpointKind.Checkpoint: return ['Checkpoint']
 		// An eventive names its owner under its own id but a different type, which cannot be told apart here.
-		default: return undefined
+		default: return []
 	}
 }
 
