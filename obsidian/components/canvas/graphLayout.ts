@@ -159,24 +159,114 @@ export function serializePositions(positions: ReadonlyMap<string, Point>): strin
 	return JSON.stringify(record)
 }
 
-/** Where an edge leaves a node: the middle of its trailing edge, since the flow runs left to right. */
-export function exitPoint(box: NodeBox): Point {
-	return { x: box.x + box.width, y: box.y + box.height / 2 }
+/** A side of a node box an edge may leave from or arrive at. */
+export type Side = 'left' | 'right' | 'top' | 'bottom'
+
+/** The outward unit normal of each side — the direction an edge travels as it leaves that side. */
+const normals: Record<Side, Point> = {
+	left: { x: -1, y: 0 },
+	right: { x: 1, y: 0 },
+	top: { x: 0, y: -1 },
+	bottom: { x: 0, y: 1 }
 }
 
-/** Where an edge arrives at a node. */
-export function entryPoint(box: NodeBox): Point {
-	return { x: box.x, y: box.y + box.height / 2 }
+/** The middle of one side of a box. */
+export function sideAnchor(box: NodeBox, side: Side): Point {
+	switch (side) {
+		case 'left': return { x: box.x, y: box.y + box.height / 2 }
+		case 'right': return { x: box.x + box.width, y: box.y + box.height / 2 }
+		case 'top': return { x: box.x + box.width / 2, y: box.y }
+		case 'bottom': return { x: box.x + box.width / 2, y: box.y + box.height }
+	}
+}
+
+function centre(box: NodeBox): Point {
+	return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
 }
 
 /**
- * Draws the curve between two points as a horizontal-tangent cubic.
+ * The side of a box most accessible from a point — the one facing it.
  *
- * Both control points sit level with their own end, so every edge leaves the source travelling right and
- * arrives at the target travelling right — the reading direction of the layout, kept even when a dependant
- * has been dragged behind its prerequisite.
+ * Judged in the box's own proportions: the offset to the point is measured in half-widths and half-heights,
+ * so a wide node keeps its left or right side for anything not clearly above or below it, and hands over to
+ * its top or bottom only once the point sits more over the node than beside it. That is what lets the
+ * ordinary left-to-right layout keep its horizontal reading while a node dragged above its neighbour gets a
+ * vertical edge instead of a loop. Ties fall to the horizontal, the layout's flow.
  */
-export function edgeCurve(from: Point, to: Point): string {
-	const reach = Math.max(40, Math.abs(to.x - from.x) * 0.5)
-	return `M ${from.x} ${from.y} C ${from.x + reach} ${from.y}, ${to.x - reach} ${to.y}, ${to.x} ${to.y}`
+export function facingSide(box: NodeBox, towards: Point): Side {
+	const from = centre(box)
+	const dx = (towards.x - from.x) / Math.max(box.width / 2, 1)
+	const dy = (towards.y - from.y) / Math.max(box.height / 2, 1)
+	if (Math.abs(dx) >= Math.abs(dy)) {
+		return dx >= 0 ? 'right' : 'left'
+	}
+
+	return dy >= 0 ? 'bottom' : 'top'
+}
+
+/** An edge's ends, each on the side of its box that faces the other end. */
+export interface EdgeEnds {
+	readonly from: Point
+	readonly fromSide: Side
+	readonly to: Point
+	readonly toSide: Side
+}
+
+/**
+ * Chooses where an edge leaves its source and arrives at its target: each end sits on the side of its own
+ * box that faces the *other box's centre*, so a dependant to the right is entered from the left, one below
+ * from the top, and one dragged behind its prerequisite is reached by leaving the source's left rather than
+ * looping around from its right.
+ */
+export function edgeEnds(source: NodeBox, target: NodeBox): EdgeEnds {
+	const fromSide = facingSide(source, centre(target))
+	const toSide = facingSide(target, centre(source))
+	return { from: sideAnchor(source, fromSide), fromSide, to: sideAnchor(target, toSide), toSide }
+}
+
+/**
+ * Draws the curve between two ends as a cubic whose tangents run out of each side.
+ *
+ * Each control point lies along its own side's outward normal, so the edge leaves the source perpendicular
+ * to the side it exits and arrives at the target perpendicular to the side it enters — a horizontal-tangent
+ * curve between left and right sides, a vertical one between top and bottom, and a clean quarter-turn between
+ * a horizontal side and a vertical one. The reach grows with the distance so a long edge stays gently bowed.
+ */
+export function edgeCurve(from: Point, fromSide: Side, to: Point, toSide: Side): string {
+	const reach = Math.max(40, Math.hypot(to.x - from.x, to.y - from.y) * 0.4)
+	const out = normals[fromSide]
+	const into = normals[toSide]
+	const c1 = { x: from.x + out.x * reach, y: from.y + out.y * reach }
+	const c2 = { x: to.x + into.x * reach, y: to.y + into.y * reach }
+	return `M ${from.x} ${from.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${to.x} ${to.y}`
+}
+
+/**
+ * The point halfway along the curve {@link edgeCurve} draws — where a badge rides.
+ *
+ * Evaluated at the parameter midpoint of the cubic, `(P0 + 3·P1 + 3·P2 + P3) / 8`, rather than the mean of
+ * the ends: with the tangents no longer level with their ends the two differ, and the badge would float off
+ * the line on a bent edge.
+ */
+export function edgeMidpoint(from: Point, fromSide: Side, to: Point, toSide: Side): Point {
+	const reach = Math.max(40, Math.hypot(to.x - from.x, to.y - from.y) * 0.4)
+	const out = normals[fromSide]
+	const into = normals[toSide]
+	const c1 = { x: from.x + out.x * reach, y: from.y + out.y * reach }
+	const c2 = { x: to.x + into.x * reach, y: to.y + into.y * reach }
+	return {
+		x: (from.x + 3 * c1.x + 3 * c2.x + to.x) / 8,
+		y: (from.y + 3 * c1.y + 3 * c2.y + to.y) / 8
+	}
+}
+
+/**
+ * The curve of an edge still being drawn: it leaves the source from the side facing the pointer and arrives
+ * at the pointer head-on, from whichever direction the pointer approaches.
+ */
+export function linkCurve(source: NodeBox, pointer: Point): string {
+	const fromSide = facingSide(source, pointer)
+	const from = sideAnchor(source, fromSide)
+	const toSide: Side = fromSide === 'left' ? 'right' : fromSide === 'right' ? 'left' : fromSide === 'top' ? 'bottom' : 'top'
+	return edgeCurve(from, fromSide, pointer, toSide)
 }

@@ -6,7 +6,7 @@ import { activatePlanningOnrush, addObjectiveToOnrush, concludeOnrush, createChe
 import { EntityDetailModal } from './EntityDetailModal'
 import { OnrushDetailModal } from './OnrushDetailModal'
 import { contextModeLabels, edgeEndpoints, globalContext, onrushContext, type CanvasContextMode, type EndpointResolver } from './graphContext'
-import { edgeCurve, entryPoint, exitPoint, layoutGraph, parsePositions, serializePositions, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
+import { edgeCurve, edgeEnds, edgeMidpoint, layoutGraph, linkCurve, parsePositions, serializePositions, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
 import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpointTypeNames, sourceRef, targetRef, wouldCycle, type CanvasEdge, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
 import { SelectObjectiveModal } from './SelectObjectiveModal'
 import { SelectEndpointModal } from './SelectEndpointModal'
@@ -795,8 +795,8 @@ export class DependencyCanvas extends Component {
 			return nothing
 		}
 
-		const entry = entryPoint(target)
-		const path = edgeCurve(exitPoint(source), entry)
+		const ends = edgeEnds(source, target)
+		const path = edgeCurve(ends.from, ends.fromSide, ends.to, ends.toSide)
 		const satisfied = edge.dependency.satisfied
 		// A begin-triggered edge fires on its source *starting*, not finishing, so it wears the same
 		// start-circle tail whatever it gates — the begin-to-begin form generalised to every begin trigger.
@@ -834,11 +834,11 @@ export class DependencyCanvas extends Component {
 			return nothing
 		}
 
-		const exit = exitPoint(source)
-		const entry = entryPoint(target)
+		const ends = edgeEnds(source, target)
+		const middle = edgeMidpoint(ends.from, ends.fromSide, ends.to, ends.toSide)
 		// The badge is 22px square; translating to the midpoint less half its size centres it on the line.
-		const x = (exit.x + entry.x) / 2 - 11
-		const y = (exit.y + entry.y) / 2 - 11
+		const x = middle.x - 11
+		const y = middle.y - 11
 		return html`
 			<div class='edge-badge ${satisfied ? 'satisfied' : 'pending'}' style='transform: translate(${x}px, ${y}px)'>
 				<p7t-icon icon=${icon}></p7t-icon>
@@ -873,7 +873,7 @@ export class DependencyCanvas extends Component {
 
 		const source = boxes.get(gesture.nodeKey)
 		return !source ? nothing : svg`
-			<path class='edge linking' d=${edgeCurve(exitPoint(source), gesture.at)}></path>
+			<path class='edge linking' d=${linkCurve(source, gesture.at)}></path>
 		`
 	}
 
