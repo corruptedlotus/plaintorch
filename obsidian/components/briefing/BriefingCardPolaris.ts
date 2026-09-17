@@ -1,8 +1,7 @@
 import { component, css, eventListener, html, nothing, state } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
-import { Activity, Attentive, DecreeStatus, Objective, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
-import { addObjectiveToPolaris, core, isObjectiveInCycle, TransferController } from ".."
-import { App, SuggestModal } from "obsidian"
+import { Attentive, Objective, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
+import { addObjectiveToPolaris, core, isObjectiveInCycle, TransferController, type CreationRowCreated, type PolarisActivityCreated } from ".."
 
 @component('p7t-briefing-polaris')
 export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
@@ -13,6 +12,9 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 	// longer needs its own.
 
 	@state() private reflectivesExpanded = false
+
+	/** Whether the inline creation row is open at the foot of the list. */
+	@state() private creating = false
 
 	/**
 	 * Takes objectives dropped from any host offering them (the Onrush card). The receive is translated: rather
@@ -135,8 +137,24 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 			${(this.data!.attentives ?? []).map(attentive => html`
 				<p7t-decree-item-attentive interactive .entity=${attentive.decree} .attentive=${attentive}></p7t-decree-item-attentive>
 			`)}
-			<p7t-button @click=${() => this.addActivity()} icon='lucide:plus' class='add-button'>Add Activity</p7t-button>
+			${!this.creating ? html`
+				<p7t-button @click=${() => this.addActivity()} icon='lucide:plus' class='add-button'>Add Activity</p7t-button>
+			` : html`
+				<p7t-polaris-creation-row
+					.cycle=${this.data}
+					@cancel=${() => this.creating = false}
+					@created=${(e: CustomEvent<CreationRowCreated<PolarisActivityCreated>>) => this.onActivityCreated(e)}>
+				</p7t-polaris-creation-row>
+			`}
 		`
+	}
+
+	/** A committed row: the cycle re-reads itself through the row's own revalidation; the row stays only to make another. */
+	private onActivityCreated(e: CustomEvent<CreationRowCreated<PolarisActivityCreated>>) {
+		e.stopPropagation()
+		if (e.detail.mode !== 'again') {
+			this.creating = false
+		}
 	}
 
 	private get reflectivesGroup() {
@@ -211,55 +229,10 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		})
 	}
 
+	/** Opens the inline creation row at the foot of the list, in place of the picker modal it replaced. */
 	private addActivity() {
 		if (!this.data) return
-		new AddActivityModal((window as any).app! as App, this).open()
-	}
-}
-
-/**
- * Adds an activity — an objective or a decree — to the current Polaris cycle. It searches the unified activity
- * endpoint, keeps only what can still be added (a live objective or an active decree), and routes the choice to the
- * right path: an objective becomes an executive, a decree materializes a bound attentive.
- */
-class AddActivityModal extends SuggestModal<Activity> {
-	constructor(app: App, protected readonly host: BriefingCardPolaris) {
-		super(app);
-	}
-
-	override async getSuggestions(query: string) {
-		const results = query.length > 2 ? await core.activities.search(query) : await core.activities.list()
-		// An objective already in the cycle is not offered again: a cycle holds one instance of an objective.
-		return results.filter(activity => activity.kind === 'decree'
-			? activity.decree?.status === DecreeStatus.Active
-			: (activity.objective?.status ?? ObjectiveStatus.Archived) < ObjectiveStatus.Archived
-				&& !isObjectiveInCycle(activity.objective!.id, this.host.data))
-	}
-
-	renderSuggestion(activity: Activity, el: HTMLElement) {
-		if (activity.kind === 'decree' && activity.decree) {
-			const item = el.createEl('p7t-decree-item')
-			item.entity = activity.decree
-		} else if (activity.objective) {
-			const item = el.createEl('p7t-objective-item')
-			item.entity = activity.objective
-		}
-	}
-
-	override async onChooseSuggestion(activity: Activity, _: MouseEvent | KeyboardEvent) {
-		if (activity.kind === 'decree' && activity.decree) {
-			const added = await core.polaris.addAttentive({ decreeId: activity.decree.id })
-			if (added) {
-				// The new attentive rides on the owning cycle and the briefing; nudge both so it appears.
-				await core.repos.polaris.revalidateObserved()
-				await core.repos.briefing.revalidateIfObserved()
-			}
-			return
-		}
-
-		const objective = activity.objective
-		if (!objective) return
-		await addObjectiveToPolaris(objective)
+		this.creating = true
 	}
 }
 

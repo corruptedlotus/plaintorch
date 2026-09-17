@@ -5,5 +5,6 @@ export * from './ThroneView'
 export * from "./Briefing"
 export * from './BriefingCard'
 export * from './BriefingCardOnrush'
+export * from './PolarisCreationRow'
 export * from './BriefingCardPolaris'
 export * from './BriefingCardAgenda'
