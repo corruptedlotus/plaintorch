@@ -185,23 +185,59 @@ function centre(box: NodeBox): Point {
 }
 
 /**
- * The side of a box most accessible from a point — the one facing it.
+ * Where a point lies in the space around an origin box, in the terms the side selection reasons in.
  *
- * Judged in the box's own proportions: the offset to the point is measured in half-widths and half-heights,
- * so a wide node keeps its left or right side for anything not clearly above or below it, and hands over to
- * its top or bottom only once the point sits more over the node than beside it. That is what lets the
- * ordinary left-to-right layout keep its horizontal reading while a node dragged above its neighbour gets a
- * vertical edge instead of a loop. Ties fall to the horizontal, the layout's flow.
+ * The box's four edges, extended, cut the plane into four *facings* — the bands straight across each side —
+ * and four *quadrants* between them. A point in a facing has one obvious side. A point in a quadrant is
+ * placed by its angle from the box's nearest corner: 0 along the horizontal edge's extension, 90° along the
+ * vertical one's, so the quadrant's bisector (`Qm`) is 45°, and each facing's direct choice extends
+ * {@link directExpansion} degrees into the quadrant (`Q2` off the horizontal, `Q1` off the vertical, in the
+ * sketch this follows). The same partition surrounds every side: which quadrant the point is in only decides
+ * which corner the angle is taken from and which pair of sides is in play.
  */
-export function facingSide(box: NodeBox, towards: Point): Side {
-	const from = centre(box)
-	const dx = (towards.x - from.x) / Math.max(box.width / 2, 1)
-	const dy = (towards.y - from.y) / Math.max(box.height / 2, 1)
-	if (Math.abs(dx) >= Math.abs(dy)) {
-		return dx >= 0 ? 'right' : 'left'
-	}
 
-	return dy >= 0 ? 'bottom' : 'top'
+/** The quadrant bisector: below it the origin leaves horizontally, above it vertically. */
+const quadrantBisector = 45
+/** How far past its facing a side's *direct* target choice still holds, before the edge swings off-axis. */
+const directExpansion = 10
+interface Placement {
+	/** The origin's side facing the point horizontally, and the target's side facing back — or none, if level. */
+	readonly horizontal?: { readonly origin: Side, readonly target: Side }
+	/** The same vertically. */
+	readonly vertical?: { readonly origin: Side, readonly target: Side }
+	/** Degrees from the horizontal edge's extension, when the point is in a quadrant (both sides set). */
+	readonly angle: number
+}
+
+function place(origin: NodeBox, point: Point): Placement {
+	const beyondRight = point.x - (origin.x + origin.width)
+	const beyondLeft = origin.x - point.x
+	const beyondBottom = point.y - (origin.y + origin.height)
+	const beyondTop = origin.y - point.y
+
+	const horizontal = beyondRight > 0 ? { origin: 'right' as const, target: 'left' as const, by: beyondRight }
+		: beyondLeft > 0 ? { origin: 'left' as const, target: 'right' as const, by: beyondLeft }
+			: undefined
+	const vertical = beyondBottom > 0 ? { origin: 'bottom' as const, target: 'top' as const, by: beyondBottom }
+		: beyondTop > 0 ? { origin: 'top' as const, target: 'bottom' as const, by: beyondTop }
+			: undefined
+
+	const angle = horizontal && vertical ? Math.atan2(vertical.by, horizontal.by) * 180 / Math.PI : 0
+	return { horizontal, vertical, angle }
+}
+
+/**
+ * The point a target is aimed at: its centre, pulled a quarter of its width and height towards the origin's
+ * centre. The nearer face is what an edge reaches for, and judging by the whole centre would let a wide or
+ * tall target tip the choice from further away than its near face really sits.
+ */
+function faceMidpoint(target: NodeBox, origin: NodeBox): Point {
+	const from = centre(origin)
+	const to = centre(target)
+	return {
+		x: to.x - Math.sign(to.x - from.x) * target.width / 4,
+		y: to.y - Math.sign(to.y - from.y) * target.height / 4
+	}
 }
 
 /** An edge's ends, each on the side of its box that faces the other end. */
@@ -213,15 +249,56 @@ export interface EdgeEnds {
 }
 
 /**
- * Chooses where an edge leaves its source and arrives at its target: each end sits on the side of its own
- * box that faces the *other box's centre*, so a dependant to the right is entered from the left, one below
- * from the top, and one dragged behind its prerequisite is reached by leaving the source's left rather than
- * looping around from its right.
+ * Chooses the sides an edge leaves and arrives by, reasoning from the origin.
+ *
+ * The target is aimed at by its {@link faceMidpoint}. In a facing of the origin the choice is direct: the
+ * origin leaves by that side and the target is entered by the side facing back. In a quadrant the angle from
+ * the origin's corner decides both, in the pattern the sketch lays down:
+ *
+ * - **Origin side**: the horizontal side up to the bisector `Qm` (45°), the vertical one beyond — each side's
+ *   facing expands by half a quadrant on either flank.
+ * - **Target side**: the facing side's direct choice holds up to `Q2` (10° off the horizontal); between `Q2`
+ *   and `Qm` the edge swings to the target's off-axis side (its vertical face); past `Qm` the same rule
+ *   mirrors around the vertical facing — direct (the vertical face) from `Qy` down to `Q1` (10° off the
+ *   vertical), off-axis (the horizontal face) between `Q1` and `Qm`.
+ *
+ * The rule is stated for one quadrant but holds in all four: the partition is symmetric about the origin,
+ * and the placement names the sides in play for whichever quadrant the target falls in.
+ *
+ * So an edge that leaves horizontally enters horizontally near the axis and vertically nearer the diagonal,
+ * and one that leaves vertically does the converse, which is what keeps a near-diagonal edge from hooking
+ * around a corner it could simply meet.
  */
 export function edgeEnds(source: NodeBox, target: NodeBox): EdgeEnds {
-	const fromSide = facingSide(source, centre(target))
-	const toSide = facingSide(target, centre(source))
+	const [fromSide, toSide] = chooseSides(source, faceMidpoint(target, source))
 	return { from: sideAnchor(source, fromSide), fromSide, to: sideAnchor(target, toSide), toSide }
+}
+
+function chooseSides(origin: NodeBox, aim: Point): [Side, Side] {
+	const { horizontal, vertical, angle } = place(origin, aim)
+	if (horizontal && !vertical) {
+		return [horizontal.origin, horizontal.target]
+	}
+
+	if (vertical && !horizontal) {
+		return [vertical.origin, vertical.target]
+	}
+
+	if (!horizontal || !vertical) {
+		// The aim lies inside the origin — overlapping boxes. Leave by whichever side the centres separate on.
+		const from = centre(origin)
+		const dx = aim.x - from.x
+		const dy = aim.y - from.y
+		return Math.abs(dx) >= Math.abs(dy)
+			? [dx >= 0 ? 'right' : 'left', dx >= 0 ? 'left' : 'right']
+			: [dy >= 0 ? 'bottom' : 'top', dy >= 0 ? 'top' : 'bottom']
+	}
+
+	if (angle < quadrantBisector) {
+		return [horizontal.origin, angle < directExpansion ? horizontal.target : vertical.target]
+	}
+
+	return [vertical.origin, angle >= 90 - directExpansion ? vertical.target : horizontal.target]
 }
 
 /**
@@ -265,8 +342,7 @@ export function edgeMidpoint(from: Point, fromSide: Side, to: Point, toSide: Sid
  * at the pointer head-on, from whichever direction the pointer approaches.
  */
 export function linkCurve(source: NodeBox, pointer: Point): string {
-	const fromSide = facingSide(source, pointer)
-	const from = sideAnchor(source, fromSide)
-	const toSide: Side = fromSide === 'left' ? 'right' : fromSide === 'right' ? 'left' : fromSide === 'top' ? 'bottom' : 'top'
-	return edgeCurve(from, fromSide, pointer, toSide)
+	// The pointer is a point, not a box: it is its own face midpoint, and the sides are chosen as for a target.
+	const [fromSide, toSide] = chooseSides(source, pointer)
+	return edgeCurve(sideAnchor(source, fromSide), fromSide, pointer, toSide)
 }
