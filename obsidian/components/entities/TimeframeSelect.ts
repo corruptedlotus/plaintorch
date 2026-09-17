@@ -1,6 +1,7 @@
 import { component, html, type HTMLTemplateResult } from "@a11d/lit"
 import type { DirectiveTimeframeRecord } from "@pleiades/sdk"
 import { core } from ".."
+import { fuzzyFilter } from "../editing/fuzzy"
 import { SelectBase, type SelectOption } from "../editing/SelectBase"
 
 /**
@@ -21,9 +22,7 @@ export class TimeframeSelect extends SelectBase<DirectiveTimeframeRecord> {
 
 	protected override async search(query: string): Promise<readonly SelectOption<DirectiveTimeframeRecord>[]> {
 		this.timeframes ??= core.directives.listAllTimeframes()
-		const needle = query.trim().toLowerCase()
-		const matches = (await this.timeframes).filter(timeframe =>
-			!needle || timeframe.title.toLowerCase().includes(needle) || timeframe.directiveTitle.toLowerCase().includes(needle))
+		const matches = fuzzyFilter(query, await this.timeframes, timeframe => `${timeframe.title} ${timeframe.directiveTitle}`)
 
 		return [
 			{

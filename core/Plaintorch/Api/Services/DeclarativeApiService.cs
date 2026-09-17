@@ -494,6 +494,18 @@ public sealed class DeclarativeApiService(
 		}
 
 		ApplyAllocations(attentive, update.Estimation, update.Minimum, update.Maximum);
+
+		if (update.AffinityTimeframeId.IsSet)
+		{
+			if (update.AffinityTimeframeId.Value is long timeframeId
+				&& !await context.Timeframes.AnyAsync(item => item.Id == timeframeId, cancellationToken))
+			{
+				throw new InvalidOperationException($"Timeframe '{timeframeId}' was not found.");
+			}
+
+			attentive.AffinityTimeframeId = update.AffinityTimeframeId.Value;
+		}
+
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",

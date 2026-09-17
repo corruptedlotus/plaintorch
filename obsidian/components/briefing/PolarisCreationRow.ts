@@ -1,7 +1,7 @@
 import { component, html, property, state } from "@a11d/lit"
 import { PolarisExecutivePlanningMode, type Activity, type Attentive, type DirectiveTimeframeRecord, type Executive, type PolarisCycle, type PolarisExecutivePlan } from "@pleiades/sdk"
 import { Notice } from "obsidian"
-import { core, ExecutiveModal, getApp, isObjectiveInCycle, openEntityEditor, type ActivityChoice, type EditableTimeUnit, type TimeframeSelect, type ActivitySelect } from ".."
+import { AttentiveModal, core, ExecutiveModal, getApp, isObjectiveInCycle, type ActivityChoice, type EditableTimeUnit, type TimeframeSelect, type ActivitySelect } from ".."
 import { CreationRowBase } from "../editing/CreationRowBase"
 
 /** What the Polaris row makes: an executive (from an objective) or an attentive (from a decree). */
@@ -112,7 +112,7 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 			return undefined
 		}
 
-		const attentive = await core.polaris.addAttentive({ decreeId: decree.id, estimation: this.estimation })
+		const attentive = await core.polaris.addAttentive({ decreeId: decree.id, estimation: this.estimation, affinityTimeframeId: this.timeframe?.id })
 		if (!attentive) {
 			new Notice(`PLAINTORCH could not add ${activity.title} to the cycle.`)
 			return undefined
@@ -138,10 +138,7 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 			return
 		}
 
-		// No attentive allocation editor exists yet; the decree behind it is the nearest thing to edit.
-		if (created.attentive.decree) {
-			openEntityEditor(created.attentive.decree)
-		}
+		new AttentiveModal(getApp(), created.attentive).open()
 	}
 
 	protected override reset() {

@@ -113,6 +113,19 @@ public sealed class Attentive : ITimeAllocated, IOccurrenceInstance
 	/// </summary>
 	public int? Maximum { get; set; }
 
+	/// <summary>
+	/// Gets or sets the optional timeframe this attentive is affined to. Seeded from the owning decree's college
+	/// through timeframe auto-inclusion when added to a cycle, overridable per instance; purely semantic, enforcing
+	/// nothing — the same affinity an executive carries.
+	/// </summary>
+	public long? AffinityTimeframeId { get; set; }
+
+	[ForeignKey(nameof(AffinityTimeframeId))]
+	/// <summary>
+	/// Gets or sets the affined timeframe.
+	/// </summary>
+	public Timeframe? AffinityTimeframe { get; set; }
+
 	[NotMapped]
 	/// <summary>
 	/// Gets a value indicating whether the attentive is bound to a Polaris cycle.

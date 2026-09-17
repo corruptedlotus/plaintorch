@@ -90,6 +90,21 @@ export class DecreeItem extends EntityItem<Decree> {
 			</div>
 		`
 	}
+
+	protected override get compactDirective() {
+		return this.decree?.directive
+	}
+
+	protected override get compactKind() {
+		return 'Decree'
+	}
+
+	protected override get compactChips() {
+		return html`
+			<p7t-college-item small mode='named' .college=${this.decree!.college}></p7t-college-item>
+			<p7t-celestron-item small .value=${this.decree!.activeCelestron}></p7t-celestron-item>
+		`
+	}
 }
 
 declare global {

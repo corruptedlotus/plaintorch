@@ -19,5 +19,6 @@ export * from './ItemGroup'
 export * from './PromptTextModal'
 export * from './SelectBase'
 export * from './CreationRowBase'
+export * from './fuzzy'
 
 export const getApp = () => (window as any).app as App

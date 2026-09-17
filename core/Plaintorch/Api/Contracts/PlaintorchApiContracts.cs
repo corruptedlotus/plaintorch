@@ -510,7 +510,8 @@ public sealed record AttentiveUpdate(
 	string? MoveToPolarisCycleId = null,
 	Optional<int?> Estimation = default,
 	Optional<int?> Minimum = default,
-	Optional<int?> Maximum = default);
+	Optional<int?> Maximum = default,
+	Optional<long?> AffinityTimeframeId = default);
 
 /// <summary>
 /// Addresses a single eventive occurrence by its owner UID (a fate or objective id) and RECURRENCE-ID
@@ -566,7 +567,8 @@ public sealed record PolarisAttentiveAdd(
 	TimeOnly? Time = null,
 	int? Estimation = null,
 	int? Minimum = null,
-	int? Maximum = null);
+	int? Maximum = null,
+	long? AffinityTimeframeId = null);
 
 /// <summary>
 /// Represents the unbound items a Polaris cycle includes non-structurally because they fall within 24h of

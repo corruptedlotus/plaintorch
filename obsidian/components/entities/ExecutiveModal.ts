@@ -1,7 +1,7 @@
 import { Component, component, css, html, nothing, property, state } from "@a11d/lit"
 import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
 import { App, Modal, Notice } from "obsidian"
-import { core, SelectObjectiveStatusModal, SelectTimeframeModal } from ".."
+import { core, openEntityEditor, SelectObjectiveStatusModal, SelectTimeframeModal, tooltip } from ".."
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 import type { EditablePart } from "../editing/EditableDataLink"
 import type { EditableTimeUnit } from "../editing/EditableTimeUnit"
@@ -62,6 +62,22 @@ export class ExecutiveEditor extends Component {
 				margin-inline-end: .6em;
 				margin-top: -1em;
 				color: color-mix(in srgb, var(--text-normal) 88%, transparent);
+			}
+
+			/* The way through to the objective's own editor, drawn like the briefing's open-note link. */
+			.open {
+				flex: 0 0 auto;
+				width: 1.3em;
+				height: 1.3em;
+				margin-top: -1em;
+				cursor: pointer;
+				color: var(--p7t-flare-accent, var(--interactive-accent));
+				opacity: .7;
+				transition: .3s ease;
+
+				&:hover {
+					opacity: 1;
+				}
 			}
 
 			.close {
@@ -174,6 +190,9 @@ export class ExecutiveEditor extends Component {
 		return html`
 			<div class='header'>
 				<div class='title'>${objective?.title ?? executive.title ?? 'Untitled Executive'}</div>
+				${!objective ? nothing : html`
+					<p7t-icon class='open' icon='lucide:file-symlink' ${tooltip('Open objective')} @click=${() => openEntityEditor(objective)}></p7t-icon>
+				`}
 			</div>
 
 			<div class='columns'>

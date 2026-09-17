@@ -1,5 +1,5 @@
 import { model } from "@a11d/api-dotnet"
-import type { Directive } from "../directives/models"
+import type { Directive, Timeframe } from "../directives/models"
 import { ObjectiveCollege, type Objective } from "../objectives/models"
 import type { PolarisCycle } from "../polaris/models"
 
@@ -108,6 +108,10 @@ export interface Attentive {
 	estimation: number | undefined
 	minimum: number | undefined
 	maximum: number | undefined
+	/** Preferred timeframe for this attentive (affinity), seeded from the decree's college on add; purely semantic. */
+	affinityTimeframeId?: number | undefined
+	/** The affined timeframe, auto-included by the core. */
+	affinityTimeframe?: Timeframe | undefined
 	isBound?: boolean
 }
 
@@ -177,6 +181,8 @@ export interface AttentiveUpdate {
 	resolution?: AttentiveResolution | undefined
 	/** Moves the attentive to another cycle; only valid while Polaris-bound. */
 	moveToPolarisCycleId?: string | undefined
+	/** Preferred timeframe (affinity). Omit to keep, an id to set, `null` to clear. */
+	affinityTimeframeId?: number | null | undefined
 	/** Whole minutes. Omit to keep, a value to set, `null` to clear. */
 	estimation?: number | null | undefined
 	minimum?: number | null | undefined

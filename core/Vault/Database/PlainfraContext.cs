@@ -339,6 +339,15 @@ public class PlainfraContext : DbContext
 			.WithMany()
 			.OnDelete(DeleteBehavior.SetNull);
 
+		modelBuilder.Entity<Attentive>()
+			.HasOne(x => x.AffinityTimeframe)
+			.WithMany()
+			.OnDelete(DeleteBehavior.SetNull);
+
+		modelBuilder.Entity<Attentive>()
+			.Navigation(x => x.AffinityTimeframe)
+			.AutoInclude();
+
 		modelBuilder.Entity<TagDefinition>()
 			.Property(x => x.Color)
 			.HasConversion<string>();

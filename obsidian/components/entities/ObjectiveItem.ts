@@ -51,6 +51,21 @@ export class ObjectiveItem extends EntityItem<Objective> {
 		`
 	}
 
+	protected override get compactDirective() {
+		return this.objective?.directive
+	}
+
+	protected override get compactKind() {
+		return 'Objective'
+	}
+
+	protected override get compactChips() {
+		return html`
+			<p7t-college-item small mode='named' .college=${this.objective!.college}></p7t-college-item>
+			<p7t-celestron-item small .value=${this.objective!.celestronValue}></p7t-celestron-item>
+		`
+	}
+
 	protected override get highlightInfo() {
 		return html`
 			<div class='college'>

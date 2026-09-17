@@ -459,6 +459,9 @@ public sealed class PolarisCycleApiService(
 			Estimation = request.Estimation ?? decree.DefaultLength,
 			Minimum = request.Minimum,
 			Maximum = request.Maximum,
+			// An explicit affinity wins; otherwise the same auto-inclusion an executive gets, from the decree's college.
+			AffinityTimeframeId = request.AffinityTimeframeId
+				?? await affinityResolver.ResolveForCollegeAsync(decree.College, cancellationToken),
 		};
 		attentive.Normalize();
 

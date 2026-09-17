@@ -54,6 +54,19 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 				box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--p7t-flare-accent) 8%, transparent);
 			}
 
+			/* The timer with the timeframe(s) in play beside it, at chip scale against the heading's size. */
+			.heading-line {
+				display: inline-flex;
+				align-items: baseline;
+				gap: .8ch;
+			}
+
+			.heading-line p7t-active-timeframes {
+				font-size: .5em;
+				font-weight: 400;
+				line-height: 1;
+			}
+
 			.add-button {
 				margin: .4em 1.2em;
 
@@ -125,7 +138,12 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 	}
 
 	override get headingTemplate() {
-		return html`<p7t-elapsed-view .epoch=${this.data!.startTime}></p7t-elapsed-view>`
+		return html`
+			<span class='heading-line'>
+				<p7t-elapsed-view .epoch=${this.data!.startTime}></p7t-elapsed-view>
+				<p7t-active-timeframes></p7t-active-timeframes>
+			</span>
+		`
 	}
 
 	protected override get listContent() {

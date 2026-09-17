@@ -1,8 +1,7 @@
 import { component, html, property } from "@a11d/lit"
 import { DecreeItem } from "./DecreeItem"
 import { Attentive, AttentiveResolution } from "@pleiades/sdk"
-import { Notice } from "obsidian"
-import { core } from ".."
+import { AttentiveModal, getApp } from ".."
 import "../system/DatetimeView"
 
 /**
@@ -35,37 +34,36 @@ export class DecreeItemAttentive extends DecreeItem {
 		return undefined
 	}
 
+	/**
+	 * The notch is the allocation chip, as on an executive, and opens the attentive's allocation modal — where the
+	 * occurrence is also marked done or pending. The chip owns the state read: resolved, no allocation, time left.
+	 */
 	protected override get notchTemplate() {
+		const attentive = this.attentive
 		return html`
-			<p7t-status-item icon-only status=${this.done ? 'Done' : 'Standby'}></p7t-status-item>
+			<p7t-allocation-item
+				?executed=${this.done}
+				.estimation=${attentive?.estimation}
+				.minimum=${attentive?.minimum}
+				.maximum=${attentive?.maximum}
+				.elapsed=${0}>
+			</p7t-allocation-item>
 		`
+	}
+
+	/** An executive shows its affinity where the decree would show its Celestron; so does the attentive. */
+	protected override get info() {
+		return html`<p7t-timeframe-item affinity small mode='icon' .timeframe=${this.attentive?.affinityTimeframe}></p7t-timeframe-item>`
 	}
 
 	protected override async notchAction() {
 		const attentive = this.attentive
 		if (!attentive) return
 
-		const resolution = this.done ? AttentiveResolution.Pending : AttentiveResolution.Done
-		// A Polaris-bound occurrence has no meaningful recurrence-id and always exists as a row, so it is addressed by
-		// its id; an unbound one is addressed by its RECURRENCE-ID so a still-projected agenda item hardens on
-		// interaction instead of failing on an absent row id.
-		const occurrence = attentive.polarisCycleId
-			? { id: attentive.id }
-			: {
-				decreeId: attentive.decreeId,
-				recurrenceDate: attentive.recurrenceDate,
-				recurrenceTime: attentive.recurrenceTime
-			}
-		const updated = await core.declaratives.updateAttentive(occurrence, { resolution })
-		if (!updated) {
-			new Notice('Failed to update attentive.')
-			return
-		}
-
-		// The update response carries no decree navigation, so the known decree is kept for the directive/college lines.
-		const merged: Attentive = { ...attentive, ...updated, decree: updated.decree ?? attentive.decree }
-		this.attentive = merged
-		this.dispatchEvent(new CustomEvent<Attentive>('attentivechange', { detail: merged, bubbles: true, composed: true }))
+		new AttentiveModal(getApp(), attentive, updated => {
+			this.attentive = updated
+			this.dispatchEvent(new CustomEvent<Attentive>('attentivechange', { detail: updated, bubbles: true, composed: true }))
+		}).open()
 	}
 }
 

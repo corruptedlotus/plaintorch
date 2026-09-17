@@ -49,6 +49,8 @@ export interface PolarisAgenda {
 /** Manually adds a decree to a Polaris cycle, creating a Polaris-bound attentive (PEP100). */
 export interface PolarisAttentiveAdd {
 	decreeId: string
+	/** Affinity to seed; omitted, the decree's college auto-inclusion decides. */
+	affinityTimeframeId?: number | undefined
 	date?: string | undefined
 	time?: string | undefined
 	estimation?: number | undefined
