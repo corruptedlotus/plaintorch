@@ -227,16 +227,20 @@ function place(origin: NodeBox, point: Point): Placement {
 }
 
 /**
- * The point a target is aimed at: its centre, pulled a quarter of its width and height towards the origin's
- * centre. The nearer face is what an edge reaches for, and judging by the whole centre would let a wide or
- * tall target tip the choice from further away than its near face really sits.
+ * The point a target is aimed at: its centre, pulled half its width and height towards the origin's centre,
+ * and never past it. The nearer face is what an edge reaches for, and judging by the whole centre would let a
+ * wide or tall target tip the choice from further away than its near face really sits. The clamp keeps a
+ * target that overlaps the origin's row or column from aiming *behind* the origin's centre, which is what
+ * had an edge swirl round the back of the origin to reach it.
  */
 function faceMidpoint(target: NodeBox, origin: NodeBox): Point {
 	const from = centre(origin)
 	const to = centre(target)
+	const pulledX = to.x - Math.sign(to.x - from.x) * target.width / 2
+	const pulledY = to.y - Math.sign(to.y - from.y) * target.height / 2
 	return {
-		x: to.x - Math.sign(to.x - from.x) * target.width / 4,
-		y: to.y - Math.sign(to.y - from.y) * target.height / 4
+		x: to.x >= from.x ? Math.max(pulledX, from.x) : Math.min(pulledX, from.x),
+		y: to.y >= from.y ? Math.max(pulledY, from.y) : Math.min(pulledY, from.y)
 	}
 }
 
@@ -255,19 +259,19 @@ export interface EdgeEnds {
  * origin leaves by that side and the target is entered by the side facing back. In a quadrant the angle from
  * the origin's corner decides both, in the pattern the sketch lays down:
  *
- * - **Origin side**: the horizontal side up to the bisector `Qm` (45°), the vertical one beyond — each side's
- *   facing expands by half a quadrant on either flank.
- * - **Target side**: the facing side's direct choice holds up to `Q2` (10° off the horizontal); between `Q2`
- *   and `Qm` the edge swings to the target's off-axis side (its vertical face); past `Qm` the same rule
- *   mirrors around the vertical facing — direct (the vertical face) from `Qy` down to `Q1` (10° off the
+ * - **Target side**: entered horizontally up to the bisector `Qm` (45°), vertically beyond — each of its
+ *   facings expands by half a quadrant on either flank.
+ * - **Origin side**: the facing side's direct choice holds up to `Q2` (10° off the horizontal); between `Q2`
+ *   and `Qm` the edge leaves by the origin's off-axis side (its vertical face) instead; past `Qm` the same
+ *   rule mirrors around the vertical facing — direct (the vertical face) from `Qy` down to `Q1` (10° off the
  *   vertical), off-axis (the horizontal face) between `Q1` and `Qm`.
  *
  * The rule is stated for one quadrant but holds in all four: the partition is symmetric about the origin,
  * and the placement names the sides in play for whichever quadrant the target falls in.
  *
- * So an edge that leaves horizontally enters horizontally near the axis and vertically nearer the diagonal,
- * and one that leaves vertically does the converse, which is what keeps a near-diagonal edge from hooking
- * around a corner it could simply meet.
+ * So an edge entering horizontally leaves horizontally near the axis and vertically nearer the diagonal, and
+ * one entering vertically does the converse, which is what keeps a near-diagonal edge from hooking around a
+ * corner it could simply meet.
  */
 export function edgeEnds(source: NodeBox, target: NodeBox): EdgeEnds {
 	const [fromSide, toSide] = chooseSides(source, faceMidpoint(target, source))
@@ -295,10 +299,10 @@ function chooseSides(origin: NodeBox, aim: Point): [Side, Side] {
 	}
 
 	if (angle < quadrantBisector) {
-		return [horizontal.origin, angle < directExpansion ? horizontal.target : vertical.target]
+		return [angle < directExpansion ? horizontal.origin : vertical.origin, horizontal.target]
 	}
 
-	return [vertical.origin, angle >= 90 - directExpansion ? vertical.target : horizontal.target]
+	return [angle >= 90 - directExpansion ? vertical.origin : horizontal.origin, vertical.target]
 }
 
 /**
