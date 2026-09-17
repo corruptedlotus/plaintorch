@@ -23,6 +23,22 @@ type Gesture =
 	| { readonly sort: 'pan', readonly pointerId: number, readonly originX: number, readonly originY: number, readonly fromX: number, readonly fromY: number }
 	| { readonly sort: 'drag', readonly pointerId: number, readonly nodeKey: string, readonly offsetX: number, readonly offsetY: number, readonly originX: number, readonly originY: number }
 	| { readonly sort: 'link', readonly pointerId: number, readonly nodeKey: string, readonly at: Point }
+	/**
+	 * Two fingers on the viewport: pinching zooms, and moving them together pans. `pointerId` is the first
+	 * finger, `secondPointerId` the other; `touches` holds each finger's latest client position. The zoom is
+	 * measured against the fingers' separation and midpoint when the pinch began, with the pan and scale of
+	 * that moment as the base, so the surface point between the fingers stays between them.
+	 */
+	| {
+		readonly sort: 'pinch',
+		readonly pointerId: number,
+		readonly secondPointerId: number,
+		readonly touches: ReadonlyMap<number, Point>,
+		readonly originDistance: number,
+		readonly originMidpoint: Point,
+		readonly fromScale: number,
+		readonly fromPan: Point
+	}
 
 /** A node's actual rendered size, measured from its element rather than assumed from the layout. */
 interface NodeSize {
@@ -1201,6 +1217,14 @@ export class DependencyCanvas extends Component {
 	}
 
 	private onPointerDown(e: PointerEvent) {
+		// A second finger while one is already down turns whatever that finger was doing into a pinch — a pan
+		// or a node drag alike; the node simply rests where it had been dragged to. It may land on a node, a
+		// button, anywhere: the two fingers together are read as a viewport gesture.
+		if (e.pointerType === 'touch' && this.gesture && this.gesture.sort !== 'pinch' && this.gesture.pointerId !== e.pointerId) {
+			this.beginPinch(this.gesture.pointerId, e)
+			return
+		}
+
 		if (e.button !== 0 || !this.isBackground(e.target)) {
 			return
 		}
@@ -1208,6 +1232,8 @@ export class DependencyCanvas extends Component {
 		// Pressing the backdrop drops focus: the active node's contents go inert again, and it can be moved.
 		this.selected = undefined
 		this.activeKey = undefined
+		// A backdrop press starts afresh: a flag left by a pinch that began on a node must not swallow the next click.
+		this.dragged = false
 		this.gesture = {
 			sort: 'pan',
 			pointerId: e.pointerId,
@@ -1233,6 +1259,13 @@ export class DependencyCanvas extends Component {
 	}
 
 	private onNodePointerDown(e: PointerEvent, nodeKey: string, box: NodeBox) {
+		// A second finger landing on a node joins the first into a pinch rather than starting a drag of its own.
+		if (e.pointerType === 'touch' && this.gesture && this.gesture.sort !== 'pinch' && this.gesture.pointerId !== e.pointerId) {
+			e.stopPropagation()
+			this.beginPinch(this.gesture.pointerId, e)
+			return
+		}
+
 		if (e.button !== 0) {
 			return
 		}
@@ -1302,13 +1335,72 @@ export class DependencyCanvas extends Component {
 		}
 	}
 
+	/**
+	 * Starts a two-finger gesture from the finger already down and the one just landed.
+	 *
+	 * The first finger's last known position is not tracked by the gesture it was carrying out, so it is read
+	 * from the gesture's origin (a pan or drag) — close enough for a base, since the zoom is measured as a
+	 * ratio against it and any offset only shifts the pan by a few pixels on the first move.
+	 */
+	private beginPinch(firstPointerId: number, second: PointerEvent) {
+		const current = this.gesture
+		const first: Point = current && current.sort !== 'pinch' && current.sort !== 'link'
+			? { x: current.originX, y: current.originY }
+			: { x: second.clientX, y: second.clientY }
+		const touches = new Map<number, Point>([[firstPointerId, first], [second.pointerId, { x: second.clientX, y: second.clientY }]])
+		// The first finger still delivers a click to the node it pressed when it lifts; flagging the gesture as
+		// a drag is what makes the node's click handler swallow it, so a pinch never selects or opens a node.
+		this.dragged = true
+		this.gesture = {
+			sort: 'pinch',
+			pointerId: firstPointerId,
+			secondPointerId: second.pointerId,
+			touches,
+			originDistance: Math.max(1, Math.hypot(second.clientX - first.x, second.clientY - first.y)),
+			originMidpoint: { x: (first.x + second.clientX) / 2, y: (first.y + second.clientY) / 2 },
+			fromScale: this.scale,
+			fromPan: this.pan
+		}
+		this.capture(second.pointerId)
+	}
+
+	/** Whether a pointer belongs to the gesture in progress — either finger of a pinch, else the one pointer. */
+	private owns(gesture: Gesture, pointerId: number): boolean {
+		return gesture.pointerId === pointerId || (gesture.sort === 'pinch' && gesture.secondPointerId === pointerId)
+	}
+
 	private onPointerMove(e: PointerEvent) {
 		const gesture = this.gesture
-		if (!gesture || gesture.pointerId !== e.pointerId) {
+		if (!gesture || !this.owns(gesture, e.pointerId)) {
 			return
 		}
 
 		switch (gesture.sort) {
+			case 'pinch': {
+				const touches = new Map(gesture.touches)
+				touches.set(e.pointerId, { x: e.clientX, y: e.clientY })
+				const [a, b] = [...touches.values()]
+				if (!a || !b) {
+					return
+				}
+
+				const distance = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y))
+				const midpoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+				const rect = this.viewportElement.getBoundingClientRect()
+				const scale = Math.min(maximumScale, Math.max(minimumScale, gesture.fromScale * (distance / gesture.originDistance)))
+				// Keep the surface point that sat between the fingers at the start between them now: scale the
+				// base pan's offset from the original midpoint, then carry it to the current midpoint.
+				const ratio = scale / gesture.fromScale
+				const originX = gesture.originMidpoint.x - rect.left
+				const originY = gesture.originMidpoint.y - rect.top
+				this.pan = {
+					x: (midpoint.x - rect.left) - (originX - gesture.fromPan.x) * ratio,
+					y: (midpoint.y - rect.top) - (originY - gesture.fromPan.y) * ratio
+				}
+				this.scale = scale
+				this.gesture = { ...gesture, touches }
+				return
+			}
 			case 'pan':
 				this.pan = {
 					x: gesture.fromX + (e.clientX - gesture.originX),
@@ -1337,7 +1429,7 @@ export class DependencyCanvas extends Component {
 
 	private async onPointerUp(e: PointerEvent) {
 		const gesture = this.gesture
-		if (!gesture || gesture.pointerId !== e.pointerId) {
+		if (!gesture || !this.owns(gesture, e.pointerId)) {
 			return
 		}
 
@@ -1354,8 +1446,15 @@ export class DependencyCanvas extends Component {
 	private endGesture() {
 		const gesture = this.gesture
 		this.gesture = undefined
-		if (gesture && this.viewportElement?.hasPointerCapture(gesture.pointerId)) {
-			this.viewportElement.releasePointerCapture(gesture.pointerId)
+		if (!gesture) {
+			return
+		}
+
+		const pointerIds = gesture.sort === 'pinch' ? [gesture.pointerId, gesture.secondPointerId] : [gesture.pointerId]
+		for (const pointerId of pointerIds) {
+			if (this.viewportElement?.hasPointerCapture(pointerId)) {
+				this.viewportElement.releasePointerCapture(pointerId)
+			}
 		}
 	}
 
@@ -1391,17 +1490,36 @@ export class DependencyCanvas extends Component {
 		await createDependency(source.ref, target.ref)
 	}
 
+	/**
+	 * Wheel input, read the way a trackpad delivers it: a two-finger scroll arrives as plain deltas and pans;
+	 * a pinch arrives as a wheel with `ctrlKey` set (how Chromium encodes it) and zooms about the cursor. A mouse
+	 * wheel therefore pans too, and zooms with Ctrl (or ⌘) held — the convention Obsidian's own canvas keeps.
+	 * Line- and page-mode deltas are scaled to pixels so a mouse notch moves a sensible distance.
+	 */
 	private onWheel(e: WheelEvent) {
 		e.preventDefault()
-		const next = Math.min(maximumScale, Math.max(minimumScale, this.scale * Math.exp(-e.deltaY * 0.0015)))
+		const unit = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? 240 : 1
+		if (!e.ctrlKey && !e.metaKey) {
+			this.pan = { x: this.pan.x - e.deltaX * unit, y: this.pan.y - e.deltaY * unit }
+			return
+		}
+
+		// A pinch reports small deltas many times a second, a ctrl-wheel a whole notch at once; the clamp keeps
+		// one notch to a modest step while a pinch's stream still adds up smoothly.
+		const delta = Math.max(-30, Math.min(30, e.deltaY * unit))
+		this.zoomAbout(e.clientX, e.clientY, this.scale * Math.exp(-delta * 0.01))
+	}
+
+	/** Zooms to a scale about a client point: whatever is under it stays under it. */
+	private zoomAbout(clientX: number, clientY: number, scale: number) {
+		const next = Math.min(maximumScale, Math.max(minimumScale, scale))
 		if (next === this.scale) {
 			return
 		}
 
-		// Zoom about the cursor: whatever is under it stays under it.
 		const rect = this.viewportElement.getBoundingClientRect()
-		const x = e.clientX - rect.left
-		const y = e.clientY - rect.top
+		const x = clientX - rect.left
+		const y = clientY - rect.top
 		const ratio = next / this.scale
 		this.pan = {
 			x: x - (x - this.pan.x) * ratio,
