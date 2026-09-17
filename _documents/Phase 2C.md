@@ -10,5 +10,6 @@
 - [x] Directives render as PUCK when rendered in global planning as imported dependency
 - [x] Controlled logging
 - [x] Launcher process
+- [x] Multifaceted graph edge positioning
 - [ ] Package
 - [ ] UI improvements
