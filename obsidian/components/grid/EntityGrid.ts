@@ -42,7 +42,7 @@ export class EntityGrid extends GridBase {
 	}
 
 	protected override get fabLabel(): string {
-		return 'Add an entity'
+		return 'Create New'
 	}
 
 	protected override get fabActions(): ExpandingAction[] {

@@ -51,9 +51,19 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 				display: flex;
 				align-items: center;
 				gap: .6ch;
-				margin: .8em 1.2em .2em;
+				margin-block: .8em .3em;
+				padding-inline: 1.2em;
 				font-size: .82em;
 				opacity: .65;
+				border-inline-start: 2px solid color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 50%, transparent);
+			}
+
+			.dependency-group-objectives {
+				display: flex;
+				flex-direction: column;
+				align-items: stretch;
+				padding-inline-start: .2em;
+				border-inline-start: 2px solid color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 50%, transparent);
 			}
 
 			.dependency-count {
@@ -84,7 +94,7 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 	protected override get listContent() {
 		return html`
 			${this.data!.objectives.map(objective => html`
-				<p7t-objective-item interactive .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
+				<p7t-objective-item interactive .currentOnrush=${this.data} .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
 			`)}
 			<p7t-button @click=${() => this.addObjective()} icon='lucide:plus' class='add-button'>Add Objective</p7t-button>
 			${this.dependencySection}
@@ -109,7 +119,7 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 			${groups.map(group => html`
 				<div class='dependency-group'>
 					<div class='dependency-group-heading'>
-						<span class='dependency-group-title'>${group.title}</span>
+						<p7t-icon-item small icon='lucide:route-off' class='dependency-group-title'>${group.title}</p7t-icon-item>
 						<span
 							class='dependency-count'
 							?data-detail=${group.nonObjectiveCount > 0}
@@ -118,9 +128,11 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 								: nothing}
 						>${group.total}</span>
 					</div>
-					${group.objectives.map(objective => html`
-						<p7t-objective-item interactive .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
-					`)}
+					<div class='dependency-group-objectives'>
+						${group.objectives.map(objective => html`
+							<p7t-objective-item interactive .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
+						`)}
+					</div>
 				</div>
 			`)}
 		`

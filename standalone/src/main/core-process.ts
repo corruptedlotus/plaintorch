@@ -65,8 +65,8 @@ export class CoreProcess extends EventEmitter<CoreProcessEvents> {
 			? [path.join(process.resourcesPath, "core", fileName)]
 			: [
 				path.join(app.getAppPath(), "core-dist", fileName),
+				path.join(app.getAppPath(), "..", "core", "bin", "Release", "net10.0", fileName),
 				path.join(app.getAppPath(), "..", "core", "bin", "Debug", "net10.0", fileName),
-				path.join(app.getAppPath(), "..", "core", "bin", "Release", "net10.0", fileName)
 			]
 		return candidates.find(candidate => existsSync(candidate))
 	}

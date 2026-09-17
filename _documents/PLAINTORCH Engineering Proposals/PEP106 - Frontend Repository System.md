@@ -1,7 +1,7 @@
 ---
 status: implemented
 assignee: Copilot 🤖
-phase: 2A
+phase: 2a
 patches:
   - Patch106.1 - Tracked References, Forks & Queries
 ---

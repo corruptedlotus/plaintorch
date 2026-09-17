@@ -569,13 +569,14 @@ export class DependencyCanvas extends Component {
 						<div class='fabs'>
 							<p7t-expanding-actions
 								large='secondary'
-								icon='lucide:sparkles'
-								actionLabel='Create on the canvas'
+								icon='lucide:badge-plus'
+								actionLabel='Create New'
 								.actions=${this.creations}>
 							</p7t-expanding-actions>
 							<p7t-expanding-actions
-								large
-								actionLabel='Add to the canvas'
+								large='main'
+								icon='lucide:copy-plus'
+								actionLabel=${'Add to Canvas'}
 								.actions=${this.additions}>
 							</p7t-expanding-actions>
 						</div>

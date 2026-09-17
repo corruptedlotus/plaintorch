@@ -3,7 +3,7 @@ status: implemented
 patches:
   - Patch100.1 - Timeframe Auto-Inclusion, Icons & Affinity Surfaces
 assignee: Copilot 🤖
-phase: 2A
+phase: 2a
 ---
 # Directives
 ## Moonlight Directives

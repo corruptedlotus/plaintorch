@@ -11,6 +11,7 @@ import { InfoItem } from '../design/InfoItem'
 export class CelestronItem extends InfoItem {
 	@property({ type: Number }) value = 0
 	@property({ type: Boolean, reflect: true }) large = false
+	@property({ type: Boolean, reflect: true }) starfire = false
 
 	static override get styles() {
 		return css`
@@ -25,6 +26,10 @@ export class CelestronItem extends InfoItem {
 				font-size: 1.5em;
 				font-weight: 400;
 			}
+
+			:host([starfire]) {
+				color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 20%, var(--text-normal));
+			}
 		`
 	}
 
@@ -38,11 +43,11 @@ export class CelestronItem extends InfoItem {
 	}
 
 	protected override get bulletText() {
-		return html`<span class='value'>${this.value}</span>`
+		return html`<span class='value'>${this.starfire ? this.value * 2 : this.value}</span>`
 	}
 
 	protected override get tooltip() {
-		return `${this.value} Celestron`
+		return this.starfire ? `${this.value} Starfire` : `${this.value} Celestron`
 	}
 }
 

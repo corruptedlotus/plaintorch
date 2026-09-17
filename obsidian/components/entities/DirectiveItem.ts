@@ -24,15 +24,15 @@ export class DirectiveItem extends InfoItem {
 
 			.info-bullet {
 				font-weight: 400;
-				font-size: .9em;
-				line-height: .9;
+				/*font-size: .9em;
+				line-height: .9;*/
 			}
 
 			.placeholder {
 				opacity: .7;
-				font-weight: 400;
-				font-size: .9em;
-				line-height: .9;
+				font-weight: 500;
+				/*font-size: .9em;
+				line-height: .9;*/
 			}
 		`
 	}

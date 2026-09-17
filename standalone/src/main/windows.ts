@@ -123,7 +123,7 @@ export class ShellWindows {
 			autoHideMenuBar: true,
 			show: false,
 			backgroundColor: "#1f1a22",
-			icon: path.join(__dirname, "assets", "icon.png"),
+			icon: path.join(__dirname, "assets", "plaintorch-full.png"),
 			webPreferences: this.webPreferences()
 		})
 		this.status.once("ready-to-show", () => this.status?.show())

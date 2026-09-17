@@ -42,7 +42,7 @@ views:
     name: p2a
     filters:
       and:
-        - phase == "2A"
+        - phase == "2a"
     order:
       - file.name
       - status
@@ -91,19 +91,19 @@ views:
     markers: none
     indentProperties: true
   - type: list
-    name: p3c
+    name: p3a
     filters:
       and:
-        - phase == "3C"
+        - phase == "3a"
     order:
       - file.name
       - status
     markers: none
   - type: list
-    name: p3d
+    name: p3b
     filters:
       and:
-        - phase == "3D"
+        - phase == "3b"
     order:
       - file.name
       - status
@@ -112,7 +112,7 @@ views:
     name: p4q
     filters:
       and:
-        - phase == "4Q"
+        - phase == "4"
     order:
       - file.name
       - status
@@ -121,7 +121,7 @@ views:
     name: p4s
     filters:
       and:
-        - phase == "4S"
+        - phase == "5"
     order:
       - file.name
       - status

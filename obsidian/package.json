@@ -1,6 +1,6 @@
 {
 	"name": "@pleiades/plaintorch-obsidian",
-	"version": "0.2b",
+	"version": "0.2c",
 	"private": true,
 	"description": "Obsidian plugin scaffold for PLAINTORCH entity rendering and briefing surfaces.",
 	"type": "module",

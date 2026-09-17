@@ -61,6 +61,7 @@ export abstract class InfoItem extends Component {
 				align-items: center;
 				gap: .4ch;
 				min-width: 0;
+				line-height: .9;
 			}
 
 			.info-icon {
@@ -77,6 +78,7 @@ export abstract class InfoItem extends Component {
 
 			.info-text {
 				min-width: 0;
+				vertical-align: middle;
 			}
 
 			:host([thumbnail]) .info-bullet {

@@ -1,4 +1,4 @@
-import { Component, component, css, html, nothing, state } from "@a11d/lit"
+import { Component, component, css, html, nothing, state, unsafeCSS } from "@a11d/lit"
 import { PlaintorchCoreClient, type PlaintorchCoreClientOptions, type SystemBriefing } from "@pleiades/sdk/plaintorch"
 import type { CorePhase, PlaintorchBridge, ShellStatus } from "../shared/contracts"
 import splashArtwork from "../../assets/splash-loading.png"
@@ -107,8 +107,9 @@ export class Splash extends Component {
 				height: 405px;
 				overflow: hidden;
 				border-radius: 6px;
-				background: #1f1a22 center / cover no-repeat;
-				box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+				background: url(${unsafeCSS(splashArtwork)}) center / cover no-repeat;
+				background-color: transparent;
+				/*box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);*/
 				font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
 			}
 			.message {

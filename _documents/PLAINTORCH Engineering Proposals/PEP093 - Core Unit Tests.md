@@ -1,7 +1,7 @@
 ---
 status: implemented
 assignee: Copilot 🤖
-phase: 2A
+phase: 2a
 ---
 # Core Unit Tests
 The core has no automated tests. Every proposal so far has been validated by hand — running `serve` and poking the API — against the developer's real per-user environment. This PEP establishes an automated test suite for the core, and the isolated dev environment that makes running it (and future sandbox development) safe and parallelisable.

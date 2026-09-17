@@ -8,7 +8,7 @@ patches:
   - Patch102.5 - Onrush Management UI
   - Patch102.6 - Global Planning Mode
 assignee: Soraya 🧙‍♀️
-phase: 2A
+phase: 2a
 ---
 > [!idea]
 > let's add a lock milestones or unlockable milestones whatever it is that instead of having their dependencies met of course they can have their dependencies met as well but their whole gimmick is that they are unlocked by paying a certain price it could be Celestron or something

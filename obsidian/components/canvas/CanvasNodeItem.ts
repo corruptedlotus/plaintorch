@@ -221,7 +221,7 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 			}
 
 			.title {
-				font-size: .98em;
+				font-size: 1.05em;
 			}
 
 		`

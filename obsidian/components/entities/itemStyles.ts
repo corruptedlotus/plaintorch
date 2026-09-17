@@ -108,6 +108,7 @@ export const itemLayoutStyles = css`
 	}
 	
 	p7t-directive-item {
+		font-size: .9em;
 		opacity: .6;
 	}
 

@@ -3,7 +3,7 @@ status: implemented
 patches:
   - Patch098.1 - Add Elapsed Time Tracking
 assignee: Copilot 🤖
-phase: 2A
+phase: 2a
 ---
 # Working Time Unit
 The time unit specification for work items allow a minute-based stamp, which is translated to timespan/time-only in the application layer and to hours + fraction in the UI. 

@@ -2,23 +2,19 @@
 	"folders": [
 		{
 			"path": "core",
-			"name": "Daemon Core",
+			"name": "Daemon Core"
 		},
 		{
 			"path": "cli",
-			"name": "CLI",
+			"name": "CLI"
 		},
 		{
 			"path": "obsidian",
-			"name": "Obsidian Plugin",
+			"name": "Obsidian Plugin"
 		},
 		{
 			"name": "SDK: TypeScript (Node)",
 			"path": "sdk.ts"
-		},
-		{
-			"path": "sipa",
-			"name": "Sunnyside Interface"
 		},
 		{
 			"path": "standalone",

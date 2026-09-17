@@ -1,11 +1,13 @@
-import { component, css, html } from "@a11d/lit"
+import { component, css, html, state } from "@a11d/lit"
 import { EntityItem } from "./EntityItem"
-import { Objective, ObjectiveStatus } from "@pleiades/sdk"
+import { Objective, ObjectiveStatus, OnrushSprint } from "@pleiades/sdk"
 import { App } from "obsidian"
 import { ChangeStateModal } from 'components'
 
 @component('p7t-objective-item')
 export class ObjectiveItem extends EntityItem<Objective> {
+
+	@state() currentOnrush?: OnrushSprint
 
 	protected get objective() {
 		return this.entity
@@ -40,7 +42,7 @@ export class ObjectiveItem extends EntityItem<Objective> {
 	}
 
 	protected override get info() {
-		return html`<p7t-celestron-item small .value=${this.objective!.celestronValue}></p7t-celestron-item>`
+		return html`<p7t-celestron-item ?starfire=${this.currentOnrush && (this.currentOnrush.id === this.objective?.onrushSprintId)} small .value=${this.objective!.celestronValue}></p7t-celestron-item>`
 	}
 
 	protected override get notchTemplate() {

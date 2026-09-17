@@ -1,5 +1,5 @@
 import path from "node:path"
-import { Menu, Tray, nativeImage, type MenuItemConstructorOptions } from "electron"
+import { Menu, Tray, nativeImage, nativeTheme, type MenuItemConstructorOptions } from "electron"
 import type { ShellStatus } from "../shared/contracts"
 import { hostsCore } from "./flavor"
 
@@ -24,13 +24,30 @@ export class ShellTray {
 
 	public constructor(private readonly actions: TrayActions) { }
 
+	public getPath() {
+		const iconName = nativeTheme.shouldUseDarkColors
+			? 'plaintorch-mono-dark.png'
+			: 'plaintorch-mono-light.png'
+		const icon = nativeImage.createFromPath(path.join(__dirname, "assets", iconName))
+		return icon
+	}
+
 	/** Creates the tray icon. */
 	public create(): void {
-		const icon = nativeImage.createFromPath(path.join(__dirname, "assets", "tray.png"))
-		this.tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
+		const icon = this.getPath()
+		this.tray = new Tray(icon)
 		this.tray.setToolTip("PLAINTORCH")
 		this.tray.on("click", () => this.actions.openStatus())
 		this.tray.on("double-click", () => this.actions.openStatus())
+	}
+
+	public updateIcon() {
+		if (this.tray && !this.tray.isDestroyed()) {
+			const icon = this.getPath()
+			this.tray.setImage(icon)
+		} else {
+			this.create()
+		}
 	}
 
 	/** Rebuilds the menu and tooltip for a status. */

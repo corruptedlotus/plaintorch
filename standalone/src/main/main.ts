@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain, shell as electronShell } from "electron"
+import { app, dialog, ipcMain, shell as electronShell, nativeTheme } from "electron"
 import { mkdirSync } from "node:fs"
 import { ipc, type BridgeRequest, type ShellStatus } from "../shared/contracts"
 import { setAutostartEnabled } from "./autostart"
@@ -126,6 +126,7 @@ async function run(): Promise<void> {
 
 	await app.whenReady()
 	tray.create()
+	nativeTheme.on("updated", () => tray.updateIcon())
 	shell.on("status", publish)
 	shell.on("log", line => console.warn(`[core] ${line}`))
 

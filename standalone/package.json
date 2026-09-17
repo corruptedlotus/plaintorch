@@ -1,6 +1,6 @@
 {
 	"name": "@pleiades/plaintorch-standalone",
-	"version": "0.1.0",
+	"version": "0.2c",
 	"private": true,
 	"description": "PLAINTORCH desktop shell: a per-user tray app that hosts (standalone flavour) or attaches to (client flavour) the core.",
 	"main": "dist/main.cjs",
@@ -18,7 +18,7 @@
 		"@a11d/lit": "^0.11.1",
 		"@pleiades/sdk": "file:../sdk.ts",
 		"@types/node": "^22.15.17",
-		"electron": "^39.2.0",
+		"electron": "^44.4.0",
 		"electron-builder": "^26.0.12",
 		"esbuild": "^0.25.4",
 		"typescript": "^5.9.3"

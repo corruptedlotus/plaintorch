@@ -38,7 +38,7 @@ export class LoreGrid extends GridBase {
 	}
 
 	protected override get fabLabel(): string {
-		return 'Add an Era'
+		return 'New Era'
 	}
 
 	protected override get fabActions(): ExpandingAction[] {

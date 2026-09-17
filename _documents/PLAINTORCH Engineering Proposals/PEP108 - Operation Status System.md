@@ -1,7 +1,7 @@
 ---
 status: implemented
 assignee: Claude 🤖
-phase: 2A
+phase: 2a
 ---
 # Operation Status System
 
