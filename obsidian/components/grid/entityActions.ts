@@ -187,7 +187,7 @@ export function openNotePath(vaultRelativePath: string): void {
 }
 
 /** The kinds whose note can be brought into being on demand — the implicit entities the SDK can materialize. */
-const materializableKinds = new Set<string>(['fate', 'decree'])
+const materializableKinds = new Set<string>(['objective', 'fate', 'decree'])
 
 /**
  * Whether a kind's note can be created here — its entity is implicit and stays database-only (no file) until its
@@ -233,6 +233,7 @@ export async function createEntityNote(entity: { id: string }, kind: string): Pr
 /** The materialization call a kind needs, or `undefined` for a kind that cannot be created here. */
 function beginNoteByKind(kind: string, id: string): Promise<unknown> | undefined {
 	switch (kind) {
+		case 'objective': return core.objectives.beginObjective(id)
 		case 'fate': return core.declaratives.beginFate(id)
 		case 'decree': return core.declaratives.beginDecree(id)
 		default: return undefined

@@ -169,18 +169,23 @@ export class FullBanner extends Component {
 		`
 	}
 
-	/** The typed banner for a kind. Tag names cannot be interpolated into a template, so the mapping is a switch. */
+	/**
+	 * The typed banner for a kind. Tag names cannot be interpolated into a template, so the mapping is a switch.
+	 *
+	 * The banner wears `plaintorch-modal-content` so it sheds its own card chrome and sits as one part of this composed
+	 * panel — the same class the detail modals used to add when they assembled the banner and its editors by hand.
+	 */
 	private renderBanner(kind: string) {
 		switch (kind) {
-			case 'stellar-directive': return html`<p7t-sdirective-banner class='banner' .app=${this.app} puck=${this.puck}></p7t-sdirective-banner>`
-			case 'lunar-directive': return html`<p7t-ldirective-banner class='banner' .app=${this.app} puck=${this.puck}></p7t-ldirective-banner>`
-			case 'objective': return html`<p7t-objective-banner class='banner' .app=${this.app} puck=${this.puck}></p7t-objective-banner>`
-			case 'fate': return html`<p7t-fate-banner class='banner' .app=${this.app} puck=${this.puck}></p7t-fate-banner>`
-			case 'decree': return html`<p7t-decree-banner class='banner' .app=${this.app} puck=${this.puck}></p7t-decree-banner>`
-			case 'onrush-sprint': return html`<p7t-onrush-banner class='banner' .app=${this.app} puck=${this.puck}></p7t-onrush-banner>`
-			case 'executive-order': return html`<p7t-executive-order-banner class='banner' .app=${this.app} puck=${this.puck}></p7t-executive-order-banner>`
-			case 'polaris-cycle': return html`<p7t-polaris-banner class='banner' .app=${this.app} puck=${this.puck}></p7t-polaris-banner>`
-			case 'lore-page': return html`<p7t-lore-banner class='banner' .app=${this.app} puck=${this.puck}></p7t-lore-banner>`
+			case 'stellar-directive': return html`<p7t-sdirective-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-sdirective-banner>`
+			case 'lunar-directive': return html`<p7t-ldirective-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-ldirective-banner>`
+			case 'objective': return html`<p7t-objective-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-objective-banner>`
+			case 'fate': return html`<p7t-fate-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-fate-banner>`
+			case 'decree': return html`<p7t-decree-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-decree-banner>`
+			case 'onrush-sprint': return html`<p7t-onrush-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-onrush-banner>`
+			case 'executive-order': return html`<p7t-executive-order-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-executive-order-banner>`
+			case 'polaris-cycle': return html`<p7t-polaris-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-polaris-banner>`
+			case 'lore-page': return html`<p7t-lore-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-lore-banner>`
 			default: return this.fallbackBanner
 		}
 	}
@@ -188,7 +193,7 @@ export class FullBanner extends Component {
 	/** The generic banner for a kind with no dedicated one, handed the entity directly the way NoteBanner does. */
 	private get fallbackBanner() {
 		return html`<p7t-entity-banner
-			class='banner'
+			class='banner plaintorch-modal-content'
 			.app=${this.app}
 			.puck=${this.puck}
 			.xtype=${this.kind}
@@ -200,6 +205,8 @@ export class FullBanner extends Component {
 		switch (kind) {
 			case 'lunar-directive': return html`<p7t-timeframes-editor class='editor' .directiveId=${this.puck}></p7t-timeframes-editor>`
 			case 'onrush-sprint': return html`<p7t-onrush-orders class='editor' .onrushId=${this.puck}></p7t-onrush-orders>`
+			case 'fate': return html`<p7t-declarative-agenda class='editor' .fateId=${this.puck}></p7t-declarative-agenda>`
+			case 'decree': return html`<p7t-declarative-agenda class='editor' .decreeId=${this.puck}></p7t-declarative-agenda>`
 			default: return nothing
 		}
 	}
