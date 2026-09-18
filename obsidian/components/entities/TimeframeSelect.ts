@@ -33,7 +33,8 @@ export class TimeframeSelect extends SelectBase<DirectiveTimeframeRecord> {
 			...matches.map(timeframe => ({
 				key: `timeframe:${timeframe.id}`,
 				value: timeframe,
-				template: html`<p7t-timeframe-item small .timeframe=${timeframe}></p7t-timeframe-item> <span class='placeholder'>· ${timeframe.directiveTitle}</span>`
+				// `chipped` adds the owning directive as the timeframe's chip — which lunar directive it belongs to.
+				template: html`<p7t-timeframe-item small chipped .timeframe=${timeframe}></p7t-timeframe-item>`
 			}))
 		]
 	}

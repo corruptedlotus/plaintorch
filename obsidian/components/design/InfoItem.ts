@@ -40,6 +40,14 @@ export abstract class InfoItem extends Component {
 
 	@property({ type: Boolean, reflect: true }) thumbnail = false
 
+	/**
+	 * Draws the chip's **chips** — the row of tiny, softly-backgrounded tags after its label (a kind, a college,
+	 * an owner). Off by default, so a chip reads as it always has; a consumer turns it on where the extra context
+	 * earns its space (a select's list), and a derivation whose whole point is the tags overrides
+	 * {@link showChips} to have them always.
+	 */
+	@property({ type: Boolean, reflect: true }) chipped = false
+
 	static override get styles() {
 		return css`
 			/*
@@ -100,8 +108,51 @@ export abstract class InfoItem extends Component {
 				}
 			}
 
+			/*
+			 * The chips: a row of tiny tags after the label. Whatever a derivation renders into it, and whatever a
+			 * consumer slots into the default 'chips' slot (an icon item, a plain span), wears the same soft tag.
+			 */
+			.chips {
+				display: inline-flex;
+				align-items: center;
+				flex-wrap: wrap;
+				gap: .4ch;
+				flex: 0 0 auto;
+				margin-inline-start: .4ch;
+				font-size: .78em;
+				line-height: 1.2;
+			}
+
+			.chips > :not(slot),
+			.chips > slot::slotted(*) {
+				padding: .05em .55ch;
+				border-radius: 4px;
+				background-color: color-mix(in srgb, var(--text-normal) 10%, transparent);
+				color: color-mix(in srgb, var(--text-normal) 75%, transparent);
+				white-space: nowrap;
+			}
+
+			/* In a thumbnail the bullet is a column, so the chips simply land at the bottom, centred. */
+			:host([thumbnail]) .chips {
+				margin-inline-start: 0;
+				justify-content: center;
+			}
+
 			${nullGlyphStyle}
 		`
+	}
+
+	/** Whether the chips are drawn. The {@link chipped} prop by default; a chip that is nothing without them says `true`. */
+	protected get showChips(): boolean {
+		return this.chipped
+	}
+
+	/**
+	 * What goes in the chips row. A derivation overrides this with its own tags; left alone it is a slot named
+	 * `chips`, so a consumer can hand tags to any chip by hand — `<p7t-icon-item slot='chips' …>`.
+	 */
+	protected get chipsTemplate(): HTMLTemplateResult {
+		return html`<slot name='chips' class='chips-slot'></slot>`
 	}
 
 	/**
@@ -164,10 +215,12 @@ export abstract class InfoItem extends Component {
 		}
 
 		const textTemplate = html`<span class='info-text'>${this.bulletText}</span>`
+		const chipsTemplate = this.showChips ? html`<span class='chips' part='chips'>${this.chipsTemplate}</span>` : nothing
 
 		return html`
 			<span class='info-bullet' ${hasTooltip ? tooltip(() => tip as string | HTMLTemplateResult) : nothing}>
 				${this.iconTrailing ? html`${textTemplate}${iconTemplate}` : html`${iconTemplate}${textTemplate}`}
+				${chipsTemplate}
 			</span>
 		`
 	}

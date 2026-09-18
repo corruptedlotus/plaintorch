@@ -1,6 +1,5 @@
 import { component, Component, css, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
-import type { MediaReference } from '@pleiades/sdk'
-import { ContextMenuController, EntityWatch, getApp, resolveMediaIcon, type ContextMenuSpec } from '..'
+import { ContextMenuController, EntityWatch, type ContextMenuSpec } from '..'
 import { entityContextMenu, openEntityEditor } from './entityMenu'
 import { itemLayoutStyles } from './itemStyles'
 
@@ -51,56 +50,6 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 		return css`
 			${itemLayoutStyles}
 
-			/* The compact one-liner: icon, title, chips — sized to sit inside a select or a dense list. */
-			:host([compact]) {
-				padding: .15em .3em;
-				animation: none;
-			}
-
-			.compact {
-				display: flex;
-				align-items: center;
-				gap: .6ch;
-				min-width: 0;
-				font-family: var(--font-interface);
-			}
-
-			.compact.disabled {
-				opacity: .4;
-			}
-
-			.compact-icon {
-				flex: 0 0 auto;
-				width: 1.3em;
-				height: 1.3em;
-			}
-
-			.compact-title {
-				flex: 0 1 auto;
-				min-width: 0;
-				overflow: hidden;
-				text-overflow: ellipsis;
-				white-space: nowrap;
-				font-weight: 400;
-			}
-
-			.chips {
-				display: inline-flex;
-				align-items: center;
-				gap: .4ch;
-				flex: 0 0 auto;
-				font-size: .78em;
-			}
-
-			.chip,
-			.chips > * {
-				padding: .05em .55ch;
-				border-radius: 4px;
-				background-color: color-mix(in srgb, var(--text-normal) 10%, transparent);
-				color: color-mix(in srgb, var(--text-normal) 75%, transparent);
-				white-space: nowrap;
-			}
-
 			.extra-action {
 				position: fixed;
 				display: flex;
@@ -140,52 +89,7 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 		`
 	}
 
-	/**
-	 * The one-line form, for a dense list or a select's face: the parent directive's icon (its media, or the
-	 * asteroid glyph for a world quest), the title, and a few small chips — the kind, and whatever
-	 * {@link compactChips} adds (college, Celestron). No notch, no fly-out, no interaction of its own.
-	 */
-	@property({ type: Boolean, reflect: true }) compact = false
-
-	/** The directive this entity belongs to, for the compact icon. Subclasses with one supply it. */
-	protected get compactDirective(): { iconMedia?: MediaReference | undefined } | undefined {
-		return undefined
-	}
-
-	/** The compact form's icon: the directive's media, or the asteroid for an entity outside any directive. */
-	protected get compactIcon(): string {
-		const directive = this.compactDirective
-		return directive ? resolveMediaIcon(directive.iconMedia, getApp(), 'directive') : 'lucide:astroid'
-	}
-
-	/** What kind of entity this is, for the compact form's first chip. */
-	protected get compactKind(): string {
-		return 'Entity'
-	}
-
-	/** The chips after the kind chip in the compact form — a college, a Celestron. */
-	protected get compactChips(): HTMLTemplateResult {
-		return html``
-	}
-
-	protected get compactTemplate() {
-		return html`
-			<div class='compact ${this.disabled ? 'disabled' : ''}'>
-				<p7t-icon class='compact-icon' .icon=${this.compactIcon}></p7t-icon>
-				<span class='compact-title' @click=${() => this.titleAction()}>${this.entity?.title}</span>
-				<span class='chips'>
-					<span class='chip'>${this.compactKind}</span>
-					${this.compactChips}
-				</span>
-			</div>
-		`
-	}
-
 	protected override get template() {
-		if (this.compact) {
-			return this.compactTemplate
-		}
-
 		return html`
 			<div class='grid ${this.disabled ? 'disabled' : ''}'>
 				<div @click=${async () => await this.notchAction()} class='notch part'>${this.notchTemplate}</div>
