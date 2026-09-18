@@ -190,10 +190,10 @@ export class ExecutiveEditor extends Component {
 		return html`
 			<div class='header'>
 				<div class='title'>${objective?.title ?? executive.title ?? 'Untitled Executive'}</div>
-				${!objective ? nothing : html`
-					<p7t-icon class='open' icon='lucide:file-symlink' ${tooltip('Open objective')} @click=${() => openEntityEditor(objective)}></p7t-icon>
-				`}
 			</div>
+			${!objective ? nothing : html`
+				<p7t-icon-item small icon='objective'>Open Objective</p7t-icon-item>
+			`}
 
 			<div class='columns'>
 				<div class='tracked'>

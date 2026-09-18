@@ -1,7 +1,7 @@
 import { component, css, eventListener, html, nothing, state } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
 import { Attentive, Objective, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
-import { addObjectiveToPolaris, core, isObjectiveInCycle, TransferController, type CreationRowCreated, type PolarisActivityCreated } from ".."
+import { addObjectiveToPolaris, core, isObjectiveInCycle, timebound, TransferController, type CreationRowCreated, type PolarisActivityCreated } from ".."
 
 @component('p7t-briefing-polaris')
 export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
@@ -141,7 +141,7 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		return html`
 			<span class='heading-line'>
 				<p7t-elapsed-view .epoch=${this.data!.startTime}></p7t-elapsed-view>
-				<p7t-active-timeframes></p7t-active-timeframes>
+				<p7t-active-timeframes ${timebound('60s')}></p7t-active-timeframes>
 			</span>
 		`
 	}

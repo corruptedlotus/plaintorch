@@ -1,4 +1,4 @@
-import { component, html, type HTMLTemplateResult } from "@a11d/lit"
+import { component, css, html, property, type HTMLTemplateResult } from "@a11d/lit"
 import type { DirectiveTimeframeRecord } from "@pleiades/sdk"
 import { core } from ".."
 import { fuzzyFilter } from "../editing/fuzzy"
@@ -11,6 +11,22 @@ import { SelectBase, type SelectOption } from "../editing/SelectBase"
  */
 @component('p7t-timeframe-select')
 export class TimeframeSelect extends SelectBase<DirectiveTimeframeRecord> {
+	@property({ type: Boolean, reflect: true }) thumbnail = false
+
+	static override get styles() {
+		return css`
+			${super.styles}
+
+			:host([thumbnail]) {
+				min-width: 0 !important;
+
+				& .field {
+					justify-content: center !important;
+				}
+			}
+		`
+	}
+
 	override placeholder = 'Affinity…'
 
 	private timeframes?: Promise<DirectiveTimeframeRecord[]>
@@ -39,13 +55,13 @@ export class TimeframeSelect extends SelectBase<DirectiveTimeframeRecord> {
 		]
 	}
 
-	protected override renderValue(value: DirectiveTimeframeRecord): HTMLTemplateResult {
-		return html`<p7t-timeframe-item small affinity .timeframe=${value}></p7t-timeframe-item>`
+	protected override renderValue(value: DirectiveTimeframeRecord | undefined): HTMLTemplateResult {
+		return html`<p7t-timeframe-item class='face-item' ?thumbnail=${this.thumbnail} mode=${this.thumbnail ? 'icon' : 'named'} affinity .timeframe=${value}></p7t-timeframe-item>`
 	}
 
 	/** An unset affinity is a chip of its own ("No Affinity"), not a bare placeholder. */
 	protected override renderEmpty(): HTMLTemplateResult {
-		return html`<p7t-timeframe-item small affinity></p7t-timeframe-item>`
+		return this.renderValue(undefined)
 	}
 }
 

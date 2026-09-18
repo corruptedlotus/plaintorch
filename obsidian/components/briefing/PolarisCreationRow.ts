@@ -1,4 +1,4 @@
-import { component, html, property, state } from "@a11d/lit"
+import { component, css, html, property, state } from "@a11d/lit"
 import { PolarisExecutivePlanningMode, type Activity, type Attentive, type DirectiveTimeframeRecord, type Executive, type PolarisCycle, type PolarisExecutivePlan } from "@pleiades/sdk"
 import { Notice } from "obsidian"
 import { AttentiveModal, core, ExecutiveModal, getApp, isObjectiveInCycle, type ActivityChoice, type EditableTimeUnit, type TimeframeSelect, type ActivitySelect } from ".."
@@ -36,10 +36,24 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 			? 'In cycle'
 			: undefined
 
+	static override get styles() {
+		return css`
+			${super.styles}
+
+			p7t-editable-time-unit {
+				font-size: 2em;
+			}
+			
+			.cells {
+				grid-template-columns: 3em 1fr auto;
+			}
+		`
+	}
+
 	protected override get cells() {
 		return html`
 			<div class='cell'>
-				<span class='caption'>Estimation</span>
+				<span class='caption'>Est.</span>
 				<p7t-editable-time-unit
 					nullable
 					accent
@@ -59,6 +73,7 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 			<div class='cell'>
 				<span class='caption'>Affinity</span>
 				<p7t-timeframe-select
+					thumbnail
 					.value=${this.timeframe}
 					@change=${(e: Event) => this.timeframe = (e.target as TimeframeSelect).value}>
 				</p7t-timeframe-select>

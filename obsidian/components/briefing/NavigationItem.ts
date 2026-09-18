@@ -13,13 +13,15 @@ export class NavigationItem extends Component {
 			:host {
 				display: flex;
 				flex-direction: column;
-				gap: .3em;
+				gap: .2em;
 				align-items: center;
 				font-family: var(--font-text);
-				border-radius: 8px;
+				border-radius: 12px 12px 0 0;
 				padding-inline: 8px;
 				padding-top: 5px;
 				transition: .3s ease;
+				border: 1px solid transparent;
+				border-bottom: none;
 			}
 
 			:host(:hover) {
@@ -28,6 +30,8 @@ export class NavigationItem extends Component {
 
 			:host([active]) {
 				color: color-mix(in srgb, var(--interactive-accent) 70%, var(--text-normal));
+				/*border-color: color-mix(in srgb, var(--interactive-accent) 30%, transparent);*/
+				background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
 			}
 
 			.main {
@@ -65,16 +69,16 @@ export class NavigationItem extends Component {
 
 			.indicator {
 				grid-area: indicator;
-				height: 3px;
-				border-radius: 3px;
+				height: 2px;
 				background-color: currentColor;
 				width: 8px;
 				transition: ease .6s;
-				opacity: .2;
+				opacity: 0;
 
 				:host([active]) & {
 					width: 2em;
 					opacity: 1;
+					border-radius: 3px 3px 0 0;
 				}
 			}
 		`

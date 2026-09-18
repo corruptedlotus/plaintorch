@@ -104,6 +104,7 @@ export abstract class SelectBase<T> extends Component {
 			.field {
 				display: inline-flex;
 				align-items: center;
+				justify-content: stretch;
 				min-width: 0;
 				max-width: 100%;
 				flex: 1;
@@ -174,7 +175,7 @@ export abstract class SelectBase<T> extends Component {
 		// Both faces stay in the DOM and only one shows: swapping them would remove the search input in the middle
 		// of a Tab out of it, and sequential focus then loses its place instead of moving to the next cell.
 		return html`
-			<div class='field' ${popover(() => this.listTemplate)}>
+			<div class='field' ${popover(() => this.listTemplate)} @click=${() => this.open()}>
 				<input
 					class='input'
 					type='text'
@@ -184,7 +185,7 @@ export abstract class SelectBase<T> extends Component {
 					@input=${(e: Event) => this.onInput((e.target as HTMLInputElement).value)}
 					@keydown=${(e: KeyboardEvent) => this.onInputKeyDown(e)}
 					@blur=${() => this.close()}>
-				<div class='face' ?hidden=${this.searching} tabindex=${this.disabled ? -1 : 0} @focus=${() => this.onFaceFocus()} @click=${() => this.open()}>
+				<div class='face' ?hidden=${this.searching} tabindex=${this.disabled ? -1 : 0} @focus=${() => this.onFaceFocus()}>
 					${this.value === undefined ? this.renderEmpty() : this.renderValue(this.value)}
 				</div>
 			</div>
@@ -301,6 +302,7 @@ export abstract class SelectBase<T> extends Component {
 				}
 
 				e.preventDefault()
+				e.stopPropagation()
 				this.chooseAt(this.highlighted)
 				return
 			case 'Escape':

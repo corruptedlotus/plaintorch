@@ -100,6 +100,7 @@ export class EditablePart<T> extends Component {
 				outline-offset: .16rem;
 				border-radius: 4px;
 				transition: .3s ease;
+				anchor-name: --stepper-anchor;
 			}
 
 			slot {
@@ -132,16 +133,25 @@ export class EditablePart<T> extends Component {
 			${nullGlyphStyle}
 
 			.clear {
+				position: fixed;
+				position-anchor: --stepper-anchor;
+				anchor-try: normal flip-block;
+				inset-inline-end: anchor(start);
+				top: anchor(top);
+				margin: .1em;
+				border-radius: 12px;
+				font-size: 1rem;
 				width: .9em;
 				height: .9em;
 				cursor: pointer;
-				opacity: .55;
+				background-color: black;
+				transition: all .2s ease, inset none;
+
+				&:hover {
+					color: var(--text-error, crimson);
+				}
 			}
 
-			.clear:hover {
-				opacity: 1;
-				color: var(--text-error, crimson);
-			}
 		`
 	}
 

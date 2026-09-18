@@ -3,8 +3,12 @@
 - [ ] Improved Orbit human translation
 - [x] Show active timeframe
 - [x] Pinch actions
-- [ ] [[PEP097 - Filename Constraints & Conversions]]
-- [ ] `${timebound(clock: '1s' | '60s' = '1s')}`: forcefully updates that DOM tree based on the global ticker
+- [x] [[PEP097 - Filename Constraints & Conversions]]
+- [x] `${timebound(clock: '1s' | '60s' = '1s')}`: subscribe to the global ticker and request update on tick
+- [ ] Eventive & Executive unified allocation editor + link to entity
+# Bugs
+- [ ] LoreIndex getting retconned by repo
+- [ ] Circular reference when syncing objective edits
 # Special
 - [x] Polaris briefing in-place insertion
 - [ ] Move parent/owner button

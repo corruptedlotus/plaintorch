@@ -1,4 +1,4 @@
-import { component, html, property, type HTMLTemplateResult } from '@a11d/lit'
+import { component, html, nothing, property, type HTMLTemplateResult } from '@a11d/lit'
 import type { Activity } from '@pleiades/sdk'
 import { getApp, resolveMediaIcon } from '..'
 import { InfoItem } from '../design/InfoItem'
@@ -43,7 +43,7 @@ export class MiniActivityItem extends InfoItem {
 		const college = decree ? activity.decree?.college : activity.objective?.college
 		const celestron = decree ? activity.decree?.activeCelestron : activity.objective?.celestronValue
 		return html`
-			<span>${decree ? 'Decree' : 'Objective'}</span>
+			${decree ? html`<span data-accent>Decree</span>` : nothing}
 			${college === undefined ? html`` : html`<p7t-college-item small mode='named' .college=${college}></p7t-college-item>`}
 			${celestron === undefined ? html`` : html`<p7t-celestron-item small .value=${celestron}></p7t-celestron-item>`}
 			<slot name='chips'></slot>

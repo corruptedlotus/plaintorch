@@ -87,6 +87,8 @@ export abstract class InfoItem extends Component {
 			.info-text {
 				min-width: 0;
 				vertical-align: middle;
+				line-height: .9;
+				margin-top: .1em;
 			}
 
 			:host([thumbnail]) .info-bullet {
@@ -121,16 +123,29 @@ export abstract class InfoItem extends Component {
 				margin-inline-start: .4ch;
 				font-size: .78em;
 				line-height: 1.2;
+
+				& > :not(slot),
+				& > slot::slotted(*) {
+					padding: .05em .55ch;
+					border-radius: 4px;
+					background-color: color-mix(in srgb, var(--text-normal) 10%, transparent);
+					color: color-mix(in srgb, var(--text-normal) 75%, transparent);
+					white-space: nowrap;
+				}
+
+				& > :not(slot)[data-accent],
+				& > slot::slotted(*[data-accent]) {
+					background-color: color-mix(in srgb, var(--p7t-flare-accent, var(--ineractive-accent)) 10%, transparent);
+					color: color-mix(in srgb, var(--p7t-flare-accent, var(--ineractive-accent)) 75%, transparent);
+				}
+
+				& > :not(slot)[data-error],
+				& > slot::slotted(*[data-error]) {
+					background-color: color-mix(in srgb, var(--text-error) 10%, transparent);
+					color: color-mix(in srgb, var(--text-error) 75%, transparent);
+				}
 			}
 
-			.chips > :not(slot),
-			.chips > slot::slotted(*) {
-				padding: .05em .55ch;
-				border-radius: 4px;
-				background-color: color-mix(in srgb, var(--text-normal) 10%, transparent);
-				color: color-mix(in srgb, var(--text-normal) 75%, transparent);
-				white-space: nowrap;
-			}
 
 			/* In a thumbnail the bullet is a column, so the chips simply land at the bottom, centred. */
 			:host([thumbnail]) .chips {

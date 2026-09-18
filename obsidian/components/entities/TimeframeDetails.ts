@@ -50,7 +50,7 @@ export class TimeframeDetails extends Component {
 	protected override get template() {
 		const timeframe = this.timeframe
 		if (!timeframe) {
-			return nothing
+			return html``
 		}
 
 		const window = timeframe.startTime && timeframe.endTime
@@ -59,16 +59,25 @@ export class TimeframeDetails extends Component {
 		// No Orbit means the timeframe applies to every Polaris cycle (PEP100).
 		const scope = timeframe.orbit ? (humanizeOrbit(timeframe.orbit).text || timeframe.orbit) : 'Every cycle'
 		const colleges = timeframe.autoInclusion === TimeframeInclusion.College
-			? (timeframe.autoInclusionColleges ?? []).map(collegeDescriptorOf)
+			? timeframe.autoInclusionColleges ?? []
 			: []
-		const [primaryCollege] = colleges
 
 		return html`
 			<div class='details'>
 				<div class='title'>${timeframe.title}</div>
 				${!window ? nothing : html`<div class='row'><p7t-icon icon='lucide:clock'></p7t-icon><span>${window}</span></div>`}
 				<div class='row'><p7t-icon icon='lucide:repeat'></p7t-icon><span>${scope}</span></div>
-				${!primaryCollege ? nothing : html`<div class='row'><p7t-icon icon=${primaryCollege.icon}></p7t-icon><span>Includes ${colleges.map(descriptor => descriptor.name).join(', ')}</span></div>`}
+				${colleges.length === 0 ? nothing : html`
+					<div class='row'>
+						<p7t-icon icon='lucide:layers'></p7t-icon>
+						<p7t-icon-item chipped>
+							Affined to
+							${colleges.map(college => html`
+								<p7t-college-item small slot='chips' .college=${college}></p7t-college-item>
+							`)}
+						</p7t-icon-item>
+					</div>
+				`}
 			</div>
 		`
 	}

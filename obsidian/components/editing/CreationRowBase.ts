@@ -65,13 +65,14 @@ export abstract class CreationRowBase<T> extends Component {
 				box-sizing: border-box;
 				display: flex;
 				flex-direction: column;
-				gap: .35em;
+				gap: .4em;
 				padding: .7em .9em .5em;
 				border-radius: 12px;
-				background-color: var(--background-secondary, #1e1e1e);
+				background-color: color-mix(in srgb, var(--background-primary) 60%, black);
+				border: none;
 				color: var(--text-normal);
-				border: 1px solid color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 45%, transparent);
-				box-shadow: 0 8px 26px color-mix(in srgb, black 45%, transparent);
+				outline-offset: 2px;
+				outline: 2px solid color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 30%, transparent);
 				font-family: var(--font-interface);
 				animation: settle .2s ease;
 				overflow: visible;
@@ -103,35 +104,40 @@ export abstract class CreationRowBase<T> extends Component {
 			}
 
 			.cells {
-				display: flex;
+				display: grid;
+				grid-template-rows: auto auto;
+				grid-template-columns: repeat(auto-fill, auto);
 				align-items: center;
 				gap: 1em;
-				flex-wrap: wrap;
 			}
 
 			.cell {
-				display: inline-flex;
-				flex-direction: column;
-				gap: .2em;
+				display: grid;
+				grid-template-rows: subgrid;
+				grid-auto-flow: column;
+				grid-row: 1 / -1;
+				gap: .3em;
 			}
 
 			.cell .caption {
-				font-size: .7em;
+				font-size: .6em;
 				font-weight: 600;
 				text-transform: uppercase;
 				letter-spacing: .04em;
-				opacity: .55;
+				color: var(--text-muted);
 			}
 
-			.cell.grow {
+			/*.cell.grow {
 				flex: 1 1 12em;
-			}
+			}*/
 
 			.hints {
+				font-family: var(--font-text);
 				display: flex;
+				margin-top: .1em;
 				gap: 1.2em;
-				font-size: .72em;
-				opacity: .5;
+				font-size: .7em;
+				color: var(--text-faint);
 			}
 
 			kbd {
@@ -164,8 +170,8 @@ export abstract class CreationRowBase<T> extends Component {
 				<div class='cells'>${this.cells}</div>
 				<div class='hints'>
 					<span><kbd>Tab</kbd> next cell</span>
+					<span><kbd>Enter</kbd> create & next</span>
 					<span><kbd>Ctrl+Enter</kbd> create & edit</span>
-					<span><kbd>Shift+Enter</kbd> create & next</span>
 					<span><kbd>Esc</kbd> cancel</span>
 				</div>
 			</div>
@@ -237,12 +243,12 @@ export abstract class CreationRowBase<T> extends Component {
 			return
 		}
 
-		if (e.ctrlKey || e.metaKey) {
+		if (e.ctrlKey) {
 			e.preventDefault()
 			e.stopPropagation()
 			void this.commit('open')
 		}
-		else if (e.shiftKey) {
+		else {
 			e.preventDefault()
 			e.stopPropagation()
 			void this.commit('again')

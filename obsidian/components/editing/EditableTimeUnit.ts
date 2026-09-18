@@ -23,6 +23,10 @@ export class EditableTimeUnit extends EditableNumericPart {
 		return css`
 			${super.styles}
 
+			:host {
+				padding: .1em;
+			}
+
 			:host([accent]) {
 				color: var(--p7t-flare-accent, var(--interactive-accent));
 			}

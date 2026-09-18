@@ -70,7 +70,7 @@ export class ActivitySelect extends SelectBase<ActivityChoice> {
 			disabled: reason !== undefined,
 			template: html`
 				<p7t-mini-activity-item small .activity=${activity}>
-					${reason === undefined ? html`` : html`<span slot='chips'>${reason}</span>`}
+					${reason === undefined ? html`` : html`<span data-error slot='chips'>${reason}</span>`}
 				</p7t-mini-activity-item>
 			`
 		}))
@@ -95,7 +95,7 @@ function creationOption(kind: 'objective' | 'decree', title: string): SelectOpti
 	return {
 		key: `create:${kind}`,
 		value: { kind, title, isNew: true },
-		template: html`<p7t-icon-item small chipped icon=${kind}>${title}<span slot='chips'>New ${kind}</span></p7t-icon-item>`
+		template: html`<p7t-icon-item small chipped icon=${kind}>${title}<span slot='chips'>New ${kind.charAt(0).toUpperCase() + kind.slice(1)}</span></p7t-icon-item>`
 	}
 }
 

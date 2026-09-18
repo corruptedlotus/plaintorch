@@ -39,7 +39,6 @@ export abstract class EditableNumericPart extends EditablePart<number> {
 				justify-content: center;
 				cursor: pointer;
 				user-select: none;
-				outline-offset: .3rem;
 			}
 
 			:host(:focus) {
@@ -51,34 +50,41 @@ export abstract class EditableNumericPart extends EditablePart<number> {
 			 * for them and its projected size never shifts on entering editing.
 			 */
 			.stepper {
-				position: absolute;
+				position: fixed;
+				position-anchor: --stepper-anchor;
+				anchor-try: normal flip-inline;
+				inset-inline-start: anchor(end);
 				display: flex;
 				flex-direction: column;
 				justify-content: space-between;
 				align-items: center;
-				height: calc(100% + 1.2rem);
-				margin-block: -.6rem;
+				margin-block: -.2rem;
 				margin-inline: .2rem;
-				scale: .4;
 				opacity: 0;
-				transition: .2s ease;
+				transition: all .2s ease, inset none;
 				pointer-events: none;
-				color: var(--p7t-flare-accent, var(--interactive-accent));
-				left: calc(100% + .3rem);
-				background-color: color-mix(in srgb, black 50%, var(--background-primary));
-				font-size: .4em;
-				border-radius: 8px;
+				color: var(--background-primary);
+				font-size: 1rem;
+				gap: .25em;
+				z-index: 99;
 			}
 
 			:host([active]) .stepper {
-				opacity: .75;
+				opacity: 1;
 				scale: 1;
 				pointer-events: auto;
+
+				& > * {
+					background-color: var(--p7t-flare-accent, var(--interactive-accent));
+					border-radius: 12px;
+					transition: .2s ease;
+
+					&:hover {
+						background-color: var(--text-muted);
+					}
+				}
 			}
 
-			:host([active]) .stepper > *:hover {
-				opacity: 1;
-			}
 		`
 	}
 
@@ -97,8 +103,8 @@ export abstract class EditableNumericPart extends EditablePart<number> {
 					@mousedown=${(e: Event) => e.preventDefault()}
 					@click=${() => this.stepValue(-1)}>
 				</p7t-icon>
-				${!this.nullable ? nothing : this.clearButtonTemplate}
 			</div>
+			${!this.nullable ? nothing : this.clearButtonTemplate}
 		`
 	}
 

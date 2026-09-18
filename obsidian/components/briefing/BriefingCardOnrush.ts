@@ -124,7 +124,11 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 							class='dependency-count'
 							?data-detail=${group.nonObjectiveCount > 0}
 							${group.nonObjectiveCount > 0
-								? tooltip(() => html`<p7t-endpoint-list .endpoints=${group.refs} filter='non-objective'></p7t-endpoint-list>`)
+								? tooltip(() => html`
+									<p7t-endpoint-list .endpoints=${group.refs} filter='non-objective'>
+										Blocked by
+									</p7t-endpoint-list>
+								`)
 								: nothing}
 						>${group.total}</span>
 					</div>

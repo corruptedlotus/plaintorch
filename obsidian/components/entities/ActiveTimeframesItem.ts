@@ -31,9 +31,11 @@ export class ActiveTimeframesItem extends Component {
 			}
 
 			p7t-timeframe-item {
-				padding: .05em .5ch;
-				border-radius: 6px;
-				background-color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 14%, transparent);
+				padding-inline: .5ch .8ch;
+				padding-block: .2em;
+				border-radius: 12px;
+				color: var(--text-muted);
+				background-color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 10%, black);
 			}
 		`
 	}

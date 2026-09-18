@@ -36,14 +36,15 @@ export class Briefing extends Component {
 				margin-block: -1em .5em;
 				align-items: center;
 				gap: .3em;
+				border-bottom: 1px solid color-mix(in srgb, var(--interactive-accent) 30%, transparent);
 
-				&::before, &::after {
+				/*&::before, &::after {
 					content: '';
 					flex: 1;
 					height: 1px;
 					margin-inline: 1em;
-					background-color: var(--text-faint);
-				}
+					background-color: color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+				}*/
 			}
 		`
 	}

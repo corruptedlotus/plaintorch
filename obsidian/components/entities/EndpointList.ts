@@ -44,6 +44,14 @@ export class EndpointList extends Component {
 				display: block;
 			}
 
+			.heading {
+				font-weight: bold;
+				color: var(--text-muted);
+				text-transform: uppercase;
+				font-size: .8em;
+				margin-bottom: .5em;
+			}
+
 			.list {
 				display: flex;
 				flex-direction: column;
@@ -78,7 +86,10 @@ export class EndpointList extends Component {
 			return nothing
 		}
 
-		return html`<div class='list'>${shown.map(endpoint => this.endpointTemplate(endpoint))}</div>`
+		return html`
+			<div class='heading'><slot></slot></div>
+			<div class='list'>${shown.map(endpoint => this.endpointTemplate(endpoint))}</div>
+		`
 	}
 
 	private endpointTemplate(endpoint: EndpointRef) {
