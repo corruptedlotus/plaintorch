@@ -186,6 +186,59 @@ export function openNotePath(vaultRelativePath: string): void {
 	getWorkspace().openLinkText(vaultRelativePath.replace(/\\/g, '/'), '', true)
 }
 
+/** The kinds whose note can be brought into being on demand — the implicit entities the SDK can materialize. */
+const materializableKinds = new Set<string>(['fate', 'decree'])
+
+/**
+ * Whether a kind's note can be created here — its entity is implicit and stays database-only (no file) until its
+ * synchronization boundary is begun. The show/hide test a surface offering a "Create note" action uses.
+ */
+export function canMaterializeKind(kind: string | undefined): boolean {
+	return !!kind && materializableKinds.has(kind)
+}
+
+/**
+ * Brings an implicit entity's note into being and opens it — the file is what begins its synchronization boundary.
+ *
+ * Resolves first so an entity that already has a note simply opens it rather than being begun twice; then materializes
+ * through the kind's begin call, re-reads the listings and resolution the change touches, and opens the written note.
+ * A kind with no begin call reports that nothing could be created.
+ */
+export async function createEntityNote(entity: { id: string }, kind: string): Promise<void> {
+	const existence = await core.repos.entityResolution.get(entity.id)
+	if (existence?.associatedNote) {
+		openNotePath(existence.associatedNote)
+		return
+	}
+
+	const begin = beginNoteByKind(kind, entity.id)
+	if (!begin) {
+		new Notice('That entity has no note to create here.')
+		return
+	}
+
+	const begun = await begin
+	if (!begun) {
+		new Notice('PLAINTORCH could not create that note.')
+		return
+	}
+
+	await Promise.all([refreshListings(), core.repos.entityResolution.refresh(entity.id)])
+	const resolved = await core.repos.entityResolution.get(entity.id)
+	if (resolved?.associatedNote) {
+		openNotePath(resolved.associatedNote)
+	}
+}
+
+/** The materialization call a kind needs, or `undefined` for a kind that cannot be created here. */
+function beginNoteByKind(kind: string, id: string): Promise<unknown> | undefined {
+	switch (kind) {
+		case 'fate': return core.declaratives.beginFate(id)
+		case 'decree': return core.declaratives.beginDecree(id)
+		default: return undefined
+	}
+}
+
 /** The choices offered for creating something anywhere, in the order the FAB presents them. */
 export function creationActions(directiveId?: string, kinds?: readonly EntityKind[]): ExpandingAction[] {
 	const offered = kinds ?? ['lunar-directive', 'stellar-directive', 'objective', 'fate', 'decree'] as const
