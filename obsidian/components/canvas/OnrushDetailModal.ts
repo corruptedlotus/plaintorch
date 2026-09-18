@@ -1,20 +1,19 @@
 import { App, Modal } from 'obsidian'
 import type { OnrushSprint } from '@pleiades/sdk'
 
-/** The onrush banner properties this modal sets. */
-interface OnrushBannerElement extends HTMLElement {
+/** The full-banner properties this modal sets; it resolves and observes everything else from the PUCK. */
+interface FullBannerElement extends HTMLElement {
 	app?: App
 	puck?: string
-	entity?: OnrushSprint
+	xtype?: string
 }
 
 /**
- * Views and edits one onrush through its own banner, with its executive orders listed and edited beneath
- * (PEP102.5).
+ * Views and edits one onrush through the full banner (PEP102.5).
  *
- * The banner resolves and observes the canonical sprint from its id, so a rename made here reaches every other
- * surface at once; the orders grid manages its own list. Together they are the onrush's detail window, opened
- * from the management tray on the graph.
+ * The whole surface — the onrush's own banner, its entity actions, and its executive orders listed and edited beneath —
+ * is composed by `<p7t-full-banner>`, which used to be assembled here by hand. Handed the type and PUCK it asks the
+ * onrush repository for the sprint directly and renders the rest.
  */
 export class OnrushDetailModal extends Modal {
 	public constructor(app: App, private readonly sprint: OnrushSprint) {
@@ -25,17 +24,12 @@ export class OnrushDetailModal extends Modal {
 		this.titleEl.setText(this.sprint.title)
 		this.contentEl.addClass('plaintorch-root')
 
-		const banner = document.createElement('p7t-onrush-banner') as OnrushBannerElement
+		const banner = document.createElement('p7t-full-banner') as FullBannerElement
 		banner.addClass('plaintorch-modal-content')
 		banner.app = this.app
-		// The provided sprint shows immediately; the id resolves the canonical instance the banner then edits.
-		banner.entity = this.sprint
+		banner.xtype = 'OnrushSprint'
 		banner.puck = this.sprint.id
 		this.contentEl.appendChild(banner)
-
-		const orders = document.createElement('p7t-onrush-orders') as HTMLElement & { onrushId?: string }
-		orders.onrushId = this.sprint.id
-		this.contentEl.appendChild(orders)
 	}
 
 	public override onClose(): void {

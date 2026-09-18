@@ -30,11 +30,16 @@ export function entityContextMenu(entity: InteractableEntity): ContextMenuSpec {
 		entries.push({ label: 'Remove from Onrush', icon: 'onrush', run: () => removeFromOnrush(entity.id) })
 	}
 
-	if (typeName && deletableTypes.has(typeName)) {
+	if (canDeleteEntity(typeName)) {
 		entries.push({ separator: true }, { label: 'Delete', icon: 'lucide:trash-2', danger: true, run: () => deleteEntity(entity) })
 	}
 
 	return { title: entity.title, entries }
+}
+
+/** Whether an entity of this runtime type can be deleted here — the show/hide test a surface offering deletion uses. */
+export function canDeleteEntity(typeName: string | undefined): boolean {
+	return !!typeName && deletableTypes.has(typeName)
 }
 
 /** Opens an entity's editing modal (its banner), reporting when a kind has no editor here yet. */
@@ -51,22 +56,32 @@ export function openEntityEditor(entity: InteractableEntity): boolean {
 
 /**
  * Deletes an entity of whatever kind, reporting the outcome and re-reading the listings it appeared in. Kept module
- * -private so it does not collide with the canvas's node-based {@link deleteEntity} through the components barrel.
+ * -private so it does not collide with the canvas's node-based {@link deleteEntity} through the components barrel; the
+ * exported {@link deleteEntityByType} is the form a surface holding only an identity (a banner keyed by PUCK) uses.
  */
 async function deleteEntity(entity: InteractableEntity): Promise<boolean> {
-	const request = deleteByType(typeNameOf(entity), entity.id)
+	return await deleteEntityByType(typeNameOf(entity), entity.id, entity.title)
+}
+
+/**
+ * Deletes an entity named by its runtime type, PUCK and title, reporting the outcome and re-reading the listings it
+ * appeared in. The type-and-id form so a surface that never holds the full instance — a banner resolving an entity by
+ * PUCK — can still delete it through the one delete path the context menu uses.
+ */
+export async function deleteEntityByType(typeName: string | undefined, id: string, title: string): Promise<boolean> {
+	const request = deleteByType(typeName, id)
 	if (!request) {
-		new Notice(`${entity.title} can't be deleted from here.`)
+		new Notice(`${title} can't be deleted from here.`)
 		return false
 	}
 
 	const deleted = await request
 	if (!deleted) {
-		new Notice(`PLAINTORCH could not delete ${entity.title}.`)
+		new Notice(`PLAINTORCH could not delete ${title}.`)
 		return false
 	}
 
-	new Notice(`Deleted ${entity.title}.`)
+	new Notice(`Deleted ${title}.`)
 	await refreshAfterEntityChange()
 	return true
 }
