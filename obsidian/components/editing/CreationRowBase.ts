@@ -21,8 +21,8 @@ let anchorSequence = 0
  * still follows the host as the list scrolls. CSS anchor positioning does the following where it exists; a
  * measured fallback keeps up otherwise.
  *
- * Its cells are the ordinary editables and selects, so Tab walks them as it walks any form. The keys that end
- * it are the row's own, wherever focus is:
+ * Its cells are the ordinary editables and selects. **Tab** and **Shift+Tab** cycle through them and wrap at
+ * either end, never leaving the row. The keys that end it are the row's own, wherever focus is:
  *
  * - **Ctrl+Enter** (or ⌘+Enter) creates the entity and opens its editor at once;
  * - **Shift+Enter** creates the entity and starts a fresh row for the next one;
@@ -225,6 +225,14 @@ export abstract class CreationRowBase<T> extends Component {
 			return
 		}
 
+		if (e.key === 'Tab') {
+			// The row owns Tab: it cycles the cells and never leaves them.
+			e.preventDefault()
+			e.stopPropagation()
+			this.moveFocus(e.shiftKey ? -1 : 1)
+			return
+		}
+
 		if (e.key !== 'Enter') {
 			return
 		}
@@ -300,10 +308,42 @@ export abstract class CreationRowBase<T> extends Component {
 		}
 	}
 
-	/** Focuses the first focusable cell, so the row is ready to type into the moment it appears. */
+	/** The row's focusable controls, in order: each cell's content, its caption aside. */
+	protected get cellControls(): HTMLElement[] {
+		const controls = this.shadowRoot?.querySelectorAll<HTMLElement>('.cells .cell > :not(.caption)')
+		return controls ? Array.from(controls) : []
+	}
+
+	/**
+	 * Focuses the first cell, so the row is ready to type into the moment it appears.
+	 *
+	 * Deferred to the next task, deliberately: an editable's `@eventListener` handlers are attached a few
+	 * microtasks after it connects (the decorator's controller resolves its targets asynchronously), so a focus
+	 * given in the same task as the row's first render arrives before the cell can hear it — the cell holds
+	 * focus but never enters its editing state (no outline pulse, no steppers). One task later the listener is
+	 * there and focus reads as the reader's own. A timeout rather than an animation frame, so it does not wait
+	 * on the page drawing.
+	 */
 	protected focusFirstCell() {
-		const first = this.shadowRoot?.querySelector<HTMLElement>('.cells [tabindex], .cells [contenteditable], .cells input, .cells p7t-editable-time-unit, .cells p7t-activity-select, .cells p7t-timeframe-select')
-		first?.focus()
+		setTimeout(() => this.cellControls[0]?.focus())
+	}
+
+	/**
+	 * Moves focus to the next or previous cell, wrapping at either end: Tab stays within the row, which is a
+	 * form being filled, rather than walking off into the list around it.
+	 */
+	protected moveFocus(direction: 1 | -1) {
+		const controls = this.cellControls
+		if (controls.length === 0) {
+			return
+		}
+
+		const active = this.shadowRoot?.activeElement
+		const current = controls.findIndex(control => control === active || control.contains(active ?? null))
+		const next = current < 0
+			? (direction > 0 ? 0 : controls.length - 1)
+			: (current + direction + controls.length) % controls.length
+		controls[next]?.focus()
 	}
 
 	private blurActiveCell() {
