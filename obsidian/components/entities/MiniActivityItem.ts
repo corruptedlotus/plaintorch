@@ -9,7 +9,8 @@ import { InfoItem } from '../design/InfoItem'
  * and the Celestron it is worth. The dense form a select's list and face want, where the full item row would
  * be three lines of chrome around one line of information.
  *
- * It is nothing without its chips, so it always shows them rather than waiting on `chipped`.
+ * It is nothing without its chips, so it always shows them rather than waiting on `chipped`. The base's `chips`
+ * slot follows its own tags, so a consumer can add one by hand — a select marks an unavailable row "In cycle".
  */
 @component('p7t-mini-activity-item')
 export class MiniActivityItem extends InfoItem {
@@ -45,6 +46,7 @@ export class MiniActivityItem extends InfoItem {
 			<span>${decree ? 'Decree' : 'Objective'}</span>
 			${college === undefined ? html`` : html`<p7t-college-item small mode='named' .college=${college}></p7t-college-item>`}
 			${celestron === undefined ? html`` : html`<p7t-celestron-item small .value=${celestron}></p7t-celestron-item>`}
+			<slot name='chips'></slot>
 		`
 	}
 }

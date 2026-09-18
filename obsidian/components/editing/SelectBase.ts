@@ -15,6 +15,8 @@ export interface SelectOption<T> {
 	readonly template: HTMLTemplateResult
 	readonly value?: T
 	readonly resolve?: () => T | undefined | Promise<T | undefined>
+	/** Shown but not choosable — something the search found that the surface cannot take. The row says why itself. */
+	readonly disabled?: boolean
 }
 
 /** How long typing settles before a search runs, so a burst of keystrokes costs one request. */
@@ -162,7 +164,7 @@ export abstract class SelectBase<T> extends Component {
 				.highlighted=${this.highlighted}
 				?loading=${this.loading}
 				style='min-width: ${Math.round(this.offsetWidth)}px'
-				@rowhighlight=${(e: CustomEvent<number>) => this.highlighted = e.detail}
+				@rowhighlight=${(e: CustomEvent<number>) => this.highlightAt(e.detail)}
 				@rowchoose=${(e: CustomEvent<number>) => this.chooseAt(e.detail)}>
 			</p7t-select-list>
 		`
@@ -286,11 +288,11 @@ export abstract class SelectBase<T> extends Component {
 		switch (e.key) {
 			case 'ArrowDown':
 				e.preventDefault()
-				this.highlighted = this.options.length === 0 ? 0 : (this.highlighted + 1) % this.options.length
+				this.highlighted = this.nextEnabled(this.highlighted, 1)
 				return
 			case 'ArrowUp':
 				e.preventDefault()
-				this.highlighted = this.options.length === 0 ? 0 : (this.highlighted - 1 + this.options.length) % this.options.length
+				this.highlighted = this.nextEnabled(this.highlighted, -1)
 				return
 			case 'Enter':
 				// A modified Enter belongs to the form around this field — a creation row's commit keys.
@@ -329,12 +331,31 @@ export abstract class SelectBase<T> extends Component {
 
 		this.loading = false
 		this.options = found
-		this.highlighted = 0
+		this.highlighted = Math.max(0, found.findIndex(option => !option.disabled))
+	}
+
+	/** The next choosable option from an index, wrapping, stepping over the disabled ones; the index itself if none. */
+	private nextEnabled(from: number, direction: 1 | -1): number {
+		const count = this.options.length
+		for (let step = 1; step <= count; step++) {
+			const index = (from + direction * step + count * step) % count
+			if (!this.options[index]?.disabled) {
+				return index
+			}
+		}
+
+		return from
+	}
+
+	private highlightAt(index: number) {
+		if (!this.options[index]?.disabled) {
+			this.highlighted = index
+		}
 	}
 
 	private chooseAt(index: number) {
 		const option = this.options[index]
-		if (option) {
+		if (option && !option.disabled) {
 			void this.choose(option)
 		}
 	}

@@ -5,6 +5,8 @@ import { Popover as MoPopover } from "@3mo/popover"
 export interface SelectListRow {
 	readonly key: string
 	readonly template: HTMLTemplateResult
+	/** Drawn dimmed and inert: present in the results, not on offer. */
+	readonly disabled?: boolean
 }
 
 /**
@@ -62,6 +64,11 @@ export class SelectList extends MoPopover {
 				pointer-events: none;
 			}
 
+			.row.disabled {
+				opacity: .45;
+				cursor: default;
+			}
+
 			.row.highlighted {
 				background-color: color-mix(in srgb, var(--text-normal) 10%, transparent);
 			}
@@ -79,7 +86,7 @@ export class SelectList extends MoPopover {
 			<div class='rows' @pointerdown=${(e: Event) => e.preventDefault()}>
 				${this.rows.map((row, index) => html`
 					<div
-						class='row ${index === this.highlighted ? 'highlighted' : ''}'
+						class='row ${index === this.highlighted ? 'highlighted' : ''} ${row.disabled ? 'disabled' : ''}'
 						@pointermove=${() => this.announce('rowhighlight', index)}
 						@click=${() => this.announce('rowchoose', index)}>
 						${row.template}

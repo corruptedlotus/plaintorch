@@ -16,11 +16,10 @@ export type PolarisActivityCreated =
  * Committing plans the activity into the cycle by the path its kind takes: an objective becomes an executive
  * (a new objective is created standalone by the same plan call), a decree materializes an attentive (a new
  * decree is created first). The estimation seeds the allocation; the affinity is applied to the executive
- * afterwards, since planning does not take one. Objectives already in the cycle are not offered — a cycle
- * holds one instance of an objective.
+ * afterwards, since planning does not take one. Objectives already in the cycle are listed but cannot be chosen —
+ * a cycle holds one instance of an objective.
  *
- * The editor a committed row opens is the executive's allocation modal; an attentive has no allocation editor
- * of its own yet, so its decree's editor stands in.
+ * The editor a committed row opens is the allocation modal of what it made: the executive's, or the attentive's.
  */
 @component('p7t-polaris-creation-row')
 export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> {
@@ -31,8 +30,11 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 	@state() private activity?: ActivityChoice
 	@state() private timeframe?: DirectiveTimeframeRecord
 
-	private readonly excludeInCycle = (activity: Activity) =>
+	/** A cycle holds one instance of an objective, so one already in it is found but cannot be added again. */
+	private readonly unavailableInCycle = (activity: Activity) =>
 		activity.kind === 'objective' && !!activity.objective && isObjectiveInCycle(activity.objective.id, this.cycle)
+			? 'In cycle'
+			: undefined
 
 	protected override get cells() {
 		return html`
@@ -49,7 +51,7 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 				<span class='caption'>Activity</span>
 				<p7t-activity-select
 					allowCreation
-					.exclude=${this.excludeInCycle}
+					.unavailable=${this.unavailableInCycle}
 					.value=${this.activity}
 					@change=${(e: Event) => this.activity = (e.target as ActivitySelect).value}>
 				</p7t-activity-select>

@@ -26,16 +26,19 @@ const listLimit = 12
  *
  * With {@link allowCreation}, typing a title that no activity carries offers to create it, one option per kind,
  * at the top of the list: choosing one resolves to an {@link ActivityChoice} flagged `isNew`, to be made by the
- * committing surface. {@link exclude} hides what the surface cannot take (an objective already in the cycle,
- * say) without the select knowing why.
+ * committing surface.
+ *
+ * {@link unavailable} marks what the surface cannot take — an objective already in the cycle, say — by giving
+ * the reason. Such an activity is still *found*: it lists after the available matches, dimmed and unchoosable,
+ * wearing the reason as a tag. Hiding it instead made the search look as though it had never seen it.
  */
 @component('p7t-activity-select')
 export class ActivitySelect extends SelectBase<ActivityChoice> {
 	/** Offers to create a new objective or decree under the typed title when no activity carries it. */
 	@property({ type: Boolean }) allowCreation = false
 
-	/** Hides activities the surface cannot accept. */
-	@property({ attribute: false }) exclude?: (activity: Activity) => boolean
+	/** Why the surface cannot accept an activity ("In cycle"), or nothing when it can. */
+	@property({ attribute: false }) unavailable?: (activity: Activity) => string | undefined
 
 	override placeholder = 'Activity…'
 
@@ -50,18 +53,26 @@ export class ActivitySelect extends SelectBase<ActivityChoice> {
 	protected override async search(query: string): Promise<readonly SelectOption<ActivityChoice>[]> {
 		this.activities ??= core.activities.list()
 		const trimmed = query.trim()
-		// Only what can still be added: a live objective or an active decree, minus what the surface excludes.
+		// Only what is live: a live objective or an active decree.
 		const usable = (await this.activities)
 			.filter(activity => activity.kind === 'decree'
 				? activity.decree?.status === DecreeStatus.Active
 				: (activity.objective?.status ?? ObjectiveStatus.Archived) < ObjectiveStatus.Archived)
-			.filter(activity => !this.exclude?.(activity))
 
-		const matches = fuzzyFilter(trimmed, usable, activity => activity.title).slice(0, listLimit)
-		const options: SelectOption<ActivityChoice>[] = matches.map(activity => ({
+		// Best match first, but what cannot be taken sinks below what can — found, shown, out of the way.
+		const matches = fuzzyFilter(trimmed, usable, activity => activity.title)
+			.map(activity => ({ activity, reason: this.unavailable?.(activity) }))
+			.sort((a, b) => Number(a.reason !== undefined) - Number(b.reason !== undefined))
+			.slice(0, listLimit)
+		const options: SelectOption<ActivityChoice>[] = matches.map(({ activity, reason }) => ({
 			key: `${activity.kind}:${activity.objective?.id ?? activity.decree?.id}`,
 			value: activity,
-			template: html`<p7t-mini-activity-item small .activity=${activity}></p7t-mini-activity-item>`
+			disabled: reason !== undefined,
+			template: html`
+				<p7t-mini-activity-item small .activity=${activity}>
+					${reason === undefined ? html`` : html`<span slot='chips'>${reason}</span>`}
+				</p7t-mini-activity-item>
+			`
 		}))
 
 		const taken = usable.some(activity => activity.title.trim().toLowerCase() === trimmed.toLowerCase())
