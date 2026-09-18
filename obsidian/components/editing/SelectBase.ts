@@ -1,8 +1,14 @@
-import { Component, css, html, nothing, property, query, state, type HTMLTemplateResult } from "@a11d/lit"
+import { Component, css, html, property, query, ref, state, type HTMLTemplateResult } from "@a11d/lit"
+import { popover, PopoverAlignment, PopoverPlacement } from "@3mo/popover"
+import type { SelectList } from "./SelectList"
+import "./SelectList"
 
 /**
  * One row of a select's list. A plain option carries the value it stands for; an option that has to work for
  * its value — "create a new one named …" — supplies `resolve` instead and is asked only when chosen.
+ *
+ * The template is drawn inside the floating list, which lives outside the select's own tree, so it must style
+ * itself: a self-contained element (an info chip, an item), not markup leaning on the select's stylesheet.
  */
 export interface SelectOption<T> {
 	readonly key: string
@@ -21,6 +27,9 @@ const searchDelay = 150
  * editable so a row of them reads as one thing. Focusing it opens a search: the face gives way to a text
  * input and a floating list of {@link search | results} follows the typing, walked with the arrow keys and
  * chosen with Enter or a click. Choosing sets the value and fires `change`, like an editable's commit.
+ *
+ * The list is a {@link SelectList} hosted through @3mo's `popover` directive: tethered to the field in the
+ * application's top layer, positioned by the popover machinery, and no part of this element's own layout.
  *
  * Leaving without choosing — Tab, a click elsewhere, Escape — is not a commit: the typed text is dropped and
  * the field returns to whatever it showed before, its value untouched. So a half-typed search never becomes
@@ -45,12 +54,13 @@ export abstract class SelectBase<T> extends Component {
 
 	@query('.input') private readonly inputElement?: HTMLInputElement
 	@query('.face') private readonly faceElement?: HTMLElement
-	@query('.panel') private readonly panelElement!: HTMLElement
 
 	private searchTimer?: ReturnType<typeof setTimeout>
 	private searchSequence = 0
 	/** Whether the face should take focus once it renders again, so Tab carries on from this field. */
 	private refocusFace = false
+	/** Whether the face is being focused by the field itself rather than by the reader. */
+	private quietFocus = false
 
 	static override get styles() {
 		return css`
@@ -89,15 +99,19 @@ export abstract class SelectBase<T> extends Component {
 				display: none !important;
 			}
 
+			.field {
+				display: inline-flex;
+				align-items: center;
+				min-width: 0;
+				max-width: 100%;
+				flex: 1;
+			}
+
 			.face {
 				display: inline-flex;
 				align-items: center;
 				outline: none;
 				max-width: 100%;
-			}
-
-			.face:focus-visible {
-				outline: none;
 			}
 
 			.placeholder {
@@ -111,47 +125,6 @@ export abstract class SelectBase<T> extends Component {
 				font: inherit;
 				color: inherit;
 				cursor: text;
-			}
-
-			.panel {
-				position: fixed;
-				margin: 0;
-				inset: auto;
-				box-sizing: border-box;
-				min-width: 14rem;
-				max-width: min(92vw, 28rem);
-				max-height: min(60vh, 22rem);
-				overflow-y: auto;
-				padding: .3rem;
-				border: 1px solid color-mix(in srgb, var(--text-normal) 18%, transparent);
-				border-radius: 10px;
-				background-color: var(--background-secondary, #1e1e1e);
-				color: var(--text-normal);
-				box-shadow: 0 10px 30px color-mix(in srgb, black 48%, transparent);
-				font-family: var(--font-interface);
-				font-size: .9rem;
-				scrollbar-width: thin;
-			}
-
-			.panel:not(:popover-open) {
-				display: none;
-			}
-
-			.option {
-				padding: .3em .5em;
-				border-radius: 6px;
-				cursor: pointer;
-			}
-
-			.option.highlighted,
-			.option:hover {
-				background-color: color-mix(in srgb, var(--text-normal) 10%, transparent);
-			}
-
-			.note {
-				padding: .4em .5em;
-				opacity: .55;
-				font-size: .9em;
 			}
 		`
 	}
@@ -167,44 +140,74 @@ export abstract class SelectBase<T> extends Component {
 		return html`<span class='placeholder'>${this.placeholder}</span>`
 	}
 
-	protected override get template() {
-		return html`
+	/**
+	 * The list element once the directive has made it. The directive renders its popover eagerly but only at
+	 * browser idle time — fine for creating the list ahead of need, far too loose for a highlight that must
+	 * follow an arrow key or a list that must close on a choice. So the template below creates and tethers the
+	 * list, and {@link syncList} pushes the live state into it directly on every update of the field.
+	 */
+	private listElement?: SelectList
 
-			<!--
-				Both faces stay in the DOM and only one shows: swapping them would remove the search input in the
-				middle of a Tab out of it, and sequential focus then loses its place instead of moving to the next cell.
-			-->
-			<input
-				class='input'
-				type='text'
-				?hidden=${!this.searching}
-				.value=${this.query}
-				placeholder=${this.placeholder}
-				@input=${(e: Event) => this.onInput((e.target as HTMLInputElement).value)}
-				@keydown=${(e: KeyboardEvent) => this.onInputKeyDown(e)}
-				@blur=${() => this.close()}>
-			<div class='face' ?hidden=${this.searching} tabindex=${this.disabled ? -1 : 0} @focus=${() => this.onFaceFocus()} @click=${() => this.open()}>
-				${this.value === undefined ? this.renderEmpty() : this.renderValue(this.value)}
-			</div>
-			<div class='panel' popover='manual' @pointerdown=${(e: Event) => e.preventDefault()}>
-				${this.options.map((option, index) => html`
-					<div
-						class='option ${index === this.highlighted ? 'highlighted' : ''}'
-						@pointermove=${() => this.highlighted = index}
-						@click=${() => void this.choose(option)}>
-						${option.template}
-					</div>
-				`)}
-				${this.options.length > 0 ? nothing : html`<div class='note'>${this.loading ? 'Searching…' : 'Nothing found.'}</div>`}
+	/** The floating list, as the popover directive renders it. */
+	private get listTemplate(): HTMLTemplateResult {
+		return html`
+			<p7t-select-list
+				${ref(element => this.listElement = element as SelectList | undefined)}
+				mode='manual'
+				.placement=${PopoverPlacement.BlockEnd}
+				.alignment=${PopoverAlignment.Start}
+				.offset=${6}
+				?open=${this.searching}
+				.rows=${this.options}
+				.highlighted=${this.highlighted}
+				?loading=${this.loading}
+				style='min-width: ${Math.round(this.offsetWidth)}px'
+				@rowhighlight=${(e: CustomEvent<number>) => this.highlighted = e.detail}
+				@rowchoose=${(e: CustomEvent<number>) => this.chooseAt(e.detail)}>
+			</p7t-select-list>
+		`
+	}
+
+	protected override get template() {
+		// Both faces stay in the DOM and only one shows: swapping them would remove the search input in the middle
+		// of a Tab out of it, and sequential focus then loses its place instead of moving to the next cell.
+		return html`
+			<div class='field' ${popover(() => this.listTemplate)}>
+				<input
+					class='input'
+					type='text'
+					?hidden=${!this.searching}
+					.value=${this.query}
+					placeholder=${this.placeholder}
+					@input=${(e: Event) => this.onInput((e.target as HTMLInputElement).value)}
+					@keydown=${(e: KeyboardEvent) => this.onInputKeyDown(e)}
+					@blur=${() => this.close()}>
+				<div class='face' ?hidden=${this.searching} tabindex=${this.disabled ? -1 : 0} @focus=${() => this.onFaceFocus()} @click=${() => this.open()}>
+					${this.value === undefined ? this.renderEmpty() : this.renderValue(this.value)}
+				</div>
 			</div>
 		`
 	}
 
+	/** Pushes the field's live state into the list at once, rather than waiting on the directive's idle render. */
+	private syncList() {
+		const list = this.listElement
+		if (!list) {
+			return
+		}
+
+		list.rows = this.options
+		list.highlighted = this.highlighted
+		list.loading = this.loading
+		list.style.minWidth = `${Math.round(this.offsetWidth)}px`
+		list.open = this.searching
+	}
+
 	protected override updated() {
 		this.toggleAttribute('searching', this.searching)
+		this.syncList()
 		if (this.searching) {
 			this.inputElement?.focus()
-			this.reposition()
 		}
 		else if (this.refocusFace) {
 			// Focus returned by the field itself, after a choice or an Escape, must not reopen the search — only
@@ -215,9 +218,6 @@ export abstract class SelectBase<T> extends Component {
 			this.quietFocus = false
 		}
 	}
-
-	/** Whether the face is being focused by the field itself rather than by the reader. */
-	private quietFocus = false
 
 	private onFaceFocus() {
 		if (!this.quietFocus) {
@@ -260,10 +260,7 @@ export abstract class SelectBase<T> extends Component {
 		this.query = ''
 		this.options = []
 		this.highlighted = 0
-		void this.updateComplete.then(() => {
-			this.showPanel()
-			void this.runSearch('')
-		})
+		void this.runSearch('')
 	}
 
 	/** Closes the search without choosing: the typed text is dropped and the value stands. */
@@ -277,7 +274,6 @@ export abstract class SelectBase<T> extends Component {
 		this.searching = false
 		this.query = ''
 		this.options = []
-		this.hidePanel()
 	}
 
 	private onInput(text: string) {
@@ -291,26 +287,20 @@ export abstract class SelectBase<T> extends Component {
 			case 'ArrowDown':
 				e.preventDefault()
 				this.highlighted = this.options.length === 0 ? 0 : (this.highlighted + 1) % this.options.length
-				this.scrollHighlightedIntoView()
 				return
 			case 'ArrowUp':
 				e.preventDefault()
 				this.highlighted = this.options.length === 0 ? 0 : (this.highlighted - 1 + this.options.length) % this.options.length
-				this.scrollHighlightedIntoView()
 				return
-			case 'Enter': {
+			case 'Enter':
 				// A modified Enter belongs to the form around this field — a creation row's commit keys.
 				if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) {
 					return
 				}
 
 				e.preventDefault()
-				const option = this.options[this.highlighted]
-				if (option) {
-					void this.choose(option)
-				}
+				this.chooseAt(this.highlighted)
 				return
-			}
 			case 'Escape':
 				// The first Escape only closes the search; a second, on the idle face, reaches the form.
 				e.preventDefault()
@@ -340,7 +330,13 @@ export abstract class SelectBase<T> extends Component {
 		this.loading = false
 		this.options = found
 		this.highlighted = 0
-		void this.updateComplete.then(() => this.reposition())
+	}
+
+	private chooseAt(index: number) {
+		const option = this.options[index]
+		if (option) {
+			void this.choose(option)
+		}
 	}
 
 	private async choose(option: SelectOption<T>) {
@@ -349,56 +345,5 @@ export abstract class SelectBase<T> extends Component {
 		this.close()
 		this.value = value
 		this.dispatchEvent(new Event('change'))
-	}
-
-	private scrollHighlightedIntoView() {
-		void this.updateComplete.then(() => {
-			this.panelElement.querySelector('.option.highlighted')?.scrollIntoView({ block: 'nearest' })
-		})
-	}
-
-	private showPanel() {
-		try {
-			this.panelElement.showPopover()
-		}
-		catch {
-			// Already shown, or unsupported: the list still renders in place.
-		}
-
-		this.reposition()
-		window.addEventListener('scroll', this.reposition, true)
-		window.addEventListener('resize', this.reposition)
-	}
-
-	private hidePanel() {
-		try {
-			this.panelElement?.hidePopover()
-		}
-		catch {
-			// Already hidden.
-		}
-
-		window.removeEventListener('scroll', this.reposition, true)
-		window.removeEventListener('resize', this.reposition)
-	}
-
-	/** Places the list under the field (above when there is no room), aligned to its leading edge. */
-	private readonly reposition = () => {
-		const panel = this.panelElement
-		if (!this.searching || !panel) {
-			return
-		}
-
-		const field = this.getBoundingClientRect()
-		const gap = 6
-		const margin = 8
-		const height = panel.offsetHeight
-		const width = Math.max(panel.offsetWidth, field.width)
-		const below = field.bottom + gap
-		const top = below + height + margin > window.innerHeight ? Math.max(margin, field.top - height - gap) : below
-		const left = Math.max(margin, Math.min(field.left, window.innerWidth - width - margin))
-		panel.style.top = `${Math.round(top)}px`
-		panel.style.left = `${Math.round(left)}px`
-		panel.style.minWidth = `${Math.round(field.width)}px`
 	}
 }

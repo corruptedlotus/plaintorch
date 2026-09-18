@@ -1,13 +1,18 @@
 import { component, css, html, nothing, property } from '@a11d/lit'
-import { ObjectiveCollege, TimeframeInclusion, type MediaReference } from '@pleiades/sdk'
+import { ObjectiveCollege, TimeframeInclusion, type Directive, type LunarDirectiveStatus, type MediaReference } from '@pleiades/sdk'
 import { IconName } from 'components/PleiadesIcon'
-import { getApp, resolveMediaIcon } from '..'
+import { core, getApp, resolveMediaIcon } from '..'
 import { InfoItem } from '../design/InfoItem'
 import './TimeframeDetails'
+import './DirectiveItem'
 
 /** The subset of a timeframe (or a directive-timeframe record) the chip reads. */
 export interface TimeframeLike {
 	title: string
+	/** The owning lunar directive — every timeframe knows its id; a record also carries its title and state. */
+	directiveId?: string
+	directiveTitle?: string
+	directiveStatus?: LunarDirectiveStatus
 	startTime?: string
 	endTime?: string
 	orbit?: string
@@ -65,6 +70,22 @@ export class TimeframeItem extends InfoItem {
 		}
 
 		return this.affinity ? `${timeframe.title} Affinity` : timeframe.title
+	}
+
+	/**
+	 * The timeframe's chip is the lunar directive that owns it, as a {@link DirectiveItem} — shown only where a
+	 * consumer asks with `chipped` (a select's list, where two directives may each have a "Morning").
+	 *
+	 * The live directive is preferred, for its real state in the chip's tooltip; a timeframe record carries its
+	 * owner's title, which is enough to stand in until the directive is loaded. A bare timeframe that knows only
+	 * its owner's id, with the directive not loaded, has nothing to name and draws no chip.
+	 */
+	protected override get chipsTemplate() {
+		const timeframe = this.timeframe
+		const directiveId = timeframe?.directiveId
+		const directive = (directiveId ? core.repos.lunarDirectives.peek(directiveId) : undefined)
+			?? (timeframe?.directiveTitle ? { id: directiveId ?? '', title: timeframe.directiveTitle, status: timeframe.directiveStatus, isLunar: true } as unknown as Directive : undefined)
+		return directive ? html`<p7t-directive-item small .directive=${directive}></p7t-directive-item>` : html``
 	}
 
 	/** `icon` mode is the glyph alone — an affined executive's compact form; the label moves to the tooltip. */

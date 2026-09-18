@@ -261,7 +261,11 @@ export abstract class CreationRowBase<T> extends Component {
 
 	/** A pointer landing anywhere but the row (its floating panel and the lists its selects open included) cancels it. */
 	private readonly onDocumentPointerDown = (e: PointerEvent) => {
-		if (this.busy || e.composedPath().includes(this)) {
+		const path = e.composedPath()
+		// A select's floating list is hosted in the application's top layer, outside this row's tree, yet a
+		// press on it is a press on the row's own control.
+		const onSelectList = path.some(target => target instanceof Element && target.localName === 'p7t-select-list')
+		if (this.busy || path.includes(this) || onSelectList) {
 			return
 		}
 
