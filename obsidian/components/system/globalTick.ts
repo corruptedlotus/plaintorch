@@ -1,33 +1,53 @@
 import { Controller, type ReactiveElement } from "@a11d/lit"
 
-/** A per-second listener; receives the current epoch milliseconds so every subscriber shares one clock read. */
+/** A tick listener; receives the current epoch milliseconds so every subscriber shares one clock read. */
 type TickListener = (now: number) => void
 
-const listeners = new Set<TickListener>()
+/**
+ * The cadence a subscriber wants: every second (relative-time chips, elapsed views) or every minute (labels that
+ * only ever change by the minute, e.g. "3 minutes ago"). Both derive from the one underlying 1-second timer.
+ */
+export type TickClock = '1s' | '60s'
+
+const listeners: Record<TickClock, Set<TickListener>> = { '1s': new Set(), '60s': new Set() }
 let timer: ReturnType<typeof setInterval> | undefined
+// Ticks elapsed since the current timer started; the 60s clock fires every 60th tick. Reset when the timer (re)starts.
+let ticksSinceStart = 0
 
 function pump() {
 	const now = Date.now()
-	// A snapshot, so a listener that unsubscribes mid-tick (e.g. a view removed by the render it triggers) is safe.
-	for (const listener of [...listeners]) {
+	ticksSinceStart++
+	// Snapshots, so a listener that unsubscribes mid-tick (e.g. a view removed by the render it triggers) is safe.
+	for (const listener of [...listeners['1s']]) {
 		listener(now)
+	}
+
+	if (ticksSinceStart % 60 === 0) {
+		for (const listener of [...listeners['60s']]) {
+			listener(now)
+		}
 	}
 }
 
 /**
- * Subscribes to the **one** app-wide 1-second tick and returns an unsubscribe. There is a single `setInterval`
- * behind every live display in the app — the timer starts with the first subscriber and stops with the last —
- * rather than each elapsed view or relative-time chip owning its own drifting interval.
+ * Subscribes to an app-wide tick and returns an unsubscribe. There is a single `setInterval` behind every live
+ * display in the app — it starts with the first subscriber and stops with the last — rather than each elapsed view
+ * or relative-time chip owning its own drifting interval. The `60s` clock is that same timer sampled every 60th
+ * tick (not a second interval), so a minute-cadence subscriber costs nothing extra and stays in step with the
+ * second clock. A subscriber joins the shared cadence in progress: its first `60s` tick lands on the next
+ * minute boundary of the running timer, not 60s after it subscribed.
  */
-export function subscribeTick(listener: TickListener): () => void {
-	listeners.add(listener)
+export function subscribeTick(listener: TickListener, clock: TickClock = '1s'): () => void {
+	const set = listeners[clock]
+	set.add(listener)
 	if (timer === undefined) {
+		ticksSinceStart = 0
 		timer = setInterval(pump, 1000)
 	}
 
 	return () => {
-		listeners.delete(listener)
-		if (listeners.size === 0 && timer !== undefined) {
+		set.delete(listener)
+		if (listeners['1s'].size === 0 && listeners['60s'].size === 0 && timer !== undefined) {
 			clearInterval(timer)
 			timer = undefined
 		}
