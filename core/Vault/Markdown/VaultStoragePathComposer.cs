@@ -133,7 +133,9 @@ public sealed class VaultStoragePathComposer
 	{
 		ArgumentNullException.ThrowIfNull(entityType);
 		ArgumentException.ThrowIfNullOrWhiteSpace(path);
-		var fileName = Path.GetFileNameWithoutExtension(path);
+		// Decode the PEP097 filename encoding here, at the read chokepoint symmetric with GetBaseName's write-side
+		// encoding, so both the Index and the Quiet (whole-filename-is-title) branches recover the raw entity name.
+		var fileName = PuckNamedIdentity.DecodeFileName(path);
 
 		if (_catalog.TryGet(entityType, out var declared)
 			&& declared?.Storage?.PuckStorage == VaultPuckStorage.Index)

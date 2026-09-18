@@ -178,8 +178,7 @@ public sealed class MarkdownFileLocator(VaultStoragePathComposer composer)
 		where T : IPuckNamedEntity
 	{
 		ArgumentNullException.ThrowIfNull(entity);
-		var fileName = Path.GetFileNameWithoutExtension(path);
-		PuckNamedIdentity.ApplyTo(entity, fileName);
+		PuckNamedIdentity.ApplyTo(entity, PuckNamedIdentity.DecodeFileName(path));
 	}
 
 	/// <summary>
@@ -227,7 +226,8 @@ public sealed class MarkdownFileLocator(VaultStoragePathComposer composer)
 			return null;
 		}
 
-		return PuckNamedIdentity.ParseLoose(Path.GetFileName(sprintDirectory)).Id;
+		// A directory name (no extension to strip); decode the PEP097 look-alikes back before parsing its identity.
+		return PuckNamedIdentity.ParseLoose(PuckFileNameCodec.Decode(Path.GetFileName(sprintDirectory))).Id;
 	}
 
 	/// <summary>

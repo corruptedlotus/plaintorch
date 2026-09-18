@@ -82,7 +82,7 @@ public sealed class MessageSheetCatalogTests
 	{
 		// A smoke test that the manifest name the accessors resolve matches what the build embedded.
 		Assert.Equal("Field is required.", MarkdownMessages.FieldRequired);
-		Assert.Equal("asserted by 2 files: a, b", WatcherMessages.Details.DuplicateIdentity(2, "a, b"));
+		Assert.Equal("Asserted by 2 files: a, b", WatcherMessages.Details.DuplicateIdentity(2, "a, b"));
 		Assert.Equal(WatcherMessages.Reasons.ForeignFile, WatcherOperations.Describe(WatcherOperations.ForeignFile).Message);
 	}
 
