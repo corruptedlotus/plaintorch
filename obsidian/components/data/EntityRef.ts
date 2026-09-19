@@ -7,14 +7,21 @@ import { ReactiveBinder } from '../editing/ReactiveBinder'
 /** Supplies the identifier a reference should resolve, re-read on every host update. */
 export type EntityRefSource = () => string | undefined
 
-/** Persists one committed field of an entity. Returns the API result; an absent result is a rejection. */
+/** Persists an already-applied edit. Returns the API result; an absent result is a rejection. */
 export type EntityFieldPersist<T> = (entity: T) => Promise<unknown>
 
 /**
- * How each field of an entity is saved. A field name maps to the call that persists it; `'*'` is the fallback
- * for any field without its own entry — typically a whole-entity update.
+ * Persists one committed field, given the entity and the key that changed. The key lets a `'*'` fallback send a
+ * partial — just the changed field — rather than the whole entity, which serializes a cyclic graph once the
+ * identity map has cross-linked a navigation back to its owner (an objective's directive lists that objective).
  */
-export type EntityPersistMap<T> = Record<string, EntityFieldPersist<T>> & { '*': EntityFieldPersist<T> }
+export type EntityFieldWrite<T> = (entity: T, keyPath: string) => Promise<unknown>
+
+/**
+ * How each field of an entity is saved. A field name maps to the call that persists it; `'*'` is the fallback
+ * for any field without its own entry. Each write is handed the changed key, so the fallback can send a partial.
+ */
+export type EntityPersistMap<T> = Record<string, EntityFieldWrite<T>> & { '*': EntityFieldWrite<T> }
 
 /** Runs after a field commit settles, for surface-specific follow-up such as revealing a renamed note. */
 export type EntityCommitReaction<T> = (keyPath: string, entity: T, saved: boolean) => void | Promise<void>
@@ -166,8 +173,9 @@ export class EntityRef<T extends object> extends Controller {
 			sourceUpdate: () => this.beginEdit(),
 			sourceUpdated: (_, keyPath) => {
 				const key = (keyPath as string | undefined) ?? '*'
-				const send = persist[key] ?? persist['*']
-				void this.commit(send, reaction && ((saved) => reaction(key, this.value!, saved)))
+				const write = persist[key] ?? persist['*']
+				// Bind the changed key so a '*' fallback can persist just that field, not the whole entity.
+				void this.commit((entity) => write(entity, key), reaction && ((saved) => reaction(key, this.value!, saved)))
 			}
 		})
 	}

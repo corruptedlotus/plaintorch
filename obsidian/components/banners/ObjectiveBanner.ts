@@ -1,6 +1,6 @@
 import { component, css, html, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { Objective, PolarisCycle } from '@pleiades/sdk'
+import { Objective, ObjectiveUpdate, PolarisCycle } from '@pleiades/sdk'
 import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
 import { OnrushSprint } from "@pleiades/sdk"
 import { App, Notice, SuggestModal } from "obsidian"
@@ -16,7 +16,9 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 
 	protected binder = this.ref.binder('entity', {
 		status: (entity) => core.objectives.shiftWorkflow(entity.id, { status: entity.status }),
-		'*': (entity) => core.objectives.update(entity.id, entity)
+		// Send only the changed field. The whole objective is cyclic (directive → objectives → this objective)
+		// once the identity map cross-links it, so serializing it throws; the update endpoint wants the one field.
+		'*': (entity, keyPath) => core.objectives.update(entity.id, { [keyPath]: entity[keyPath as keyof Objective] } as ObjectiveUpdate)
 	}, (keyPath, entity, saved) => {
 		if (saved && keyPath === 'title') {
 			void this.revealRenamedNote(entity.id)
