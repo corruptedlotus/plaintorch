@@ -21,22 +21,26 @@ public sealed class LorePageStorageTests : VaultTestBase
 			.CreateAsync(new LorePageCreateRequest(parentPuck, title, beginning), TestContext.Current.CancellationToken));
 
 	[Fact]
-	public async Task List_stamps_the_active_spine_from_the_lore_index()
+	public async Task LoreActiveCache_resolves_the_active_spine_from_the_lore_index()
 	{
 		var today = DateOnly.FromDateTime(DateTime.Today);
 		var era1 = await CreateAsync(null, "First Age", today.AddDays(-10));
 		var cha1 = await CreateAsync(era1.Puck, "The Gathering", today.AddDays(-2));
 		var future = await CreateAsync(null, "Ages Hence", today.AddDays(5));
 
-		var pages = await Vault.WithScopeAsync(services => services.GetRequiredService<ILorePageApi>()
-			.ListAsync(TestContext.Current.CancellationToken));
+		// The active spine — the latest begun page (cha1) walked up to its root (era1); a not-yet-begun page is
+		// not active — is resolved once by the cache from the lore index and stamped onto responses by
+		// LoreActiveEndpointFilter, rather than each endpoint hand-computing it.
+		var activeIds = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<LoreActiveCache>()
+			.GetActiveIdsAsync(
+				services.GetRequiredService<PlainfraContext>().LorePages,
+				generation: 0,
+				TestContext.Current.CancellationToken));
 
-		// The active spine is the latest begun page (cha1) walked up to its root (era1); a not-yet-begun page is not
-		// active. The grid reads this server-stamped flag instead of computing its own definition.
-		LorePage Page(string puck) => pages.Single(page => page.Id == puck);
-		Assert.True(Page(era1.Puck).IsActive);
-		Assert.True(Page(cha1.Puck).IsActive);
-		Assert.False(Page(future.Puck).IsActive);
+		Assert.Contains(era1.Puck, activeIds);
+		Assert.Contains(cha1.Puck, activeIds);
+		Assert.DoesNotContain(future.Puck, activeIds);
 	}
 
 	[Fact]

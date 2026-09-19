@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Pleiades.Orchestration;
 using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
+using Pleiades.Saga;
 using Pleiades.Diagnostics;
 using Pleiades.Plaintorch.Api.Changes;
 using Pleiades.Plaintorch.Diagnostics;
@@ -45,6 +46,10 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<PlaintorchStatePolicyInterceptor>();
 		services.AddSingleton<PlaintorchChangeBroker>();
 		services.AddScoped<PlaintorchChangeFeedInterceptor>();
+		// The active lore spine, cached once per vault session and stamped onto responses by a filter rather
+		// than hand-computed at each lore endpoint; the interceptor drops the cache when a lore page is written.
+		services.AddSingleton<LoreActiveCache>();
+		services.AddScoped<LoreActiveCacheInterceptor>();
 		services.AddDbContext<PlainfraContext>((serviceProvider, options) =>
 		{
 			var layout = serviceProvider.GetRequiredService<VaultLayout>();
@@ -57,6 +62,7 @@ public sealed class PlaintorchModule : Module
 			// Registered after the state policy, so the changes it announces are the ones policy left
 			// behind rather than what the caller originally asked for.
 			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchChangeFeedInterceptor>());
+			options.AddInterceptors(serviceProvider.GetRequiredService<LoreActiveCacheInterceptor>());
 		});
 
 		services.AddScoped<PlainfraContextInitializer>();
