@@ -354,6 +354,51 @@ public sealed class PolarisCycleApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task RemoveExecutiveAsync(long executiveId, CancellationToken cancellationToken = default)
+	{
+		var executive = await context.Set<Executive>().FirstOrDefaultAsync(item => item.Id == executiveId, cancellationToken)
+			?? throw new InvalidOperationException($"Executive '{executiveId}' was not found.");
+
+		// Only the cycle's record goes. The core moves a backlog item's state forward on the strength of cycle
+		// participation and never back, so the objective keeps whatever state it has — stepping it out of Polaris is
+		// the user's call, not a side effect of tidying a cycle.
+		context.Remove(executive);
+		await context.SaveChangesAsync(cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"polaris.remove-executive",
+			subjectType: nameof(Executive),
+			subjectId: executive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+			details: new { cycleId = executive.PolarisCycleId, objectiveId = executive.ObjectiveId, executed = executive.Executed },
+			cancellationToken: cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public async Task RemoveAttentiveAsync(long attentiveId, CancellationToken cancellationToken = default)
+	{
+		var attentive = await context.Attentives.FirstOrDefaultAsync(item => item.Id == attentiveId, cancellationToken)
+			?? throw new InvalidOperationException($"Attentive '{attentiveId}' was not found.");
+		if (attentive.PolarisCycleId is null)
+		{
+			// An unbound attentive is an occurrence of its decree's schedule, not something a cycle holds; it is
+			// resolved or skipped, never removed.
+			throw new InvalidOperationException($"Attentive '{attentiveId}' is not bound to a Polaris cycle.");
+		}
+
+		// As with an executive: the record goes and nothing is walked back. What a done occurrence already granted
+		// stays granted.
+		context.Attentives.Remove(attentive);
+		await context.SaveChangesAsync(cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"polaris.remove-attentive",
+			subjectType: nameof(Attentive),
+			subjectId: attentive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+			details: new { cycleId = attentive.PolarisCycleId, decreeId = attentive.DecreeId, resolution = attentive.Resolution.ToString() },
+			cancellationToken: cancellationToken);
+	}
+
+	/// <inheritdoc />
 	public async Task<PolarisCycleInclusions> GetInclusionsAsync(string? polarisCycleId = null, CancellationToken cancellationToken = default)
 	{
 		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, cancellationToken)

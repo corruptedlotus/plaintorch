@@ -96,6 +96,21 @@ public sealed class PolarisCycleModule : Module
 		executives.MapPut("/{executiveId:long}", async (long executiveId, ExecutiveUpdate request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateExecutiveAsync(executiveId, request, cancellationToken)));
 
+		executives.MapDelete("/{executiveId:long}", async (long executiveId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+		{
+			await api.RemoveExecutiveAsync(executiveId, cancellationToken);
+			return Results.NoContent();
+		});
+
+		// Only the removal lives here: the rest of the attentive surface belongs to the declarative module, but
+		// taking one out of a cycle is the cycle's business.
+		endpoints.MapEnrichedGroup("/api/polaris/attentives")
+			.MapDelete("/{attentiveId:long}", async (long attentiveId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			{
+				await api.RemoveAttentiveAsync(attentiveId, cancellationToken);
+				return Results.NoContent();
+			});
+
 		var reflectives = endpoints.MapEnrichedGroup("/api/reflectives");
 		reflectives.MapPut("/{reflectiveId:long}", async (long reflectiveId, ReflectiveUpdate request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateReflectiveAsync(reflectiveId, request, cancellationToken)));

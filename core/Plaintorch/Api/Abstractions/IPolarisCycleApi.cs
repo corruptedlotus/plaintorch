@@ -66,6 +66,18 @@ public interface IPolarisCycleApi
 	Task<PolarisAgenda> GetAgendaAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Removes an executive from its Polaris cycle, deleting the record and nothing else: its objective stays, in
+	/// whatever state it has — the core advances backlog state on cycle participation and never walks it back.
+	/// </summary>
+	Task RemoveExecutiveAsync(long executiveId, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Removes a Polaris-bound attentive from its cycle, deleting the record and nothing else: its decree stays, and
+	/// so does anything a done occurrence had already granted.
+	/// </summary>
+	Task RemoveAttentiveAsync(long attentiveId, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Manually adds a decree to a Polaris cycle, creating a Polaris-bound attentive (PEP100).
 	/// </summary>
 	Task<Attentive> AddDecreeAttentiveAsync(PolarisAttentiveAdd request, string? polarisCycleId = null, CancellationToken cancellationToken = default);

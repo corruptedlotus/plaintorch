@@ -138,6 +138,16 @@ export class PlaintorchPolarisSdk {
 		return await this.client.putForJson<Executive>(`/api/executives/${executiveId}`, update)
 	}
 
+	/** Removes an executive from its cycle, deleting it. The objective stays, in whatever state it has. */
+	public async removeExecutive(executiveId: number): Promise<boolean> {
+		return await this.client.delete(`/api/executives/${executiveId}`)
+	}
+
+	/** Removes a Polaris-bound attentive from its cycle, deleting it. The decree stays. */
+	public async removeAttentive(attentiveId: number): Promise<boolean> {
+		return await this.client.delete(`/api/polaris/attentives/${attentiveId}`)
+	}
+
 	public async updateReflective(reflectiveId: number, update: ReflectiveUpdate): Promise<Reflective | undefined> {
 		return await this.client.putForJson<Reflective>(`/api/reflectives/${reflectiveId}`, update)
 	}

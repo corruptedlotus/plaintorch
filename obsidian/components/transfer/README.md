@@ -82,6 +82,15 @@ html`<p7t-media class='kind' ${this.transfer.draggable(row.entity, () => this)}>
 Because rows travel under their type names, an objective dragged out of the grid is also welcome wherever else
 objectives are taken — the Polaris card adds it to the cycle.
 
+### A recycle bin (the Polaris card's footer)
+
+A host can hold more than one controller, and must when it is to receive its own items: a controller is never a
+candidate for the drag it started. The Polaris card offers its executives and attentives through one
+(`activities`, source-only) and takes them back through another (`bin`), whose `canAccept` admits only drags
+that began in this card and whose `accept` is `removePolarisActivity`. The bin's drop target is the footer
+*frame*, which exists before the drag does; the card merely redraws what is inside it while `bin.isCandidate`.
+What is drawn there takes no pointer events, so the frame sees one clean enter and leave.
+
 ---
 
 ## Lifecycle of a drop

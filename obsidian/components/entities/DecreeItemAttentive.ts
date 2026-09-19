@@ -1,7 +1,8 @@
 import { component, html, property } from "@a11d/lit"
 import { DecreeItem } from "./DecreeItem"
 import { Attentive, AttentiveResolution } from "@pleiades/sdk"
-import { AttentiveModal, getApp } from ".."
+import { AttentiveModal, getApp, type ContextMenuSpec } from ".."
+import { polarisActivityMenu } from "./polarisActivity"
 import "../system/DatetimeView"
 
 /**
@@ -27,6 +28,20 @@ export class DecreeItemAttentive extends DecreeItem {
 
 	override get disabled() {
 		return this.done
+	}
+
+	/** The attentive's own menu, as on an executive: done, time, the decree's editor, removal from the cycle. */
+	protected override contextMenuSpec(): ContextMenuSpec | undefined {
+		if (this.menu || !this.interactive || !this.attentive) {
+			return super.contextMenuSpec()
+		}
+
+		return polarisActivityMenu({ kind: 'attentive', attentive: this.attentive }, updated => {
+			if (updated.kind === 'attentive') {
+				this.attentive = updated.attentive
+				this.dispatchEvent(new CustomEvent<Attentive>('attentivechange', { detail: updated.attentive, bubbles: true, composed: true }))
+			}
+		})
 	}
 
 	protected override get extraActionTemplate() {

@@ -1,7 +1,10 @@
 import { component, css, eventListener, html, nothing, state } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
 import { Attentive, Objective, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
-import { addObjectiveToPolaris, core, isObjectiveInCycle, timebound, TransferController, type CreationRowCreated, type PolarisActivityCreated } from ".."
+import {
+	addObjectiveToPolaris, core, isObjectiveInCycle, polarisActivityKind, polarisActivityKinds, removePolarisActivity, timebound,
+	TransferController, type CreationRowCreated, type PolarisActivity, type PolarisActivityCreated
+} from ".."
 
 @component('p7t-briefing-polaris')
 export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
@@ -31,6 +34,28 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		accept: objective => addObjectiveToPolaris(objective),
 	})
 
+	/**
+	 * Offers the cycle's own activities for dragging. Source-only, and it keeps what it hands out: what a drop
+	 * means is the receiver's business — here, the bin below — and the list is the repository's to redraw.
+	 */
+	protected readonly activities = new TransferController<PolarisActivity>(this, {
+		kind: polarisActivityKind,
+		accepts: [],
+	})
+
+	/**
+	 * The recycle bin. While one of this cycle's activities is in the air the footer becomes a bin, and a drop
+	 * there takes the activity out of the cycle — deleting the executive or attentive, not the objective or decree
+	 * behind it. A controller of its own, since a host's source is never a candidate for its own drag. The footer
+	 * frame is the drop target rather than the bin drawn in it: the frame is there before the drag starts.
+	 */
+	protected readonly bin = new TransferController<PolarisActivity>(this, {
+		accepts: polarisActivityKinds,
+		canAccept: (_, transaction) => transaction.source === this.activities,
+		accept: activity => removePolarisActivity(activity),
+		dropTarget: () => this.renderRoot.querySelector("[part='footer']"),
+	})
+
 	static override get styles() {
 		return css`
 			${super.styles}
@@ -52,6 +77,34 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 				outline-style: solid;
 				outline-color: var(--p7t-flare-accent);
 				box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--p7t-flare-accent) 8%, transparent);
+			}
+
+			/* The footer as a recycle bin, for the life of a drag of one of the cycle's activities. */
+			.bin {
+				grid-column: 1 / -1;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: .6em;
+				padding: .7em 1em;
+				border-radius: 12px;
+				border: 2px dashed color-mix(in srgb, var(--text-error, crimson) 55%, transparent);
+				color: var(--text-error, crimson);
+				font-weight: 500;
+				transition: background-color .2s ease, border-color .2s ease;
+				/* The frame takes the drop; the bin's own children must not break the hover into enter/leave pairs. */
+				pointer-events: none;
+			}
+
+			.bin p7t-icon {
+				width: 1.3em;
+				height: 1.3em;
+			}
+
+			[part='footer'][transfer-over] .bin {
+				border-style: solid;
+				border-color: var(--text-error, crimson);
+				background-color: color-mix(in srgb, var(--text-error, crimson) 16%, transparent);
 			}
 
 			/* The timer with the timeframe(s) in play beside it, at chip scale against the heading's size. */
@@ -150,10 +203,20 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		return html`
 			${this.reflectivesGroup}
 			${this.data!.executives.map(executive => html`
-				<p7t-objective-item-exec interactive .entity=${executive.objective} .executive=${executive}></p7t-objective-item-exec>
+				<p7t-objective-item-exec
+					interactive
+					.entity=${executive.objective}
+					.executive=${executive}
+					${this.activities.draggable({ kind: 'executive', executive })}>
+				</p7t-objective-item-exec>
 			`)}
 			${(this.data!.attentives ?? []).map(attentive => html`
-				<p7t-decree-item-attentive interactive .entity=${attentive.decree} .attentive=${attentive}></p7t-decree-item-attentive>
+				<p7t-decree-item-attentive
+					interactive
+					.entity=${attentive.decree}
+					.attentive=${attentive}
+					${this.activities.draggable({ kind: 'attentive', attentive })}>
+				</p7t-decree-item-attentive>
 			`)}
 			${!this.creating ? html`
 				<p7t-button @click=${() => this.addActivity()} icon='lucide:plus' class='add-button'>Add Activity</p7t-button>
@@ -200,6 +263,15 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 	}
 
 	protected override get footer() {
+		if (this.bin.isCandidate) {
+			return html`
+				<div class='bin'>
+					<p7t-icon icon='lucide:trash-2'></p7t-icon>
+					<span>Drop here to remove from this cycle</span>
+				</div>
+			`
+		}
+
 		const totalEstimation = this.data!.executives.reduce((acc, executive) => acc + (executive.estimation ?? 0), 0)
 		const totalElapsed = this.data!.executives.reduce((acc, executive) => acc + (executive.elapsed ?? 0), 0)
 		return html`

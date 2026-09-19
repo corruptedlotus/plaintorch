@@ -1,7 +1,8 @@
 import { component, html, property } from "@a11d/lit"
 import { ObjectiveItem } from "./ObjectiveItem"
 import { Executive } from "@pleiades/sdk"
-import { ExecutiveModal, getApp } from ".."
+import { ExecutiveModal, getApp, type ContextMenuSpec } from ".."
+import { polarisActivityMenu } from "./polarisActivity"
 
 @component('p7t-objective-item-exec')
 export class ObjectiveItemExecutive extends ObjectiveItem {
@@ -14,6 +15,24 @@ export class ObjectiveItemExecutive extends ObjectiveItem {
 
 	override get disabled() {
 		return !!this.executive?.executed
+	}
+
+	/**
+	 * Inside a cycle the row is the executive, not the objective: its menu marks it done, manages its time, edits
+	 * the objective behind it, or takes it out of the cycle — never the objective's own "Delete". A host-supplied
+	 * menu still wins, as on every entity item.
+	 */
+	protected override contextMenuSpec(): ContextMenuSpec | undefined {
+		if (this.menu || !this.interactive || !this.executive) {
+			return super.contextMenuSpec()
+		}
+
+		return polarisActivityMenu({ kind: 'executive', executive: this.executive }, updated => {
+			if (updated.kind === 'executive') {
+				this.executive = updated.executive
+				this.dispatchEvent(new CustomEvent<void>('updateRequest', { bubbles: true, composed: true }))
+			}
+		})
 	}
 
 	/**
