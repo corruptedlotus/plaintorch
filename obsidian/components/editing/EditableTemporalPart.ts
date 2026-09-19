@@ -14,7 +14,6 @@ import { tooltip } from "../design/Tooltip"
  */
 export abstract class EditableTemporalPart extends EditablePart<string> {
 	protected abstract readonly inputType: 'date' | 'time' | 'datetime-local'
-	protected valueAtFocus?: string
 
 	static override get styles() {
 		return css`
@@ -29,10 +28,6 @@ export abstract class EditableTemporalPart extends EditablePart<string> {
 
 			.display {
 				white-space: nowrap;
-			}
-
-			.display.empty {
-				opacity: .4;
 			}
 
 			input {
@@ -51,14 +46,14 @@ export abstract class EditableTemporalPart extends EditablePart<string> {
 		`
 	}
 
-	protected override get template() {
+	protected override get contentTemplate() {
 		if (this.active) {
 			return html`
 				<input
 					type=${this.inputType}
 					.value=${this.value ?? ''}
 					@change=${(e: Event) => this.commit((e.target as HTMLInputElement).value)}
-					@blur=${() => this.exit()}
+					@blur=${() => this.cancelEditing()}
 					@keydown=${(e: KeyboardEvent) => this.onKeyDown(e)}>
 			`
 		}
@@ -67,7 +62,7 @@ export abstract class EditableTemporalPart extends EditablePart<string> {
 		// inert field draws none, leaving a composing chip (e.g. the editable schedule) to surrogate the one tooltip.
 		const tip = this.disabled ? '' : this.idleTooltip
 		return html`
-			<span class='display ${this.value ? '' : 'empty'}' @click=${() => this.beginEdit()} ${tip ? tooltip(tip) : nothing}>
+			<span class='display ${this.value ? '' : 'placeholder'}' ${tip ? tooltip(tip) : nothing}>
 				${this.toDisplayText(this.value)}
 			</span>
 		`
@@ -78,13 +73,12 @@ export abstract class EditableTemporalPart extends EditablePart<string> {
 		return ''
 	}
 
-	private beginEdit() {
-		if (this.disabled) {
+	/** A temporal field edits by swapping its face for the native input, and opening its picker. */
+	public override startEditing() {
+		if (this.active || !this.beginManualEditing()) {
 			return
 		}
 
-		this.valueAtFocus = this.value
-		this.active = true
 		void this.updateComplete.then(() => {
 			const input = this.renderRoot.querySelector('input')
 			if (!input) return
@@ -98,12 +92,6 @@ export abstract class EditableTemporalPart extends EditablePart<string> {
 		this.finishEditing(raw.length > 0 ? raw : undefined)
 	}
 
-	private exit() {
-		if (this.active) {
-			this.active = false
-		}
-	}
-
 	private onKeyDown(e: KeyboardEvent) {
 		if (e.key === 'Enter') {
 			e.preventDefault()
@@ -113,8 +101,7 @@ export abstract class EditableTemporalPart extends EditablePart<string> {
 
 		if (e.key === 'Escape') {
 			e.preventDefault()
-			this.value = this.valueAtFocus
-			this.active = false
+			this.cancelEditing()
 		}
 	}
 

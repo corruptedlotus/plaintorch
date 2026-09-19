@@ -38,14 +38,10 @@ export class EditableTimeUnit extends EditableNumericPart {
 		`
 	}
 
-	protected override get template() {
-		const empty = this.nullable && (this.value === undefined || this.value === null)
-		return html`
-			${empty
-				? this.nullDisplayTemplate
-				: html`<p7t-time-unit .value=${Math.max(0, this.value ?? 0)}></p7t-time-unit>`}
-			${this.stepperTemplate()}
-		`
+	protected override get contentTemplate() {
+		return this.nullable && this.isNull
+			? this.nullDisplayTemplate
+			: html`<p7t-time-unit .value=${Math.max(0, this.value ?? 0)}></p7t-time-unit>`
 	}
 
 	// Snap onto the quarter grid in the direction of travel so odd values tidy up as they move.

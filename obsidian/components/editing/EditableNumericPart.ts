@@ -1,4 +1,4 @@
-import { css, eventListener, html, nothing, property } from "@a11d/lit"
+import { css, eventListener, html, property } from "@a11d/lit"
 import { EditablePart } from "./EditableDataLink"
 
 /** How long consecutive digits keep accumulating into the same entry. */
@@ -10,7 +10,8 @@ const digitEntryWindow = 900
  * The field is focusable rather than contenteditable: **Arrow up/right and down/left step** the value,
  * typed digits accumulate into an entry, Enter finishes, Escape reverts, and Backspace/Delete clears to the
  * floor. Every change raises `preview` for live surfaces; the committed value is published through the
- * inherited `edit`/`change` once editing ends. Steppers on the side mirror the arrow keys.
+ * inherited `edit`/`change` once editing ends. Steppers on the side mirror the arrow keys; they are affordances
+ * of the base, so a subclass template draws only the value.
  *
  * Subclasses supply {@link applyDigits} (how typed digits map to a value), their bounds/step, and rendering.
  */
@@ -21,7 +22,6 @@ export abstract class EditableNumericPart extends EditablePart<number> {
 	@property({ type: Number }) max = Number.POSITIVE_INFINITY
 	@property({ type: Number }) step = 1
 
-	protected valueAtFocus?: number
 	/** How many typed digits are retained (time-unit keeps 2 hour digits; starfire keeps more). */
 	protected digitLimit = 6
 
@@ -41,17 +41,13 @@ export abstract class EditableNumericPart extends EditablePart<number> {
 				user-select: none;
 			}
 
-			:host(:focus) {
-				outline-color: var(--p7t-flare-accent, var(--interactive-accent));
-			}
-
 			/*
 			 * The steppers overlay the outer side rather than sitting in flow, so an idle unit reserves no space
 			 * for them and its projected size never shifts on entering editing.
 			 */
 			.stepper {
 				position: fixed;
-				position-anchor: --stepper-anchor;
+				position-anchor: --editable-anchor;
 				anchor-try: normal flip-inline;
 				inset-inline-start: anchor(end);
 				display: flex;
@@ -88,30 +84,27 @@ export abstract class EditableNumericPart extends EditablePart<number> {
 		`
 	}
 
-	protected stepperTemplate() {
+	/** The steppers join the base's affordances, so a numeric field's own template is only its value. */
+	protected override get affordancesTemplate() {
 		return html`
-			<div class='stepper'>
-				<p7t-icon
-					class='increment'
-					icon='lucide:chevron-up'
-					@mousedown=${(e: Event) => e.preventDefault()}
-					@click=${() => this.stepValue(1)}>
-				</p7t-icon>
-				<p7t-icon
-					class='decrement'
-					icon='lucide:chevron-down'
-					@mousedown=${(e: Event) => e.preventDefault()}
-					@click=${() => this.stepValue(-1)}>
-				</p7t-icon>
+			${super.affordancesTemplate}
+			<div class='stepper' @mousedown=${(e: Event) => e.preventDefault()}>
+				<p7t-icon class='increment' icon='lucide:chevron-up' @click=${() => this.stepValue(1)}></p7t-icon>
+				<p7t-icon class='decrement' icon='lucide:chevron-down' @click=${() => this.stepValue(-1)}></p7t-icon>
 			</div>
-			${!this.nullable ? nothing : this.clearButtonTemplate}
 		`
+	}
+
+	/** A numeric field edits by holding focus. */
+	public override startEditing() {
+		this.focus()
 	}
 
 	@eventListener({ type: 'focus', target: this })
 	protected handleFocus() {
-		this.valueAtFocus = this.value
-		this.beginManualEditing()
+		if (!this.beginManualEditing()) {
+			this.blur()
+		}
 	}
 
 	@eventListener({ type: 'blur', target: this })

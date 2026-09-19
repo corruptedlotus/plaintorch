@@ -39,7 +39,6 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 
 	@state() protected warning = false
 
-	protected valueAtFocus?: T
 	private cancelling = false
 	private warnTimer?: ReturnType<typeof setTimeout>
 
@@ -94,15 +93,24 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 		clearTimeout(this.warnTimer)
 	}
 
+	/** A text field edits by holding the caret. */
+	public override startEditing() {
+		this.focus()
+	}
+
+	/** Clearing empties the text and commits it like any other edit, so `required` still has its say. */
+	public override clear() {
+		this.textContent = ''
+		this.blur()
+	}
+
 	@eventListener({ type: 'focus', target: this })
 	protected handleFocus() {
-		if (this.disabled) {
+		if (!this.beginManualEditing()) {
 			this.blur()
 			return
 		}
 
-		this.valueAtFocus = this.value
-		this.beginManualEditing()
 		this.textContent = this.toEditableText(this.value)
 		this.placeCaretAtEnd()
 	}
@@ -167,8 +175,7 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 
 	/** Restores the value held at focus and returns to idle, without dispatching a change. */
 	protected revert() {
-		this.value = this.valueAtFocus
-		this.active = false
+		this.cancelEditing()
 		const display = this.toDisplayText(this.value)
 		if (this.textContent !== display) {
 			this.textContent = display

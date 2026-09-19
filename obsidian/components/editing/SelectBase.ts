@@ -1,5 +1,6 @@
-import { Component, css, html, property, query, ref, state, type HTMLTemplateResult } from "@a11d/lit"
+import { css, html, property, query, ref, state, type HTMLTemplateResult } from "@a11d/lit"
 import { popover, PopoverAlignment, PopoverPlacement } from "@3mo/popover"
+import { EditablePart } from "./EditableDataLink"
 import type { SelectList } from "./SelectList"
 import "./SelectList"
 
@@ -23,12 +24,13 @@ export interface SelectOption<T> {
 const searchDelay = 150
 
 /**
- * Base for the searching selects: an editable-shaped field whose edit is a search.
+ * Base for the searching selects: an editable whose edit is a search.
  *
- * Idle, it shows its value (through {@link renderValue}) or its placeholder, outlined like every other
- * editable so a row of them reads as one thing. Focusing it opens a search: the face gives way to a text
- * input and a floating list of {@link search | results} follows the typing, walked with the arrow keys and
- * chosen with Enter or a click. Choosing sets the value and fires `change`, like an editable's commit.
+ * It is an {@link EditablePart} like the rest — the value contract, binding, `nullable`, `disabled`, the edit
+ * button, the outline and the pulse all come from there — and adds only the search. Idle, it shows its value
+ * (through {@link renderValue}) or its placeholder. Editing opens a search: the face gives way to a text input
+ * and a floating list of {@link search | results} follows the typing, walked with the arrow keys and chosen
+ * with Enter or a click. Choosing is the commit: it sets the value and raises `edit` and `change`.
  *
  * The list is a {@link SelectList} hosted through @3mo's `popover` directive: tethered to the field in the
  * application's top layer, positioned by the popover machinery, and no part of this element's own layout.
@@ -43,12 +45,9 @@ const searchDelay = 150
  * Subclasses supply {@link search} and {@link renderValue}; {@link renderEmpty} may replace the placeholder
  * with a chip's own empty face.
  */
-export abstract class SelectBase<T> extends Component {
-	@property({ type: Object }) value?: T
+export abstract class SelectBase<T> extends EditablePart<T> {
 	@property() placeholder = 'Select…'
-	@property({ type: Boolean, reflect: true }) disabled = false
 
-	@state() protected searching = false
 	@state() protected query = ''
 	@state() protected options: readonly SelectOption<T>[] = []
 	@state() protected highlighted = 0
@@ -66,39 +65,18 @@ export abstract class SelectBase<T> extends Component {
 
 	static override get styles() {
 		return css`
+			${super.styles}
+
 			:host {
 				display: inline-flex;
-				align-items: center;
+				justify-content: start;
 				min-width: 6ch;
 				min-height: 1lh;
-				outline: 1px solid transparent;
-				outline-offset: .16rem;
-				border-radius: 4px;
-				transition: .3s ease;
 				cursor: pointer;
 			}
 
-			:host(:hover) {
-				outline-color: var(--p7t-flare-accent, var(--interactive-accent));
-			}
-
-			@keyframes pulse {
-				from { outline-color: var(--p7t-flare-accent, var(--interactive-accent)); }
-				to { outline-color: var(--text-normal); }
-			}
-
-			:host([searching]) {
-				animation: pulse .7s ease-in-out infinite alternate;
+			:host([active]) {
 				cursor: text;
-			}
-
-			:host([disabled]) {
-				cursor: default;
-				outline-color: transparent;
-			}
-
-			[hidden] {
-				display: none !important;
 			}
 
 			.field {
@@ -115,10 +93,6 @@ export abstract class SelectBase<T> extends Component {
 				align-items: center;
 				outline: none;
 				max-width: 100%;
-			}
-
-			.placeholder {
-				opacity: .4;
 			}
 
 			.input {
@@ -160,7 +134,7 @@ export abstract class SelectBase<T> extends Component {
 				.placement=${PopoverPlacement.BlockEnd}
 				.alignment=${PopoverAlignment.Start}
 				.offset=${6}
-				?open=${this.searching}
+				?open=${this.active}
 				.rows=${this.options}
 				.highlighted=${this.highlighted}
 				?loading=${this.loading}
@@ -171,21 +145,21 @@ export abstract class SelectBase<T> extends Component {
 		`
 	}
 
-	protected override get template() {
+	protected override get contentTemplate() {
 		// Both faces stay in the DOM and only one shows: swapping them would remove the search input in the middle
 		// of a Tab out of it, and sequential focus then loses its place instead of moving to the next cell.
 		return html`
-			<div class='field' ${popover(() => this.listTemplate)} @click=${() => this.open()}>
+			<div class='field' ${popover(() => this.listTemplate)}>
 				<input
 					class='input'
 					type='text'
-					?hidden=${!this.searching}
+					?hidden=${!this.active}
 					.value=${this.query}
 					placeholder=${this.placeholder}
 					@input=${(e: Event) => this.onInput((e.target as HTMLInputElement).value)}
 					@keydown=${(e: KeyboardEvent) => this.onInputKeyDown(e)}
 					@blur=${() => this.close()}>
-				<div class='face' ?hidden=${this.searching} tabindex=${this.disabled ? -1 : 0} @focus=${() => this.onFaceFocus()}>
+				<div class='face' ?hidden=${this.active} tabindex=${this.disabled ? -1 : 0} @focus=${() => this.onFaceFocus()}>
 					${this.value === undefined ? this.renderEmpty() : this.renderValue(this.value)}
 				</div>
 			</div>
@@ -203,13 +177,12 @@ export abstract class SelectBase<T> extends Component {
 		list.highlighted = this.highlighted
 		list.loading = this.loading
 		list.style.minWidth = `${Math.round(this.offsetWidth)}px`
-		list.open = this.searching
+		list.open = this.active
 	}
 
 	protected override updated() {
-		this.toggleAttribute('searching', this.searching)
 		this.syncList()
-		if (this.searching) {
+		if (this.active) {
 			this.inputElement?.focus()
 		}
 		else if (this.refocusFace) {
@@ -235,7 +208,7 @@ export abstract class SelectBase<T> extends Component {
 
 	/** Focusing the host focuses what is live inside it: the search input while searching, else the face. */
 	public override focus() {
-		if (this.searching) {
+		if (this.active) {
 			this.inputElement?.focus()
 		}
 		else {
@@ -245,7 +218,7 @@ export abstract class SelectBase<T> extends Component {
 
 	/** Blurring the host ends a search the way leaving it does — dropping the typed text, keeping the value. */
 	public override blur() {
-		if (this.searching) {
+		if (this.active) {
 			this.close()
 		}
 		else {
@@ -253,13 +226,24 @@ export abstract class SelectBase<T> extends Component {
 		}
 	}
 
+	/** A select edits by opening its search. */
+	public override startEditing() {
+		this.open()
+	}
+
+	/** Clearing is a choice of no value: the search closes and the commit is the base's. */
+	public override clear() {
+		this.refocusFace = true
+		this.close()
+		super.clear()
+	}
+
 	/** Opens the search, keeping the current value until something else is chosen. */
 	public open() {
-		if (this.disabled || this.searching) {
+		if (this.active || !this.beginManualEditing()) {
 			return
 		}
 
-		this.searching = true
 		this.query = ''
 		this.options = []
 		this.highlighted = 0
@@ -268,13 +252,13 @@ export abstract class SelectBase<T> extends Component {
 
 	/** Closes the search without choosing: the typed text is dropped and the value stands. */
 	public close() {
-		if (!this.searching) {
+		if (!this.active) {
 			return
 		}
 
 		clearTimeout(this.searchTimer)
 		this.searchSequence++
-		this.searching = false
+		this.active = false
 		this.query = ''
 		this.options = []
 	}
@@ -327,7 +311,7 @@ export abstract class SelectBase<T> extends Component {
 		}
 
 		// A slower earlier search must not land over a later one's results.
-		if (sequence !== this.searchSequence || !this.searching) {
+		if (sequence !== this.searchSequence || !this.active) {
 			return
 		}
 
@@ -366,7 +350,6 @@ export abstract class SelectBase<T> extends Component {
 		const value = option.resolve ? await option.resolve() : option.value
 		this.refocusFace = true
 		this.close()
-		this.value = value
-		this.dispatchEvent(new Event('change'))
+		this.finishEditing(value)
 	}
 }

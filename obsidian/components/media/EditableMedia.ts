@@ -69,7 +69,7 @@ export class EditableMedia extends EditablePart<string> {
 		return chosen === null ? '' : chosen
 	}
 
-	protected override get template() {
+	protected override get contentTemplate() {
 		return html`
 			<p7t-media
 				part='media'
