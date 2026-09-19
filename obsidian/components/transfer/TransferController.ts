@@ -216,9 +216,12 @@ export class TransferController<T> extends Controller {
 	 *
 	 * The element becomes draggable and, when dragged, starts a transaction carrying `item` under this host's
 	 * kind. Re-rendering with another item updates what the element carries without re-wiring it.
+	 *
+	 * When the marked element is only a handle — a row's icon standing in for the row — `image` names what the
+	 * pointer should be seen carrying instead; it is resolved at drag start.
 	 */
-	public draggable(item: T) {
-		return draggableDirective(this as AnyTransferController, item)
+	public draggable(item: T, image?: () => Element | null | undefined) {
+		return draggableDirective(this as AnyTransferController, item, image)
 	}
 
 	/** The kind an item travels under, from this host's declaration. */
@@ -510,6 +513,7 @@ class DraggableDirective extends AsyncDirective {
 	private element?: HTMLElement
 	private controller?: AnyTransferController
 	private item?: unknown
+	private image?: () => Element | null | undefined
 
 	public constructor(partInfo: PartInfo) {
 		super(partInfo)
@@ -518,13 +522,14 @@ class DraggableDirective extends AsyncDirective {
 		}
 	}
 
-	public override render(_controller: AnyTransferController, _item: unknown) {
+	public override render(_controller: AnyTransferController, _item: unknown, _image?: () => Element | null | undefined) {
 		return noChange
 	}
 
-	public override update(part: ElementPart, [controller, item]: [AnyTransferController, unknown]) {
+	public override update(part: ElementPart, [controller, item, image]: [AnyTransferController, unknown, (() => Element | null | undefined)?]) {
 		this.controller = controller
 		this.item = item
+		this.image = image
 		if (this.element !== part.element) {
 			this.detach()
 			this.element = part.element as HTMLElement
@@ -571,6 +576,13 @@ class DraggableDirective extends AsyncDirective {
 		// A nested draggable (a handle within the row) starts its own drag; the outer row must not also start one.
 		event.stopPropagation()
 		this.controller.beginDrag(this.item, event)
+
+		const image = this.image?.()
+		if (image && event.dataTransfer && !event.defaultPrevented) {
+			// Held where it was grabbed, so the image does not jump under the pointer as the drag starts.
+			const bounds = image.getBoundingClientRect()
+			event.dataTransfer.setDragImage(image, event.clientX - bounds.left, event.clientY - bounds.top)
+		}
 	}
 
 	private readonly onDragEnd = (event: DragEvent): void => {

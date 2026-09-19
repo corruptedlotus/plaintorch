@@ -1,12 +1,12 @@
 import { component, css, html, HTMLTemplateResult, nothing, property, PropertyValues } from '@a11d/lit'
-import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, Directive, Objective } from '@pleiades/sdk'
+import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, Directive, Objective, typeNameOf } from '@pleiades/sdk'
 import {
 	getApp, IconName, LunarDirectiveModal, type ScheduleValue,
 	SelectDirectiveStatusModal, SelectLunarDirectiveStatusModal, SelectObjectiveStatusModal
 } from '..'
 import {
 	directiveActions, entityIcon, entityKindLabel, entityKindOf, isDirectiveKind,
-	objectiveActions, saveEntityField, saveFateSchedule, type EditableField
+	objectiveActions, reparentEntity, reparentRefusal, saveEntityField, saveFateSchedule, type EditableField
 } from './entityActions'
 import { GridItemBase } from './GridItemBase'
 import type { GridEntity } from './entityTree'
@@ -18,6 +18,11 @@ import type { GridEntity } from './entityTree'
  * columns — is the shared {@link GridItemBase}. This variant only fills the two middle cells (a kind's measure and its
  * workflow state), names the icon each kind draws, offers the right creation actions, and routes an edited field to
  * the update its kind requires.
+ *
+ * Rows rearrange the tree by drag and drop: any row can be picked up by its kind icon, and dropping it on a
+ * directive row moves it under that directive — a directive to a new parent, an incentive to a new owner. Each
+ * entity travels under its runtime type name, so an objective dragged from here is also welcome wherever else
+ * objectives are taken (the Polaris card).
  */
 @component('p7t-grid-item')
 export class GridItem extends GridItemBase {
@@ -79,6 +84,24 @@ export class GridItem extends GridItemBase {
 		}
 
 		return undefined
+	}
+
+	protected override transferKind(entity: { readonly id: string } | null) {
+		return entity ? typeNameOf(entity) : undefined
+	}
+
+	protected override get acceptedTransferKinds() {
+		return ['StellarDirective', 'LunarDirective', 'Objective', 'Fate', 'Decree']
+	}
+
+	/** Only a directive row takes anything, and only what the tree's rules let it hold. */
+	protected override canTakeTransfer(entity: { readonly id: string }) {
+		const own = this.row!.entity as GridEntity
+		return isDirectiveKind(entityKindOf(own)) && reparentRefusal(entity as GridEntity, own as Directive) === undefined
+	}
+
+	protected override async takeTransfer(entity: { readonly id: string }) {
+		return await reparentEntity(entity as GridEntity, this.row!.entity as Directive)
 	}
 
 	/**

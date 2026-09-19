@@ -80,6 +80,14 @@ export abstract class GridBase extends Component {
 		this.toggleRow(e.detail)
 	}
 
+	@eventListener('requestRowExpand')
+	protected onRequestRowExpand(e: CustomEvent<string>) {
+		e.stopPropagation()
+		if (!this.expandedKeys.has(e.detail)) {
+			this.toggleRow(e.detail)
+		}
+	}
+
 	/** Expands or collapses one row. */
 	public toggleRow(key: string) {
 		const next = new Set(this.expandedKeys)

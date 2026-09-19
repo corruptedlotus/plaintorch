@@ -2,6 +2,7 @@ using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Api.Services;
 using Pleiades.Plaintorch.Api.Transport;
+using Pleiades.Plaintorch.Markdown;
 
 namespace Pleiades.Plaintorch.Api.Endpoints;
 
@@ -14,6 +15,8 @@ public sealed class DirectiveModule : Module
 	public override void ConfigureServices(IServiceCollection services)
 	{
 		services.AddScoped<IDirectiveApi, DirectiveApiService>();
+		// A reparented directive or incentive re-homes its note under the new parent, where the path authority agrees.
+		services.AddScoped<IEntitySaveHook, DirectiveParentingSaveHook>();
 	}
 
 	/// <inheritdoc />

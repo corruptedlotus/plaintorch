@@ -152,6 +152,93 @@ export async function saveEntityField(entity: GridEntity, field: EditableField):
 	}
 }
 
+/** The directive an entity currently sits under: a directive's parent, an incentive's owner. */
+export function parentIdOf(entity: GridEntity): string | undefined {
+	return isDirectiveKind(entityKindOf(entity))
+		? (entity as Directive).parentDirectiveId
+		: (entity as { directiveId?: string }).directiveId
+}
+
+/**
+ * Why an entity cannot be moved under a directive, or `undefined` when it can.
+ *
+ * The same rules the core enforces, answered up front so a row that would refuse a drop never offers itself as
+ * a target: a directive cannot go under itself or anything beneath it (the parent chain would close into a loop
+ * no root reaches), and a lunar hierarchy stays lunar, a stellar one stellar (PEP100). Incentives go anywhere.
+ * An entity already under the directive has nowhere to move.
+ */
+export function reparentRefusal(entity: GridEntity, parent: Directive): string | undefined {
+	if (parentIdOf(entity) === parent.id) {
+		return 'Already there.'
+	}
+
+	const kind = entityKindOf(entity)
+	if (!isDirectiveKind(kind)) {
+		return undefined
+	}
+
+	if (kind !== entityKindOf(parent)) {
+		return 'Lunar and stellar directives do not mix.'
+	}
+
+	// Walk up from the would-be parent; meeting the entity means the parent is the entity or beneath it. A
+	// hand-edited vault can already loop, so the walk remembers where it has been.
+	const byId = new Map((core.repos.directiveList.peek() ?? []).map(directive => [directive.id, directive]))
+	const seen = new Set<string>()
+	for (let current: Directive | undefined = parent; current && !seen.has(current.id); current = byId.get(current.parentDirectiveId ?? '')) {
+		if (current.id === entity.id) {
+			return 'A directive cannot go under itself.'
+		}
+
+		seen.add(current.id)
+	}
+
+	return undefined
+}
+
+/**
+ * Moves an entity under a directive — a directive under a new parent, an incentive under a new owner.
+ *
+ * The write goes through the entity's repository, so the canonical instance takes the new parent and every
+ * surface drawing a tree from it reshapes on its own; nothing is re-listed.
+ */
+export async function reparentEntity(entity: GridEntity, parent: Directive): Promise<boolean> {
+	const refusal = reparentRefusal(entity, parent)
+	if (refusal) {
+		new Notice(refusal)
+		return false
+	}
+
+	const id = entity.id
+	const repositories = core.repos
+	let moved = false
+	try {
+		switch (entityKindOf(entity)) {
+			case 'stellar-directive':
+				moved = !!await repositories.directives.mutate(id, async () => await core.directives.updateStellar(id, { parentDirectiveId: parent.id }))
+				break
+			case 'lunar-directive':
+				moved = !!await repositories.lunarDirectives.mutate(id, async () => await core.directives.updateLunar(id, { parentDirectiveId: parent.id }))
+				break
+			case 'objective':
+				moved = !!await repositories.objectives.mutate(id, async () => await core.objectives.update(id, { directiveId: parent.id }))
+				break
+			case 'fate':
+				moved = !!await repositories.fates.mutate(id, async () => await core.declaratives.updateFate(id, { directiveId: parent.id }))
+				break
+			case 'decree':
+				moved = !!await repositories.decrees.mutate(id, async () => await core.declaratives.updateDecree(id, { directiveId: parent.id }))
+				break
+		}
+	}
+	catch (error) {
+		console.error('PLAINTORCH: reparenting failed.', error)
+	}
+
+	new Notice(moved ? `Moved ${entity.title} under ${parent.title}.` : `PLAINTORCH could not move ${entity.title}.`)
+	return moved
+}
+
 /** Whether a fate is a one-off occurrence rather than a recurring schedule. */
 export function isSingleInstanceFate(entity: GridEntity): boolean {
 	const fate = entity as { orbit?: string, date?: string }

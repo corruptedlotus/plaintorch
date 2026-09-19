@@ -146,6 +146,7 @@ public sealed class DirectiveApiService(
 
 		if (!string.IsNullOrWhiteSpace(update.ParentDirectiveId))
 		{
+			await EnsureCanReparentAsync(stellar, update.ParentDirectiveId, cancellationToken);
 			stellar.ParentDirectiveId = update.ParentDirectiveId;
 		}
 
@@ -180,6 +181,51 @@ public sealed class DirectiveApiService(
 		return stellar;
 	}
 
+	/// <summary>
+	/// Refuses a new parent that would break the directive tree: one that does not exist, one of the other family
+	/// (a lunar hierarchy stays lunar, a stellar one stellar — PEP100), the directive itself, or one of its own
+	/// descendants, which would close the parent chain into a loop no root ever reaches.
+	/// </summary>
+	private async Task EnsureCanReparentAsync(Directive directive, string parentDirectiveId, CancellationToken cancellationToken)
+	{
+		if (string.Equals(directive.ParentDirectiveId, parentDirectiveId, StringComparison.Ordinal))
+		{
+			return;
+		}
+
+		if (string.Equals(directive.Id, parentDirectiveId, StringComparison.Ordinal))
+		{
+			throw new InvalidOperationException($"Directive '{directive.Id}' cannot be its own parent.");
+		}
+
+		var parents = await context.Directives
+			.AsNoTracking()
+			.Select(item => new { item.Id, item.ParentDirectiveId, IsLunar = item is LunarDirective })
+			.ToDictionaryAsync(item => item.Id, cancellationToken);
+		if (!parents.TryGetValue(parentDirectiveId, out var parent))
+		{
+			throw new InvalidOperationException($"Directive '{parentDirectiveId}' was not found.");
+		}
+
+		if (parent.IsLunar != (directive is LunarDirective))
+		{
+			throw new InvalidOperationException("A lunar directive can only sit under a lunar directive, and a stellar one under a stellar one.");
+		}
+
+		// Walk up from the new parent; meeting the directive on the way means the parent is one of its descendants.
+		// The vault is hand-editable, so the chain may already loop — the visited set keeps the walk finite.
+		var visited = new HashSet<string>(StringComparer.Ordinal);
+		for (var current = parent; current is not null && visited.Add(current.Id);)
+		{
+			if (string.Equals(current.ParentDirectiveId, directive.Id, StringComparison.Ordinal))
+			{
+				throw new InvalidOperationException($"Directive '{parentDirectiveId}' descends from '{directive.Id}' and cannot become its parent.");
+			}
+
+			current = current.ParentDirectiveId is not null && parents.TryGetValue(current.ParentDirectiveId, out var next) ? next : null;
+		}
+	}
+
 	/// <inheritdoc />
 	public async Task<LunarDirective> UpdateLunarAsync(string directiveId, LunarDirectiveUpdate update, CancellationToken cancellationToken = default)
 	{
@@ -206,6 +252,7 @@ public sealed class DirectiveApiService(
 
 		if (!string.IsNullOrWhiteSpace(update.ParentDirectiveId))
 		{
+			await EnsureCanReparentAsync(lunar, update.ParentDirectiveId, cancellationToken);
 			lunar.ParentDirectiveId = update.ParentDirectiveId;
 		}
 

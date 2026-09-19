@@ -1,7 +1,7 @@
 import { Component, css, event, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
 import {
 	ContextMenuController, entityContextMenu, EntityWatch, ExpandingAction, IconName, ReactiveBinder,
-	tooltip,
+	tooltip, TransferController,
 	type ContextMenuSpec, type InteractableEntity
 } from '..'
 import { openEntityNote } from './entityActions'
@@ -17,9 +17,19 @@ import { MediaReference } from '@pleiades/sdk'
  * add columns, the right-click menu, and the canonical-entity watch are all shared here; a variant supplies only what
  * its middle cells hold ({@link middleCells}), what its add button offers ({@link actions}), which icon its kind draws
  * ({@link kindIcon}), and how an edited field is persisted ({@link persistField}).
+ *
+ * A row also takes part in drag-and-drop transfers, as far as its variant lets it: one that names a
+ * {@link transferKind} can be picked up by its kind icon, and one that answers {@link canTakeTransfer} is a drop
+ * target for {@link takeTransfer}. A variant that says nothing stays inert.
  */
 export abstract class GridItemBase extends Component {
 	@property({ type: Object }) row?: GridRow
+
+	/** How long a dragged item must hover over a collapsed row before it opens, to let the drop reach inside. */
+	private static readonly hoverExpandDelay = 700
+
+	/** Asks the owning grid to expand this row if it is not already — never to collapse it. */
+	@event({ bubbles: true, composed: true }) requestRowExpand!: EventDispatcher<string>
 
 	/** Asks the owning grid to expand or collapse this row, identified by its key. */
 	@event({ bubbles: true, composed: true }) requestRowToggle!: EventDispatcher<string>
@@ -43,6 +53,30 @@ export abstract class GridItemBase extends Component {
 			await this.persistField(keyPath)
 		}
 	})
+
+	/**
+	 * The row's side of drag and drop. Each row is its own host: a source for its own entity (it keeps it — what a
+	 * drop *means* is the receiver's business, so nothing is removed here) and, where the variant allows, a receiver
+	 * whose taking is a translation rather than an append. What a row really takes is decided per item by
+	 * {@link canTakeTransfer}.
+	 */
+	protected readonly transfer = new TransferController<GridRow['entity']>(this, {
+		kind: entity => this.transferKind(entity),
+		accepts: this.acceptedTransferKinds,
+		outbound: 'clone',
+		canAccept: entity => !!this.row?.entity && this.canTakeTransfer(entity),
+		accept: async entity => {
+			const taken = await this.takeTransfer(entity)
+			if (taken && this.row) {
+				// What was dropped now lives inside this row; open it so the item does not seem to vanish.
+				this.requestRowExpand.dispatch(this.row.key)
+			}
+
+			return taken
+		}
+	})
+
+	private hoverExpandTimer?: ReturnType<typeof setTimeout>
 
 	/** The binding target. Named apart from `row` so the binder writes into the entity, not the row. */
 	protected get boundEntity() {
@@ -170,6 +204,24 @@ export abstract class GridItemBase extends Component {
 				height: 1.7em;
 				width: calc(2 * var(--p7t-grid-lane-width));
 			}
+
+			.kind[draggable='true'] {
+				cursor: grab;
+			}
+
+			/* Drag and drop: the row in the air dims, rows that would take it are marked, the one under it lights. */
+			:host([transfer-source]) {
+				opacity: .45;
+			}
+
+			:host([transfer-target]) {
+				box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 35%, transparent);
+			}
+
+			:host([transfer-over]) {
+				background-color: color-mix(in srgb, var(--interactive-accent) 22%, transparent);
+				box-shadow: inset 0 0 0 1px var(--interactive-accent);
+			}
 		`
 	}
 
@@ -177,6 +229,31 @@ export abstract class GridItemBase extends Component {
 		// The active wash is driven by an attribute rather than a reactive property so a variant that never marks a row
 		// active needs to opt into nothing; a plain row simply carries no attribute.
 		this.toggleAttribute('active', !!this.row?.active)
+		this.toggleAttribute('transfer-source', this.transfer.isSource)
+		this.syncHoverExpansion()
+	}
+
+	public override disconnectedCallback() {
+		super.disconnectedCallback()
+		clearTimeout(this.hoverExpandTimer)
+		this.hoverExpandTimer = undefined
+	}
+
+	/** A collapsed row opens under a lingering drag, the way a folder does, so a drop can reach what is inside it. */
+	private syncHoverExpansion() {
+		const waiting = this.transfer.isHovered && !!this.row?.expandable && !this.row.expanded
+		if (!waiting) {
+			clearTimeout(this.hoverExpandTimer)
+			this.hoverExpandTimer = undefined
+			return
+		}
+
+		this.hoverExpandTimer ??= setTimeout(() => {
+			this.hoverExpandTimer = undefined
+			if (this.transfer.isHovered) {
+				this.toggleExpansion()
+			}
+		}, GridItemBase.hoverExpandDelay)
 	}
 
 	protected override get template() {
@@ -195,7 +272,14 @@ export abstract class GridItemBase extends Component {
 						<p7t-icon class='chevron' icon=${row.expanded ? 'lucide:chevron-down' : 'lucide:chevron-right'}></p7t-icon>
 					`}
 				</div>
-				<p7t-media icon class='kind' .media=${this.entityIcon} ${!this.kindName ? nothing : tooltip(this.kindName)} .default=${this.kindIcon}></p7t-media>
+				<p7t-media
+					icon
+					class='kind'
+					.media=${this.entityIcon}
+					.default=${this.kindIcon}
+					${!this.kindName ? nothing : tooltip(this.kindName)}
+					${!this.transferKind(row.entity) ? nothing : this.transfer.draggable(row.entity, () => this)}>
+				</p7t-media>
 				<div class='leading'>${this.leadingCell}</div>
 				<p7t-editable-plaintext required class='title' ${this.binder.bind('title')}></p7t-editable-plaintext>
 			</div>
@@ -221,6 +305,29 @@ export abstract class GridItemBase extends Component {
 	/** The name of the entity's own kind, shown as a tooltip on the kind icon. */
 	protected get kindName(): string | undefined {
 		return undefined
+	}
+
+	/**
+	 * The kind this row's entity travels under when dragged — by convention its runtime type name, so any host
+	 * that takes that type interoperates. `undefined` (the default) leaves the row without a drag handle.
+	 */
+	protected transferKind(_entity: GridRow['entity']): string | undefined {
+		return undefined
+	}
+
+	/** The kinds this row's variant can receive at all; {@link canTakeTransfer} narrows it per item. */
+	protected get acceptedTransferKinds(): readonly string[] {
+		return []
+	}
+
+	/** Whether this row can take a dragged entity right now. Asked once as a drag starts. */
+	protected canTakeTransfer(_entity: GridRow['entity']): boolean {
+		return false
+	}
+
+	/** Takes a dropped entity, whatever that means for the variant. Resolves to whether it was taken. */
+	protected async takeTransfer(_entity: GridRow['entity']): Promise<boolean> {
+		return false
 	}
 
 	/** An optional label between the notch and the title (lore's level and index). Empty for variants without one. */

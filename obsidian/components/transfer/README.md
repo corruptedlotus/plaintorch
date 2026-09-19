@@ -56,6 +56,26 @@ protected readonly transfer = new TransferController<Tag>(this, { kind: 'Tag', b
 Dropping a tag from another such list appends it here and, once appended, splices it out of the source — the
 default receive and the default `move` removal, both by identity (`id` when present, else the instance).
 
+### Rows that are both source and receiver (the backlog grid)
+
+Every grid row holds its own controller (`GridItemBase.transfer`), so a row is a source for its own entity and,
+where its variant allows, a receiver. A variant opts in through four small hooks rather than touching the
+controller: `transferKind` (what the row's entity travels as — its runtime type name), `acceptedTransferKinds`,
+`canTakeTransfer` and `takeTransfer`. The backlog row (`GridItem`) uses them to **reparent**: dropping any row on
+a directive row moves it under that directive, through `reparentEntity`. `canTakeTransfer` asks `reparentRefusal`
+up front — not onto itself or a descendant, lunar and stellar do not mix, not where it already is — so a row that
+would refuse never lights up as a target. A collapsed row under a lingering drag opens, like a folder.
+
+The handle is the row's kind icon, not the row: a row is full of editables, and a draggable ancestor would take
+text selection away from them. The second argument of `draggable` names what the pointer is seen carrying:
+
+```ts
+html`<p7t-media class='kind' ${this.transfer.draggable(row.entity, () => this)}></p7t-media>`
+```
+
+Because rows travel under their type names, an objective dragged out of the grid is also welcome wherever else
+objectives are taken — the Polaris card adds it to the cycle.
+
 ---
 
 ## Lifecycle of a drop
