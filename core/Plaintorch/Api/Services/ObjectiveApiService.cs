@@ -104,9 +104,10 @@ public sealed class ObjectiveApiService(
 			objective.Title = update.Title;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.DirectiveId))
+		if (update.DirectiveId.IsSet)
 		{
-			objective.DirectiveId = update.DirectiveId;
+			// A present directive is applied: a value moves the objective under it, an explicit null makes it standalone.
+			objective.DirectiveId = string.IsNullOrWhiteSpace(update.DirectiveId.Value) ? null : update.DirectiveId.Value;
 		}
 
 		if (!string.IsNullOrWhiteSpace(update.OnrushSprintId))

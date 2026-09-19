@@ -36,6 +36,11 @@ export interface GridRow {
 	readonly expanded: boolean
 	/** Whether the row is part of its grid's "active" set (the lore spine); grids without one leave it unset. */
 	readonly active?: boolean
+	/**
+	 * Whether the row heads a group that currently holds nothing. Such a row stands by out of sight: it is there
+	 * to be a drop target, and shows itself only while something that could land in its group is being dragged.
+	 */
+	readonly vacant?: boolean
 }
 
 /** The flat listings a tree is composed from. */
@@ -155,8 +160,10 @@ export function buildGridRows(source: EntityTreeSource, expanded: ReadonlySet<st
 	}
 
 	// Incentives with no directive are first-level citizens rather than being hidden or grouped under a
-	// synthetic parent.
-	if (rootIncentives.length > 0) {
+	// synthetic parent. Their heading is also where a drag lands to take an entity out from under its directive, so
+	// it is emitted even with nothing beneath it — vacant, and unseen until a drag needs it. An empty grid has
+	// nothing to drag, and keeps its "nothing here" notice.
+	if (rootIncentives.length > 0 || rows.length > 0) {
 		rows.push({
 			key: 'world-incentives',
 			entity: null!,
@@ -164,7 +171,8 @@ export function buildGridRows(source: EntityTreeSource, expanded: ReadonlySet<st
 			depth: 0,
 			guides: [],
 			expandable: false,
-			expanded: false
+			expanded: false,
+			vacant: rootIncentives.length === 0
 		})
 	}
 	for (const incentive of [...rootIncentives].sort(byTitle)) {

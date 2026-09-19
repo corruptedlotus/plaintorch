@@ -20,7 +20,9 @@ import type { GridEntity } from './entityTree'
  * the update its kind requires.
  *
  * Rows rearrange the tree by drag and drop: any row can be picked up by its kind icon, and dropping it on a
- * directive row moves it under that directive — a directive to a new parent, an incentive to a new owner. Each
+ * directive row moves it under that directive — a directive to a new parent, an incentive to a new owner. Dropping
+ * it on the world heading takes it out from under its directive instead; that heading stands by even when the
+ * world is empty ({@link GridRow.vacant}), out of sight until a drag could use it. Each
  * entity travels under its runtime type name, so an objective dragged from here is also welcome wherever else
  * objectives are taken (the Polaris card).
  */
@@ -58,6 +60,27 @@ export class GridItem extends GridItemBase {
 				color: color-mix(in srgb, var(--interactive-accent) 80%, transparent);
 				text-transform: uppercase;
 			}
+
+			/* The heading is inert until a drag could land on it — then it is the way out from under a directive. */
+			:host([root][transfer-target]) {
+				pointer-events: auto;
+			}
+
+			:host([root][vacant]:not([transfer-target])) {
+				display: none;
+			}
+
+			.root .hint {
+				display: none;
+				margin-inline-start: 1em;
+				font-size: .75em;
+				text-transform: none;
+				opacity: .7;
+			}
+
+			:host([transfer-target]) .root .hint {
+				display: inline;
+			}
 			
 			.root {
 				
@@ -94,14 +117,28 @@ export class GridItem extends GridItemBase {
 		return ['StellarDirective', 'LunarDirective', 'Objective', 'Fate', 'Decree']
 	}
 
-	/** Only a directive row takes anything, and only what the tree's rules let it hold. */
-	protected override canTakeTransfer(entity: { readonly id: string }) {
+	/**
+	 * The directive a drop on this row would move an entity under: the row's own, for a directive row; none — the
+	 * top level — for the world heading. `false` for a row that takes nothing.
+	 */
+	private get transferParent(): Directive | undefined | false {
+		if (this.row!.kind === 'root') {
+			return undefined
+		}
+
 		const own = this.row!.entity as GridEntity
-		return isDirectiveKind(entityKindOf(own)) && reparentRefusal(entity as GridEntity, own as Directive) === undefined
+		return isDirectiveKind(entityKindOf(own)) ? own as Directive : false
+	}
+
+	/** A directive row and the world heading take what the tree's rules let them; every other row takes nothing. */
+	protected override canTakeTransfer(entity: { readonly id: string }) {
+		const parent = this.transferParent
+		return parent !== false && reparentRefusal(entity as GridEntity, parent) === undefined
 	}
 
 	protected override async takeTransfer(entity: { readonly id: string }) {
-		return await reparentEntity(entity as GridEntity, this.row!.entity as Directive)
+		const parent = this.transferParent
+		return parent !== false && await reparentEntity(entity as GridEntity, parent)
 	}
 
 	/**
@@ -203,8 +240,14 @@ export class GridItem extends GridItemBase {
 				<p7t-icon class='notch' icon='lucide:astroid'></p7t-icon>
 				<div class='leading'>${this.leadingCell}</div>
 				<span class='title'>World Quests & Events</span>
+				<span class='hint'>Drop here to take it out of its directive</span>
 			</div>
 		`
+	}
+
+	protected override updated() {
+		super.updated()
+		this.toggleAttribute('vacant', !!this.row?.vacant)
 	}
 
 	protected override firstUpdated(props: PropertyValues): void {

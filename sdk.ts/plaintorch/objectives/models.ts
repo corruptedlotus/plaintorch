@@ -55,7 +55,8 @@ export interface InitObjectiveRequest {
 
 export interface ObjectiveUpdate {
 	title?: string | undefined
-	directiveId?: string | undefined
+	/** The owning directive. Omit to keep, a value to move under it, `null` to lift to the top level. */
+	directiveId?: string | null | undefined
 	onrushSprintId?: string | undefined
 	college?: ObjectiveCollege | undefined
 	celestronValue?: number | undefined

@@ -129,7 +129,8 @@ export interface InitDirectiveRequest {
 export interface StellarDirectiveUpdate {
 	title?: string | undefined
 	codename?: string | null | undefined
-	parentDirectiveId?: string | undefined
+	/** The owning directive. Omit to keep, a value to move under it, `null` to lift to the top level. */
+	parentDirectiveId?: string | null | undefined
 	tags?: string[] | undefined
 	due?: string | null | undefined
 	startDate?: string | null | undefined
@@ -140,7 +141,8 @@ export interface StellarDirectiveUpdate {
 export interface LunarDirectiveUpdate {
 	title?: string | undefined
 	codename?: string | null | undefined
-	parentDirectiveId?: string | undefined
+	/** The owning directive. Omit to keep, a value to move under it, `null` to lift to the top level. */
+	parentDirectiveId?: string | null | undefined
 	tags?: string[] | undefined
 }
 

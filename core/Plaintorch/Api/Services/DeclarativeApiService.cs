@@ -110,10 +110,12 @@ public sealed class DeclarativeApiService(
 			fate.Status = update.Status.Value;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.DirectiveId))
+		if (update.DirectiveId.IsSet)
 		{
-			await EnsureDirectiveExistsAsync(update.DirectiveId, cancellationToken);
-			fate.DirectiveId = update.DirectiveId;
+			// A present directive is applied: a value moves the fate under it, an explicit null makes it standalone.
+			var directiveId = string.IsNullOrWhiteSpace(update.DirectiveId.Value) ? null : update.DirectiveId.Value;
+			await EnsureDirectiveExistsAsync(directiveId, cancellationToken);
+			fate.DirectiveId = directiveId;
 		}
 
 		if (update.ParentIncentiveId.IsSet)
@@ -280,10 +282,12 @@ public sealed class DeclarativeApiService(
 			decree.Status = update.Status.Value;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.DirectiveId))
+		if (update.DirectiveId.IsSet)
 		{
-			await EnsureDirectiveExistsAsync(update.DirectiveId, cancellationToken);
-			decree.DirectiveId = update.DirectiveId;
+			// A present directive is applied: a value moves the decree under it, an explicit null makes it standalone.
+			var directiveId = string.IsNullOrWhiteSpace(update.DirectiveId.Value) ? null : update.DirectiveId.Value;
+			await EnsureDirectiveExistsAsync(directiveId, cancellationToken);
+			decree.DirectiveId = directiveId;
 		}
 
 		if (update.Orbit is not null)

@@ -64,10 +64,10 @@ export abstract class GridItemBase extends Component {
 		kind: entity => this.transferKind(entity),
 		accepts: this.acceptedTransferKinds,
 		outbound: 'clone',
-		canAccept: entity => !!this.row?.entity && this.canTakeTransfer(entity),
+		canAccept: entity => !!this.row && this.canTakeTransfer(entity),
 		accept: async entity => {
 			const taken = await this.takeTransfer(entity)
-			if (taken && this.row) {
+			if (taken && this.row?.entity) {
 				// What was dropped now lives inside this row; open it so the item does not seem to vanish.
 				this.requestRowExpand.dispatch(this.row.key)
 			}

@@ -144,10 +144,16 @@ public sealed class DirectiveApiService(
 			stellar.Codename = string.IsNullOrWhiteSpace(update.Codename.Value) ? null : update.Codename.Value;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.ParentDirectiveId))
+		if (update.ParentDirectiveId.IsSet)
 		{
-			await EnsureCanReparentAsync(stellar, update.ParentDirectiveId, cancellationToken);
-			stellar.ParentDirectiveId = update.ParentDirectiveId;
+			// A present parent is applied: a value reparents, an explicit null lifts the directive to the top level.
+			var parentId = string.IsNullOrWhiteSpace(update.ParentDirectiveId.Value) ? null : update.ParentDirectiveId.Value;
+			if (parentId is not null)
+			{
+				await EnsureCanReparentAsync(stellar, parentId, cancellationToken);
+			}
+
+			stellar.ParentDirectiveId = parentId;
 		}
 
 		if (update.Tags is not null)
@@ -250,10 +256,16 @@ public sealed class DirectiveApiService(
 			lunar.Codename = string.IsNullOrWhiteSpace(update.Codename.Value) ? null : update.Codename.Value;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.ParentDirectiveId))
+		if (update.ParentDirectiveId.IsSet)
 		{
-			await EnsureCanReparentAsync(lunar, update.ParentDirectiveId, cancellationToken);
-			lunar.ParentDirectiveId = update.ParentDirectiveId;
+			// A present parent is applied: a value reparents, an explicit null lifts the directive to the top level.
+			var parentId = string.IsNullOrWhiteSpace(update.ParentDirectiveId.Value) ? null : update.ParentDirectiveId.Value;
+			if (parentId is not null)
+			{
+				await EnsureCanReparentAsync(lunar, parentId, cancellationToken);
+			}
+
+			lunar.ParentDirectiveId = parentId;
 		}
 
 		if (update.Tags is not null)

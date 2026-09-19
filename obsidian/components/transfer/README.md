@@ -66,6 +66,12 @@ a directive row moves it under that directive, through `reparentEntity`. `canTak
 up front — not onto itself or a descendant, lunar and stellar do not mix, not where it already is — so a row that
 would refuse never lights up as a target. A collapsed row under a lingering drag opens, like a folder.
 
+The world heading ("World Quests & Events") is the way back out: a drop there **de-parents** — `reparentEntity`
+with no directive, which sends an explicit `null` parent — lifting a directive to the top of the tree and an
+incentive into the world. The heading is inert outside a drag, and is emitted even when the world is empty
+(`GridRow.vacant`), hidden until a drag that could use it starts; an entity already at the top level never
+lights it.
+
 The handle is the row's kind icon, not the row: a row is full of editables, and a draggable ancestor would take
 text selection away from them. The second argument of `draggable` names what the pointer is seen carrying:
 

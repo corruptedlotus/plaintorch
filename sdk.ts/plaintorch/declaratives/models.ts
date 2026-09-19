@@ -130,7 +130,8 @@ export interface FatePlan {
 export interface FateUpdate {
 	title?: string | undefined
 	status?: FateStatus | undefined
-	directiveId?: string | undefined
+	/** The owning directive. Omit to keep, a value to move under it, `null` to lift to the top level. */
+	directiveId?: string | null | undefined
 	/** Parent incentive. Omit to keep, an id to set, `null` to clear. */
 	parentIncentiveId?: string | null | undefined
 	/** Fixed date. Omit to keep, a value to set, `null` to clear (e.g. switching onto a recurring orbit). */
@@ -154,7 +155,8 @@ export interface DecreePlan {
 export interface DecreeUpdate {
 	title?: string | undefined
 	status?: DecreeStatus | undefined
-	directiveId?: string | undefined
+	/** The owning directive. Omit to keep, a value to move under it, `null` to lift to the top level. */
+	directiveId?: string | null | undefined
 	orbit?: string | undefined
 	defaultLength?: number | undefined
 	activeCelestron?: number | undefined

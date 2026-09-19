@@ -7,9 +7,11 @@ using Xunit;
 namespace Pleiades.Tests.Core;
 
 /// <summary>
-/// Reparenting a directive through its update: the new parent is taken when the tree stays a tree, and refused
-/// when it would not — a parent that does not exist, the directive itself, one of its own descendants, or a
-/// directive of the other family (PEP100: a lunar hierarchy stays lunar, a stellar one stellar).
+/// Reparenting through an update. The new parent is taken when the tree stays a tree, and refused when it would not
+/// — a parent that does not exist, the directive itself, one of its own descendants, or a directive of the other
+/// family (PEP100: a lunar hierarchy stays lunar, a stellar one stellar). An explicit null parent lifts the entity to
+/// the top level, while an omitted one leaves it alone. And the note always follows: a composed storage path holds
+/// the parent, the path is the authority for it on disk, so any parent-partitioned entity re-homes on a change.
 /// </summary>
 public sealed class DirectiveReparentingTests : VaultTestBase
 {
@@ -74,6 +76,69 @@ public sealed class DirectiveReparentingTests : VaultTestBase
 
 		Assert.Single(NotesOf(objective.Id, "Directives/Campaign"));
 		Assert.Empty(NotesOf(objective.Id, "Directives/Strike"));
+	}
+
+	[Fact]
+	public async Task A_null_parent_lifts_a_directive_to_the_top_level()
+	{
+		var campaign = await Api(api => api.CreateStandaloneAsync("Campaign", cancellationToken: Token));
+		var strike = await Api(api => api.CreateFromParentAsync(campaign.Id, "Strike", cancellationToken: Token));
+		await Api(api => api.CreateFromParentAsync(strike.Id, "Sortie", cancellationToken: Token));
+
+		var lifted = await Api(api => api.UpdateStellarAsync(strike.Id, new StellarDirectiveUpdate(ParentDirectiveId: new Optional<string?>(null)), Token));
+
+		Assert.Null(lifted.ParentDirectiveId);
+		Assert.True(Vault.VaultFileExists("Directives/Strike/Strike.md"));
+		Assert.True(Vault.VaultFileExists("Directives/Strike/Sortie/Sortie.md"));
+		Assert.False(Directory.Exists(Vault.AbsolutePath("Directives/Campaign/Strike")));
+	}
+
+	[Fact]
+	public async Task An_omitted_parent_leaves_the_directive_where_it_is()
+	{
+		var campaign = await Api(api => api.CreateStandaloneAsync("Campaign", cancellationToken: Token));
+		var strike = await Api(api => api.CreateFromParentAsync(campaign.Id, "Strike", cancellationToken: Token));
+
+		var edited = await Api(api => api.UpdateStellarAsync(strike.Id, new StellarDirectiveUpdate(Title: "Strike"), Token));
+
+		Assert.Equal(campaign.Id, edited.ParentDirectiveId);
+	}
+
+	[Fact]
+	public async Task A_null_directive_makes_an_objective_standalone_and_its_note_follows()
+	{
+		var campaign = await Api(api => api.CreateStandaloneAsync("Campaign", cancellationToken: Token));
+		var objective = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IObjectiveApi>()
+			.CreateFromDirectiveAsync(campaign.Id, "Take the bridge", cancellationToken: Token));
+		await Vault.BeginObjectiveBoundaryAsync(objective.Id);
+
+		var lifted = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IObjectiveApi>()
+			.UpdateAsync(objective.Id, new ObjectiveUpdate(DirectiveId: new Optional<string?>(null)), Token));
+
+		Assert.Null(lifted.DirectiveId);
+		Assert.Single(NotesOf(objective.Id, "Objectives"));
+		Assert.Empty(NotesOf(objective.Id, "Directives"));
+	}
+
+	[Fact]
+	public async Task A_decree_with_a_note_follows_its_new_directive()
+	{
+		var campaign = await Api(api => api.CreateStandaloneAsync("Campaign", cancellationToken: Token));
+		var strike = await Api(api => api.CreateStandaloneAsync("Strike", cancellationToken: Token));
+		var decree = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDeclarativeApi>()
+			.CreateDecreeAsync(new DecreePlan("Stand watch", DirectiveId: strike.Id), Token));
+		await Vault.WithScopeAsync(services => services.GetRequiredService<IDeclarativeApi>().BeginDecreeBoundaryAsync(decree.Id, Token));
+		Assert.Single(NotesOf(decree.Id, "Directives/Strike"));
+
+		await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDeclarativeApi>()
+			.UpdateDecreeAsync(decree.Id, new DecreeUpdate(DirectiveId: campaign.Id), Token));
+
+		Assert.Single(NotesOf(decree.Id, "Directives/Campaign"));
+		Assert.Empty(NotesOf(decree.Id, "Directives/Strike"));
 	}
 
 	/// <summary>The notes under a vault folder that carry an entity's PUCK — wherever its mode chose to put them.</summary>

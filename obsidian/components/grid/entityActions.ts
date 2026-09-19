@@ -160,14 +160,19 @@ export function parentIdOf(entity: GridEntity): string | undefined {
 }
 
 /**
- * Why an entity cannot be moved under a directive, or `undefined` when it can.
+ * Why an entity cannot be moved under a directive — or, with no directive, lifted to the top level — or
+ * `undefined` when it can.
  *
  * The same rules the core enforces, answered up front so a row that would refuse a drop never offers itself as
  * a target: a directive cannot go under itself or anything beneath it (the parent chain would close into a loop
  * no root reaches), and a lunar hierarchy stays lunar, a stellar one stellar (PEP100). Incentives go anywhere.
- * An entity already under the directive has nowhere to move.
+ * An entity already under the directive has nowhere to move, and one with no parent is already at the top.
  */
-export function reparentRefusal(entity: GridEntity, parent: Directive): string | undefined {
+export function reparentRefusal(entity: GridEntity, parent: Directive | undefined): string | undefined {
+	if (!parent) {
+		return parentIdOf(entity) ? undefined : 'Already at the top level.'
+	}
+
 	if (parentIdOf(entity) === parent.id) {
 		return 'Already there.'
 	}
@@ -197,12 +202,13 @@ export function reparentRefusal(entity: GridEntity, parent: Directive): string |
 }
 
 /**
- * Moves an entity under a directive — a directive under a new parent, an incentive under a new owner.
+ * Moves an entity under a directive — a directive under a new parent, an incentive under a new owner — or, with
+ * no directive, out from under the one it has: a directive to the top of the tree, an incentive to the world.
  *
  * The write goes through the entity's repository, so the canonical instance takes the new parent and every
  * surface drawing a tree from it reshapes on its own; nothing is re-listed.
  */
-export async function reparentEntity(entity: GridEntity, parent: Directive): Promise<boolean> {
+export async function reparentEntity(entity: GridEntity, parent: Directive | undefined): Promise<boolean> {
 	const refusal = reparentRefusal(entity, parent)
 	if (refusal) {
 		new Notice(refusal)
@@ -211,23 +217,25 @@ export async function reparentEntity(entity: GridEntity, parent: Directive): Pro
 
 	const id = entity.id
 	const repositories = core.repos
+	// An explicit null is what clears a parent; leaving the field out would leave the parent alone.
+	const parentId = parent?.id ?? null
 	let moved = false
 	try {
 		switch (entityKindOf(entity)) {
 			case 'stellar-directive':
-				moved = !!await repositories.directives.mutate(id, async () => await core.directives.updateStellar(id, { parentDirectiveId: parent.id }))
+				moved = !!await repositories.directives.mutate(id, async () => await core.directives.updateStellar(id, { parentDirectiveId: parentId }))
 				break
 			case 'lunar-directive':
-				moved = !!await repositories.lunarDirectives.mutate(id, async () => await core.directives.updateLunar(id, { parentDirectiveId: parent.id }))
+				moved = !!await repositories.lunarDirectives.mutate(id, async () => await core.directives.updateLunar(id, { parentDirectiveId: parentId }))
 				break
 			case 'objective':
-				moved = !!await repositories.objectives.mutate(id, async () => await core.objectives.update(id, { directiveId: parent.id }))
+				moved = !!await repositories.objectives.mutate(id, async () => await core.objectives.update(id, { directiveId: parentId }))
 				break
 			case 'fate':
-				moved = !!await repositories.fates.mutate(id, async () => await core.declaratives.updateFate(id, { directiveId: parent.id }))
+				moved = !!await repositories.fates.mutate(id, async () => await core.declaratives.updateFate(id, { directiveId: parentId }))
 				break
 			case 'decree':
-				moved = !!await repositories.decrees.mutate(id, async () => await core.declaratives.updateDecree(id, { directiveId: parent.id }))
+				moved = !!await repositories.decrees.mutate(id, async () => await core.declaratives.updateDecree(id, { directiveId: parentId }))
 				break
 		}
 	}
@@ -235,7 +243,9 @@ export async function reparentEntity(entity: GridEntity, parent: Directive): Pro
 		console.error('PLAINTORCH: reparenting failed.', error)
 	}
 
-	new Notice(moved ? `Moved ${entity.title} under ${parent.title}.` : `PLAINTORCH could not move ${entity.title}.`)
+	new Notice(!moved
+		? `PLAINTORCH could not move ${entity.title}.`
+		: parent ? `Moved ${entity.title} under ${parent.title}.` : `Moved ${entity.title} to the top level.`)
 	return moved
 }
 

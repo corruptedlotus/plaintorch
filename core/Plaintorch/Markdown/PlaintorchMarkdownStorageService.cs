@@ -215,7 +215,8 @@ public sealed class PlaintorchMarkdownStorageService(
 			}
 		}
 
-		var newPath = await ResolveCanonicalPathAsync(entity, cancellationToken);
+		var canonicalPath = await ResolveCanonicalPathAsync(entity, cancellationToken);
+		var newPath = canonicalPath;
 		if (previous is null
 			&& string.IsNullOrWhiteSpace(sourcePath)
 			&& !string.IsNullOrWhiteSpace(previousPath)
@@ -246,6 +247,17 @@ public sealed class PlaintorchMarkdownStorageService(
 		// Placement policy: the mode decides whether the file keeps a user-authored location (Freeform) or uses the
 		// canonical path (everyone else). The storage pipeline no longer branches on the mode.
 		newPath = policyEngine.PolicyFor(storage.Mode).ResolveWriteTargetPath(entity, newPath, sourcePath, previousPath);
+		if (IsReparented(storage, entity, previous))
+		{
+			// A composed storage path puts the parent *in the path*, and on disk the path is the authority for that
+			// relationship. A mode that keeps a note where it was authored is right to for any ordinary edit and wrong
+			// for this one: the authored location is the old parent, so a note left there has the watcher read the
+			// previous parent straight back. A change of parent therefore always lands at the canonical path — under
+			// the new parent, or at the location root once there is none. Declared by the storage attribute, so it
+			// holds for every parent-partitioned type rather than for the ones someone remembered.
+			newPath = canonicalPath;
+		}
+
 		// Opt-in per-type shaping (e.g. a lore page re-homing under a reassigned parent). A type with no registered
 		// hook keeps the resolved path; the storage pipeline no longer branches on the entity type.
 		var saveHook = saveHooks.FirstOrDefault(hook => hook.CanHandle(entity.GetType()));
@@ -373,6 +385,31 @@ public sealed class PlaintorchMarkdownStorageService(
 		var normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 		return string.Equals(normalizedPath, normalizedRoot, StringComparison.OrdinalIgnoreCase)
 			|| normalizedPath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+	}
+
+	/// <summary>
+	/// Whether a save changes the parent its type composes its storage path from — the declared
+	/// <see cref="VaultStorageAttribute.ParentIdProperty"/> differs between the previous state and the new one.
+	/// </summary>
+	private static bool IsReparented(VaultStorageAttribute storage, object entity, object? previous)
+	{
+		if (previous is null || string.IsNullOrWhiteSpace(storage.ParentIdProperty) || storage.ParentEntityType is null)
+		{
+			return false;
+		}
+
+		var property = entity.GetType().GetProperty(storage.ParentIdProperty, BindingFlags.Public | BindingFlags.Instance);
+		if (property is null || !property.DeclaringType!.IsInstanceOfType(previous))
+		{
+			return false;
+		}
+
+		var current = property.GetValue(entity) as string;
+		var before = property.GetValue(previous) as string;
+		return !string.Equals(
+			string.IsNullOrWhiteSpace(current) ? null : current,
+			string.IsNullOrWhiteSpace(before) ? null : before,
+			StringComparison.OrdinalIgnoreCase);
 	}
 
 	private string? TryRelocateSelfNamedDirectory(string? previousPath, string newPath, Type entityType)

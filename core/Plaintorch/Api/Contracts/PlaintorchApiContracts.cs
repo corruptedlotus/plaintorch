@@ -176,7 +176,7 @@ public enum DirectiveKind
 public sealed record StellarDirectiveUpdate(
 	string? Title = null,
 	Optional<string?> Codename = default,
-	string? ParentDirectiveId = null,
+	Optional<string?> ParentDirectiveId = default,
 	IReadOnlyList<string>? Tags = null,
 	Optional<DateOnly?> Due = default,
 	Optional<DateOnly?> StartDate = default,
@@ -189,7 +189,7 @@ public sealed record StellarDirectiveUpdate(
 public sealed record LunarDirectiveUpdate(
 	string? Title = null,
 	Optional<string?> Codename = default,
-	string? ParentDirectiveId = null,
+	Optional<string?> ParentDirectiveId = default,
 	IReadOnlyList<string>? Tags = null);
 
 /// <summary>
@@ -246,7 +246,7 @@ public sealed record DirectiveBannerRequest(
 /// </remarks>
 public sealed record ObjectiveUpdate(
 	string? Title = null,
-	string? DirectiveId = null,
+	Optional<string?> DirectiveId = default,
 	string? OnrushSprintId = null,
 	ObjectiveCollege? College = null,
 	int? CelestronValue = null,
@@ -431,7 +431,7 @@ public sealed record FatePlan(
 public sealed record FateUpdate(
 	string? Title = null,
 	FateStatus? Status = null,
-	string? DirectiveId = null,
+	Optional<string?> DirectiveId = default,
 	Optional<string?> ParentIncentiveId = default,
 	Optional<DateOnly?> Date = default,
 	TimeOnly? StartTime = null,
@@ -457,7 +457,7 @@ public sealed record DecreePlan(
 public sealed record DecreeUpdate(
 	string? Title = null,
 	DecreeStatus? Status = null,
-	string? DirectiveId = null,
+	Optional<string?> DirectiveId = default,
 	string? Orbit = null,
 	int? DefaultLength = null,
 	int? ActiveCelestron = null,
