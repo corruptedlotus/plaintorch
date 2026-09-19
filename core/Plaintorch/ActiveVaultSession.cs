@@ -50,6 +50,21 @@ public sealed class ActiveVaultSession
 	}
 
 	/// <summary>
+	/// Gets the current session generation — a monotonically increasing number bumped on each activation. Cheap
+	/// to key a per-vault cache on: a vault switch moves it on, so anything cached against it recomputes.
+	/// </summary>
+	public long Generation
+	{
+		get
+		{
+			lock (_gate)
+			{
+				return _generation;
+			}
+		}
+	}
+
+	/// <summary>
 	/// Marks the session as ready to serve the specified vault, beginning a new session generation.
 	/// </summary>
 	/// <param name="vaultPath">The absolute path of the activated vault.</param>
