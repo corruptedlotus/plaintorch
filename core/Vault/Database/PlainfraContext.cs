@@ -245,6 +245,11 @@ public class PlainfraContext : DbContext
 			.Property(x => x.Orbit)
 			.HasColumnName("Orbit");
 
+		// A declarative's resolution calendar stores as a readable string; null = kind default.
+		modelBuilder.Entity<Declarative>()
+			.Property(x => x.Calendar)
+			.HasConversion<string>();
+
 		modelBuilder.Entity<LunarDirective>()
 			.Property(x => x.Status)
 			.HasConversion<string>()

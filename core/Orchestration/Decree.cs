@@ -22,7 +22,7 @@ namespace Pleiades.Orchestration;
 	ParentIdProperty = nameof(DirectiveId),
 	ParentEntityType = typeof(Directive),
 	PartitionUnder = "Decrees")]
-public sealed class Decree : Incentive
+public sealed class Decree : Declarative
 {
 	/// <summary>
 	/// Gets or sets the current decree state.

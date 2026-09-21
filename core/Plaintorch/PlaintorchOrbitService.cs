@@ -32,6 +32,14 @@ public sealed class PlaintorchOrbitService(PlainfraContext context)
 	public static IOrbitCalendar ResolveCalendar(Incentive incentive)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
+
+		// An explicit per-declarative calendar wins; otherwise fall back to the kind default
+		// (decrees Pleiadean, fates Gregorian) until a user preference (PEP116) sets one.
+		if (incentive is Declarative { Calendar: { } calendar })
+		{
+			return calendar == DeclarativeCalendar.Pleiadean ? OrbitDays.Pleiadean : OrbitDays.Gregorian;
+		}
+
 		return incentive is Decree ? OrbitDays.Pleiadean : OrbitDays.Gregorian;
 	}
 

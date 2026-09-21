@@ -20,7 +20,7 @@ namespace Pleiades.Orchestration;
 	ParentIdProperty = nameof(DirectiveId),
 	ParentEntityType = typeof(Directive),
 	PartitionUnder = "Fates")]
-public sealed class Fate : Incentive
+public sealed class Fate : Declarative
 {
 	/// <summary>
 	/// Gets or sets the current fate state.

@@ -178,8 +178,10 @@ public sealed class PolarisCycleApiService(
 				.ThenInclude(executive => executive.AffinityTimeframe)
 			.Include(item => item.Reflectives)
 				.ThenInclude(reflective => reflective.Decree)
+					.ThenInclude(decree => decree!.Directive)
 			.Include(item => item.Attentives)
 				.ThenInclude(attentive => attentive.Decree)
+					.ThenInclude(decree => decree!.Directive)
 			.FirstOrDefaultAsync(item => item.Id == targetId, cancellationToken);
 
 		return cycle;

@@ -224,12 +224,19 @@ public sealed class VaultEntityModelCatalog
 		// drops the common entity root (PuckNamedEntity), leaving the real discriminated hierarchies (Directive,
 		// Incentive) whether or not the anchor itself declares entity attributes — Incentive, for instance, carries
 		// none and so is not a catalog model in its own right.
-		return concrete
+		var candidates = concrete
 			.SelectMany(member => AbstractBaseTypes(member.EntityType))
 			.Distinct()
 			.Where(anchor =>
 				concrete.Any(member => member.EntityType != anchor && anchor.IsAssignableFrom(member.EntityType))
 				&& !concrete.All(member => anchor.IsAssignableFrom(member.EntityType)))
+			.ToList();
+
+		// Anchor a family at the *topmost* qualifying base only. An intermediate abstract (e.g. Declarative,
+		// which groups Fate and Decree under Incentive) is a code-level grouping, not a discriminated storage/
+		// identity family — its leaves have distinct storage — so it stays transparent to family resolution.
+		return candidates
+			.Where(anchor => !candidates.Any(other => other != anchor && other.IsAssignableFrom(anchor)))
 			.Select(anchor => new VaultEntityFamily(
 				anchor,
 				concrete.Where(member => anchor.IsAssignableFrom(member.EntityType)).ToList()))
