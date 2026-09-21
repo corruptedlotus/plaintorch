@@ -107,8 +107,11 @@ pure HTTP. The dependencies that require the drain to have *completed* are:
 - **Part 2 — route the remaining write paths (incentives, onrush, polaris, executive, lore) through the drainer;
   add the synchronous bounded drain + `noteReady` contract; client pending-handling (banners + `createEntityNote`
   poll `resolve-note`); timeout from the user preference.**
-- **Part 3 — the remaining two repros:** a freeform (Quiet) rename recomposes the self-named base name at the entity's
-  real location; a move within a parent's territory re-homes the implicit boundary instead of orphaning it.
+- **Part 3 — the remaining two repros.** *Done*: (repro 4) `FreeformVaultStorageModePolicyService.ResolveWriteTargetPath`
+  rebases onto the authored container with the entity's current base name (`RebaseOntoAuthoredLocation`), so a Quiet
+  rename renames the self-named folder/file in place instead of leaving a stale, self-reverting name; (repro 5) the
+  discovery orphan pass skips a begun boundary whose identity is still asserted by a scanned file — a move within the
+  vault is not a deletion — so a note relocated inside its parent survives the sweep. All five pinned repros are green.
 - **Part 4 — deny the core direct file writes:** delete `SaveCanonicalMarkdownAsync`'s in-request invocation from the
   API path and the `IsReparented`/`previous`-clone reconstruction; fold `PlaintorchEngine.WriteVaultMarkdown` in;
   consolidate the stray direct FS *readers* (note-resolver frontmatter fallback, media, direct dir-name readers)
@@ -116,8 +119,9 @@ pure HTTP. The dependencies that require the drain to have *completed* are:
 
 ### Acceptance criteria
 
-The five pinned repros go green (1–3 in Part 1a, 4–5 in Part 3); a crash-recovery test (an intent row left undrained
-is reconciled by the startup drain); the full suite stays green and stable across repeated (parallel) runs.
+The five pinned repros go green (1–3 in Part 1a, 4–5 in Part 3) — **all green as of Part 3**; a crash-recovery test (an
+intent row left undrained is reconciled by the startup drain) — **green**; the full suite stays green and stable across
+repeated (parallel) runs — **402 passed / 0 skipped, stable**.
 
 ### Status log
 
@@ -125,6 +129,8 @@ is reconciled by the startup drain); the full suite stays green and stable acros
   green; suite 398 passed / 2 skipped, stable across repeated runs.
 - 2026-09-21 — Part 1b landed: `VaultWriteIntent` outbox + `VaultWriteQueue` + startup drain, live on the directive
   Reconcile write path; crash-recovery test green; suite 400 passed / 2 skipped, stable across repeated runs.
+- 2026-09-21 — Part 3 landed: freeform (Quiet) rename rebases onto the authored location; the orphan pass treats a
+  still-asserted moved note as a move, not a deletion. All five repros green; suite 402 passed / 0 skipped, stable.
 
 ## Sunnyside Mk1
 

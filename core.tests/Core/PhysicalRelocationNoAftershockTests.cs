@@ -156,7 +156,7 @@ public sealed class PhysicalRelocationNoAftershockTests : VaultTestBase
 
 	// --- A neutral relocation of an implicit objective note within its parent's folder ---
 
-	[Fact(Skip = "CONFIRMED BUG (dev/phase2d; acceptance criterion for the write/read-convergence work). Reproduced: an implicit objective whose note is moved from Projects/Alpha/Objectives/Task.md to a sibling subfolder Projects/Alpha/Notebook/Task.md (still inside its parent directive's folder, parentage unchanged) is DELETED on the next sweep. Root cause: the startup orphan pass keys a begun boundary on its recorded path; the moved file is not re-associated because implicit classification does not reach a non-partition subfolder under an out-of-root parent, so the vanished old path is read as a deletion. The placement policy's 'detected anywhere inside the parent's folder' promise does not hold at scan/orphan time. Fix steer: a move within the parent's territory must re-home the boundary, not delete. Contrast: moving a whole self-named directory subtree survives (Moving_a_directive_with_a_nested_subtree_to_a_neutral_location_causes_no_aftershock passes).")]
+	[Fact] // Refactor BETA part 3: fixed — the orphan pass skips a begun boundary whose identity is still asserted by a scanned file (it moved, not deleted).
 	public async Task Moving_an_implicit_objective_note_within_its_parent_keeps_it_alive()
 	{
 		await InitDirectiveAtAsync("Projects/Alpha/Alpha.md");

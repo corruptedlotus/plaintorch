@@ -152,7 +152,7 @@ public sealed class FreeformOutOfRootEditTests : VaultTestBase
 		Assert.False(Vault.VaultFileExists("Projects/Alpha/Objectives/Task.md"));
 	}
 
-	[Fact(Skip = "CONFIRMED BUG (dev/phase2d; acceptance criterion for the write/read-convergence work). Reproduced: renaming a freeform directive kept at Projects/Campaign (Title Campaign->Operations) leaves the file at Projects/Campaign/Campaign.md — the folder/file name never changes. A directive is Quiet (its title lives ONLY in the filename), so the stale filename resurrects the old title on the next read. Root cause: FreeformVaultStorageModePolicyService.ResolveWriteTargetPath anchors to sourcePath ?? existingPath and returns the EXISTING file path, ignoring the new title-derived base name, so no rename is composed. Fix steer: a rename must recompose the self-named base name at the entity's real location. Contrast: the same rename on an implicit objective works (Renaming_an_out_of_root_objective_renames_the_real_file passes).")]
+	[Fact] // Refactor BETA part 3: fixed — Freeform.ResolveWriteTargetPath rebases onto the authored container with the new base name, so the self-named folder/file renames in place.
 	public async Task Renaming_an_out_of_root_directive_reflects_on_the_real_file_without_duplicating()
 	{
 		var directive = await InitDirectiveAtAsync("Projects/Campaign/Campaign.md");

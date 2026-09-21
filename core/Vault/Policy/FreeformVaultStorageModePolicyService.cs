@@ -165,9 +165,44 @@ public sealed class FreeformVaultStorageModePolicyService(
 
 		// A freeform file the user authored anywhere is kept at its authored location, unless that location is another
 		// entity's managed root — then it falls back to a free canonical slot rather than intruding on managed space.
+		// The base name is refreshed from the entity's current identity (via defaultPath): a Quiet entity's title lives
+		// in its filename, so a rename must reach the real file even when the user keeps it outside the canonical root,
+		// or the stale name reverts the title on the next read.
 		return IsAllowedFreeformAssertion(entity.GetType(), fullAnchor)
-			? fullAnchor
+			? RebaseOntoAuthoredLocation(fullAnchor, defaultPath)
 			: ResolveFreeformFallbackPath(defaultPath);
+	}
+
+	/// <summary>
+	/// Keeps a freeform entity at the location the user authored it, but refreshes its file (and self-named folder) name
+	/// from the entity's current identity, which <paramref name="defaultPath"/> carries. A self-named layout
+	/// (<c>.../{Name}/{Name}.md</c>) rehomes the whole folder under the same authored container; any other layout keeps
+	/// the file's directory. So an ordinary edit is a no-op (the base name is unchanged) and a rename reaches the real
+	/// file rather than leaving a stale, self-reverting name.
+	/// </summary>
+	private static string RebaseOntoAuthoredLocation(string anchor, string defaultPath)
+	{
+		var newFileName = Path.GetFileName(defaultPath);
+		var anchorDirectory = Path.GetDirectoryName(anchor);
+		if (string.IsNullOrWhiteSpace(anchorDirectory))
+		{
+			return anchor;
+		}
+
+		var isSelfNamed = string.Equals(
+			Path.GetFileName(anchorDirectory),
+			Path.GetFileNameWithoutExtension(anchor),
+			StringComparison.OrdinalIgnoreCase);
+		if (isSelfNamed)
+		{
+			var container = Path.GetDirectoryName(anchorDirectory);
+			if (!string.IsNullOrWhiteSpace(container))
+			{
+				return Path.Combine(container, Path.GetFileNameWithoutExtension(defaultPath), newFileName);
+			}
+		}
+
+		return Path.Combine(anchorDirectory, newFileName);
 	}
 
 	private bool IsAllowedFreeformAssertion(Type entityType, string fullSourcePath)
