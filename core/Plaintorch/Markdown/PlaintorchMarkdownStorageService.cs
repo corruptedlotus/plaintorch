@@ -555,7 +555,31 @@ public sealed class PlaintorchMarkdownStorageService(
 	private async Task<string> ResolveCanonicalPathAsync(object entity, CancellationToken cancellationToken)
 	{
 		var parent = await LoadParentHierarchyAsync(entity, new HashSet<string>(StringComparer.OrdinalIgnoreCase), cancellationToken);
+		if (parent is not null)
+		{
+			// Place the child beneath its parent's REAL folder — found by the parent's own identity, exactly as discovery
+			// resolves a note's owner — so a child of a parent kept outside its canonical root lands beside it rather than
+			// under a conjured canonical parent folder (write-side placement converging on read-side discovery). When the
+			// parent has no file on disk yet, fall back to canonical composition.
+			var parentDirectory = await TryResolveExistingParentDirectoryAsync(parent, cancellationToken);
+			if (!string.IsNullOrWhiteSpace(parentDirectory))
+			{
+				return markdownFileLocator.GetFilePathUnderParentDirectory(entity, parentDirectory);
+			}
+		}
+
 		return markdownFileLocator.GetFilePath(entity, parent);
+	}
+
+	/// <summary>
+	/// Resolves the directory a parent entity's own file actually sits in, located by the parent's identity across its
+	/// territory (the same resolution discovery uses on read). Returns <see langword="null"/> when the parent has no
+	/// file on disk yet, leaving the caller on canonical composition.
+	/// </summary>
+	private async Task<string?> TryResolveExistingParentDirectoryAsync(object parent, CancellationToken cancellationToken)
+	{
+		var parentPath = await TryResolveExistingPathByIdentityAsync(parent, preferredPath: null, cancellationToken);
+		return string.IsNullOrWhiteSpace(parentPath) ? null : Path.GetDirectoryName(parentPath);
 	}
 
 	private async Task<object?> LoadParentHierarchyAsync(object entity, HashSet<string> visited, CancellationToken cancellationToken)

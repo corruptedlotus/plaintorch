@@ -146,7 +146,7 @@ public sealed class ReparentingRelocationTests : VaultTestBase
 
 	// --- Scenario 2: a parent outside the default root hosts its child in its real folder ---
 
-	[Fact(Skip = "CONFIRMED BUG (dev/phase2d; acceptance criterion for the write/read-convergence work). Reproduced: a directive kept at Projects/Campaign (freeform, outside the Directives root) hosts a NEW objective, which materializes at Directives/Campaign/Objectives/... — the parent's canonical folder, freshly conjured — instead of Projects/Campaign/Objectives. Root cause: a brand-new child has no existing file to locate by identity, so PlaintorchMarkdownStorageService composes the canonical path via VaultStoragePathComposer.GetContainer -> GetOwnDirectory, which recurses the parent's DECLARED storage (canonical location), never the parent's actual on-disk location; discovery instead resolves the parent by where its file really is (ResolveFreeformDirectiveParentIdAsync). Write-side placement diverges from read-side discovery. Contrast: editing/renaming an EXISTING out-of-root objective works (found by identity). Fix steer: placement must resolve the parent's real path the way discovery does — one owner for the entity<->file mapping.")]
+	[Fact] // Refactor BETA part 1: fixed — ResolveCanonicalPathAsync composes a child beneath its parent's REAL folder (resolved by the parent's identity, as discovery does), not the parent's canonical folder.
 	public async Task A_new_objective_under_an_out_of_root_directive_materializes_in_the_parents_real_folder()
 	{
 		// A freeform directive the user keeps outside the Directives root.
@@ -164,7 +164,7 @@ public sealed class ReparentingRelocationTests : VaultTestBase
 		Assert.False(Directory.Exists(Vault.AbsolutePath("Directives/Campaign")), "the parent's canonical folder must not be conjured");
 	}
 
-	[Fact(Skip = "CONFIRMED BUG (dev/phase2d; acceptance criterion for the write/read-convergence work). Reproduced: reparenting a standalone objective INTO a directive kept at Projects/Campaign moves its note to Directives/Campaign/Objectives/... (the parent's conjured canonical folder), not Projects/Campaign. Root cause: PlaintorchMarkdownStorageService.SaveCanonicalMarkdownAsync forces newPath = canonicalPath whenever IsReparented is true, and canonicalPath is composed against the parent's DECLARED (canonical) directory rather than its actual out-of-root location. Fix steer: reparent placement must resolve the parent's real folder — same resolver on write as on read.")]
+	[Fact] // Refactor BETA part 1: fixed — the reparent branch lands at canonicalPath, which now resolves the new parent's REAL folder via ResolveCanonicalPathAsync.
 	public async Task Reparenting_an_objective_into_an_out_of_root_directive_moves_its_note_under_that_parent()
 	{
 		var directive = await InitDirectiveAtAsync("Projects/Campaign/Campaign.md");
@@ -182,7 +182,7 @@ public sealed class ReparentingRelocationTests : VaultTestBase
 		Assert.False(Directory.Exists(Vault.AbsolutePath("Directives/Campaign")), "the parent's canonical folder must not be conjured");
 	}
 
-	[Fact(Skip = "CONFIRMED BUG (dev/phase2d; acceptance criterion for the write/read-convergence work). Reproduced: a child directive created under a parent directive kept at Projects/Campaign materializes at Directives/Campaign/Strike/Strike.md, not Projects/Campaign/Strike. Root cause: same as the objective case — VaultStoragePathComposer.GetOwnDirectory composes the parent's canonical directory, so a new child is placed under a conjured Directives/Campaign rather than the parent's real folder. Fix steer: compose a child against the parent's resolved actual location.")]
+	[Fact] // Refactor BETA part 1: fixed — a child composes beneath the parent's resolved actual location (GetFilePathUnderParentDirectory).
 	public async Task A_new_child_directive_under_an_out_of_root_parent_materializes_beneath_it()
 	{
 		var parent = await InitDirectiveAtAsync("Projects/Campaign/Campaign.md");

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch;
@@ -237,14 +238,27 @@ public sealed class TestVault : IAsyncLifetime
 	/// <inheritdoc />
 	public async ValueTask DisposeAsync()
 	{
+		string? connectionString = null;
 		if (_app is not null)
 		{
 			_app.Services.GetRequiredService<PlaintorchUserLayout>().Cleanup();
+			using (var scope = _app.Services.CreateScope())
+			{
+				connectionString = scope.ServiceProvider.GetRequiredService<PlainfraContext>().Database.GetConnectionString();
+			}
+
 			await _app.DisposeAsync();
 		}
 
-		// Release SQLite file handles before deleting the temp directory (SQLite/Windows).
-		SqliteConnection.ClearAllPools();
+		// Release only THIS vault's SQLite handles before deleting its temp directory (SQLite/Windows). Clearing the whole
+		// process-wide pool (ClearAllPools) races other test collections that are opening their own connections in parallel
+		// — surfacing as a spurious SqliteConnection.Open() failure elsewhere — so clear just this connection's pool.
+		if (connectionString is not null)
+		{
+			using var connection = new SqliteConnection(connectionString);
+			SqliteConnection.ClearPool(connection);
+		}
+
 		TryDeleteDirectory(VaultRoot);
 	}
 

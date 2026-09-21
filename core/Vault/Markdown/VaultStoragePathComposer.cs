@@ -25,6 +25,13 @@ public interface IVaultStorageStrategy
 	/// single-file entity's file sits in. Used when composing a child's path beneath this entity as a parent.
 	/// </summary>
 	string GetOwnDirectory(VaultStoragePathComposer composer, object entity, object? immediateParent);
+
+	/// <summary>
+	/// Composes the entity's markdown file path inside an already-resolved container directory. The write path uses this
+	/// when a parent's real on-disk location is known (so a child follows a parent kept outside its canonical root),
+	/// bypassing the canonical parent-directory recursion that <see cref="GetFilePath"/> performs.
+	/// </summary>
+	string GetFilePathInContainer(VaultStoragePathComposer composer, object entity, string container);
 }
 
 /// <summary>
@@ -80,6 +87,20 @@ public sealed class VaultStoragePathComposer
 	{
 		ArgumentNullException.ThrowIfNull(entity);
 		return ResolveStrategy(entity.GetType()).GetOwnDirectory(this, entity, immediateParent);
+	}
+
+	/// <summary>
+	/// Composes an entity's markdown file path beneath a parent whose real own-directory is already resolved. The write
+	/// path uses this so a child of a parent kept outside its canonical root lands under the parent's ACTUAL folder — the
+	/// same folder discovery resolves it from — rather than a conjured canonical one. The entity's declared partition (if
+	/// any) is applied to the supplied directory, then its shape composes the file within it.
+	/// </summary>
+	public string GetFilePathUnderParentDirectory(object entity, string parentOwnDirectory)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		ArgumentException.ThrowIfNullOrWhiteSpace(parentOwnDirectory);
+		var container = ApplyPartition(parentOwnDirectory, GetStorage(entity.GetType()), entity.GetType());
+		return ResolveStrategy(entity.GetType()).GetFilePathInContainer(this, entity, container);
 	}
 
 	/// <summary>
@@ -292,6 +313,12 @@ internal sealed class SelfNamedDirectoryStorageStrategy : IVaultStorageStrategy
 
 	public string GetFilePath(VaultStoragePathComposer composer, object entity, object? immediateParent)
 		=> Path.Combine(GetOwnDirectory(composer, entity, immediateParent), $"{composer.GetBaseName(entity)}.md");
+
+	public string GetFilePathInContainer(VaultStoragePathComposer composer, object entity, string container)
+	{
+		var baseName = composer.GetBaseName(entity);
+		return Path.Combine(container, baseName, $"{baseName}.md");
+	}
 }
 
 /// <summary>
@@ -307,6 +334,9 @@ internal sealed class SingleFileStorageStrategy : IVaultStorageStrategy
 
 	public string GetFilePath(VaultStoragePathComposer composer, object entity, object? immediateParent)
 		=> Path.Combine(GetOwnDirectory(composer, entity, immediateParent), $"{composer.GetBaseName(entity)}.md");
+
+	public string GetFilePathInContainer(VaultStoragePathComposer composer, object entity, string container)
+		=> Path.Combine(container, $"{composer.GetBaseName(entity)}.md");
 }
 
 /// <summary>
@@ -339,4 +369,9 @@ internal sealed class LorePageStorageStrategy : IVaultStorageStrategy
 	public string GetOwnDirectory(VaultStoragePathComposer composer, object entity, object? immediateParent)
 		=> Path.GetDirectoryName(GetFilePath(composer, entity, immediateParent))
 			?? throw new InvalidOperationException("Lore page markdown path does not have a directory.");
+
+	// Lore placement is RelativePath-authoritative and never composed beneath a resolved parent directory (nesting is
+	// carried by RelativePath), so the container is ignored and the canonical resolution stands.
+	public string GetFilePathInContainer(VaultStoragePathComposer composer, object entity, string container)
+		=> GetFilePath(composer, entity, null);
 }
