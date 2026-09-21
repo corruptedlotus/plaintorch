@@ -17,8 +17,11 @@ public sealed record OrbitResolutionEntry(long TimestampMs, OrbitUnit Granularit
 /// <summary>
 /// Span resolution: an explicit [start, end) interval. Produced only by span-format
 /// schedules (those using a <c>=&lt;dur&gt;</c> duration); never mixed with granular entries.
+/// <see cref="Granularity"/> is the schedule's finest unit — the window the start sits in —
+/// so a consumer can distinguish an anchored span (granularity at or finer than the duration)
+/// from a floating one (granularity window larger than the duration, e.g. <c>d=2h</c>).
 /// </summary>
-public sealed record OrbitSpanEntry(long StartMs, long EndMs) : OrbitEntry
+public sealed record OrbitSpanEntry(long StartMs, long EndMs, OrbitUnit Granularity) : OrbitEntry
 {
 	public long DurationMs => EndMs - StartMs;
 }
@@ -85,11 +88,15 @@ public sealed class OrbitEngine
 	{
 		ArgumentNullException.ThrowIfNull(ast);
 		_calendar = calendar ?? throw new ArgumentNullException(nameof(calendar));
-		_rawAst = ast;
+		// Desugar z/Z datetime literals into their equivalent nested time-unit chain up
+		// front, so every downstream pass (limits, normalize, span-building) only ever sees
+		// OrbitTimeUnitNode / OrbitSetOperationNode and needs no literal awareness.
+		var source = ExpandLiterals(ast);
+		_rawAst = source;
 		// Record each node's explicit (user-written) parent BEFORE normalization
 		// adds synthetic y>M>... wrappers, then normalize and index the nodes.
-		IndexLimits(ast, null);
-		_ast = NormalizeAst(ast);
+		IndexLimits(source, null);
+		_ast = NormalizeAst(source);
 		AssignIds(_ast);
 		foreach (var (node, info) in _limited)
 		{
@@ -103,7 +110,7 @@ public sealed class OrbitEngine
 		_limits = CollectLimits(_ast);
 		_cursor = SeededStart();
 
-		_spanFormat = !granularOnly && HasDuration(ast);
+		_spanFormat = !granularOnly && HasDuration(source);
 		if (_spanFormat)
 		{
 			ValidateSpanFormat();
@@ -319,7 +326,7 @@ public sealed class OrbitEngine
 				var interval = _spanRoot.Next()!.Value;
 				if (interval.Start >= startMs)
 				{
-					output.Add(new OrbitSpanEntry(interval.Start, interval.End));
+					output.Add(new OrbitSpanEntry(interval.Start, interval.End, _globalGranularity));
 				}
 			}
 
@@ -356,7 +363,7 @@ public sealed class OrbitEngine
 			{
 				if (interval.Start >= startMs)
 				{
-					output.Add(new OrbitSpanEntry(interval.Start, interval.End));
+					output.Add(new OrbitSpanEntry(interval.Start, interval.End, _globalGranularity));
 				}
 			}
 
@@ -388,7 +395,7 @@ public sealed class OrbitEngine
 				var interval = stream.Next()!.Value;
 				if (interval.Start >= startMs)
 				{
-					output.Add(new OrbitSpanEntry(interval.Start, interval.End));
+					output.Add(new OrbitSpanEntry(interval.Start, interval.End, _globalGranularity));
 				}
 			}
 
@@ -417,7 +424,7 @@ public sealed class OrbitEngine
 			{
 				if (interval.Start >= startMs)
 				{
-					output.Add(new OrbitSpanEntry(interval.Start, interval.End));
+					output.Add(new OrbitSpanEntry(interval.Start, interval.End, _globalGranularity));
 				}
 			}
 
@@ -468,6 +475,99 @@ public sealed class OrbitEngine
 			_anchor = savedAnchor;
 			_autoReset = savedAutoReset;
 		}
+	}
+
+	// Desugars every z/Z datetime literal in a tree into the equivalent nested time-unit
+	// chain, leaving OrbitTimeUnitNode / OrbitSetOperationNode subtrees untouched.
+	private OrbitAstNode ExpandLiterals(OrbitAstNode node)
+	{
+		if (node is OrbitSetOperationNode set)
+		{
+			return new OrbitSetOperationNode
+			{
+				Operator = set.Operator,
+				Left = ExpandLiterals(set.Left),
+				Right = ExpandLiterals(set.Right),
+			};
+		}
+
+		if (node is OrbitDateTimeLiteralNode literal)
+		{
+			return ExpandDateTimeLiteral(literal);
+		}
+
+		var unit = (OrbitTimeUnitNode)node;
+		if (unit.Child is not null)
+		{
+			unit.Child = ExpandLiterals(unit.Child);
+		}
+
+		return unit;
+	}
+
+	// A datetime literal becomes a fully-pinned singleton chain from its coarsest present
+	// component down to its finest — Z{2027/6/5T18:00} -> y{2027}[M{6}[d{5}[h{18}[m{0}]]]],
+	// z{12:00} -> h{12}[m{0}]. The deepest component is the leaf, so CalcGranularity reads
+	// the intended granularity for free. Modifiers ride on the chain root.
+	private static OrbitTimeUnitNode ExpandDateTimeLiteral(OrbitDateTimeLiteralNode literal)
+	{
+		var parts = new List<(OrbitUnit Unit, int Value)>();
+		if (literal.Year is { } year)
+		{
+			parts.Add((OrbitUnit.Year, year));
+		}
+
+		if (literal.Month is { } month)
+		{
+			parts.Add((OrbitUnit.Month, month));
+		}
+
+		if (literal.Day is { } day)
+		{
+			parts.Add((OrbitUnit.Day, day));
+		}
+
+		if (literal.Hour is { } hour)
+		{
+			parts.Add((OrbitUnit.Hour, hour));
+		}
+
+		if (literal.Minute is { } minute)
+		{
+			parts.Add((OrbitUnit.Minute, minute));
+		}
+
+		if (literal.Second is { } second)
+		{
+			parts.Add((OrbitUnit.Second, second));
+		}
+
+		if (parts.Count == 0)
+		{
+			throw new FormatException("A datetime literal must carry at least one component.");
+		}
+
+		OrbitTimeUnitNode? chain = null;
+		for (var i = parts.Count - 1; i >= 0; i--)
+		{
+			var (unit, value) = parts[i];
+			chain = new OrbitTimeUnitNode
+			{
+				Unit = unit,
+				Indices = new OrbitIndexSpec { Kind = OrbitIndexKind.List, Values = [value] },
+				Child = chain,
+			};
+		}
+
+		var root = chain!;
+		root.Interval = literal.Interval;
+		if (literal.Limits.Count > 0)
+		{
+			root.Limits.AddRange(literal.Limits);
+		}
+
+		root.Duration = literal.Duration;
+		return root;
 	}
 
 	private OrbitAstNode NormalizeAst(OrbitAstNode node)
@@ -534,7 +634,7 @@ public sealed class OrbitEngine
 			return null;
 		}
 
-		return new OrbitSpanEntry(interval.Value.Start, interval.Value.End);
+		return new OrbitSpanEntry(interval.Value.Start, interval.Value.End, _globalGranularity);
 	}
 
 	// --- Span construction (interval algebra) ---

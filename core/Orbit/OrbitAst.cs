@@ -118,13 +118,45 @@ public abstract class OrbitAstNode
 }
 
 /// <summary>
+/// The modifiers a base node accepts after its body: <c>%interval</c>, limits (<c>*x @x &lt;t &gt;t</c>)
+/// and a span <c>=&lt;dur&gt;</c>. Both <see cref="OrbitTimeUnitNode"/> and <see cref="OrbitDateTimeLiteralNode"/>
+/// carry them, so the parser can apply modifiers to either through this surface.
+/// </summary>
+public interface IOrbitModifiable
+{
+	int? Interval { get; set; }
+	List<OrbitLimitSpec> Limits { get; }
+	List<OrbitDurationPart>? Duration { get; set; }
+}
+
+/// <summary>
 /// A time-unit node with optional indexing, child, interval, limits, and span duration.
 /// </summary>
-public sealed class OrbitTimeUnitNode : OrbitAstNode
+public sealed class OrbitTimeUnitNode : OrbitAstNode, IOrbitModifiable
 {
 	public required OrbitUnit Unit { get; init; }
 	public OrbitIndexSpec? Indices { get; set; }
 	public OrbitAstNode? Child { get; set; }
+	public int? Interval { get; set; }
+	public List<OrbitLimitSpec> Limits { get; } = [];
+	public List<OrbitDurationPart>? Duration { get; set; }
+}
+
+/// <summary>
+/// A literal moment from the <c>z</c>/<c>Z</c> shorthand: <c>z{h:m[:s]}</c> is a daily time-of-day
+/// (no date part), <c>Z{y/M/d[Th:m[:s]]}</c> a fixed calendar datetime. Kept as its own node so a
+/// humanizer can render it directly; the engine expands it into the equivalent nested
+/// <see cref="OrbitTimeUnitNode"/> chain (deepest present component fixes the granularity) before
+/// resolving, so the solver needs no literal awareness.
+/// </summary>
+public sealed class OrbitDateTimeLiteralNode : OrbitAstNode, IOrbitModifiable
+{
+	public int? Year { get; init; }
+	public int? Month { get; init; }
+	public int? Day { get; init; }
+	public int? Hour { get; init; }
+	public int? Minute { get; init; }
+	public int? Second { get; init; }
 	public int? Interval { get; set; }
 	public List<OrbitLimitSpec> Limits { get; } = [];
 	public List<OrbitDurationPart>? Duration { get; set; }

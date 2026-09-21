@@ -10,7 +10,7 @@
 // unexpected input throws, and the caller (humanizeOrbit) then falls back to the full
 // phrase — so exotic notation is never mangled, only ever rendered long.
 
-import { ASTNode, IndexSpec, TimeUnit, TimeUnitNode } from './ast'
+import { ASTNode, DateTimeLiteralNode, IndexSpec, TimeUnit, TimeUnitNode } from './ast'
 import { CalendarSystem } from './calendar'
 
 /** Terse unit words; a trailing 's' is added where a count makes them plural. */
@@ -32,7 +32,26 @@ export class OrbitShortHumanizer {
 		if (node.kind === 'SetOperationNode') {
 			return `${this.serialize(node.left, isRoot)}${SET_JOIN[node.operator]}${this.serialize(node.right, isRoot)}`
 		}
+		if (node.kind === 'DateTimeLiteralNode') {
+			return this.serializeDateTimeLiteral(node, isRoot)
+		}
 		return this.serializeUnit(node, isRoot)
+	}
+
+	/** A z/Z literal, terse: "5 Jun 2027 @18:00" for a dated one, "daily @12:00"/"@12:00" for a time-only one. */
+	private serializeDateTimeLiteral(node: DateTimeLiteralNode, isRoot: boolean): string {
+		const time = node.hour !== undefined
+			? (node.second !== undefined
+				? `${pad(node.hour)}:${pad(node.minute!)}:${pad(node.second)}`
+				: `${pad(node.hour)}:${pad(node.minute!)}`)
+			: null
+
+		if (node.year !== undefined) {
+			const month = this.calendar.getUnitName('M', node.month!, 'y')?.slice(0, 3) ?? `${node.month}`
+			const date = `${node.day} ${month} ${node.year}`
+			return time ? `${date} @${time}` : date
+		}
+		return isRoot ? `daily @${time}` : `@${time}`
 	}
 
 	private serializeUnit(node: TimeUnitNode, isRoot: boolean): string {

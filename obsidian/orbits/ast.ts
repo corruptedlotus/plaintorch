@@ -1,6 +1,10 @@
+// @ts-nocheck
 // Vendored from @pleiades/orbits (orbit-scheduler, packages/node/src/ast.ts).
 // Kept verbatim so it stays in sync with upstream; edit upstream and re-vendor
-// rather than diverging here. See orbits/index.ts for the plugin-facing helpers.
+// rather than diverging here. @ts-nocheck keeps the plugin's strict tsconfig off
+// upstream code (mirrors assets/icons/index.ts).
+
+// types.ts
 
 export type TimeUnit = 'y' | 'M' | 'w' | 'd' | 'h' | 'm' | 's'
 export type SetOperator = '+' | '&' | '^' | '-'
@@ -41,4 +45,24 @@ export interface SetOperationNode {
 	right: ASTNode;
 }
 
-export type ASTNode = TimeUnitNode | SetOperationNode
+// A literal moment written with the `z`/`Z` shorthand: `z{h:m[:s]}` is a daily
+// time-of-day (no date part), `Z{y/M/d[Th:m[:s]]}` a fixed calendar datetime. It is
+// kept as its own node so a humanizer can render it as a clock/date directly; the
+// engine expands it into the equivalent nested TimeUnitNode chain (deepest present
+// component sets the granularity) before resolving, so it needs no solver support.
+// The modifier fields mirror TimeUnitNode: a literal accepts `%interval`, limits and
+// `=<dur>` exactly as the `z` shorthand did.
+export interface DateTimeLiteralNode {
+	kind: 'DateTimeLiteralNode'
+	year?: number;
+	month?: number;
+	day?: number;
+	hour?: number;
+	minute?: number;
+	second?: number;
+	interval?: number;
+	limits: LimitSpec[]
+	duration?: DurationPart[]
+}
+
+export type ASTNode = TimeUnitNode | SetOperationNode | DateTimeLiteralNode

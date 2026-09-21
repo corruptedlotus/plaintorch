@@ -10,12 +10,15 @@ namespace Pleiades.Orbits;
 /// <param name="DurationMinutes">The span length in whole minutes, when the schedule is span-format.</param>
 /// <param name="PeriodEndExclusive">The exclusive end date of the occurrence's period. Super-day granularities
 /// (week/month/year) span multiple days, so multiple Polaris cycles can collide with one instance.</param>
+/// <param name="Granularity">The schedule's finest unit — the accuracy the occurrence stands for (its
+/// don't-care window): a day-granular occurrence occupies a whole day, an hour-granular one an hour, and so on.</param>
 public sealed record OrbitOccurrenceInstance(
 	DateOnly Date,
 	TimeOnly? StartTime,
 	TimeOnly? EndTime,
 	int? DurationMinutes,
-	DateOnly PeriodEndExclusive);
+	DateOnly PeriodEndExclusive,
+	OrbitUnit Granularity);
 
 /// <summary>
 /// The calendar-date view of orbit schedules used by the PLAINTORCH declarative ecosystem (PEP100).
@@ -81,6 +84,23 @@ public static class OrbitDays
 			{
 				Walk(set.Left);
 				Walk(set.Right);
+				return;
+			}
+
+			if (node is OrbitDateTimeLiteralNode literal)
+			{
+				// A date-only Z{y/M/d} is day granularity (allowed); a z/Z carrying a time of day
+				// resolves finer than a day, and a span duration is likewise disallowed here.
+				if (literal.Hour is not null || literal.Minute is not null || literal.Second is not null)
+				{
+					throw new FormatException("This orbit resolves at day granularity; a z/Z time of day is not allowed.");
+				}
+
+				if (literal.Duration is { Count: > 0 })
+				{
+					throw new FormatException("This orbit resolves at day granularity; span durations (=<dur>) are not allowed.");
+				}
+
 				return;
 			}
 
@@ -230,6 +250,11 @@ public static class OrbitDays
 			return HasDuration(set.Left) || HasDuration(set.Right);
 		}
 
+		if (node is OrbitDateTimeLiteralNode literal)
+		{
+			return literal.Duration is { Count: > 0 };
+		}
+
 		var unitNode = (OrbitTimeUnitNode)node;
 		if (unitNode.Duration is { Count: > 0 })
 		{
@@ -274,7 +299,7 @@ public static class OrbitDays
 					var periodEnd = resolution.Granularity is OrbitUnit.Year or OrbitUnit.Month or OrbitUnit.Week
 						? ToDate(calendar.Add(calendar.SnapToStart(resolution.TimestampMs, resolution.Granularity), resolution.Granularity, 1))
 						: date.AddDays(1);
-					occurrences.Add(new OrbitOccurrenceInstance(date, startTime, null, null, periodEnd));
+					occurrences.Add(new OrbitOccurrenceInstance(date, startTime, null, null, periodEnd, resolution.Granularity));
 					break;
 				}
 				case OrbitSpanEntry span:
@@ -296,7 +321,8 @@ public static class OrbitDays
 						startTime,
 						endTime,
 						(int)(span.DurationMs / 60000),
-						periodEnd));
+						periodEnd,
+						span.Granularity));
 					break;
 				}
 			}
