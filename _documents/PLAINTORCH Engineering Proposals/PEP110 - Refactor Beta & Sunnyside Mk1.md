@@ -97,9 +97,13 @@ pure HTTP. The dependencies that require the drain to have *completed* are:
   - 1a. *Done* (`925e0d1`): `ResolveCanonicalPathAsync` composes a child beneath its parent's real folder (resolved by
     the parent's identity); `GetFilePathUnderParentDirectory` + per-shape `GetFilePathInContainer`. Flips repros 1–3.
     (Also fixed a pre-existing test-harness SQLite-pool flake surfaced by the added I/O.)
-  - 1b. The `VaultWriteIntent` outbox table + queue + `VaultEntityWriteDrainer` + startup drain, proven live on the
-    directive write path (create/update/reparent/delete) with crash-recovery tests. Additive; other flows still call
-    `Save*Async` directly during transition.
+  - 1b. *Done*: the `VaultWriteIntent` outbox table (durable, composite-keyed, coalesced) + `VaultWriteQueue`
+    (record-in-transaction / synchronous in-request drain / `DrainPendingAsync` startup recovery) + a generic
+    `PlaintorchMarkdownStorageService.SaveEntityAsync`. Live on the directive **Reconcile** write path
+    (create / update / reparent / workflow-shift / set-icon / set-banner): each records an intent atomically with the
+    entity change, then drains it. `PlaintorchEngine.Initialize*` drains leftover intents. Delete and the other entity
+    types keep calling `Save*Async` directly during transition (Part 2). Tests: `VaultWriteQueueTests` (a write leaves
+    no pending intent; a crash-left intent is recovered by the startup drain).
 - **Part 2 — route the remaining write paths (incentives, onrush, polaris, executive, lore) through the drainer;
   add the synchronous bounded drain + `noteReady` contract; client pending-handling (banners + `createEntityNote`
   poll `resolve-note`); timeout from the user preference.**
@@ -119,6 +123,8 @@ is reconciled by the startup drain); the full suite stays green and stable acros
 
 - 2026-09-21 — Part 1a landed (`925e0d1` on `claude/watcher-reparenting-tests`): placement convergence; repros 1–3
   green; suite 398 passed / 2 skipped, stable across repeated runs.
+- 2026-09-21 — Part 1b landed: `VaultWriteIntent` outbox + `VaultWriteQueue` + startup drain, live on the directive
+  Reconcile write path; crash-recovery test green; suite 400 passed / 2 skipped, stable across repeated runs.
 
 ## Sunnyside Mk1
 

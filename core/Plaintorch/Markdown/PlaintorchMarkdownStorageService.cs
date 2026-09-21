@@ -36,6 +36,16 @@ public sealed class PlaintorchMarkdownStorageService(
 			&& method.GetParameters()[1].ParameterType == typeof(object[]));
 
 	/// <summary>
+	/// Writes the canonical markdown file for any vault-backed entity, reconciling it to its current database state. The
+	/// type-agnostic entry the write drainer (PEP110 Refactor BETA) uses; the per-type methods remain for typed callers.
+	/// </summary>
+	public async Task SaveEntityAsync(object entity, object? previous = null, string? sourcePath = null, bool beginBoundary = false, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		await SaveCanonicalMarkdownAsync(entity, previous, sourcePath, cancellationToken, beginBoundary);
+	}
+
+	/// <summary>
 	/// Writes the canonical markdown file for a directive.
 	/// </summary>
 	public async Task SaveDirectiveAsync(Directive directive, Directive? previous = null, string? sourcePath = null, CancellationToken cancellationToken = default)
