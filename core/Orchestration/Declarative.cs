@@ -19,4 +19,16 @@ public abstract class Declarative : Incentive
 	/// </summary>
 	[MarkdownField("calendar")]
 	public DeclarativeCalendar? Calendar { get; set; }
+
+	/// <summary>
+	/// Gets or sets the denormalized moment of this declarative's next upcoming occurrence — the earliest occurrence
+	/// at or after the last refresh (PEP111), or <see langword="null"/> when the schedule has no upcoming occurrence
+	/// (unscheduled, or a one-off that has passed). A civil (wall-clock) moment, matching <see cref="Epoch.Moment"/>.
+	/// </summary>
+	/// <remarks>
+	/// A read-model cache, not a source of truth: it is recomputed from the schedule state whenever the declarative
+	/// is saved (create, orbit edit, or a frontmatter sync) and advanced by the rolling harden pass as occurrences
+	/// pass, so it is database-only and never written to frontmatter.
+	/// </remarks>
+	public DateTime? NextOccurrence { get; set; }
 }

@@ -41,6 +41,7 @@ public sealed class PlaintorchStatePolicyProcessor(
 		ArgumentNullException.ThrowIfNull(context);
 
 		await ResetChangedScheduleCursorsAsync(context, cancellationToken);
+		await RefreshNextOccurrencesAsync(context, cancellationToken);
 		await EnforceOnrushRulesAsync(context, cancellationToken);
 		var supersededForecasts = await EnforcePolarisRulesAsync(context, cancellationToken);
 		await ApplyObjectiveSettlementRulesAsync(context, cancellationToken);
@@ -100,6 +101,46 @@ public sealed class PlaintorchStatePolicyProcessor(
 			// schedule anchors today so it generates forward with no backfill.
 			var epoch = (orbit is not null ? OrbitDays.FixedLiteralDate(orbit) : null) ?? today;
 			await orbitService.ResetStateAsync(incentive, orbit, epoch, cancellationToken);
+		}
+	}
+
+	/// <summary>
+	/// Refreshes the denormalized <see cref="Declarative.NextOccurrence"/> for every declarative touched in this
+	/// unit of work (PEP111). Riding the save hook — after the cursor reset above — covers every write pathway, so
+	/// creating or editing a schedule (API, CLI, or a frontmatter sync) leaves an accurate cached next occurrence,
+	/// and recomputing here restores the database-only field even when a markdown sync would otherwise null it.
+	/// </summary>
+	private async Task RefreshNextOccurrencesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var fates = context.ChangeTracker.Entries<Fate>()
+			.Where(entry => entry.State is EntityState.Added or EntityState.Modified)
+			.Select(entry => entry.Entity)
+			.ToList();
+		var decrees = context.ChangeTracker.Entries<Decree>()
+			.Where(entry => entry.State is EntityState.Added or EntityState.Modified)
+			.Select(entry => entry.Entity)
+			.ToList();
+		if (fates.Count == 0 && decrees.Count == 0)
+		{
+			return;
+		}
+
+		var orbitService = serviceProvider.GetRequiredService<PlaintorchOrbitService>();
+		var now = DateTime.Now;
+		foreach (var fate in fates)
+		{
+			// A paused fate (cancelled) generates nothing, so it has no upcoming occurrence; an active or opted-out
+			// fate keeps generating and caches its next.
+			fate.NextOccurrence = fate.Status is FateStatus.Active or FateStatus.OptOut && !string.IsNullOrWhiteSpace(fate.Orbit)
+				? await orbitService.ComputeNextOccurrenceAsync(fate, now, cancellationToken)
+				: null;
+		}
+
+		foreach (var decree in decrees)
+		{
+			decree.NextOccurrence = decree.Status == DecreeStatus.Active && !string.IsNullOrWhiteSpace(decree.Orbit)
+				? await orbitService.ComputeNextOccurrenceAsync(decree, now, cancellationToken)
+				: null;
 		}
 	}
 

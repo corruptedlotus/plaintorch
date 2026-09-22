@@ -135,6 +135,14 @@ public sealed class ProximityMaterializationService(
 			{
 				created += await EnsureFateEventiveAsync(fate, occurrence, resolution, cancellationToken) ? 1 : 0;
 			}
+
+			// Advance the denormalized next occurrence as time passes; only touch the row when it actually rolls
+			// forward, so an idle tick writes nothing.
+			var next = await orbitService.ComputeNextOccurrenceAsync(fate, localNow, cancellationToken);
+			if (fate.NextOccurrence != next)
+			{
+				fate.NextOccurrence = next;
+			}
 		}
 
 		// Orbit decrees (non-reflect): seek through now, hardening crossed attentives. Reflect-decrees are
@@ -153,6 +161,12 @@ public sealed class ProximityMaterializationService(
 			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(decree, decree.Orbit!, localNow, cancellationToken))
 			{
 				created += await EnsureDecreeAttentiveAsync(decree, occurrence, cancellationToken) ? 1 : 0;
+			}
+
+			var next = await orbitService.ComputeNextOccurrenceAsync(decree, localNow, cancellationToken);
+			if (decree.NextOccurrence != next)
+			{
+				decree.NextOccurrence = next;
 			}
 		}
 

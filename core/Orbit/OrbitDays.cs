@@ -219,6 +219,33 @@ public static class OrbitDays
 	}
 
 	/// <summary>
+	/// PREVIEW: the moment of the earliest occurrence whose start is at or after <paramref name="from"/>, resolved
+	/// from the schedule state without advancing it, or <see langword="null"/> when none falls within the lookahead
+	/// horizon. This is the denormalized "next occurrence" the declarative caches.
+	/// </summary>
+	public static DateTime? NextOccurrence(string state, DateTime from, IOrbitCalendar calendar)
+	{
+		var fromDay = DateOnly.FromDateTime(from);
+		// A year-plus horizon catches every occurrence up to a yearly cadence; a rarer super-annual schedule simply
+		// has no cached next occurrence until it comes closer.
+		var occurrences = PreviewOccurrencesWithin(state, fromDay, fromDay.AddDays(NextOccurrenceHorizonDays), calendar);
+		DateTime? earliest = null;
+		foreach (var occurrence in occurrences)
+		{
+			var moment = occurrence.Date.ToDateTime(occurrence.StartTime ?? TimeOnly.MinValue);
+			if (moment >= from && (earliest is null || moment < earliest))
+			{
+				earliest = moment;
+			}
+		}
+
+		return earliest;
+	}
+
+	/// <summary>The lookahead used when caching a declarative's next occurrence: a little over a year.</summary>
+	private const int NextOccurrenceHorizonDays = 400;
+
+	/// <summary>
 	/// PREVIEW: whether the schedule has an occurrence whose period covers the given day. This is the
 	/// day-granularity match rule (used, for example, to test a reflective decree's orbit against the day a
 	/// Polaris cycle started). Super-day periods cover every day they span.

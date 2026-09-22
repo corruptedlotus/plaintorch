@@ -208,6 +208,23 @@ public sealed class PlaintorchOrbitService(PlainfraContext context)
 	}
 
 	/// <summary>
+	/// Computes the declarative's next upcoming occurrence at or after <paramref name="from"/> from its persisted
+	/// schedule state, without advancing it — the value cached in <see cref="Declarative.NextOccurrence"/>. Returns
+	/// <see langword="null"/> when the declarative has no schedule state (unscheduled) or no occurrence within the
+	/// lookahead horizon. Sees a state added earlier in the current unit of work, so it is correct mid-save.
+	/// </summary>
+	public async Task<DateTime?> ComputeNextOccurrenceAsync(Incentive incentive, DateTime from, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(incentive);
+		var tracked = context.ChangeTracker.Entries<OrbitScheduleState>()
+			.FirstOrDefault(entry => entry.State != Microsoft.EntityFrameworkCore.EntityState.Deleted
+				&& entry.Entity.IncentiveId == incentive.Id)?.Entity;
+		var state = tracked
+			?? await context.OrbitScheduleStates.FirstOrDefaultAsync(item => item.IncentiveId == incentive.Id, cancellationToken);
+		return state is null ? null : OrbitDays.NextOccurrence(state.StateJson, from, ResolveCalendar(incentive));
+	}
+
+	/// <summary>
 	/// Determines whether a directive lineage belongs to a Moonlight (lunar) hierarchy — i.e. the directive
 	/// itself or any ancestor is a lunar directive.
 	/// </summary>
