@@ -134,10 +134,23 @@ pure HTTP. The dependencies that require the drain to have *completed* are:
   rename renames the self-named folder/file in place instead of leaving a stale, self-reverting name; (repro 5) the
   discovery orphan pass skips a begun boundary whose identity is still asserted by a scanned file — a move within the
   vault is not a deletion — so a note relocated inside its parent survives the sweep. All five pinned repros are green.
-- **Part 4 — deny the core direct file writes:** delete `SaveCanonicalMarkdownAsync`'s in-request invocation from the
-  API path and the `IsReparented`/`previous`-clone reconstruction; fold `PlaintorchEngine.WriteVaultMarkdown` in;
-  consolidate the stray direct FS *readers* (note-resolver frontmatter fallback, media, direct dir-name readers)
-  behind a watcher read facade (the read-side half of "watcher as the sole vault-IO interface").
+- **Part 4 — deny the core direct file writes.** *Done.*
+  - **Second writer removed.** `PlaintorchEngine.WriteVaultMarkdown`/`WriteMarkdown` and the create/save methods that
+    reached them were dead code (no callers — the CLI `Program.cs` uses only `InitializeVault*` + `GetStatusReport`),
+    so the engine is reduced to vault activation and holds no file writer. The API path (through the queue) is now the
+    only way an entity mutation reaches a markdown file.
+  - **Reparent detection no longer reconstructs from a `previous` clone.** `IsReparentedFromFile` derives it from the
+    existing file's own location (the same containment resolution the watcher reads on the way in) versus the entity's
+    current declared parent, so a write that omits a `previous` clone still reparents correctly — the fragility the
+    clone-based `IsReparented` carried is gone. `previous` now survives only as (a) an optional path hint for the one
+    case a same-identity scan cannot cover — the onrush placeholder→real **id change** — and (b) audit "previous"
+    detail; it no longer drives placement. (Verified against the full reparent/rename/onrush/survival/relocation suites.)
+  - **Read side — assessed; a facade is deliberately not built.** The "stray direct readers" were already consolidated
+    by REFACTOR Alpha: containment is one walk-up (`VaultWatcherPathPolicy.TryResolveContainingDirectiveId`, which
+    `IsReparentedFromFile` now reuses) and `MarkdownFileLocator.TryGetContainingOnrushSprintId` is the single onrush
+    reader. The remaining direct reads (note resolution, media) are localized, legitimate domain reads over different
+    concerns; a unifying "watcher read facade" over them would be an abstraction without payoff. The read-side goal is
+    already met by the existing single-owner resolvers.
 
 ### Acceptance criteria
 
@@ -162,6 +175,10 @@ repeated (parallel) runs — **402 passed / 0 skipped, stable**.
   109 tests green; plugin builds.
 - 2026-09-22 — Part 2b delete/Remove landed: deletes route through `RecordRemoveAsync` + `DrainRemoveAsync`; startup
   drain recovers a crashed remove. Four API services shed their direct storage dependency. Suite 417 passed / 0 skipped.
+- 2026-09-22 — Part 4 landed: the second writer (`PlaintorchEngine.WriteVaultMarkdown` + dead create/save methods) is
+  removed; reparent detection is file-based (`IsReparentedFromFile`), no longer reconstructed from a `previous` clone;
+  the read facade was assessed and deliberately not built (already consolidated). Suite 417 passed / 0 skipped, stable.
+  **Refactor BETA is complete.**
 
 ## Sunnyside Mk1
 
