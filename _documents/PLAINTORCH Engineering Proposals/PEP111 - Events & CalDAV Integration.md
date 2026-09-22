@@ -80,8 +80,8 @@ authoritative so a round-trip through an external client can't clobber a floatin
 
 ### Sub-chunk sequence & status
 
-The core (C#) refactor is **complete and green (405 tests)** on `claude/temporal-model`. Only the client-side
-sweep (2g) remains.
+The refactor is **complete**: the core (C#) side is green (405 tests) and the client (SDK + Obsidian plugin)
+sweep (2g) has landed — SDK typecheck + 106 vitest tests green, plugin esbuild production build green.
 
 1. Orbit engine — `Z`/`z` literal, span granularity, floating support. **Done (Phase 1, `5ffdf5b`).**
 2a. `Declarative` base + calendar-as-data. **Done (`a1d91d4`).**
@@ -96,10 +96,17 @@ sweep (2g) remains.
    *(PEP116 user preferences merged in at `e007e73`; the temporal branch's OptOut toggle was reconciled onto
    `AgendaPreferences.AutoMaterialiseOptOut`.)*
 
-2g. **Contracts/SDK sweep + UI restructure — PENDING (the only remaining work).** The TS SDK (`sdk.ts`) and the
-   Obsidian plugin mirror the C# contracts and have drifted across 2c–2f. The C# wire shapes to mirror live in
-   `core/Plaintorch/Api/Transport/PlaintorchApiTransportContracts.cs` and `.../Api/Contracts/PlaintorchApiContracts.cs`.
-   Sweep inventory:
+2g. **Contracts/SDK sweep + UI restructure — Done (SDK `42a4f86`, plugin `19f70c1`).** The TS SDK (`sdk.ts`)
+   and the Obsidian plugin now mirror the unified C# contracts. Highlights: occurrences carry an owned `Epoch`
+   (with server-computed `date`/`isAllDay`/`timeOfDay`/`endMoment`) and no allocation; `Attentive` is unbound-only;
+   `Fate` is orbit-only with `calendar`/`nextOccurrence`; `Executive.incentive` is an objective **or** decree
+   (`incentiveKind`/`isDecreeIncentive`/`isObjectiveIncentive` narrow it); `PolarisDecreeAdd`/`addDecreeExecutive`
+   replace the attentive-add path; owned `Due` on Objective + Checkpoint. In the plugin, `ObjectiveItemExecutive`
+   + `DecreeItemAttentive` collapsed into one `IncentiveItemExecutive`, `polarisActivity` reduced to `Executive`,
+   the fate schedule controls fold a fixed date/window into a `Z{…}` literal (`fateScheduleToOrbit`, validated
+   against the vendored orbit parser), and the attentive editor dropped allocation. The C# wire shapes it mirrors
+   live in `core/Plaintorch/Api/Transport/PlaintorchApiTransportContracts.cs` and
+   `.../Api/Contracts/PlaintorchApiContracts.cs`. Sweep inventory (as delivered):
    - **Fate**: no more `date`/`startTime`/`endTime`/`eventDuration`; orbit-only. A one-off is a `Z{y/M/d[Th:m]}`
      literal (with a `=<dur>` span for a window). `FatePlan` keeps the one-off fields as *create sugar* (folded to
      `Z{…}` server-side); `FateUpdate` is orbit-only (reschedule = new orbit).
