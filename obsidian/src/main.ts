@@ -3,7 +3,6 @@ import { PlaintorchBriefingView, PLAINTORCH_BRIEFING_VIEW_TYPE } from "./briefin
 import { PlaintorchCanvasView, PLAINTORCH_CANVAS_VIEW_TYPE } from "./canvas/PlaintorchCanvasView"
 import { PlaintorchGlobalFileView, PLAINTORCH_GLOBAL_VIEW_TYPE } from "./canvas/PlaintorchGlobalFileView"
 import { PageBannerRenderer } from "./banner/PageBannerRenderer"
-import { PreferenceSettingTab } from "./settings/PreferenceSettingTab"
 
 import 'components'
 import { GLOBAL_CONTEXT_EXTENSION } from "components"
@@ -119,14 +118,7 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 			}
 		})
 
-		this.addSettingTab(new PreferenceSettingTab(this.app, this))
-
 		void this.startChangeFeed()
-	}
-
-	/** Resolves the shared node core client, loading it on first use. */
-	public getCoreClient(): Promise<PlaintorchNodeCoreClient> {
-		return getPlaintorchNodeCoreClient()
 	}
 
 	public override onunload(): void {
