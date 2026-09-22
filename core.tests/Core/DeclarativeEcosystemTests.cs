@@ -353,7 +353,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 			.CreateStandaloneAsync("Deliver", cancellationToken: cancellationToken));
 		await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IObjectiveApi>()
-			.UpdateAsync(objective.Id, new ObjectiveUpdate(Due: today), cancellationToken));
+			.UpdateAsync(objective.Id, new ObjectiveUpdate(Due: Due.On(today)), cancellationToken));
 		var decree = await WithApi(api => api.CreateDecreeAsync(new DecreePlan("Sweep"), cancellationToken));
 		await WithApi(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, today), new AttentiveUpdate(), cancellationToken));
 

@@ -330,6 +330,13 @@ public class PlainfraContext : DbContext
 		modelBuilder.Entity<Eventive>()
 			.OwnsOne(x => x.Epoch, epoch => epoch.Property(e => e.Granularity).HasConversion<string>());
 
+		// A deadline is an optional owned value: its Due_Moment/Due_TimeZone columns live on the owner's table and
+		// are all-null when there is no due.
+		modelBuilder.Entity<Objective>().OwnsOne(x => x.Due);
+		modelBuilder.Entity<Objective>().Navigation(x => x.Due).IsRequired(false);
+		modelBuilder.Entity<Checkpoint>().OwnsOne(x => x.Due);
+		modelBuilder.Entity<Checkpoint>().Navigation(x => x.Due).IsRequired(false);
+
 		// Eventive owners cascade: deleting a fate or an objective removes its materialized occurrences.
 		modelBuilder.Entity<Eventive>()
 			.HasOne(x => x.Fate)

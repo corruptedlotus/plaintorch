@@ -170,23 +170,25 @@ public sealed class ProximityMaterializationService(
 			}
 		}
 
-		// Due objectives whose due date has arrived.
+		// Due objectives whose due moment has arrived. An objective has a single due occurrence, so the presence of
+		// any eventive for it means it is already hardened.
+		var tomorrowStart = today.AddDays(1).ToDateTime(TimeOnly.MinValue);
 		var dueObjectives = await context.Objectives
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
-			.Where(objective => objective.Due != null && objective.Due <= today
+			.Where(objective => objective.Due != null && objective.Due.Moment < tomorrowStart
 				&& objective.Status != ObjectiveStatus.Done
 				&& objective.Status != ObjectiveStatus.Archived
 				&& objective.Status != ObjectiveStatus.Failed
-				&& !context.Eventives.Any(eventive => eventive.ObjectiveId == objective.Id && eventive.RecurrenceDate == objective.Due))
+				&& !context.Eventives.Any(eventive => eventive.ObjectiveId == objective.Id))
 			.ToListAsync(cancellationToken);
 		foreach (var objective in dueObjectives)
 		{
 			context.Eventives.Add(new Eventive
 			{
 				ObjectiveId = objective.Id,
-				Epoch = Epoch.From(objective.Due!.Value, timeOfDay: null, OrbitUnit.Day),
-				RecurrenceDate = objective.Due!.Value,
+				Epoch = Epoch.From(objective.Due!.Date, timeOfDay: null, OrbitUnit.Day),
+				RecurrenceDate = objective.Due!.Date,
 			});
 			created++;
 		}

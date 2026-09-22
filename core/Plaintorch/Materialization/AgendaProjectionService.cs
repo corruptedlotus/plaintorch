@@ -88,7 +88,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 			.IgnoreAutoIncludes()
 			.Include(objective => objective.Directive)
 			.Where(objective => objective.Due != null
-				&& objective.Due >= startInclusive && objective.Due <= endInclusive
+				&& objective.Due.Moment >= windowStart && objective.Due.Moment < windowEndExclusive
 				&& objective.Status != ObjectiveStatus.Done
 				&& objective.Status != ObjectiveStatus.Archived
 				&& objective.Status != ObjectiveStatus.Failed)
@@ -99,8 +99,8 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 			{
 				ObjectiveId = objective.Id,
 				Objective = objective,
-				Epoch = Epoch.From(objective.Due!.Value, timeOfDay: null, OrbitUnit.Day),
-				RecurrenceDate = objective.Due!.Value,
+				Epoch = Epoch.From(objective.Due!.Date, timeOfDay: null, OrbitUnit.Day),
+				RecurrenceDate = objective.Due!.Date,
 			};
 			AddEventive(eventives, eventiveKeys, eventive);
 		}

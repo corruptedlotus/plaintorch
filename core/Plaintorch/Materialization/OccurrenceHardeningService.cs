@@ -229,7 +229,7 @@ public sealed class OccurrenceHardeningService(
 	private async Task<(Eventive Eventive, bool Created)> EnsureObjectiveEventiveIntoContextAsync(Objective objective, EventiveMaterialization request, CancellationToken cancellationToken)
 	{
 		var date = request.Date
-			?? objective.Due
+			?? objective.Due?.Date
 			?? throw new InvalidOperationException($"Objective '{objective.Id}' has no due date; supply a date to materialize its eventive.");
 
 		var existing = await FindEventiveAsync(objective.Id, date, null, cancellationToken);

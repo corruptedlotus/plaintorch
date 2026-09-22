@@ -151,7 +151,7 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		var objective = await Vault.WithScopeAsync(s => s.GetRequiredService<IObjectiveApi>()
 			.CreateStandaloneAsync("Overdue deliverable", cancellationToken: Ct));
 		await Vault.WithScopeAsync(s => s.GetRequiredService<IObjectiveApi>()
-			.UpdateAsync(objective.Id, new ObjectiveUpdate(Due: pastDue), Ct));
+			.UpdateAsync(objective.Id, new ObjectiveUpdate(Due: Due.On(pastDue)), Ct));
 
 		await HardenNowAsync();
 

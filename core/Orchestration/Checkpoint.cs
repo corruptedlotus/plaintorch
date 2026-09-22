@@ -17,6 +17,13 @@ namespace Pleiades.Orchestration;
 public sealed class Checkpoint : PuckNamedEntity
 {
 	/// <summary>
+	/// Gets or sets the optional deadline moment (PEP111). When set, the Celestron toll is suppressed until the due
+	/// arrives — the checkpoint can unlock without paying while there is still time — and only owed once the due
+	/// moment has passed. <see langword="null"/> means the toll (if any) is always owed. Owned by the checkpoint.
+	/// </summary>
+	public Due? Due { get; set; }
+
+	/// <summary>
 	/// Gets or sets the optional Celestron toll that must be paid before the checkpoint can unlock. A
 	/// <see langword="null"/> value means the checkpoint has no toll.
 	/// </summary>

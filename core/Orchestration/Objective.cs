@@ -35,10 +35,11 @@ public sealed class Objective : Incentive
 	public OnrushSprint? OnrushSprint { get; set; }
 
 	/// <summary>
-	/// Gets or sets the optional due date.
+	/// Gets or sets the optional deadline — a moment plus zone (PEP111), not just a date. Owned by the objective
+	/// (EF <c>OwnsOne</c>) and round-tripped to one compact <c>due:</c> frontmatter field.
 	/// </summary>
 	[MarkdownField("due")]
-	public DateOnly? Due { get; set; }
+	public Due? Due { get; set; }
 
 	/// <summary>
 	/// Gets or sets the objective college.

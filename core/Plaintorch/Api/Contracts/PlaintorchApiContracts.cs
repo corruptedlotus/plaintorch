@@ -250,7 +250,7 @@ public sealed record ObjectiveUpdate(
 	string? OnrushSprintId = null,
 	ObjectiveCollege? College = null,
 	int? CelestronValue = null,
-	Optional<DateOnly?> Due = default,
+	Optional<Due?> Due = default,
 	Optional<string?> ParentIncentiveId = default);
 
 /// <summary>
