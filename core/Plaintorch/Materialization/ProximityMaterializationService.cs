@@ -232,17 +232,14 @@ public sealed class ProximityMaterializationService(
 			PeriodEndDate = occurrence.PeriodEndExclusive > occurrence.Date.AddDays(1)
 				? occurrence.PeriodEndExclusive
 				: null,
-			Estimation = decree.DefaultLength,
 		};
-		attentive.Normalize();
 		context.Attentives.Add(attentive);
 		return true;
 	}
 
 	/// <summary>
 	/// Ensures a fate's eventive exists for an orbit occurrence, returning whether one was created. Only a span
-	/// occurrence carries a temporal span; a granular occurrence fills its granularity window (null span). The span
-	/// minutes also seed the allocation (until allocation moves to the executive).
+	/// occurrence carries a temporal span; a granular occurrence fills its granularity window (null span).
 	/// </summary>
 	private Task<bool> EnsureFateEventiveAsync(Fate fate, OrbitOccurrenceInstance occurrence, EventiveResolution resolution, CancellationToken cancellationToken)
 	{
@@ -252,12 +249,11 @@ public sealed class ProximityMaterializationService(
 			occurrence.StartTime,
 			occurrence.Granularity,
 			occurrence.DurationMinutes,
-			occurrence.DurationMinutes,
 			resolution,
 			cancellationToken);
 	}
 
-	private async Task<bool> EnsureFateEventiveCoreAsync(Fate fate, DateOnly day, TimeOnly? startTime, OrbitUnit granularity, int? spanMinutes, int? estimation, EventiveResolution resolution, CancellationToken cancellationToken)
+	private async Task<bool> EnsureFateEventiveCoreAsync(Fate fate, DateOnly day, TimeOnly? startTime, OrbitUnit granularity, int? spanMinutes, EventiveResolution resolution, CancellationToken cancellationToken)
 	{
 		// PEP101: a locked whole-fate pauses orbit generation; a locked single occurrence blocks just itself.
 		if (await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, day, startTime, cancellationToken))
@@ -279,10 +275,8 @@ public sealed class ProximityMaterializationService(
 			Epoch = Epoch.From(day, startTime, granularity, spanMinutes),
 			RecurrenceDate = day,
 			RecurrenceTime = startTime,
-			Estimation = estimation,
 			Resolution = resolution,
 		};
-		eventive.Normalize();
 		context.Eventives.Add(eventive);
 		return true;
 	}

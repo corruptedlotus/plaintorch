@@ -211,7 +211,6 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		var occurrenceRef = new EventiveOccurrenceRef(fate.Id, new DateOnly(2026, 8, 1), new TimeOnly(19, 0));
 		var eventive = await WithApi(api => api.UpdateEventiveAsync(occurrenceRef, new EventiveUpdate(), cancellationToken));
 		Assert.Equal(new DateOnly(2026, 8, 1), eventive.Epoch.Date);
-		Assert.Equal(120, eventive.Estimation);
 		Assert.Equal(EventiveResolution.Pending, eventive.Resolution);
 
 		// Interacting with the same occurrence returns the existing instance instead of duplicating it.
@@ -221,7 +220,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		var decree = await WithApi(api => api.CreateDecreeAsync(new DecreePlan("Journaling", DefaultLength: 15), cancellationToken));
 		var attentiveRef = new AttentiveOccurrenceRef(decree.Id, new DateOnly(2026, 8, 1));
 		var attentive = await WithApi(api => api.UpdateAttentiveAsync(attentiveRef, new AttentiveUpdate(), cancellationToken));
-		Assert.Equal(15, attentive.Estimation);
+		Assert.Equal(decree.Id, attentive.DecreeId);
 
 		// Eventives can always be moved because they are never Polaris-bound. Addressed by recurrence-id, which
 		// stays stable across the move.
@@ -374,7 +373,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		var inclusions = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
 			.GetInclusionsAsync(null, cancellationToken));
-		Assert.Contains(inclusions.Eventives, item => item.FateId == fate.Id && item.Estimation == 30);
+		Assert.Contains(inclusions.Eventives, item => item.FateId == fate.Id);
 		Assert.Contains(inclusions.Eventives, item => item.ObjectiveId == objective.Id);
 		Assert.Contains(inclusions.Attentives, item => item.DecreeId == decree.Id);
 	}

@@ -113,11 +113,7 @@ public sealed class OccurrenceHardeningService(
 			PeriodEndDate = occurrence is not null && occurrence.PeriodEndExclusive > occurrence.Date.AddDays(1)
 				? occurrence.PeriodEndExclusive
 				: null,
-			Estimation = request.Estimation ?? decree.DefaultLength,
-			Minimum = request.Minimum,
-			Maximum = request.Maximum,
 		};
-		attentive.Normalize();
 		context.Attentives.Add(attentive);
 		return attentive;
 	}
@@ -215,7 +211,6 @@ public sealed class OccurrenceHardeningService(
 
 		var endTime = occurrence?.EndTime ?? request.EndTime;
 		// Temporal span (Epoch.Duration): the orbit span or explicit start/end window, null for an all-day occurrence.
-		// The span minutes also seed the allocation (until allocation moves to the executive).
 		var spanMinutes = occurrence?.DurationMinutes ?? OccurrenceDurations.SpanMinutes(startTime, endTime);
 		var granularity = occurrence?.Granularity ?? (startTime is null ? OrbitUnit.Day : OrbitUnit.Minute);
 
@@ -225,10 +220,8 @@ public sealed class OccurrenceHardeningService(
 			Epoch = Epoch.From(date, startTime, granularity, spanMinutes),
 			RecurrenceDate = date,
 			RecurrenceTime = startTime,
-			Estimation = spanMinutes,
 			Resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending,
 		};
-		eventive.Normalize();
 		context.Eventives.Add(eventive);
 		return (eventive, true);
 	}
@@ -252,7 +245,6 @@ public sealed class OccurrenceHardeningService(
 			RecurrenceDate = date,
 			RecurrenceTime = request.StartTime,
 		};
-		eventive.Normalize();
 		context.Eventives.Add(eventive);
 		return (eventive, true);
 	}

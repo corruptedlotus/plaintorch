@@ -12,7 +12,7 @@ namespace Pleiades.Orchestration;
 /// Because they are unbound, eventives can be moved (their time specification changed). They carry no
 /// Celestron reward.
 /// </remarks>
-public sealed class Eventive : ITimeAllocated, IOccurrenceInstance
+public sealed class Eventive : IOccurrenceInstance
 {
 	[Key]
 	/// <summary>
@@ -78,20 +78,4 @@ public sealed class Eventive : ITimeAllocated, IOccurrenceInstance
 	/// an occurrence that simply happened stays <see cref="EventiveResolution.Pending"/>.
 	/// </summary>
 	public EventiveResolution Resolution { get; set; } = EventiveResolution.Pending;
-
-	/// <summary>
-	/// Gets or sets the optional primary time allocation, expressed as a whole-minute working time unit.
-	/// Filled from the owning fate's event duration.
-	/// </summary>
-	public int? Estimation { get; set; }
-
-	/// <summary>
-	/// Gets or sets the optional minimum time allocation, expressed as a whole-minute working time unit.
-	/// </summary>
-	public int? Minimum { get; set; }
-
-	/// <summary>
-	/// Gets or sets the optional maximum time allocation, expressed as a whole-minute working time unit.
-	/// </summary>
-	public int? Maximum { get; set; }
 }

@@ -78,7 +78,6 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 					occurrence.StartTime,
 					occurrence.Granularity,
 					occurrence.DurationMinutes,
-					occurrence.DurationMinutes,
 					resolution));
 			}
 		}
@@ -103,7 +102,6 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 				Epoch = Epoch.From(objective.Due!.Value, timeOfDay: null, OrbitUnit.Day),
 				RecurrenceDate = objective.Due!.Value,
 			};
-			eventive.Normalize();
 			AddEventive(eventives, eventiveKeys, eventive);
 		}
 
@@ -132,9 +130,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 					RecurrenceDate = occurrence.Date,
 					RecurrenceTime = occurrence.StartTime,
 					PeriodEndDate = occurrence.PeriodEndExclusive > occurrence.Date.AddDays(1) ? occurrence.PeriodEndExclusive : null,
-					Estimation = decree.DefaultLength,
 				};
-				attentive.Normalize();
 				AddAttentive(attentives, attentiveKeys, attentive);
 			}
 		}
@@ -144,20 +140,17 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		return new AgendaProjection(eventives, attentives);
 	}
 
-	private static Eventive ProjectFateEventive(Fate fate, DateOnly date, TimeOnly? startTime, OrbitUnit granularity, int? spanMinutes, int? estimation, EventiveResolution resolution)
+	private static Eventive ProjectFateEventive(Fate fate, DateOnly date, TimeOnly? startTime, OrbitUnit granularity, int? spanMinutes, EventiveResolution resolution)
 	{
-		var eventive = new Eventive
+		return new Eventive
 		{
 			FateId = fate.Id,
 			Fate = fate,
 			Epoch = Epoch.From(date, startTime, granularity, spanMinutes),
 			RecurrenceDate = date,
 			RecurrenceTime = startTime,
-			Estimation = estimation,
 			Resolution = resolution,
 		};
-		eventive.Normalize();
-		return eventive;
 	}
 
 	private static void AddEventive(List<Eventive> list, HashSet<(string, DateOnly, TimeOnly?)> keys, Eventive eventive)

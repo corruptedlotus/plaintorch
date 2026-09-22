@@ -140,7 +140,7 @@ public sealed class RollingMaterializationTests : VaultTestBase
 
 		var eventive = await Vault.QueryAsync(context => context.Eventives
 			.SingleAsync(item => item.FateId == fate.Id && item.RecurrenceDate == pastDay, Ct));
-		Assert.Equal(30, eventive.Estimation);
+		Assert.Equal(pastDay, eventive.RecurrenceDate);
 	}
 
 	[Fact]

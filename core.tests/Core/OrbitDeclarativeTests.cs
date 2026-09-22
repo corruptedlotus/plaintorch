@@ -89,7 +89,7 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 			.GetRequiredService<IPolarisCycleApi>()
 			.GetInclusionsAsync(null, cancellationToken));
 		Assert.Contains(inclusions.Eventives, item => item.FateId == fate.Id && item.Epoch.Date == today);
-		Assert.Contains(inclusions.Attentives, item => item.DecreeId == decree.Id && item.Epoch.Date == today && item.Estimation == 20);
+		Assert.Contains(inclusions.Attentives, item => item.DecreeId == decree.Id && item.Epoch.Date == today);
 
 		var persistedEventives = await Vault.QueryAsync(context => context.Eventives.CountAsync(item => item.FateId == fate.Id, cancellationToken));
 		Assert.Equal(0, persistedEventives);

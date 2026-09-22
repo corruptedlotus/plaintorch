@@ -398,7 +398,6 @@ public sealed class DeclarativeApiService(
 			eventive.Resolution = update.Resolution.Value;
 		}
 
-		ApplyAllocations(eventive, update.Estimation, update.Minimum, update.Maximum);
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
@@ -445,8 +444,6 @@ public sealed class DeclarativeApiService(
 			attentive.Resolution = update.Resolution.Value;
 		}
 
-		ApplyAllocations(attentive, update.Estimation, update.Minimum, update.Maximum);
-
 		if (update.AffinityTimeframeId.IsSet)
 		{
 			if (update.AffinityTimeframeId.Value is long timeframeId
@@ -467,27 +464,6 @@ public sealed class DeclarativeApiService(
 			details: new { attentive.DecreeId, resolution = attentive.Resolution.ToString(), date = attentive.Epoch.Date.ToString("yyyy-MM-dd") },
 			cancellationToken: cancellationToken);
 		return attentive;
-	}
-
-	private static void ApplyAllocations(ITimeAllocated record, Optional<int?> estimation, Optional<int?> minimum, Optional<int?> maximum)
-	{
-		// A set field applies its value — including null, which clears the allocation; an unset field is left alone.
-		if (estimation.IsSet)
-		{
-			record.Estimation = estimation.Value;
-		}
-
-		if (minimum.IsSet)
-		{
-			record.Minimum = minimum.Value;
-		}
-
-		if (maximum.IsSet)
-		{
-			record.Maximum = maximum.Value;
-		}
-
-		record.Normalize();
 	}
 
 	private async Task ApplyParentAsync(Incentive child, string parentIncentiveId, CancellationToken cancellationToken)

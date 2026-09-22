@@ -483,21 +483,15 @@ public sealed record EventiveUpdate(
 	DateOnly? Date = null,
 	Optional<TimeOnly?> StartTime = default,
 	Optional<TimeOnly?> EndTime = default,
-	EventiveResolution? Resolution = null,
-	Optional<int?> Estimation = default,
-	Optional<int?> Minimum = default,
-	Optional<int?> Maximum = default);
+	EventiveResolution? Resolution = null);
 
 /// <summary>
 /// Represents the caller-supplied occurrence details when interacting with a decree to materialize an
-/// unbound attentive (PEP100). The time allocation defaults to the decree's default length.
+/// unbound attentive (PEP111). Occurrences carry no time allocation — allocation lives on the executive.
 /// </summary>
 public sealed record AttentiveMaterialization(
 	DateOnly? Date = null,
-	TimeOnly? Time = null,
-	int? Estimation = null,
-	int? Minimum = null,
-	int? Maximum = null);
+	TimeOnly? Time = null);
 
 /// <summary>
 /// Represents a mutable update to an attentive occurrence. An attentive is always unbound (PEP111), so
@@ -507,9 +501,6 @@ public sealed record AttentiveUpdate(
 	DateOnly? Date = null,
 	Optional<TimeOnly?> Time = default,
 	AttentiveResolution? Resolution = null,
-	Optional<int?> Estimation = default,
-	Optional<int?> Minimum = default,
-	Optional<int?> Maximum = default,
 	Optional<long?> AffinityTimeframeId = default);
 
 /// <summary>

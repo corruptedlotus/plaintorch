@@ -12,7 +12,7 @@ namespace Pleiades.Orchestration;
 /// An attentive can be done, skipped, or rescheduled (delayed). Its Celestron reward is predefined on the owning
 /// decree and granted on each execution.
 /// </remarks>
-public sealed class Attentive : ITimeAllocated, IOccurrenceInstance
+public sealed class Attentive : IOccurrenceInstance
 {
 	[Key]
 	/// <summary>
@@ -78,22 +78,6 @@ public sealed class Attentive : ITimeAllocated, IOccurrenceInstance
 	/// This is cleared when the attentive is no longer done.
 	/// </summary>
 	public DateTimeOffset? ResolvedOn { get; set; }
-
-	/// <summary>
-	/// Gets or sets the optional primary time allocation, expressed as a whole-minute working time unit.
-	/// Seeded from the owning decree's default length; overridable per instance.
-	/// </summary>
-	public int? Estimation { get; set; }
-
-	/// <summary>
-	/// Gets or sets the optional minimum time allocation, expressed as a whole-minute working time unit.
-	/// </summary>
-	public int? Minimum { get; set; }
-
-	/// <summary>
-	/// Gets or sets the optional maximum time allocation, expressed as a whole-minute working time unit.
-	/// </summary>
-	public int? Maximum { get; set; }
 
 	/// <summary>
 	/// Gets or sets the optional timeframe this attentive is affined to. Seeded from the owning decree's college

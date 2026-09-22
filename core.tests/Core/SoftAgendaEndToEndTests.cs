@@ -48,7 +48,6 @@ public sealed class SoftAgendaEndToEndTests : VaultTestBase
 
 		var eventive = await Vault.QueryAsync(context => context.Eventives.SingleAsync(item => item.FateId == fate.Id && item.RecurrenceDate == slot, Ct));
 		Assert.Equal(new TimeOnly(14, 0), eventive.RecurrenceTime);
-		Assert.Equal(45, eventive.Estimation);
 
 		// The now-real, still-pending source occurrence gates the target.
 		var lockView = await Deps(api => api.GetLockAsync(downstream.Id, Ct));
