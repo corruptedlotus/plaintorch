@@ -16,6 +16,7 @@ namespace Pleiades.Plaintorch.Api.Services;
 public sealed class LorePageApiService(
 	PlainfraContext context,
 	PlaintorchMarkdownStorageService markdownStorageService,
+	VaultWriteQueue writeQueue,
 	MarkdownFileLocator fileLocator,
 	VaultLayout layout,
 	VaultTemporalDataService temporalDataService,
@@ -97,8 +98,7 @@ public sealed class LorePageApiService(
 		lorePage.RelativePath = ComposeRelativePath(lorePage, parent);
 
 		context.LorePages.Add(lorePage);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveLorePageAsync(lorePage, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(lorePage, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "lore.create", subject: lorePage, details: new { parent = parent?.Id, level }, cancellationToken: cancellationToken);
 		return lorePage;
 	}
@@ -142,10 +142,9 @@ public sealed class LorePageApiService(
 			lorePage.RelativePath = ComposeRelativePath(lorePage, parent);
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
 		// Lore is synced, so the change is written back through the entity's own markdown file. Passing the previous
 		// snapshot lets the storage layer relocate the self-named directory when the title (and therefore folder) changed.
-		await markdownStorageService.SaveLorePageAsync(lorePage, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(lorePage, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "lore.update", subject: lorePage, details: new { previousTitle = previous.Title }, cancellationToken: cancellationToken);
 		return lorePage;
 	}

@@ -19,6 +19,7 @@ public sealed class OnrushSprintApiService(
 	PuckTokenizer puckTokenizer,
 	PlaintorchStateService stateService,
 	PlaintorchMarkdownStorageService markdownFileService,
+	VaultWriteQueue writeQueue,
 	VaultTemporalDataService temporalDataService,
 	VaultAuditLogService auditLogService) : IOnrushSprintApi
 {
@@ -38,8 +39,7 @@ public sealed class OnrushSprintApiService(
 
 		context.OnrushSprints.Add(sprint);
 		AttachMilestone(sprint);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveOnrushSprintAsync(sprint, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(sprint, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.plan", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
@@ -126,16 +126,14 @@ public sealed class OnrushSprintApiService(
 			}
 
 			context.OnrushSprints.Remove(sprint);
-			await context.SaveChangesAsync(cancellationToken);
-			await markdownFileService.SaveOnrushSprintAsync(activatedSprint, previous, cancellationToken: cancellationToken);
+			await writeQueue.WriteAsync(activatedSprint, previous, cancellationToken);
 			await auditLogService.WriteAsync("api", "onrush.begin", subject: activatedSprint, cancellationToken: cancellationToken);
 			return activatedSprint;
 		}
 
 		sprint.StartDate = resolvedStartDate;
 		AttachMilestone(sprint);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(sprint, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.begin", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
@@ -153,8 +151,7 @@ public sealed class OnrushSprintApiService(
 
 		context.OnrushSprints.Add(sprint);
 		AttachMilestone(sprint);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveOnrushSprintAsync(sprint, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(sprint, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.start-new", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
@@ -168,8 +165,7 @@ public sealed class OnrushSprintApiService(
 
 		var previous = Clone(sprint);
 		sprint.EndDate = endDate ?? DateOnly.FromDateTime(DateTime.Today);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(sprint, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.end", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
@@ -218,7 +214,7 @@ public sealed class OnrushSprintApiService(
 
 		foreach (var objective in detached)
 		{
-			await markdownFileService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
+			await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		}
 
 		await markdownFileService.DeleteOnrushSprintAsync(sprint, cancellationToken);
@@ -338,8 +334,7 @@ public sealed class OnrushSprintApiService(
 			sprint.EndDate = update.EndDate.Value;
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(sprint, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.update", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
@@ -413,8 +408,7 @@ public sealed class OnrushSprintApiService(
 		};
 
 		context.ExecutiveOrders.Add(order);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveExecutiveOrderAsync(order, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(order, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.issue-order", subject: order, details: new { onrushSprintId = sprint.Id }, cancellationToken: cancellationToken);
 		return order;
 	}
@@ -470,8 +464,7 @@ public sealed class OnrushSprintApiService(
 		}
 
 		ValidateEffectiveWindow(order.EffectiveFrom, order.EffectiveUntil);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveExecutiveOrderAsync(order, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(order, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.update-order", subject: order, cancellationToken: cancellationToken);
 		return order;
 	}

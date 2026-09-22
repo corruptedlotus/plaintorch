@@ -14,6 +14,8 @@ public static class PlaintorchApiEndpointRouteBuilderExtensions
 	{
 		ArgumentNullException.ThrowIfNull(endpoints);
 		ArgumentException.ThrowIfNullOrWhiteSpace(pattern);
-		return endpoints.MapGroup(pattern).AddEndpointFilter<MediaEnrichmentEndpointFilter>();
+		return endpoints.MapGroup(pattern)
+			.AddEndpointFilter<MediaEnrichmentEndpointFilter>()
+			.AddEndpointFilter<NoteReadinessEndpointFilter>();
 	}
 }

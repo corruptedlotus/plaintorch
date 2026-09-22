@@ -15,6 +15,7 @@ public sealed class PlaintorchApiModule : Module
 	{
 		services.AddScoped<PlaintorchStateService>();
 		services.AddScoped<PlaintorchMarkdownStorageService>();
+		services.AddScoped<VaultWriteReadiness>();
 		services.AddScoped<VaultWriteQueue>();
 		services.AddScoped<IPlaintorchApi, PlaintorchApiService>();
 	}

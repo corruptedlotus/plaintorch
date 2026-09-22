@@ -110,9 +110,14 @@ pure HTTP. The dependencies that require the drain to have *completed* are:
     write reports **ready**; past it it reports **pending** while the drain finishes on best-effort (the durable row /
     startup drain guarantees completion). Inline on the request scope, one SQLite connection (a fresh-scope drain
     deadlocks the same DB), via `Task.WaitAsync`. `noteReady` is returned but not yet surfaced to the client.
-  - 2b. *Pending*: route the remaining entity types (incentives, onrush, polaris, executive, lore) + delete/Remove
-    through the queue.
-  - 2c. *Pending*: surface `noteReady` on the write responses (API + SDK) and add the client pending-handling — the
+  - 2b. *Done (reconcile writes)*: every entity type's reconcile writes — directive / objective / fate / decree /
+    onrush sprint / executive order / polaris cycle / lore page — route through `VaultWriteQueue.WriteAsync`
+    (record-in-transaction + `SaveChanges` + bounded drain, replacing `SaveChangesAsync` + a direct `Save*Async`).
+    Lore's `SetIndex` subtree chain (a synchronous read-your-own-writes move) and the delete paths stay direct for now.
+    *Pending*: delete/Remove (a `Remove` intent + a drain that archives the file by last-known identity).
+  - 2c. *Server done*: `noteReady` rides the `X-Note-Ready` response header — the bounded drain marks a per-request
+    `VaultWriteReadiness` on timeout, and `NoteReadinessEndpointFilter` (on the shared enriched API group) sets the
+    header to `false` when pending (absent = ready). *Pending*: the SDK reads the header and the client acts — the
     seven banners' rename-reveal and `createEntityNote` show "the note will be available shortly" and poll
     `resolve-note` before opening.
 - **Part 3 — the remaining two repros.** *Done*: (repro 4) `FreeformVaultStorageModePolicyService.ResolveWriteTargetPath`
@@ -141,6 +146,8 @@ repeated (parallel) runs — **402 passed / 0 skipped, stable**.
   still-asserted moved note as a move, not a deletion. All five repros green; suite 402 passed / 0 skipped, stable.
 - 2026-09-22 — merged `claude/user-preferences` (PEP116) in; Part 2a landed: the bounded drain reads
   `WatcherPreferences.NoteQueueTimeout`. Suite 415 passed / 0 skipped.
+- 2026-09-22 — Part 2b (reconcile writes) + 2c (server) landed: all entity types route through `VaultWriteQueue.WriteAsync`;
+  `X-Note-Ready` header emitted via `VaultWriteReadiness` + `NoteReadinessEndpointFilter`. Suite 415 passed / 0 skipped.
 
 ## Sunnyside Mk1
 

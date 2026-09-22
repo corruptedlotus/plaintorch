@@ -29,6 +29,7 @@ public sealed class DeclarativeApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
 	PlaintorchMarkdownStorageService markdownStorageService,
+	VaultWriteQueue writeQueue,
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
 	OccurrenceHardeningService hardeningService,
@@ -83,8 +84,7 @@ public sealed class DeclarativeApiService(
 		}
 
 		context.Fates.Add(fate);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveFateAsync(fate, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(fate, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "fate.create", subject: fate, cancellationToken: cancellationToken);
 		return fate;
 	}
@@ -176,8 +176,7 @@ public sealed class DeclarativeApiService(
 
 		ValidateEventWindow(fate.StartTime, fate.EndTime);
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveFateAsync(fate, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(fate, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "fate.update", subject: fate, cancellationToken: cancellationToken);
 		return fate;
 	}
@@ -256,8 +255,7 @@ public sealed class DeclarativeApiService(
 		};
 
 		context.Decrees.Add(decree);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveDecreeAsync(decree, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(decree, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "decree.create", subject: decree, cancellationToken: cancellationToken);
 		return decree;
 	}
@@ -313,8 +311,7 @@ public sealed class DeclarativeApiService(
 		// Validate the resulting combination: reflecting decrees demand day-granularity orbits.
 		PlaintorchOrbitService.ValidateDecreeOrbit(decree.Orbit, decree.Reflect);
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveDecreeAsync(decree, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(decree, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "decree.update", subject: decree, cancellationToken: cancellationToken);
 		return decree;
 	}

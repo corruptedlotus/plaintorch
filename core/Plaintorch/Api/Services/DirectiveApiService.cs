@@ -177,9 +177,7 @@ public sealed class DirectiveApiService(
 			stellar.EndDate = update.EndDate.Value;
 		}
 
-		await writeQueue.RecordReconcileAsync(stellar, cancellationToken);
-		await context.SaveChangesAsync(cancellationToken);
-		await writeQueue.DrainReconcileAsync(stellar, previous, cancellationToken);
+		await writeQueue.WriteAsync(stellar, previous, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.update-stellar",
@@ -275,9 +273,7 @@ public sealed class DirectiveApiService(
 			lunar.Tags = update.Tags.ToList();
 		}
 
-		await writeQueue.RecordReconcileAsync(lunar, cancellationToken);
-		await context.SaveChangesAsync(cancellationToken);
-		await writeQueue.DrainReconcileAsync(lunar, previous, cancellationToken);
+		await writeQueue.WriteAsync(lunar, previous, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.update-lunar",
@@ -304,9 +300,7 @@ public sealed class DirectiveApiService(
 
 		var previousStatus = stellar.Status;
 		stellar.Status = shift.Status;
-		await writeQueue.RecordReconcileAsync(stellar, cancellationToken);
-		await context.SaveChangesAsync(cancellationToken);
-		await writeQueue.DrainReconcileAsync(stellar, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(stellar, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.workflow-shift",
@@ -364,9 +358,7 @@ public sealed class DirectiveApiService(
 		var previous = directive.Icon;
 		await ApplyMediaChangeAsync(directiveId, directive, previous, request.Reference, request.Clear, key => directive.Icon = key, "directive.icon", cancellationToken);
 
-		await writeQueue.RecordReconcileAsync(directive, cancellationToken);
-		await context.SaveChangesAsync(cancellationToken);
-		await writeQueue.DrainReconcileAsync(directive, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(directive, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.set-icon",
@@ -388,9 +380,7 @@ public sealed class DirectiveApiService(
 		var previous = directive.Banner;
 		await ApplyMediaChangeAsync(directiveId, directive, previous, request.Reference, request.Clear, key => directive.Banner = key, "directive.banner", cancellationToken);
 
-		await writeQueue.RecordReconcileAsync(directive, cancellationToken);
-		await context.SaveChangesAsync(cancellationToken);
-		await writeQueue.DrainReconcileAsync(directive, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(directive, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.set-banner",
@@ -429,9 +419,7 @@ public sealed class DirectiveApiService(
 		};
 
 		context.Directives.Add(directive);
-		await writeQueue.RecordReconcileAsync(directive, cancellationToken);
-		await context.SaveChangesAsync(cancellationToken);
-		await writeQueue.DrainReconcileAsync(directive, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(directive, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "directive.create-lunar", subject: directive, cancellationToken: cancellationToken);
 		return directive;
 	}
@@ -451,9 +439,7 @@ public sealed class DirectiveApiService(
 
 		var previousStatus = lunar.Status;
 		lunar.Status = shift.Status;
-		await writeQueue.RecordReconcileAsync(lunar, cancellationToken);
-		await context.SaveChangesAsync(cancellationToken);
-		await writeQueue.DrainReconcileAsync(lunar, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(lunar, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.lunar-workflow-shift",
@@ -642,9 +628,7 @@ public sealed class DirectiveApiService(
 		};
 
 		context.Directives.Add(directive);
-		await writeQueue.RecordReconcileAsync(directive, cancellationToken);
-		await context.SaveChangesAsync(cancellationToken);
-		await writeQueue.DrainReconcileAsync(directive, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(directive, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "directive.create", subject: directive, cancellationToken: cancellationToken);
 		return directive;
 	}

@@ -26,9 +26,23 @@ public sealed class VaultWriteQueue(
 	PlainfraContext context,
 	PlaintorchMarkdownStorageService storage,
 	VaultEntityGateway entityGateway,
+	VaultWriteReadiness readiness,
 	IOptionsSnapshot<WatcherPreferences> watcherPreferences,
 	ILogger<VaultWriteQueue> logger)
 {
+	/// <summary>
+	/// Records a reconcile intent for an entity, commits it atomically with the pending entity change, then drains it —
+	/// the one call a mutation flow makes in place of <c>SaveChangesAsync</c> + a direct <c>Save*Async</c>. Returns the
+	/// drain's <c>noteReady</c> (whether the file landed within the timeout); a pending write is also recorded on the
+	/// per-request <see cref="VaultWriteReadiness"/> so the endpoint filter can tell the client.
+	/// </summary>
+	public async Task<bool> WriteAsync(object entity, object? previous = null, CancellationToken cancellationToken = default)
+	{
+		await RecordReconcileAsync(entity, cancellationToken);
+		await context.SaveChangesAsync(cancellationToken);
+		return await DrainReconcileAsync(entity, previous, cancellationToken);
+	}
+
 	/// <summary>
 	/// Records a reconcile intent for an entity onto the current context, to be committed atomically with the entity
 	/// change that follows. One row per entity: a repeat record idempotently refreshes the existing row.
@@ -86,7 +100,9 @@ public sealed class VaultWriteQueue(
 		catch (TimeoutException)
 		{
 			// Past the timeout: the write is reported pending; the drain finishes on best-effort and the durable row (or
-			// the startup drain, if this scope is torn down first) guarantees it lands.
+			// the startup drain, if this scope is torn down first) guarantees it lands. Signal the request so the client
+			// is told to wait for the note rather than open a file that is not on disk yet.
+			readiness.MarkPending();
 			ObserveInBackground(drainTask);
 			return false;
 		}
