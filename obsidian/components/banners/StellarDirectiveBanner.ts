@@ -1,7 +1,7 @@
 import { component, css, html } from "@a11d/lit"
 import { DirectiveBanner } from './DirectiveBanner'
 import { Directive, DirectiveStatus, StellarDirectiveUpdate } from '@pleiades/sdk'
-import { core, IconName, ReactiveBinder, SelectDirectiveStatusModal } from ".."
+import { core, IconName, openNoteWhenReady, ReactiveBinder, SelectDirectiveStatusModal } from ".."
 import { App } from "obsidian"
 
 /**
@@ -56,8 +56,7 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 		if (!existence?.associatedNote
 			|| app.workspace.activeEditor?.file?.path === existence.associatedNote) return
 
-		const file = app.vault.getFileByPath(existence.associatedNote)!
-		app.workspace.getLeaf(true).openFile(file)
+		await openNoteWhenReady(existence.associatedNote, core.lastWriteNotePending)
 	}
 
 	static override get styles() {

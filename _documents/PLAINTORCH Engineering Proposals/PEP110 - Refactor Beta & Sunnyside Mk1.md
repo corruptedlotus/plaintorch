@@ -115,11 +115,15 @@ pure HTTP. The dependencies that require the drain to have *completed* are:
     (record-in-transaction + `SaveChanges` + bounded drain, replacing `SaveChangesAsync` + a direct `Save*Async`).
     Lore's `SetIndex` subtree chain (a synchronous read-your-own-writes move) and the delete paths stay direct for now.
     *Pending*: delete/Remove (a `Remove` intent + a drain that archives the file by last-known identity).
-  - 2c. *Server done*: `noteReady` rides the `X-Note-Ready` response header — the bounded drain marks a per-request
+  - 2c. *Done*: `noteReady` rides the `X-Note-Ready` response header — the bounded drain marks a per-request
     `VaultWriteReadiness` on timeout, and `NoteReadinessEndpointFilter` (on the shared enriched API group) sets the
-    header to `false` when pending (absent = ready). *Pending*: the SDK reads the header and the client acts — the
-    seven banners' rename-reveal and `createEntityNote` show "the note will be available shortly" and poll
-    `resolve-note` before opening.
+    header to `false` when pending (absent = ready). The SDK transport exposes response headers; the core client keeps
+    a `lastWriteNotePending` flag (set per non-GET write, untouched by reads, so it survives a re-resolve) — pinned by
+    `noteReadiness.test.ts`. The client consumes it through one shared `openNoteWhenReady(path, pending)` helper that
+    announces "the note will be available shortly" and polls the vault for the file before opening (in a new tab once
+    it lands) — replacing the seven banners' `getFileByPath(...)!` + `openFile` (which threw on a not-yet-indexed file)
+    and `createEntityNote`'s eager `openLinkText` (which spawned a phantom). Even a ready write is indexed a beat after
+    it lands, so this also removes that latent race.
 - **Part 3 — the remaining two repros.** *Done*: (repro 4) `FreeformVaultStorageModePolicyService.ResolveWriteTargetPath`
   rebases onto the authored container with the entity's current base name (`RebaseOntoAuthoredLocation`), so a Quiet
   rename renames the self-named folder/file in place instead of leaving a stale, self-reverting name; (repro 5) the
@@ -148,6 +152,9 @@ repeated (parallel) runs — **402 passed / 0 skipped, stable**.
   `WatcherPreferences.NoteQueueTimeout`. Suite 415 passed / 0 skipped.
 - 2026-09-22 — Part 2b (reconcile writes) + 2c (server) landed: all entity types route through `VaultWriteQueue.WriteAsync`;
   `X-Note-Ready` header emitted via `VaultWriteReadiness` + `NoteReadinessEndpointFilter`. Suite 415 passed / 0 skipped.
+- 2026-09-22 — Part 2c (client) landed: SDK surfaces the header (`lastWriteNotePending`, `noteReadiness.test.ts`);
+  the 7 banners + `createEntityNote` open through the shared `openNoteWhenReady` (announce + poll for the file). SDK
+  109 tests green; plugin builds.
 
 ## Sunnyside Mk1
 

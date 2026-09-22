@@ -4,7 +4,7 @@ import { Objective, ObjectiveUpdate, PolarisCycle } from '@pleiades/sdk'
 import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
 import { OnrushSprint } from "@pleiades/sdk"
 import { App, Notice, SuggestModal } from "obsidian"
-import { addObjectiveToPolaris, core, getApp, IconItem, IconName, isObjectiveInCycle, SelectCollegeModal, SelectObjectiveStatusModal } from ".."
+import { addObjectiveToPolaris, core, getApp, IconItem, IconName, isObjectiveInCycle, openNoteWhenReady, SelectCollegeModal, SelectObjectiveStatusModal } from ".."
 
 @component('p7t-objective-banner')
 export class ObjectiveBanner extends EntityBanner<Objective> {
@@ -37,8 +37,7 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 			return
 		}
 
-		const file = app.vault.getFileByPath(existence.associatedNote)!
-		app.workspace.getLeaf(true).openFile(file)
+		await openNoteWhenReady(existence.associatedNote, core.lastWriteNotePending)
 	}
 
 	protected get isInActivePolaris() {

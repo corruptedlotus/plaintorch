@@ -1,6 +1,6 @@
-import { Notice } from 'obsidian'
+import { Notice, type App, type TFile } from 'obsidian'
 import { Directive, Objective, typeNameOf } from '@pleiades/sdk'
-import { addObjectiveToPolaris, core, ExpandingAction, IconName, PromptTextModal, type ScheduleValue } from '..'
+import { addObjectiveToPolaris, core, ExpandingAction, getApp, IconName, PromptTextModal, type ScheduleValue } from '..'
 import type { GridEntity } from './entityTree'
 
 /** What kind of thing a row holds, resolved from the runtime type the core stamped on it. */
@@ -283,6 +283,51 @@ export function openNotePath(vaultRelativePath: string): void {
 	getWorkspace().openLinkText(vaultRelativePath.replace(/\\/g, '/'), '', true)
 }
 
+const noteReadyPollIntervalMs = 120
+const noteReadyPollTimeoutMs = 6_000
+
+/**
+ * Opens a note once its file is on disk and indexed by Obsidian, tolerating a write still draining in the core
+ * (PEP110). Pass <c>core.lastWriteNotePending</c> from right after the mutation: when the core reported the write
+ * pending it announces the short wait up front. Even a ready write is indexed a beat after it lands, so this polls for
+ * the file rather than assuming it is already there — the assumption that made a rename-reveal throw
+ * (<c>getFileByPath(...)!</c> → null) or a create-then-open spawn a phantom note. Opens in a new tab once the file
+ * appears; gives up quietly if it never does.
+ */
+export async function openNoteWhenReady(vaultRelativePath: string, pending = false): Promise<void> {
+	const app = getApp()
+	const path = vaultRelativePath.replace(/\\/g, '/')
+	let file = app.vault.getFileByPath(path)
+	if (!file) {
+		if (pending) {
+			new Notice('The note will be available shortly…')
+		}
+
+		file = await waitForVaultFile(app, path)
+	}
+
+	if (file) {
+		app.workspace.getLeaf(true).openFile(file)
+	}
+}
+
+/** Polls the vault until a path resolves to a file or the wait elapses — the file lands a beat after the core writes it. */
+async function waitForVaultFile(app: App, path: string): Promise<TFile | null> {
+	const deadline = Date.now() + noteReadyPollTimeoutMs
+	for (;;) {
+		const file = app.vault.getFileByPath(path)
+		if (file) {
+			return file
+		}
+
+		if (Date.now() >= deadline) {
+			return null
+		}
+
+		await new Promise((resolve) => setTimeout(resolve, noteReadyPollIntervalMs))
+	}
+}
+
 /** The kinds whose note can be brought into being on demand — the implicit entities the SDK can materialize. */
 const materializableKinds = new Set<string>(['objective', 'fate', 'decree'])
 
@@ -320,10 +365,12 @@ export async function createEntityNote(entity: { id: string }, kind: string): Pr
 		return
 	}
 
+	// Whether the note is still draining is decided by the begin write above; the resolves below are reads and leave it.
+	const notePending = core.lastWriteNotePending
 	await Promise.all([refreshListings(), core.repos.entityResolution.refresh(entity.id)])
 	const resolved = await core.repos.entityResolution.get(entity.id)
 	if (resolved?.associatedNote) {
-		openNotePath(resolved.associatedNote)
+		await openNoteWhenReady(resolved.associatedNote, notePending)
 	}
 }
 

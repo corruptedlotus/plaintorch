@@ -2,7 +2,7 @@ import { component, css, html, nothing, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { Decree, DecreeStatus, DecreeUpdate, PolarisCycle } from '@pleiades/sdk'
 import { App, Notice } from "obsidian"
-import { core, IconName, ReactiveBinder, SelectDecreeStatusModal } from ".."
+import { core, IconName, openNoteWhenReady, ReactiveBinder, SelectDecreeStatusModal } from ".."
 
 /**
  * Banner for a Decree declarative (PEP100). Decrees are enduring routines: the banner shows
@@ -87,8 +87,7 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		if (!existence?.associatedNote
 			|| app.workspace.activeEditor?.file?.path === existence.associatedNote) return
 
-		const file = app.vault.getFileByPath(existence.associatedNote)!
-		app.workspace.getLeaf(true).openFile(file)
+		await openNoteWhenReady(existence.associatedNote, core.lastWriteNotePending)
 	}
 
 	static override get styles() {
