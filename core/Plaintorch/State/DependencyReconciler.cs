@@ -59,6 +59,7 @@ public sealed class DependencyReconciler(EntityLifecycleResolver lifecycleResolv
 			.Where(dependency => dependency.SourceKind == DependencyEndpointKind.Checkpoint)
 			.ToList();
 
+		var now = DateTime.Now;
 		for (var iteration = 0; iteration < MaxIterations; iteration++)
 		{
 			var changed = false;
@@ -67,7 +68,10 @@ public sealed class DependencyReconciler(EntityLifecycleResolver lifecycleResolv
 			{
 				var incoming = incomingByCheckpoint.GetValueOrDefault(checkpoint.Id) ?? [];
 				var dependenciesMet = incoming.All(dependency => dependency.Satisfied);
-				var tollMet = checkpoint.CelestronToll is null || checkpoint.TollPaid;
+				// The toll is suppressed until the due arrives (PEP111): while there is still time, the checkpoint can
+				// unlock without paying; once the due moment has passed, the toll is owed as usual.
+				var beforeDue = checkpoint.Due is { } due && now < due.Moment;
+				var tollMet = checkpoint.CelestronToll is null || checkpoint.TollPaid || beforeDue;
 				var conditionMet = checkpoint.ExternalCondition != false;
 				changed |= SetUnlocked(context, checkpoint, dependenciesMet && tollMet && conditionMet);
 			}

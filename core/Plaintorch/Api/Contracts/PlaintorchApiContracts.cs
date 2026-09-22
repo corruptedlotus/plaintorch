@@ -254,8 +254,8 @@ public sealed record ObjectiveUpdate(
 	Optional<string?> ParentIncentiveId = default);
 
 /// <summary>
-/// Represents the editable fields of a checkpoint (PEP102): its name, its Celestron toll, and its external
-/// condition.
+/// Represents the editable fields of a checkpoint (PEP102): its name, its Celestron toll, its external
+/// condition, and its optional due (which suppresses the toll until it arrives).
 /// </summary>
 /// <remarks>
 /// The toll and the condition are each optional on the checkpoint (a null means it has none), so a nullable
@@ -266,7 +266,8 @@ public sealed record ObjectiveUpdate(
 public sealed record CheckpointUpdate(
 	string? Title = null,
 	Optional<int?> CelestronToll = default,
-	Optional<bool?> ExternalCondition = default);
+	Optional<bool?> ExternalCondition = default,
+	Optional<Due?> Due = default);
 
 /// <summary>
 /// Represents a workflow shift for an objective.

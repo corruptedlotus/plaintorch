@@ -119,6 +119,28 @@ public sealed class DependencySystemTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task A_checkpoint_toll_is_suppressed_until_its_due()
+	{
+		var source = await Directive(api => api.CreateStandaloneAsync("Gate prereq", cancellationToken: Ct));
+		await Directive(api => api.ShiftStellarWorkflowAsync(source.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
+		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Deadline Gate", celestronToll: 5, cancellationToken: Ct));
+		await Deps(api => api.CreateAsync(DirectiveRef(source.Id), CheckpointRef(checkpoint.Id), cancellationToken: Ct));
+
+		// Dependency met, but the toll is unpaid and there is no due, so it is owed now: the checkpoint stays locked.
+		Assert.False((await Deps(api => api.GetCheckpointAsync(checkpoint.Id, Ct)))!.Unlocked);
+
+		// A future due suppresses the toll — there is still time — so the checkpoint unlocks without paying.
+		var future = Due.On(DateOnly.FromDateTime(DateTime.Today).AddDays(3));
+		await Deps(api => api.UpdateCheckpointAsync(checkpoint.Id, new CheckpointUpdate(Due: future), Ct));
+		Assert.True((await Deps(api => api.GetCheckpointAsync(checkpoint.Id, Ct)))!.Unlocked);
+
+		// Once the due has passed, the toll is owed again and the checkpoint re-locks until it is paid.
+		var past = Due.At(DateTime.Now.AddDays(-1));
+		await Deps(api => api.UpdateCheckpointAsync(checkpoint.Id, new CheckpointUpdate(Due: past), Ct));
+		Assert.False((await Deps(api => api.GetCheckpointAsync(checkpoint.Id, Ct)))!.Unlocked);
+	}
+
+	[Fact]
 	public async Task Paying_a_toll_without_enough_celestron_is_rejected()
 	{
 		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Expensive", celestronToll: 100, cancellationToken: Ct));

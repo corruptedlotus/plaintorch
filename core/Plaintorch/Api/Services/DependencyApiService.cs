@@ -226,6 +226,12 @@ public sealed class DependencyApiService(
 			checkpoint.ExternalCondition = update.ExternalCondition.Value;
 		}
 
+		if (update.Due.IsSet)
+		{
+			// A due suppresses the toll until it arrives; clearing it (null) makes any toll owed immediately.
+			checkpoint.Due = update.Due.Value;
+		}
+
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync("api", "checkpoint.update", subject: checkpoint, cancellationToken: cancellationToken);
 		return checkpoint;
