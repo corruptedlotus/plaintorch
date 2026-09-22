@@ -37,12 +37,12 @@ public sealed class DependencyApiService(
 		{
 			SourceKind = source.Kind,
 			SourceId = source.Id,
-			SourceRecurrenceDate = source.RecurrenceDate,
-			SourceRecurrenceTime = source.RecurrenceTime,
+			SourceRecurrenceDate = source.Recurrence?.Date,
+			SourceRecurrenceTime = source.Recurrence?.Time,
 			TargetKind = target.Kind,
 			TargetId = target.Id,
-			TargetRecurrenceDate = target.RecurrenceDate,
-			TargetRecurrenceTime = target.RecurrenceTime,
+			TargetRecurrenceDate = target.Recurrence?.Date,
+			TargetRecurrenceTime = target.Recurrence?.Time,
 			Trigger = trigger,
 			Constraint = constraint,
 		};
@@ -413,12 +413,12 @@ SELECT NOT EXISTS (
 		command.Transaction = context.Database.CurrentTransaction?.GetDbTransaction();
 		AddParameter(command, "$sourceKind", source.Kind.ToString());
 		AddParameter(command, "$sourceId", source.Id);
-		AddParameter(command, "$sourceDate", (object?)source.RecurrenceDate ?? DBNull.Value);
-		AddParameter(command, "$sourceTime", (object?)source.RecurrenceTime ?? DBNull.Value);
+		AddParameter(command, "$sourceDate", (object?)source.Recurrence?.Date ?? DBNull.Value);
+		AddParameter(command, "$sourceTime", (object?)source.Recurrence?.Time ?? DBNull.Value);
 		AddParameter(command, "$targetKind", target.Kind.ToString());
 		AddParameter(command, "$targetId", target.Id);
-		AddParameter(command, "$targetDate", (object?)target.RecurrenceDate ?? DBNull.Value);
-		AddParameter(command, "$targetTime", (object?)target.RecurrenceTime ?? DBNull.Value);
+		AddParameter(command, "$targetDate", (object?)target.Recurrence?.Date ?? DBNull.Value);
+		AddParameter(command, "$targetTime", (object?)target.Recurrence?.Time ?? DBNull.Value);
 		AddParameter(command, "$sourceSide", SideOf(source.Kind, trigger));
 		AddParameter(command, "$targetSide", SideOf(target.Kind, constraint));
 
@@ -477,7 +477,7 @@ SELECT NOT EXISTS (
 				await EnsureExistsAsync(side, "checkpoint", await context.Checkpoints.AnyAsync(item => item.Id == endpoint.Id, cancellationToken), endpoint.Id);
 				break;
 			case DependencyEndpointKind.Eventive:
-				if (endpoint.RecurrenceDate is null)
+				if (endpoint.Recurrence is null)
 				{
 					throw new InvalidOperationException($"The {side} eventive endpoint requires an occurrence date (RECURRENCE-ID).");
 				}
@@ -507,7 +507,7 @@ SELECT NOT EXISTS (
 
 	private static string Describe(EndpointRef endpoint)
 	{
-		return endpoint.RecurrenceDate is DateOnly date
+		return endpoint.Recurrence is { Date: var date }
 			? $"{endpoint.Kind}:{endpoint.Id}@{date:yyyy-MM-dd}"
 			: $"{endpoint.Kind}:{endpoint.Id}";
 	}

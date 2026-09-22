@@ -83,11 +83,15 @@ public sealed class Dependency
 	/// <summary>
 	/// Gets the source endpoint as a reference value.
 	/// </summary>
-	public EndpointRef Source => new(SourceKind, SourceId, SourceRecurrenceDate, SourceRecurrenceTime);
+	public EndpointRef Source => new(SourceKind, SourceId, ToRecurrence(SourceRecurrenceDate, SourceRecurrenceTime));
 
 	[NotMapped]
 	/// <summary>
 	/// Gets the target endpoint as a reference value.
 	/// </summary>
-	public EndpointRef Target => new(TargetKind, TargetId, TargetRecurrenceDate, TargetRecurrenceTime);
+	public EndpointRef Target => new(TargetKind, TargetId, ToRecurrence(TargetRecurrenceDate, TargetRecurrenceTime));
+
+	/// <summary>Composes the stored slot date/time columns into a single <see cref="RecurrenceId"/>, or null when there is no slot.</summary>
+	private static RecurrenceId? ToRecurrence(DateOnly? date, TimeOnly? time)
+		=> date is { } slotDate ? new RecurrenceId(slotDate, time) : null;
 }

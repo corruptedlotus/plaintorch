@@ -50,9 +50,10 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 			? query.Where(dependency => dependency.Constraint == DependencyConstraint.ToBegin || dependency.Constraint == null)
 			: query.Where(dependency => dependency.Constraint == phase);
 
-		if (target.Kind == DependencyEndpointKind.Eventive && target.RecurrenceDate is DateOnly date)
+		if (target.Kind == DependencyEndpointKind.Eventive && target.Recurrence is { } recurrence)
 		{
-			query = target.RecurrenceTime is TimeOnly time
+			var date = recurrence.Date;
+			query = recurrence.Time is TimeOnly time
 				? query.Where(dependency => dependency.TargetRecurrenceDate == date && dependency.TargetRecurrenceTime == time)
 				: query.Where(dependency => dependency.TargetRecurrenceDate == date && dependency.TargetRecurrenceTime == null);
 		}
@@ -78,14 +79,14 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 			return false;
 		}
 
-		return await IsLockedAsync(new EndpointRef(DependencyEndpointKind.Eventive, fateId, occurrenceDate, occurrenceTime), DependencyConstraint.ToBegin, cancellationToken);
+		return await IsLockedAsync(new EndpointRef(DependencyEndpointKind.Eventive, fateId, new RecurrenceId(occurrenceDate.Value, occurrenceTime)), DependencyConstraint.ToBegin, cancellationToken);
 	}
 
 	private static string Describe(EndpointRef target)
 	{
 		return target.Kind switch
 		{
-			DependencyEndpointKind.Eventive => $"Occurrence {target.RecurrenceDate:yyyy-MM-dd} of '{target.Id}'",
+			DependencyEndpointKind.Eventive => $"Occurrence {target.Recurrence?.Date:yyyy-MM-dd} of '{target.Id}'",
 			_ => $"{target.Kind} '{target.Id}'",
 		};
 	}

@@ -103,17 +103,12 @@ public static class DependencyRules
 	{
 		if (endpoint.Kind == DependencyEndpointKind.Eventive)
 		{
-			// The recurrence slot may be omitted only for a one-off (non-orbit) owner; that requires resolving
-			// the owner and is enforced by the service. Here we only forbid a time without a date.
-			if (endpoint.RecurrenceDate is null && endpoint.RecurrenceTime is not null)
-			{
-				throw new InvalidOperationException($"The {side} eventive endpoint has an occurrence time without a date.");
-			}
-
+			// An eventive endpoint may carry an occurrence slot, or omit it for a one-off (non-orbit) owner — owner
+			// resolution is the service's job. The collapsed RecurrenceId makes a time-without-date shape impossible.
 			return;
 		}
 
-		if (endpoint.RecurrenceDate is not null || endpoint.RecurrenceTime is not null)
+		if (endpoint.Recurrence is not null)
 		{
 			throw new InvalidOperationException($"The {side} {endpoint.Kind} endpoint must not carry an occurrence slot; only eventive endpoints do.");
 		}

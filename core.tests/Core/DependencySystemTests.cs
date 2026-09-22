@@ -391,7 +391,7 @@ public sealed class DependencySystemTests : VaultTestBase
 		Assert.Equal(slot, eventive.RecurrenceDate);
 
 		await Deps(api => api.CreateAsync(
-			new EndpointRef(DependencyEndpointKind.Eventive, fate.Id, slot),
+			new EndpointRef(DependencyEndpointKind.Eventive, fate.Id, new RecurrenceId(slot, null)),
 			DirectiveRef(target.Id),
 			cancellationToken: Ct));
 

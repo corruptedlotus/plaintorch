@@ -29,7 +29,7 @@ public sealed class SoftAgendaEndToEndTests : VaultTestBase
 	private Task<AgendaProjection> Project(DateOnly start, DateOnly end) => Vault.WithScopeAsync(s => s.GetRequiredService<AgendaProjectionService>().ProjectAsync(start, end, Ct));
 
 	private static EndpointRef DirectiveRef(string id) => new(DependencyEndpointKind.Directive, id);
-	private static EndpointRef EventiveRef(string ownerId, DateOnly date, TimeOnly? time = null) => new(DependencyEndpointKind.Eventive, ownerId, date, time);
+	private static EndpointRef EventiveRef(string ownerId, DateOnly date, TimeOnly? time = null) => new(DependencyEndpointKind.Eventive, ownerId, new RecurrenceId(date, time));
 
 	[Fact]
 	public async Task Referencing_a_projected_occurrence_hardens_it_into_a_row()

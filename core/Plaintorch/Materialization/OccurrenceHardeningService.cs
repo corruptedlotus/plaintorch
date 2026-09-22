@@ -127,17 +127,18 @@ public sealed class OccurrenceHardeningService(
 	/// </summary>
 	public async Task EnsureReferencedEventiveAsync(EndpointRef endpoint, CancellationToken cancellationToken = default)
 	{
-		if (endpoint.Kind != DependencyEndpointKind.Eventive || endpoint.RecurrenceDate is not DateOnly date)
+		if (endpoint.Kind != DependencyEndpointKind.Eventive || endpoint.Recurrence is not { } recurrence)
 		{
 			return;
 		}
 
-		if (await FindEventiveAsync(endpoint.Id, date, endpoint.RecurrenceTime, cancellationToken) is not null)
+		var date = recurrence.Date;
+		if (await FindEventiveAsync(endpoint.Id, date, recurrence.Time, cancellationToken) is not null)
 		{
 			return;
 		}
 
-		var request = new EventiveMaterialization(Date: date, StartTime: endpoint.RecurrenceTime);
+		var request = new EventiveMaterialization(Date: date, StartTime: recurrence.Time);
 
 		var fate = await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == endpoint.Id, cancellationToken);
 		if (fate is not null)
