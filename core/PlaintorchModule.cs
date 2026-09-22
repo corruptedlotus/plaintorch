@@ -113,6 +113,14 @@ public sealed class PlaintorchModule : Module
 		{
 			preferences.NoteQueueTimeout = store.Get(PreferenceKeys.NoteQueueTimeout, preferences.NoteQueueTimeout);
 		});
+		services.AddOptions<AgendaPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
+		{
+			preferences.AutoMaterialiseOptOut = store.Get(PreferenceKeys.AutoMaterialiseOptOut, preferences.AutoMaterialiseOptOut);
+		});
+		services.AddOptions<CalDavPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
+		{
+			preferences.FloatingRender = store.Get(PreferenceKeys.CalDavFloatingRender, preferences.FloatingRender);
+		});
 		services.AddSingleton<WatcherStatusReporter>();
 		services.AddSingleton<WatcherRetryScheduler>();
 		services.AddSingleton<VaultStorageTopologyValidator>();

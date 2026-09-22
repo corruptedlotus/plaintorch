@@ -48,12 +48,14 @@ The DB was chosen over extending the `.plaintorch` JSON so preferences are trans
 
 Implemented:
 - **`WatcherPreferences.NoteQueueTimeout`** (`watcher.note-queue-timeout`, int ms, default **2000**) — how long a note may wait in the watcher's write queue before it is drained.
+- **`AgendaPreferences.AutoMaterialiseOptOut`** (`agenda.auto-materialise-optout`, bool, default **false**) — whether an opted-out eventive is materialized automatically as time passes; off means an OptOut occurrence is hardened only by a user opting it back in, never by time-passage alone. (Consumer: the rolling materialization pass, PEP111 Preparation.)
+- **`CalDavPreferences.FloatingRender`** (`caldav.floating-render`, enum `AllDay`|`PinToStart`, default **`AllDay`**) — how a floating occurrence (granularity window wider than its duration) is projected on export, which CalDAV cannot represent natively; `AllDay` never invents a start time. (Consumer: the CalDAV integration, PEP111.)
 
 Planned (each added by its consumer as it lands, one POCO property apiece — no migration):
 - **Default calendar** — the calendar an Orbit resolves against. Today this is fixed per declarative type (Gregorian for fates, Pleiadean for decrees). It becomes a preference, defaulting to **Pleiadean for both** until set. **Migration note:** when the fate default flips to Pleiadean, existing fates must be pinned `Calendar = Gregorian` so their already-authored orbits keep their meaning; only fates created afterward take the Pleiadean default. (Consumer: the temporal / Declarative-&-Occurrence unification work, PEP111 Preparation.)
 - **Default time zone** — for `Due` and occurrences; none = wall time.
-- **CalDAV floating-window render** — how a floating occurrence (granularity window > duration) is projected on export (pin-to-start / all-day). (Consumer: PEP111.)
-- **OptOut time-passage hardening** — whether the rolling pass hardens an opted-out eventive on time-passage (default off). (Consumer: PEP111.)
+
+Deliberately *not* a preference: how far an *inactive* declarative goes — pausing generation vs hiding from display vs excluding from the agenda — is expressed by the declarative's own status states, not a setting.
 
 ## Implementation
 

@@ -106,4 +106,39 @@ public sealed class UserPreferencesTests : VaultTestBase
 		Assert.Equal(2000, await NoteQueueTimeoutOptionAsync());
 		Assert.Equal(2000, await NoteQueueTimeoutDirectAsync());
 	}
+
+	[Fact]
+	public async Task CalDav_floating_render_defaults_to_all_day_and_an_override_stores_by_name()
+	{
+		var initial = await Vault.WithScopeAsync(services => Task.FromResult(
+			services.GetRequiredService<IOptionsSnapshot<CalDavPreferences>>().Value.FloatingRender));
+		Assert.Equal(CalDavFloatingRender.AllDay, initial);
+
+		await Vault.WithScopeAsync(services => services.GetRequiredService<UserPreferenceService>()
+			.SetAsync(PreferenceKeys.CalDavFloatingRender, CalDavFloatingRender.PinToStart, TestContext.Current.CancellationToken));
+
+		var overridden = await Vault.WithScopeAsync(services => Task.FromResult(
+			services.GetRequiredService<IOptionsSnapshot<CalDavPreferences>>().Value.FloatingRender));
+		Assert.Equal(CalDavFloatingRender.PinToStart, overridden);
+
+		// The enum is persisted by name, not ordinal, so reordering the enum can never reinterpret a stored value.
+		var stored = await Vault.QueryAsync(context => context.UserPreferences.AsNoTracking()
+			.FirstAsync(row => row.Key == PreferenceKeys.CalDavFloatingRender, TestContext.Current.CancellationToken));
+		Assert.Equal("\"PinToStart\"", stored.Value);
+	}
+
+	[Fact]
+	public async Task Auto_materialise_optout_defaults_to_false_and_can_be_enabled()
+	{
+		var initial = await Vault.WithScopeAsync(services => Task.FromResult(
+			services.GetRequiredService<IOptionsSnapshot<AgendaPreferences>>().Value.AutoMaterialiseOptOut));
+		Assert.False(initial);
+
+		await Vault.WithScopeAsync(services => services.GetRequiredService<UserPreferenceService>()
+			.SetAsync(PreferenceKeys.AutoMaterialiseOptOut, true, TestContext.Current.CancellationToken));
+
+		var enabled = await Vault.WithScopeAsync(services => Task.FromResult(
+			services.GetRequiredService<IOptionsSnapshot<AgendaPreferences>>().Value.AutoMaterialiseOptOut));
+		Assert.True(enabled);
+	}
 }
