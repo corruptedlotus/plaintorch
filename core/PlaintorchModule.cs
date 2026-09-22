@@ -10,6 +10,7 @@ using Pleiades.Plaintorch.Diagnostics;
 using Pleiades.Plaintorch.Hosting;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.Media;
+using Pleiades.Plaintorch.Preferences;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
@@ -102,6 +103,16 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<IOperationStatusSink>(provider => provider.GetRequiredService<OperationStatusEventBuffer>());
 		services.AddSingleton<OperationStatusReporter>();
 		services.AddScoped<OperationStatusDismissalService>();
+		// PEP116 user preferences: a sparse, vault-bound key/value store with code-owned defaults, surfaced
+		// through .NET Options. The store is the singleton hot-read cache (loaded on activation, kept current by
+		// write-through); the service owns the database read/write; each Options group binds its keys off the
+		// store, so an unset preference falls through to its POCO-default and adding one needs no migration.
+		services.AddSingleton<UserPreferenceStore>();
+		services.AddScoped<UserPreferenceService>();
+		services.AddOptions<WatcherPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
+		{
+			preferences.NoteQueueTimeout = store.Get(PreferenceKeys.NoteQueueTimeout, preferences.NoteQueueTimeout);
+		});
 		services.AddSingleton<WatcherStatusReporter>();
 		services.AddSingleton<WatcherRetryScheduler>();
 		services.AddSingleton<VaultStorageTopologyValidator>();

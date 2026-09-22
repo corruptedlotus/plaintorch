@@ -33,6 +33,8 @@ Extracting these conventions out of the code that currently hardcodes them (they
 - Migrations are ordered and gated by that version. On startup, if the stored version is behind the current version, the pending migrations run in order and the version is advanced.
 - Each applied migration is recorded in a vault migration history table (version, timestamp, actor, and counts of what was loaded, rewritten, and archived), complementing the per-file audit-log and graveyard records that already exist.
 
+> **Planned (PEP116, Phase 2):** the `.plaintorch` settings document — including this schema-version marker and the location keys — moves into the vault database, and the metadata directory `.plaintorch-data` is renamed `.plaintorch`. That relocation cannot ride the runner here (it runs after the DB is open and is gated on the very marker being moved); it needs a one-time, crash-safe **pre-boot layout migration** in `VaultBootstrapper`. See *PEP116 → Deferred — `.plaintorch` consolidation*.
+
 ## Ordering
 Vault migration runs during vault initialisation, **after** database migration (its state-driven phase depends on an up-to-date schema) and **before** the existing consistency reconciliation and lore reindex. This mirrors and sits alongside the database migration step rather than replacing it.
 
