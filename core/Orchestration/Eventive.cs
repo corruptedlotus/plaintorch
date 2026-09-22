@@ -45,19 +45,11 @@ public sealed class Eventive : ITimeAllocated, IOccurrenceInstance
 	public Objective? Objective { get; set; }
 
 	/// <summary>
-	/// Gets or sets the occurrence date of the eventive's time specification.
+	/// Gets or sets the occurrence's position in time — the moment plus its granularity, nominal duration
+	/// (the event window), and zone (PEP111). An eventive can be moved by changing the moment, while
+	/// <see cref="RecurrenceId"/> keeps the original slot for dependency references and orbit dedup.
 	/// </summary>
-	public DateOnly Date { get; set; }
-
-	/// <summary>
-	/// Gets or sets the optional start time. An eventive without a start time is all-day.
-	/// </summary>
-	public TimeOnly? StartTime { get; set; }
-
-	/// <summary>
-	/// Gets or sets the optional end time.
-	/// </summary>
-	public TimeOnly? EndTime { get; set; }
+	public Epoch Epoch { get; set; } = new();
 
 	/// <summary>
 	/// Gets or sets the original occurrence slot date (iCalendar <c>RECURRENCE-ID</c>) that identifies this

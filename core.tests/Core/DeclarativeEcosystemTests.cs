@@ -210,7 +210,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		// hardens it — there is no standalone materialize verb, so an empty update simply brings the row into being.
 		var occurrenceRef = new EventiveOccurrenceRef(fate.Id, new DateOnly(2026, 8, 1), new TimeOnly(19, 0));
 		var eventive = await WithApi(api => api.UpdateEventiveAsync(occurrenceRef, new EventiveUpdate(), cancellationToken));
-		Assert.Equal(new DateOnly(2026, 8, 1), eventive.Date);
+		Assert.Equal(new DateOnly(2026, 8, 1), eventive.Epoch.Date);
 		Assert.Equal(120, eventive.Estimation);
 		Assert.Equal(EventiveResolution.Pending, eventive.Resolution);
 
@@ -227,7 +227,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		// Eventives can always be moved because they are never Polaris-bound. Addressed by recurrence-id, which
 		// stays stable across the move.
 		var moved = await WithApi(api => api.UpdateEventiveAsync(occurrenceRef, new EventiveUpdate(Date: new DateOnly(2026, 8, 2)), cancellationToken));
-		Assert.Equal(new DateOnly(2026, 8, 2), moved.Date);
+		Assert.Equal(new DateOnly(2026, 8, 2), moved.Epoch.Date);
 
 		var missed = await WithApi(api => api.UpdateEventiveAsync(occurrenceRef, new EventiveUpdate(Resolution: EventiveResolution.Missed), cancellationToken));
 		Assert.Equal(EventiveResolution.Missed, missed.Resolution);
@@ -246,7 +246,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		var unbound = await WithApi(api => api.UpdateAttentiveAsync(unboundRef, new AttentiveUpdate(), cancellationToken));
 		Assert.Null(unbound.PolarisCycleId);
 		var delayed = await WithApi(api => api.UpdateAttentiveAsync(unboundRef, new AttentiveUpdate(Date: new DateOnly(2026, 8, 3)), cancellationToken));
-		Assert.Equal(new DateOnly(2026, 8, 3), delayed.Date);
+		Assert.Equal(new DateOnly(2026, 8, 3), delayed.Epoch.Date);
 		await Assert.ThrowsAsync<InvalidOperationException>(() =>
 			WithApi(api => api.UpdateAttentiveAsync(unboundRef, new AttentiveUpdate(MoveToPolarisCycleId: "20260801"), cancellationToken)));
 

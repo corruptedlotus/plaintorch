@@ -107,8 +107,7 @@ public sealed class OccurrenceHardeningService(
 		var attentive = new Attentive
 		{
 			DecreeId = decree.Id,
-			Date = occurrenceDate,
-			Time = occurrenceTime,
+			Epoch = Epoch.From(occurrenceDate, occurrenceTime, occurrence?.Granularity ?? (occurrenceTime is null ? OrbitUnit.Day : OrbitUnit.Minute)),
 			RecurrenceDate = occurrenceDate,
 			RecurrenceTime = occurrenceTime,
 			PeriodEndDate = occurrence is not null && occurrence.PeriodEndExclusive > occurrence.Date.AddDays(1)
@@ -212,15 +211,19 @@ public sealed class OccurrenceHardeningService(
 			return (existing, false);
 		}
 
+		var endTime = occurrence?.EndTime ?? request.EndTime ?? fate.EndTime;
+		// Temporal span (Epoch.Duration): the orbit span or explicit start/end window, null for an all-day
+		// occurrence. Estimation (allocation) falls back to the fate's resolved duration.
+		var spanMinutes = occurrence?.DurationMinutes ?? OccurrenceDurations.SpanMinutes(startTime, endTime);
+		var granularity = occurrence?.Granularity ?? (startTime is null ? OrbitUnit.Day : OrbitUnit.Minute);
+
 		var eventive = new Eventive
 		{
 			FateId = fate.Id,
-			Date = date,
-			StartTime = startTime,
-			EndTime = occurrence?.EndTime ?? request.EndTime ?? fate.EndTime,
+			Epoch = Epoch.From(date, startTime, granularity, spanMinutes),
 			RecurrenceDate = date,
 			RecurrenceTime = startTime,
-			Estimation = occurrence?.DurationMinutes ?? fate.ResolveEventiveDuration(),
+			Estimation = spanMinutes ?? fate.ResolveEventiveDuration(),
 		};
 		eventive.Normalize();
 		context.Eventives.Add(eventive);
@@ -242,9 +245,7 @@ public sealed class OccurrenceHardeningService(
 		var eventive = new Eventive
 		{
 			ObjectiveId = objective.Id,
-			Date = date,
-			StartTime = request.StartTime,
-			EndTime = request.EndTime,
+			Epoch = Epoch.From(date, request.StartTime, request.StartTime is null ? OrbitUnit.Day : OrbitUnit.Minute, OccurrenceDurations.SpanMinutes(request.StartTime, request.EndTime)),
 			RecurrenceDate = date,
 			RecurrenceTime = request.StartTime,
 		};

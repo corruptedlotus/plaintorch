@@ -58,11 +58,21 @@ public static class InclusionWindow
 		ArgumentNullException.ThrowIfNull(attentive);
 		if (attentive.PeriodEndDate is { } periodEnd)
 		{
-			var occurrenceStart = attentive.Date.ToDateTime(TimeOnly.MinValue);
+			var occurrenceStart = attentive.Epoch.Date.ToDateTime(TimeOnly.MinValue);
 			var occurrenceEnd = periodEnd.ToDateTime(TimeOnly.MinValue);
 			return occurrenceEnd >= windowStart && occurrenceStart < windowEnd;
 		}
 
-		return Intersects(attentive.Date, attentive.Time, attentive.Time, windowStart, windowEnd);
+		return Intersects(attentive.Epoch.Date, attentive.Epoch.TimeOfDay, attentive.Epoch.TimeOfDay, windowStart, windowEnd);
+	}
+
+	/// <summary>
+	/// Determines whether an eventive collides with the inclusion window, using its epoch: the occurrence spans
+	/// [moment, moment + duration) — an all-day occurrence's duration being its whole day.
+	/// </summary>
+	public static bool EventiveIntersects(Eventive eventive, DateTime windowStart, DateTime windowEnd)
+	{
+		ArgumentNullException.ThrowIfNull(eventive);
+		return eventive.Epoch.EndMoment >= windowStart && eventive.Epoch.Moment < windowEnd;
 	}
 }

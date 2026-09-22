@@ -63,7 +63,7 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 		Assert.True(attentives.Count <= 1);
 		foreach (var attentive in attentives)
 		{
-			var pleiadean = Pleiades.Calendar.PleiadeanCalendar.FromDateTime(attentive.Date.ToDateTime(TimeOnly.MinValue));
+			var pleiadean = Pleiades.Calendar.PleiadeanCalendar.FromDateTime(attentive.Epoch.Date.ToDateTime(TimeOnly.MinValue));
 			Assert.Equal(1, pleiadean.Day);
 		}
 
@@ -88,8 +88,8 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 		var inclusions = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
 			.GetInclusionsAsync(null, cancellationToken));
-		Assert.Contains(inclusions.Eventives, item => item.FateId == fate.Id && item.Date == today && item.Estimation == 45);
-		Assert.Contains(inclusions.Attentives, item => item.DecreeId == decree.Id && item.Date == today && item.Estimation == 20 && item.PolarisCycleId == null);
+		Assert.Contains(inclusions.Eventives, item => item.FateId == fate.Id && item.Epoch.Date == today && item.Estimation == 45);
+		Assert.Contains(inclusions.Attentives, item => item.DecreeId == decree.Id && item.Epoch.Date == today && item.Estimation == 20 && item.PolarisCycleId == null);
 
 		var persistedEventives = await Vault.QueryAsync(context => context.Eventives.CountAsync(item => item.FateId == fate.Id, cancellationToken));
 		Assert.Equal(0, persistedEventives);
@@ -147,7 +147,7 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 
 		// A future on-phase occurrence resolves through preview without advancing the schedule.
 		var future = await WithApi(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, today.AddDays(2)), new AttentiveUpdate(), cancellationToken));
-		Assert.Equal(today.AddDays(2), future.Date);
+		Assert.Equal(today.AddDays(2), future.Epoch.Date);
 
 		// Interacting with today's occurrence too, then beginning a cycle: the seeking pass must recognize
 		// the already-hardened instance by its date instead of duplicating it.
@@ -157,7 +157,7 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 			.StartNewAsync(cancellationToken: cancellationToken));
 
 		var todayCount = await Vault.QueryAsync(context => context.Attentives
-			.CountAsync(item => item.DecreeId == decree.Id && item.Date == today, cancellationToken));
+			.CountAsync(item => item.DecreeId == decree.Id && item.Epoch.Moment >= today.ToDateTime(TimeOnly.MinValue) && item.Epoch.Moment < today.AddDays(1).ToDateTime(TimeOnly.MinValue), cancellationToken));
 		Assert.Equal(1, todayCount);
 	}
 

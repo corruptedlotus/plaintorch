@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Pleiades.Orbits;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
@@ -422,7 +423,7 @@ public sealed class PolarisCycleApiService(
 			cancellationToken);
 
 		return new PolarisCycleInclusions(
-			projection.Eventives.Where(item => InclusionWindow.Intersects(item.Date, item.StartTime, item.EndTime, windowStart, windowEnd)).ToList(),
+			projection.Eventives.Where(item => InclusionWindow.EventiveIntersects(item, windowStart, windowEnd)).ToList(),
 			projection.Attentives.Where(item => item.PolarisCycleId == null && InclusionWindow.AttentiveIntersects(item, windowStart, windowEnd)).ToList());
 	}
 
@@ -430,6 +431,7 @@ public sealed class PolarisCycleApiService(
 	public async Task<PolarisAgenda> GetAgendaAsync(CancellationToken cancellationToken = default)
 	{
 		var today = DateOnly.FromDateTime(DateTime.Today);
+		var todayStart = today.ToDateTime(TimeOnly.MinValue);
 		var horizon = today.AddDays(7);
 		// "Requiring attention" spans the next 24h, so at day granularity that is today plus tomorrow, alongside
 		// anything overdue.
@@ -446,7 +448,7 @@ public sealed class PolarisCycleApiService(
 			.AsNoTracking()
 			.Include(item => item.Decree)
 			.Where(item => item.PolarisCycleId == null
-				&& item.Date < today
+				&& item.Epoch.Moment < todayStart
 				&& item.Resolution == AttentiveResolution.Pending)
 			.ToListAsync(cancellationToken);
 
@@ -463,18 +465,16 @@ public sealed class PolarisCycleApiService(
 			.Concat(overdueAttentives)
 			.Where(item => item.PolarisCycleId == null
 				&& item.Resolution == AttentiveResolution.Pending
-				&& item.Date <= attentiveThrough)
+				&& item.Epoch.Date <= attentiveThrough)
 			.Concat(recentlyResolved.Where(item => item.ResolvedOn >= resolvedSince && item.ResolvedOn <= now))
-			.OrderBy(item => item.Date)
-			.ThenBy(item => item.Time)
+			.OrderBy(item => item.Epoch.Moment)
 			.ToList();
 
 		var eventives = projection.Eventives
 			.Where(item => item.Resolution == EventiveResolution.Pending
-				&& item.Date >= today
-				&& item.Date <= horizon)
-			.OrderBy(item => item.Date)
-			.ThenBy(item => item.StartTime)
+				&& item.Epoch.Date >= today
+				&& item.Epoch.Date <= horizon)
+			.OrderBy(item => item.Epoch.Moment)
 			.ToList();
 
 		return new PolarisAgenda(attentives, eventives);
@@ -499,8 +499,7 @@ public sealed class PolarisCycleApiService(
 		{
 			DecreeId = decree.Id,
 			PolarisCycleId = cycle.Id,
-			Date = attentiveDate,
-			Time = request.Time,
+			Epoch = Epoch.From(attentiveDate, request.Time, request.Time is null ? OrbitUnit.Day : OrbitUnit.Minute),
 			RecurrenceDate = attentiveDate,
 			RecurrenceTime = request.Time,
 			Estimation = request.Estimation ?? decree.DefaultLength,
@@ -519,7 +518,7 @@ public sealed class PolarisCycleApiService(
 			"polaris.add-attentive",
 			subjectType: nameof(Attentive),
 			subjectId: attentive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-			details: new { cycleId = cycle.Id, decreeId = decree.Id, date = attentive.Date.ToString("yyyy-MM-dd") },
+			details: new { cycleId = cycle.Id, decreeId = decree.Id, date = attentive.Epoch.Date.ToString("yyyy-MM-dd") },
 			cancellationToken: cancellationToken);
 		return attentive;
 	}

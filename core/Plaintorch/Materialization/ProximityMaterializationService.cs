@@ -182,7 +182,7 @@ public sealed class ProximityMaterializationService(
 			context.Eventives.Add(new Eventive
 			{
 				ObjectiveId = objective.Id,
-				Date = objective.Due!.Value,
+				Epoch = Epoch.From(objective.Due!.Value, timeOfDay: null, OrbitUnit.Day),
 				RecurrenceDate = objective.Due!.Value,
 			});
 			created++;
@@ -224,8 +224,7 @@ public sealed class ProximityMaterializationService(
 		var attentive = new Attentive
 		{
 			DecreeId = decree.Id,
-			Date = occurrence.Date,
-			Time = occurrence.StartTime,
+			Epoch = Epoch.From(occurrence.Date, occurrence.StartTime, occurrence.Granularity),
 			RecurrenceDate = occurrence.Date,
 			RecurrenceTime = occurrence.StartTime,
 			PeriodEndDate = occurrence.PeriodEndExclusive > occurrence.Date.AddDays(1)
@@ -243,12 +242,17 @@ public sealed class ProximityMaterializationService(
 	/// </summary>
 	private Task<bool> EnsureFateEventiveAsync(Fate fate, DateOnly day, CancellationToken cancellationToken)
 	{
-		return EnsureFateEventiveCoreAsync(fate, day, fate.StartTime, fate.EndTime, fate.ResolveEventiveDuration(), cancellationToken);
+		var granularity = fate.StartTime is null ? OrbitUnit.Day : OrbitUnit.Minute;
+		// The occurrence's temporal span is the fate's own start/end window (null = all-day); the estimation is the
+		// resolved event duration (allocation). Keeping them separate stops a 45-minute allocation from shrinking
+		// an all-day occurrence's window.
+		var span = OccurrenceDurations.SpanMinutes(fate.StartTime, fate.EndTime);
+		return EnsureFateEventiveCoreAsync(fate, day, fate.StartTime, granularity, span, fate.ResolveEventiveDuration(), cancellationToken);
 	}
 
 	/// <summary>
-	/// Ensures a fate's eventive exists for an orbit occurrence, returning whether one was created. Span
-	/// occurrences carry their own start/end/length; granular occurrences fall back to the fate's time spec.
+	/// Ensures a fate's eventive exists for an orbit occurrence, returning whether one was created. Only a span
+	/// occurrence carries a temporal span; a granular occurrence fills its granularity window (null span).
 	/// </summary>
 	private Task<bool> EnsureFateEventiveAsync(Fate fate, OrbitOccurrenceInstance occurrence, CancellationToken cancellationToken)
 	{
@@ -256,12 +260,13 @@ public sealed class ProximityMaterializationService(
 			fate,
 			occurrence.Date,
 			occurrence.StartTime ?? fate.StartTime,
-			occurrence.EndTime ?? (occurrence.StartTime is null ? fate.EndTime : null),
+			occurrence.Granularity,
+			occurrence.DurationMinutes,
 			occurrence.DurationMinutes ?? fate.ResolveEventiveDuration(),
 			cancellationToken);
 	}
 
-	private async Task<bool> EnsureFateEventiveCoreAsync(Fate fate, DateOnly day, TimeOnly? startTime, TimeOnly? endTime, int? estimation, CancellationToken cancellationToken)
+	private async Task<bool> EnsureFateEventiveCoreAsync(Fate fate, DateOnly day, TimeOnly? startTime, OrbitUnit granularity, int? spanMinutes, int? estimation, CancellationToken cancellationToken)
 	{
 		// PEP101: a locked whole-fate pauses orbit generation; a locked single occurrence blocks just itself.
 		if (await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, day, startTime, cancellationToken))
@@ -280,9 +285,7 @@ public sealed class ProximityMaterializationService(
 		var eventive = new Eventive
 		{
 			FateId = fate.Id,
-			Date = day,
-			StartTime = startTime,
-			EndTime = endTime,
+			Epoch = Epoch.From(day, startTime, granularity, spanMinutes),
 			RecurrenceDate = day,
 			RecurrenceTime = startTime,
 			Estimation = estimation,

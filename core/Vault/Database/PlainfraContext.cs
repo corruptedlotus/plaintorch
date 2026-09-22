@@ -322,6 +322,14 @@ public class PlainfraContext : DbContext
 			.Property(x => x.Resolution)
 			.HasConversion<string>();
 
+		// An occurrence's position in time is an owned value: its fields live as Epoch_* columns on the
+		// occurrence's own table, with Granularity stored as a readable string like the other enums.
+		modelBuilder.Entity<Attentive>()
+			.OwnsOne(x => x.Epoch, epoch => epoch.Property(e => e.Granularity).HasConversion<string>());
+
+		modelBuilder.Entity<Eventive>()
+			.OwnsOne(x => x.Epoch, epoch => epoch.Property(e => e.Granularity).HasConversion<string>());
+
 		// Eventive owners cascade: deleting a fate or an objective removes its materialized occurrences.
 		modelBuilder.Entity<Eventive>()
 			.HasOne(x => x.Fate)

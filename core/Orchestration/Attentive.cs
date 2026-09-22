@@ -46,16 +46,11 @@ public sealed class Attentive : ITimeAllocated, IOccurrenceInstance
 	public PolarisCycle? PolarisCycle { get; set; }
 
 	/// <summary>
-	/// Gets or sets the occurrence date (the start day of the occurrence's period).
-	/// Together with <see cref="Time"/> it forms the occurrence identity for orbit dedup.
+	/// Gets or sets the occurrence's position in time — the mutable current moment plus its granularity,
+	/// nominal duration, and zone (PEP111). An unbound attentive can be rescheduled by moving the moment;
+	/// <see cref="RecurrenceId"/> keeps the original slot so orbit dedup and the agenda still resolve it.
 	/// </summary>
-	public DateOnly Date { get; set; }
-
-	/// <summary>
-	/// Gets or sets the optional time of day for the attentive. Sub-day orbit granularities (hour/minute)
-	/// fill this from the occurrence instant; unbound attentives may carry any time and date.
-	/// </summary>
-	public TimeOnly? Time { get; set; }
+	public Epoch Epoch { get; set; } = new();
 
 	/// <summary>
 	/// Gets or sets the original occurrence slot date (iCalendar <c>RECURRENCE-ID</c>). Unlike <see cref="Date"/>

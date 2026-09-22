@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Pleiades.Orbits;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
@@ -363,8 +364,7 @@ public sealed class DeclarativeApiService(
 		}
 
 		return await query
-			.OrderBy(item => item.Date)
-			.ThenBy(item => item.StartTime)
+			.OrderBy(item => item.Epoch.Moment)
 			.ToListAsync(cancellationToken);
 	}
 
@@ -378,8 +378,7 @@ public sealed class DeclarativeApiService(
 		}
 
 		return await query
-			.OrderBy(item => item.Date)
-			.ThenBy(item => item.Time)
+			.OrderBy(item => item.Epoch.Moment)
 			.ToListAsync(cancellationToken);
 	}
 
@@ -398,20 +397,23 @@ public sealed class DeclarativeApiService(
 			new EventiveMaterialization(Date: occurrence.RecurrenceDate, StartTime: occurrence.RecurrenceTime),
 			cancellationToken);
 
-		// Eventives are never Polaris-bound, so moving their time specification is always allowed.
+		// Eventives are never Polaris-bound, so moving their time specification is always allowed. Moving is a
+		// change to the occurrence's Epoch: date shifts the moment's day, a start time shifts its time of day
+		// (and its granularity), and an end time becomes the nominal duration from the start.
 		if (update.Date is not null)
 		{
-			eventive.Date = update.Date.Value;
+			eventive.Epoch.Moment = update.Date.Value.ToDateTime(TimeOnly.FromDateTime(eventive.Epoch.Moment));
 		}
 
 		if (update.StartTime.IsSet)
 		{
-			eventive.StartTime = update.StartTime.Value;
+			eventive.Epoch.Moment = eventive.Epoch.Date.ToDateTime(update.StartTime.Value ?? TimeOnly.MinValue);
+			eventive.Epoch.Granularity = update.StartTime.Value is null ? OrbitUnit.Day : OrbitUnit.Minute;
 		}
 
 		if (update.EndTime.IsSet)
 		{
-			eventive.EndTime = update.EndTime.Value;
+			eventive.Epoch.Duration = OccurrenceDurations.Format(OccurrenceDurations.SpanMinutes(eventive.Epoch.TimeOfDay, update.EndTime.Value));
 		}
 
 		if (update.Resolution is not null)
@@ -426,7 +428,7 @@ public sealed class DeclarativeApiService(
 			"eventive.update",
 			subjectType: nameof(Eventive),
 			subjectId: eventive.Id.ToString(CultureInfo.InvariantCulture),
-			details: new { eventive.FateId, eventive.ObjectiveId, resolution = eventive.Resolution.ToString(), date = eventive.Date.ToString("yyyy-MM-dd") },
+			details: new { eventive.FateId, eventive.ObjectiveId, resolution = eventive.Resolution.ToString(), date = eventive.Epoch.Date.ToString("yyyy-MM-dd") },
 			cancellationToken: cancellationToken);
 		return eventive;
 	}
@@ -468,7 +470,7 @@ public sealed class DeclarativeApiService(
 				throw new InvalidOperationException("A Polaris-bound attentive cannot be rescheduled; it can only be done, skipped, or moved to another Polaris cycle.");
 			}
 
-			attentive.Date = update.Date.Value;
+			attentive.Epoch.Moment = update.Date.Value.ToDateTime(TimeOnly.FromDateTime(attentive.Epoch.Moment));
 		}
 
 		if (!string.IsNullOrWhiteSpace(update.MoveToPolarisCycleId))
@@ -489,7 +491,8 @@ public sealed class DeclarativeApiService(
 
 		if (update.Time.IsSet)
 		{
-			attentive.Time = update.Time.Value;
+			attentive.Epoch.Moment = attentive.Epoch.Date.ToDateTime(update.Time.Value ?? TimeOnly.MinValue);
+			attentive.Epoch.Granularity = update.Time.Value is null ? OrbitUnit.Day : OrbitUnit.Minute;
 		}
 
 		if (update.Resolution is not null)
@@ -516,7 +519,7 @@ public sealed class DeclarativeApiService(
 			"attentive.update",
 			subjectType: nameof(Attentive),
 			subjectId: attentive.Id.ToString(CultureInfo.InvariantCulture),
-			details: new { attentive.DecreeId, attentive.PolarisCycleId, resolution = attentive.Resolution.ToString(), date = attentive.Date.ToString("yyyy-MM-dd") },
+			details: new { attentive.DecreeId, attentive.PolarisCycleId, resolution = attentive.Resolution.ToString(), date = attentive.Epoch.Date.ToString("yyyy-MM-dd") },
 			cancellationToken: cancellationToken);
 		return attentive;
 	}

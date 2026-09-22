@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Pleiades.Orbits;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
@@ -118,16 +119,16 @@ public sealed class PolarisAgendaTests : VaultTestBase
 			context.Add(new Fate { Id = "agenda-test-fate", Title = "Conference", DirectiveId = directive.Id });
 
 			context.Attentives.AddRange(
-				new Attentive { DecreeId = decree.Id, Date = today, Resolution = AttentiveResolution.Pending },
-				new Attentive { DecreeId = decree.Id, Date = today.AddDays(-1), Resolution = AttentiveResolution.Pending },
+				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today, null, OrbitUnit.Day), Resolution = AttentiveResolution.Pending },
+				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today.AddDays(-1), null, OrbitUnit.Day), Resolution = AttentiveResolution.Pending },
 				// Resolved two hours ago: Done and outside the one-hour retention window, so it stays excluded.
-				new Attentive { DecreeId = decree.Id, Date = today, Resolution = AttentiveResolution.Done, ResolvedOn = DateTimeOffset.UtcNow.AddHours(-2) },
-				new Attentive { DecreeId = decree.Id, Date = today.AddDays(2), Resolution = AttentiveResolution.Pending },
-				new Attentive { DecreeId = decree.Id, Date = today, Resolution = AttentiveResolution.Pending, PolarisCycleId = cycle.Id });
+				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today, null, OrbitUnit.Day), Resolution = AttentiveResolution.Done, ResolvedOn = DateTimeOffset.UtcNow.AddHours(-2) },
+				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today.AddDays(2), null, OrbitUnit.Day), Resolution = AttentiveResolution.Pending },
+				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today, null, OrbitUnit.Day), Resolution = AttentiveResolution.Pending, PolarisCycleId = cycle.Id });
 
 			context.Eventives.AddRange(
-				new Eventive { FateId = "agenda-test-fate", Date = today.AddDays(3), RecurrenceDate = today.AddDays(3), Resolution = EventiveResolution.Pending },
-				new Eventive { FateId = "agenda-test-fate", Date = today.AddDays(10), RecurrenceDate = today.AddDays(10), Resolution = EventiveResolution.Pending });
+				new Eventive { FateId = "agenda-test-fate", Epoch = Epoch.From(today.AddDays(3), null, OrbitUnit.Day), RecurrenceDate = today.AddDays(3), Resolution = EventiveResolution.Pending },
+				new Eventive { FateId = "agenda-test-fate", Epoch = Epoch.From(today.AddDays(10), null, OrbitUnit.Day), RecurrenceDate = today.AddDays(10), Resolution = EventiveResolution.Pending });
 
 			await context.SaveChangesAsync(ct);
 		});
@@ -141,13 +142,13 @@ public sealed class PolarisAgendaTests : VaultTestBase
 		{
 			Assert.Null(attentive.PolarisCycleId);
 			Assert.Equal(AttentiveResolution.Pending, attentive.Resolution);
-			Assert.True(attentive.Date <= today);
+			Assert.True(attentive.Epoch.Date <= today);
 			Assert.NotNull(attentive.Decree);
 		});
 
 		// Upcoming within the seven-day horizon; the far-future occurrence is excluded.
 		var eventive = Assert.Single(agenda.Eventives);
-		Assert.Equal(today.AddDays(3), eventive.Date);
+		Assert.Equal(today.AddDays(3), eventive.Epoch.Date);
 		Assert.NotNull(eventive.Fate);
 	}
 
@@ -172,7 +173,7 @@ public sealed class PolarisAgendaTests : VaultTestBase
 				new Attentive
 				{
 					DecreeId = decree.Id,
-					Date = today.AddDays(14),
+					Epoch = Epoch.From(today.AddDays(14), null, OrbitUnit.Day),
 					Resolution = AttentiveResolution.Done,
 					ResolvedOn = recentlyResolvedOn,
 				},
@@ -180,14 +181,14 @@ public sealed class PolarisAgendaTests : VaultTestBase
 				{
 					DecreeId = decree.Id,
 					PolarisCycleId = cycle.Id,
-					Date = today.AddDays(14),
+					Epoch = Epoch.From(today.AddDays(14), null, OrbitUnit.Day),
 					Resolution = AttentiveResolution.Done,
 					ResolvedOn = recentlyResolvedOn,
 				},
 				new Attentive
 				{
 					DecreeId = decree.Id,
-					Date = today.AddDays(14),
+					Epoch = Epoch.From(today.AddDays(14), null, OrbitUnit.Day),
 					Resolution = AttentiveResolution.Done,
 					ResolvedOn = DateTimeOffset.UtcNow.AddHours(-2),
 				});

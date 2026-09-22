@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Pleiades.Orbits;
 using Pleiades.Orchestration;
 using Pleiades.Vault.Database;
 
@@ -32,20 +33,24 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 	public async Task<AgendaProjection> ProjectAsync(DateOnly startInclusive, DateOnly endInclusive, CancellationToken cancellationToken = default)
 	{
 		var endExclusive = endInclusive.AddDays(1);
+		// Occurrence positions are stored as Epoch.Moment (a datetime); the window in datetime terms is
+		// [startInclusive 00:00, endExclusive 00:00).
+		var windowStart = startInclusive.ToDateTime(TimeOnly.MinValue);
+		var windowEndExclusive = endExclusive.ToDateTime(TimeOnly.MinValue);
 
 		// Hardened rows overlapping the window are the source of truth for their recurrence-id.
 		var eventives = await context.Eventives
 			.AsNoTracking()
 			.Include(item => item.Fate)
 			.Include(item => item.Objective)
-			.Where(item => item.Date >= startInclusive && item.Date <= endInclusive)
+			.Where(item => item.Epoch.Moment >= windowStart && item.Epoch.Moment < windowEndExclusive)
 			.ToListAsync(cancellationToken);
 		var attentives = await context.Attentives
 			.AsNoTracking()
 			.Include(item => item.Decree)
 			.Where(item => item.PolarisCycleId == null
-				&& ((item.Date >= startInclusive && item.Date <= endInclusive)
-					|| (item.PeriodEndDate != null && item.Date <= endInclusive && item.PeriodEndDate > startInclusive)))
+				&& ((item.Epoch.Moment >= windowStart && item.Epoch.Moment < windowEndExclusive)
+					|| (item.PeriodEndDate != null && item.Epoch.Moment < windowEndExclusive && item.PeriodEndDate > startInclusive)))
 			.ToListAsync(cancellationToken);
 
 		var eventiveKeys = eventives.Select(OccurrenceKey).ToHashSet();
@@ -63,7 +68,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 			.ToListAsync(cancellationToken);
 		foreach (var fate in datedFates)
 		{
-			AddEventive(eventives, eventiveKeys, ProjectFateEventive(fate, fate.Date!.Value, fate.StartTime, fate.EndTime, fate.ResolveEventiveDuration()));
+			AddEventive(eventives, eventiveKeys, ProjectFateEventive(fate, fate.Date!.Value, fate.StartTime, fate.StartTime is null ? OrbitUnit.Day : OrbitUnit.Minute, OccurrenceDurations.SpanMinutes(fate.StartTime, fate.EndTime), fate.ResolveEventiveDuration()));
 		}
 
 		// Orbit fates: preview occurrences overlapping the window (Gregorian calendar).
@@ -81,7 +86,8 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 					fate,
 					occurrence.Date,
 					occurrence.StartTime ?? fate.StartTime,
-					occurrence.EndTime ?? (occurrence.StartTime is null ? fate.EndTime : null),
+					occurrence.Granularity,
+					occurrence.DurationMinutes,
 					occurrence.DurationMinutes ?? fate.ResolveEventiveDuration()));
 			}
 		}
@@ -103,7 +109,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 			{
 				ObjectiveId = objective.Id,
 				Objective = objective,
-				Date = objective.Due!.Value,
+				Epoch = Epoch.From(objective.Due!.Value, timeOfDay: null, OrbitUnit.Day),
 				RecurrenceDate = objective.Due!.Value,
 			};
 			eventive.Normalize();
@@ -131,8 +137,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 				{
 					DecreeId = decree.Id,
 					Decree = decree,
-					Date = occurrence.Date,
-					Time = occurrence.StartTime,
+					Epoch = Epoch.From(occurrence.Date, occurrence.StartTime, occurrence.Granularity),
 					RecurrenceDate = occurrence.Date,
 					RecurrenceTime = occurrence.StartTime,
 					PeriodEndDate = occurrence.PeriodEndExclusive > occurrence.Date.AddDays(1) ? occurrence.PeriodEndExclusive : null,
@@ -143,20 +148,18 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 			}
 		}
 
-		eventives.Sort(static (left, right) => Compare(left.Date, left.StartTime, right.Date, right.StartTime));
-		attentives.Sort(static (left, right) => Compare(left.Date, left.Time, right.Date, right.Time));
+		eventives.Sort(static (left, right) => Compare(left.Epoch.Date, left.Epoch.TimeOfDay, right.Epoch.Date, right.Epoch.TimeOfDay));
+		attentives.Sort(static (left, right) => Compare(left.Epoch.Date, left.Epoch.TimeOfDay, right.Epoch.Date, right.Epoch.TimeOfDay));
 		return new AgendaProjection(eventives, attentives);
 	}
 
-	private static Eventive ProjectFateEventive(Fate fate, DateOnly date, TimeOnly? startTime, TimeOnly? endTime, int? estimation)
+	private static Eventive ProjectFateEventive(Fate fate, DateOnly date, TimeOnly? startTime, OrbitUnit granularity, int? spanMinutes, int? estimation)
 	{
 		var eventive = new Eventive
 		{
 			FateId = fate.Id,
 			Fate = fate,
-			Date = date,
-			StartTime = startTime,
-			EndTime = endTime,
+			Epoch = Epoch.From(date, startTime, granularity, spanMinutes),
 			RecurrenceDate = date,
 			RecurrenceTime = startTime,
 			Estimation = estimation,

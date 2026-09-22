@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations.Schema;
 using Pleiades.Orbits;
 
 namespace Pleiades.Orchestration;
@@ -42,4 +43,29 @@ public sealed class Epoch
 	/// time (no zone).
 	/// </summary>
 	public string? TimeZone { get; set; }
+
+	/// <summary>Gets the calendar day of <see cref="Moment"/>. In an EF query, filter on <see cref="Moment"/> instead.</summary>
+	[NotMapped]
+	public DateOnly Date => DateOnly.FromDateTime(Moment);
+
+	/// <summary>Gets whether the occurrence is day-or-coarser (no meaningful time of day).</summary>
+	[NotMapped]
+	public bool IsAllDay => Granularity is not (OrbitUnit.Hour or OrbitUnit.Minute or OrbitUnit.Second);
+
+	/// <summary>Gets the time of day of <see cref="Moment"/> for a sub-day occurrence; <see langword="null"/> when all-day.</summary>
+	[NotMapped]
+	public TimeOnly? TimeOfDay => IsAllDay ? null : TimeOnly.FromDateTime(Moment);
+
+	/// <summary>Gets the exclusive end moment: <see cref="Moment"/> plus the <see cref="Duration"/>, or one granularity unit when none.</summary>
+	[NotMapped]
+	public DateTime EndMoment => OccurrenceDurations.Apply(Moment, Duration, Granularity);
+
+	/// <summary>Builds an epoch from a resolved occurrence's day/time-of-day, granularity, and whole-minute length.</summary>
+	public static Epoch From(DateOnly date, TimeOnly? timeOfDay, OrbitUnit granularity, int? durationMinutes = null, string? timeZone = null) => new()
+	{
+		Moment = date.ToDateTime(timeOfDay ?? TimeOnly.MinValue),
+		Granularity = granularity,
+		Duration = OccurrenceDurations.Format(durationMinutes),
+		TimeZone = timeZone,
+	};
 }
