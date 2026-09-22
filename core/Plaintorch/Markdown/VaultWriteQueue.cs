@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Pleiades.Orchestration;
+using Pleiades.Plaintorch.Preferences;
 using Pleiades.Puck;
 using Pleiades.Vault.Database;
 
@@ -8,18 +11,23 @@ namespace Pleiades.Plaintorch.Markdown;
 /// <summary>
 /// The vault write queue (PEP110 Refactor BETA). The core records a durable <see cref="VaultWriteIntent"/> in the same
 /// transaction as an entity change, and this drains it — reconciling the entity's markdown file to its database state
-/// through <see cref="PlaintorchMarkdownStorageService"/> and then clearing the row. Draining synchronously in-request
-/// keeps the file present when the API returns (so open-after-mutate flows still work); the startup
-/// <see cref="DrainPendingAsync"/> recovers any intent a crash left between the database commit and the file write.
+/// through <see cref="PlaintorchMarkdownStorageService"/> and then clearing the row. The drain is bounded by the user's
+/// <see cref="WatcherPreferences.NoteQueueTimeout"/>: within it the file is on disk when the API returns (so
+/// open-after-mutate flows work) and the write is reported ready; past it the drain continues on its own scope and the
+/// write is reported pending. The startup <see cref="DrainPendingAsync"/> recovers any intent a crash left between the
+/// database commit and the file write.
 /// </summary>
 /// <remarks>
-/// Part 1b routes the directive write path through the queue for <see cref="VaultWriteIntentKind.Reconcile"/>. Removes,
-/// the remaining entity types, and the bounded (2s) drain with the <c>noteReady</c> signal follow in later parts.
+/// Part 1b routes the directive write path through the queue for <see cref="VaultWriteIntentKind.Reconcile"/>. Removes
+/// and the remaining entity types follow in later parts; the <c>noteReady</c> flag returned here is surfaced to the
+/// client (banners / create-then-open) in the same later work.
 /// </remarks>
 public sealed class VaultWriteQueue(
 	PlainfraContext context,
 	PlaintorchMarkdownStorageService storage,
-	VaultEntityGateway entityGateway)
+	VaultEntityGateway entityGateway,
+	IOptionsSnapshot<WatcherPreferences> watcherPreferences,
+	ILogger<VaultWriteQueue> logger)
 {
 	/// <summary>
 	/// Records a reconcile intent for an entity onto the current context, to be committed atomically with the entity
@@ -49,15 +57,60 @@ public sealed class VaultWriteQueue(
 	}
 
 	/// <summary>
-	/// Drains an entity's recorded reconcile intent now: writes its markdown file to match its database state, then
-	/// clears the row. Runs in the request scope so the file is present when the call returns. If the write throws, the
-	/// row is left behind for the startup drain / retry.
+	/// Drains an entity's recorded reconcile intent, bounded by <see cref="WatcherPreferences.NoteQueueTimeout"/>. The
+	/// drain runs inline on the request's scope (one SQLite connection, no cross-scope contention); the timeout bounds
+	/// only how long the caller <em>waits</em> for it. It returns <see langword="true"/> (the file is on disk) when it
+	/// completes within the timeout, or <see langword="false"/> when the timeout elapses first — the drain then runs on
+	/// best-effort to completion, and the durable row guarantees the write is finished (or, if the scope is torn down
+	/// first, recovered by the startup drain). A non-positive timeout means no bound (wait for completion). If the drain
+	/// throws, the row is left behind for the startup drain / retry.
 	/// </summary>
-	public async Task DrainReconcileAsync(object entity, object? previous = null, CancellationToken cancellationToken = default)
+	/// <returns><see langword="true"/> when the file was written within the timeout; otherwise <see langword="false"/> (pending).</returns>
+	public async Task<bool> DrainReconcileAsync(object entity, object? previous = null, CancellationToken cancellationToken = default)
+	{
+		var (entityType, id) = Identify(entity);
+		var drainTask = DrainInlineAsync(entity, previous, entityType, id, cancellationToken);
+		var timeout = ResolveTimeout();
+		if (timeout <= TimeSpan.Zero)
+		{
+			await drainTask;
+			return true;
+		}
+
+		try
+		{
+			// Wait for the inline drain up to the timeout only; WaitAsync leaves the underlying drain running.
+			await drainTask.WaitAsync(timeout, cancellationToken);
+			return true;
+		}
+		catch (TimeoutException)
+		{
+			// Past the timeout: the write is reported pending; the drain finishes on best-effort and the durable row (or
+			// the startup drain, if this scope is torn down first) guarantees it lands.
+			ObserveInBackground(drainTask);
+			return false;
+		}
+	}
+
+	private async Task DrainInlineAsync(object entity, object? previous, string entityType, string id, CancellationToken cancellationToken)
 	{
 		await storage.SaveEntityAsync(entity, previous, cancellationToken: cancellationToken);
-		var (entityType, id) = Identify(entity);
 		await ClearAsync(entityType, id, cancellationToken);
+	}
+
+	private TimeSpan ResolveTimeout()
+	{
+		var milliseconds = watcherPreferences.Value.NoteQueueTimeout;
+		return milliseconds <= 0 ? TimeSpan.Zero : TimeSpan.FromMilliseconds(milliseconds);
+	}
+
+	private void ObserveInBackground(Task task)
+	{
+		_ = task.ContinueWith(
+			completed => logger.LogWarning(completed.Exception, "A backgrounded vault write drain faulted; its intent will be retried by the startup drain."),
+			CancellationToken.None,
+			TaskContinuationOptions.OnlyOnFaulted,
+			TaskScheduler.Default);
 	}
 
 	/// <summary>

@@ -104,9 +104,17 @@ pure HTTP. The dependencies that require the drain to have *completed* are:
     entity change, then drains it. `PlaintorchEngine.Initialize*` drains leftover intents. Delete and the other entity
     types keep calling `Save*Async` directly during transition (Part 2). Tests: `VaultWriteQueueTests` (a write leaves
     no pending intent; a crash-left intent is recovered by the startup drain).
-- **Part 2 — route the remaining write paths (incentives, onrush, polaris, executive, lore) through the drainer;
-  add the synchronous bounded drain + `noteReady` contract; client pending-handling (banners + `createEntityNote`
-  poll `resolve-note`); timeout from the user preference.**
+- **Part 2 — the bounded drain, the remaining write paths, and the client `noteReady` handling.**
+  - 2a. *Done*: the bounded drain. `VaultWriteQueue.DrainReconcileAsync` waits for the inline drain only up to
+    `WatcherPreferences.NoteQueueTimeout` (PEP116, default 2000 ms, merged in): within it the file is on disk and the
+    write reports **ready**; past it it reports **pending** while the drain finishes on best-effort (the durable row /
+    startup drain guarantees completion). Inline on the request scope, one SQLite connection (a fresh-scope drain
+    deadlocks the same DB), via `Task.WaitAsync`. `noteReady` is returned but not yet surfaced to the client.
+  - 2b. *Pending*: route the remaining entity types (incentives, onrush, polaris, executive, lore) + delete/Remove
+    through the queue.
+  - 2c. *Pending*: surface `noteReady` on the write responses (API + SDK) and add the client pending-handling — the
+    seven banners' rename-reveal and `createEntityNote` show "the note will be available shortly" and poll
+    `resolve-note` before opening.
 - **Part 3 — the remaining two repros.** *Done*: (repro 4) `FreeformVaultStorageModePolicyService.ResolveWriteTargetPath`
   rebases onto the authored container with the entity's current base name (`RebaseOntoAuthoredLocation`), so a Quiet
   rename renames the self-named folder/file in place instead of leaving a stale, self-reverting name; (repro 5) the
@@ -131,6 +139,8 @@ repeated (parallel) runs — **402 passed / 0 skipped, stable**.
   Reconcile write path; crash-recovery test green; suite 400 passed / 2 skipped, stable across repeated runs.
 - 2026-09-21 — Part 3 landed: freeform (Quiet) rename rebases onto the authored location; the orphan pass treats a
   still-asserted moved note as a move, not a deletion. All five repros green; suite 402 passed / 0 skipped, stable.
+- 2026-09-22 — merged `claude/user-preferences` (PEP116) in; Part 2a landed: the bounded drain reads
+  `WatcherPreferences.NoteQueueTimeout`. Suite 415 passed / 0 skipped.
 
 ## Sunnyside Mk1
 
