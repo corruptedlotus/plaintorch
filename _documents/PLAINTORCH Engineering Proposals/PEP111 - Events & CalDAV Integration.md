@@ -79,13 +79,52 @@ Pleiadean resolution costs nothing on export (occurrences store concrete civil i
 authoritative so a round-trip through an external client can't clobber a floating/nominal original.
 
 ### Sub-chunk sequence & status
-1. Orbit engine — `Z`/`z` literal, span granularity, floating support. **Done (Phase 1).**
-2a. `Declarative` base + calendar-as-data. **Done.**
+
+The core (C#) refactor is **complete and green (405 tests)** on `claude/temporal-model`. Only the client-side
+sweep (2g) remains.
+
+1. Orbit engine — `Z`/`z` literal, span granularity, floating support. **Done (Phase 1, `5ffdf5b`).**
+2a. `Declarative` base + calendar-as-data. **Done (`a1d91d4`).**
 2b. Occurrence spine — `Epoch` owned type, occurrence reshape, `EventiveResolution.OptOut`,
-   `OrbitOccurrenceInstance` rename, three-service materialiser rewrite. **In progress.**
-2c. Declaratives — Fate → Orbit-only, generation modes + seek-to-now (+ the three tests above), frontmatter
-   migration.
-2d. Executive — `IncentiveId` + allocation ownership; cycle-bound attentives → executives.
-2e. Due + Checkpoint owned moments; Checkpoint toll-before-Due.
-2f. Dependency endpoint refs → single `RecurrenceId`.
-2g. Contracts/SDK sweep; the `IncentiveItem`/`IncentiveItemExecutive` UI restructure is last.
+   `OrbitOccurrenceInstance` rename, three-service materialiser rewrite. **Done (`998c2f5`).**
+2c. Declaratives — Fate → Orbit-only, generation modes + seek-to-now (+ the three tests above), `NextOccurrence`
+   denormalization, DB + vault (markdown) migrations. **Done (`6c84584`, `274cb45`, `6ed4016`; migration e2e test `98a9243`).**
+2d. Executive — `IncentiveId` (objective OR decree) + allocation ownership; cycle-bound attentives → decree-executives;
+   occurrences drop `Estimation/Min/Max`. **Done (`d912ddf`, `13425cc`, `f625b89`).**
+2e. Due + Checkpoint owned `Due` moments; Checkpoint toll-before-Due; markdown-scalar serializer hook. **Done (`cb388b4`, `66742fc`).**
+2f. Dependency endpoint refs → single `RecurrenceId`. **Done (`24fdc51`).**
+   *(PEP116 user preferences merged in at `e007e73`; the temporal branch's OptOut toggle was reconciled onto
+   `AgendaPreferences.AutoMaterialiseOptOut`.)*
+
+2g. **Contracts/SDK sweep + UI restructure — PENDING (the only remaining work).** The TS SDK (`sdk.ts`) and the
+   Obsidian plugin mirror the C# contracts and have drifted across 2c–2f. The C# wire shapes to mirror live in
+   `core/Plaintorch/Api/Transport/PlaintorchApiTransportContracts.cs` and `.../Api/Contracts/PlaintorchApiContracts.cs`.
+   Sweep inventory:
+   - **Fate**: no more `date`/`startTime`/`endTime`/`eventDuration`; orbit-only. A one-off is a `Z{y/M/d[Th:m]}`
+     literal (with a `=<dur>` span for a window). `FatePlan` keeps the one-off fields as *create sugar* (folded to
+     `Z{…}` server-side); `FateUpdate` is orbit-only (reschedule = new orbit).
+   - **Declarative**: new `calendar` (`Gregorian`/`Pleiadean`, nullable → kind default) and read-only denormalized
+     `nextOccurrence` (a moment, or null).
+   - **Occurrences (`Eventive`/`Attentive`)**: date/time replaced by an owned `epoch` `{ moment, granularity,
+     duration?, timeZone? }`. `Attentive` is unbound-only — no `polarisCycleId`/`isBound`. Occurrences no longer
+     carry `estimation`/`minimum`/`maximum`.
+   - **`Executive`**: `objectiveId` → `incentiveId` (an objective **or** a decree); allocation (`estimation/min/max`)
+     lives here now; `ExecutiveUpdate` gained `moveToPolarisCycleId` (relocate to another cycle).
+   - **Polaris cycle API**: `AddDecreeAttentiveAsync`/`PolarisAttentiveAdd` → `AddDecreeExecutiveAsync`/`PolarisDecreeAdd`
+     (returns an `Executive`; routes `POST /polaris/cycles/current|{id}/decrees`). `RemoveAttentiveAsync` and the
+     `DELETE /api/polaris/attentives/{id}` route are gone — remove a decree from a cycle via `RemoveExecutiveAsync`.
+     `AttentiveOccurrenceRef` lost `id`/`addressesById`; `AttentiveUpdate` lost `moveToPolarisCycleId` and allocation;
+     `EventiveUpdate` lost allocation.
+   - **Due**: owned `{ moment, timeZone? }`. `ObjectiveUpdate.due` and `CheckpointUpdate.due` carry it; frontmatter is
+     one compact field (`due: 2026-07-20`, `…T14:30`, or `…T14:30 America/New_York`). Checkpoint gained a due whose
+     presence suppresses its Celestron toll until the due passes.
+   - **Dependency**: `EndpointRef`'s occurrence slot is a single `RecurrenceId { date, time? }` internally; the wire
+     transport (`DependencyEndpointRequest`) still carries flat `recurrenceDate`/`recurrenceTime` — the SDK may keep
+     the flat wire and collapse client-side, or mirror the flat shape.
+   - **Preferences**: already merged — the PEP116 SDK module + settings surface are present and consistent; nothing to
+     redo there.
+   - **UI restructure (last):** `IncentiveItem`/`IncentiveItemExecutive` — executives now back both objectives and
+     decrees; occurrence items read `epoch` and carry no allocation; the due is a moment. Align the components
+     accordingly.
+   - **Verify:** plugin builds via `node esbuild.config.mjs production` (no `tsc` gate) + `tsc --noEmit --ignoreDeprecations 6.0`;
+     SDK Vitest (`npm test`); browser smoke where controllers changed.
