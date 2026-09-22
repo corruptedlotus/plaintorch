@@ -80,11 +80,11 @@ public sealed class PolarisCycleModule : Module
 		cycles.MapGet("/{polarisCycleId}/inclusions", async (string polarisCycleId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.GetInclusionsAsync(polarisCycleId, cancellationToken)));
 
-		cycles.MapPost("/current/attentives", async (PolarisAttentiveAdd request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.AddDecreeAttentiveAsync(request, null, cancellationToken)));
+		cycles.MapPost("/current/decrees", async (PolarisDecreeAdd request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.AddDecreeExecutiveAsync(request, null, cancellationToken)));
 
-		cycles.MapPost("/{polarisCycleId}/attentives", async (string polarisCycleId, PolarisAttentiveAdd request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.AddDecreeAttentiveAsync(request, polarisCycleId, cancellationToken)));
+		cycles.MapPost("/{polarisCycleId}/decrees", async (string polarisCycleId, PolarisDecreeAdd request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.AddDecreeExecutiveAsync(request, polarisCycleId, cancellationToken)));
 
 		cycles.MapPost("/{polarisCycleId}/reflectives/draw", async (string polarisCycleId, ReflectiveDrawRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.DrawReflectivesAsync(request with { PolarisCycleId = polarisCycleId }, cancellationToken)));
@@ -101,15 +101,6 @@ public sealed class PolarisCycleModule : Module
 			await api.RemoveExecutiveAsync(executiveId, cancellationToken);
 			return Results.NoContent();
 		});
-
-		// Only the removal lives here: the rest of the attentive surface belongs to the declarative module, but
-		// taking one out of a cycle is the cycle's business.
-		endpoints.MapEnrichedGroup("/api/polaris/attentives")
-			.MapDelete("/{attentiveId:long}", async (long attentiveId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
-			{
-				await api.RemoveAttentiveAsync(attentiveId, cancellationToken);
-				return Results.NoContent();
-			});
 
 		var reflectives = endpoints.MapEnrichedGroup("/api/reflectives");
 		reflectives.MapPut("/{reflectiveId:long}", async (long reflectiveId, ReflectiveUpdate request, IPolarisCycleApi api, CancellationToken cancellationToken) =>

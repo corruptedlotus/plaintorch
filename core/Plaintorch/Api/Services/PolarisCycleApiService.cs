@@ -175,13 +175,11 @@ public sealed class PolarisCycleApiService(
 			.AsNoTracking()
 			.Include(item => item.Executives)
 				.ThenInclude(executive => executive.Incentive)
+					.ThenInclude(incentive => incentive!.Directive)
 			.Include(item => item.Executives)
 				.ThenInclude(executive => executive.AffinityTimeframe)
 			.Include(item => item.Reflectives)
 				.ThenInclude(reflective => reflective.Decree)
-					.ThenInclude(decree => decree!.Directive)
-			.Include(item => item.Attentives)
-				.ThenInclude(attentive => attentive.Decree)
 					.ThenInclude(decree => decree!.Directive)
 			.FirstOrDefaultAsync(item => item.Id == targetId, cancellationToken);
 
@@ -304,6 +302,23 @@ public sealed class PolarisCycleApiService(
 			executive.IncentiveId = update.ObjectiveId;
 		}
 
+		// An executive can be relocated to another Polaris cycle (the successor to moving a Polaris-bound
+		// attentive, PEP111), refused when the target cycle already holds the same incentive.
+		if (!string.IsNullOrWhiteSpace(update.MoveToPolarisCycleId) && update.MoveToPolarisCycleId != executive.PolarisCycleId)
+		{
+			if (!await context.PolarisCycles.AnyAsync(item => item.Id == update.MoveToPolarisCycleId, cancellationToken))
+			{
+				throw new InvalidOperationException($"Polaris cycle '{update.MoveToPolarisCycleId}' was not found.");
+			}
+
+			if (!string.IsNullOrWhiteSpace(executive.IncentiveId))
+			{
+				await EnsureIncentiveNotInCycleAsync(update.MoveToPolarisCycleId, executive.IncentiveId, cancellationToken);
+			}
+
+			executive.PolarisCycleId = update.MoveToPolarisCycleId;
+		}
+
 		// A set allocation applies its value — including null, which clears it; an unset one is left unchanged.
 		if (update.Estimation.IsSet)
 		{
@@ -377,31 +392,6 @@ public sealed class PolarisCycleApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task RemoveAttentiveAsync(long attentiveId, CancellationToken cancellationToken = default)
-	{
-		var attentive = await context.Attentives.FirstOrDefaultAsync(item => item.Id == attentiveId, cancellationToken)
-			?? throw new InvalidOperationException($"Attentive '{attentiveId}' was not found.");
-		if (attentive.PolarisCycleId is null)
-		{
-			// An unbound attentive is an occurrence of its decree's schedule, not something a cycle holds; it is
-			// resolved or skipped, never removed.
-			throw new InvalidOperationException($"Attentive '{attentiveId}' is not bound to a Polaris cycle.");
-		}
-
-		// As with an executive: the record goes and nothing is walked back. What a done occurrence already granted
-		// stays granted.
-		context.Attentives.Remove(attentive);
-		await context.SaveChangesAsync(cancellationToken);
-		await auditLogService.WriteAsync(
-			"api",
-			"polaris.remove-attentive",
-			subjectType: nameof(Attentive),
-			subjectId: attentive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-			details: new { cycleId = attentive.PolarisCycleId, decreeId = attentive.DecreeId, resolution = attentive.Resolution.ToString() },
-			cancellationToken: cancellationToken);
-	}
-
-	/// <inheritdoc />
 	public async Task<PolarisCycleInclusions> GetInclusionsAsync(string? polarisCycleId = null, CancellationToken cancellationToken = default)
 	{
 		var cycle = await ResolveCycleForMutationAsync(polarisCycleId, cancellationToken)
@@ -424,7 +414,7 @@ public sealed class PolarisCycleApiService(
 
 		return new PolarisCycleInclusions(
 			projection.Eventives.Where(item => InclusionWindow.EventiveIntersects(item, windowStart, windowEnd)).ToList(),
-			projection.Attentives.Where(item => item.PolarisCycleId == null && InclusionWindow.AttentiveIntersects(item, windowStart, windowEnd)).ToList());
+			projection.Attentives.Where(item => InclusionWindow.AttentiveIntersects(item, windowStart, windowEnd)).ToList());
 	}
 
 	/// <inheritdoc />
@@ -443,28 +433,26 @@ public sealed class PolarisCycleApiService(
 		// while interacted/resolved ones carry their persisted state.
 		var projection = await projectionService.ProjectAsync(today, horizon, cancellationToken);
 
-		// Overdue pending unbound attentives sit before the projected window (a direct query over hardened rows).
+		// Overdue pending attentives sit before the projected window (a direct query over hardened rows).
 		var overdueAttentives = await context.Attentives
 			.AsNoTracking()
 			.Include(item => item.Decree)
-			.Where(item => item.PolarisCycleId == null
-				&& item.Epoch.Moment < todayStart
+			.Where(item => item.Epoch.Moment < todayStart
 				&& item.Resolution == AttentiveResolution.Pending)
 			.ToListAsync(cancellationToken);
 
-		// Recently-resolved unbound attentives are retained for an hour regardless of their date, so they are
-		// fetched independently of the projection window. SQLite lacks reliable translated DateTimeOffset
-		// comparison, so the resolved-since window is applied after materialization.
+		// Recently-resolved attentives are retained for an hour regardless of their date, so they are fetched
+		// independently of the projection window. SQLite lacks reliable translated DateTimeOffset comparison, so the
+		// resolved-since window is applied after materialization.
 		var recentlyResolved = await context.Attentives
 			.AsNoTracking()
 			.Include(item => item.Decree)
-			.Where(item => item.PolarisCycleId == null && item.ResolvedOn != null)
+			.Where(item => item.ResolvedOn != null)
 			.ToListAsync(cancellationToken);
 
 		var attentives = projection.Attentives
 			.Concat(overdueAttentives)
-			.Where(item => item.PolarisCycleId == null
-				&& item.Resolution == AttentiveResolution.Pending
+			.Where(item => item.Resolution == AttentiveResolution.Pending
 				&& item.Epoch.Date <= attentiveThrough)
 			.Concat(recentlyResolved.Where(item => item.ResolvedOn >= resolvedSince && item.ResolvedOn <= now))
 			.OrderBy(item => item.Epoch.Moment)
@@ -481,7 +469,7 @@ public sealed class PolarisCycleApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<Attentive> AddDecreeAttentiveAsync(PolarisAttentiveAdd request, string? polarisCycleId = null, CancellationToken cancellationToken = default)
+	public async Task<Executive> AddDecreeExecutiveAsync(PolarisDecreeAdd request, string? polarisCycleId = null, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(request);
 		ArgumentException.ThrowIfNullOrWhiteSpace(request.DecreeId);
@@ -494,33 +482,34 @@ public sealed class PolarisCycleApiService(
 			throw new InvalidOperationException($"Decree '{decree.Id}' is {decree.Status} and cannot be added to a Polaris cycle.");
 		}
 
-		var attentiveDate = request.Date ?? ResolveCycleDate(cycle);
-		var attentive = new Attentive
+		// A decree occupies a cycle as an executive, at most once — the cycle is the temporal context (PEP111).
+		await EnsureIncentiveNotInCycleAsync(cycle.Id, decree.Id, cancellationToken);
+
+		var executive = new Executive
 		{
-			DecreeId = decree.Id,
 			PolarisCycleId = cycle.Id,
-			Epoch = Epoch.From(attentiveDate, request.Time, request.Time is null ? OrbitUnit.Day : OrbitUnit.Minute),
-			RecurrenceDate = attentiveDate,
-			RecurrenceTime = request.Time,
+			IncentiveId = decree.Id,
+			Executed = false,
 			Estimation = request.Estimation ?? decree.DefaultLength,
 			Minimum = request.Minimum,
 			Maximum = request.Maximum,
-			// An explicit affinity wins; otherwise the same auto-inclusion an executive gets, from the decree's college.
+			// An explicit affinity wins; otherwise the same auto-inclusion an objective-executive gets, from the
+			// decree's college.
 			AffinityTimeframeId = request.AffinityTimeframeId
 				?? await affinityResolver.ResolveForCollegeAsync(decree.College, cancellationToken),
 		};
-		attentive.Normalize();
+		executive.NormalizeTimeAllocations();
 
-		context.Attentives.Add(attentive);
+		context.Add(executive);
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
-			"polaris.add-attentive",
-			subjectType: nameof(Attentive),
-			subjectId: attentive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-			details: new { cycleId = cycle.Id, decreeId = decree.Id, date = attentive.Epoch.Date.ToString("yyyy-MM-dd") },
+			"polaris.add-decree-executive",
+			subjectType: nameof(Executive),
+			subjectId: executive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+			details: new { cycleId = cycle.Id, decreeId = decree.Id },
 			cancellationToken: cancellationToken);
-		return attentive;
+		return executive;
 	}
 
 	/// <summary>
@@ -536,13 +525,6 @@ public sealed class PolarisCycleApiService(
 		{
 			throw new InvalidOperationException($"Incentive '{incentiveId}' is already an executive of Polaris cycle '{polarisCycleId}'.");
 		}
-	}
-
-	private static DateOnly ResolveCycleDate(PolarisCycle cycle)
-	{
-		return cycle.StartTime is not null
-			? DateOnly.FromDateTime(cycle.StartTime.Value.LocalDateTime)
-			: DateOnly.FromDateTime(DateTime.Today);
 	}
 
 	/// <inheritdoc />

@@ -416,54 +416,22 @@ public sealed class DeclarativeApiService(
 		ArgumentNullException.ThrowIfNull(occurrence);
 		ArgumentNullException.ThrowIfNull(update);
 
-		Attentive attentive;
-		if (occurrence.Id is long id)
+		// An attentive is always an unbound occurrence, addressed by its decree + recurrence-id. Resolve it into the
+		// current unit of work without a save of its own; the single SaveChanges below persists the materialization
+		// together with this interaction, and the state-policy pass runs over it centrally.
+		if (string.IsNullOrWhiteSpace(occurrence.DecreeId) || occurrence.RecurrenceDate is not DateOnly recurrenceDate)
 		{
-			// By row id: a Polaris-bound occurrence (placed into a cycle by hand) has no meaningful recurrence-id, so
-			// it is addressed directly. The row already exists, so no materialization is involved.
-			attentive = await context.Attentives.FirstOrDefaultAsync(item => item.Id == id, cancellationToken)
-				?? throw new InvalidOperationException($"Attentive '{id}' was not found.");
+			throw new ArgumentException("An attentive occurrence must be addressed by decree and recurrence date.", nameof(occurrence));
 		}
-		else
-		{
-			if (string.IsNullOrWhiteSpace(occurrence.DecreeId) || occurrence.RecurrenceDate is not DateOnly recurrenceDate)
-			{
-				throw new ArgumentException("An attentive occurrence must be addressed by row id, or by decree and recurrence date.", nameof(occurrence));
-			}
 
-			// By recurrence-id: an unbound occurrence, possibly still a projection. Resolve it into the current unit
-			// of work without a save of its own; the single SaveChanges below persists the materialization together
-			// with this interaction, and the state-policy pass runs over it centrally.
-			attentive = await hardeningService.EnsureDecreeAttentiveIntoContextAsync(
-				occurrence.DecreeId,
-				new AttentiveMaterialization(Date: recurrenceDate, Time: occurrence.RecurrenceTime),
-				cancellationToken);
-		}
+		var attentive = await hardeningService.EnsureDecreeAttentiveIntoContextAsync(
+			occurrence.DecreeId,
+			new AttentiveMaterialization(Date: recurrenceDate, Time: occurrence.RecurrenceTime),
+			cancellationToken);
 
 		if (update.Date is not null)
 		{
-			if (attentive.IsBound)
-			{
-				throw new InvalidOperationException("A Polaris-bound attentive cannot be rescheduled; it can only be done, skipped, or moved to another Polaris cycle.");
-			}
-
 			attentive.Epoch.Moment = update.Date.Value.ToDateTime(TimeOnly.FromDateTime(attentive.Epoch.Moment));
-		}
-
-		if (!string.IsNullOrWhiteSpace(update.MoveToPolarisCycleId))
-		{
-			if (!attentive.IsBound)
-			{
-				throw new InvalidOperationException("An unbound attentive is not part of a Polaris cycle and cannot be moved between cycles; reschedule it instead.");
-			}
-
-			var targetExists = await context.PolarisCycles.AnyAsync(item => item.Id == update.MoveToPolarisCycleId, cancellationToken);
-			if (!targetExists)
-			{
-				throw new InvalidOperationException($"Polaris cycle '{update.MoveToPolarisCycleId}' was not found.");
-			}
-
-			attentive.PolarisCycleId = update.MoveToPolarisCycleId;
 		}
 
 		if (update.Time.IsSet)
@@ -496,7 +464,7 @@ public sealed class DeclarativeApiService(
 			"attentive.update",
 			subjectType: nameof(Attentive),
 			subjectId: attentive.Id.ToString(CultureInfo.InvariantCulture),
-			details: new { attentive.DecreeId, attentive.PolarisCycleId, resolution = attentive.Resolution.ToString(), date = attentive.Epoch.Date.ToString("yyyy-MM-dd") },
+			details: new { attentive.DecreeId, resolution = attentive.Resolution.ToString(), date = attentive.Epoch.Date.ToString("yyyy-MM-dd") },
 			cancellationToken: cancellationToken);
 		return attentive;
 	}

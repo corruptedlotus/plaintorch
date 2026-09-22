@@ -7,10 +7,10 @@ using Xunit;
 namespace Pleiades.Tests.Core;
 
 /// <summary>
-/// An attentive carries a timeframe affinity like an executive: it can be seeded when the decree is added to a cycle,
-/// set or cleared afterwards, and a timeframe that does not exist is refused.
+/// A decree-backed executive carries a timeframe affinity (PEP111): it can be seeded when the decree is added to a
+/// cycle, set or cleared afterwards, and a timeframe that does not exist is refused.
 /// </summary>
-public sealed class AttentiveAffinityTests : VaultTestBase
+public sealed class DecreeExecutiveAffinityTests : VaultTestBase
 {
 	private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -35,23 +35,22 @@ public sealed class AttentiveAffinityTests : VaultTestBase
 		var timeframeId = await CreateTimeframeAsync();
 		var decree = await Declarative(api => api.CreateDecreeAsync(new DecreePlan("Stretch"), Ct));
 
-		var attentive = await Polaris(api => api.AddDecreeAttentiveAsync(new PolarisAttentiveAdd(decree.Id, AffinityTimeframeId: timeframeId), cancellationToken: Ct));
+		var executive = await Polaris(api => api.AddDecreeExecutiveAsync(new PolarisDecreeAdd(decree.Id, AffinityTimeframeId: timeframeId), cancellationToken: Ct));
 
-		Assert.Equal(timeframeId, attentive.AffinityTimeframeId);
+		Assert.Equal(timeframeId, executive.AffinityTimeframeId);
 	}
 
 	[Fact]
-	public async Task An_attentive_affinity_can_be_set_and_cleared()
+	public async Task A_decree_executive_affinity_can_be_set_and_cleared()
 	{
 		var timeframeId = await CreateTimeframeAsync();
 		var decree = await Declarative(api => api.CreateDecreeAsync(new DecreePlan("Journal"), Ct));
-		var attentive = await Polaris(api => api.AddDecreeAttentiveAsync(new PolarisAttentiveAdd(decree.Id), cancellationToken: Ct));
-		var occurrence = new AttentiveOccurrenceRef(Id: attentive.Id);
+		var executive = await Polaris(api => api.AddDecreeExecutiveAsync(new PolarisDecreeAdd(decree.Id), cancellationToken: Ct));
 
-		var affined = await Declarative(api => api.UpdateAttentiveAsync(occurrence, new AttentiveUpdate(AffinityTimeframeId: timeframeId), Ct));
+		var affined = await Polaris(api => api.UpdateExecutiveAsync(executive.Id, new ExecutiveUpdate(AffinityTimeframeId: timeframeId), Ct));
 		Assert.Equal(timeframeId, affined.AffinityTimeframeId);
 
-		var cleared = await Declarative(api => api.UpdateAttentiveAsync(occurrence, new AttentiveUpdate(AffinityTimeframeId: (long?)null), Ct));
+		var cleared = await Polaris(api => api.UpdateExecutiveAsync(executive.Id, new ExecutiveUpdate(AffinityTimeframeId: (long?)null), Ct));
 		Assert.Null(cleared.AffinityTimeframeId);
 	}
 
@@ -59,9 +58,9 @@ public sealed class AttentiveAffinityTests : VaultTestBase
 	public async Task An_unknown_timeframe_is_refused()
 	{
 		var decree = await Declarative(api => api.CreateDecreeAsync(new DecreePlan("Walk"), Ct));
-		var attentive = await Polaris(api => api.AddDecreeAttentiveAsync(new PolarisAttentiveAdd(decree.Id), cancellationToken: Ct));
+		var executive = await Polaris(api => api.AddDecreeExecutiveAsync(new PolarisDecreeAdd(decree.Id), cancellationToken: Ct));
 
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Declarative(api =>
-			api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(Id: attentive.Id), new AttentiveUpdate(AffinityTimeframeId: 999_999L), Ct)));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Polaris(api =>
+			api.UpdateExecutiveAsync(executive.Id, new ExecutiveUpdate(AffinityTimeframeId: 999_999L), Ct)));
 	}
 }

@@ -97,7 +97,7 @@ public sealed class OccurrenceHardeningService(
 		var occurrenceDate = occurrence?.Date ?? date;
 		var occurrenceTime = occurrence?.StartTime ?? request.Time;
 		var existing = await context.Attentives.FirstOrDefaultAsync(
-			item => item.DecreeId == decree.Id && item.RecurrenceDate == occurrenceDate && item.RecurrenceTime == occurrenceTime && item.PolarisCycleId == null,
+			item => item.DecreeId == decree.Id && item.RecurrenceDate == occurrenceDate && item.RecurrenceTime == occurrenceTime,
 			cancellationToken);
 		if (existing is not null)
 		{

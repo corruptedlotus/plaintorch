@@ -11,7 +11,7 @@ namespace Pleiades.Tests.Core;
 /// <summary>
 /// Taking an activity back out of a Polaris cycle deletes the cycle's record of it and nothing else. The core moves
 /// backlog state forward on cycle participation and never back: the objective behind a removed executive keeps its
-/// state, the decree behind a removed attentive stays, and what a done attentive granted stays granted.
+/// state, the decree behind a removed decree-executive stays, and what a done executive granted stays granted.
 /// </summary>
 public sealed class PolarisActivityRemovalTests : VaultTestBase
 {
@@ -61,29 +61,28 @@ public sealed class PolarisActivityRemovalTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Removing_an_attentive_deletes_it_and_keeps_its_decree()
+	public async Task Removing_a_decree_executive_deletes_it_and_keeps_its_decree()
 	{
 		var decree = await Vault.WithScopeAsync(services => services.GetRequiredService<IDeclarativeApi>()
 			.CreateDecreeAsync(new DecreePlan("Stand watch"), Token));
-		var attentive = await PolarisAsync(api => api.AddDecreeAttentiveAsync(new PolarisAttentiveAdd(decree.Id), null, Token));
+		var executive = await PolarisAsync(api => api.AddDecreeExecutiveAsync(new PolarisDecreeAdd(decree.Id), null, Token));
 
-		await RemoveAsync(api => api.RemoveAttentiveAsync(attentive.Id, Token));
+		await RemoveAsync(api => api.RemoveExecutiveAsync(executive.Id, Token));
 
-		Assert.False(await Vault.QueryAsync(context => context.Attentives.AnyAsync(item => item.Id == attentive.Id, Token)));
+		Assert.False(await Vault.QueryAsync(context => context.Set<Executive>().AnyAsync(item => item.Id == executive.Id, Token)));
 		Assert.True(await Vault.QueryAsync(context => context.Decrees.AnyAsync(item => item.Id == decree.Id, Token)));
 	}
 
 	[Fact]
-	public async Task What_a_done_attentive_granted_stays_granted()
+	public async Task What_a_done_decree_executive_granted_stays_granted()
 	{
 		var decree = await Vault.WithScopeAsync(services => services.GetRequiredService<IDeclarativeApi>()
 			.CreateDecreeAsync(new DecreePlan("Stand watch", ActiveCelestron: 5), Token));
-		var attentive = await PolarisAsync(api => api.AddDecreeAttentiveAsync(new PolarisAttentiveAdd(decree.Id), null, Token));
-		await Vault.WithScopeAsync(services => services.GetRequiredService<IDeclarativeApi>()
-			.UpdateAttentiveAsync(new AttentiveOccurrenceRef(Id: attentive.Id), new AttentiveUpdate(Resolution: AttentiveResolution.Done), Token));
+		var executive = await PolarisAsync(api => api.AddDecreeExecutiveAsync(new PolarisDecreeAdd(decree.Id), null, Token));
+		await PolarisAsync(api => api.UpdateExecutiveAsync(executive.Id, new ExecutiveUpdate(Executed: true), Token));
 		var granted = await Vault.QueryAsync(context => context.CelestronLedger.CountAsync(item => item.SourcePuck == decree.Id, Token));
 
-		await RemoveAsync(api => api.RemoveAttentiveAsync(attentive.Id, Token));
+		await RemoveAsync(api => api.RemoveExecutiveAsync(executive.Id, Token));
 
 		Assert.True(granted > 0);
 		Assert.Equal(granted, await Vault.QueryAsync(context => context.CelestronLedger.CountAsync(item => item.SourcePuck == decree.Id, Token)));
@@ -93,6 +92,5 @@ public sealed class PolarisActivityRemovalTests : VaultTestBase
 	public async Task Removing_what_is_not_there_is_refused()
 	{
 		await Assert.ThrowsAsync<InvalidOperationException>(() => RemoveAsync(api => api.RemoveExecutiveAsync(987654, Token)));
-		await Assert.ThrowsAsync<InvalidOperationException>(() => RemoveAsync(api => api.RemoveAttentiveAsync(987654, Token)));
 	}
 }

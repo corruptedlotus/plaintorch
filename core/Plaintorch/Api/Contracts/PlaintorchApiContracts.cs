@@ -386,7 +386,8 @@ public sealed record ExecutiveUpdate(
 	Optional<int?> Minimum = default,
 	Optional<int?> Maximum = default,
 	int? Elapsed = null,
-	Optional<long?> AffinityTimeframeId = default);
+	Optional<long?> AffinityTimeframeId = default,
+	string? MoveToPolarisCycleId = null);
 
 /// <summary>
 /// Represents the inputs used to draw reflectives for a Polaris cycle.
@@ -499,17 +500,13 @@ public sealed record AttentiveMaterialization(
 	int? Maximum = null);
 
 /// <summary>
-/// Represents a mutable update to an attentive occurrence.
+/// Represents a mutable update to an attentive occurrence. An attentive is always unbound (PEP111), so
+/// <paramref name="Date"/> reschedules it freely.
 /// </summary>
-/// <remarks>
-/// Mobility rules (PEP100): <paramref name="Date"/> reschedules and is only valid while unbound;
-/// <paramref name="MoveToPolarisCycleId"/> is only valid while Polaris-bound.
-/// </remarks>
 public sealed record AttentiveUpdate(
 	DateOnly? Date = null,
 	Optional<TimeOnly?> Time = default,
 	AttentiveResolution? Resolution = null,
-	string? MoveToPolarisCycleId = null,
 	Optional<int?> Estimation = default,
 	Optional<int?> Minimum = default,
 	Optional<int?> Maximum = default,
@@ -526,26 +523,16 @@ public sealed record EventiveOccurrenceRef(
 	TimeOnly? RecurrenceTime = null);
 
 /// <summary>
-/// Addresses a single attentive occurrence one of two ways (Strategy 1). An unbound occurrence is addressed by
-/// its decree + RECURRENCE-ID (<paramref name="DecreeId"/> + <paramref name="RecurrenceDate"/> +
-/// <paramref name="RecurrenceTime"/>): the recurrence-id resolves a projected occurrence and its hardened twin
-/// identically, so an interaction hardens it without needing a row id. A Polaris-bound occurrence has no
-/// meaningful recurrence-id — it was placed into a cycle by hand and always exists as a row — so it is addressed
-/// by its database <paramref name="Id"/> instead. Supplying <paramref name="Id"/> selects the by-id mode;
-/// otherwise the recurrence-id mode applies.
+/// Addresses a single attentive occurrence by its decree + RECURRENCE-ID (<paramref name="DecreeId"/> +
+/// <paramref name="RecurrenceDate"/> + <paramref name="RecurrenceTime"/>): the recurrence-id resolves a projected
+/// occurrence and its hardened twin identically, so an interaction hardens it without needing a row id. Attentives
+/// are always unbound occurrences (PEP111); a decree placed into a cycle is an <see cref="Executive"/>, addressed
+/// by its own row id.
 /// </summary>
 public sealed record AttentiveOccurrenceRef(
 	string? DecreeId = null,
 	DateOnly? RecurrenceDate = null,
-	TimeOnly? RecurrenceTime = null,
-	long? Id = null)
-{
-	/// <summary>
-	/// Gets a value indicating whether this reference addresses the attentive by its database row id (the mode
-	/// used for a Polaris-bound occurrence) rather than by decree + recurrence-id.
-	/// </summary>
-	public bool AddressesById => Id is not null;
-}
+	TimeOnly? RecurrenceTime = null);
 
 /// <summary>
 /// The request body for updating an eventive occurrence over the wire: the occurrence to address plus the
@@ -560,13 +547,11 @@ public sealed record EventiveUpdateRequest(EventiveOccurrenceRef Occurrence, Eve
 public sealed record AttentiveUpdateRequest(AttentiveOccurrenceRef Occurrence, AttentiveUpdate Update);
 
 /// <summary>
-/// Represents the data required to manually add a decree to a Polaris cycle, creating a Polaris-bound
-/// attentive (PEP100).
+/// Represents the data required to add a decree to a Polaris cycle, creating a decree-backed
+/// <see cref="Executive"/> (PEP111). The cycle is the temporal context, so no occurrence date/time is carried.
 /// </summary>
-public sealed record PolarisAttentiveAdd(
+public sealed record PolarisDecreeAdd(
 	string DecreeId,
-	DateOnly? Date = null,
-	TimeOnly? Time = null,
 	int? Estimation = null,
 	int? Minimum = null,
 	int? Maximum = null,

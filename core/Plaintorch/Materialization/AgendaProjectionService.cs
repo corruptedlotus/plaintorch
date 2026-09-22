@@ -48,9 +48,8 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		var attentives = await context.Attentives
 			.AsNoTracking()
 			.Include(item => item.Decree)
-			.Where(item => item.PolarisCycleId == null
-				&& ((item.Epoch.Moment >= windowStart && item.Epoch.Moment < windowEndExclusive)
-					|| (item.PeriodEndDate != null && item.Epoch.Moment < windowEndExclusive && item.PeriodEndDate > startInclusive)))
+			.Where(item => (item.Epoch.Moment >= windowStart && item.Epoch.Moment < windowEndExclusive)
+				|| (item.PeriodEndDate != null && item.Epoch.Moment < windowEndExclusive && item.PeriodEndDate > startInclusive))
 			.ToListAsync(cancellationToken);
 
 		var eventiveKeys = eventives.Select(OccurrenceKey).ToHashSet();

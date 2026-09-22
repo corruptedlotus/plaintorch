@@ -216,8 +216,7 @@ public sealed class ProximityMaterializationService(
 		var exists = await context.Attentives.AnyAsync(
 			item => item.DecreeId == decree.Id
 				&& item.RecurrenceDate == occurrence.Date
-				&& item.RecurrenceTime == occurrence.StartTime
-				&& item.PolarisCycleId == null,
+				&& item.RecurrenceTime == occurrence.StartTime,
 			cancellationToken);
 		if (exists)
 		{

@@ -4,14 +4,13 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace Pleiades.Orchestration;
 
 /// <summary>
-/// Represents a per-occurrence instance of a decree (PEP100): an attention/act item shaped like an
-/// executive, created through interaction or proximity (unbound) or by manually adding its decree to a
-/// Polaris cycle (bound).
+/// Represents a per-occurrence instance of a decree (PEP100/PEP111): an attention/act item shaped like an
+/// executive, created through interaction or proximity. An attentive is always an unbound occurrence of its
+/// decree's schedule; adding a decree into a Polaris cycle creates an <see cref="Executive"/> instead.
 /// </summary>
 /// <remarks>
-/// Mobility rules: an unbound attentive can be done, skipped, or rescheduled (delayed); a Polaris-bound
-/// attentive can only be done, skipped, or moved to another Polaris cycle. Its Celestron reward is
-/// predefined on the owning decree and granted on each execution.
+/// An attentive can be done, skipped, or rescheduled (delayed). Its Celestron reward is predefined on the owning
+/// decree and granted on each execution.
 /// </remarks>
 public sealed class Attentive : ITimeAllocated, IOccurrenceInstance
 {
@@ -34,20 +33,8 @@ public sealed class Attentive : ITimeAllocated, IOccurrenceInstance
 	public Decree? Decree { get; set; }
 
 	/// <summary>
-	/// Gets or sets the bound Polaris cycle identifier, when the attentive is Polaris-bound.
-	/// </summary>
-	public string? PolarisCycleId { get; set; }
-
-	[ForeignKey(nameof(PolarisCycleId))]
-	[InverseProperty(nameof(PolarisCycle.Attentives))]
-	/// <summary>
-	/// Gets or sets the bound Polaris cycle.
-	/// </summary>
-	public PolarisCycle? PolarisCycle { get; set; }
-
-	/// <summary>
 	/// Gets or sets the occurrence's position in time — the mutable current moment plus its granularity,
-	/// nominal duration, and zone (PEP111). An unbound attentive can be rescheduled by moving the moment;
+	/// nominal duration, and zone (PEP111). An attentive can be rescheduled by moving the moment;
 	/// <see cref="RecurrenceId"/> keeps the original slot so orbit dedup and the agenda still resolve it.
 	/// </summary>
 	public Epoch Epoch { get; set; } = new();
@@ -120,10 +107,4 @@ public sealed class Attentive : ITimeAllocated, IOccurrenceInstance
 	/// Gets or sets the affined timeframe.
 	/// </summary>
 	public Timeframe? AffinityTimeframe { get; set; }
-
-	[NotMapped]
-	/// <summary>
-	/// Gets a value indicating whether the attentive is bound to a Polaris cycle.
-	/// </summary>
-	public bool IsBound => PolarisCycleId is not null;
 }

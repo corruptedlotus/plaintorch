@@ -38,7 +38,7 @@ public sealed class PolarisAgendaTests : VaultTestBase
 			.StartNewAsync(cancellationToken: ct));
 
 		await Vault.WithScopeAsync(s => s.GetRequiredService<IPolarisCycleApi>()
-			.AddDecreeAttentiveAsync(new PolarisAttentiveAdd(DecreeId: boundDecree.Id), cycle.Id, ct));
+			.AddDecreeExecutiveAsync(new PolarisDecreeAdd(DecreeId: boundDecree.Id), cycle.Id, ct));
 
 		var loaded = await Vault.WithScopeAsync(s => s.GetRequiredService<IPolarisCycleApi>()
 			.GetAsync(cycle.Id, ct));
@@ -51,11 +51,12 @@ public sealed class PolarisAgendaTests : VaultTestBase
 		Assert.NotNull(reflective.Decree!.Directive);
 		Assert.Equal(lunar.Id, reflective.Decree!.Directive!.Id);
 
-		var attentive = Assert.Single(loaded.Attentives);
-		Assert.Equal(cycle.Id, attentive.PolarisCycleId);
-		Assert.NotNull(attentive.Decree);
-		Assert.NotNull(attentive.Decree!.Directive);
-		Assert.Equal(stellar.Id, attentive.Decree!.Directive!.Id);
+		// The decree bound to the cycle is a decree-backed executive, carrying its incentive and directive.
+		var executive = Assert.Single(loaded.Executives);
+		Assert.Equal(boundDecree.Id, executive.IncentiveId);
+		Assert.NotNull(executive.Incentive);
+		Assert.NotNull(executive.Incentive!.Directive);
+		Assert.Equal(stellar.Id, executive.Incentive!.Directive!.Id);
 	}
 
 	[Fact]
@@ -107,11 +108,6 @@ public sealed class PolarisAgendaTests : VaultTestBase
 		var decree = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
 			.CreateDecreeAsync(new DecreePlan("Check inbox", DirectiveId: directive.Id), ct));
 
-		// A cycle only exists so a bound attentive has a real foreign key to hang on. The decree has no orbit,
-		// so beginning the cycle seeds nothing, keeping the agenda entirely from the rows inserted below.
-		var cycle = await Vault.WithScopeAsync(s => s.GetRequiredService<IPolarisCycleApi>()
-			.StartNewAsync(cancellationToken: ct));
-
 		await Vault.WithScopeAsync(async s =>
 		{
 			var context = s.GetRequiredService<PlainfraContext>();
@@ -123,8 +119,7 @@ public sealed class PolarisAgendaTests : VaultTestBase
 				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today.AddDays(-1), null, OrbitUnit.Day), Resolution = AttentiveResolution.Pending },
 				// Resolved two hours ago: Done and outside the one-hour retention window, so it stays excluded.
 				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today, null, OrbitUnit.Day), Resolution = AttentiveResolution.Done, ResolvedOn = DateTimeOffset.UtcNow.AddHours(-2) },
-				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today.AddDays(2), null, OrbitUnit.Day), Resolution = AttentiveResolution.Pending },
-				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today, null, OrbitUnit.Day), Resolution = AttentiveResolution.Pending, PolarisCycleId = cycle.Id });
+				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today.AddDays(2), null, OrbitUnit.Day), Resolution = AttentiveResolution.Pending });
 
 			context.Eventives.AddRange(
 				new Eventive { FateId = "agenda-test-fate", Epoch = Epoch.From(today.AddDays(3), null, OrbitUnit.Day), RecurrenceDate = today.AddDays(3), Resolution = EventiveResolution.Pending },
@@ -136,11 +131,10 @@ public sealed class PolarisAgendaTests : VaultTestBase
 		var agenda = await Vault.WithScopeAsync(s => s.GetRequiredService<IPolarisCycleApi>()
 			.GetAgendaAsync(ct));
 
-		// Unbound, pending, and due today or earlier: the done, the future, and the bound rows are all excluded.
+		// Pending and due today or earlier: the done and the future rows are excluded.
 		Assert.Equal(2, agenda.Attentives.Count);
 		Assert.All(agenda.Attentives, attentive =>
 		{
-			Assert.Null(attentive.PolarisCycleId);
 			Assert.Equal(AttentiveResolution.Pending, attentive.Resolution);
 			Assert.True(attentive.Epoch.Date <= today);
 			Assert.NotNull(attentive.Decree);
@@ -162,8 +156,6 @@ public sealed class PolarisAgendaTests : VaultTestBase
 			.CreateStandaloneAsync("Ops", cancellationToken: ct));
 		var decree = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
 			.CreateDecreeAsync(new DecreePlan("Check inbox", DirectiveId: directive.Id), ct));
-		var cycle = await Vault.WithScopeAsync(s => s.GetRequiredService<IPolarisCycleApi>()
-			.StartNewAsync(cancellationToken: ct));
 
 		var recentlyResolvedOn = DateTimeOffset.UtcNow.AddMinutes(-30);
 		await Vault.WithScopeAsync(async s =>
@@ -173,14 +165,6 @@ public sealed class PolarisAgendaTests : VaultTestBase
 				new Attentive
 				{
 					DecreeId = decree.Id,
-					Epoch = Epoch.From(today.AddDays(14), null, OrbitUnit.Day),
-					Resolution = AttentiveResolution.Done,
-					ResolvedOn = recentlyResolvedOn,
-				},
-				new Attentive
-				{
-					DecreeId = decree.Id,
-					PolarisCycleId = cycle.Id,
 					Epoch = Epoch.From(today.AddDays(14), null, OrbitUnit.Day),
 					Resolution = AttentiveResolution.Done,
 					ResolvedOn = recentlyResolvedOn,
@@ -199,7 +183,6 @@ public sealed class PolarisAgendaTests : VaultTestBase
 			.GetAgendaAsync(ct));
 
 		var attentive = Assert.Single(agenda.Attentives);
-		Assert.Null(attentive.PolarisCycleId);
 		Assert.Equal(recentlyResolvedOn, attentive.ResolvedOn);
 	}
 }

@@ -72,15 +72,10 @@ public interface IPolarisCycleApi
 	Task RemoveExecutiveAsync(long executiveId, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Removes a Polaris-bound attentive from its cycle, deleting the record and nothing else: its decree stays, and
-	/// so does anything a done occurrence had already granted.
+	/// Adds a decree to a Polaris cycle, creating a decree-backed executive (PEP111). Removal is through
+	/// <see cref="RemoveExecutiveAsync"/>, like any other executive.
 	/// </summary>
-	Task RemoveAttentiveAsync(long attentiveId, CancellationToken cancellationToken = default);
-
-	/// <summary>
-	/// Manually adds a decree to a Polaris cycle, creating a Polaris-bound attentive (PEP100).
-	/// </summary>
-	Task<Attentive> AddDecreeAttentiveAsync(PolarisAttentiveAdd request, string? polarisCycleId = null, CancellationToken cancellationToken = default);
+	Task<Executive> AddDecreeExecutiveAsync(PolarisDecreeAdd request, string? polarisCycleId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Draws reflectives for a Polaris cycle.

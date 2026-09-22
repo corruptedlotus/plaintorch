@@ -183,7 +183,6 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		var attentive = await Vault.QueryAsync(context => context.Attentives
 			.SingleAsync(item => item.DecreeId == decree.Id && item.RecurrenceDate == today, Ct));
 		Assert.Equal(new TimeOnly(9, 0), attentive.RecurrenceTime);
-		Assert.Null(attentive.PolarisCycleId);
 	}
 
 	[Fact]

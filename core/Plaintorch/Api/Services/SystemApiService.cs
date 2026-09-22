@@ -606,8 +606,6 @@ public sealed class SystemApiService(
 				.ThenInclude(item => item.Incentive)
 			.Include(item => item.Reflectives)
 				.ThenInclude(item => item.Decree)
-			.Include(item => item.Attentives)
-				.ThenInclude(item => item.Decree)
 			.FirstOrDefaultAsync(item => item.Id == cycleId, cancellationToken);
 
 		return cycle;

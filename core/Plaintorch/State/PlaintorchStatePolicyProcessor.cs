@@ -25,6 +25,7 @@ public sealed class PlaintorchStatePolicyProcessor(
 {
 	private const string ObjectiveSettlementDescriptionPrefix = "PLAINTORCH objective settlement";
 	private const string AttentiveExecutionDescriptionPrefix = "PLAINTORCH attentive execution";
+	private const string DecreeExecutionDescriptionPrefix = "PLAINTORCH decree execution";
 	private const string ReflectiveCollectionDescriptionPrefix = "PLAINTORCH reflective collection";
 
 	/// <summary>
@@ -46,6 +47,7 @@ public sealed class PlaintorchStatePolicyProcessor(
 		var supersededForecasts = await EnforcePolarisRulesAsync(context, cancellationToken);
 		await ApplyObjectiveSettlementRulesAsync(context, cancellationToken);
 		await ApplyAttentiveResolutionRulesAsync(context, cancellationToken);
+		await ApplyDecreeExecutiveRewardRulesAsync(context, cancellationToken);
 		await ApplyReflectiveCollectionRewardRulesAsync(context, cancellationToken);
 		await HardenReferencedOccurrencesAsync(context, cancellationToken);
 		await dependencyReconciler.ReconcileAsync(context, cancellationToken);
@@ -435,6 +437,75 @@ public sealed class PlaintorchStatePolicyProcessor(
 	}
 
 	/// <summary>
+	/// Grants a decree-backed executive's Celestron reward on execution (PEP111): executing a decree inside a
+	/// Polaris cycle grants the decree's predefined <see cref="Decree.ActiveCelestron"/>, and un-executing it
+	/// revokes it — the successor to the Polaris-bound attentive's reward. Objective-backed executives are exempt;
+	/// their objective settles its own Celestron on completion. Keyed by decree + cycle (the executive's identity),
+	/// so the ledger entry is stable and idempotent across re-saves.
+	/// </summary>
+	private static async Task ApplyDecreeExecutiveRewardRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var executiveEntries = context.ChangeTracker.Entries<Executive>()
+			.Where(entry => entry.State is EntityState.Added or EntityState.Modified)
+			.ToList();
+		if (executiveEntries.Count == 0)
+		{
+			return;
+		}
+
+		foreach (var entry in executiveEntries)
+		{
+			var current = entry.Entity;
+			if (string.IsNullOrWhiteSpace(current.IncentiveId))
+			{
+				continue;
+			}
+
+			var wasExecuted = entry.State != EntityState.Added
+				&& entry.OriginalValues.GetValue<bool>(nameof(Executive.Executed));
+			if (wasExecuted == current.Executed)
+			{
+				continue;
+			}
+
+			// Only decree-backed executives carry a per-execution reward; the query returns nothing for an
+			// objective-backed one (its incentive id is not a decree), so it is naturally exempt.
+			var reward = await context.Decrees
+				.AsNoTracking()
+				.IgnoreAutoIncludes()
+				.Where(item => item.Id == current.IncentiveId)
+				.Select(item => (int?)item.ActiveCelestron)
+				.FirstOrDefaultAsync(cancellationToken);
+			if (reward is not { } amount || amount == 0)
+			{
+				continue;
+			}
+
+			var description = $"{DecreeExecutionDescriptionPrefix} (cycle {current.PolarisCycleId})";
+			var existingTransactions = await context.CelestronLedger
+				.Where(item => item.SourcePuck == current.IncentiveId && item.Description == description)
+				.ToListAsync(cancellationToken);
+
+			if (current.Executed)
+			{
+				if (existingTransactions.Count == 0)
+				{
+					context.CelestronLedger.Add(new CelestronTransaction
+					{
+						Amount = amount,
+						SourcePuck = current.IncentiveId,
+						Description = description,
+					});
+				}
+			}
+			else if (existingTransactions.Count > 0)
+			{
+				context.CelestronLedger.RemoveRange(existingTransactions);
+			}
+		}
+	}
+
+	/// <summary>
 	/// Applies the reflective collection reward (PEP100): reflectives ignore decree rewards; instead, once
 	/// all reflectives of a single Polaris cycle are done, the whole collection grants a fixed Celestron
 	/// amount. Un-executing a reflective revokes the cycle's collection reward.
@@ -500,17 +571,15 @@ public sealed class PlaintorchStatePolicyProcessor(
 	}
 
 	/// <summary>
-	/// Describes an attentive occurrence by its RECURRENCE-ID (and cycle when bound) for a stable, row-id-free
-	/// reward ledger key — the occurrence's identity survives a reschedule and is known before the row is saved.
+	/// Describes an attentive occurrence by its RECURRENCE-ID for a stable, row-id-free reward ledger key — the
+	/// occurrence's identity survives a reschedule and is known before the row is saved.
 	/// </summary>
 	private static string DescribeOccurrence(Attentive attentive)
 	{
 		var slot = attentive.RecurrenceTime is { } time
 			? $"{attentive.RecurrenceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}T{time.ToString("HH\\:mm", CultureInfo.InvariantCulture)}"
 			: attentive.RecurrenceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-		return attentive.PolarisCycleId is { } cycle
-			? $"attentive {cycle}:{slot}"
-			: $"attentive {slot}";
+		return $"attentive {slot}";
 	}
 
 	private static async Task<string?> ResolveActiveOnrushIdAsync(PlainfraContext context, CancellationToken cancellationToken)
