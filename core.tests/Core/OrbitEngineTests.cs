@@ -141,6 +141,25 @@ public sealed class OrbitEngineTests
 	}
 
 	[Fact]
+	public void Pleiadean_weeks_are_saturday_anchored()
+	{
+		// The Pleiadean resolver anchors the week on Saturday, so "the first day of every week" (w[d{1}])
+		// resolves onto Saturdays — where the Gregorian resolver's Monday-anchored week lands on Mondays.
+		var state = OrbitDays.CreateState("w[d{1}]", new DateOnly(2026, 7, 12), OrbitDays.Pleiadean, seed: 1);
+		var (occurrences, _) = OrbitDays.SeekOccurrencesThrough(state, new DateOnly(2026, 9, 1), OrbitDays.Pleiadean);
+
+		Assert.NotEmpty(occurrences);
+		Assert.All(occurrences, item => Assert.Equal(DayOfWeek.Saturday, item.Date.DayOfWeek));
+
+		// The same notation on the Gregorian calendar keeps its Monday-anchored week, proving the anchor is
+		// the Pleiadean calendar's own and not a change to the shared engine.
+		var gregorianState = OrbitDays.CreateState("w[d{1}]", new DateOnly(2026, 7, 12), OrbitDays.Gregorian, seed: 1);
+		var (gregorianOccurrences, _) = OrbitDays.SeekOccurrencesThrough(gregorianState, new DateOnly(2026, 9, 1), OrbitDays.Gregorian);
+		Assert.NotEmpty(gregorianOccurrences);
+		Assert.All(gregorianOccurrences, item => Assert.Equal(DayOfWeek.Monday, item.Date.DayOfWeek));
+	}
+
+	[Fact]
 	public void DateTime_literals_resolve_to_their_pinned_moment()
 	{
 		// Z with a time -> one minute-granular instant at the exact moment; a one-shot has no successor.

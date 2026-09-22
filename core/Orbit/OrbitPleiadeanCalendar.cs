@@ -5,8 +5,9 @@ namespace Pleiades.Orbits;
 /// <summary>
 /// The Pleiadean calendar system for the orbit engine: six months per year, months 1–5 of 61 days and a
 /// sixth month of 60/61 days (leap-coupled to the Persian calendar, matching
-/// <see cref="PleiadeanCalendar"/>). Weeks stay universal seven-day Monday-anchored cycles; hours, minutes,
-/// and seconds are unchanged. This is the default resolver calendar for decree orbits (attentives) and for
+/// <see cref="PleiadeanCalendar"/>). Weeks are seven-day cycles anchored on <b>Saturday</b> (Saturday = day 1
+/// of the week, Friday = day 7) — unlike the Gregorian resolver's Monday-anchored week; hours, minutes, and
+/// seconds are unchanged. This is the default resolver calendar for decree orbits (attentives) and for
 /// reflective day-matching (PEP100); fate orbits (eventives) keep the Gregorian calendar.
 /// </summary>
 public sealed class OrbitPleiadeanCalendar : IOrbitCalendar
@@ -86,6 +87,12 @@ public sealed class OrbitPleiadeanCalendar : IOrbitCalendar
 		return EpochDays + days + (day - 1);
 	}
 
+	/// <summary>
+	/// The Pleiadean day of the week for an instant: <b>Saturday = 1 … Friday = 7</b>. Remaps
+	/// <see cref="JsDate.UtcDayOfWeek"/> (JS convention, 0 = Sunday … 6 = Saturday) onto a Saturday-first cycle.
+	/// </summary>
+	private static int PleiadeanDayOfWeek(long ms) => (JsDate.UtcDayOfWeek(ms) + 1) % 7 + 1;
+
 	public int Get(long ms, OrbitUnit unit, OrbitUnit? parent = null)
 	{
 		switch (unit)
@@ -96,19 +103,15 @@ public sealed class OrbitPleiadeanCalendar : IOrbitCalendar
 			{
 				var (year, month, day) = PleiadeanFromDays(JsDate.EpochDays(ms));
 				var firstDayMs = DaysFromPleiadean(year, month, 1) * JsDate.MsPerDay;
-				var firstDayOfWeek = JsDate.UtcDayOfWeek(firstDayMs);
-				if (firstDayOfWeek == 0)
-				{
-					firstDayOfWeek = 7;
-				}
-
+				// Week-of-month rows break on the Saturday-anchored week, so the month's first day is placed by
+				// its Saturday-first index.
+				var firstDayOfWeek = PleiadeanDayOfWeek(firstDayMs);
 				return (day + firstDayOfWeek - 1 + 6) / 7; // ceil
 			}
 			case OrbitUnit.Day:
 				if (parent == OrbitUnit.Week)
 				{
-					var dow = JsDate.UtcDayOfWeek(ms);
-					return dow == 0 ? 7 : dow; // 1 = Monday, 7 = Sunday
+					return PleiadeanDayOfWeek(ms); // 1 = Saturday … 7 = Friday
 				}
 
 				return PleiadeanFromDays(JsDate.EpochDays(ms)).Day;
