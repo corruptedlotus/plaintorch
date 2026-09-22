@@ -1,5 +1,5 @@
 import { Component, component, css, html, nothing, property, state } from "@a11d/lit"
-import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
+import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, isObjectiveIncentive, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
 import { App, Modal, Notice } from "obsidian"
 import { core, openEntityEditor, SelectObjectiveStatusModal, SelectTimeframeModal, tooltip } from ".."
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
@@ -185,11 +185,13 @@ export class ExecutiveEditor extends Component {
 		const executive = this.executive
 		if (!executive) return html``
 
-		const objective = executive.objective
+		// An executive works an objective or a decree (PEP111); only an objective carries a shiftable workflow status.
+		const incentive = executive.incentive
+		const objective = isObjectiveIncentive(incentive) ? incentive : undefined
 
 		return html`
 			<div class='header'>
-				<div class='title'>${objective?.title ?? executive.title ?? 'Untitled Executive'}</div>
+				<div class='title'>${incentive?.title ?? 'Untitled Executive'}</div>
 			</div>
 			${!objective ? nothing : html`
 				<p7t-icon-item small icon='objective'>Open Objective</p7t-icon-item>
@@ -304,7 +306,7 @@ export class ExecutiveEditor extends Component {
 		this.executive = {
 			...this.executive!,
 			...updated,
-			objective: updated.objective ?? this.executive!.objective,
+			incentive: updated.incentive ?? this.executive!.incentive,
 			affinityTimeframe: choice ? ExecutiveEditor.recordToTimeframe(choice) : undefined,
 		}
 		this.notifyChange()
@@ -328,7 +330,8 @@ export class ExecutiveEditor extends Component {
 
 	private async commitStatus(e: Event) {
 		const status = (e.target as EditablePart<ObjectiveStatus>).value
-		const objective = this.executive?.objective
+		const incentive = this.executive?.incentive
+		const objective = isObjectiveIncentive(incentive) ? incentive : undefined
 		if (status === undefined || !objective) return
 
 		const updated = await core.objectives.shiftWorkflow(objective.id, { status })
@@ -337,7 +340,7 @@ export class ExecutiveEditor extends Component {
 			return
 		}
 
-		this.executive = { ...this.executive!, objective: updated }
+		this.executive = { ...this.executive!, incentive: updated }
 		this.notifyChange()
 	}
 
@@ -351,12 +354,12 @@ export class ExecutiveEditor extends Component {
 			return
 		}
 
-		// The update response carries no navigation properties, so the known objective and affinity timeframe are
+		// The update response carries no navigation properties, so the known incentive and affinity timeframe are
 		// kept — otherwise a plain allocation edit would spread `undefined` over them and drop the affinity display.
 		this.executive = {
 			...executive,
 			...updated,
-			objective: updated.objective ?? executive.objective,
+			incentive: updated.incentive ?? executive.incentive,
 			affinityTimeframe: updated.affinityTimeframe ?? executive.affinityTimeframe,
 		}
 		this.notifyChange()

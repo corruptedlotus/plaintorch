@@ -136,13 +136,13 @@ export async function saveEntityField(entity: GridEntity, field: EditableField):
 				? await core.objectives.shiftWorkflow(id, { status: value.status as never })
 				: await core.objectives.update(id, { title: entity.title, celestronValue: value.celestronValue as number }))
 		case 'fate':
+			// A fate is orbit-only (PEP111): the schedule column edits the orbit; a fixed date is folded into a
+			// `Z{…}` literal by the schedule control, so there is no separate 'date' field here.
 			return !!await repositories.fates.mutate(id, async () => await core.declaratives.updateFate(id, field === 'orbit'
 				? { orbit }
-				: field === 'date'
-					? { date: value.date as string | undefined }
-					: field === 'status'
-						? { status: value.status as never }
-						: { title: entity.title }))
+				: field === 'status'
+					? { status: value.status as never }
+					: { title: entity.title }))
 		case 'decree':
 			return !!await repositories.decrees.mutate(id, async () => await core.declaratives.updateDecree(id, field === 'orbit'
 				? { orbit }
@@ -249,22 +249,66 @@ export async function reparentEntity(entity: GridEntity, parent: Directive | und
 	return moved
 }
 
-/** Whether a fate is a one-off occurrence rather than a recurring schedule. */
+/** Whether a fate is a one-off occurrence — an orbit that is a fixed-datetime `Z{…}` literal (PEP111). */
 export function isSingleInstanceFate(entity: GridEntity): boolean {
-	const fate = entity as { orbit?: string, date?: string }
-	return !fate.orbit && !!fate.date
+	const fate = entity as { orbit?: string }
+	return !!fate.orbit && /^\s*Z\s*\{/.test(fate.orbit)
 }
 
 /**
- * Persists a fate's chosen schedule, clearing whichever shape it is not: an orbit clears the fixed date,
- * a fixed date clears the orbit (an empty orbit string clears it). This keeps a fate from carrying both and
- * materializing two schedules at once.
+ * Folds a chosen schedule into the orbit a fate stores (PEP111). A fate is orbit-only, so an orbit passes
+ * through while a fixed date/time becomes a `Z{y/M/d[Th:m]}` literal (with a `=<dur>` span for an event
+ * window). An empty result clears the schedule server-side.
+ */
+export function fateScheduleToOrbit(schedule: ScheduleValue): string {
+	if (schedule.mode === 'orbit') {
+		return schedule.orbit ?? ''
+	}
+
+	if (!schedule.date) {
+		return ''
+	}
+
+	const [year = '', month = '', day = ''] = schedule.date.split('-')
+	let literal = `Z{${Number(year)}/${Number(month)}/${Number(day)}`
+	if (schedule.time) {
+		const [hour = '', minute = ''] = schedule.time.split(':')
+		literal += `T${Number(hour)}:${minute}`
+	}
+
+	literal += '}'
+	const span = eventSpanNotation(schedule.time, schedule.endTime)
+	return span ? `${literal}=${span}` : literal
+}
+
+/** The `=<dur>` span notation from a start/end time pair, or undefined when there is no positive window. */
+function eventSpanNotation(startTime: string | undefined, endTime: string | undefined): string | undefined {
+	if (!startTime || !endTime) {
+		return undefined
+	}
+
+	const minutes = timeToMinutes(endTime) - timeToMinutes(startTime)
+	if (minutes <= 0) {
+		return undefined
+	}
+
+	const hours = Math.floor(minutes / 60)
+	const mins = minutes % 60
+	return `${hours > 0 ? `${hours}h` : ''}${mins > 0 ? `${mins}m` : ''}` || undefined
+}
+
+function timeToMinutes(time: string): number {
+	const [hour = '', minute = ''] = time.split(':')
+	return Number(hour) * 60 + Number(minute)
+}
+
+/**
+ * Persists a fate's chosen schedule as its orbit (PEP111): a recurring orbit or a one-off `Z{…}` literal
+ * folded from a fixed date/time. A fate is orbit-only, so there is only ever one shape to send.
  */
 export async function saveFateSchedule(entity: GridEntity, schedule: ScheduleValue): Promise<boolean> {
-	// The core interceptor clears whichever shape this update does not set, so only the chosen one is sent.
-	return !!await core.repos.fates.mutate(entity.id, async () => await core.declaratives.updateFate(entity.id, schedule.mode === 'orbit'
-		? { orbit: schedule.orbit ?? '' }
-		: { date: schedule.date, startTime: schedule.time }))
+	return !!await core.repos.fates.mutate(entity.id, async () =>
+		await core.declaratives.updateFate(entity.id, { orbit: fateScheduleToOrbit(schedule) }))
 }
 
 /** Opens the note an entity is the authority for, in a new tab. Takes any entity with a PUCK identity. */

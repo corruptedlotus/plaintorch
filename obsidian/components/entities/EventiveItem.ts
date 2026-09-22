@@ -27,10 +27,11 @@ export class EventiveItem extends OccurrenceItem {
 	protected override get info() {
 		const eventive = this.eventive
 		if (!eventive) return nothing
+		const timeOfDay = eventive.epoch.timeOfDay
 		return html`
 			<div style='display: flex; align-items: center; gap: 6px; font-weight: 300; opacity: .8; line-height: .9'>
-				<span>${formatDate(eventive.date)}</span>
-				${!eventive.startTime ? nothing : html`<span>${formatTime(eventive.startTime)}</span>`}
+				<span>${formatDate(eventive.epoch.date)}</span>
+				${!timeOfDay ? nothing : html`<span>${formatTime(timeOfDay)}</span>`}
 			</div>
 		`
 	}

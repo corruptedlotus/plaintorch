@@ -69,9 +69,9 @@ export class DecreeItem extends EntityItem<Decree> {
 
 	protected override async extraAction() {
 		const decreeId = this.decree!.id
-		const attentive = await core.polaris.addAttentive({ decreeId })
-		if (attentive) {
-			// The new attentive belongs to the owning cycle and shows on the briefing card; nudge both so it appears.
+		const executive = await core.polaris.addDecreeExecutive({ decreeId })
+		if (executive) {
+			// The new executive belongs to the owning cycle and shows on the briefing card; nudge both so it appears.
 			await core.repos.polaris.revalidateObserved()
 			await core.repos.briefing.revalidateIfObserved()
 		}

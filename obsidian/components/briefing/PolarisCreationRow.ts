@@ -1,25 +1,23 @@
 import { component, css, html, property, state } from "@a11d/lit"
-import { PolarisExecutivePlanningMode, type Activity, type Attentive, type DirectiveTimeframeRecord, type Executive, type PolarisCycle, type PolarisExecutivePlan } from "@pleiades/sdk"
+import { PolarisExecutivePlanningMode, type Activity, type DirectiveTimeframeRecord, type Executive, type PolarisCycle, type PolarisExecutivePlan } from "@pleiades/sdk"
 import { Notice } from "obsidian"
-import { AttentiveModal, core, ExecutiveModal, getApp, isObjectiveInCycle, type ActivityChoice, type EditableTimeUnit, type TimeframeSelect, type ActivitySelect } from ".."
+import { core, ExecutiveModal, getApp, isObjectiveInCycle, type ActivityChoice, type EditableTimeUnit, type TimeframeSelect, type ActivitySelect } from ".."
 import { CreationRowBase } from "../editing/CreationRowBase"
 
-/** What the Polaris row makes: an executive (from an objective) or an attentive (from a decree). */
-export type PolarisActivityCreated =
-	| { readonly kind: 'executive', readonly executive: Executive }
-	| { readonly kind: 'attentive', readonly attentive: Attentive }
+/** What the Polaris row makes: an executive — either objective- or decree-backed (PEP111). */
+export type PolarisActivityCreated = Executive
 
 /**
  * The inline row that adds an activity to the Polaris cycle: an estimation, the activity — an existing objective
  * or decree, or a new one named on the spot — and a timeframe affinity.
  *
- * Committing plans the activity into the cycle by the path its kind takes: an objective becomes an executive
- * (a new objective is created standalone by the same plan call), a decree materializes an attentive (a new
- * decree is created first). The estimation seeds the allocation; the affinity is applied to the executive
- * afterwards, since planning does not take one. Objectives already in the cycle are listed but cannot be chosen —
- * a cycle holds one instance of an objective.
+ * Committing plans the activity into the cycle as an executive (PEP111): an objective is planned (a new one
+ * created standalone by the same plan call), a decree is added as a decree-backed executive (a new decree is
+ * created first). The estimation seeds the allocation; the affinity is applied to the executive afterwards for
+ * an objective, or passed straight to the decree-add. Objectives already in the cycle are listed but cannot be
+ * chosen — a cycle holds one instance of an objective.
  *
- * The editor a committed row opens is the allocation modal of what it made: the executive's, or the attentive's.
+ * The editor a committed row opens is the executive's allocation modal.
  */
 @component('p7t-polaris-creation-row')
 export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> {
@@ -88,7 +86,7 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 			return undefined
 		}
 
-		return activity.kind === 'decree' ? await this.createAttentive(activity) : await this.createExecutive(activity)
+		return activity.kind === 'decree' ? await this.createDecreeExecutive(activity) : await this.createExecutive(activity)
 	}
 
 	private async createExecutive(activity: ActivityChoice): Promise<PolarisActivityCreated | undefined> {
@@ -106,11 +104,11 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 			return undefined
 		}
 
-		let executive: Executive = { ...result.executive, objective: result.executive.objective ?? result.objective ?? activity.objective }
+		let executive: Executive = { ...result.executive, incentive: result.executive.incentive ?? result.objective ?? activity.objective }
 		if (this.timeframe) {
 			const updated = await core.polaris.updateExecutive(executive.id, { affinityTimeframeId: this.timeframe.id })
 			if (updated) {
-				executive = { ...executive, ...updated, objective: updated.objective ?? executive.objective, affinityTimeframe: executive.affinityTimeframe }
+				executive = { ...executive, ...updated, incentive: updated.incentive ?? executive.incentive, affinityTimeframe: executive.affinityTimeframe }
 			}
 			else {
 				new Notice('The executive was added, but its affinity could not be set.')
@@ -119,25 +117,25 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 
 		await this.refresh(activity.isNew ? core.repos.objectiveList : undefined)
 		new Notice(`Added ${activity.title} to the active Polaris cycle.`)
-		return { kind: 'executive', executive }
+		return executive
 	}
 
-	private async createAttentive(activity: ActivityChoice): Promise<PolarisActivityCreated | undefined> {
+	private async createDecreeExecutive(activity: ActivityChoice): Promise<PolarisActivityCreated | undefined> {
 		const decree = activity.isNew ? await core.declaratives.createDecree({ title: activity.title }) : activity.decree
 		if (!decree) {
 			new Notice(`PLAINTORCH could not create the decree ${activity.title}.`)
 			return undefined
 		}
 
-		const attentive = await core.polaris.addAttentive({ decreeId: decree.id, estimation: this.estimation, affinityTimeframeId: this.timeframe?.id })
-		if (!attentive) {
+		const executive = await core.polaris.addDecreeExecutive({ decreeId: decree.id, estimation: this.estimation, affinityTimeframeId: this.timeframe?.id })
+		if (!executive) {
 			new Notice(`PLAINTORCH could not add ${activity.title} to the cycle.`)
 			return undefined
 		}
 
 		await this.refresh(activity.isNew ? core.repos.decreeList : undefined)
 		new Notice(`Added ${activity.title} to the active Polaris cycle.`)
-		return { kind: 'attentive', attentive: { ...attentive, decree: attentive.decree ?? decree } }
+		return { ...executive, incentive: executive.incentive ?? decree }
 	}
 
 	/** The new activity rides on the owning cycle and the briefing; a newly created incentive also on its listing. */
@@ -150,12 +148,7 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 	}
 
 	protected override openEditor(created: PolarisActivityCreated) {
-		if (created.kind === 'executive') {
-			new ExecutiveModal(getApp(), created.executive).open()
-			return
-		}
-
-		new AttentiveModal(getApp(), created.attentive).open()
+		new ExecutiveModal(getApp(), created).open()
 	}
 
 	protected override reset() {

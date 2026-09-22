@@ -1,44 +1,37 @@
 import { Notice } from 'obsidian'
-import { AttentiveResolution, type Attentive, type Executive } from '@pleiades/sdk'
+import type { Executive } from '@pleiades/sdk'
 import { core, getApp, type ContextMenuEntry, type ContextMenuSpec } from '..'
-import { attentiveOccurrence, AttentiveModal } from './AttentiveModal'
 import { ExecutiveModal } from './ExecutiveModal'
 import { openEntityEditor } from './entityMenu'
 
 /**
- * One thing a Polaris cycle holds to work at: an executive (an objective planned into the cycle) or an attentive
- * (a decree's occurrence bound to it). The two are separate records with separate calls, but to the cycle card
- * they are the same kind of row — so what a row can *do* is written once, here, against this union.
+ * One thing a Polaris cycle holds to work at: an {@link Executive}. Since PEP111 a decree in a cycle is an
+ * executive too (not a bound attentive), so a cycle holds exactly one kind of row — and what a row can *do* is
+ * written once, here. The alias is kept so the surfaces that speak of "activities" read unchanged.
  */
-export type PolarisActivity =
-	| { readonly kind: 'executive', readonly executive: Executive }
-	| { readonly kind: 'attentive', readonly attentive: Attentive }
+export type PolarisActivity = Executive
 
-/** The kinds Polaris activities travel under in a drag-and-drop transfer — the records' runtime type names. */
-export const polarisActivityKinds = ['Executive', 'Attentive'] as const
+/** The kind Polaris activities travel under in a drag-and-drop transfer — the record's runtime type name. */
+export const polarisActivityKinds = ['Executive'] as const
 
 /** The transfer kind of one activity. */
-export function polarisActivityKind(activity: PolarisActivity): string {
-	return activity.kind === 'executive' ? 'Executive' : 'Attentive'
+export function polarisActivityKind(_activity: PolarisActivity): string {
+	return 'Executive'
 }
 
-/** What an activity is called: the entity behind it, or an objective-less executive's own title. */
+/** What an activity is called: the incentive (objective or decree) behind it. */
 export function polarisActivityTitle(activity: PolarisActivity): string {
-	return activity.kind === 'executive'
-		? activity.executive.objective?.title ?? activity.executive.title ?? 'Executive'
-		: activity.attentive.decree?.title ?? 'Attentive'
+	return activity.incentive?.title ?? 'Executive'
 }
 
-/** Whether the activity is done: an executive executed, an attentive resolved as done. */
+/** Whether the activity is done: its executive executed. */
 export function isPolarisActivityDone(activity: PolarisActivity): boolean {
-	return activity.kind === 'executive'
-		? activity.executive.executed
-		: activity.attentive.resolution === AttentiveResolution.Done
+	return activity.executed
 }
 
-/** The objective or decree behind an activity — what "Edit" edits. An objective-less executive has none. */
+/** The incentive (objective or decree) behind an activity — what "Edit" edits. */
 function entityOf(activity: PolarisActivity) {
-	return activity.kind === 'executive' ? activity.executive.objective : activity.attentive.decree
+	return activity.incentive
 }
 
 /**
@@ -46,8 +39,8 @@ function entityOf(activity: PolarisActivity) {
  * the row is the *activity* — done or not, how much time it gets, in the cycle or out of it — and "Delete" there
  * would delete the objective or decree, which is never what removing a row from today means.
  *
- * `changed` is called with the updated record after Done or the allocation modal commits, so the row showing it
- * can redraw at once rather than wait for the cycle to be re-read.
+ * `changed` is called with the updated executive after Done or the allocation modal commits, so the row showing
+ * it can redraw at once rather than wait for the cycle to be re-read.
  */
 export function polarisActivityMenu(activity: PolarisActivity, changed?: (updated: PolarisActivity) => void): ContextMenuSpec {
 	const done = isPolarisActivityDone(activity)
@@ -74,28 +67,14 @@ export function polarisActivityMenu(activity: PolarisActivity, changed?: (update
 
 /** Opens the activity's allocation modal — its time, its affinity, its done flag. */
 export function openPolarisActivityAllocation(activity: PolarisActivity, changed?: (updated: PolarisActivity) => void) {
-	if (activity.kind === 'executive') {
-		new ExecutiveModal(getApp(), activity.executive, executive => changed?.({ kind: 'executive', executive })).open()
-		return
-	}
-
-	new AttentiveModal(getApp(), activity.attentive, attentive => changed?.({ kind: 'attentive', attentive })).open()
+	new ExecutiveModal(getApp(), activity, executive => changed?.(executive)).open()
 }
 
 /** Marks an activity done or not. Resolves to the updated activity, or `undefined` when the core refused. */
 export async function setPolarisActivityDone(activity: PolarisActivity, done: boolean): Promise<PolarisActivity | undefined> {
-	let updated: PolarisActivity | undefined
-	if (activity.kind === 'executive') {
-		const executive = await core.polaris.updateExecutive(activity.executive.id, { executed: done })
-		// The update answers with the bare record; the row keeps drawing the objective it already had.
-		updated = executive && { kind: 'executive', executive: { ...activity.executive, ...executive, objective: executive.objective ?? activity.executive.objective } }
-	}
-	else {
-		const attentive = await core.declaratives.updateAttentive(attentiveOccurrence(activity.attentive), {
-			resolution: done ? AttentiveResolution.Done : AttentiveResolution.Pending
-		})
-		updated = attentive && { kind: 'attentive', attentive: { ...activity.attentive, ...attentive, decree: attentive.decree ?? activity.attentive.decree } }
-	}
+	const executive = await core.polaris.updateExecutive(activity.id, { executed: done })
+	// The update answers with the bare record; the row keeps drawing the incentive it already had.
+	const updated = executive && { ...activity, ...executive, incentive: executive.incentive ?? activity.incentive }
 
 	if (!updated) {
 		new Notice(`PLAINTORCH could not update ${polarisActivityTitle(activity)}.`)
@@ -107,16 +86,14 @@ export async function setPolarisActivityDone(activity: PolarisActivity, done: bo
 }
 
 /**
- * Takes an activity out of its cycle, deleting the executive or attentive and nothing else: the objective or
- * decree behind it stays as it is, state included.
+ * Takes an activity out of its cycle, deleting the executive and nothing else: the objective or decree behind
+ * it stays as it is, state included.
  */
 export async function removePolarisActivity(activity: PolarisActivity): Promise<boolean> {
 	const title = polarisActivityTitle(activity)
 	let removed = false
 	try {
-		removed = activity.kind === 'executive'
-			? await core.polaris.removeExecutive(activity.executive.id)
-			: await core.polaris.removeAttentive(activity.attentive.id)
+		removed = await core.polaris.removeExecutive(activity.id)
 	}
 	catch (error) {
 		console.error('PLAINTORCH: removing a Polaris activity failed.', error)

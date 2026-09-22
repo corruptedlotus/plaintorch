@@ -67,15 +67,16 @@ export class DecreeBanner extends EntityBanner<Decree> {
 
 	protected get isInActivePolaris() {
 		if (!this.activePolaris || !this.entity) return false
-		return (this.activePolaris.attentives ?? []).some(attentive => attentive.decreeId === this.entity!.id)
+		// A decree in a cycle is a decree-backed executive now (PEP111), so membership is read off the executives.
+		return this.activePolaris.executives.some(executive => executive.incentiveId === this.entity!.id)
 	}
 
 	addToPolaris = async () => {
 		if (this.isInActivePolaris) return
 		const decreeId = this.entity!.id
-		const attentive = await core.repos.decrees.mutate(decreeId, async () =>
-			await core.polaris.addAttentive({ decreeId }))
-		if (attentive) {
+		const executive = await core.repos.decrees.mutate(decreeId, async () =>
+			await core.polaris.addDecreeExecutive({ decreeId }))
+		if (executive) {
 			new Notice('Added to active Polaris cycle.')
 			this.activePolaris = await core.polaris.getCurrent()
 		}

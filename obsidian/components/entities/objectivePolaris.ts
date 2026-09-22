@@ -8,7 +8,7 @@ import { core } from '..'
  * surface showing membership (a checked button, a filtered picker, a refused drop) reads the same answer.
  */
 export function isObjectiveInCycle(objectiveId: string, cycle: PolarisCycle | undefined | null): boolean {
-	return !!cycle?.executives.some(executive => (executive.objectiveId ?? executive.objective?.id) === objectiveId)
+	return !!cycle?.executives.some(executive => (executive.incentiveId ?? executive.incentive?.id) === objectiveId)
 }
 
 /** The active Polaris cycle as the briefing record knows it — cached, and kept current by the repositories. */

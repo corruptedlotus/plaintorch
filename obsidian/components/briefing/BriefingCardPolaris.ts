@@ -1,6 +1,6 @@
 import { component, css, eventListener, html, nothing, state } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
-import { Attentive, Objective, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
+import { Objective, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
 import {
 	addObjectiveToPolaris, core, isObjectiveInCycle, polarisActivityKind, polarisActivityKinds, removePolarisActivity, timebound,
 	TransferController, type CreationRowCreated, type PolarisActivity, type PolarisActivityCreated
@@ -203,20 +203,11 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		return html`
 			${this.reflectivesGroup}
 			${this.data!.executives.map(executive => html`
-				<p7t-objective-item-exec
+				<p7t-incentive-item-exec
 					interactive
-					.entity=${executive.objective}
 					.executive=${executive}
-					${this.activities.draggable({ kind: 'executive', executive })}>
-				</p7t-objective-item-exec>
-			`)}
-			${(this.data!.attentives ?? []).map(attentive => html`
-				<p7t-decree-item-attentive
-					interactive
-					.entity=${attentive.decree}
-					.attentive=${attentive}
-					${this.activities.draggable({ kind: 'attentive', attentive })}>
-				</p7t-decree-item-attentive>
+					${this.activities.draggable(executive)}>
+				</p7t-incentive-item-exec>
 			`)}
 			${!this.creating ? html`
 				<p7t-button @click=${() => this.addActivity()} icon='lucide:plus' class='add-button'>Add Activity</p7t-button>
@@ -291,18 +282,6 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		this.data = {
 			...this.data,
 			reflectives: this.data.reflectives.map(reflective => reflective.id === e.detail.id ? e.detail : reflective),
-		}
-		void core.repos.briefing.revalidateIfObserved()
-	}
-
-	/** A bound attentive toggled its resolution: reconcile the local copy, then revalidate. */
-	@eventListener('attentivechange')
-	protected onAttentiveChange(e: CustomEvent<Attentive>) {
-		e.stopPropagation()
-		if (!this.data) return
-		this.data = {
-			...this.data,
-			attentives: (this.data.attentives ?? []).map(attentive => attentive.id === e.detail.id ? e.detail : attentive),
 		}
 		void core.repos.briefing.revalidateIfObserved()
 	}

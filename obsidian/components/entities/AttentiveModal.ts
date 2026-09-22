@@ -1,38 +1,23 @@
-import { Component, component, css, html, nothing, property, state } from "@a11d/lit"
+import { Component, component, css, html, nothing, property } from "@a11d/lit"
 import { AttentiveResolution, DirectiveTimeframeRecord, Timeframe, type Attentive, type AttentiveOccurrenceRef, type AttentiveUpdate } from "@pleiades/sdk"
 import { App, Modal, Notice } from "obsidian"
 import { core, openEntityEditor, SelectTimeframeModal, tooltip } from ".."
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 import type { EditablePart } from "../editing/EditableDataLink"
-import type { EditableTimeUnit } from "../editing/EditableTimeUnit"
 
-type Allocation = 'estimation' | 'minimum' | 'maximum'
-
-/** Addresses an attentive for an update: a bound one by row id, an unbound one by its recurrence-id. */
+/** Addresses an attentive for an update by its RECURRENCE-ID (attentives are always unbound, PEP111). */
 export function attentiveOccurrence(attentive: Attentive): AttentiveOccurrenceRef {
-	return attentive.polarisCycleId
-		? { id: attentive.id }
-		: { decreeId: attentive.decreeId, recurrenceDate: attentive.recurrenceDate, recurrenceTime: attentive.recurrenceTime }
+	return { decreeId: attentive.decreeId, recurrenceDate: attentive.recurrenceDate, recurrenceTime: attentive.recurrenceTime }
 }
 
 /**
- * Editing surface for a single attentive — the attentive-side twin of the executive editor: its resolution
- * (done or pending), its timeframe affinity, and the estimation/minimum/maximum allocations. An attentive keeps
- * no tracked tally and its decree has no workflow status to shift, so those two columns are absent.
- *
- * Allocations are drafted locally so the bar follows an edit in progress, then persisted once committed; the
- * core reconciles the envelope, so its response is folded back over the draft.
+ * Editing surface for a single attentive — an unbound occurrence of its decree (PEP111): its resolution (done
+ * or pending) and its timeframe affinity. An attentive carries no time allocation (that lives on the executive)
+ * and its decree has no workflow status to shift, so neither column appears.
  */
 @component('p7t-attentive-editor')
 export class AttentiveEditor extends Component {
-	@property({
-		type: Object,
-		updated(this: AttentiveEditor, value: Attentive | undefined) {
-			this.draft = { estimation: value?.estimation, minimum: value?.minimum, maximum: value?.maximum }
-		}
-	}) attentive?: Attentive
-
-	@state() private draft: Record<Allocation, number | undefined> = { estimation: undefined, minimum: undefined, maximum: undefined }
+	@property({ type: Object }) attentive?: Attentive
 
 	static override get styles() {
 		return css`
@@ -176,41 +161,7 @@ export class AttentiveEditor extends Component {
 					<p7t-timeframe-item small nullable affinity .timeframe=${attentive.affinityTimeframe}></p7t-timeframe-item>
 				</p7t-editable>
 			</div>
-
-			<p7t-allocation-bar
-				.elapsed=${0}
-				.estimation=${this.draft.estimation ?? 0}
-				.minimum=${this.draft.minimum ?? 0}
-				.maximum=${this.draft.maximum ?? 0}>
-			</p7t-allocation-bar>
-
-			<div class='allocations'>
-				${this.allocationTemplate('minimum', 'Min')}
-				${this.allocationTemplate('estimation', 'Estimated', true)}
-				${this.allocationTemplate('maximum', 'Max')}
-			</div>
 		`
-	}
-
-	private allocationTemplate(allocation: Allocation, caption: string, featured = false) {
-		return html`
-			<div class='allocation ${featured ? 'featured' : ''}'>
-				<p7t-editable-time-unit
-					nullable
-					?accent=${featured}
-					.value=${this.draft[allocation]}
-					@preview=${(e: CustomEvent<number>) => this.draft = { ...this.draft, [allocation]: e.detail }}
-					@change=${(e: Event) => this.commitAllocation(allocation, e)}>
-				</p7t-editable-time-unit>
-				<span class='caption'>${caption}</span>
-			</div>
-		`
-	}
-
-	private commitAllocation(allocation: Allocation, e: Event) {
-		const value = (e.target as EditableTimeUnit).value
-		this.draft = { ...this.draft, [allocation]: value }
-		void this.applyUpdate({ [allocation]: value ?? null } as AttentiveUpdate)
 	}
 
 	private commitResolution(e: Event) {

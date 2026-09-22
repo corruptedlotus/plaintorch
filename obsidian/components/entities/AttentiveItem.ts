@@ -43,16 +43,13 @@ export class AttentiveItem extends OccurrenceItem {
 		if (!attentive) return
 
 		const resolution = this.done ? AttentiveResolution.Pending : AttentiveResolution.Done
-		// A Polaris-bound occurrence has no meaningful recurrence-id and always exists as a row, so it is addressed
-		// by its id; an unbound one is addressed by its RECURRENCE-ID so a still-projected agenda item hardens on
-		// interaction instead of failing on an absent row id.
-		const occurrence = attentive.polarisCycleId
-			? { id: attentive.id }
-			: {
-				decreeId: attentive.decreeId,
-				recurrenceDate: attentive.recurrenceDate,
-				recurrenceTime: attentive.recurrenceTime
-			}
+		// An attentive is always unbound (PEP111), addressed by its RECURRENCE-ID so a still-projected agenda item
+		// hardens on interaction instead of failing on an absent row id.
+		const occurrence = {
+			decreeId: attentive.decreeId,
+			recurrenceDate: attentive.recurrenceDate,
+			recurrenceTime: attentive.recurrenceTime
+		}
 		const updated = await core.declaratives.updateAttentive(occurrence, { resolution })
 		if (!updated) {
 			new Notice('Failed to update attentive.')
@@ -76,7 +73,7 @@ export class AttentiveItem extends OccurrenceItem {
 		// the exact date/time in its tooltip.
 		if (!this.done) {
 			return html`
-				<p7t-datetime-view relative warn='past' .date=${attentive.date} .time=${attentive.time}></p7t-datetime-view>
+				<p7t-datetime-view relative warn='past' .date=${attentive.epoch.date} .time=${attentive.epoch.timeOfDay}></p7t-datetime-view>
 			`
 		}
 

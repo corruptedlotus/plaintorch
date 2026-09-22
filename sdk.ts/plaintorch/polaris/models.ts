@@ -31,6 +31,11 @@ export function incentiveKind(incentive: ExecutiveIncentive | undefined): "objec
 export function isDecreeIncentive(incentive: ExecutiveIncentive | undefined): incentive is Decree {
 	return incentiveKind(incentive) === "decree"
 }
+
+/** Whether an executive's incentive is an objective (narrowing to {@link Objective}). */
+export function isObjectiveIncentive(incentive: ExecutiveIncentive | undefined): incentive is Objective {
+	return incentiveKind(incentive) === "objective"
+}
 export enum PolarisExecutivePlanningMode {
 	OneShot = 0,
 	Standalone = 1,
