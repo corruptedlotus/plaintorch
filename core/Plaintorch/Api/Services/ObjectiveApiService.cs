@@ -16,7 +16,6 @@ namespace Pleiades.Plaintorch.Api.Services;
 public sealed class ObjectiveApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
-	PlaintorchMarkdownStorageService markdownStorageService,
 	VaultWriteQueue writeQueue,
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
@@ -237,8 +236,9 @@ public sealed class ObjectiveApiService(
 
 		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(objective, "api-delete", Environment.UserName, cancellationToken);
 		context.Objectives.Remove(objective);
+		await writeQueue.RecordRemoveAsync(objective, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.DeleteObjectiveAsync(objective, cancellationToken);
+		await writeQueue.DrainRemoveAsync(objective, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"objective.delete",

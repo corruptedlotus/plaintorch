@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Preferences;
 using Pleiades.Puck;
+using Pleiades.Vault;
 using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch.Markdown;
@@ -26,6 +27,8 @@ public sealed class VaultWriteQueue(
 	PlainfraContext context,
 	PlaintorchMarkdownStorageService storage,
 	VaultEntityGateway entityGateway,
+	VaultTemporalDataService temporalDataService,
+	VaultLayout layout,
 	VaultWriteReadiness readiness,
 	IOptionsSnapshot<WatcherPreferences> watcherPreferences,
 	ILogger<VaultWriteQueue> logger)
@@ -68,6 +71,49 @@ public sealed class VaultWriteQueue(
 			existing.Identity = id;
 			existing.EnqueuedUtc = DateTimeOffset.UtcNow;
 		}
+	}
+
+	/// <summary>
+	/// Records a remove intent for an entity being deleted, onto the current context (committed atomically with the
+	/// database removal). Captures the file's current location so a crash before the file is archived can be recovered
+	/// by the startup drain. One row per entity: it overrides any pending reconcile for the same entity.
+	/// </summary>
+	public async Task RecordRemoveAsync(object entity, CancellationToken cancellationToken = default)
+	{
+		var (entityType, id) = Identify(entity);
+		var lastKnownPath = await storage.TryResolveEntityRelativePathAsync(entity, cancellationToken);
+		var existing = await context.VaultWriteIntents.FindAsync([entityType, id], cancellationToken);
+		if (existing is null)
+		{
+			context.VaultWriteIntents.Add(new VaultWriteIntent
+			{
+				EntityType = entityType,
+				EntityId = id,
+				Kind = VaultWriteIntentKind.Remove,
+				Identity = id,
+				LastKnownPath = lastKnownPath,
+				EnqueuedUtc = DateTimeOffset.UtcNow,
+			});
+		}
+		else
+		{
+			existing.Kind = VaultWriteIntentKind.Remove;
+			existing.Identity = id;
+			existing.LastKnownPath = lastKnownPath;
+			existing.EnqueuedUtc = DateTimeOffset.UtcNow;
+		}
+	}
+
+	/// <summary>
+	/// Archives an entity's markdown file now and clears its remove intent, returning the graveyard entry for the audit
+	/// trail. Synchronous — a delete has no note to open, so it is not bounded by the note-queue timeout.
+	/// </summary>
+	public async Task<FileGraveyardEntry?> DrainRemoveAsync(object entity, CancellationToken cancellationToken = default)
+	{
+		var graveyard = await storage.DeleteEntityAsync(entity, cancellationToken);
+		var (entityType, id) = Identify(entity);
+		await ClearAsync(entityType, id, cancellationToken);
+		return graveyard;
 	}
 
 	/// <summary>
@@ -154,6 +200,10 @@ public sealed class VaultWriteQueue(
 					await storage.SaveEntityAsync(entity, cancellationToken: cancellationToken);
 				}
 			}
+			else if (intent.Kind == VaultWriteIntentKind.Remove)
+			{
+				await RecoverRemoveAsync(intent, cancellationToken);
+			}
 
 			context.VaultWriteIntents.Remove(intent);
 		}
@@ -172,6 +222,33 @@ public sealed class VaultWriteQueue(
 			context.VaultWriteIntents.Remove(existing);
 			await context.SaveChangesAsync(cancellationToken);
 		}
+	}
+
+	/// <summary>
+	/// Recovers a remove intent a crash left behind — the entity is gone from the database but its file was never
+	/// archived. Archives the file from its recorded last-known location (best-effort: in the crash window the file is
+	/// still there). The caller removes the intent row afterwards.
+	/// </summary>
+	private async Task RecoverRemoveAsync(VaultWriteIntent intent, CancellationToken cancellationToken)
+	{
+		if (string.IsNullOrWhiteSpace(intent.LastKnownPath))
+		{
+			return;
+		}
+
+		var absolute = Path.GetFullPath(Path.Combine(layout.VaultRoot, intent.LastKnownPath));
+		if (!File.Exists(absolute) && !Directory.Exists(absolute))
+		{
+			return;
+		}
+
+		await temporalDataService.ArchivePathAsync(
+			absolute,
+			"startup-remove-recovery",
+			intent.EntityType,
+			intent.EntityId,
+			archivedBy: Environment.UserName,
+			cancellationToken: cancellationToken);
 	}
 
 	private static (string EntityType, string Id) Identify(object entity)

@@ -19,7 +19,6 @@ public sealed class PolarisCycleApiService(
 	PuckCreationService puckCreationService,
 	PolarisCycleLifecycle lifecycle,
 	PlaintorchStateService stateService,
-	PlaintorchMarkdownStorageService markdownFileService,
 	VaultWriteQueue writeQueue,
 	ProximityMaterializationService materializationService,
 	TimeframeAffinityResolver affinityResolver,

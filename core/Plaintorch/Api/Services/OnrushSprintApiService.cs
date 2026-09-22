@@ -478,8 +478,9 @@ public sealed class OnrushSprintApiService(
 
 		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(order, "api-delete", Environment.UserName, cancellationToken);
 		context.ExecutiveOrders.Remove(order);
+		await writeQueue.RecordRemoveAsync(order, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.DeleteExecutiveOrderAsync(order, cancellationToken);
+		await writeQueue.DrainRemoveAsync(order, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"onrush.delete-order",

@@ -28,7 +28,6 @@ namespace Pleiades.Plaintorch.Api.Services;
 public sealed class DeclarativeApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
-	PlaintorchMarkdownStorageService markdownStorageService,
 	VaultWriteQueue writeQueue,
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
@@ -201,8 +200,9 @@ public sealed class DeclarativeApiService(
 
 		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(fate, "api-delete", Environment.UserName, cancellationToken);
 		context.Fates.Remove(fate);
+		await writeQueue.RecordRemoveAsync(fate, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.DeleteFateAsync(fate, cancellationToken);
+		await writeQueue.DrainRemoveAsync(fate, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"fate.delete",
@@ -329,8 +329,9 @@ public sealed class DeclarativeApiService(
 
 		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(decree, "api-delete", Environment.UserName, cancellationToken);
 		context.Decrees.Remove(decree);
+		await writeQueue.RecordRemoveAsync(decree, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.DeleteDecreeAsync(decree, cancellationToken);
+		await writeQueue.DrainRemoveAsync(decree, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"decree.delete",

@@ -110,11 +110,16 @@ pure HTTP. The dependencies that require the drain to have *completed* are:
     write reports **ready**; past it it reports **pending** while the drain finishes on best-effort (the durable row /
     startup drain guarantees completion). Inline on the request scope, one SQLite connection (a fresh-scope drain
     deadlocks the same DB), via `Task.WaitAsync`. `noteReady` is returned but not yet surfaced to the client.
-  - 2b. *Done (reconcile writes)*: every entity type's reconcile writes — directive / objective / fate / decree /
-    onrush sprint / executive order / polaris cycle / lore page — route through `VaultWriteQueue.WriteAsync`
-    (record-in-transaction + `SaveChanges` + bounded drain, replacing `SaveChangesAsync` + a direct `Save*Async`).
-    Lore's `SetIndex` subtree chain (a synchronous read-your-own-writes move) and the delete paths stay direct for now.
-    *Pending*: delete/Remove (a `Remove` intent + a drain that archives the file by last-known identity).
+  - 2b. *Done*: every entity type's reconcile writes route through `VaultWriteQueue.WriteAsync` (record-in-transaction +
+    `SaveChanges` + bounded drain), and deletes through `RecordRemoveAsync` + `DrainRemoveAsync` — a durable `Remove`
+    intent committed with the database removal, then a synchronous file archive (a delete has no note to open, so it is
+    not bounded); the startup drain recovers a crashed `Remove` from its captured last-known path. Covers directive /
+    objective / fate / decree / executive order / polaris / lore. Two flows stay direct by design: lore's `SetIndex`
+    subtree chain (a synchronous read-your-own-writes move), and the onrush sprint-cascade delete (its milestone-cycle
+    logic needs a precise commit ordering that `DrainRemove`'s own `SaveChanges` would disturb).
+    `Directive`/`Objective`/`Declarative`/`PolarisCycle` API services now hold no direct
+    `PlaintorchMarkdownStorageService` dependency. Tests: `VaultWriteQueueTests` (a delete archives the file and leaves
+    no intent; a crashed remove intent is recovered by the startup drain).
   - 2c. *Done*: `noteReady` rides the `X-Note-Ready` response header — the bounded drain marks a per-request
     `VaultWriteReadiness` on timeout, and `NoteReadinessEndpointFilter` (on the shared enriched API group) sets the
     header to `false` when pending (absent = ready). The SDK transport exposes response headers; the core client keeps
@@ -155,6 +160,8 @@ repeated (parallel) runs — **402 passed / 0 skipped, stable**.
 - 2026-09-22 — Part 2c (client) landed: SDK surfaces the header (`lastWriteNotePending`, `noteReadiness.test.ts`);
   the 7 banners + `createEntityNote` open through the shared `openNoteWhenReady` (announce + poll for the file). SDK
   109 tests green; plugin builds.
+- 2026-09-22 — Part 2b delete/Remove landed: deletes route through `RecordRemoveAsync` + `DrainRemoveAsync`; startup
+  drain recovers a crashed remove. Four API services shed their direct storage dependency. Suite 417 passed / 0 skipped.
 
 ## Sunnyside Mk1
 

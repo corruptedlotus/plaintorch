@@ -20,7 +20,6 @@ namespace Pleiades.Plaintorch.Api.Services;
 public sealed class DirectiveApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
-	PlaintorchMarkdownStorageService markdownFileService,
 	VaultWriteQueue writeQueue,
 	VaultEntityLifecycleService lifecycleService,
 	VaultTemporalDataService temporalDataService,
@@ -328,8 +327,9 @@ public sealed class DirectiveApiService(
 		var snapshot = Clone(directive);
 		var databaseGraveyard = await temporalDataService.ArchiveEntityAsync(snapshot, "api-delete", Environment.UserName, cancellationToken);
 		context.Directives.Remove(directive);
+		await writeQueue.RecordRemoveAsync(snapshot, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
-		var fileGraveyard = await markdownFileService.DeleteDirectiveAsync(snapshot, cancellationToken);
+		var fileGraveyard = await writeQueue.DrainRemoveAsync(snapshot, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.delete",

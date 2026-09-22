@@ -46,6 +46,28 @@ public sealed class PlaintorchMarkdownStorageService(
 	}
 
 	/// <summary>
+	/// Archives any vault-backed entity's markdown file — a self-named directory or a single file — to the graveyard.
+	/// The type-agnostic delete the write queue (PEP110 Refactor BETA) drains through; the per-type methods remain.
+	/// </summary>
+	public Task<FileGraveyardEntry?> DeleteEntityAsync(object entity, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		return DeleteEntityPathAsync(entity, cancellationToken);
+	}
+
+	/// <summary>
+	/// Resolves an entity's current vault-relative markdown path (located by its identity), or <see langword="null"/>
+	/// when it has no file on disk. Used to capture a delete's last-known location so a crash before the file is
+	/// archived can be recovered.
+	/// </summary>
+	public async Task<string?> TryResolveEntityRelativePathAsync(object entity, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		var absolute = await TryResolveExistingPathByIdentityAsync(entity, preferredPath: null, cancellationToken);
+		return string.IsNullOrWhiteSpace(absolute) ? null : Path.GetRelativePath(layout.VaultRoot, absolute);
+	}
+
+	/// <summary>
 	/// Writes the canonical markdown file for a directive.
 	/// </summary>
 	public async Task SaveDirectiveAsync(Directive directive, Directive? previous = null, string? sourcePath = null, CancellationToken cancellationToken = default)
