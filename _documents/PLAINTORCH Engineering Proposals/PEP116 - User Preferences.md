@@ -60,9 +60,10 @@ Deliberately *not* a preference: how far an *inactive* declarative goes — paus
 ## Implementation
 
 - Entity `core/Vault/Database/UserPreferenceRecord.cs`; `DbSet` on `PlainfraContext`; EF migration `AddUserPreferences` (a plain `CreateTable`, no seed).
-- `core/Plaintorch/Preferences/`: `UserPreferenceStore`, `UserPreferenceService`, `UserPreferenceSerializer` (total), `WatcherPreferences`, `PreferenceKeys`.
-- Registered in `PlaintorchModule`; loaded on activation in `PlaintorchEngine.InitializeVault(Async)`.
-- Client is greenfield (no settings SDK module or Obsidian settings tab exists yet); a `sdk.ts/plaintorch/preferences/` module and a plugin settings tab follow when a preference needs a user-facing surface.
+- `core/Plaintorch/Preferences/`: `UserPreferenceStore`, `UserPreferenceService` (with `SetRawAsync` for the generic write path), `UserPreferenceSerializer` (total; enums stored by name), the Options POCOs (`WatcherPreferences`, `AgendaPreferences`, `CalDavPreferences`), `PreferenceKeys`, and `PreferenceCatalog` (the enumeration source; each default read from its POCO).
+- Options bound off the store in `PlaintorchModule`; loaded on activation in `PlaintorchEngine.InitializeVault(Async)`.
+- **API:** `PreferenceModule` exposes a registry-driven `/api/preferences` — `GET` lists every catalog entry resolved to its value and default, `PUT /{key}` validates against the descriptor's kind (400 on mismatch, 404 on unknown key) and write-throughs, `DELETE /{key}` resets. Adding a preference to the catalog exposes it with no endpoint change.
+- **Client:** `sdk.ts/plaintorch/preferences/` (`core.preferences.list/set/reset`), and the plugin's first settings tab (`obsidian/src/settings/PreferenceSettingTab.ts`) — a control per preference grouped by section (toggle / dropdown / number), each writing straight through, with a reset-to-default button. The tab renders whatever the catalog reports, so a new preference appears automatically.
 
 ## Verification
 
