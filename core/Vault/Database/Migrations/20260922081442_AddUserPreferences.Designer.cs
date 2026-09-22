@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Pleiades.Vault.Database;
 
@@ -10,9 +11,11 @@ using Pleiades.Vault.Database;
 namespace plaintorch.Vault.Database.Migrations
 {
     [DbContext(typeof(PlainfraContext))]
-    partial class PlainfraContextModelSnapshot : ModelSnapshot
+    [Migration("20260922081442_AddUserPreferences")]
+    partial class AddUserPreferences
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
@@ -927,32 +930,6 @@ namespace plaintorch.Vault.Database.Migrations
                     b.HasIndex("ToVersion");
 
                     b.ToTable("VaultMigrationHistory");
-                });
-
-            modelBuilder.Entity("Pleiades.Vault.Database.VaultWriteIntent", b =>
-                {
-                    b.Property<string>("EntityType")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("EntityId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("EnqueuedUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Identity")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LastKnownPath")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("EntityType", "EntityId");
-
-                    b.ToTable("VaultWriteIntents");
                 });
 
             modelBuilder.Entity("Pleiades.Orchestration.LunarDirective", b =>

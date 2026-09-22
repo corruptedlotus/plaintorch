@@ -1,5 +1,5 @@
 import { Component, component, css, eventListener, html, state } from "@a11d/lit"
-import { core, DerivedRef } from ".."
+import { core, DerivedRef, getApp, PreferenceModal } from ".."
 
 @component('p7t-briefing')
 export class Briefing extends Component {
@@ -19,6 +19,11 @@ export class Briefing extends Component {
 		}
 	}
 
+	/** Opens the settings modal. The settings sit at the end of the tab row but act as a button, not a nav tab. */
+	private openSettings() {
+		new PreferenceModal(getApp()).open()
+	}
+
 	static override get styles() {
 		return css`
 			:host {
@@ -30,6 +35,7 @@ export class Briefing extends Component {
 			}
 
 			.navbar {
+				position: relative;
 				display: flex;
 				justify-content: center;
 				padding-inline: .5em;
@@ -46,6 +52,33 @@ export class Briefing extends Component {
 					background-color: color-mix(in srgb, var(--interactive-accent) 30%, transparent);
 				}*/
 			}
+
+			.settings {
+				position: absolute;
+				right: .4em;
+				top: 50%;
+				transform: translateY(-50%);
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				padding: 6px;
+				border: none;
+				border-radius: 8px;
+				background: transparent;
+				color: var(--text-muted);
+				cursor: pointer;
+				transition: .2s ease;
+			}
+
+			.settings:hover {
+				background-color: var(--background-secondary);
+				color: var(--text-normal);
+			}
+
+			.settings p7t-icon {
+				width: 20px;
+				height: 20px;
+			}
 		`
 	}
 
@@ -57,6 +90,9 @@ export class Briefing extends Component {
 				<p7t-navitem key='planning' icon='onrush' ?active=${this.page === 'planning'}>Planning</p7t-navitem>
 				<p7t-navitem key='backlog' icon='directive' ?active=${this.page === 'backlog'}>Backlog</p7t-navitem>
 				<p7t-navitem key='lore' icon='lorepage' ?active=${this.page === 'lore'}>Lore</p7t-navitem>
+				<button class='settings' aria-label='Settings' @click=${() => this.openSettings()}>
+					<p7t-icon icon='lucide:settings'></p7t-icon>
+				</button>
 			</div>
 			${this.content}
 		`
