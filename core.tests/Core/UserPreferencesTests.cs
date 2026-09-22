@@ -1,6 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Preferences;
 using Pleiades.Tests.Harness;
 using Pleiades.Vault.Database;
@@ -140,5 +142,82 @@ public sealed class UserPreferencesTests : VaultTestBase
 		var enabled = await Vault.WithScopeAsync(services => Task.FromResult(
 			services.GetRequiredService<IOptionsSnapshot<AgendaPreferences>>().Value.AutoMaterialiseOptOut));
 		Assert.True(enabled);
+	}
+
+	// --- the generic preference API (registry-driven; resolving IPreferenceApi also proves the module registered) ---
+
+	private static JsonElement Json<T>(T value) => JsonSerializer.SerializeToElement(value);
+
+	[Fact]
+	public async Task Api_lists_every_catalog_preference_with_its_value_and_default()
+	{
+		var list = await Vault.WithScopeAsync(services => services.GetRequiredService<IPreferenceApi>()
+			.ListAsync(TestContext.Current.CancellationToken));
+
+		Assert.Equal(3, list.Count);
+		var noteQueue = list.Single(preference => preference.Key == PreferenceKeys.NoteQueueTimeout);
+		Assert.Equal("Integer", noteQueue.Kind);
+		Assert.Equal(2000, noteQueue.Value.GetInt32());
+		Assert.Equal(2000, noteQueue.Default.GetInt32());
+
+		var calDav = list.Single(preference => preference.Key == PreferenceKeys.CalDavFloatingRender);
+		Assert.Equal("Enum", calDav.Kind);
+		Assert.NotNull(calDav.Options);
+		Assert.Contains("PinToStart", calDav.Options!);
+	}
+
+	[Fact]
+	public async Task Api_set_overrides_persists_and_reaches_the_options_hot_path()
+	{
+		var view = await Vault.WithScopeAsync(services => services.GetRequiredService<IPreferenceApi>()
+			.SetAsync(PreferenceKeys.NoteQueueTimeout, Json(500), TestContext.Current.CancellationToken));
+		Assert.NotNull(view);
+		Assert.Equal(500, view!.Value.GetInt32());
+
+		var list = await Vault.WithScopeAsync(services => services.GetRequiredService<IPreferenceApi>()
+			.ListAsync(TestContext.Current.CancellationToken));
+		Assert.Equal(500, list.Single(preference => preference.Key == PreferenceKeys.NoteQueueTimeout).Value.GetInt32());
+		Assert.Equal(500, await NoteQueueTimeoutOptionAsync());
+	}
+
+	[Fact]
+	public async Task Api_set_rejects_a_value_of_the_wrong_kind()
+	{
+		await Assert.ThrowsAsync<PreferenceValidationException>(() => Vault.WithScopeAsync(services =>
+			services.GetRequiredService<IPreferenceApi>()
+				.SetAsync(PreferenceKeys.NoteQueueTimeout, Json("not-a-number"), TestContext.Current.CancellationToken)));
+	}
+
+	[Fact]
+	public async Task Api_set_of_an_unknown_key_returns_null()
+	{
+		var view = await Vault.WithScopeAsync(services => services.GetRequiredService<IPreferenceApi>()
+			.SetAsync("does.not.exist", Json(1), TestContext.Current.CancellationToken));
+		Assert.Null(view);
+	}
+
+	[Fact]
+	public async Task Api_reset_reverts_to_the_default()
+	{
+		await Vault.WithScopeAsync(services => services.GetRequiredService<IPreferenceApi>()
+			.SetAsync(PreferenceKeys.NoteQueueTimeout, Json(500), TestContext.Current.CancellationToken));
+
+		var reset = await Vault.WithScopeAsync(services => services.GetRequiredService<IPreferenceApi>()
+			.ResetAsync(PreferenceKeys.NoteQueueTimeout, TestContext.Current.CancellationToken));
+		Assert.NotNull(reset);
+		Assert.Equal(2000, reset!.Value.GetInt32());
+		Assert.Equal(2000, await NoteQueueTimeoutOptionAsync());
+	}
+
+	[Fact]
+	public async Task Api_enum_set_accepts_a_valid_option_and_rejects_an_invalid_one()
+	{
+		var view = await Vault.WithScopeAsync(services => services.GetRequiredService<IPreferenceApi>()
+			.SetAsync(PreferenceKeys.CalDavFloatingRender, Json("PinToStart"), TestContext.Current.CancellationToken));
+		Assert.Equal("PinToStart", view!.Value.GetString());
+
+		await Assert.ThrowsAsync<PreferenceValidationException>(() => Vault.WithScopeAsync(services =>
+			services.GetRequiredService<IPreferenceApi>()
+				.SetAsync(PreferenceKeys.CalDavFloatingRender, Json("Nonsense"), TestContext.Current.CancellationToken)));
 	}
 }

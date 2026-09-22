@@ -34,27 +34,34 @@ public sealed class UserPreferenceService(PlainfraContext context, UserPreferenc
 	}
 
 	/// <summary>Sets a preference (idempotent upsert), writing through to the store.</summary>
-	public async Task SetAsync<T>(string key, T value, CancellationToken cancellationToken = default)
+	public Task SetAsync<T>(string key, T value, CancellationToken cancellationToken = default)
+		=> SetRawAsync(key, UserPreferenceSerializer.Serialize(value), cancellationToken);
+
+	/// <summary>
+	/// Sets a preference from an already-serialized JSON value (the generic API write path), writing through to
+	/// the store. The value is stored as-is; a value that cannot later be read as the consumer's type degrades to
+	/// the default on read.
+	/// </summary>
+	public async Task SetRawAsync(string key, string rawValue, CancellationToken cancellationToken = default)
 	{
-		var raw = UserPreferenceSerializer.Serialize(value);
 		var existing = await context.UserPreferences.FirstOrDefaultAsync(item => item.Key == key, cancellationToken);
 		if (existing is null)
 		{
 			context.UserPreferences.Add(new UserPreferenceRecord
 			{
 				Key = key,
-				Value = raw,
+				Value = rawValue,
 				UpdatedUtc = DateTimeOffset.UtcNow,
 			});
 		}
 		else
 		{
-			existing.Value = raw;
+			existing.Value = rawValue;
 			existing.UpdatedUtc = DateTimeOffset.UtcNow;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
-		store.Set(key, raw);
+		store.Set(key, rawValue);
 	}
 
 	/// <summary>Clears a preference back to its default (delete), writing through to the store.</summary>
