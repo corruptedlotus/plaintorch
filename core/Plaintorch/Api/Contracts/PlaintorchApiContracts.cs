@@ -412,7 +412,11 @@ public sealed record ReflectiveUpdate(
 public sealed record LunarDirectiveWorkflowShift(LunarDirectiveStatus Status);
 
 /// <summary>
-/// Represents the data required to create a fate declarative (PEP100).
+/// Represents the data required to create a fate declarative (PEP100). A fate is stored orbit-only (PEP111): the
+/// <paramref name="Date"/>/<paramref name="StartTime"/>/<paramref name="EndTime"/>/<paramref name="EventDuration"/>
+/// fields are one-off creation sugar — when no explicit <paramref name="Orbit"/> is given they fold into a
+/// fixed-datetime <c>Z{y/M/d[Th:m]}</c> literal (with a <c>=&lt;dur&gt;</c> span for a timed window). An explicit
+/// <paramref name="Orbit"/> takes precedence and the one-off fields are ignored.
 /// </summary>
 public sealed record FatePlan(
 	string Title,
@@ -426,18 +430,16 @@ public sealed record FatePlan(
 	int? EventDuration = null);
 
 /// <summary>
-/// Represents the mutable fields of a fate declarative for generic update actions.
+/// Represents the mutable fields of a fate declarative for generic update actions. A fate is orbit-only (PEP111),
+/// so rescheduling — whether a one-off or a recurrence — is done by setting a new <paramref name="Orbit"/>
+/// (a <c>Z{…}</c> literal for a one-off).
 /// </summary>
 public sealed record FateUpdate(
 	string? Title = null,
 	FateStatus? Status = null,
 	Optional<string?> DirectiveId = default,
 	Optional<string?> ParentIncentiveId = default,
-	Optional<DateOnly?> Date = default,
-	TimeOnly? StartTime = null,
-	TimeOnly? EndTime = null,
-	string? Orbit = null,
-	int? EventDuration = null);
+	string? Orbit = null);
 
 /// <summary>
 /// Represents the data required to create a decree declarative (PEP100).

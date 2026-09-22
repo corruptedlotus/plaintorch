@@ -156,22 +156,6 @@ public sealed class ProximityMaterializationService(
 			}
 		}
 
-		// Dated fates whose occurrence instant has arrived (only those still missing their eventive are loaded).
-		var datedFates = await context.Fates
-			.AsNoTracking()
-			.IgnoreAutoIncludes()
-			.Where(fate => fate.Status == FateStatus.Active && fate.Date != null && fate.Date <= today
-				&& !context.Eventives.Any(eventive =>
-					eventive.FateId == fate.Id && eventive.RecurrenceDate == fate.Date && eventive.RecurrenceTime == fate.StartTime))
-			.ToListAsync(cancellationToken);
-		foreach (var fate in datedFates)
-		{
-			if (fate.Date!.Value.ToDateTime(fate.StartTime ?? TimeOnly.MinValue) <= localNow)
-			{
-				created += await EnsureFateEventiveAsync(fate, fate.Date.Value, EventiveResolution.Pending, cancellationToken) ? 1 : 0;
-			}
-		}
-
 		// Due objectives whose due date has arrived.
 		var dueObjectives = await context.Objectives
 			.AsNoTracking()
@@ -243,31 +227,19 @@ public sealed class ProximityMaterializationService(
 	}
 
 	/// <summary>
-	/// Ensures a dated fate's eventive exists for an occurrence day, returning whether one was created.
-	/// </summary>
-	private Task<bool> EnsureFateEventiveAsync(Fate fate, DateOnly day, EventiveResolution resolution, CancellationToken cancellationToken)
-	{
-		var granularity = fate.StartTime is null ? OrbitUnit.Day : OrbitUnit.Minute;
-		// The occurrence's temporal span is the fate's own start/end window (null = all-day); the estimation is the
-		// resolved event duration (allocation). Keeping them separate stops a 45-minute allocation from shrinking
-		// an all-day occurrence's window.
-		var span = OccurrenceDurations.SpanMinutes(fate.StartTime, fate.EndTime);
-		return EnsureFateEventiveCoreAsync(fate, day, fate.StartTime, granularity, span, fate.ResolveEventiveDuration(), resolution, cancellationToken);
-	}
-
-	/// <summary>
 	/// Ensures a fate's eventive exists for an orbit occurrence, returning whether one was created. Only a span
-	/// occurrence carries a temporal span; a granular occurrence fills its granularity window (null span).
+	/// occurrence carries a temporal span; a granular occurrence fills its granularity window (null span). The span
+	/// minutes also seed the allocation (until allocation moves to the executive).
 	/// </summary>
 	private Task<bool> EnsureFateEventiveAsync(Fate fate, OrbitOccurrenceInstance occurrence, EventiveResolution resolution, CancellationToken cancellationToken)
 	{
 		return EnsureFateEventiveCoreAsync(
 			fate,
 			occurrence.Date,
-			occurrence.StartTime ?? fate.StartTime,
+			occurrence.StartTime,
 			occurrence.Granularity,
 			occurrence.DurationMinutes,
-			occurrence.DurationMinutes ?? fate.ResolveEventiveDuration(),
+			occurrence.DurationMinutes,
 			resolution,
 			cancellationToken);
 	}

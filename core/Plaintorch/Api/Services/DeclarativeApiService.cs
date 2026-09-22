@@ -62,21 +62,20 @@ public sealed class DeclarativeApiService(
 		ArgumentException.ThrowIfNullOrWhiteSpace(plan.Title);
 		await EnsureDirectiveExistsAsync(plan.DirectiveId, cancellationToken);
 		ValidateEventWindow(plan.StartTime, plan.EndTime);
-		PlaintorchOrbitService.ValidateFateOrbit(plan.Orbit);
 
-		// Orbit and a fixed date are mutually exclusive (PEP100); a recurring plan keeps only the orbit, dropping any
-		// stray one-off date/time so the fate is never born carrying both shapes.
-		var recurring = !string.IsNullOrWhiteSpace(plan.Orbit);
+		// A fate is stored orbit-only (PEP111). An explicit orbit wins; otherwise a one-off plan (a date, optionally
+		// timed) folds into a fixed-datetime Z{…} literal so the fate is never born carrying two scheduling shapes.
+		var orbit = !string.IsNullOrWhiteSpace(plan.Orbit)
+			? plan.Orbit
+			: ComposeOneOffOrbit(plan.Date, plan.StartTime, plan.EndTime, plan.EventDuration);
+		PlaintorchOrbitService.ValidateFateOrbit(orbit);
+
 		var fate = new Fate
 		{
 			Id = puckCreationService.CreateIdFor<Fate>(plan.Id),
 			Title = plan.Title,
 			DirectiveId = plan.DirectiveId,
-			Date = recurring ? null : plan.Date,
-			StartTime = recurring ? null : plan.StartTime,
-			EndTime = recurring ? null : plan.EndTime,
-			Orbit = plan.Orbit,
-			EventDuration = plan.EventDuration,
+			Orbit = orbit,
 		};
 
 		if (!string.IsNullOrWhiteSpace(plan.ParentIncentiveId))
@@ -132,51 +131,14 @@ public sealed class DeclarativeApiService(
 			}
 		}
 
-		if (update.Date.IsSet)
-		{
-			// A null date drops the fixed date — e.g. switching a one-off fate onto a recurring orbit, so it no
-			// longer materializes a standalone eventive alongside the orbit's occurrences.
-			fate.Date = update.Date.Value;
-		}
-
-		if (update.StartTime is not null)
-		{
-			fate.StartTime = update.StartTime;
-		}
-
-		if (update.EndTime is not null)
-		{
-			fate.EndTime = update.EndTime;
-		}
-
 		if (update.Orbit is not null)
 		{
+			// A fate is orbit-only (PEP111): rescheduling — a one-off Z{…} or a recurrence — is a new orbit, and an
+			// empty orbit unschedules the fate.
 			var normalizedOrbit = string.IsNullOrWhiteSpace(update.Orbit) ? null : update.Orbit;
 			PlaintorchOrbitService.ValidateFateOrbit(normalizedOrbit);
 			fate.Orbit = normalizedOrbit;
 		}
-
-		if (update.EventDuration is not null)
-		{
-			fate.EventDuration = update.EventDuration;
-		}
-
-		// Orbit and a fixed date are mutually exclusive (PEP100). Whichever this update sets clears the other, so a
-		// caller never has to send an explicit clear alongside — the schedule interception keeps the fate single-shaped.
-		var setsOrbit = update.Orbit is not null && !string.IsNullOrWhiteSpace(update.Orbit);
-		var setsDate = update.Date.IsSet && update.Date.Value is not null;
-		if (setsOrbit)
-		{
-			fate.Date = null;
-			fate.StartTime = null;
-			fate.EndTime = null;
-		}
-		else if (setsDate)
-		{
-			fate.Orbit = null;
-		}
-
-		ValidateEventWindow(fate.StartTime, fate.EndTime);
 
 		// Resuming a paused fate (cancelled or opted out → active) seeks its cursor to now, so generation picks up
 		// from now with no backfill of the occurrences that elapsed while it was paused (PEP100/PEP111).
@@ -596,11 +558,31 @@ public sealed class DeclarativeApiService(
 			ParentIncentiveId = fate.ParentIncentiveId,
 			Status = fate.Status,
 			Orbit = fate.Orbit,
-			Date = fate.Date,
-			StartTime = fate.StartTime,
-			EndTime = fate.EndTime,
-			EventDuration = fate.EventDuration,
 		};
+	}
+
+	/// <summary>
+	/// Folds a one-off fate plan (a date, optionally timed) into a fixed-datetime Orbit literal (PEP111): a
+	/// date-only <c>Z{y/M/d}</c> for an all-day occurrence, or a <c>Z{y/M/dTh:m}</c> down to the minute with a
+	/// <c>=&lt;dur&gt;</c> span when the event has a window (its end time, else its event duration). Returns
+	/// <see langword="null"/> when there is no date to schedule.
+	/// </summary>
+	private static string? ComposeOneOffOrbit(DateOnly? date, TimeOnly? startTime, TimeOnly? endTime, int? eventDuration)
+	{
+		if (date is not { } day)
+		{
+			return null;
+		}
+
+		if (startTime is not { } start)
+		{
+			return $"Z{{{day.Year}/{day.Month}/{day.Day}}}";
+		}
+
+		var head = $"Z{{{day.Year}/{day.Month}/{day.Day}T{start.Hour:D2}:{start.Minute:D2}}}";
+		var span = OccurrenceDurations.SpanMinutes(start, endTime) ?? (eventDuration > 0 ? eventDuration : null);
+		var duration = OccurrenceDurations.Format(span);
+		return duration is null ? head : $"{head}={duration}";
 	}
 
 	private static Decree CloneDecree(Decree decree)

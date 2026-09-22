@@ -56,24 +56,12 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		var eventiveKeys = eventives.Select(OccurrenceKey).ToHashSet();
 		var attentiveKeys = attentives.Select(OccurrenceKey).ToHashSet();
 
-		// Dated fates: a single fixed occurrence. Every projected owner (fate/decree/objective) drops its
-		// auto-includes to keep the bulk read lean, then re-adds only the owning Directive explicitly — a
-		// projected occurrence must still carry its owner's directive for the agenda to surface it (PEP100).
-		var datedFates = await context.Fates
-			.AsNoTracking()
-			.IgnoreAutoIncludes()
-			.Include(fate => fate.Directive)
-			.Where(fate => fate.Status == FateStatus.Active && fate.Date != null
-				&& fate.Date >= startInclusive && fate.Date <= endInclusive)
-			.ToListAsync(cancellationToken);
-		foreach (var fate in datedFates)
-		{
-			AddEventive(eventives, eventiveKeys, ProjectFateEventive(fate, fate.Date!.Value, fate.StartTime, fate.StartTime is null ? OrbitUnit.Day : OrbitUnit.Minute, OccurrenceDurations.SpanMinutes(fate.StartTime, fate.EndTime), fate.ResolveEventiveDuration(), EventiveResolution.Pending));
-		}
-
-		// Orbit fates: preview occurrences overlapping the window (Gregorian calendar). An opted-out fate keeps
-		// generating, so its occurrences are still projected — stamped OptOut so the display agenda hides them while
-		// they can still be interacted with or opted back in (PEP100/PEP111).
+		// Orbit fates: preview occurrences overlapping the window (Gregorian calendar). A fate is orbit-only (PEP111),
+		// so a one-off is just a fixed-datetime Z{…} occurrence resolved here alongside recurrences. Every projected
+		// owner drops its auto-includes to keep the bulk read lean, then re-adds only the owning Directive explicitly
+		// so the agenda can surface it (PEP100). An opted-out fate keeps generating, so its occurrences are still
+		// projected — stamped OptOut so the display agenda hides them while they can still be interacted with or
+		// opted back in (PEP100/PEP111).
 		var orbitFates = await context.Fates
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
@@ -88,10 +76,10 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 				AddEventive(eventives, eventiveKeys, ProjectFateEventive(
 					fate,
 					occurrence.Date,
-					occurrence.StartTime ?? fate.StartTime,
+					occurrence.StartTime,
 					occurrence.Granularity,
 					occurrence.DurationMinutes,
-					occurrence.DurationMinutes ?? fate.ResolveEventiveDuration(),
+					occurrence.DurationMinutes,
 					resolution));
 			}
 		}

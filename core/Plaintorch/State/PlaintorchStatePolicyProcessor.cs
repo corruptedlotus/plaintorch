@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.DependencyInjection;
+using Pleiades.Orbits;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Puck;
@@ -94,7 +95,11 @@ public sealed class PlaintorchStatePolicyProcessor(
 		var today = DateOnly.FromDateTime(DateTime.Today);
 		foreach (var (incentive, orbit) in toReset)
 		{
-			await orbitService.ResetStateAsync(incentive, orbit, today, cancellationToken);
+			// A one-off fixed-datetime orbit (a Z{…} literal) anchors its cursor at the literal's own date, so its
+			// single occurrence is caught by a seek whether it is in the past or the future (PEP111); a recurring
+			// schedule anchors today so it generates forward with no backfill.
+			var epoch = (orbit is not null ? OrbitDays.FixedLiteralDate(orbit) : null) ?? today;
+			await orbitService.ResetStateAsync(incentive, orbit, epoch, cancellationToken);
 		}
 	}
 

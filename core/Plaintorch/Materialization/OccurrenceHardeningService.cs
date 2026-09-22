@@ -183,7 +183,6 @@ public sealed class OccurrenceHardeningService(
 		}
 
 		var date = request.Date
-			?? fate.Date
 			?? throw new InvalidOperationException($"Fate '{fate.Id}' has no occurrence date; supply one to materialize its eventive.");
 
 		OrbitOccurrenceInstance? occurrence = null;
@@ -200,7 +199,7 @@ public sealed class OccurrenceHardeningService(
 				: dayOccurrences[0];
 		}
 
-		var startTime = occurrence?.StartTime ?? request.StartTime ?? fate.StartTime;
+		var startTime = occurrence?.StartTime ?? request.StartTime;
 
 		// PEP101: a locked whole-fate freezes all materialization; a locked single occurrence blocks just itself.
 		if (respectDependencyGate && await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, date, startTime, cancellationToken))
@@ -214,9 +213,9 @@ public sealed class OccurrenceHardeningService(
 			return (existing, false);
 		}
 
-		var endTime = occurrence?.EndTime ?? request.EndTime ?? fate.EndTime;
-		// Temporal span (Epoch.Duration): the orbit span or explicit start/end window, null for an all-day
-		// occurrence. Estimation (allocation) falls back to the fate's resolved duration.
+		var endTime = occurrence?.EndTime ?? request.EndTime;
+		// Temporal span (Epoch.Duration): the orbit span or explicit start/end window, null for an all-day occurrence.
+		// The span minutes also seed the allocation (until allocation moves to the executive).
 		var spanMinutes = occurrence?.DurationMinutes ?? OccurrenceDurations.SpanMinutes(startTime, endTime);
 		var granularity = occurrence?.Granularity ?? (startTime is null ? OrbitUnit.Day : OrbitUnit.Minute);
 
@@ -226,7 +225,7 @@ public sealed class OccurrenceHardeningService(
 			Epoch = Epoch.From(date, startTime, granularity, spanMinutes),
 			RecurrenceDate = date,
 			RecurrenceTime = startTime,
-			Estimation = spanMinutes ?? fate.ResolveEventiveDuration(),
+			Estimation = spanMinutes,
 			Resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending,
 		};
 		eventive.Normalize();

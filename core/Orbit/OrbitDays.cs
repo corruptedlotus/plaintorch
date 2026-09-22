@@ -123,6 +123,35 @@ public static class OrbitDays
 	}
 
 	/// <summary>
+	/// The calendar date a notation resolves to when it is a lone fixed-datetime literal (a one-off
+	/// <c>Z{y/M/d[Th:m]}</c>, with or without a span), else <see langword="null"/>. A one-off's schedule cursor is
+	/// anchored at this date rather than today, so its single occurrence is caught by a seek whether it lies in the
+	/// past or the future. A recurring notation — or a bare time-of-day <c>z{h:m}</c>, which recurs daily and has no
+	/// fixed date — returns <see langword="null"/> and anchors at today as usual.
+	/// </summary>
+	public static DateOnly? FixedLiteralDate(string notation)
+	{
+		if (string.IsNullOrWhiteSpace(notation))
+		{
+			return null;
+		}
+
+		OrbitAstNode ast;
+		try
+		{
+			ast = new OrbitParser(notation).Parse();
+		}
+		catch (FormatException)
+		{
+			return null;
+		}
+
+		return ast is OrbitDateTimeLiteralNode { Year: { } year, Month: { } month, Day: { } day }
+			? new DateOnly(year, month, day)
+			: null;
+	}
+
+	/// <summary>
 	/// Creates the initial persisted schedule state for a notation anchored at an epoch day.
 	/// Span-format schedules carry no serializable engine state; their state is the epoch itself.
 	/// </summary>

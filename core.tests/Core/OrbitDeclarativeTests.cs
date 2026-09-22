@@ -76,7 +76,7 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var today = DateOnly.FromDateTime(DateTime.Today);
 
-		var fate = await WithApi(api => api.CreateFateAsync(new FatePlan("Daily fate", Orbit: "d", EventDuration: 45), cancellationToken));
+		var fate = await WithApi(api => api.CreateFateAsync(new FatePlan("Daily fate", Orbit: "d"), cancellationToken));
 		var decree = await WithApi(api => api.CreateDecreeAsync(new DecreePlan("Daily decree", Orbit: "d", DefaultLength: 20), cancellationToken));
 
 		await Vault.WithScopeAsync(services => services
@@ -88,7 +88,7 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 		var inclusions = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
 			.GetInclusionsAsync(null, cancellationToken));
-		Assert.Contains(inclusions.Eventives, item => item.FateId == fate.Id && item.Epoch.Date == today && item.Estimation == 45);
+		Assert.Contains(inclusions.Eventives, item => item.FateId == fate.Id && item.Epoch.Date == today);
 		Assert.Contains(inclusions.Attentives, item => item.DecreeId == decree.Id && item.Epoch.Date == today && item.Estimation == 20 && item.PolarisCycleId == null);
 
 		var persistedEventives = await Vault.QueryAsync(context => context.Eventives.CountAsync(item => item.FateId == fate.Id, cancellationToken));

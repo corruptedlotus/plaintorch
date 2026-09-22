@@ -344,9 +344,10 @@ public sealed class DependencySystemTests : VaultTestBase
 	[Fact]
 	public async Task Locked_whole_fate_pauses_materialization_until_the_source_finishes()
 	{
+		var slot = DateOnly.FromDateTime(DateTime.Today).AddDays(30);
 		var source = await Directive(api => api.CreateStandaloneAsync("Fate prereq", cancellationToken: Ct));
-		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Solstice", Date: DateOnly.FromDateTime(DateTime.Today).AddDays(30)), Ct));
-		var occurrenceRef = new EventiveOccurrenceRef(fate.Id, fate.Date!.Value, fate.StartTime);
+		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Solstice", Date: slot), Ct));
+		var occurrenceRef = new EventiveOccurrenceRef(fate.Id, slot, null);
 
 		await Deps(api => api.CreateAsync(DirectiveRef(source.Id), new EndpointRef(DependencyEndpointKind.Fate, fate.Id), cancellationToken: Ct));
 
