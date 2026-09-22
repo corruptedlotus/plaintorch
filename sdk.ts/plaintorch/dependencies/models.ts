@@ -1,4 +1,5 @@
 import { model } from "@a11d/api-dotnet"
+import type { Due } from "../objectives/models"
 
 /** Which source lifecycle event satisfies a dependency (PEP101). */
 export enum DependencyTrigger {
@@ -69,6 +70,8 @@ export class Dependency {
 export class Checkpoint {
 	id!: string
 	title!: string
+	/** Optional deadline moment (PEP111). When set, the Celestron toll is suppressed until the due passes. */
+	due: Due | undefined
 	/** Optional Celestron toll that must be paid before unlock; undefined means no toll. */
 	celestronToll: number | undefined
 	tollPaid: boolean = false
@@ -127,6 +130,8 @@ export interface CheckpointUpdate {
 	celestronToll?: number | null | undefined
 	/** Optional external condition. Omit to keep, true/false to set, `null` to clear (no condition). */
 	externalCondition?: boolean | null | undefined
+	/** Optional due moment (PEP111); its presence suppresses the toll until it passes. Omit to keep, a value to set, `null` to clear. */
+	due?: Due | null | undefined
 }
 
 /** Payload to create a checkpoint (PEP101). */

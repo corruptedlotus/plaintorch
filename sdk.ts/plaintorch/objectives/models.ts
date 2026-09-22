@@ -21,6 +21,22 @@ export enum ObjectiveCollege {
 	'Glamour' = 5
 }
 
+/**
+ * A deadline moment (PEP111): a civil (wall-clock) {@link moment} plus an optional {@link timeZone}. Unlike an
+ * occurrence's `Epoch` it carries no granularity or duration — it is a single point by which something is due.
+ * Owned by its objective/checkpoint; round-trips to one compact `due:` frontmatter field.
+ */
+export interface Due {
+	/** The civil (wall-clock) moment the item is due, interpreted in {@link timeZone} or floating local time. */
+	moment: string
+	/** The time zone {@link moment} is anchored in; undefined means wall/floating time. */
+	timeZone: string | undefined
+	/** Server-computed: the calendar day of {@link moment} (`'YYYY-MM-DD'`). Read-only. */
+	date: string
+	/** Server-computed: whether the due is a whole-day deadline (no meaningful time of day). Read-only. */
+	isAllDay: boolean
+}
+
 @model('Objective')
 export class Objective {
 	id: string = ''
@@ -31,7 +47,8 @@ export class Objective {
 	parentIncentiveId: string | undefined
 	onrushSprintId: string | undefined
 	onrushSprint?: OnrushSprint | undefined
-	due: string | undefined
+	/** The optional deadline — a moment plus zone (PEP111), not just a date. */
+	due: Due | undefined
 	college: ObjectiveCollege = ObjectiveCollege.Unspecified
 	status: ObjectiveStatus = ObjectiveStatus.Standby
 	celestronValue: number = 0
@@ -60,8 +77,8 @@ export interface ObjectiveUpdate {
 	onrushSprintId?: string | undefined
 	college?: ObjectiveCollege | undefined
 	celestronValue?: number | undefined
-	/** Due date. Omit to keep, a value to set, `null` to clear. */
-	due?: string | null | undefined
+	/** Due moment (PEP111). Omit to keep, a value to set, `null` to clear. */
+	due?: Due | null | undefined
 	/** Parent incentive. Omit to keep, an id to set, `null` to clear. */
 	parentIncentiveId?: string | null | undefined
 }

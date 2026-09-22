@@ -2,6 +2,35 @@ import { model } from "@a11d/api-dotnet"
 import type { Attentive, Decree, Eventive } from "../declaratives/models"
 import type { Objective, ObjectiveCollege } from "../objectives/models"
 import type { Timeframe } from "../directives/models"
+
+/**
+ * The incentive an {@link Executive} works at (PEP111): an objective (the day's plan to work it) or a decree
+ * (the cycle's execution of the decree's routine, replacing the former Polaris-bound attentive). Never a fate —
+ * fates are not worked. The two are told apart by {@link incentiveKind}.
+ */
+export type ExecutiveIncentive = Objective | Decree
+
+/**
+ * Which incentive kind an {@link Executive}'s {@link Executive.incentive} is. Reads the polymorphic `$type`
+ * discriminator the core emits, falling back to a structural check (a decree carries `activeCelestron`).
+ */
+export function incentiveKind(incentive: ExecutiveIncentive | undefined): "objective" | "decree" | undefined {
+	if (!incentive) {
+		return undefined
+	}
+
+	const discriminator = (incentive as { $type?: string }).$type
+	if (discriminator === "objective" || discriminator === "decree") {
+		return discriminator
+	}
+
+	return "activeCelestron" in incentive ? "decree" : "objective"
+}
+
+/** Whether an executive's incentive is a decree (narrowing to {@link Decree}). */
+export function isDecreeIncentive(incentive: ExecutiveIncentive | undefined): incentive is Decree {
+	return incentiveKind(incentive) === "decree"
+}
 export enum PolarisExecutivePlanningMode {
 	OneShot = 0,
 	Standalone = 1,
@@ -22,10 +51,9 @@ export class PolarisCycle {
 	startTime: string | undefined
 	endTime: string | undefined
 	isForecast?: boolean
+	/** Everything the cycle holds to work at (PEP111): objective- and decree-backed executives alike. */
 	executives: Executive[] = []
 	reflectives: Reflective[] = []
-	/** Polaris-bound attentives (PEP100). Unbound inclusions are served separately. */
-	attentives?: Attentive[]
 }
 
 /**
@@ -46,25 +74,28 @@ export interface PolarisAgenda {
 	eventives: Eventive[]
 }
 
-/** Manually adds a decree to a Polaris cycle, creating a Polaris-bound attentive (PEP100). */
-export interface PolarisAttentiveAdd {
+/**
+ * Adds a decree to a Polaris cycle, creating a decree-backed {@link Executive} (PEP111). The cycle is the
+ * temporal context, so no occurrence date/time is carried; the allocation seeds the executive.
+ */
+export interface PolarisDecreeAdd {
 	decreeId: string
-	/** Affinity to seed; omitted, the decree's college auto-inclusion decides. */
-	affinityTimeframeId?: number | undefined
-	date?: string | undefined
-	time?: string | undefined
+	/** Primary time allocation to seed (whole minutes); omitted, the decree's default length is used. */
 	estimation?: number | undefined
 	minimum?: number | undefined
 	maximum?: number | undefined
+	/** Affinity to seed; omitted, the decree's college auto-inclusion decides. */
+	affinityTimeframeId?: number | undefined
 }
 
 export interface Executive {
 	id: number
 	polarisCycleId: string
 	polarisCycle?: PolarisCycle | undefined
-	objectiveId: string | undefined
-	objective?: Objective | undefined
-	title: string | undefined
+	/** The incentive this executive works at (PEP111): an objective or a decree id. Reassignable, never cleared. */
+	incentiveId: string | undefined
+	/** The incentive this executive works at — an objective or a decree; told apart by {@link incentiveKind}. */
+	incentive?: ExecutiveIncentive | undefined
 	executed: boolean
 	/** Primary time allocation, as a whole-minute working time unit. Doubles as a progress marker. */
 	estimation: number | undefined
@@ -123,9 +154,8 @@ export interface PolarisExecutivePlanResult {
 
 export interface ExecutiveUpdate {
 	executed?: boolean | undefined
-	/** The objective can be reassigned but not cleared. */
+	/** The incentive (objective or decree) can be reassigned but not cleared. Wire field stays `objectiveId`. */
 	objectiveId?: string | undefined
-	title?: string | undefined
 	/** Primary time allocation (whole minutes). Omit to keep, a value to set, `null` to clear. */
 	estimation?: number | null | undefined
 	/** Minimum time allocation (whole minutes). Omit to keep, a value to set, `null` to clear. */
@@ -136,6 +166,8 @@ export interface ExecutiveUpdate {
 	elapsed?: number | undefined
 	/** Preferred timeframe for execution (affinity, PEP100). Omit to keep, an id to set, `null` to clear. */
 	affinityTimeframeId?: number | null | undefined
+	/** Relocates the executive to another Polaris cycle (successor to moving a bound attentive, PEP111). */
+	moveToPolarisCycleId?: string | undefined
 }
 
 export interface ReflectiveDrawRequest {

@@ -1,10 +1,9 @@
 import type { PlaintorchCoreClient } from "../coreClient"
-import type { Attentive } from "../declaratives/models"
 import type {
 	Executive,
 	ExecutiveUpdate,
 	PolarisAgenda,
-	PolarisAttentiveAdd,
+	PolarisDecreeAdd,
 	PolarisCycle,
 	PolarisCycleInclusions,
 	PolarisCyclePlanRequest,
@@ -123,13 +122,15 @@ export class PlaintorchPolarisSdk {
 		)
 	}
 
-	public async addAttentive(request: PolarisAttentiveAdd): Promise<Attentive | undefined> {
-		return await this.client.postForJson<Attentive>("/api/polaris/current/attentives", request)
+	/** Adds a decree to the current cycle as a decree-backed executive (PEP111). */
+	public async addDecreeExecutive(request: PolarisDecreeAdd): Promise<Executive | undefined> {
+		return await this.client.postForJson<Executive>("/api/polaris/current/decrees", request)
 	}
 
-	public async addAttentiveForCycle(polarisCycleId: string, request: PolarisAttentiveAdd): Promise<Attentive | undefined> {
-		return await this.client.postForJson<Attentive>(
-			`/api/polaris/${encodeURIComponent(polarisCycleId)}/attentives`,
+	/** Adds a decree to a specific cycle as a decree-backed executive (PEP111). */
+	public async addDecreeExecutiveForCycle(polarisCycleId: string, request: PolarisDecreeAdd): Promise<Executive | undefined> {
+		return await this.client.postForJson<Executive>(
+			`/api/polaris/${encodeURIComponent(polarisCycleId)}/decrees`,
 			request
 		)
 	}
@@ -138,14 +139,9 @@ export class PlaintorchPolarisSdk {
 		return await this.client.putForJson<Executive>(`/api/executives/${executiveId}`, update)
 	}
 
-	/** Removes an executive from its cycle, deleting it. The objective stays, in whatever state it has. */
+	/** Removes an executive from its cycle, deleting it. The incentive (objective or decree) stays, as it is. */
 	public async removeExecutive(executiveId: number): Promise<boolean> {
 		return await this.client.delete(`/api/executives/${executiveId}`)
-	}
-
-	/** Removes a Polaris-bound attentive from its cycle, deleting it. The decree stays. */
-	public async removeAttentive(attentiveId: number): Promise<boolean> {
-		return await this.client.delete(`/api/polaris/attentives/${attentiveId}`)
 	}
 
 	public async updateReflective(reflectiveId: number, update: ReflectiveUpdate): Promise<Reflective | undefined> {
