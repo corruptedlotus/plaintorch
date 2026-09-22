@@ -174,7 +174,10 @@ public sealed class OccurrenceHardeningService(
 
 	private async Task<(Eventive Eventive, bool Created)> EnsureFateEventiveIntoContextAsync(Fate fate, EventiveMaterialization request, bool respectDependencyGate, CancellationToken cancellationToken)
 	{
-		if (fate.Status != FateStatus.Active)
+		// A cancelled fate generates nothing and cannot be interacted with. An opted-out fate still honours the
+		// user-interaction rule (PEP100/PEP111): interacting with one of its occurrences hardens it, stamped OptOut
+		// so it stays hidden until the row is explicitly opted back in by setting it Pending.
+		if (fate.Status == FateStatus.Cancelled)
 		{
 			throw new InvalidOperationException($"Fate '{fate.Id}' is {fate.Status} and does not materialize eventives.");
 		}
@@ -224,6 +227,7 @@ public sealed class OccurrenceHardeningService(
 			RecurrenceDate = date,
 			RecurrenceTime = startTime,
 			Estimation = spanMinutes ?? fate.ResolveEventiveDuration(),
+			Resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending,
 		};
 		eventive.Normalize();
 		context.Eventives.Add(eventive);

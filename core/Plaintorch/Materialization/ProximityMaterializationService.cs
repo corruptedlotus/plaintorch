@@ -119,16 +119,21 @@ public sealed class ProximityMaterializationService(
 		var created = 0;
 
 		// Orbit fates: seek through now (instant), hardening occurrences whose time has already arrived; the
-		// still-future occurrences of today are left for a later tick.
+		// still-future occurrences of today are left for a later tick. Active fates harden as Pending; an opted-out
+		// fate keeps generating but its occurrences only harden — stamped OptOut so they stay hidden — when the
+		// time-passage preference is enabled, so by default they remain projections (PEP100/PEP111).
 		var orbitFates = await context.Fates
 			.IgnoreAutoIncludes()
-			.Where(fate => fate.Status == FateStatus.Active && fate.Orbit != null)
+			.Where(fate => fate.Orbit != null
+				&& (fate.Status == FateStatus.Active
+					|| (fate.Status == FateStatus.OptOut && policy.HardenOptOutOnTimePassage)))
 			.ToListAsync(cancellationToken);
 		foreach (var fate in orbitFates)
 		{
+			var resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
 			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(fate, fate.Orbit!, localNow, cancellationToken))
 			{
-				created += await EnsureFateEventiveAsync(fate, occurrence, cancellationToken) ? 1 : 0;
+				created += await EnsureFateEventiveAsync(fate, occurrence, resolution, cancellationToken) ? 1 : 0;
 			}
 		}
 
@@ -163,7 +168,7 @@ public sealed class ProximityMaterializationService(
 		{
 			if (fate.Date!.Value.ToDateTime(fate.StartTime ?? TimeOnly.MinValue) <= localNow)
 			{
-				created += await EnsureFateEventiveAsync(fate, fate.Date.Value, cancellationToken) ? 1 : 0;
+				created += await EnsureFateEventiveAsync(fate, fate.Date.Value, EventiveResolution.Pending, cancellationToken) ? 1 : 0;
 			}
 		}
 
@@ -240,21 +245,21 @@ public sealed class ProximityMaterializationService(
 	/// <summary>
 	/// Ensures a dated fate's eventive exists for an occurrence day, returning whether one was created.
 	/// </summary>
-	private Task<bool> EnsureFateEventiveAsync(Fate fate, DateOnly day, CancellationToken cancellationToken)
+	private Task<bool> EnsureFateEventiveAsync(Fate fate, DateOnly day, EventiveResolution resolution, CancellationToken cancellationToken)
 	{
 		var granularity = fate.StartTime is null ? OrbitUnit.Day : OrbitUnit.Minute;
 		// The occurrence's temporal span is the fate's own start/end window (null = all-day); the estimation is the
 		// resolved event duration (allocation). Keeping them separate stops a 45-minute allocation from shrinking
 		// an all-day occurrence's window.
 		var span = OccurrenceDurations.SpanMinutes(fate.StartTime, fate.EndTime);
-		return EnsureFateEventiveCoreAsync(fate, day, fate.StartTime, granularity, span, fate.ResolveEventiveDuration(), cancellationToken);
+		return EnsureFateEventiveCoreAsync(fate, day, fate.StartTime, granularity, span, fate.ResolveEventiveDuration(), resolution, cancellationToken);
 	}
 
 	/// <summary>
 	/// Ensures a fate's eventive exists for an orbit occurrence, returning whether one was created. Only a span
 	/// occurrence carries a temporal span; a granular occurrence fills its granularity window (null span).
 	/// </summary>
-	private Task<bool> EnsureFateEventiveAsync(Fate fate, OrbitOccurrenceInstance occurrence, CancellationToken cancellationToken)
+	private Task<bool> EnsureFateEventiveAsync(Fate fate, OrbitOccurrenceInstance occurrence, EventiveResolution resolution, CancellationToken cancellationToken)
 	{
 		return EnsureFateEventiveCoreAsync(
 			fate,
@@ -263,10 +268,11 @@ public sealed class ProximityMaterializationService(
 			occurrence.Granularity,
 			occurrence.DurationMinutes,
 			occurrence.DurationMinutes ?? fate.ResolveEventiveDuration(),
+			resolution,
 			cancellationToken);
 	}
 
-	private async Task<bool> EnsureFateEventiveCoreAsync(Fate fate, DateOnly day, TimeOnly? startTime, OrbitUnit granularity, int? spanMinutes, int? estimation, CancellationToken cancellationToken)
+	private async Task<bool> EnsureFateEventiveCoreAsync(Fate fate, DateOnly day, TimeOnly? startTime, OrbitUnit granularity, int? spanMinutes, int? estimation, EventiveResolution resolution, CancellationToken cancellationToken)
 	{
 		// PEP101: a locked whole-fate pauses orbit generation; a locked single occurrence blocks just itself.
 		if (await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, day, startTime, cancellationToken))
@@ -289,6 +295,7 @@ public sealed class ProximityMaterializationService(
 			RecurrenceDate = day,
 			RecurrenceTime = startTime,
 			Estimation = estimation,
+			Resolution = resolution,
 		};
 		eventive.Normalize();
 		context.Eventives.Add(eventive);

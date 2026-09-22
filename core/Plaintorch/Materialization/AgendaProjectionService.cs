@@ -68,18 +68,21 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 			.ToListAsync(cancellationToken);
 		foreach (var fate in datedFates)
 		{
-			AddEventive(eventives, eventiveKeys, ProjectFateEventive(fate, fate.Date!.Value, fate.StartTime, fate.StartTime is null ? OrbitUnit.Day : OrbitUnit.Minute, OccurrenceDurations.SpanMinutes(fate.StartTime, fate.EndTime), fate.ResolveEventiveDuration()));
+			AddEventive(eventives, eventiveKeys, ProjectFateEventive(fate, fate.Date!.Value, fate.StartTime, fate.StartTime is null ? OrbitUnit.Day : OrbitUnit.Minute, OccurrenceDurations.SpanMinutes(fate.StartTime, fate.EndTime), fate.ResolveEventiveDuration(), EventiveResolution.Pending));
 		}
 
-		// Orbit fates: preview occurrences overlapping the window (Gregorian calendar).
+		// Orbit fates: preview occurrences overlapping the window (Gregorian calendar). An opted-out fate keeps
+		// generating, so its occurrences are still projected — stamped OptOut so the display agenda hides them while
+		// they can still be interacted with or opted back in (PEP100/PEP111).
 		var orbitFates = await context.Fates
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
 			.Include(fate => fate.Directive)
-			.Where(fate => fate.Status == FateStatus.Active && fate.Orbit != null)
+			.Where(fate => (fate.Status == FateStatus.Active || fate.Status == FateStatus.OptOut) && fate.Orbit != null)
 			.ToListAsync(cancellationToken);
 		foreach (var fate in orbitFates)
 		{
+			var resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
 			foreach (var occurrence in await orbitService.PreviewOccurrencesAsync(fate, fate.Orbit!, startInclusive, endExclusive, cancellationToken))
 			{
 				AddEventive(eventives, eventiveKeys, ProjectFateEventive(
@@ -88,7 +91,8 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 					occurrence.StartTime ?? fate.StartTime,
 					occurrence.Granularity,
 					occurrence.DurationMinutes,
-					occurrence.DurationMinutes ?? fate.ResolveEventiveDuration()));
+					occurrence.DurationMinutes ?? fate.ResolveEventiveDuration(),
+					resolution));
 			}
 		}
 
@@ -153,7 +157,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		return new AgendaProjection(eventives, attentives);
 	}
 
-	private static Eventive ProjectFateEventive(Fate fate, DateOnly date, TimeOnly? startTime, OrbitUnit granularity, int? spanMinutes, int? estimation)
+	private static Eventive ProjectFateEventive(Fate fate, DateOnly date, TimeOnly? startTime, OrbitUnit granularity, int? spanMinutes, int? estimation, EventiveResolution resolution)
 	{
 		var eventive = new Eventive
 		{
@@ -163,6 +167,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 			RecurrenceDate = date,
 			RecurrenceTime = startTime,
 			Estimation = estimation,
+			Resolution = resolution,
 		};
 		eventive.Normalize();
 		return eventive;

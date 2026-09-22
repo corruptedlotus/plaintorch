@@ -33,6 +33,7 @@ public sealed class DeclarativeApiService(
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
 	OccurrenceHardeningService hardeningService,
+	PlaintorchOrbitService orbitService,
 	VaultEntityLifecycleService lifecycleService,
 	VaultAuditLogService auditLogService) : IDeclarativeApi
 {
@@ -177,6 +178,13 @@ public sealed class DeclarativeApiService(
 
 		ValidateEventWindow(fate.StartTime, fate.EndTime);
 
+		// Resuming a paused fate (cancelled or opted out → active) seeks its cursor to now, so generation picks up
+		// from now with no backfill of the occurrences that elapsed while it was paused (PEP100/PEP111).
+		if (previous.Status != FateStatus.Active && fate.Status == FateStatus.Active && !string.IsNullOrWhiteSpace(fate.Orbit))
+		{
+			await orbitService.FastForwardToNowAsync(fate, fate.Orbit!, DateTime.Now, cancellationToken);
+		}
+
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveFateAsync(fate, previous, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "fate.update", subject: fate, cancellationToken: cancellationToken);
@@ -313,6 +321,13 @@ public sealed class DeclarativeApiService(
 
 		// Validate the resulting combination: reflecting decrees demand day-granularity orbits.
 		PlaintorchOrbitService.ValidateDecreeOrbit(decree.Orbit, decree.Reflect);
+
+		// Resuming an abandoned decree (→ active) seeks its cursor to now, so generation picks up from now with no
+		// backfill of the occurrences that elapsed while it was abandoned (PEP100/PEP111).
+		if (previous.Status != DecreeStatus.Active && decree.Status == DecreeStatus.Active && !string.IsNullOrWhiteSpace(decree.Orbit))
+		{
+			await orbitService.FastForwardToNowAsync(decree, decree.Orbit!, DateTime.Now, cancellationToken);
+		}
 
 		await context.SaveChangesAsync(cancellationToken);
 		await markdownStorageService.SaveDecreeAsync(decree, previous, cancellationToken: cancellationToken);

@@ -151,6 +151,21 @@ public sealed class PlaintorchOrbitService(PlainfraContext context)
 	}
 
 	/// <summary>
+	/// FAST-FORWARD: advances and persists the declarative's schedule cursor to <paramref name="now"/> WITHOUT
+	/// emitting the occurrences it passes. This is the resume-from-pause seek (PEP100): re-activating a cancelled
+	/// fate or an abandoned decree picks generation up from now forward, so the occurrences that elapsed while it
+	/// was paused are skipped rather than back-filled by the next harden-on-time pass.
+	/// </summary>
+	public async Task FastForwardToNowAsync(Incentive incentive, string orbit, DateTime now, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(incentive);
+		var state = await GetOrCreateStateAsync(incentive, orbit, DateOnly.FromDateTime(DateTime.Today), cancellationToken);
+		var (_, advanced) = OrbitDays.SeekOccurrencesThroughInstant(state.StateJson, now, ResolveCalendar(incentive));
+		state.StateJson = advanced;
+		state.UpdatedUtc = DateTimeOffset.UtcNow;
+	}
+
+	/// <summary>
 	/// PREVIEW: the declarative's orbit occurrences whose period covers the given day, without pushing the
 	/// schedule state forward.
 	/// </summary>
