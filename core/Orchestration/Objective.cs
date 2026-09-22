@@ -60,12 +60,6 @@ public sealed class Objective : Incentive
 	public int CelestronValue { get; set; }
 
 	/// <summary>
-	/// Gets the execution records linked to this objective.
-	/// </summary>
-	[InverseProperty(nameof(Executive.Objective))]
-	public List<Executive> Executives { get; set; } = [];
-
-	/// <summary>
 	/// Gets the eventives materialized from this objective's due date (PEP100).
 	/// </summary>
 	[InverseProperty(nameof(Eventive.Objective))]

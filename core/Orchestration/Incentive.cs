@@ -48,4 +48,11 @@ public abstract class Incentive : PuckNamedEntity
 	/// Gets the child incentives parented under this incentive.
 	/// </summary>
 	public List<Incentive> ChildIncentives { get; set; } = [];
+
+	/// <summary>
+	/// Gets the Polaris execution records that work at this incentive (PEP111). Populated for objectives (the day's
+	/// plan to work them) and decrees (a cycle's execution of the routine); empty for fates, which are never worked.
+	/// </summary>
+	[InverseProperty(nameof(Executive.Incentive))]
+	public List<Executive> Executives { get; set; } = [];
 }

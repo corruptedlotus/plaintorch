@@ -174,7 +174,7 @@ public sealed class PolarisCycleApiService(
 		var cycle = await context.PolarisCycles
 			.AsNoTracking()
 			.Include(item => item.Executives)
-				.ThenInclude(executive => executive.Objective)
+				.ThenInclude(executive => executive.Incentive)
 			.Include(item => item.Executives)
 				.ThenInclude(executive => executive.AffinityTimeframe)
 			.Include(item => item.Reflectives)
@@ -194,7 +194,7 @@ public sealed class PolarisCycleApiService(
 		return await context.PolarisCycles
 			.AsNoTracking()
 			.Include(cycle => cycle.Executives)
-				.ThenInclude(executive => executive.Objective)
+				.ThenInclude(executive => executive.Incentive)
 			.Where(cycle => cycle.Forecast != null && cycle.StartTime == null)
 			.OrderBy(cycle => cycle.Id)
 			.ToListAsync(cancellationToken);
@@ -232,7 +232,7 @@ public sealed class PolarisCycleApiService(
 				ArgumentException.ThrowIfNullOrWhiteSpace(plan.ObjectiveId);
 				objective = await context.Objectives.FirstOrDefaultAsync(item => item.Id == plan.ObjectiveId, cancellationToken)
 					?? throw new InvalidOperationException($"Objective '{plan.ObjectiveId}' was not found.");
-				await EnsureObjectiveNotInCycleAsync(cycle.Id, objective.Id, cancellationToken);
+				await EnsureIncentiveNotInCycleAsync(cycle.Id, objective.Id, cancellationToken);
 				if (plan.College is not null)
 				{
 					objective.College = plan.College.Value;
@@ -259,7 +259,7 @@ public sealed class PolarisCycleApiService(
 		var executive = new Executive
 		{
 			PolarisCycleId = cycle.Id,
-			ObjectiveId = objective?.Id,
+			IncentiveId = objective?.Id,
 			Executed = false,
 			Estimation = plan.Estimation,
 			Minimum = plan.Minimum,
@@ -296,12 +296,12 @@ public sealed class PolarisCycleApiService(
 			executive.Executed = update.Executed.Value;
 		}
 
-		// The executive's objective can be reassigned but never cleared — an executive without an objective has
+		// The executive's incentive can be reassigned but never cleared — an executive without an incentive has
 		// nothing to work at.
-		if (!string.IsNullOrWhiteSpace(update.ObjectiveId) && update.ObjectiveId != executive.ObjectiveId)
+		if (!string.IsNullOrWhiteSpace(update.ObjectiveId) && update.ObjectiveId != executive.IncentiveId)
 		{
-			await EnsureObjectiveNotInCycleAsync(executive.PolarisCycleId, update.ObjectiveId, cancellationToken);
-			executive.ObjectiveId = update.ObjectiveId;
+			await EnsureIncentiveNotInCycleAsync(executive.PolarisCycleId, update.ObjectiveId, cancellationToken);
+			executive.IncentiveId = update.ObjectiveId;
 		}
 
 		// A set allocation applies its value — including null, which clears it; an unset one is left unchanged.
@@ -351,7 +351,7 @@ public sealed class PolarisCycleApiService(
 			"polaris.update-executive",
 			subjectType: nameof(Executive),
 			subjectId: executive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-			details: new { objectiveId = executive.ObjectiveId, executed = executive.Executed, estimation = executive.Estimation, minimum = executive.Minimum, maximum = executive.Maximum, elapsed = executive.Elapsed },
+			details: new { incentiveId = executive.IncentiveId, executed = executive.Executed, estimation = executive.Estimation, minimum = executive.Minimum, maximum = executive.Maximum, elapsed = executive.Elapsed },
 			cancellationToken: cancellationToken);
 		return executive;
 	}
@@ -372,7 +372,7 @@ public sealed class PolarisCycleApiService(
 			"polaris.remove-executive",
 			subjectType: nameof(Executive),
 			subjectId: executive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-			details: new { cycleId = executive.PolarisCycleId, objectiveId = executive.ObjectiveId, executed = executive.Executed },
+			details: new { cycleId = executive.PolarisCycleId, incentiveId = executive.IncentiveId, executed = executive.Executed },
 			cancellationToken: cancellationToken);
 	}
 
@@ -524,17 +524,17 @@ public sealed class PolarisCycleApiService(
 	}
 
 	/// <summary>
-	/// Enforces that a Polaris cycle holds at most one executive per objective: planning an objective already in the
+	/// Enforces that a Polaris cycle holds at most one executive per incentive: planning an incentive already in the
 	/// cycle, or reassigning an executive onto one, is refused rather than producing a second instance. The unique
-	/// index on <c>(PolarisCycleId, ObjectiveId)</c> is the last line of defence; this is the one that speaks.
+	/// index on <c>(PolarisCycleId, IncentiveId)</c> is the last line of defence; this is the one that speaks.
 	/// </summary>
-	private async Task EnsureObjectiveNotInCycleAsync(string polarisCycleId, string objectiveId, CancellationToken cancellationToken)
+	private async Task EnsureIncentiveNotInCycleAsync(string polarisCycleId, string incentiveId, CancellationToken cancellationToken)
 	{
 		var alreadyPlanned = await context.Set<Executive>()
-			.AnyAsync(item => item.PolarisCycleId == polarisCycleId && item.ObjectiveId == objectiveId, cancellationToken);
+			.AnyAsync(item => item.PolarisCycleId == polarisCycleId && item.IncentiveId == incentiveId, cancellationToken);
 		if (alreadyPlanned)
 		{
-			throw new InvalidOperationException($"Objective '{objectiveId}' is already an executive of Polaris cycle '{polarisCycleId}'.");
+			throw new InvalidOperationException($"Incentive '{incentiveId}' is already an executive of Polaris cycle '{polarisCycleId}'.");
 		}
 	}
 

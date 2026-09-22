@@ -603,7 +603,7 @@ public sealed class SystemApiService(
 		var cycle = await context.PolarisCycles
 			.AsNoTracking()
 			.Include(item => item.Executives)
-				.ThenInclude(item => item.Objective)
+				.ThenInclude(item => item.Incentive)
 			.Include(item => item.Reflectives)
 				.ThenInclude(item => item.Decree)
 			.Include(item => item.Attentives)

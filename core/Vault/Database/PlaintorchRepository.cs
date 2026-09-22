@@ -186,9 +186,9 @@ public sealed class PlaintorchRepository(PlainfraContext context)
 			.Include(x => x.Executives)
 			.Single(x => x.Id == executive.PolarisCycleId);
 
-		if (!string.IsNullOrWhiteSpace(executive.ObjectiveId))
+		if (!string.IsNullOrWhiteSpace(executive.IncentiveId))
 		{
-			executive.Objective = context.Objectives.SingleOrDefault(x => x.Id == executive.ObjectiveId);
+			executive.Incentive = context.Incentives.SingleOrDefault(x => x.Id == executive.IncentiveId);
 		}
 
 		cycle.Executives.Add(executive);
