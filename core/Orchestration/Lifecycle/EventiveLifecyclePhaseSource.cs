@@ -26,7 +26,7 @@ public sealed class EventiveLifecyclePhaseSource : ILifecyclePhaseSource
 	public bool HasFinished(object entity)
 	{
 		var eventive = (Eventive)entity;
-		if (eventive.Resolution is EventiveResolution.Missed or EventiveResolution.Cancelled)
+		if (eventive.Resolution is EventiveResolution.Missed or EventiveResolution.Cancelled or EventiveResolution.OptOut)
 		{
 			return true;
 		}
