@@ -17,14 +17,4 @@ public sealed class MaterializationPolicyOptions
 	/// changes; only explicit interactions harden it.
 	/// </summary>
 	public bool TimeIsInteraction { get; set; } = true;
-
-	/// <summary>
-	/// Gets or sets a value indicating whether the passage of time hardens an OPTED-OUT fate's occurrences
-	/// (PEP100/PEP111). An opted-out fate keeps generating, but its occurrences spawn with
-	/// <see cref="Pleiades.Orchestration.EventiveResolution.OptOut"/> and are hidden. When <see langword="false"/>
-	/// (the default), the rolling pass never persists them — they stay projections and are only ever hardened by
-	/// explicit interaction. When <see langword="true"/>, the pass hardens them like active occurrences, but
-	/// stamped <see cref="Pleiades.Orchestration.EventiveResolution.OptOut"/> so they remain hidden.
-	/// </summary>
-	public bool HardenOptOutOnTimePassage { get; set; }
 }

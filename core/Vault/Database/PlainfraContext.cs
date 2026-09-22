@@ -152,6 +152,12 @@ public class PlainfraContext : DbContext
 	/// </summary>
 	public DbSet<OperationStatusDismissalRecord> OperationStatusDismissals => Set<OperationStatusDismissalRecord>();
 
+	/// <summary>
+	/// Gets the vault-bound user preference overrides (PEP116). Sparse key/value rows; unset preferences
+	/// resolve to their code-owned defaults.
+	/// </summary>
+	public DbSet<UserPreferenceRecord> UserPreferences => Set<UserPreferenceRecord>();
+
 	/// <inheritdoc />
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{

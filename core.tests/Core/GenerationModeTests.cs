@@ -4,6 +4,7 @@ using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Materialization;
+using Pleiades.Plaintorch.Preferences;
 using Pleiades.Tests.Harness;
 using Xunit;
 
@@ -25,10 +26,7 @@ public sealed class GenerationModeTests : VaultTestBase
 	private Task<int> HardenAt(DateTimeOffset now) => Vault.WithScopeAsync(s => s.GetRequiredService<ProximityMaterializationService>().MaterializeForNowAsync(now, Ct));
 
 	private Task SetHardenOptOutOnTimePassage(bool value) => Vault.WithScopeAsync(s =>
-	{
-		s.GetRequiredService<MaterializationPolicyOptions>().HardenOptOutOnTimePassage = value;
-		return Task.CompletedTask;
-	});
+		s.GetRequiredService<UserPreferenceService>().SetAsync(PreferenceKeys.AutoMaterialiseOptOut, value, Ct));
 
 	private static DateTimeOffset TodayAt(int hour, int minute = 0)
 		=> new(DateOnly.FromDateTime(DateTime.Today).ToDateTime(new TimeOnly(hour, minute)));

@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
+using Pleiades.Plaintorch.Preferences;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 
@@ -26,6 +28,7 @@ public sealed class ProximityMaterializationService(
 	DependencyGateService dependencyGate,
 	TimeframeAffinityResolver affinityResolver,
 	MaterializationPolicyOptions policy,
+	IOptionsSnapshot<AgendaPreferences> agendaPreferences,
 	VaultAuditLogService auditLogService)
 {
 	/// <summary>
@@ -121,12 +124,13 @@ public sealed class ProximityMaterializationService(
 		// Orbit fates: seek through now (instant), hardening occurrences whose time has already arrived; the
 		// still-future occurrences of today are left for a later tick. Active fates harden as Pending; an opted-out
 		// fate keeps generating but its occurrences only harden — stamped OptOut so they stay hidden — when the
-		// time-passage preference is enabled, so by default they remain projections (PEP100/PEP111).
+		// user's auto-materialise-optout preference is enabled, so by default they remain projections (PEP111/PEP116).
+		var autoMaterialiseOptOut = agendaPreferences.Value.AutoMaterialiseOptOut;
 		var orbitFates = await context.Fates
 			.IgnoreAutoIncludes()
 			.Where(fate => fate.Orbit != null
 				&& (fate.Status == FateStatus.Active
-					|| (fate.Status == FateStatus.OptOut && policy.HardenOptOutOnTimePassage)))
+					|| (fate.Status == FateStatus.OptOut && autoMaterialiseOptOut)))
 			.ToListAsync(cancellationToken);
 		foreach (var fate in orbitFates)
 		{

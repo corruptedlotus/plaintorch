@@ -14,6 +14,7 @@ import { PlaintorchActivitiesSdk } from "./activities/activitiesSdk"
 import { PlaintorchLoreSdk } from "./lore/loreSdk"
 import { PlaintorchDependenciesSdk } from "./dependencies/dependenciesSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
+import { PlaintorchPreferencesSdk } from "./preferences/preferencesSdk"
 import { PlaintorchMediaSdk } from "./media/mediaSdk"
 import { createAbsorbingReviver, EntityStore, PlaintorchRepositories, type AbsorptionContext } from "./repository"
 
@@ -54,6 +55,8 @@ export class PlaintorchCoreClient {
 	public readonly activities: PlaintorchActivitiesSdk
 	public readonly lore: PlaintorchLoreSdk
 	public readonly dependencies: PlaintorchDependenciesSdk
+	/** Vault-bound user preferences (PEP116). */
+	public readonly preferences: PlaintorchPreferencesSdk
 	public constructor(options: PlaintorchCoreClientOptions = {}) {
 		const host = options.host ?? defaultHost
 		const loopbackPort = options.loopbackPort ?? defaultLoopbackPort
@@ -76,6 +79,7 @@ export class PlaintorchCoreClient {
 		this.activities = new PlaintorchActivitiesSdk(this)
 		this.lore = new PlaintorchLoreSdk(this)
 		this.dependencies = new PlaintorchDependenciesSdk(this)
+		this.preferences = new PlaintorchPreferencesSdk(this)
 		// Constructed last: the repositories delegate to the SDKs above.
 		this.repos = new PlaintorchRepositories(this, { resolutionFreshnessMs: options.cacheTtlMs })
 	}
