@@ -372,6 +372,87 @@ public sealed class PolarisCycleApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task<Executive> MoveExecutiveToNextPolarisAsync(long executiveId, CancellationToken cancellationToken = default)
+	{
+		var executive = await context.Set<Executive>()
+			.Include(item => item.PolarisCycle)
+			.FirstOrDefaultAsync(item => item.Id == executiveId, cancellationToken)
+			?? throw new InvalidOperationException($"Executive '{executiveId}' was not found.");
+
+		var currentDate = ResolveCycleDate(executive.PolarisCycle);
+		var next = await EnsureNextForecastCycleAsync(currentDate, cancellationToken);
+
+		// A cycle holds at most one executive per incentive (PEP111).
+		if (!string.IsNullOrWhiteSpace(executive.IncentiveId))
+		{
+			await EnsureIncentiveNotInCycleAsync(next.Id, executive.IncentiveId, cancellationToken);
+		}
+
+		// Carry the tracked work forward as the fresh allocation envelope — the day starts from an estimate of
+		// what was actually worked so far — and restart tracking from zero.
+		var carried = executive.Elapsed;
+		executive.PolarisCycleId = next.Id;
+		executive.Estimation = carried;
+		executive.Minimum = carried;
+		executive.Maximum = carried;
+		executive.Elapsed = 0;
+		executive.NormalizeTimeAllocations();
+
+		await context.SaveChangesAsync(cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"polaris.move-executive-next",
+			subjectType: nameof(Executive),
+			subjectId: executive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+			details: new { toCycleId = next.Id, incentiveId = executive.IncentiveId, carried },
+			cancellationToken: cancellationToken);
+		return executive;
+	}
+
+	/// <summary>
+	/// Finds the cycle for the day after <paramref name="currentDate"/>, or plans and persists a forecast one
+	/// (a one-day-ahead forecast anchored on <paramref name="currentDate"/>).
+	/// </summary>
+	private async Task<PolarisCycle> EnsureNextForecastCycleAsync(DateOnly currentDate, CancellationToken cancellationToken)
+	{
+		var nextDate = currentDate.AddDays(1);
+		var existingId = puckCreationService.ComposeIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: nextDate)]);
+		var existing = await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == existingId, cancellationToken);
+		if (existing is not null)
+		{
+			return existing;
+		}
+
+		var id = puckCreationService.CreateIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: nextDate)]);
+		var forecast = lifecycle.PlanForecast(currentDate, 1, id);
+		context.PolarisCycles.Add(forecast);
+		await context.SaveChangesAsync(cancellationToken);
+		await markdownFileService.SavePolarisCycleAsync(forecast, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync("api", "polaris.plan", subject: forecast, cancellationToken: cancellationToken);
+		return forecast;
+	}
+
+	/// <summary>
+	/// Resolves the calendar day a cycle stands for: its start day when started, its forecast target day when
+	/// still a forecast, else today (a defensive fallback for a cycle that is neither).
+	/// </summary>
+	private static DateOnly ResolveCycleDate(PolarisCycle? cycle)
+	{
+		if (cycle?.StartTime is { } start)
+		{
+			return DateOnly.FromDateTime(start.LocalDateTime);
+		}
+
+		if (cycle?.Forecast is { } forecast
+			&& int.TryParse(forecast.ForecastTarget.Trim().TrimStart('+').TrimEnd('d'), System.Globalization.CultureInfo.InvariantCulture, out var daysAhead))
+		{
+			return forecast.ForecastReference.AddDays(daysAhead);
+		}
+
+		return DateOnly.FromDateTime(DateTime.Today);
+	}
+
+	/// <inheritdoc />
 	public async Task RemoveExecutiveAsync(long executiveId, CancellationToken cancellationToken = default)
 	{
 		var executive = await context.Set<Executive>().FirstOrDefaultAsync(item => item.Id == executiveId, cancellationToken)

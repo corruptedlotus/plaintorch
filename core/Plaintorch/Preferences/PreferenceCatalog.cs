@@ -1,3 +1,5 @@
+using Pleiades.Orchestration;
+
 namespace Pleiades.Plaintorch.Preferences;
 
 /// <summary>
@@ -36,6 +38,16 @@ public sealed class PreferenceCatalog
 				Description = "Materialise an opted-out eventive as time passes, instead of only when it is opted back in.",
 				Kind = PreferenceKind.Boolean,
 				DefaultRaw = UserPreferenceSerializer.Serialize(agenda.AutoMaterialiseOptOut),
+			},
+			new PreferenceDescriptor
+			{
+				Key = PreferenceKeys.DefaultCalendar,
+				Label = "Default resolution calendar",
+				Group = "Agenda",
+				Description = "The calendar an orbit resolves against when its declarative names none of its own — the single vault-wide default (no fate-vs-decree split).",
+				Kind = PreferenceKind.Enum,
+				DefaultRaw = UserPreferenceSerializer.Serialize(agenda.DefaultCalendar),
+				Options = Enum.GetNames<DeclarativeCalendar>(),
 			},
 			new PreferenceDescriptor
 			{

@@ -116,6 +116,7 @@ public sealed class PlaintorchModule : Module
 		services.AddOptions<AgendaPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
 		{
 			preferences.AutoMaterialiseOptOut = store.Get(PreferenceKeys.AutoMaterialiseOptOut, preferences.AutoMaterialiseOptOut);
+			preferences.DefaultCalendar = store.Get(PreferenceKeys.DefaultCalendar, preferences.DefaultCalendar);
 		});
 		services.AddOptions<CalDavPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
 		{

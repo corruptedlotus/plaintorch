@@ -76,6 +76,8 @@ public sealed class DeclarativeApiService(
 			Title = plan.Title,
 			DirectiveId = plan.DirectiveId,
 			Orbit = orbit,
+			// A one-off Z{…} literal is Gregorian-authored; pin it so the global default calendar never reinterprets it.
+			Calendar = PinnedCalendarFor(orbit),
 		};
 
 		if (!string.IsNullOrWhiteSpace(plan.ParentIncentiveId))
@@ -138,6 +140,8 @@ public sealed class DeclarativeApiService(
 			var normalizedOrbit = string.IsNullOrWhiteSpace(update.Orbit) ? null : update.Orbit;
 			PlaintorchOrbitService.ValidateFateOrbit(normalizedOrbit);
 			fate.Orbit = normalizedOrbit;
+			// Re-pin: a one-off Z{…} literal resolves Gregorian, a recurrence follows the global default (PEP111).
+			fate.Calendar = PinnedCalendarFor(normalizedOrbit);
 		}
 
 		// Resuming a paused fate (cancelled or opted out → active) seeks its cursor to now, so generation picks up
@@ -528,6 +532,17 @@ public sealed class DeclarativeApiService(
 		var duration = OccurrenceDurations.Format(span);
 		return duration is null ? head : $"{head}={duration}";
 	}
+
+	/// <summary>
+	/// The calendar a fate pins itself to given its orbit (PEP111): a fixed-datetime <c>Z{…}</c> literal is an
+	/// absolute civil moment authored in Gregorian, so it pins <see cref="DeclarativeCalendar.Gregorian"/> and is
+	/// never reinterpreted by the vault's global default calendar (which may be Pleiadean, where its month/day
+	/// would overflow a six-month year). A recurrence follows the global default (<see langword="null"/>).
+	/// </summary>
+	private static DeclarativeCalendar? PinnedCalendarFor(string? orbit)
+		=> !string.IsNullOrWhiteSpace(orbit) && orbit.TrimStart().StartsWith("Z{", System.StringComparison.Ordinal)
+			? DeclarativeCalendar.Gregorian
+			: null;
 
 	private static Decree CloneDecree(Decree decree)
 	{

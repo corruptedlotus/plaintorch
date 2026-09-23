@@ -154,7 +154,7 @@ public sealed class UserPreferencesTests : VaultTestBase
 		var list = await Vault.WithScopeAsync(services => services.GetRequiredService<IPreferenceApi>()
 			.ListAsync(TestContext.Current.CancellationToken));
 
-		Assert.Equal(3, list.Count);
+		Assert.Equal(4, list.Count);
 		var noteQueue = list.Single(preference => preference.Key == PreferenceKeys.NoteQueueTimeout);
 		Assert.Equal("Integer", noteQueue.Kind);
 		Assert.Equal(2000, noteQueue.Value.GetInt32());
@@ -164,6 +164,13 @@ public sealed class UserPreferencesTests : VaultTestBase
 		Assert.Equal("Enum", calDav.Kind);
 		Assert.NotNull(calDav.Options);
 		Assert.Contains("PinToStart", calDav.Options!);
+
+		var defaultCalendar = list.Single(preference => preference.Key == PreferenceKeys.DefaultCalendar);
+		Assert.Equal("Enum", defaultCalendar.Kind);
+		Assert.NotNull(defaultCalendar.Options);
+		Assert.Contains("Pleiadean", defaultCalendar.Options!);
+		Assert.Contains("Gregorian", defaultCalendar.Options!);
+		Assert.Equal("Pleiadean", defaultCalendar.Default.GetString());
 	}
 
 	[Fact]

@@ -96,6 +96,9 @@ public sealed class PolarisCycleModule : Module
 		executives.MapPut("/{executiveId:long}", async (long executiveId, ExecutiveUpdate request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateExecutiveAsync(executiveId, request, cancellationToken)));
 
+		executives.MapPost("/{executiveId:long}/next-polaris", async (long executiveId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.MoveExecutiveToNextPolarisAsync(executiveId, cancellationToken)));
+
 		executives.MapDelete("/{executiveId:long}", async (long executiveId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 		{
 			await api.RemoveExecutiveAsync(executiveId, cancellationToken);

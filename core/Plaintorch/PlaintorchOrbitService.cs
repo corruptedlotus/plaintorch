@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
+using Pleiades.Plaintorch.Preferences;
 using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch;
@@ -18,29 +20,27 @@ namespace Pleiades.Plaintorch;
 /// interaction with single — possibly future — occurrences.
 /// </para>
 /// <para>
-/// The resolver calendar is modular per declarative kind: decree orbits (attentives) and reflective
-/// day-matching resolve on the <b>Pleiadean</b> calendar by default, matching the system's mechanics;
-/// fate orbits (eventives) resolve on the <b>Gregorian</b> calendar.
+/// The resolver calendar is modular: an explicit per-declarative calendar wins, otherwise the vault's global
+/// default-calendar preference (PEP116) decides — a single default, no longer a fate-vs-decree split.
 /// </para>
 /// </remarks>
-public sealed class PlaintorchOrbitService(PlainfraContext context)
+public sealed class PlaintorchOrbitService(PlainfraContext context, IOptionsSnapshot<AgendaPreferences> agendaPreferences)
 {
 	/// <summary>
-	/// Resolves the calendar an incentive's orbit is resolved against: Pleiadean for decrees (attentives and
-	/// reflectives), Gregorian for fates (eventives).
+	/// Resolves the calendar an incentive's orbit is resolved against: an explicit per-declarative
+	/// <see cref="Declarative.Calendar"/> when set, otherwise the vault-wide default from
+	/// <see cref="AgendaPreferences.DefaultCalendar"/> (PEP116).
 	/// </summary>
-	public static IOrbitCalendar ResolveCalendar(Incentive incentive)
+	public IOrbitCalendar ResolveCalendar(Incentive incentive)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
 
-		// An explicit per-declarative calendar wins; otherwise fall back to the kind default
-		// (decrees Pleiadean, fates Gregorian) until a user preference (PEP116) sets one.
-		if (incentive is Declarative { Calendar: { } calendar })
-		{
-			return calendar == DeclarativeCalendar.Pleiadean ? OrbitDays.Pleiadean : OrbitDays.Gregorian;
-		}
+		// An explicit per-declarative calendar wins; otherwise the vault's global default preference decides.
+		var calendar = incentive is Declarative { Calendar: { } explicitCalendar }
+			? explicitCalendar
+			: agendaPreferences.Value.DefaultCalendar;
 
-		return incentive is Decree ? OrbitDays.Pleiadean : OrbitDays.Gregorian;
+		return calendar == DeclarativeCalendar.Pleiadean ? OrbitDays.Pleiadean : OrbitDays.Gregorian;
 	}
 
 	/// <summary>

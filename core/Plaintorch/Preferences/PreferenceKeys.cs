@@ -13,6 +13,9 @@ public static class PreferenceKeys
 	/// <summary>Backs <see cref="AgendaPreferences.AutoMaterialiseOptOut"/>.</summary>
 	public const string AutoMaterialiseOptOut = "agenda.auto-materialise-optout";
 
+	/// <summary>Backs <see cref="AgendaPreferences.DefaultCalendar"/>.</summary>
+	public const string DefaultCalendar = "agenda.default-calendar";
+
 	/// <summary>Backs <see cref="CalDavPreferences.FloatingRender"/>.</summary>
 	public const string CalDavFloatingRender = "caldav.floating-render";
 }
