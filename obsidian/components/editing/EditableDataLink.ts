@@ -219,17 +219,25 @@ export class EditablePart<T> extends Component {
 
 			${nullGlyphStyle}
 
+			.overlay {
+				flex: 0 0 0;
+				width: 0;
+				height: 0;
+			}
+
 			/* Affordances tether to the field's outside, so they take no room in it and never shift its size. */
 			.affordance {
 				position: fixed;
 				position-anchor: --editable-anchor;
-				border-radius: 12px;
+				border-radius: 6px;
 				font-size: 1rem;
 				width: .9em;
 				height: .9em;
+				margin-inline: .2em;
 				cursor: pointer;
 				background-color: black;
 				transition: all .2s ease, inset none;
+				z-index: 9;
 			}
 
 			.clear {
@@ -276,7 +284,7 @@ export class EditablePart<T> extends Component {
 	}
 
 	protected override get template() {
-		return html`${this.contentTemplate}${this.affordancesTemplate}`
+		return html`${this.contentTemplate}<div class='overlay'>${this.affordancesTemplate}</div>`
 	}
 }
 

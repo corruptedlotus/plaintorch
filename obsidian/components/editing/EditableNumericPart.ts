@@ -50,11 +50,12 @@ export abstract class EditableNumericPart extends EditablePart<number> {
 				position-anchor: --editable-anchor;
 				anchor-try: normal flip-inline;
 				inset-inline-start: anchor(end);
+				top: anchor(top);
+				bottom: anchor(bottom);
 				display: flex;
 				flex-direction: column;
 				justify-content: space-between;
 				align-items: center;
-				margin-block: -.2rem;
 				margin-inline: .2rem;
 				opacity: 0;
 				transition: all .2s ease, inset none;
@@ -72,7 +73,7 @@ export abstract class EditableNumericPart extends EditablePart<number> {
 
 				& > * {
 					background-color: var(--p7t-flare-accent, var(--interactive-accent));
-					border-radius: 12px;
+					border-radius: 6px;
 					transition: .2s ease;
 
 					&:hover {

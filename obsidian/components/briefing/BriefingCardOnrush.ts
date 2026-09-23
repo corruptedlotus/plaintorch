@@ -96,7 +96,7 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 			${this.data!.objectives.map(objective => html`
 				<p7t-objective-item interactive .currentOnrush=${this.data} .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
 			`)}
-			<p7t-button @click=${() => this.addObjective()} icon='lucide:plus' class='add-button'>Add Objective</p7t-button>
+			<!--<p7t-button @click=${() => this.addObjective()} icon='lucide:plus' class='add-button'>Add Objective</p7t-button>-->
 			${this.dependencySection}
 		`
 	}

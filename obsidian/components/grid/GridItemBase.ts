@@ -281,7 +281,7 @@ export abstract class GridItemBase extends Component {
 					${!this.transferKind(row.entity) ? nothing : this.transfer.draggable(row.entity, () => this)}>
 				</p7t-media>
 				<div class='leading'>${this.leadingCell}</div>
-				<p7t-editable-plaintext required class='title' ${this.binder.bind('title')}></p7t-editable-plaintext>
+				<p7t-editable-plaintext required editButton class='title' ${this.binder.bind('title')}></p7t-editable-plaintext>
 			</div>
 			${this.middleCells.map(cell => html`<div class='cell'>${cell}</div>`)}
 			<div class='cell actions'>

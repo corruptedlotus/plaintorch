@@ -142,6 +142,11 @@ export class FullBanner extends Component {
 				flex-wrap: wrap;
 				gap: .6em;
 				justify-content: flex-end;
+				border: 1px solid var(--background-secondary);
+				background-color: color-mix(in srgb, var(--background-primary) 80%, black);
+				padding: 0.5em 0.6em;
+				border-radius: 8px;
+				font-size: 0.9em;
 			}
 
 			.loading {

@@ -1,24 +1,26 @@
 # Small Changes
-- [ ] Orbits/Agenda number warning on overdue
-- [ ] Improved Orbit human translation
+- [x] Orbits/Agenda number warning on overdue
+- [x] Improved Orbit human transcription + shortform
 - [x] Show active timeframe
 - [x] Pinch actions
 - [x] [[PEP097 - Filename Constraints & Conversions]]
-- [x] `${timebound(clock: '1s' | '60s' = '1s')}`: subscribe to the global ticker and request update on tick
-- [ ] Eventive & Executive unified allocation editor + link to entity
-# Bugs
-- [ ] LoreIndex getting retconned by repo
-- [ ] Circular reference when syncing objective edits
+- [x] `${timebound(clock: '1s' | '60s' = '1s')}`: update on global tick
 # Special
 - [x] Polaris briefing in-place insertion
-- [ ] Move parent/owner button
+- [x] Move parent/owner
 # Views
-- [ ] Unify "extra view parts" as an extension to the note banner system (eg. what we currently have for Timeframes and ExecutiveOrders)
+- [x] Unify "extra view parts" as an extension to the note banner system (eg. what we currently have for Timeframes and ExecutiveOrders)
+- [ ] Executive unification
 - [ ] Attentive & Eventive modal
 # Instance Management
 - [ ] Rework occurrence timing system
 - [ ] Attentive skipping (rescheduling) + Opt-in Orbit shift recalculation
+# Bugs
+- [x] LoreIndex getting retconned by repo
+- [x] Circular reference when syncing objective edits
+- [ ] Watcher note creation and repositioning is still a mess
+- [ ] Single touch behaving like multi touch in graph
 # Infrastructure
 - [ ] Enable polyfill and abstentions for Obsidian-dependent codepaths
 - [ ] Decouple the frontend from Obsidian and push the Electron client
-- [ ] User preferences
+- [x] User preferences

@@ -15,7 +15,7 @@ public enum FateStatus
 	/// <summary>
 	/// The fate has been opted out of and no longer materializes eventives.
 	/// </summary>
-	[LifecyclePhase(LifecyclePhase.Finish)]
+	[LifecyclePhase(LifecyclePhase.Begin)]
 	OptOut,
 	/// <summary>
 	/// The fate has been cancelled.

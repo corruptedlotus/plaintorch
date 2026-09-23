@@ -161,6 +161,11 @@ export class Eventive extends Occurrence {
 	objectiveId: string | undefined
 	objective?: Objective | undefined
 	resolution: EventiveResolution = EventiveResolution.Pending
+
+	get isOverdue() {
+		return this.resolution === EventiveResolution.Pending
+			&& new Date(this.epoch.date) < new Date()
+	}
 }
 
 /**
@@ -179,6 +184,11 @@ export class Attentive extends Occurrence {
 	affinityTimeframeId?: number | undefined
 	/** The affined timeframe, resolved by the core. */
 	affinityTimeframe?: Timeframe | undefined
+
+	get isOverdue() {
+		return this.resolution === AttentiveResolution.Pending
+			&& new Date(this.epoch.date) < new Date()
+	}
 }
 
 /**

@@ -83,6 +83,18 @@ export class BriefingCardAgenda extends CardComponent {
 				padding: .1em .6em;
 				margin-inline-start: .5ch;
 				vertical-align: middle;
+
+				&.warn {
+					background-color: color-mix(in srgb, var(--text-error) 10%, transparent);
+					color: var(--text-error);
+
+					& p7t-icon {
+						color: var(--text-error);
+						margin-inline: 0 -1em;
+						display: inline-block;
+						vertical-align: text-top;
+					}
+				}
 			}
 		`
 	}
@@ -92,32 +104,44 @@ export class BriefingCardAgenda extends CardComponent {
 	}
 
 	override get headingTemplate() {
+		const attCount = this.agenda?.attentives.length ?? 0
+		const attWarn = this.agenda?.attentives.some(x => x.isOverdue)
+		const evCount = this.agenda?.eventives.length ?? 0
+		const evWarn = this.agenda?.eventives.some(x => x.isOverdue)
+
 		switch (this.mode) {
 
 			case 'attentives':
-				const attCount = this.agenda?.attentives.length ?? 0
 				return html`
 					<span>
 						Orbits
-						${this.collapsed && attCount > 0 ? html`<span class='count-badge'>${attCount}</span>` : nothing}
+						${this.collapsed && attCount > 0 ? html`<span class='count-badge ${attWarn ? 'warn' : ''}'>
+							${attCount}
+							${attWarn ? html`<p7t-icon icon='lucide:triangle-alert'></p7t-icon>` : nothing}
+						</span>` : nothing}
 					</span>
 				`
 			
 			case 'eventives':
-				const evCount = this.agenda?.eventives.length ?? 0
 				return html`
 					<span>
 						Agenda
-						${this.collapsed && evCount > 0 ? html`<span class='count-badge'>${evCount}</span>` : nothing}
+						${this.collapsed && evCount > 0 ? html`<span class='count-badge ${evWarn ? 'warn' : ''}'>
+							${evCount}
+							${evWarn ? html`<p7t-icon icon='lucide:triangle-alert'></p7t-icon>` : nothing}
+						</span>` : nothing}
 					</span>
 				`
 
 			default:
-				const countAll = (this.agenda?.attentives.length ?? 0) + (this.agenda?.eventives.length ?? 0)
+				const countAll = attCount + evCount
 				return html`
 					<span>
 						Agenda
-						${this.collapsed && countAll > 0 ? html`<span class='count-badge'>${countAll}</span>` : nothing}
+						${this.collapsed && countAll > 0 ? html`<span class='count-badge ${attWarn || evWarn ? 'warn' : ''}'>
+							${countAll}
+							${attWarn || evWarn ? html`<p7t-icon icon='lucide:triangle-alert'></p7t-icon>` : nothing}
+						</span>` : nothing}
 					</span>
 				`
 		}
