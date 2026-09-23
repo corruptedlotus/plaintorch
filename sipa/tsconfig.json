@@ -1,32 +1,28 @@
 {
 	"compilerOptions": {
-		"baseUrl": ".",
 		"target": "es2021",
 		"lib": [
 			"DOM",
 			"ES2021"
 		],
-		"incremental": true,
 		"module": "ESNext",
 		"moduleResolution": "Bundler",
 		"strict": true,
+		"experimentalDecorators": true,
+		"useDefineForClassFields": false,
 		"noImplicitOverride": true,
 		"forceConsistentCasingInFileNames": true,
 		"esModuleInterop": true,
 		"skipLibCheck": true,
 		"resolveJsonModule": true,
-		"sourceMap": true,
-		"inlineSources": true,
 		"isolatedModules": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noImplicitReturns": true,
 		"noFallthroughCasesInSwitch": true,
 		"allowSyntheticDefaultImports": true,
-		"allowImportingTsExtensions": false,
-		"experimentalDecorators": true,
 		"noUncheckedIndexedAccess": true,
-		"importHelpers": true,
+		"importHelpers": false,
 		"plugins": [
 			{
 				"name": "ts-lit-plugin",
@@ -38,20 +34,12 @@
 					"no-incompatible-property-type": "warning"
 				}
 			}
-		],
-		"paths": {
-			"@": [
-				"src"
-			],
-			// @pleiades/sipa still imports obsidian until the PlatformHost inversion (PEP110 SIPA P7); pinning the
-			// module here keeps the program on a single copy of its types instead of the package's own devDependency.
-			"obsidian": [
-				"node_modules/obsidian"
-			]
-		}
+		]
 	},
 	"include": [
-		"src/**/*.ts",
-		"src/**/*.d.ts"
+		"index.ts",
+		"components/**/*.ts",
+		"orbits/**/*.ts",
+		"assets/**/*.ts"
 	]
 }

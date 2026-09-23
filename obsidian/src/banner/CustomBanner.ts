@@ -1,6 +1,6 @@
 import { App } from "obsidian"
 import { PageBannerComponent } from "./PageBannerComponent"
-import { NoteBanner } from "components"
+import { NoteBanner } from "@pleiades/sipa"
 
 export class CustomBanner implements PageBannerComponent {
 	file: string

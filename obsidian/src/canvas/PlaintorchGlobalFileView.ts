@@ -1,6 +1,6 @@
 import { TextFileView, type WorkspaceLeaf } from "obsidian"
-import type { DependencyCanvas, GlobalContextSnapshot } from "components"
-import { parseGlobalContext, serializeGlobalContext } from "components"
+import type { DependencyCanvas, GlobalContextSnapshot } from "@pleiades/sipa"
+import { parseGlobalContext, serializeGlobalContext } from "@pleiades/sipa"
 
 export const PLAINTORCH_GLOBAL_VIEW_TYPE = "plaintorch-global-context"
 

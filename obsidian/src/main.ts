@@ -4,8 +4,8 @@ import { PlaintorchCanvasView, PLAINTORCH_CANVAS_VIEW_TYPE } from "./canvas/Plai
 import { PlaintorchGlobalFileView, PLAINTORCH_GLOBAL_VIEW_TYPE } from "./canvas/PlaintorchGlobalFileView"
 import { PageBannerRenderer } from "./banner/PageBannerRenderer"
 
-import 'components'
-import { GLOBAL_CONTEXT_EXTENSION } from "components"
+import '@pleiades/sipa'
+import { GLOBAL_CONTEXT_EXTENSION } from "@pleiades/sipa"
 
 type PlaintorchNodeCoreClient = typeof import("@pleiades/sdk/plaintorch/node").plaintorchNodeCoreClient
 

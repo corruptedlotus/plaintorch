@@ -203,9 +203,11 @@ adapter* among two.
 1. **The Obsidian host API.** 54 files import `obsidian` (48 in `components/`, 6 in `src/`). Concentrated seams:
    - **App handle** — `getApp() = (window as any).app` (`components/editing/index.ts`) + ~10 direct `window.app` reads;
      every modal-open and navigation needs it.
-   - **Dialogs** — 21 classes extend `Modal` (8: Executive, Occurrence, EntityEdit, EntityDetail, OnrushDetail,
-     LunarDirective, Preference, PromptText) or `SuggestModal` (7 fuzzy pickers: SelectCollege, SelectTimeframe,
-     SelectEndpoint, SelectObjective, SelectMedia, AddObjective, AddToOnrush, ChangeState).
+   - **Dialogs** — 17 classes extend `Modal` (8: Executive, Occurrence, EntityEdit, EntityDetail, OnrushDetail,
+     LunarDirective, Preference, PromptText) or `SuggestModal` (9 fuzzy pickers: SelectCollege, SelectTimeframe,
+     SelectStatus, SelectEndpoint, SelectObjective, SelectMedia, ChangeState, plus the inline AddObjective picker in
+     `BriefingCardOnrush` and AddToOnrush picker in `ObjectiveBanner`). *(Recounted at P1; the planning run's
+     "21 / 7" was a miscount.)*
    - **Toasts** — `Notice`, **89 call sites**.
    - **Icons** — `PleiadesIcon` → `getIcon()` (Obsidian's bundled lucide registry; backs *every* `p7t-icon`, so
      pervasive); `iconCatalog.ts` → `getIconIds()`; `main.ts` → `addIcon()` (the custom glyph).
@@ -215,20 +217,29 @@ adapter* among two.
    via the `components/index.ts` barrel and three direct importers (`FullBanner`, `NoteBanner`, `EntityRef`). The SIPA
    renderer is **sandboxed** (no Node; it talks through the preload bridge), so it cannot use the node client. `core`
    must become an *injected* dependency.
+3. **Hidden couplings** (invisible to an `obsidian`-import count; found at P1):
+   - **Theme CSS variables** — the components read ~22 of Obsidian's theme tokens by name (~330 uses:
+     `--text-normal`, `--interactive-accent`, `--background-primary`, `--font-interface`, `--text-error`, …).
+   - **HTMLElement prototype helpers** — Obsidian patches `createEl` / `createDiv` / `empty` / `setText` onto every
+     element. Used only inside the dialog classes, so they disappear with P5/P6.
+   - **The plugin's global `styles.css`** — besides view-host rules it defines two things the components rely on:
+     the `@property --flare-intensity` registration (the animated item flare) and the `--p7t-accent-polaris` /
+     `--p7t-accent-onrush` tokens on `.plaintorch-root`.
 
 Excluded from SIPA scope (stay Obsidian-only): the **on-note banner** (`PageBannerRenderer`/`CustomBanner`, editor
 extension + markdown post-processor) and the **note command palette** ("Initialize directive/objective from current
 file"). These are intrinsically editor-bound.
 
 ### Target architecture
-- **`@pleiades/client` — a new shared package** (extracted from `obsidian/components/` + `obsidian/orbits/` + the new
-  host), a sibling of `@pleiades/sdk`, bundled from source by both consumers. It holds the platform-neutral lit UI, the
+- **`@pleiades/sipa` (at `sipa/`) — a new shared package** (extracted from `obsidian/components/` +
+  `obsidian/orbits/` + `obsidian/assets/` + the new host), a sibling of `@pleiades/sdk`, bundled from source by both
+  consumers. It holds the platform-neutral lit UI, the
   `PlatformHost` interface, and the injected-`core` provider. It depends on `@pleiades/sdk`, `@a11d/lit`, `@3mo/*`,
   lucide — **never on `obsidian`** (once the inversion completes).
 - **Obsidian = one adapter** (`obsidian/`): the plugin shell (`src/main.ts`, the `ItemView`/`TextFileView` hosts, the
   on-note banner, the command palette) + an **`ObsidianHost`** implementing `PlatformHost` (App/Notice/Modal/getIcon/
   openLinkText) + injecting the node `core` client.
-- **SIPA = the other adapter** (`standalone/`): the renderer mounts `@pleiades/client`, provides a **`SipaHost`**
+- **SIPA = the other adapter** (`standalone/`): the renderer mounts `@pleiades/sipa`, provides a **`SipaHost`**
   (toast/dialog/icons via the chosen libraries; navigation is interim no-op) + injects the bridge `core` client.
 
 Two inversions carry it:
@@ -242,7 +253,8 @@ Two inversions carry it:
   the node client; SIPA injects the bridge client.
 
 ### Decisions pinned (this planning run)
-- **Shared-code home — extract `@pleiades/client` up front.** The relocation of `components/` (+ `orbits/`) into the
+- **Shared-code home — extract `@pleiades/sipa` (at `sipa/`) up front.** *(Named at P1; the planning run's working
+  name was `@pleiades/client` at `client.ts/`.)* The relocation of `components/` (+ `orbits/`) into the
   package lands *first* (mechanical move, plugin stays green, still transitively importing `obsidian` until the
   inversion), so all subsequent inversion work happens in the code's final SIPA-first home. (Note the sequencing
   consequence: extraction alone does **not** unblock SIPA — the SIPA renderer can only consume the package once the
@@ -254,13 +266,30 @@ Two inversions carry it:
   `SelectBase` / `p7t-popover` / `fuzzy.ts` if 3MO can't stretch. Gated by an early spike (below).
 - **Interim navigation — no-op + "no editor yet" toast.** SIPA has the vault on disk but no in-app editor yet, so
   `navigate(entity)` just toasts that the editor is coming. (A real in-app read/edit surface is a later effort.)
-- **Branch — `claude/sipa-first`, off the current consolidated tip.** Isolates this cross-cutting refactor.
+- **Branch — `claude/sipa-first`, off the current consolidated tip** (`dev/phase2d` at `2db63a5`). Isolates this
+  cross-cutting refactor.
+- **Theme — keep Obsidian's CSS variable names** *(pinned at P1)*. The components go on reading `--text-normal`,
+  `--interactive-accent`, … by name; a non-Obsidian host *defines* those variables in its own stylesheet. No
+  package-owned token rename.
+- **Package mechanics** *(pinned at P1)*:
+  - The package **owns the UI dependencies** (`@a11d/lit`, `@3mo/*`, dagre, deferred-promise) in its own
+    `node_modules`; the plugin no longer lists them. esbuild follows the `file:` link to the real path, so package
+    code resolves lit from `sipa/node_modules` — one lit runtime, as long as a host never imports lit from a second
+    copy of its own (relevant to the SIPA renderer at P8, which imports `@a11d/lit` directly today).
+  - Imports inside the package are **relative**; the old bare aliases (`components/…`, `orbits`, `assets/…`) are
+    gone, so no host needs `paths` entries for package internals. Hosts import from `@pleiades/sipa` only.
+  - The package has its **own `tsconfig.json`**, which esbuild applies to the package's files (nearest tsconfig per
+    file); it pins `experimentalDecorators: true` + `useDefineForClassFields: false`.
+  - Transitional: `obsidian` and `@types/node` are package dev dependencies for its own `typecheck` (the barrel
+    still exports the node `core` client). The plugin's `tsconfig` pins the `obsidian` module to its own copy so its
+    program holds a single set of Obsidian types.
 
 ### Phased plan (Obsidian esbuild build green at every gate)
-- **P0 — Plan + branch.** This section; cut `claude/sipa-first` from the current tip. *(this run)*
-- **P1 — Extract `@pleiades/client`.** Move `components/` + `orbits/` into the package; add its build/tsconfig; rewire
-  `obsidian/` and `standalone/` esbuild aliases + tsconfig paths to consume it (as they already consume `@pleiades/sdk`
-  from source). The package may still `import { … } from "obsidian"` transitionally. No behavior change; plugin green.
+- **P0 — Plan + branch.** This section; cut `claude/sipa-first` from the current tip. *(done)*
+- **P1 — Extract `@pleiades/sipa`.** Move `components/` + `orbits/` + `assets/` into the package; add its
+  package.json/tsconfig; rewire `obsidian/` to consume it (as it already consumes `@pleiades/sdk` from source). The
+  package may still `import { … } from "obsidian"` transitionally. No behavior change; plugin green. *(done —
+  `standalone/` is wired at P8 instead, since nothing there consumes the package before the mount.)*
 - **Spike (gate for P5/P6) — 3MO dialog viability.** Stand up a `@3mo/dialog` + `@3mo/notification` probe inside the
   package (mind `@3mo/theme`'s global-import side-effects vs the plugin's styles). Decide: 3MO for modals? 3MO or
   in-house for suggest? Records the choice before the modal phases commit.
@@ -272,11 +301,15 @@ Two inversions carry it:
   (mechanical, batchable).
 - **P5 — Modals.** `P7tModal` base over the modal service; migrate the 8 plain modals. Obsidian→`Modal`, SIPA→(spike
   result).
-- **P6 — SuggestModals.** `P7tSuggest` base; migrate the 7 pickers per the spike decision.
+- **P6 — SuggestModals.** `P7tSuggest` base; migrate the 9 pickers per the spike decision.
 - **P7 — Icons + navigation.** Icon provider (bundle lucide; Obsidian→`getIcon`); SIPA `navigate` = no-op + toast.
   After this the package no longer imports `obsidian`.
-- **P8 — SIPA renderer mount (payoff).** In `standalone/`: `SipaHost` + inject the bridge `core` + mount the briefing
-  (± dependency canvas) into the renderer, replacing the status-only view; wire the change feed / eviction sweep.
+- **P8 — SIPA renderer mount (payoff).** In `standalone/`: depend on `@pleiades/sipa` (package.json + esbuild, and
+  keep the renderer's own lit imports on the package's copy); `SipaHost` + inject the bridge `core` + mount the
+  briefing (± dependency canvas) into the renderer, replacing the status-only view; wire the change feed / eviction
+  sweep. Styling: a SIPA stylesheet defining the Obsidian theme variables the components read, and lift the
+  component-facing part of the plugin's `styles.css` (`@property --flare-intensity`, the `--p7t-accent-*` tokens)
+  into the package so both hosts share it.
 
 P1 is the structural prerequisite; the Spike gates P5/P6; P2–P3 are the foundation; P4–P7 are largely independent and
 reorderable; P8 is the realization. Obsidian keeps working throughout because every seam ships its `ObsidianHost` impl
@@ -296,6 +329,17 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
 ### Open items to resolve during implementation
 - 3MO dialog/notification styling reach vs `@3mo/theme` global side-effects (the Spike answers this; may flip the modal
   and/or suggest host to bespoke).
-- Final name/location of the shared package (`@pleiades/client` at `client.ts/`, mirroring `sdk.ts/`, is the working
-  assumption).
+- ~~Final name/location of the shared package~~ — resolved at P1: `@pleiades/sipa` at `sipa/`.
 - The exact `core`-injection mechanism (settable module singleton vs lit context) — settle in P3.
+
+### Status log
+
+- 2026-09-24 — P0: `claude/sipa-first` cut from `dev/phase2d` (`2db63a5`). Gate baseline: plugin esbuild green,
+  plugin `tsc` 46 pre-existing errors, SDK vitest 110/110.
+- 2026-09-24 — P1 landed: `obsidian/components`, `obsidian/orbits`, `obsidian/assets` and `orbit-humanize.tsx`
+  moved to `sipa/` (history-preserving renames); 38 internal alias imports made relative; the plugin imports
+  `@pleiades/sipa` (5 sites). The package lockfile was seeded from the plugin's so every dependency kept its exact
+  version (a fresh resolve would have bumped `@a11d/lit`, `@3mo/popover`, `@3mo/theme` by a patch). Verified: the
+  production bundle is **byte-identical** to the baseline once the `../sipa/` module-path comments are normalised
+  (one lit runtime, `obsidian` still external); plugin `tsc` 46 errors, identical per file; the package's own
+  `typecheck` reports exactly the 36 of those that sit in its files.

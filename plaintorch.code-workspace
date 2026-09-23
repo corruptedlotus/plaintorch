@@ -13,6 +13,10 @@
 			"name": "Obsidian Plugin"
 		},
 		{
+			"path": "sipa",
+			"name": "SIPA: Shared UI"
+		},
+		{
 			"name": "SDK: TypeScript (Node)",
 			"path": "sdk.ts"
 		},

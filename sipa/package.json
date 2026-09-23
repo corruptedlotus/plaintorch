@@ -1,0 +1,28 @@
+{
+	"name": "@pleiades/sipa",
+	"version": "0.2c",
+	"private": true,
+	"description": "Sunnyside Interface for Pleiades Affairs: the platform-neutral PLAINTORCH UI (lit components, orbit humaniser, assets) bundled from source by the Obsidian plugin and the standalone shell.",
+	"type": "module",
+	"scripts": {
+		"index-assets": "node ./assets/indexer.mjs",
+		"typecheck": "tsc -p tsconfig.json --noEmit"
+	},
+	"exports": {
+		".": "./index.ts",
+		"./orbits": "./orbits/index.ts"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.17",
+		"obsidian": "^1.8.10",
+		"typescript": "^5.9.3"
+	},
+	"dependencies": {
+		"@3mo/popover": "^0.11.1",
+		"@3mo/tooltip": "^0.11.1",
+		"@a11d/lit": "^0.11.1",
+		"@dagrejs/dagre": "^1.1.4",
+		"@open-draft/deferred-promise": "^3.0.0",
+		"@pleiades/sdk": "file:../sdk.ts"
+	}
+}
