@@ -20,7 +20,7 @@ namespace Pleiades.Plaintorch.Api.Services;
 public sealed class DirectiveApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
-	PlaintorchMarkdownStorageService markdownFileService,
+	VaultWriteQueue writeQueue,
 	VaultEntityLifecycleService lifecycleService,
 	VaultTemporalDataService temporalDataService,
 	VaultAuditLogService auditLogService,
@@ -176,8 +176,7 @@ public sealed class DirectiveApiService(
 			stellar.EndDate = update.EndDate.Value;
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(stellar, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(stellar, previous, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.update-stellar",
@@ -273,8 +272,7 @@ public sealed class DirectiveApiService(
 			lunar.Tags = update.Tags.ToList();
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(lunar, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(lunar, previous, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.update-lunar",
@@ -301,8 +299,7 @@ public sealed class DirectiveApiService(
 
 		var previousStatus = stellar.Status;
 		stellar.Status = shift.Status;
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(stellar, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(stellar, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.workflow-shift",
@@ -330,8 +327,9 @@ public sealed class DirectiveApiService(
 		var snapshot = Clone(directive);
 		var databaseGraveyard = await temporalDataService.ArchiveEntityAsync(snapshot, "api-delete", Environment.UserName, cancellationToken);
 		context.Directives.Remove(directive);
+		await writeQueue.RecordRemoveAsync(snapshot, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
-		var fileGraveyard = await markdownFileService.DeleteDirectiveAsync(snapshot, cancellationToken);
+		var fileGraveyard = await writeQueue.DrainRemoveAsync(snapshot, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.delete",
@@ -360,8 +358,7 @@ public sealed class DirectiveApiService(
 		var previous = directive.Icon;
 		await ApplyMediaChangeAsync(directiveId, directive, previous, request.Reference, request.Clear, key => directive.Icon = key, "directive.icon", cancellationToken);
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(directive, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(directive, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.set-icon",
@@ -383,8 +380,7 @@ public sealed class DirectiveApiService(
 		var previous = directive.Banner;
 		await ApplyMediaChangeAsync(directiveId, directive, previous, request.Reference, request.Clear, key => directive.Banner = key, "directive.banner", cancellationToken);
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(directive, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(directive, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.set-banner",
@@ -423,8 +419,7 @@ public sealed class DirectiveApiService(
 		};
 
 		context.Directives.Add(directive);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(directive, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(directive, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "directive.create-lunar", subject: directive, cancellationToken: cancellationToken);
 		return directive;
 	}
@@ -444,8 +439,7 @@ public sealed class DirectiveApiService(
 
 		var previousStatus = lunar.Status;
 		lunar.Status = shift.Status;
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(lunar, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(lunar, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.lunar-workflow-shift",
@@ -634,8 +628,7 @@ public sealed class DirectiveApiService(
 		};
 
 		context.Directives.Add(directive);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(directive, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(directive, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "directive.create", subject: directive, cancellationToken: cancellationToken);
 		return directive;
 	}

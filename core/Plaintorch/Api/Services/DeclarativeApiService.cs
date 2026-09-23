@@ -29,7 +29,7 @@ namespace Pleiades.Plaintorch.Api.Services;
 public sealed class DeclarativeApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
-	PlaintorchMarkdownStorageService markdownStorageService,
+	VaultWriteQueue writeQueue,
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
 	OccurrenceHardeningService hardeningService,
@@ -86,8 +86,7 @@ public sealed class DeclarativeApiService(
 		}
 
 		context.Fates.Add(fate);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveFateAsync(fate, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(fate, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "fate.create", subject: fate, cancellationToken: cancellationToken);
 		return fate;
 	}
@@ -151,8 +150,9 @@ public sealed class DeclarativeApiService(
 			await orbitService.FastForwardToNowAsync(fate, fate.Orbit!, DateTime.Now, cancellationToken);
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveFateAsync(fate, previous, cancellationToken: cancellationToken);
+		// A fate is orbit-only (PEP111), so there is no fixed-date shape to reconcile here — the update above
+		// already set the orbit (and re-pinned the calendar). The write goes through the vault write queue (PEP110).
+		await writeQueue.WriteAsync(fate, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "fate.update", subject: fate, cancellationToken: cancellationToken);
 		return fate;
 	}
@@ -177,8 +177,9 @@ public sealed class DeclarativeApiService(
 
 		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(fate, "api-delete", Environment.UserName, cancellationToken);
 		context.Fates.Remove(fate);
+		await writeQueue.RecordRemoveAsync(fate, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.DeleteFateAsync(fate, cancellationToken);
+		await writeQueue.DrainRemoveAsync(fate, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"fate.delete",
@@ -231,8 +232,7 @@ public sealed class DeclarativeApiService(
 		};
 
 		context.Decrees.Add(decree);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveDecreeAsync(decree, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(decree, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "decree.create", subject: decree, cancellationToken: cancellationToken);
 		return decree;
 	}
@@ -295,8 +295,7 @@ public sealed class DeclarativeApiService(
 			await orbitService.FastForwardToNowAsync(decree, decree.Orbit!, DateTime.Now, cancellationToken);
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveDecreeAsync(decree, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(decree, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "decree.update", subject: decree, cancellationToken: cancellationToken);
 		return decree;
 	}
@@ -314,8 +313,9 @@ public sealed class DeclarativeApiService(
 
 		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(decree, "api-delete", Environment.UserName, cancellationToken);
 		context.Decrees.Remove(decree);
+		await writeQueue.RecordRemoveAsync(decree, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.DeleteDecreeAsync(decree, cancellationToken);
+		await writeQueue.DrainRemoveAsync(decree, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"decree.delete",

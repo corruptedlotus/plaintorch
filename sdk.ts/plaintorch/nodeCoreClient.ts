@@ -116,7 +116,7 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 					// every request queues with no socket and fails on its timeout until the server's own
 					// keep-alive timeout closes them: the core looks like it hung and then recovered.
 					readNodeResponseText(response)
-						.then((text) => settle(wrapNodeResponse(response.statusCode, text)))
+						.then((text) => settle(wrapNodeResponse(response.statusCode, text, response.headers)))
 						.catch(() => settle(undefined))
 				}
 			)
@@ -200,7 +200,11 @@ class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTransport {
 	}
 }
 
-function wrapNodeResponse(status: number | undefined, text: string): PlaintorchCoreResponse {
+function wrapNodeResponse(
+	status: number | undefined,
+	text: string,
+	headers: Record<string, string | string[] | undefined> = {}
+): PlaintorchCoreResponse {
 	const code = status ?? 0
 	// The body is already read and buffered by the time this is built, which is what guarantees the socket
 	// was drained and released rather than left pinning a slot in the keep-alive pool.
@@ -209,6 +213,11 @@ function wrapNodeResponse(status: number | undefined, text: string): PlaintorchC
 		status: code,
 		async text() {
 			return text
+		},
+		header(name) {
+			// Node lowercases header names.
+			const value = headers[name.toLowerCase()]
+			return Array.isArray(value) ? value[0] : value
 		}
 	}
 }

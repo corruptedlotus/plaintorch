@@ -36,6 +36,38 @@ public sealed class PlaintorchMarkdownStorageService(
 			&& method.GetParameters()[1].ParameterType == typeof(object[]));
 
 	/// <summary>
+	/// Writes the canonical markdown file for any vault-backed entity, reconciling it to its current database state. The
+	/// type-agnostic entry the write drainer (PEP110 Refactor BETA) uses; the per-type methods remain for typed callers.
+	/// </summary>
+	public async Task SaveEntityAsync(object entity, object? previous = null, string? sourcePath = null, bool beginBoundary = false, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		await SaveCanonicalMarkdownAsync(entity, previous, sourcePath, cancellationToken, beginBoundary);
+	}
+
+	/// <summary>
+	/// Archives any vault-backed entity's markdown file — a self-named directory or a single file — to the graveyard.
+	/// The type-agnostic delete the write queue (PEP110 Refactor BETA) drains through; the per-type methods remain.
+	/// </summary>
+	public Task<FileGraveyardEntry?> DeleteEntityAsync(object entity, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		return DeleteEntityPathAsync(entity, cancellationToken);
+	}
+
+	/// <summary>
+	/// Resolves an entity's current vault-relative markdown path (located by its identity), or <see langword="null"/>
+	/// when it has no file on disk. Used to capture a delete's last-known location so a crash before the file is
+	/// archived can be recovered.
+	/// </summary>
+	public async Task<string?> TryResolveEntityRelativePathAsync(object entity, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		var absolute = await TryResolveExistingPathByIdentityAsync(entity, preferredPath: null, cancellationToken);
+		return string.IsNullOrWhiteSpace(absolute) ? null : Path.GetRelativePath(layout.VaultRoot, absolute);
+	}
+
+	/// <summary>
 	/// Writes the canonical markdown file for a directive.
 	/// </summary>
 	public async Task SaveDirectiveAsync(Directive directive, Directive? previous = null, string? sourcePath = null, CancellationToken cancellationToken = default)
@@ -247,14 +279,15 @@ public sealed class PlaintorchMarkdownStorageService(
 		// Placement policy: the mode decides whether the file keeps a user-authored location (Freeform) or uses the
 		// canonical path (everyone else). The storage pipeline no longer branches on the mode.
 		newPath = policyEngine.PolicyFor(storage.Mode).ResolveWriteTargetPath(entity, newPath, sourcePath, previousPath);
-		if (IsReparented(storage, entity, previous))
+		if (IsReparentedFromFile(storage, entity, previousPath))
 		{
 			// A composed storage path puts the parent *in the path*, and on disk the path is the authority for that
 			// relationship. A mode that keeps a note where it was authored is right to for any ordinary edit and wrong
 			// for this one: the authored location is the old parent, so a note left there has the watcher read the
 			// previous parent straight back. A change of parent therefore always lands at the canonical path — under
-			// the new parent, or at the location root once there is none. Declared by the storage attribute, so it
-			// holds for every parent-partitioned type rather than for the ones someone remembered.
+			// the new parent, or at the location root once there is none. Detected from the existing file's own location
+			// (the same containment the watcher reads) against the entity's current parent, so it needs no `previous`
+			// clone from the caller — a write path that omits one still reparents correctly (PEP110 Refactor BETA pt.4).
 			newPath = canonicalPath;
 		}
 
@@ -388,29 +421,49 @@ public sealed class PlaintorchMarkdownStorageService(
 	}
 
 	/// <summary>
-	/// Whether a save changes the parent its type composes its storage path from — the declared
-	/// <see cref="VaultStorageAttribute.ParentIdProperty"/> differs between the previous state and the new one.
+	/// Whether an entity's existing file sits under a different parent than its current database state names — a
+	/// reparent. Derived from the file's own location (the same containment the watcher reads on the way in) compared to
+	/// the entity's declared <see cref="VaultStorageAttribute.ParentIdProperty"/>, so it needs no <c>previous</c> clone
+	/// from the caller: a write that omits one still reparents correctly. A top-level entity, or one with no existing
+	/// file, is never reparented.
 	/// </summary>
-	private static bool IsReparented(VaultStorageAttribute storage, object entity, object? previous)
+	private bool IsReparentedFromFile(VaultStorageAttribute storage, object entity, string? existingPath)
 	{
-		if (previous is null || string.IsNullOrWhiteSpace(storage.ParentIdProperty) || storage.ParentEntityType is null)
+		if (string.IsNullOrWhiteSpace(existingPath)
+			|| string.IsNullOrWhiteSpace(storage.ParentIdProperty)
+			|| storage.ParentEntityType is null)
 		{
 			return false;
 		}
 
 		var property = entity.GetType().GetProperty(storage.ParentIdProperty, BindingFlags.Public | BindingFlags.Instance);
-		if (property is null || !property.DeclaringType!.IsInstanceOfType(previous))
+		if (property is null)
 		{
 			return false;
 		}
 
-		var current = property.GetValue(entity) as string;
-		var before = property.GetValue(previous) as string;
-		return !string.Equals(
-			string.IsNullOrWhiteSpace(current) ? null : current,
-			string.IsNullOrWhiteSpace(before) ? null : before,
-			StringComparison.OrdinalIgnoreCase);
+		var currentParentId = NormalizeId(property.GetValue(entity) as string);
+		var fileParentId = NormalizeId(ResolveContainingParentId(storage, existingPath!));
+		return !string.Equals(currentParentId, fileParentId, StringComparison.OrdinalIgnoreCase);
 	}
+
+	/// <summary>The parent id an existing file's location implies, resolved the same way discovery resolves a note's owner.</summary>
+	private string? ResolveContainingParentId(VaultStorageAttribute storage, string path)
+	{
+		if (storage.ParentEntityType == typeof(OnrushSprint))
+		{
+			return MarkdownFileLocator.TryGetContainingOnrushSprintId(path);
+		}
+
+		if (storage.ParentEntityType == typeof(Directive))
+		{
+			return pathPolicy.TryResolveContainingDirectiveId(path, skipCurrentIfSelfNamed: storage.Shape == VaultStorageShape.SelfNamedDirectory);
+		}
+
+		return null;
+	}
+
+	private static string? NormalizeId(string? id) => string.IsNullOrWhiteSpace(id) ? null : id;
 
 	private string? TryRelocateSelfNamedDirectory(string? previousPath, string newPath, Type entityType)
 	{
@@ -555,7 +608,31 @@ public sealed class PlaintorchMarkdownStorageService(
 	private async Task<string> ResolveCanonicalPathAsync(object entity, CancellationToken cancellationToken)
 	{
 		var parent = await LoadParentHierarchyAsync(entity, new HashSet<string>(StringComparer.OrdinalIgnoreCase), cancellationToken);
+		if (parent is not null)
+		{
+			// Place the child beneath its parent's REAL folder — found by the parent's own identity, exactly as discovery
+			// resolves a note's owner — so a child of a parent kept outside its canonical root lands beside it rather than
+			// under a conjured canonical parent folder (write-side placement converging on read-side discovery). When the
+			// parent has no file on disk yet, fall back to canonical composition.
+			var parentDirectory = await TryResolveExistingParentDirectoryAsync(parent, cancellationToken);
+			if (!string.IsNullOrWhiteSpace(parentDirectory))
+			{
+				return markdownFileLocator.GetFilePathUnderParentDirectory(entity, parentDirectory);
+			}
+		}
+
 		return markdownFileLocator.GetFilePath(entity, parent);
+	}
+
+	/// <summary>
+	/// Resolves the directory a parent entity's own file actually sits in, located by the parent's identity across its
+	/// territory (the same resolution discovery uses on read). Returns <see langword="null"/> when the parent has no
+	/// file on disk yet, leaving the caller on canonical composition.
+	/// </summary>
+	private async Task<string?> TryResolveExistingParentDirectoryAsync(object parent, CancellationToken cancellationToken)
+	{
+		var parentPath = await TryResolveExistingPathByIdentityAsync(parent, preferredPath: null, cancellationToken);
+		return string.IsNullOrWhiteSpace(parentPath) ? null : Path.GetDirectoryName(parentPath);
 	}
 
 	private async Task<object?> LoadParentHierarchyAsync(object entity, HashSet<string> visited, CancellationToken cancellationToken)

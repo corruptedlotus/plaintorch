@@ -31,6 +31,8 @@ export interface PlaintorchCoreResponse {
 	ok: boolean
 	status: number
 	text(): Promise<string>
+	/** Reads a response header value (case-insensitive), or undefined when it is absent or the transport cannot expose it. */
+	header(name: string): string | undefined
 }
 
 export interface PlaintorchCoreTransport {
@@ -148,6 +150,9 @@ function wrapFetchResponse(response: Response): PlaintorchCoreResponse {
 		status: response.status,
 		async text() {
 			return await response.text()
+		},
+		header(name) {
+			return response.headers.get(name) ?? undefined
 		}
 	}
 }

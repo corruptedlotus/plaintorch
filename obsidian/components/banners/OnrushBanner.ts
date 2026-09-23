@@ -1,7 +1,7 @@
 import { component, css, html, nothing } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { OnrushSprint } from '@pleiades/sdk'
-import { core, ReactiveBinder, SelectDirectiveStatusModal } from ".."
+import { core, openNoteWhenReady, ReactiveBinder, SelectDirectiveStatusModal } from ".."
 import { App } from "obsidian"
 
 @component('p7t-onrush-banner')
@@ -33,8 +33,7 @@ export class OnrushBanner extends EntityBanner<OnrushSprint> {
 				if (!existence?.associatedNote
 					|| app.workspace.activeEditor?.file?.path === existence?.associatedNote) return
 
-				const file = app.vault.getFileByPath(existence.associatedNote)!
-				app.workspace.getLeaf(true).openFile(file)
+				await openNoteWhenReady(existence.associatedNote, core.lastWriteNotePending)
 			}
 		}
 	})

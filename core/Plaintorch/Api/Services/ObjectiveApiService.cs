@@ -16,7 +16,7 @@ namespace Pleiades.Plaintorch.Api.Services;
 public sealed class ObjectiveApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
-	PlaintorchMarkdownStorageService markdownStorageService,
+	VaultWriteQueue writeQueue,
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
 	VaultEntityLifecycleService lifecycleService,
@@ -148,8 +148,7 @@ public sealed class ObjectiveApiService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveObjectiveAsync(objective, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(objective, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.update", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}
@@ -168,8 +167,7 @@ public sealed class ObjectiveApiService(
 		var previous = Clone(objective);
 
 		objective.Status = shift.Status;
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveObjectiveAsync(objective, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(objective, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.workflow-shift", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}
@@ -191,8 +189,7 @@ public sealed class ObjectiveApiService(
 
 		objective.OnrushSprintId = onrushSprintId;
 		objective.Status = IsAutoPromotableToOnrush(objective.Status) ? ObjectiveStatus.Onrush : objective.Status;
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.add-to-onrush", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}
@@ -205,8 +202,7 @@ public sealed class ObjectiveApiService(
 			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
 
 		objective.OnrushSprintId = null;
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.remove-from-onrush", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}
@@ -240,8 +236,9 @@ public sealed class ObjectiveApiService(
 
 		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(objective, "api-delete", Environment.UserName, cancellationToken);
 		context.Objectives.Remove(objective);
+		await writeQueue.RecordRemoveAsync(objective, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.DeleteObjectiveAsync(objective, cancellationToken);
+		await writeQueue.DrainRemoveAsync(objective, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"objective.delete",
@@ -269,8 +266,7 @@ public sealed class ObjectiveApiService(
 		};
 
 		context.Objectives.Add(objective);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.create", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}

@@ -54,6 +54,22 @@ public sealed class MarkdownFileLocator(VaultStoragePathComposer composer)
 	}
 
 	/// <summary>
+	/// Resolves the markdown file path for a vault-backed entity beneath a parent whose real on-disk directory is already
+	/// known — so a child follows its parent to wherever the parent actually lives, symmetric with discovery's parent
+	/// resolution, instead of composing the parent's canonical location.
+	/// </summary>
+	public string GetFilePathUnderParentDirectory(object entity, string parentOwnDirectory)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		if (!HasFileBacking(entity.GetType()))
+		{
+			throw new InvalidOperationException($"Type '{entity.GetType().Name}' is not configured for vault markdown storage.");
+		}
+
+		return _composer.GetFilePathUnderParentDirectory(entity, parentOwnDirectory);
+	}
+
+	/// <summary>
 	/// Resolves the directory path for a directive (its self-named storage folder).
 	/// </summary>
 	public string GetDirectiveDirectoryPath(Directive directive, Directive? parentDirective = null)

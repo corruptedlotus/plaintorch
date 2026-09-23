@@ -31,9 +31,12 @@ export interface PlaintorchCoreClientOptions {
 
 const defaultLoopbackPort = 43118
 const defaultHost = "127.0.0.1"
+/** Response header the core sets to `false` when a write's note is still draining past the note-queue timeout (PEP110). */
+const noteReadyHeader = "X-Note-Ready"
 export class PlaintorchCoreClient {
 	private readonly baseUrl: string
 	private readonly transports: PlaintorchCoreTransport[]
+	private lastWriteNotePendingFlag = false
 	/**
 	 * Canonical instances of every entity this client has seen. Populated by every response the client
 	 * reads, so call sites that have not moved onto repositories still contribute to it.
@@ -86,6 +89,16 @@ export class PlaintorchCoreClient {
 
 	public icon(icon: string): string {
 		return `${this.baseUrl}/assets/icons/${encodeURIComponent(icon)}.svg`
+	}
+
+	/**
+	 * Whether the most recent write's note did not land within the core's note-queue timeout and is finishing in the
+	 * background (PEP110). Read it immediately after awaiting a mutation — before issuing another write — to decide
+	 * whether to wait for the note (poll a resolution) rather than open a file that may not be on disk yet. Reads
+	 * (GETs) leave it untouched, so re-resolving between the write and this read is safe.
+	 */
+	public get lastWriteNotePending(): boolean {
+		return this.lastWriteNotePendingFlag
 	}
 
 	/**
@@ -189,6 +202,11 @@ export class PlaintorchCoreClient {
 		for (const transport of this.transports) {
 			const response = await transport.send(request)
 			if (response?.ok) {
+				// A write records whether its note is still draining; reads leave the flag for the write before them.
+				if (request.method !== "GET") {
+					this.lastWriteNotePendingFlag = response.header(noteReadyHeader) === "false"
+				}
+
 				Promise.resolve().then(async () => console.log('PLAINTORCH called', request.path, JSON.parse(await response.text())))
 				return response
 			}

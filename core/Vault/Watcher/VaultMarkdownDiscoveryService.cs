@@ -90,11 +90,21 @@ public sealed class VaultMarkdownDiscoveryService(
 		// boundary's recorded path — when the file is now absent, discovery recovers the identity and the mode policy
 		// decides the authoritative action (implicit deletes), so a sweep reaches the same state a live delete would.
 		var discoveredPaths = new HashSet<string>(allPaths.Select(Path.GetFullPath), StringComparer.OrdinalIgnoreCase);
+		// The identities the scan already found asserted by a file on disk. A begun boundary whose recorded file is gone
+		// but whose identity is still asserted somewhere has MOVED, not been deleted — the user relocated the note within
+		// the vault — so the moved file's own candidate re-homes it and it must not be orphan-deleted here.
+		var assertedIdentities = new HashSet<string>(
+			candidates
+				.Where(candidate => candidate.FileExists && !string.IsNullOrWhiteSpace(candidate.PathId))
+				.Select(candidate => candidate.PathId!),
+			StringComparer.OrdinalIgnoreCase);
 		foreach (var boundary in await implicitBoundaryService.EnumerateBegunBoundariesAsync(cancellationToken))
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 			var absolutePath = Path.GetFullPath(Path.Combine(layout.VaultRoot, boundary.VaultRelativePath));
-			if (File.Exists(absolutePath) || discoveredPaths.Contains(absolutePath))
+			if (File.Exists(absolutePath)
+				|| discoveredPaths.Contains(absolutePath)
+				|| (!string.IsNullOrWhiteSpace(boundary.EntityId) && assertedIdentities.Contains(boundary.EntityId)))
 			{
 				continue;
 			}

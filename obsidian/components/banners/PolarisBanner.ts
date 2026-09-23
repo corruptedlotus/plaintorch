@@ -1,7 +1,7 @@
 import { component, css, html } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { PolarisCycle } from '@pleiades/sdk'
-import { core, ReactiveBinder } from ".."
+import { core, openNoteWhenReady, ReactiveBinder } from ".."
 import { App } from "obsidian"
 
 @component('p7t-polaris-banner')
@@ -33,8 +33,7 @@ export class PolarisBanner extends EntityBanner<PolarisCycle> {
 				if (!existence?.associatedNote
 					|| app.workspace.activeEditor?.file?.path === existence?.associatedNote) return
 
-				const file = app.vault.getFileByPath(existence.associatedNote)!
-				app.workspace.getLeaf(true).openFile(file)
+				await openNoteWhenReady(existence.associatedNote, core.lastWriteNotePending)
 			}
 		}
 	})

@@ -2,7 +2,7 @@ import { component, css, html, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { Eventive, EventiveResolution, Fate, FateStatus, FateUpdate } from '@pleiades/sdk'
 import { App } from "obsidian"
-import { core, fateScheduleToOrbit, IconName, ReactiveBinder, SelectFateStatusModal } from ".."
+import { core, fateScheduleToOrbit, IconName, openNoteWhenReady, ReactiveBinder, SelectFateStatusModal } from ".."
 import type { ScheduleValue } from "../editing/EditableSchedule"
 
 /**
@@ -70,8 +70,7 @@ export class FateBanner extends EntityBanner<Fate> {
 		if (!existence?.associatedNote
 			|| app.workspace.activeEditor?.file?.path === existence.associatedNote) return
 
-		const file = app.vault.getFileByPath(existence.associatedNote)!
-		app.workspace.getLeaf(true).openFile(file)
+		await openNoteWhenReady(existence.associatedNote, core.lastWriteNotePending)
 	}
 
 	/**

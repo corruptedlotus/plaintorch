@@ -20,7 +20,7 @@ public sealed class PolarisCycleApiService(
 	PuckCreationService puckCreationService,
 	PolarisCycleLifecycle lifecycle,
 	PlaintorchStateService stateService,
-	PlaintorchMarkdownStorageService markdownFileService,
+	VaultWriteQueue writeQueue,
 	ProximityMaterializationService materializationService,
 	TimeframeAffinityResolver affinityResolver,
 	AgendaProjectionService projectionService,
@@ -34,8 +34,7 @@ public sealed class PolarisCycleApiService(
 		var cycle = lifecycle.PlanForecast(forecastReference, daysAhead, id);
 
 		context.PolarisCycles.Add(cycle);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SavePolarisCycleAsync(cycle, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(cycle, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "polaris.plan", subject: cycle, cancellationToken: cancellationToken);
 		return cycle;
 	}
@@ -74,7 +73,7 @@ public sealed class PolarisCycleApiService(
 		ApplyCycle(cycle, started);
 		await context.SaveChangesAsync(cancellationToken);
 		await materializationService.MaterializeForCycleAsync(cycle, cancellationToken);
-		await markdownFileService.SavePolarisCycleAsync(cycle, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(cycle, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "polaris.begin", subject: cycle, cancellationToken: cancellationToken);
 		return cycle;
 	}
@@ -135,8 +134,7 @@ public sealed class PolarisCycleApiService(
 			cycle.Title = update.Title;
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SavePolarisCycleAsync(cycle, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(cycle, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "polaris.update", subject: cycle, cancellationToken: cancellationToken);
 		return cycle;
 	}
@@ -150,8 +148,7 @@ public sealed class PolarisCycleApiService(
 		var previous = Clone(cycle);
 		var finished = lifecycle.Finish(cycle, endTime ?? DateTimeOffset.UtcNow);
 		ApplyCycle(cycle, finished);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SavePolarisCycleAsync(cycle, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(cycle, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "polaris.end", subject: cycle, cancellationToken: cancellationToken);
 		return cycle;
 	}
@@ -426,8 +423,8 @@ public sealed class PolarisCycleApiService(
 		var id = puckCreationService.CreateIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: nextDate)]);
 		var forecast = lifecycle.PlanForecast(currentDate, 1, id);
 		context.PolarisCycles.Add(forecast);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SavePolarisCycleAsync(forecast, cancellationToken: cancellationToken);
+		// A Polaris cycle is vault-backed, so its creation goes through the write queue (PEP110), like PlanAsync.
+		await writeQueue.WriteAsync(forecast, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "polaris.plan", subject: forecast, cancellationToken: cancellationToken);
 		return forecast;
 	}
@@ -734,8 +731,7 @@ public sealed class PolarisCycleApiService(
 		};
 
 		context.Objectives.Add(objective);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		return objective;
 	}
 

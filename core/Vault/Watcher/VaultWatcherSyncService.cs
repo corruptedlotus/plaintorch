@@ -252,6 +252,9 @@ public sealed class VaultWatcherSyncService(
 
 		if (existing is Objective objective)
 		{
+			// Due is an owned type (PEP111); SetValues copies only scalar properties and never descends into an
+			// owned reference, so the parsed frontmatter due would be dropped. Copy it across explicitly.
+			objective.Due = (candidate.ParsedModel as Objective)?.Due;
 			await NormalizeObjectiveForeignKeysAsync(objective, candidate.VaultRelativePath, cancellationToken);
 		}
 
@@ -283,7 +286,7 @@ public sealed class VaultWatcherSyncService(
 		}
 
 		var requiresScaffold = RequiresCanonicalScaffold(candidate);
-		if (!existingEntry.Properties.Any(property => property.IsModified))
+		if (!HasSyncChanges(existingEntry))
 		{
 			if (requiresScaffold)
 			{
@@ -435,6 +438,17 @@ public sealed class VaultWatcherSyncService(
 	/// Resets the persisted orbit schedule state when a file sync changed a declarative's orbit notation.
 	/// A fresh state (anchored at reset time) is lazily rebuilt on the next seeking resolution.
 	/// </summary>
+	/// <summary>
+	/// Whether a frontmatter sync actually changed the entity: a modified scalar property, or a changed owned
+	/// reference it maps (Objective.Due, PEP111) — SetValues never touches an owned reference, so it is applied
+	/// separately and the scalar-only modified check would otherwise miss it.
+	/// </summary>
+	private static bool HasSyncChanges(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry)
+		=> entry.Properties.Any(property => property.IsModified)
+			|| entry.References.Any(reference => reference.TargetEntry is { } owned
+				&& owned.Metadata.IsOwned()
+				&& owned.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
+
 	private async Task ResetOrbitStateOnChangeAsync(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry, string incentiveId, CancellationToken cancellationToken)
 	{
 		var originalOrbit = entry.OriginalValues.GetValue<string?>("Orbit");

@@ -153,6 +153,11 @@ public class PlainfraContext : DbContext
 	public DbSet<OperationStatusDismissalRecord> OperationStatusDismissals => Set<OperationStatusDismissalRecord>();
 
 	/// <summary>
+	/// Gets the durable vault write-intent outbox — pending entity→file syncs the drainer reconciles (PEP110 Refactor BETA).
+	/// </summary>
+	public DbSet<VaultWriteIntent> VaultWriteIntents => Set<VaultWriteIntent>();
+
+	/// <summary>
 	/// Gets the vault-bound user preference overrides (PEP116). Sparse key/value rows; unset preferences
 	/// resolve to their code-owned defaults.
 	/// </summary>
@@ -177,6 +182,11 @@ public class PlainfraContext : DbContext
 		// PEP108 dismiss feature: durable dismissals, with the scope enum stored as a readable string.
 		modelBuilder.Entity<OperationStatusDismissalRecord>()
 			.Property(x => x.Scope)
+			.HasConversion<string>();
+
+		// PEP110 Refactor BETA: the vault write-intent outbox, with the kind enum stored as a readable string.
+		modelBuilder.Entity<VaultWriteIntent>()
+			.Property(x => x.Kind)
 			.HasConversion<string>();
 
 		var tagsConverter = new ValueConverter<List<string>, string>(
