@@ -141,6 +141,13 @@ export class DependencyCanvas extends Component {
 	private framed = false
 	/** Whether the drag in progress has actually moved, which is what tells a drag from a click. */
 	private dragged = false
+	/**
+	 * The pointers currently pressed on the canvas — the ones a gesture has captured and not yet released. A
+	 * genuine second finger (what turns a gesture into a pinch) is one that lands while a first is still in here;
+	 * without this, a gesture left dangling by a pointerup we never received would make the next lone touch look
+	 * like that stale gesture's second finger and be swallowed instead of moving or long-pressing a node.
+	 */
+	private readonly livePointers = new Set<number>()
 	/** The last node clicked and when, so a quick second click on it is read as a double-click. */
 	private lastClickKey?: string
 	private lastClickAt = 0
@@ -407,6 +414,7 @@ export class DependencyCanvas extends Component {
 		this.resizeObserver?.disconnect()
 		this.resizeObserver = undefined
 		this.observedSignature = undefined
+		this.livePointers.clear()
 		window.clearTimeout(this.layoutSaveTimer)
 	}
 
@@ -546,7 +554,8 @@ export class DependencyCanvas extends Component {
 				@pointerdown=${(e: PointerEvent) => this.onPointerDown(e)}
 				@pointermove=${(e: PointerEvent) => this.onPointerMove(e)}
 				@pointerup=${(e: PointerEvent) => void this.onPointerUp(e)}
-				@pointercancel=${() => this.endGesture()}
+				@pointercancel=${(e: PointerEvent) => this.onPointerCancel(e)}
+				@lostpointercapture=${(e: PointerEvent) => this.onLostPointerCapture(e)}
 				@wheel=${(e: WheelEvent) => this.onWheel(e)}>
 				<div class='surface' style='transform: translate(${this.pan.x}px, ${this.pan.y}px) scale(${this.scale})'>
 					<svg class='edges' width=${Math.max(layout.width, 1)} height=${Math.max(layout.height, 1)}>
@@ -1220,8 +1229,9 @@ export class DependencyCanvas extends Component {
 		// A second finger while one is already down turns whatever that finger was doing into a pinch — a pan
 		// or a node drag alike; the node simply rests where it had been dragged to. It may land on a node, a
 		// button, anywhere: the two fingers together are read as a viewport gesture.
-		if (e.pointerType === 'touch' && this.gesture && this.gesture.sort !== 'pinch' && this.gesture.pointerId !== e.pointerId) {
-			this.beginPinch(this.gesture.pointerId, e)
+		const gesture = this.gesture
+		if (e.pointerType === 'touch' && gesture && this.isSecondFinger(gesture, e)) {
+			this.beginPinch(gesture.pointerId, e)
 			return
 		}
 
@@ -1260,9 +1270,10 @@ export class DependencyCanvas extends Component {
 
 	private onNodePointerDown(e: PointerEvent, nodeKey: string, box: NodeBox) {
 		// A second finger landing on a node joins the first into a pinch rather than starting a drag of its own.
-		if (e.pointerType === 'touch' && this.gesture && this.gesture.sort !== 'pinch' && this.gesture.pointerId !== e.pointerId) {
+		const gesture = this.gesture
+		if (e.pointerType === 'touch' && gesture && this.isSecondFinger(gesture, e)) {
 			e.stopPropagation()
-			this.beginPinch(this.gesture.pointerId, e)
+			this.beginPinch(gesture.pointerId, e)
 			return
 		}
 
@@ -1369,6 +1380,17 @@ export class DependencyCanvas extends Component {
 		return gesture.pointerId === pointerId || (gesture.sort === 'pinch' && gesture.secondPointerId === pointerId)
 	}
 
+	/**
+	 * Whether a fresh touch is a genuine second finger — the pinch trigger — rather than a lone touch that a stale
+	 * gesture is masquerading as. The first finger must still be pressed (its pointer still in {@link livePointers}):
+	 * a gesture left behind by a pointerup that never reached us would otherwise swallow every later single touch.
+	 */
+	private isSecondFinger(gesture: Gesture, e: PointerEvent): boolean {
+		return gesture.sort !== 'pinch'
+			&& gesture.pointerId !== e.pointerId
+			&& this.livePointers.has(gesture.pointerId)
+	}
+
 	private onPointerMove(e: PointerEvent) {
 		const gesture = this.gesture
 		if (!gesture || !this.owns(gesture, e.pointerId)) {
@@ -1428,6 +1450,7 @@ export class DependencyCanvas extends Component {
 	}
 
 	private async onPointerUp(e: PointerEvent) {
+		this.livePointers.delete(e.pointerId)
 		const gesture = this.gesture
 		if (!gesture || !this.owns(gesture, e.pointerId)) {
 			return
@@ -1455,6 +1478,23 @@ export class DependencyCanvas extends Component {
 			if (this.viewportElement?.hasPointerCapture(pointerId)) {
 				this.viewportElement.releasePointerCapture(pointerId)
 			}
+		}
+	}
+
+	private onPointerCancel(e: PointerEvent) {
+		this.livePointers.delete(e.pointerId)
+		this.endGesture()
+	}
+
+	/**
+	 * A capture the browser released without a matching pointerup — the finger lifted while the OS or another
+	 * surface took over, or a re-render moved the element out from under it. Forget the pointer and drop a gesture
+	 * it owned, so a stale gesture never lingers to hijack the next lone touch into a phantom pinch.
+	 */
+	private onLostPointerCapture(e: PointerEvent) {
+		this.livePointers.delete(e.pointerId)
+		if (this.gesture && this.owns(this.gesture, e.pointerId)) {
+			this.endGesture()
 		}
 	}
 
@@ -1530,6 +1570,7 @@ export class DependencyCanvas extends Component {
 
 	private capture(pointerId: number) {
 		if (pointerId >= 0) {
+			this.livePointers.add(pointerId)
 			this.viewportElement?.setPointerCapture(pointerId)
 		}
 	}
