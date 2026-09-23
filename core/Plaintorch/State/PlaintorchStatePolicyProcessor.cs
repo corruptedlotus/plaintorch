@@ -576,9 +576,11 @@ public sealed class PlaintorchStatePolicyProcessor(
 	/// </summary>
 	private static string DescribeOccurrence(Attentive attentive)
 	{
-		var slot = attentive.RecurrenceTime is { } time
-			? $"{attentive.RecurrenceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}T{time.ToString("HH\\:mm", CultureInfo.InvariantCulture)}"
-			: attentive.RecurrenceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+		// The key format predates the single RECURRENCE-ID and is persisted in the ledger, so it is kept: the date
+		// alone for a midnight (all-day) slot, the date and minute otherwise.
+		var slot = attentive.RecurrenceId.TimeOfDay == TimeSpan.Zero
+			? attentive.RecurrenceId.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+			: attentive.RecurrenceId.ToString("yyyy-MM-dd'T'HH\\:mm", CultureInfo.InvariantCulture);
 		return $"attentive {slot}";
 	}
 

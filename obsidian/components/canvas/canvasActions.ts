@@ -28,8 +28,7 @@ function toRequest(ref: EndpointRef): DependencyEndpointRequest {
 	return {
 		kind: ref.kind,
 		id: ref.id,
-		recurrenceDate: ref.recurrenceDate,
-		recurrenceTime: ref.recurrenceTime
+		recurrenceId: ref.recurrenceId
 	}
 }
 

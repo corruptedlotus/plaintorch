@@ -50,17 +50,16 @@ public static class InclusionWindow
 	}
 
 	/// <summary>
-	/// Determines whether an attentive collides with the inclusion window: period attentives occupy
-	/// [Date, PeriodEndDate), timed attentives their instant, and all-day attentives their whole day.
+	/// Determines whether an attentive collides with the inclusion window: an attentive with a duration — a
+	/// super-day period or a span — occupies [moment, moment + duration), a timed one its instant, and an all-day
+	/// one its whole day.
 	/// </summary>
 	public static bool AttentiveIntersects(Attentive attentive, DateTime windowStart, DateTime windowEnd)
 	{
 		ArgumentNullException.ThrowIfNull(attentive);
-		if (attentive.PeriodEndDate is { } periodEnd)
+		if (attentive.Epoch.Duration is not null)
 		{
-			var occurrenceStart = attentive.Epoch.Date.ToDateTime(TimeOnly.MinValue);
-			var occurrenceEnd = periodEnd.ToDateTime(TimeOnly.MinValue);
-			return occurrenceEnd >= windowStart && occurrenceStart < windowEnd;
+			return attentive.Epoch.EndMoment >= windowStart && attentive.Epoch.Moment < windowEnd;
 		}
 
 		return Intersects(attentive.Epoch.Date, attentive.Epoch.TimeOfDay, attentive.Epoch.TimeOfDay, windowStart, windowEnd);

@@ -68,4 +68,32 @@ public sealed class Epoch
 		Duration = OccurrenceDurations.Format(durationMinutes),
 		TimeZone = timeZone,
 	};
+
+	/// <summary>
+	/// Builds the epoch of a resolved orbit occurrence: its moment and granularity, with its span as the duration —
+	/// or, for a super-day occurrence (week/month/year), its whole period in days.
+	/// </summary>
+	/// <remarks>
+	/// The period is resolved on the declarative's own calendar, so storing it as the duration keeps a Pleiadean
+	/// month's 60/61-day period exact, where the one-unit fallback of <see cref="EndMoment"/> adds a nominal
+	/// (Gregorian) month. A day-or-finer occurrence spans at most its own window and keeps a null duration.
+	/// </remarks>
+	public static Epoch For(OrbitOccurrenceInstance occurrence)
+	{
+		ArgumentNullException.ThrowIfNull(occurrence);
+		var periodDays = occurrence.PeriodEndExclusive.DayNumber - occurrence.Date.DayNumber;
+		return From(
+			occurrence.Date,
+			occurrence.StartTime,
+			occurrence.Granularity,
+			occurrence.DurationMinutes ?? (periodDays > 1 ? periodDays * 24 * 60 : null));
+	}
+
+	/// <summary>
+	/// Builds the epoch of an occurrence known only by its slot moment — one with no orbit to resolve its shape:
+	/// a midnight slot is an all-day (day-granular) occurrence, any other a minute-granular timed one.
+	/// </summary>
+	public static Epoch FromSlot(DateTime slot) => slot.TimeOfDay == TimeSpan.Zero
+		? From(DateOnly.FromDateTime(slot), timeOfDay: null, OrbitUnit.Day)
+		: From(DateOnly.FromDateTime(slot), TimeOnly.FromDateTime(slot), OrbitUnit.Minute);
 }

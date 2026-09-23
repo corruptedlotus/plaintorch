@@ -63,12 +63,12 @@ function occurrenceOwner(target: OccurrenceTarget): { icon: IconName, label: str
 
 /** Addresses an attentive occurrence by its RECURRENCE-ID (attentives are always unbound, PEP111). */
 function attentiveRef(attentive: Attentive): AttentiveOccurrenceRef {
-	return { decreeId: attentive.decreeId, recurrenceDate: attentive.recurrenceDate, recurrenceTime: attentive.recurrenceTime }
+	return { decreeId: attentive.decreeId, recurrenceId: attentive.recurrenceId }
 }
 
 /** Addresses an eventive occurrence by its owner id + RECURRENCE-ID. */
 function eventiveRef(eventive: Eventive): EventiveOccurrenceRef {
-	return { ownerId: eventive.fateId ?? eventive.objectiveId ?? '', recurrenceDate: eventive.recurrenceDate, recurrenceTime: eventive.recurrenceTime }
+	return { ownerId: eventive.fateId ?? eventive.objectiveId ?? '', recurrenceId: eventive.recurrenceId }
 }
 
 /**

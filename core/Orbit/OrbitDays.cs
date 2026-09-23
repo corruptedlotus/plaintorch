@@ -18,7 +18,14 @@ public sealed record OrbitOccurrenceInstance(
 	TimeOnly? EndTime,
 	int? DurationMinutes,
 	DateOnly PeriodEndExclusive,
-	OrbitUnit Granularity);
+	OrbitUnit Granularity)
+{
+	/// <summary>
+	/// Gets the occurrence's start as a civil moment — its date at its start time, or midnight for a
+	/// day-or-coarser instant. This is the slot a materialized occurrence pins as its RECURRENCE-ID.
+	/// </summary>
+	public DateTime Moment => Date.ToDateTime(StartTime ?? TimeOnly.MinValue);
+}
 
 /// <summary>
 /// The calendar-date view of orbit schedules used by the PLAINTORCH declarative ecosystem (PEP100).

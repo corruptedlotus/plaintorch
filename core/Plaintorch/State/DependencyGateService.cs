@@ -50,12 +50,9 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 			? query.Where(dependency => dependency.Constraint == DependencyConstraint.ToBegin || dependency.Constraint == null)
 			: query.Where(dependency => dependency.Constraint == phase);
 
-		if (target.Kind == DependencyEndpointKind.Eventive && target.Recurrence is { } recurrence)
+		if (target.Kind == DependencyEndpointKind.Eventive && target.RecurrenceId is { } slot)
 		{
-			var date = recurrence.Date;
-			query = recurrence.Time is TimeOnly time
-				? query.Where(dependency => dependency.TargetRecurrenceDate == date && dependency.TargetRecurrenceTime == time)
-				: query.Where(dependency => dependency.TargetRecurrenceDate == date && dependency.TargetRecurrenceTime == null);
+			query = query.Where(dependency => dependency.TargetRecurrenceId == slot);
 		}
 
 		return await query.AnyAsync(cancellationToken);
@@ -66,7 +63,7 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 	/// (a locked whole-fate begin constraint pauses orbit generation and blocks all single events) or the
 	/// specific occurrence slot is itself locked.
 	/// </summary>
-	public async Task<bool> IsFateMaterializationBlockedAsync(string fateId, DateOnly? occurrenceDate, TimeOnly? occurrenceTime, CancellationToken cancellationToken)
+	public async Task<bool> IsFateMaterializationBlockedAsync(string fateId, DateTime? recurrenceId, CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(fateId);
 		if (await IsLockedAsync(new EndpointRef(DependencyEndpointKind.Fate, fateId), DependencyConstraint.ToBegin, cancellationToken))
@@ -74,19 +71,19 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 			return true;
 		}
 
-		if (occurrenceDate is null)
+		if (recurrenceId is null)
 		{
 			return false;
 		}
 
-		return await IsLockedAsync(new EndpointRef(DependencyEndpointKind.Eventive, fateId, new RecurrenceId(occurrenceDate.Value, occurrenceTime)), DependencyConstraint.ToBegin, cancellationToken);
+		return await IsLockedAsync(new EndpointRef(DependencyEndpointKind.Eventive, fateId, recurrenceId), DependencyConstraint.ToBegin, cancellationToken);
 	}
 
 	private static string Describe(EndpointRef target)
 	{
 		return target.Kind switch
 		{
-			DependencyEndpointKind.Eventive => $"Occurrence {target.Recurrence?.Date:yyyy-MM-dd} of '{target.Id}'",
+			DependencyEndpointKind.Eventive => $"Occurrence {target.RecurrenceId:yyyy-MM-dd} of '{target.Id}'",
 			_ => $"{target.Kind} '{target.Id}'",
 		};
 	}

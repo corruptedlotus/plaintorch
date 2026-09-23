@@ -149,14 +149,18 @@ export class EndpointList extends Component {
 	}
 }
 
-/** The occurrence an eventive endpoint pins, as a short 'Mon 12 · 14:30', from its recurrence slot. */
+/**
+ * The occurrence an eventive endpoint pins, as a short 'Mon 12 · 14:30', from its recurrence slot. The slot is a
+ * civil ISO datetime; a midnight slot is an all-day occurrence and shows its day alone.
+ */
 function occurrenceLabel(endpoint: EndpointRef): string | undefined {
-	if (!endpoint.recurrenceDate) {
+	if (!endpoint.recurrenceId) {
 		return undefined
 	}
 
-	const day = formatDate(endpoint.recurrenceDate)
-	return endpoint.recurrenceTime ? `${day} · ${formatTime(endpoint.recurrenceTime)}` : day
+	const day = formatDate(endpoint.recurrenceId.slice(0, 10))
+	const time = endpoint.recurrenceId.slice(11, 16)
+	return time && time !== '00:00' ? `${day} · ${time}` : day
 }
 
 /** 'YYYY-MM-DD' → a short 'Mon 12' label, parsed as local time so the day never shifts across a timezone. */
@@ -167,11 +171,6 @@ function formatDate(date: string): string {
 	}
 
 	return parsed.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })
-}
-
-/** 'HH:MM[:SS]' → 'HH:MM'. */
-function formatTime(time: string): string {
-	return time.slice(0, 5)
 }
 
 declare global {

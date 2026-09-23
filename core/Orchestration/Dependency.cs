@@ -32,14 +32,10 @@ public sealed class Dependency
 	public required string SourceId { get; set; }
 
 	/// <summary>
-	/// Gets or sets the source occurrence slot date (iCalendar <c>RECURRENCE-ID</c>) for an eventive source.
+	/// Gets or sets the source occurrence slot (iCalendar <c>RECURRENCE-ID</c>, the occurrence's original moment)
+	/// for an eventive source; <see langword="null"/> for a whole-entity or non-eventive source.
 	/// </summary>
-	public DateOnly? SourceRecurrenceDate { get; set; }
-
-	/// <summary>
-	/// Gets or sets the source occurrence slot time for a timed eventive source.
-	/// </summary>
-	public TimeOnly? SourceRecurrenceTime { get; set; }
+	public DateTime? SourceRecurrenceId { get; set; }
 
 	/// <summary>
 	/// Gets or sets the target (blocked/dependant) endpoint kind.
@@ -52,14 +48,10 @@ public sealed class Dependency
 	public required string TargetId { get; set; }
 
 	/// <summary>
-	/// Gets or sets the target occurrence slot date (iCalendar <c>RECURRENCE-ID</c>) for an eventive target.
+	/// Gets or sets the target occurrence slot (iCalendar <c>RECURRENCE-ID</c>, the occurrence's original moment)
+	/// for an eventive target; <see langword="null"/> for a whole-entity or non-eventive target.
 	/// </summary>
-	public DateOnly? TargetRecurrenceDate { get; set; }
-
-	/// <summary>
-	/// Gets or sets the target occurrence slot time for a timed eventive target.
-	/// </summary>
-	public TimeOnly? TargetRecurrenceTime { get; set; }
+	public DateTime? TargetRecurrenceId { get; set; }
 
 	/// <summary>
 	/// Gets or sets the trigger on the source side. <see langword="null"/> resolves to the default
@@ -83,15 +75,11 @@ public sealed class Dependency
 	/// <summary>
 	/// Gets the source endpoint as a reference value.
 	/// </summary>
-	public EndpointRef Source => new(SourceKind, SourceId, ToRecurrence(SourceRecurrenceDate, SourceRecurrenceTime));
+	public EndpointRef Source => new(SourceKind, SourceId, SourceRecurrenceId);
 
 	[NotMapped]
 	/// <summary>
 	/// Gets the target endpoint as a reference value.
 	/// </summary>
-	public EndpointRef Target => new(TargetKind, TargetId, ToRecurrence(TargetRecurrenceDate, TargetRecurrenceTime));
-
-	/// <summary>Composes the stored slot date/time columns into a single <see cref="RecurrenceId"/>, or null when there is no slot.</summary>
-	private static RecurrenceId? ToRecurrence(DateOnly? date, TimeOnly? time)
-		=> date is { } slotDate ? new RecurrenceId(slotDate, time) : null;
+	public EndpointRef Target => new(TargetKind, TargetId, TargetRecurrenceId);
 }

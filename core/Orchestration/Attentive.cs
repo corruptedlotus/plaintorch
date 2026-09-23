@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Pleiades.Orchestration;
@@ -10,16 +9,12 @@ namespace Pleiades.Orchestration;
 /// </summary>
 /// <remarks>
 /// An attentive can be done, skipped, or rescheduled (delayed). Its Celestron reward is predefined on the owning
-/// decree and granted on each execution.
+/// decree and granted on each execution. Its row identity, position in time, and RECURRENCE-ID are the shared
+/// <see cref="Occurrence"/> members; a week/month/year-born attentive occupies its whole period through the
+/// epoch's duration, so multiple Polaris cycles can collide with it.
 /// </remarks>
-public sealed class Attentive : IOccurrenceInstance
+public sealed class Attentive : Occurrence
 {
-	[Key]
-	/// <summary>
-	/// Gets or sets the database identity for the attentive record.
-	/// </summary>
-	public long Id { get; set; }
-
 	/// <summary>
 	/// Gets or sets the owning decree identifier.
 	/// </summary>
@@ -32,41 +27,9 @@ public sealed class Attentive : IOccurrenceInstance
 	/// </summary>
 	public Decree? Decree { get; set; }
 
-	/// <summary>
-	/// Gets or sets the occurrence's position in time — the mutable current moment plus its granularity,
-	/// nominal duration, and zone (PEP111). An attentive can be rescheduled by moving the moment;
-	/// <see cref="RecurrenceId"/> keeps the original slot so orbit dedup and the agenda still resolve it.
-	/// </summary>
-	public Epoch Epoch { get; set; } = new();
-
-	/// <summary>
-	/// Gets or sets the original occurrence slot date (iCalendar <c>RECURRENCE-ID</c>). Unlike <see cref="Date"/>
-	/// (which is mutable — an unbound attentive can be rescheduled), this stays fixed at the occurrence's
-	/// original slot, so orbit dedup and the agenda projection resolve to the same occurrence after a reschedule.
-	/// Set at materialization.
-	/// </summary>
-	public DateOnly RecurrenceDate { get; set; }
-
-	/// <summary>
-	/// Gets or sets the original occurrence slot time; <see langword="null"/> for an all-day slot. Together with
-	/// <see cref="RecurrenceDate"/> it forms the stable <c>RECURRENCE-ID</c>.
-	/// </summary>
-	public TimeOnly? RecurrenceTime { get; set; }
-
 	/// <inheritdoc />
 	[NotMapped]
-	public string RecurrenceOwnerUid => DecreeId;
-
-	/// <inheritdoc />
-	[NotMapped]
-	public RecurrenceId RecurrenceId => new(RecurrenceDate, RecurrenceTime);
-
-	/// <summary>
-	/// Gets or sets the exclusive end date of the occurrence's period for super-day orbit granularities
-	/// (week/month/year). A week-born attentive occupies its whole week, so multiple Polaris cycles can
-	/// collide with it. Null means a single-day occurrence.
-	/// </summary>
-	public DateOnly? PeriodEndDate { get; set; }
+	public override string RecurrenceOwnerUid => DecreeId;
 
 	/// <summary>
 	/// Gets or sets how the attentive was resolved.

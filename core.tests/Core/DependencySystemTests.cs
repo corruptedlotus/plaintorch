@@ -369,7 +369,7 @@ public sealed class DependencySystemTests : VaultTestBase
 		var slot = DateOnly.FromDateTime(DateTime.Today).AddDays(30);
 		var source = await Directive(api => api.CreateStandaloneAsync("Fate prereq", cancellationToken: Ct));
 		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Solstice", Date: slot), Ct));
-		var occurrenceRef = new EventiveOccurrenceRef(fate.Id, slot, null);
+		var occurrenceRef = new EventiveOccurrenceRef(fate.Id, slot.ToDateTime(TimeOnly.MinValue));
 
 		await Deps(api => api.CreateAsync(DirectiveRef(source.Id), new EndpointRef(DependencyEndpointKind.Fate, fate.Id), cancellationToken: Ct));
 
@@ -387,11 +387,11 @@ public sealed class DependencySystemTests : VaultTestBase
 		var target = await Directive(api => api.CreateStandaloneAsync("Downstream", cancellationToken: Ct));
 		var slot = DateOnly.FromDateTime(DateTime.Today).AddDays(30);
 		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Occurrence", Date: slot), Ct));
-		var eventive = await Declarative(api => api.UpdateEventiveAsync(new EventiveOccurrenceRef(fate.Id, slot), new EventiveUpdate(), Ct));
-		Assert.Equal(slot, eventive.RecurrenceDate);
+		var eventive = await Declarative(api => api.UpdateEventiveAsync(new EventiveOccurrenceRef(fate.Id, slot.ToDateTime(TimeOnly.MinValue)), new EventiveUpdate(), Ct));
+		Assert.Equal(slot.ToDateTime(TimeOnly.MinValue), eventive.RecurrenceId);
 
 		await Deps(api => api.CreateAsync(
-			new EndpointRef(DependencyEndpointKind.Eventive, fate.Id, new RecurrenceId(slot, null)),
+			new EndpointRef(DependencyEndpointKind.Eventive, fate.Id, slot.ToDateTime(TimeOnly.MinValue)),
 			DirectiveRef(target.Id),
 			cancellationToken: Ct));
 
@@ -400,7 +400,7 @@ public sealed class DependencySystemTests : VaultTestBase
 			api.ShiftStellarWorkflowAsync(target.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Active), Ct)));
 
 		// Move the occurrence (its current date changes) then resolve it: the reference still matches by slot.
-		var eventiveRef = new EventiveOccurrenceRef(eventive.RecurrenceOwnerUid, eventive.RecurrenceDate, eventive.RecurrenceTime);
+		var eventiveRef = new EventiveOccurrenceRef(eventive.RecurrenceOwnerUid, eventive.RecurrenceId);
 		await Declarative(api => api.UpdateEventiveAsync(eventiveRef, new EventiveUpdate(Date: slot.AddDays(10)), Ct));
 		await Declarative(api => api.UpdateEventiveAsync(eventiveRef, new EventiveUpdate(Resolution: EventiveResolution.Missed), Ct));
 

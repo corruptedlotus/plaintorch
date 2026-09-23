@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
+using Pleiades.Plaintorch.Materialization;
 using Pleiades.Tests.Harness;
 using Xunit;
 
@@ -68,6 +69,37 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 		}
 
 		_ = today;
+	}
+
+	[Fact]
+	public async Task A_super_day_occurrence_carries_its_calendar_resolved_period_as_its_duration()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+		var today = DateOnly.FromDateTime(DateTime.Today);
+
+		// A month-granular decree resolves on the Pleiadean calendar, whose months run 60/61 days. The period is the
+		// occurrence's duration, so each month ends exactly where the next begins — not a nominal (Gregorian) month
+		// after its start, which is what the one-unit fallback of a null duration would give.
+		var monthly = await WithApi(api => api.CreateDecreeAsync(new DecreePlan("Moonrite", Orbit: "M"), cancellationToken));
+		var weekly = await WithApi(api => api.CreateDecreeAsync(new DecreePlan("Sweep", Orbit: "w"), cancellationToken));
+
+		var projection = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<AgendaProjectionService>()
+			.ProjectAsync(today, today.AddDays(200), cancellationToken));
+
+		// The first occurrence may be clipped to the schedule's epoch, so whole periods are asserted from the second.
+		var months = projection.Attentives.Where(item => item.DecreeId == monthly.Id).OrderBy(item => item.Epoch.Moment).ToList();
+		Assert.True(months.Count >= 3, $"expected several Pleiadean months in the window, got {months.Count}");
+		Assert.All(months.Skip(1), item => Assert.Contains(item.Epoch.Duration, new[] { "60d", "61d" }));
+		for (var index = 1; index < months.Count; index++)
+		{
+			Assert.Equal(months[index].Epoch.Moment, months[index - 1].Epoch.EndMoment);
+			Assert.Equal(months[index].Epoch.Moment, months[index].RecurrenceId);
+		}
+
+		var weeks = projection.Attentives.Where(item => item.DecreeId == weekly.Id).OrderBy(item => item.Epoch.Moment).Skip(1).ToList();
+		Assert.NotEmpty(weeks);
+		Assert.All(weeks, item => Assert.Equal("7d", item.Epoch.Duration));
 	}
 
 	[Fact]
@@ -143,15 +175,15 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 
 		// The orbit anchors today, so tomorrow is off-phase: interaction must reject it.
 		await Assert.ThrowsAsync<InvalidOperationException>(() =>
-			WithApi(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, today.AddDays(1)), new AttentiveUpdate(), cancellationToken)));
+			WithApi(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, today.AddDays(1).ToDateTime(TimeOnly.MinValue)), new AttentiveUpdate(), cancellationToken)));
 
 		// A future on-phase occurrence resolves through preview without advancing the schedule.
-		var future = await WithApi(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, today.AddDays(2)), new AttentiveUpdate(), cancellationToken));
+		var future = await WithApi(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, today.AddDays(2).ToDateTime(TimeOnly.MinValue)), new AttentiveUpdate(), cancellationToken));
 		Assert.Equal(today.AddDays(2), future.Epoch.Date);
 
 		// Interacting with today's occurrence too, then beginning a cycle: the seeking pass must recognize
 		// the already-hardened instance by its date instead of duplicating it.
-		await WithApi(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, today), new AttentiveUpdate(), cancellationToken));
+		await WithApi(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, today.ToDateTime(TimeOnly.MinValue)), new AttentiveUpdate(), cancellationToken));
 		await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
 			.StartNewAsync(cancellationToken: cancellationToken));

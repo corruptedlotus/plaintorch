@@ -67,16 +67,11 @@ export interface CanvasGraph {
 export function endpointKey(ref: EndpointRef): string {
 	const kind = DependencyEndpointKind[ref.kind]
 	// Nullish, not strictly undefined: the core writes an absent optional as `null` rather than omitting it,
-	// so an edge endpoint arrives with `recurrenceDate: null` where a node built in the client has the field
+	// so an edge endpoint arrives with `recurrenceId: null` where a node built in the client has the field
 	// missing. Comparing against undefined alone would give the two the same endpoint two different keys, and
 	// every edge would be dropped for connecting nodes that, by their keys, do not exist.
-	const date = ref.recurrenceDate ?? undefined
-	const time = ref.recurrenceTime ?? undefined
-	if (date === undefined && time === undefined) {
-		return `${kind}:${ref.id}`
-	}
-
-	return `${kind}:${ref.id}@${date ?? ''}${time === undefined ? '' : `T${time}`}`
+	const slot = ref.recurrenceId ?? undefined
+	return slot === undefined ? `${kind}:${ref.id}` : `${kind}:${ref.id}@${slot}`
 }
 
 /**
@@ -88,9 +83,8 @@ export function sourceRef(dependency: Dependency): EndpointRef {
 		kind: dependency.sourceKind,
 		id: dependency.sourceId,
 		// null → undefined: the core writes an absent recurrence as null, and the rest of the module — keys,
-		// cycle checks, create requests — reads these as optional, not nullable.
-		recurrenceDate: dependency.sourceRecurrenceDate ?? undefined,
-		recurrenceTime: dependency.sourceRecurrenceTime ?? undefined
+		// cycle checks, create requests — reads it as optional, not nullable.
+		recurrenceId: dependency.sourceRecurrenceId ?? undefined
 	}
 }
 
@@ -99,8 +93,7 @@ export function targetRef(dependency: Dependency): EndpointRef {
 	return {
 		kind: dependency.targetKind,
 		id: dependency.targetId,
-		recurrenceDate: dependency.targetRecurrenceDate ?? undefined,
-		recurrenceTime: dependency.targetRecurrenceTime ?? undefined
+		recurrenceId: dependency.targetRecurrenceId ?? undefined
 	}
 }
 

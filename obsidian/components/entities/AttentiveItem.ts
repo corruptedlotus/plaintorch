@@ -70,11 +70,7 @@ export class AttentiveItem extends OccurrenceItem {
 		const resolution = this.done ? AttentiveResolution.Pending : AttentiveResolution.Done
 		// An attentive is always unbound (PEP111), addressed by its RECURRENCE-ID so a still-projected agenda item
 		// hardens on interaction instead of failing on an absent row id.
-		const occurrence = {
-			decreeId: attentive.decreeId,
-			recurrenceDate: attentive.recurrenceDate,
-			recurrenceTime: attentive.recurrenceTime
-		}
+		const occurrence = { decreeId: attentive.decreeId, recurrenceId: attentive.recurrenceId }
 		const updated = await core.declaratives.updateAttentive(occurrence, { resolution })
 		if (!updated) {
 			new Notice('Failed to update attentive.')

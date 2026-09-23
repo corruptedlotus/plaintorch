@@ -86,7 +86,7 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		await HardenNowAsync();
 
 		var count = await Vault.QueryAsync(context => context.Attentives
-			.CountAsync(item => item.DecreeId == decree.Id && item.RecurrenceDate == today, Ct));
+			.CountAsync(item => item.DecreeId == decree.Id && item.RecurrenceId == today.ToDateTime(TimeOnly.MinValue), Ct));
 		Assert.Equal(1, count);
 	}
 
@@ -139,8 +139,8 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		await HardenNowAsync();
 
 		var eventive = await Vault.QueryAsync(context => context.Eventives
-			.SingleAsync(item => item.FateId == fate.Id && item.RecurrenceDate == pastDay, Ct));
-		Assert.Equal(pastDay, eventive.RecurrenceDate);
+			.SingleAsync(item => item.FateId == fate.Id, Ct));
+		Assert.Equal(pastDay.ToDateTime(new TimeOnly(9, 0)), eventive.RecurrenceId);
 	}
 
 	[Fact]
@@ -156,7 +156,7 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		await HardenNowAsync();
 
 		var eventive = await Vault.QueryAsync(context => context.Eventives
-			.SingleAsync(item => item.ObjectiveId == objective.Id && item.RecurrenceDate == pastDue, Ct));
+			.SingleAsync(item => item.ObjectiveId == objective.Id && item.RecurrenceId == pastDue.ToDateTime(TimeOnly.MinValue), Ct));
 		Assert.Equal(pastDue, eventive.Epoch.Date);
 	}
 
@@ -181,8 +181,8 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		Assert.Equal(1, createdLate);
 
 		var attentive = await Vault.QueryAsync(context => context.Attentives
-			.SingleAsync(item => item.DecreeId == decree.Id && item.RecurrenceDate == today, Ct));
-		Assert.Equal(new TimeOnly(9, 0), attentive.RecurrenceTime);
+			.SingleAsync(item => item.DecreeId == decree.Id, Ct));
+		Assert.Equal(today.ToDateTime(new TimeOnly(9, 0)), attentive.RecurrenceId);
 	}
 
 	[Fact]
@@ -199,7 +199,7 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		Assert.Equal(0, persisted);
 
 		var agenda = await AgendaAsync();
-		Assert.Contains(agenda.Attentives, item => item.DecreeId == decree.Id && item.RecurrenceTime == new TimeOnly(21, 0));
+		Assert.Contains(agenda.Attentives, item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId) == new TimeOnly(21, 0));
 	}
 
 	[Fact]

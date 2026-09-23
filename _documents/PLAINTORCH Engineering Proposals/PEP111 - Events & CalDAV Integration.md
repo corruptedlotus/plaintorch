@@ -23,13 +23,16 @@ emits — an `Epoch` (a moment plus how much of it is real) — so it maps 1:1 o
   `Calendar?` (resolution-only; null → kind default, Pleiadean once user prefs land — see PEP116), and a
   denormalized `NextOccurrence?`. Fate loses `Date`/`StartTime`/`EndTime`/`EventDuration` — everything is Orbit
   (one-shots use the `Z{…}` literal). *(Declarative base + Calendar landed in Phase 2a.)*
-- **`Occurrence`** (non-hierarchical base of Attentive/Eventive). Fields:
+- **`Occurrence`** (non-hierarchical base of Attentive/Eventive: an abstract CLR base outside the EF model, so
+  each kind keeps its own table). Fields:
   - **`Epoch`** owned type `{ Moment: DateTime (civil/wall), Granularity: OrbitUnit, Duration?: <nominal, Orbit
     duration notation>, TimeZone?: string }`. Duration null ⇒ one granularity unit (the window). `TimeZone` null
-    ⇒ wall/floating.
-  - **`RecurrenceId`** = the original `Epoch.Moment` (immutable identity; iCalendar RECURRENCE-ID). *(Collapse of
-    the old `RecurrenceDate`/`RecurrenceTime` pair; shared with dependency endpoint refs, so done with the
-    dependency sub-chunk.)*
+    ⇒ wall/floating. A super-day (week/month/year) occurrence stores its whole period as the `Duration`, in days
+    resolved on its declarative's calendar — the one-unit fallback adds a *nominal* (Gregorian) unit, which would
+    misplace a 60/61-day Pleiadean month's end.
+  - **`RecurrenceId`**: a single `DateTime` — the original `Epoch.Moment`, pinned at materialization (immutable
+    identity; iCalendar RECURRENCE-ID). An all-day slot sits at midnight. The old `RecurrenceDate`/`RecurrenceTime`
+    pair is gone, and dependency endpoints carry the same single moment per side.
   - Resolution/state, owner FK. **No** Estimation/Min/Max — allocation lives on the `Executive` (done with the
     Executive sub-chunk).
 - **`EventiveResolution`** gains **`OptOut`** → {Pending, Missed, Cancelled, OptOut}.
@@ -80,8 +83,8 @@ authoritative so a round-trip through an external client can't clobber a floatin
 
 ### Sub-chunk sequence & status
 
-The refactor is **complete**: the core (C#) side is green (405 tests) and the client (SDK + Obsidian plugin)
-sweep (2g) has landed — SDK typecheck + 106 vitest tests green, plugin esbuild production build green.
+The refactor is **complete**: the core (C#) side is green and the client (SDK + Obsidian plugin) sweep (2g) has
+landed. 2h brought the occurrence spine in line with the locked model, which 2b/2f had not fully honoured.
 
 1. Orbit engine — `Z`/`z` literal, span granularity, floating support. **Done (Phase 1, `5ffdf5b`).**
 2a. `Declarative` base + calendar-as-data. **Done (`a1d91d4`).**
@@ -125,9 +128,8 @@ sweep (2g) has landed — SDK typecheck + 106 vitest tests green, plugin esbuild
    - **Due**: owned `{ moment, timeZone? }`. `ObjectiveUpdate.due` and `CheckpointUpdate.due` carry it; frontmatter is
      one compact field (`due: 2026-07-20`, `…T14:30`, or `…T14:30 America/New_York`). Checkpoint gained a due whose
      presence suppresses its Celestron toll until the due passes.
-   - **Dependency**: `EndpointRef`'s occurrence slot is a single `RecurrenceId { date, time? }` internally; the wire
-     transport (`DependencyEndpointRequest`) still carries flat `recurrenceDate`/`recurrenceTime` — the SDK may keep
-     the flat wire and collapse client-side, or mirror the flat shape.
+   - **Dependency**: *(superseded by 2h)* the occurrence slot is now one `recurrenceId` datetime end to end —
+     entity columns, `EndpointRef`, `DependencyEndpointRequest`, and the SDK.
    - **Preferences**: already merged — the PEP116 SDK module + settings surface are present and consistent; nothing to
      redo there.
    - **UI restructure (last):** `IncentiveItem`/`IncentiveItemExecutive` — executives now back both objectives and
@@ -135,3 +137,21 @@ sweep (2g) has landed — SDK typecheck + 106 vitest tests green, plugin esbuild
      accordingly.
    - **Verify:** plugin builds via `node esbuild.config.mjs production` (no `tsc` gate) + `tsc --noEmit --ignoreDeprecations 6.0`;
      SDK Vitest (`npm test`); browser smoke where controllers changed.
+
+2h. **Occurrence spine, as locked — Done.** 2b and 2f had drifted from the locked model: there was no
+   `Occurrence` base (each kind duplicated its members behind an `IOccurrenceInstance` interface), `RecurrenceId`
+   stayed flat `RecurrenceDate` + `RecurrenceTime` columns behind a computed struct, and `Attentive.PeriodEndDate`
+   duplicated what the epoch duration expresses. Now:
+   - **Core**: `Occurrence` is an abstract, non-hierarchical base (`Id`, `Epoch`, `RecurrenceId`, abstract
+     `RecurrenceOwnerUid`) that EF never maps — no table, no discriminator. `RecurrenceId` is one `DateTime` pinned
+     to the materializing occurrence's moment; `Dependency` carries `SourceRecurrenceId`/`TargetRecurrenceId`, and
+     `EndpointRef`, the occurrence refs, and `DependencyEndpointRequest` carry one `RecurrenceId` each. The
+     `*Materialization` slot-carrier DTOs are gone — the hardening service takes the recurrence-id directly.
+     `Epoch.For(occurrence)` builds an occurrence's epoch, folding a super-day period into `Duration` (whole days).
+   - **Migration** `OccurrenceRecurrenceId`: hand-written add → backfill → drop (the scaffold guessed renames that
+     would have dropped every time of day and moved dependency target slots into the source column). Backfilled
+     moments use EF's own text form, so equality lookups match. `Up` and `Down` are exercised against rows written in
+     the pre-migration shape by `OccurrenceRecurrenceIdMigrationTests`.
+   - **SDK**: `Occurrence` abstract base; `Eventive`/`Attentive` are `@model` classes, so the transport revives them
+     from the runtime `@type` the core stamps; `recurrenceId` replaces the date/time pair on occurrences, occurrence
+     refs, and dependency endpoints; `periodEndDate` is gone.

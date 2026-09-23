@@ -83,9 +83,6 @@ public sealed class DependencyModule : Module
 
 	private static EndpointRef ToRef(DependencyEndpointRequest request)
 	{
-		return new EndpointRef(
-			request.Kind,
-			request.Id,
-			request.RecurrenceDate is { } date ? new RecurrenceId(date, request.RecurrenceTime) : null);
+		return new EndpointRef(request.Kind, request.Id, request.RecurrenceId);
 	}
 }

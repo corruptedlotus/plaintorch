@@ -25,10 +25,8 @@ public enum OccurrenceOwnerKind
 /// </summary>
 /// <param name="OwnerKind">Whether the owner is a fate, decree, or objective.</param>
 /// <param name="OwnerId">The owning declarative's PUCK id.</param>
-/// <param name="RecurrenceDate">The occurrence slot's original start date.</param>
-/// <param name="RecurrenceTime">The occurrence slot's original time of day; <see langword="null"/> for an all-day slot.</param>
+/// <param name="RecurrenceId">The occurrence's original slot moment (<see cref="Pleiades.Orchestration.Occurrence.RecurrenceId"/>).</param>
 public readonly record struct OccurrenceRef(
 	OccurrenceOwnerKind OwnerKind,
 	string OwnerId,
-	DateOnly RecurrenceDate,
-	TimeOnly? RecurrenceTime);
+	DateTime RecurrenceId);

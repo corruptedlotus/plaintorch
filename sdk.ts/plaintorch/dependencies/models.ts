@@ -29,10 +29,8 @@ export enum DependencyEndpointKind {
 export interface EndpointRef {
 	kind: DependencyEndpointKind
 	id: string
-	/** Original occurrence slot date (RECURRENCE-ID), for an eventive endpoint. */
-	recurrenceDate?: string | undefined
-	/** Original occurrence slot time, for a timed eventive endpoint. */
-	recurrenceTime?: string | undefined
+	/** The occurrence's original slot moment (RECURRENCE-ID, a civil ISO datetime), for an eventive endpoint. */
+	recurrenceId?: string | undefined
 }
 
 /** A directed blocking edge: the source (prerequisite) blocks the target (dependant) (PEP101). */
@@ -41,12 +39,12 @@ export class Dependency {
 	id!: number
 	sourceKind!: DependencyEndpointKind
 	sourceId!: string
-	sourceRecurrenceDate: string | undefined
-	sourceRecurrenceTime: string | undefined
+	/** The source occurrence's slot (RECURRENCE-ID) for an eventive source; undefined otherwise. */
+	sourceRecurrenceId: string | undefined
 	targetKind!: DependencyEndpointKind
 	targetId!: string
-	targetRecurrenceDate: string | undefined
-	targetRecurrenceTime: string | undefined
+	/** The target occurrence's slot (RECURRENCE-ID) for an eventive target; undefined otherwise. */
+	targetRecurrenceId: string | undefined
 	/** Source-side trigger; undefined resolves to OnFinish (empty for checkpoint sources). */
 	trigger: DependencyTrigger | undefined
 	/** Target-side constraint; undefined resolves to ToBegin (empty for checkpoint targets). */
@@ -54,11 +52,11 @@ export class Dependency {
 	satisfied: boolean = false
 
 	get source(): EndpointRef {
-		return { kind: this.sourceKind, id: this.sourceId, recurrenceDate: this.sourceRecurrenceDate, recurrenceTime: this.sourceRecurrenceTime }
+		return { kind: this.sourceKind, id: this.sourceId, recurrenceId: this.sourceRecurrenceId }
 	}
 
 	get target(): EndpointRef {
-		return { kind: this.targetKind, id: this.targetId, recurrenceDate: this.targetRecurrenceDate, recurrenceTime: this.targetRecurrenceTime }
+		return { kind: this.targetKind, id: this.targetId, recurrenceId: this.targetRecurrenceId }
 	}
 }
 
@@ -106,8 +104,8 @@ export interface EndpointHit {
 export interface DependencyEndpointRequest {
 	kind: DependencyEndpointKind
 	id: string
-	recurrenceDate?: string | undefined
-	recurrenceTime?: string | undefined
+	/** The occurrence's original slot moment (RECURRENCE-ID), for an eventive endpoint. */
+	recurrenceId?: string | undefined
 }
 
 /** Payload to create a dependency edge (source blocks target) (PEP101). */

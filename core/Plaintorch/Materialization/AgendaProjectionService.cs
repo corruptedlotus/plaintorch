@@ -19,13 +19,17 @@ public sealed record AgendaProjection(IReadOnlyList<Eventive> Eventives, IReadOn
 /// that always tracks the current orbit/date. This service never writes.
 /// </summary>
 /// <remarks>
-/// Eventives dedup by <c>(owner, RecurrenceDate, RecurrenceTime)</c> — the stable iCalendar RECURRENCE-ID, so a
-/// moved eventive still overrides its original slot. Attentives dedup by <c>(DecreeId, Date, Time)</c>, their
-/// occurrence identity; a rescheduled orbit attentive therefore does not yet suppress its original projected
-/// slot (see the attentive-recurrence-id follow-up).
+/// Eventives and attentives alike dedup by <c>(owner UID, RecurrenceId)</c> — the stable iCalendar identity of an
+/// <see cref="Occurrence"/> — so a moved occurrence still overrides its original projected slot.
 /// </remarks>
 public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchOrbitService orbitService)
 {
+	/// <summary>
+	/// The longest period one orbit occurrence spans: a year-granularity window. A hardened attentive that starts
+	/// earlier than this before a window cannot reach into it.
+	/// </summary>
+	private const int LongestPeriodDays = 366;
+
 	/// <summary>
 	/// Projects the occurrences of every active schedule over <c>[startInclusive, endInclusive]</c>, unioned
 	/// with the hardened rows overlapping that window (hardened wins per recurrence-id).
@@ -45,12 +49,19 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 			.Include(item => item.Objective)
 			.Where(item => item.Epoch.Moment >= windowStart && item.Epoch.Moment < windowEndExclusive)
 			.ToListAsync(cancellationToken);
-		var attentives = await context.Attentives
+		// An attentive also overlaps the window when it starts before it and its duration (a super-day period or a
+		// span) reaches into it. Its end (Epoch.EndMoment) is derived rather than stored, so SQL admits every
+		// duration-bearing attentive starting within the longest period before the window and the overlap itself
+		// is decided in memory.
+		var lookbackStart = windowStart.AddDays(-LongestPeriodDays);
+		var attentives = (await context.Attentives
 			.AsNoTracking()
 			.Include(item => item.Decree)
-			.Where(item => (item.Epoch.Moment >= windowStart && item.Epoch.Moment < windowEndExclusive)
-				|| (item.PeriodEndDate != null && item.Epoch.Moment < windowEndExclusive && item.PeriodEndDate > startInclusive))
-			.ToListAsync(cancellationToken);
+			.Where(item => item.Epoch.Moment < windowEndExclusive
+				&& (item.Epoch.Moment >= windowStart || (item.Epoch.Duration != null && item.Epoch.Moment >= lookbackStart)))
+			.ToListAsync(cancellationToken))
+			.Where(item => item.Epoch.Moment >= windowStart || item.Epoch.EndMoment > windowStart)
+			.ToList();
 
 		var eventiveKeys = eventives.Select(OccurrenceKey).ToHashSet();
 		var attentiveKeys = attentives.Select(OccurrenceKey).ToHashSet();
@@ -72,13 +83,14 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 			var resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
 			foreach (var occurrence in await orbitService.PreviewOccurrencesAsync(fate, fate.Orbit!, startInclusive, endExclusive, cancellationToken))
 			{
-				AddEventive(eventives, eventiveKeys, ProjectFateEventive(
-					fate,
-					occurrence.Date,
-					occurrence.StartTime,
-					occurrence.Granularity,
-					occurrence.DurationMinutes,
-					resolution));
+				AddEventive(eventives, eventiveKeys, new Eventive
+				{
+					FateId = fate.Id,
+					Fate = fate,
+					Epoch = Epoch.For(occurrence),
+					RecurrenceId = occurrence.Moment,
+					Resolution = resolution,
+				});
 			}
 		}
 
@@ -100,7 +112,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 				ObjectiveId = objective.Id,
 				Objective = objective,
 				Epoch = Epoch.From(objective.Due!.Date, timeOfDay: null, OrbitUnit.Day),
-				RecurrenceDate = objective.Due!.Date,
+				RecurrenceId = objective.Due!.Date.ToDateTime(TimeOnly.MinValue),
 			};
 			AddEventive(eventives, eventiveKeys, eventive);
 		}
@@ -126,10 +138,8 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 				{
 					DecreeId = decree.Id,
 					Decree = decree,
-					Epoch = Epoch.From(occurrence.Date, occurrence.StartTime, occurrence.Granularity),
-					RecurrenceDate = occurrence.Date,
-					RecurrenceTime = occurrence.StartTime,
-					PeriodEndDate = occurrence.PeriodEndExclusive > occurrence.Date.AddDays(1) ? occurrence.PeriodEndExclusive : null,
+					Epoch = Epoch.For(occurrence),
+					RecurrenceId = occurrence.Moment,
 				};
 				AddAttentive(attentives, attentiveKeys, attentive);
 			}
@@ -140,20 +150,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		return new AgendaProjection(eventives, attentives);
 	}
 
-	private static Eventive ProjectFateEventive(Fate fate, DateOnly date, TimeOnly? startTime, OrbitUnit granularity, int? spanMinutes, EventiveResolution resolution)
-	{
-		return new Eventive
-		{
-			FateId = fate.Id,
-			Fate = fate,
-			Epoch = Epoch.From(date, startTime, granularity, spanMinutes),
-			RecurrenceDate = date,
-			RecurrenceTime = startTime,
-			Resolution = resolution,
-		};
-	}
-
-	private static void AddEventive(List<Eventive> list, HashSet<(string, DateOnly, TimeOnly?)> keys, Eventive eventive)
+	private static void AddEventive(List<Eventive> list, HashSet<(string, DateTime)> keys, Eventive eventive)
 	{
 		if (keys.Add(OccurrenceKey(eventive)))
 		{
@@ -161,7 +158,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		}
 	}
 
-	private static void AddAttentive(List<Attentive> list, HashSet<(string, DateOnly, TimeOnly?)> keys, Attentive attentive)
+	private static void AddAttentive(List<Attentive> list, HashSet<(string, DateTime)> keys, Attentive attentive)
 	{
 		if (keys.Add(OccurrenceKey(attentive)))
 		{
@@ -171,8 +168,8 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 
 	// The CalDAV occurrence identity — owner UID + RECURRENCE-ID — shared by eventives and attentives, so a
 	// hardened row overrides its projected twin even after the occurrence's current start was rescheduled.
-	private static (string, DateOnly, TimeOnly?) OccurrenceKey(IOccurrenceInstance occurrence)
-		=> (occurrence.RecurrenceOwnerUid, occurrence.RecurrenceId.Date, occurrence.RecurrenceId.Time);
+	private static (string, DateTime) OccurrenceKey(Occurrence occurrence)
+		=> (occurrence.RecurrenceOwnerUid, occurrence.RecurrenceId);
 
 	private static int Compare(DateOnly leftDate, TimeOnly? leftTime, DateOnly rightDate, TimeOnly? rightTime)
 	{

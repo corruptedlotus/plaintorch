@@ -73,7 +73,7 @@ public sealed class GenerationModeTests : VaultTestBase
 		Assert.Equal(1, createdWhileOn);
 
 		var eventive = await Vault.QueryAsync(context => context.Eventives
-			.SingleAsync(item => item.FateId == fate.Id && item.RecurrenceDate == today, Ct));
+			.SingleAsync(item => item.FateId == fate.Id && item.RecurrenceId == today.ToDateTime(TimeOnly.MinValue), Ct));
 		Assert.Equal(EventiveResolution.OptOut, eventive.Resolution);
 	}
 

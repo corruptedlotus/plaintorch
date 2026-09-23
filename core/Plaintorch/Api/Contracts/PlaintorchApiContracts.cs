@@ -468,15 +468,6 @@ public sealed record DecreeUpdate(
 	bool? Reflect = null);
 
 /// <summary>
-/// Represents the caller-supplied occurrence details when interacting with a fate or an objective due date
-/// to materialize an eventive (PEP100).
-/// </summary>
-public sealed record EventiveMaterialization(
-	DateOnly? Date = null,
-	TimeOnly? StartTime = null,
-	TimeOnly? EndTime = null);
-
-/// <summary>
 /// Represents a mutable update to an eventive occurrence. Eventives are never Polaris-bound, so their time
 /// specification can always be moved.
 /// </summary>
@@ -485,14 +476,6 @@ public sealed record EventiveUpdate(
 	Optional<TimeOnly?> StartTime = default,
 	Optional<TimeOnly?> EndTime = default,
 	EventiveResolution? Resolution = null);
-
-/// <summary>
-/// Represents the caller-supplied occurrence details when interacting with a decree to materialize an
-/// unbound attentive (PEP111). Occurrences carry no time allocation — allocation lives on the executive.
-/// </summary>
-public sealed record AttentiveMaterialization(
-	DateOnly? Date = null,
-	TimeOnly? Time = null);
 
 /// <summary>
 /// Represents a mutable update to an attentive occurrence. An attentive is always unbound (PEP111), so
@@ -509,22 +492,23 @@ public sealed record AttentiveUpdate(
 /// (Strategy 1): the recurrence-id resolves a projected occurrence and its hardened twin identically, so an
 /// interaction hardens the occurrence and applies to it without ever needing a database row id.
 /// </summary>
+/// <param name="OwnerId">The owning fate or objective id (the iCalendar <c>UID</c>).</param>
+/// <param name="RecurrenceId">The occurrence's original slot moment (<see cref="Occurrence.RecurrenceId"/>).</param>
 public sealed record EventiveOccurrenceRef(
 	string OwnerId,
-	DateOnly RecurrenceDate,
-	TimeOnly? RecurrenceTime = null);
+	DateTime RecurrenceId);
 
 /// <summary>
-/// Addresses a single attentive occurrence by its decree + RECURRENCE-ID (<paramref name="DecreeId"/> +
-/// <paramref name="RecurrenceDate"/> + <paramref name="RecurrenceTime"/>): the recurrence-id resolves a projected
+/// Addresses a single attentive occurrence by its decree + RECURRENCE-ID: the recurrence-id resolves a projected
 /// occurrence and its hardened twin identically, so an interaction hardens it without needing a row id. Attentives
 /// are always unbound occurrences (PEP111); a decree placed into a cycle is an <see cref="Executive"/>, addressed
 /// by its own row id.
 /// </summary>
+/// <param name="DecreeId">The owning decree id (the iCalendar <c>UID</c>).</param>
+/// <param name="RecurrenceId">The occurrence's original slot moment (<see cref="Occurrence.RecurrenceId"/>).</param>
 public sealed record AttentiveOccurrenceRef(
 	string? DecreeId = null,
-	DateOnly? RecurrenceDate = null,
-	TimeOnly? RecurrenceTime = null);
+	DateTime? RecurrenceId = null);
 
 /// <summary>
 /// The request body for updating an eventive occurrence over the wire: the occurrence to address plus the

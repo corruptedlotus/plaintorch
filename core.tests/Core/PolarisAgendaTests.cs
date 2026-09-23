@@ -122,8 +122,8 @@ public sealed class PolarisAgendaTests : VaultTestBase
 				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today.AddDays(2), null, OrbitUnit.Day), Resolution = AttentiveResolution.Pending });
 
 			context.Eventives.AddRange(
-				new Eventive { FateId = "agenda-test-fate", Epoch = Epoch.From(today.AddDays(3), null, OrbitUnit.Day), RecurrenceDate = today.AddDays(3), Resolution = EventiveResolution.Pending },
-				new Eventive { FateId = "agenda-test-fate", Epoch = Epoch.From(today.AddDays(10), null, OrbitUnit.Day), RecurrenceDate = today.AddDays(10), Resolution = EventiveResolution.Pending });
+				new Eventive { FateId = "agenda-test-fate", Epoch = Epoch.From(today.AddDays(3), null, OrbitUnit.Day), RecurrenceId = today.AddDays(3).ToDateTime(TimeOnly.MinValue), Resolution = EventiveResolution.Pending },
+				new Eventive { FateId = "agenda-test-fate", Epoch = Epoch.From(today.AddDays(10), null, OrbitUnit.Day), RecurrenceId = today.AddDays(10).ToDateTime(TimeOnly.MinValue), Resolution = EventiveResolution.Pending });
 
 			await context.SaveChangesAsync(ct);
 		});

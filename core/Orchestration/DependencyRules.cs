@@ -104,11 +104,11 @@ public static class DependencyRules
 		if (endpoint.Kind == DependencyEndpointKind.Eventive)
 		{
 			// An eventive endpoint may carry an occurrence slot, or omit it for a one-off (non-orbit) owner — owner
-			// resolution is the service's job. The collapsed RecurrenceId makes a time-without-date shape impossible.
+			// resolution is the service's job.
 			return;
 		}
 
-		if (endpoint.Recurrence is not null)
+		if (endpoint.RecurrenceId is not null)
 		{
 			throw new InvalidOperationException($"The {side} {endpoint.Kind} endpoint must not carry an occurrence slot; only eventive endpoints do.");
 		}

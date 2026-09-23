@@ -125,45 +125,54 @@ export class Decree {
 }
 
 /**
+ * The non-hierarchical base of a declarative's materialized occurrences (PEP111): an {@link Eventive} of a fate
+ * or of an objective's due, or an {@link Attentive} of a decree. It carries what every occurrence shares — its
+ * row identity, its position in time, and its iCalendar identity ({@link recurrenceOwnerUid} +
+ * {@link recurrenceId}).
+ *
+ * Abstract and never registered with `@model`: the core stamps the concrete kind as the runtime type, so a
+ * response revives into {@link Eventive} or {@link Attentive}, never into this base.
+ */
+export abstract class Occurrence {
+	/** The database identity; `0` for an occurrence still projected from its schedule (not yet hardened). */
+	id: number = 0
+	/** The occurrence's position in time — the (mutable) moment plus granularity, nominal duration, and zone. */
+	epoch!: Epoch
+	/**
+	 * The iCalendar RECURRENCE-ID: the occurrence's original {@link Epoch.moment}, pinned when it materializes and
+	 * never moved by a reschedule — a civil ISO datetime (`'2026-07-20T14:30:00'`; midnight for an all-day slot).
+	 */
+	recurrenceId: string = ''
+	/**
+	 * Server-computed: the owning declarative's UID — the fate or objective id for an eventive, the decree id for
+	 * an attentive. With {@link recurrenceId} it addresses the occurrence. Read-only.
+	 */
+	recurrenceOwnerUid: string = ''
+}
+
+/**
  * Per-occurrence instance of a fate or of an objective's due date. Never Polaris-bound. Its position in time is
  * the owned {@link Epoch} (PEP111); it carries no time allocation — allocation lives on the executive.
  */
-export interface Eventive {
-	id: number
+@model('Eventive')
+export class Eventive extends Occurrence {
 	fateId: string | undefined
 	fate?: Fate | undefined
 	objectiveId: string | undefined
 	objective?: Objective | undefined
-	/** The occurrence's position in time — the (mutable) moment plus granularity, nominal duration, and zone. */
-	epoch: Epoch
-	/** Original occurrence slot date — the stable RECURRENCE-ID; unlike `epoch` it survives a reschedule. */
-	recurrenceDate: string
-	/** Original occurrence slot time; undefined for an all-day slot. With `recurrenceDate` forms the RECURRENCE-ID. */
-	recurrenceTime: string | undefined
-	resolution: EventiveResolution
+	resolution: EventiveResolution = EventiveResolution.Pending
 }
 
 /**
  * Per-occurrence instance of a decree — always an unbound occurrence (PEP111). Adding a decree into a Polaris
  * cycle creates an {@link Executive} instead, so an attentive carries no cycle binding and no time allocation.
- * Its position in time is the owned {@link Epoch}.
+ * A week/month/year-born attentive occupies its whole period through its {@link Epoch.duration}.
  */
-export interface Attentive {
-	id: number
-	decreeId: string
+@model('Attentive')
+export class Attentive extends Occurrence {
+	decreeId: string = ''
 	decree?: Decree | undefined
-	/** The occurrence's position in time — the (mutable) moment plus granularity, nominal duration, and zone. */
-	epoch: Epoch
-	/** Original occurrence slot date — the stable RECURRENCE-ID; unlike `epoch` it survives a reschedule. */
-	recurrenceDate: string
-	/** Original occurrence slot time; undefined for an all-day slot. With `recurrenceDate` forms the RECURRENCE-ID. */
-	recurrenceTime: string | undefined
-	/**
-	 * Exclusive period end date for super-day orbit granularities (week/month/year). A week-born attentive
-	 * occupies its whole week. Null means single-day.
-	 */
-	periodEndDate: string | undefined
-	resolution: AttentiveResolution
+	resolution: AttentiveResolution = AttentiveResolution.Pending
 	/** UTC timestamp of the most recent transition to Done; cleared when the attentive is unresolved. */
 	resolvedOn: string | undefined
 	/** Preferred timeframe for this attentive (affinity), seeded from the decree's college; purely semantic. */
@@ -246,19 +255,21 @@ export interface AttentiveUpdate {
  * (Strategy 1). Interacting with the occurrence hardens it, so a projected occurrence needs no row id.
  */
 export interface EventiveOccurrenceRef {
+	/** The owning fate or objective id (the iCalendar UID). */
 	ownerId: string
-	recurrenceDate: string
-	recurrenceTime?: string | null | undefined
+	/** The occurrence's {@link Occurrence.recurrenceId} — its original slot moment. */
+	recurrenceId: string
 }
 
 /**
- * Addresses a single attentive occurrence by its decree + RECURRENCE-ID (`decreeId` + `recurrenceDate` +
- * `recurrenceTime`): the recurrence-id resolves a projected occurrence and its hardened twin identically, so
- * interacting with it hardens the projection without needing a row id. Attentives are always unbound (PEP111);
- * a decree placed into a cycle is an {@link Executive}, addressed by its own row id.
+ * Addresses a single attentive occurrence by its decree + RECURRENCE-ID: the recurrence-id resolves a projected
+ * occurrence and its hardened twin identically, so interacting with it hardens the projection without needing a
+ * row id. Attentives are always unbound (PEP111); a decree placed into a cycle is an {@link Executive},
+ * addressed by its own row id.
  */
 export interface AttentiveOccurrenceRef {
+	/** The owning decree id (the iCalendar UID). */
 	decreeId?: string | undefined
-	recurrenceDate?: string | undefined
-	recurrenceTime?: string | null | undefined
+	/** The occurrence's {@link Occurrence.recurrenceId} — its original slot moment. */
+	recurrenceId?: string | undefined
 }

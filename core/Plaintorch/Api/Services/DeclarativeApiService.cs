@@ -373,10 +373,7 @@ public sealed class DeclarativeApiService(
 		// build the projected row) without a save of its own; the single SaveChanges below persists the
 		// materialization together with this interaction, and the state-policy pass runs over it centrally. The
 		// recurrence-id resolves a projected occurrence and its hardened twin identically, so no row id is needed.
-		var eventive = await hardeningService.EnsureEventiveIntoContextAsync(
-			occurrence.OwnerId,
-			new EventiveMaterialization(Date: occurrence.RecurrenceDate, StartTime: occurrence.RecurrenceTime),
-			cancellationToken);
+		var eventive = await hardeningService.EnsureEventiveIntoContextAsync(occurrence.OwnerId, occurrence.RecurrenceId, cancellationToken);
 
 		// Eventives are never Polaris-bound, so moving their time specification is always allowed. Moving is a
 		// change to the occurrence's Epoch: date shifts the moment's day, a start time shifts its time of day
@@ -422,15 +419,12 @@ public sealed class DeclarativeApiService(
 		// An attentive is always an unbound occurrence, addressed by its decree + recurrence-id. Resolve it into the
 		// current unit of work without a save of its own; the single SaveChanges below persists the materialization
 		// together with this interaction, and the state-policy pass runs over it centrally.
-		if (string.IsNullOrWhiteSpace(occurrence.DecreeId) || occurrence.RecurrenceDate is not DateOnly recurrenceDate)
+		if (string.IsNullOrWhiteSpace(occurrence.DecreeId) || occurrence.RecurrenceId is not DateTime recurrenceId)
 		{
-			throw new ArgumentException("An attentive occurrence must be addressed by decree and recurrence date.", nameof(occurrence));
+			throw new ArgumentException("An attentive occurrence must be addressed by decree and recurrence-id.", nameof(occurrence));
 		}
 
-		var attentive = await hardeningService.EnsureDecreeAttentiveIntoContextAsync(
-			occurrence.DecreeId,
-			new AttentiveMaterialization(Date: recurrenceDate, Time: occurrence.RecurrenceTime),
-			cancellationToken);
+		var attentive = await hardeningService.EnsureDecreeAttentiveIntoContextAsync(occurrence.DecreeId, recurrenceId, cancellationToken);
 
 		if (update.Date is not null)
 		{

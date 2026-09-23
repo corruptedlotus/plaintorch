@@ -304,12 +304,10 @@ public class PlainfraContext : DbContext
 			{
 				x.SourceKind,
 				x.SourceId,
-				x.SourceRecurrenceDate,
-				x.SourceRecurrenceTime,
+				x.SourceRecurrenceId,
 				x.TargetKind,
 				x.TargetId,
-				x.TargetRecurrenceDate,
-				x.TargetRecurrenceTime,
+				x.TargetRecurrenceId,
 				x.Trigger,
 				x.Constraint,
 			})

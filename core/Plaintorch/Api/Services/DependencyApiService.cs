@@ -37,12 +37,10 @@ public sealed class DependencyApiService(
 		{
 			SourceKind = source.Kind,
 			SourceId = source.Id,
-			SourceRecurrenceDate = source.Recurrence?.Date,
-			SourceRecurrenceTime = source.Recurrence?.Time,
+			SourceRecurrenceId = source.RecurrenceId,
 			TargetKind = target.Kind,
 			TargetId = target.Id,
-			TargetRecurrenceDate = target.Recurrence?.Date,
-			TargetRecurrenceTime = target.Recurrence?.Time,
+			TargetRecurrenceId = target.RecurrenceId,
 			Trigger = trigger,
 			Constraint = constraint,
 		};
@@ -382,17 +380,17 @@ public sealed class DependencyApiService(
 WITH RECURSIVE
 edges(src, dst, sside, dside) AS (
     SELECT
-        SourceKind || '|' || SourceId || '|' || COALESCE(SourceRecurrenceDate, '') || '|' || COALESCE(SourceRecurrenceTime, ''),
-        TargetKind || '|' || TargetId || '|' || COALESCE(TargetRecurrenceDate, '') || '|' || COALESCE(TargetRecurrenceTime, ''),
+        SourceKind || '|' || SourceId || '|' || COALESCE(SourceRecurrenceId, ''),
+        TargetKind || '|' || TargetId || '|' || COALESCE(TargetRecurrenceId, ''),
         CASE WHEN SourceKind = 'Checkpoint' THEN NULL WHEN ""Trigger"" = 'OnBegin' THEN 0 ELSE 1 END,
         CASE WHEN TargetKind = 'Checkpoint' THEN NULL WHEN ""Constraint"" = 'ToFinish' THEN 1 ELSE 0 END
     FROM Dependencies
 ),
 origin(node, side) AS (
-    SELECT $sourceKind || '|' || $sourceId || '|' || COALESCE($sourceDate, '') || '|' || COALESCE($sourceTime, ''), $sourceSide
+    SELECT $sourceKind || '|' || $sourceId || '|' || COALESCE($sourceSlot, ''), $sourceSide
 ),
 seed(node, side) AS (
-    SELECT $targetKind || '|' || $targetId || '|' || COALESCE($targetDate, '') || '|' || COALESCE($targetTime, ''), $targetSide
+    SELECT $targetKind || '|' || $targetId || '|' || COALESCE($targetSlot, ''), $targetSide
 ),
 path(node, side) AS (
     SELECT node, side FROM seed
@@ -411,14 +409,14 @@ SELECT NOT EXISTS (
 		await using var command = connection.CreateCommand();
 		command.CommandText = sql;
 		command.Transaction = context.Database.CurrentTransaction?.GetDbTransaction();
+		// A slot binds as a DateTime, which the SQLite provider renders in the same text form EF stores the
+		// RecurrenceId columns in, so the concatenated node keys compare equal.
 		AddParameter(command, "$sourceKind", source.Kind.ToString());
 		AddParameter(command, "$sourceId", source.Id);
-		AddParameter(command, "$sourceDate", (object?)source.Recurrence?.Date ?? DBNull.Value);
-		AddParameter(command, "$sourceTime", (object?)source.Recurrence?.Time ?? DBNull.Value);
+		AddParameter(command, "$sourceSlot", (object?)source.RecurrenceId ?? DBNull.Value);
 		AddParameter(command, "$targetKind", target.Kind.ToString());
 		AddParameter(command, "$targetId", target.Id);
-		AddParameter(command, "$targetDate", (object?)target.Recurrence?.Date ?? DBNull.Value);
-		AddParameter(command, "$targetTime", (object?)target.Recurrence?.Time ?? DBNull.Value);
+		AddParameter(command, "$targetSlot", (object?)target.RecurrenceId ?? DBNull.Value);
 		AddParameter(command, "$sourceSide", SideOf(source.Kind, trigger));
 		AddParameter(command, "$targetSide", SideOf(target.Kind, constraint));
 
@@ -477,7 +475,7 @@ SELECT NOT EXISTS (
 				await EnsureExistsAsync(side, "checkpoint", await context.Checkpoints.AnyAsync(item => item.Id == endpoint.Id, cancellationToken), endpoint.Id);
 				break;
 			case DependencyEndpointKind.Eventive:
-				if (endpoint.Recurrence is null)
+				if (endpoint.RecurrenceId is null)
 				{
 					throw new InvalidOperationException($"The {side} eventive endpoint requires an occurrence date (RECURRENCE-ID).");
 				}
@@ -507,8 +505,8 @@ SELECT NOT EXISTS (
 
 	private static string Describe(EndpointRef endpoint)
 	{
-		return endpoint.Recurrence is { Date: var date }
-			? $"{endpoint.Kind}:{endpoint.Id}@{date:yyyy-MM-dd}"
+		return endpoint.RecurrenceId is { } slot
+			? $"{endpoint.Kind}:{endpoint.Id}@{slot:yyyy-MM-dd}"
 			: $"{endpoint.Kind}:{endpoint.Id}";
 	}
 }

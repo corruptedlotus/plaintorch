@@ -208,7 +208,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 
 		// Interacting with a still-projected occurrence by its recurrence-id resolves it into the same save and
 		// hardens it — there is no standalone materialize verb, so an empty update simply brings the row into being.
-		var occurrenceRef = new EventiveOccurrenceRef(fate.Id, new DateOnly(2026, 8, 1), new TimeOnly(19, 0));
+		var occurrenceRef = new EventiveOccurrenceRef(fate.Id, new DateTime(2026, 8, 1, 19, 0, 0));
 		var eventive = await WithApi(api => api.UpdateEventiveAsync(occurrenceRef, new EventiveUpdate(), cancellationToken));
 		Assert.Equal(new DateOnly(2026, 8, 1), eventive.Epoch.Date);
 		Assert.Equal(EventiveResolution.Pending, eventive.Resolution);
@@ -218,7 +218,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 		Assert.Equal(eventive.Id, again.Id);
 
 		var decree = await WithApi(api => api.CreateDecreeAsync(new DecreePlan("Journaling", DefaultLength: 15), cancellationToken));
-		var attentiveRef = new AttentiveOccurrenceRef(decree.Id, new DateOnly(2026, 8, 1));
+		var attentiveRef = new AttentiveOccurrenceRef(decree.Id, new DateTime(2026, 8, 1));
 		var attentive = await WithApi(api => api.UpdateAttentiveAsync(attentiveRef, new AttentiveUpdate(), cancellationToken));
 		Assert.Equal(decree.Id, attentive.DecreeId);
 
@@ -240,7 +240,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 
 		// An attentive is always an unbound occurrence: rescheduling moves its moment. Addressed by recurrence-id
 		// (stable across the reschedule); the empty update resolves the projected occurrence into a hardened row.
-		var unboundRef = new AttentiveOccurrenceRef(decree.Id, new DateOnly(2026, 8, 1));
+		var unboundRef = new AttentiveOccurrenceRef(decree.Id, new DateTime(2026, 8, 1));
 		await WithApi(api => api.UpdateAttentiveAsync(unboundRef, new AttentiveUpdate(), cancellationToken));
 		var delayed = await WithApi(api => api.UpdateAttentiveAsync(unboundRef, new AttentiveUpdate(Date: new DateOnly(2026, 8, 3)), cancellationToken));
 		Assert.Equal(new DateOnly(2026, 8, 3), delayed.Epoch.Date);
@@ -274,8 +274,8 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 
 		// Each interaction resolves its projected occurrence and hardens it in the same save; the two occurrences
 		// are distinct recurrence-ids, so they reward independently.
-		var firstRef = new AttentiveOccurrenceRef(decree.Id, new DateOnly(2026, 8, 1));
-		var secondRef = new AttentiveOccurrenceRef(decree.Id, new DateOnly(2026, 8, 2));
+		var firstRef = new AttentiveOccurrenceRef(decree.Id, new DateTime(2026, 8, 1));
+		var secondRef = new AttentiveOccurrenceRef(decree.Id, new DateTime(2026, 8, 2));
 		var beforeResolution = DateTimeOffset.UtcNow;
 		var resolvedFirst = await WithApi(api => api.UpdateAttentiveAsync(firstRef, new AttentiveUpdate(Resolution: AttentiveResolution.Done), cancellationToken));
 		var resolvedSecond = await WithApi(api => api.UpdateAttentiveAsync(secondRef, new AttentiveUpdate(Resolution: AttentiveResolution.Done), cancellationToken));
@@ -355,7 +355,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 			.GetRequiredService<IObjectiveApi>()
 			.UpdateAsync(objective.Id, new ObjectiveUpdate(Due: Due.On(today)), cancellationToken));
 		var decree = await WithApi(api => api.CreateDecreeAsync(new DecreePlan("Sweep"), cancellationToken));
-		await WithApi(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, today), new AttentiveUpdate(), cancellationToken));
+		await WithApi(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, today.ToDateTime(TimeOnly.MinValue)), new AttentiveUpdate(), cancellationToken));
 
 		// Anchor cycle begin at the local start of `today` so the forward 24h proximity window always covers the
 		// 23:00 fate. Left to default (DateTimeOffset.UtcNow), the window is [now, now+24h] and the 23:00 fate
