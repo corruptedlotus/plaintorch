@@ -180,6 +180,122 @@ repeated (parallel) runs — **402 passed / 0 skipped, stable**.
   the read facade was assessed and deliberately not built (already consolidated). Suite 417 passed / 0 skipped, stable.
   **Refactor BETA is complete.**
 
-## Sunnyside Mk1
+## Sunnyside Mk1 — the Sunnyside Interface for Pleiades Affairs (SIPA)
 
-_TBD — tracked separately in this PEP; not part of the Refactor BETA work above._
+SIPA is PLAINTORCH's own standalone (Electron) client — the non-Obsidian face of the vault, living in `standalone/`.
+Refactor BETA made the **core** vault-authoritative (the watcher is the sole vault-IO and the daemon owns the files);
+SIPA makes the **client** stand on its own so the whole planning UI runs without Obsidian. The ambition is to invert
+the current arrangement: the reusable UI becomes **SIPA-first** (platform-neutral), and Obsidian is demoted to *one
+adapter* among two.
+
+### Why now / what already exists
+- The daemon, the vault, and the watcher exist independently of Obsidian; the files are the vault, and edits from any
+  source are reconciled by the watcher (Refactor BETA). So "no Obsidian" does not mean "no vault".
+- `standalone/` is already a working Electron scaffold: main process + tray + `core-process` (spawns the daemon) +
+  `CoreTransport` (HTTP over the profile's named pipe / unix socket) + a preload **bridge** + a renderer that already
+  constructs `new PlaintorchCoreClient({ transports: [new BridgeTransport()] })`. **Transport is solved.** The renderer
+  today shows only a splash/status view — the payoff is mounting the real client UI into it.
+- The reusable UI (`obsidian/components/`) is framework-agnostic **lit web components** (briefing dashboard, entity /
+  occurrence items, cards, editables, dependency canvas). They render into plain DOM; only a handful of seams tie them
+  to Obsidian.
+
+### The coupling (two axes, not one)
+1. **The Obsidian host API.** 54 files import `obsidian` (48 in `components/`, 6 in `src/`). Concentrated seams:
+   - **App handle** — `getApp() = (window as any).app` (`components/editing/index.ts`) + ~10 direct `window.app` reads;
+     every modal-open and navigation needs it.
+   - **Dialogs** — 21 classes extend `Modal` (8: Executive, Occurrence, EntityEdit, EntityDetail, OnrushDetail,
+     LunarDirective, Preference, PromptText) or `SuggestModal` (7 fuzzy pickers: SelectCollege, SelectTimeframe,
+     SelectEndpoint, SelectObjective, SelectMedia, AddObjective, AddToOnrush, ChangeState).
+   - **Toasts** — `Notice`, **89 call sites**.
+   - **Icons** — `PleiadesIcon` → `getIcon()` (Obsidian's bundled lucide registry; backs *every* `p7t-icon`, so
+     pervasive); `iconCatalog.ts` → `getIconIds()`; `main.ts` → `addIcon()` (the custom glyph).
+   - **Navigation / vault** — `navigateToEntity` → `workspace.openLinkText`, `openNoteWhenReady`, `getActiveFile`,
+     `TFile`, `normalizePath`.
+2. **The hardcoded node core client.** Components consume `core = plaintorchNodeCoreClient` (a `node:http` client) —
+   via the `components/index.ts` barrel and three direct importers (`FullBanner`, `NoteBanner`, `EntityRef`). The SIPA
+   renderer is **sandboxed** (no Node; it talks through the preload bridge), so it cannot use the node client. `core`
+   must become an *injected* dependency.
+
+Excluded from SIPA scope (stay Obsidian-only): the **on-note banner** (`PageBannerRenderer`/`CustomBanner`, editor
+extension + markdown post-processor) and the **note command palette** ("Initialize directive/objective from current
+file"). These are intrinsically editor-bound.
+
+### Target architecture
+- **`@pleiades/client` — a new shared package** (extracted from `obsidian/components/` + `obsidian/orbits/` + the new
+  host), a sibling of `@pleiades/sdk`, bundled from source by both consumers. It holds the platform-neutral lit UI, the
+  `PlatformHost` interface, and the injected-`core` provider. It depends on `@pleiades/sdk`, `@a11d/lit`, `@3mo/*`,
+  lucide — **never on `obsidian`** (once the inversion completes).
+- **Obsidian = one adapter** (`obsidian/`): the plugin shell (`src/main.ts`, the `ItemView`/`TextFileView` hosts, the
+  on-note banner, the command palette) + an **`ObsidianHost`** implementing `PlatformHost` (App/Notice/Modal/getIcon/
+  openLinkText) + injecting the node `core` client.
+- **SIPA = the other adapter** (`standalone/`): the renderer mounts `@pleiades/client`, provides a **`SipaHost`**
+  (toast/dialog/icons via the chosen libraries; navigation is interim no-op) + injects the bridge `core` client.
+
+Two inversions carry it:
+- **`PlatformHost`** — the SIPA-first seam the UI depends on instead of `obsidian`. Sketch: `toast(message, kind?)`;
+  a **modal service** that hosts our `P7tModal` / `P7tSuggest` bases (so swapping the underlying dialog engine never
+  touches the 21 dialog classes); `navigate(target)`; an **icon provider** (`getIcon`/`getIconIds`); `activeFile()`
+  (Obsidian editor context; SIPA returns none for now). Vault reads/writes go through the `core` client (watcher-
+  synced), not the host.
+- **`core` provider** — the UI reads an injected client set at bootstrap (e.g. a module-level `setCore()` mirroring how
+  `window.app` is set today), replacing the direct `@pleiades/sdk/plaintorch/node` import. Obsidian bootstrap injects
+  the node client; SIPA injects the bridge client.
+
+### Decisions pinned (this planning run)
+- **Shared-code home — extract `@pleiades/client` up front.** The relocation of `components/` (+ `orbits/`) into the
+  package lands *first* (mechanical move, plugin stays green, still transitively importing `obsidian` until the
+  inversion), so all subsequent inversion work happens in the code's final SIPA-first home. (Note the sequencing
+  consequence: extraction alone does **not** unblock SIPA — the SIPA renderer can only consume the package once the
+  `obsidian` imports are gone, i.e. after the `PlatformHost` inversion.)
+- **Dialog host — OPEN, deliberately.** Start the modal service on **`@3mo/dialog`** for the 8 plain modals and
+  **`@3mo/notification`** for toasts (only `@3mo/popover` + `@3mo/tooltip` are deps today). But the modal service is an
+  abstraction: if 3MO's styling proves too restrictive we **retract to a bespoke dialog host** without touching the 21
+  dialog classes. **The 7 `SuggestModal` pickers stay undecided** pending the spike — likely in-house on the existing
+  `SelectBase` / `p7t-popover` / `fuzzy.ts` if 3MO can't stretch. Gated by an early spike (below).
+- **Interim navigation — no-op + "no editor yet" toast.** SIPA has the vault on disk but no in-app editor yet, so
+  `navigate(entity)` just toasts that the editor is coming. (A real in-app read/edit surface is a later effort.)
+- **Branch — `claude/sipa-first`, off the current consolidated tip.** Isolates this cross-cutting refactor.
+
+### Phased plan (Obsidian esbuild build green at every gate)
+- **P0 — Plan + branch.** This section; cut `claude/sipa-first` from the current tip. *(this run)*
+- **P1 — Extract `@pleiades/client`.** Move `components/` + `orbits/` into the package; add its build/tsconfig; rewire
+  `obsidian/` and `standalone/` esbuild aliases + tsconfig paths to consume it (as they already consume `@pleiades/sdk`
+  from source). The package may still `import { … } from "obsidian"` transitionally. No behavior change; plugin green.
+- **Spike (gate for P5/P6) — 3MO dialog viability.** Stand up a `@3mo/dialog` + `@3mo/notification` probe inside the
+  package (mind `@3mo/theme`'s global-import side-effects vs the plugin's styles). Decide: 3MO for modals? 3MO or
+  in-house for suggest? Records the choice before the modal phases commit.
+- **P2 — `PlatformHost` + `ObsidianHost`.** Define the interface; route `getApp`/`navigateToEntity`/`Notice`/`Modal`/
+  `getIcon` through it; implement the Obsidian adapter. Plugin green, no behavior change.
+- **P3 — `core` provider inversion.** UI consumes injected `core`; Obsidian bootstrap injects the node client. Fix the
+  barrel + the 3 direct importers.
+- **P4 — Toasts.** `host.toast(...)` over the host; Obsidian→`Notice`, SIPA→`@3mo/notification`. Refactor the 89 sites
+  (mechanical, batchable).
+- **P5 — Modals.** `P7tModal` base over the modal service; migrate the 8 plain modals. Obsidian→`Modal`, SIPA→(spike
+  result).
+- **P6 — SuggestModals.** `P7tSuggest` base; migrate the 7 pickers per the spike decision.
+- **P7 — Icons + navigation.** Icon provider (bundle lucide; Obsidian→`getIcon`); SIPA `navigate` = no-op + toast.
+  After this the package no longer imports `obsidian`.
+- **P8 — SIPA renderer mount (payoff).** In `standalone/`: `SipaHost` + inject the bridge `core` + mount the briefing
+  (± dependency canvas) into the renderer, replacing the status-only view; wire the change feed / eviction sweep.
+
+P1 is the structural prerequisite; the Spike gates P5/P6; P2–P3 are the foundation; P4–P7 are largely independent and
+reorderable; P8 is the realization. Obsidian keeps working throughout because every seam ships its `ObsidianHost` impl
+in the same phase.
+
+### Verification (per phase)
+Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors over baseline; SDK `npm test` (vitest);
+`standalone` `typecheck`/`build`; browser smoke where a controller changed ([[obsidian-plugin-verification]]). No core
+(C#) changes are expected — SIPA is client-only; the daemon/transport already exist.
+
+### Non-goals / deferred
+- **In-app editor** — SIPA edits notes via the OS/watcher later; for Mk1 navigation is a no-op + toast.
+- **On-note banner + note command palette** — remain Obsidian-only (editor-bound).
+- **Pure-browser target** — out of scope; SIPA is Electron, so the node/bridge transport already covers it (a browser
+  target would additionally need the daemon to expose HTTP/WS, which it does not today).
+
+### Open items to resolve during implementation
+- 3MO dialog/notification styling reach vs `@3mo/theme` global side-effects (the Spike answers this; may flip the modal
+  and/or suggest host to bespoke).
+- Final name/location of the shared package (`@pleiades/client` at `client.ts/`, mirroring `sdk.ts/`, is the working
+  assumption).
+- The exact `core`-injection mechanism (settable module singleton vs lit context) — settle in P3.
