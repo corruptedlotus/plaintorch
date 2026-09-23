@@ -1,5 +1,6 @@
 import { Component, component, css, html, HTMLTemplateResult, nothing, property } from "@a11d/lit"
 import type { Directive } from "@pleiades/sdk"
+import { ContextMenuController, type ContextMenuSpec } from ".."
 import { itemLayoutStyles } from "./itemStyles"
 
 /**
@@ -16,6 +17,16 @@ export class OccurrenceItem extends Component {
 	@property({ type: Boolean, reflect: true }) interactive = false
 
 	get disabled() { return false }
+
+	/**
+	 * Raises the occurrence's context menu on right-click. As a controller it needs no template handler; it
+	 * withholds the menu (passing the event through) whenever {@link contextMenuSpec} returns nothing. Subclasses
+	 * override the spec to offer their own actions.
+	 */
+	protected readonly contextMenu = new ContextMenuController(this, () => this.contextMenuSpec())
+
+	/** The context menu this occurrence raises; none by default. */
+	protected contextMenuSpec(): ContextMenuSpec | undefined { return undefined }
 
 	static override get styles() {
 		return css`

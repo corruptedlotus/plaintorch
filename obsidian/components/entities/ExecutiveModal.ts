@@ -1,7 +1,7 @@
 import { Component, component, css, html, nothing, property, state } from "@a11d/lit"
-import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, isObjectiveIncentive, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
+import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, isDecreeIncentive, isObjectiveIncentive, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
 import { App, Modal, Notice } from "obsidian"
-import { core, openEntityEditor, SelectObjectiveStatusModal, SelectTimeframeModal, tooltip } from ".."
+import { core, openEntityEditor, SelectObjectiveStatusModal, SelectTimeframeModal } from ".."
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 import type { EditablePart } from "../editing/EditableDataLink"
 import type { EditableTimeUnit } from "../editing/EditableTimeUnit"
@@ -106,6 +106,13 @@ export class ExecutiveEditor extends Component {
 				margin-block-end: .4em;
 			}
 
+			/* The way through to the incentive's own editor — a compact, left-aligned affordance, not a full-width button. */
+			.open-entity {
+				align-self: flex-start;
+				font-size: .85em;
+				margin-top: -.4em;
+			}
+
 			.columns {
 				display: grid;
 				grid-template-columns: 1fr 1fr;
@@ -189,12 +196,16 @@ export class ExecutiveEditor extends Component {
 		const incentive = executive.incentive
 		const objective = isObjectiveIncentive(incentive) ? incentive : undefined
 
+		const decree = isDecreeIncentive(incentive)
+
 		return html`
 			<div class='header'>
 				<div class='title'>${incentive?.title ?? 'Untitled Executive'}</div>
 			</div>
-			${!objective ? nothing : html`
-				<p7t-icon-item small icon='objective'>Open Objective</p7t-icon-item>
+			${!incentive ? nothing : html`
+				<p7t-button ghost class='open-entity' icon=${decree ? 'decree' : 'objective'} @click=${() => openEntityEditor(incentive)}>
+					${decree ? 'Open Decree' : 'Open Objective'}
+				</p7t-button>
 			`}
 
 			<div class='columns'>
@@ -365,10 +376,6 @@ export class ExecutiveEditor extends Component {
 		this.notifyChange()
 	}
 
-	private requestClose() {
-		this.dispatchEvent(new CustomEvent<void>('requestclose', { bubbles: true, composed: true }))
-	}
-
 	private notifyChange() {
 		this.dispatchEvent(new CustomEvent<Executive>('executivechange', {
 			detail: this.executive!,
@@ -394,7 +401,6 @@ export class ExecutiveModal extends Modal {
 		const editor = this.contentEl.createEl('p7t-executive-editor')
 		editor.executive = this.executive
 		editor.addEventListener('executivechange', e => this.onChange?.((e as CustomEvent<Executive>).detail))
-		editor.addEventListener('requestclose', () => this.close())
 	}
 
 	override onClose() {

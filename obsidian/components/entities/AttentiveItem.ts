@@ -2,7 +2,8 @@ import { component, html, property } from "@a11d/lit"
 import { Attentive, AttentiveResolution } from "@pleiades/sdk"
 import { Notice } from "obsidian"
 import { OccurrenceItem } from "./OccurrenceItem"
-import { core } from ".."
+import { occurrenceMenu, openOccurrenceModal, type OccurrenceTarget } from "./OccurrenceModal"
+import { core, getApp, type ContextMenuSpec } from ".."
 import "../system/DatetimeView"
 
 /**
@@ -22,6 +23,30 @@ export class AttentiveItem extends OccurrenceItem {
 
 	override get disabled() {
 		return this.done
+	}
+
+	private get target(): OccurrenceTarget | undefined {
+		return this.attentive ? { kind: 'attentive', attentive: this.attentive } : undefined
+	}
+
+	/** Folds a committed change from the modal or the menu back into the row and announces it upward. */
+	private readonly applyChange = (updated: OccurrenceTarget) => {
+		if (updated.kind !== 'attentive') return
+		this.attentive = updated.attentive
+		this.dispatchEvent(new CustomEvent<Attentive>('attentivechange', { detail: updated.attentive, bubbles: true, composed: true }))
+	}
+
+	/** Its menu opens the editor, navigates to the decree, and quick-sets each resolution. */
+	protected override contextMenuSpec(): ContextMenuSpec | undefined {
+		const target = this.target
+		return this.interactive && target ? occurrenceMenu(target, this.applyChange) : undefined
+	}
+
+	/** Clicking the title opens the occurrence editor (status, navigate, reschedule). */
+	protected override navigate() {
+		const target = this.target
+		if (!this.interactive || !target) return
+		openOccurrenceModal(getApp(), target, this.applyChange)
 	}
 
 	protected override get heading() {

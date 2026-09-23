@@ -139,6 +139,14 @@ export class PlaintorchPolarisSdk {
 		return await this.client.putForJson<Executive>(`/api/executives/${executiveId}`, update)
 	}
 
+	/**
+	 * Defers an executive to the next day's Polaris cycle (PEP111), creating that day's forecast cycle if none
+	 * exists. The tracked (elapsed) minutes become the new estimation/minimum/maximum and the tally resets to 0.
+	 */
+	public async moveExecutiveToNextPolaris(executiveId: number): Promise<Executive | undefined> {
+		return await this.client.postForJson<Executive>(`/api/executives/${executiveId}/next-polaris`, {})
+	}
+
 	/** Removes an executive from its cycle, deleting it. The incentive (objective or decree) stays, as it is. */
 	public async removeExecutive(executiveId: number): Promise<boolean> {
 		return await this.client.delete(`/api/executives/${executiveId}`)

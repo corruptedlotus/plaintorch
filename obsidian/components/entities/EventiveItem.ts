@@ -1,7 +1,8 @@
 import { component, html, nothing, property } from "@a11d/lit"
 import { Eventive } from "@pleiades/sdk"
 import { OccurrenceItem } from "./OccurrenceItem"
-import { navigateToEntity } from ".."
+import { occurrenceMenu, openOccurrenceModal, type OccurrenceTarget } from "./OccurrenceModal"
+import { getApp, type ContextMenuSpec } from ".."
 
 /**
  * A single upcoming eventive — a per-occurrence instance of a fate or of an objective's due date. Eventives
@@ -36,10 +37,28 @@ export class EventiveItem extends OccurrenceItem {
 		`
 	}
 
+	private get target(): OccurrenceTarget | undefined {
+		return this.eventive ? { kind: 'eventive', eventive: this.eventive } : undefined
+	}
+
+	/** Folds a committed change from the modal or the menu back into the row. */
+	private readonly applyChange = (updated: OccurrenceTarget) => {
+		if (updated.kind !== 'eventive') return
+		this.eventive = updated.eventive
+		this.dispatchEvent(new CustomEvent<OccurrenceTarget>('occurrencechange', { detail: updated, bubbles: true, composed: true }))
+	}
+
+	/** Its menu opens the editor, navigates to the fate/objective, and quick-sets each resolution. */
+	protected override contextMenuSpec(): ContextMenuSpec | undefined {
+		const target = this.target
+		return this.interactive && target ? occurrenceMenu(target, this.applyChange) : undefined
+	}
+
+	/** Clicking the title opens the occurrence editor (status, navigate, reschedule). */
 	protected override navigate() {
-		if (!this.interactive) return
-		const target = this.eventive?.fate?.id ?? this.eventive?.objective?.id
-		if (target) navigateToEntity(target)
+		const target = this.target
+		if (!this.interactive || !target) return
+		openOccurrenceModal(getApp(), target, this.applyChange)
 	}
 }
 

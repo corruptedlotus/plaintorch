@@ -58,6 +58,7 @@ export function polarisActivityMenu(activity: PolarisActivity, changed?: (update
 		},
 		{ label: 'Time Management', icon: 'lucide:clock', run: () => openPolarisActivityAllocation(activity, changed) },
 		{ label: 'Edit', icon: 'lucide:pencil', disabled: !entity, run: () => { entity && openEntityEditor(entity) } },
+		{ label: 'Move to next Polaris', icon: 'lucide:calendar-plus', run: () => moveToNextPolaris(activity) },
 		{ separator: true },
 		{ label: 'Remove', icon: 'lucide:trash-2', danger: true, run: () => removePolarisActivity(activity) }
 	]
@@ -83,6 +84,31 @@ export async function setPolarisActivityDone(activity: PolarisActivity, done: bo
 
 	await revalidateCycle()
 	return updated
+}
+
+/**
+ * Defers an activity to the next day's Polaris cycle (PEP111): the core creates that day's forecast cycle when
+ * none exists, carries the tracked minutes forward as the new allocation envelope, and resets the tally. The
+ * current cycle re-reads itself so the row leaves it and lands on the next.
+ */
+export async function moveToNextPolaris(activity: PolarisActivity): Promise<boolean> {
+	const title = polarisActivityTitle(activity)
+	let moved: PolarisActivity | undefined
+	try {
+		moved = await core.polaris.moveExecutiveToNextPolaris(activity.id)
+	}
+	catch (error) {
+		console.error('PLAINTORCH: moving a Polaris activity to the next cycle failed.', error)
+	}
+
+	if (!moved) {
+		new Notice(`PLAINTORCH could not move ${title} to the next Polaris cycle.`)
+		return false
+	}
+
+	await revalidateCycle()
+	new Notice(`Moved ${title} to the next Polaris cycle.`)
+	return true
 }
 
 /**
