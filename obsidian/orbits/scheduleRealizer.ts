@@ -90,9 +90,9 @@ function shortOperand(model: ScheduleModel): string {
 	return model.kind === 'compound' ? `(${text})` : text
 }
 
-/** A fixed moment, terse: "Jun 5 2027", "Jun 5 2027 @18", "Tva 5 2027 ~2h". */
+/** A fixed moment, terse: dates read day-first as "d/MMM y" — "5/Jun 2027", "5/Jun 2027 @18", "35/Xun 3 ~2h". */
 function shortInstant(model: InstantSchedule): string {
-	const parts = [`${shortLabel(model.month)} ${model.day} ${model.year}`]
+	const parts = [`${model.day}/${shortLabel(model.month)} ${model.year}`]
 	if (model.time) parts.push(`@${shortClock(model.time)}`)
 	if (model.span && model.span.length > 0) parts.push(`~${shortDuration(model.span)}`)
 	for (const bound of model.bounds) parts.push(shortBound(bound))
@@ -146,7 +146,8 @@ function shortDate(frames: Frame[]): string | null {
 	const monthValue = onlyValue(month.selection)
 	if (!monthValue?.name) return null
 	if (!frames.slice(0, frames.length - 2).every(frame => frame.unit === 'y' && frame.selection.kind === 'all')) return null
-	return `${shortLabel(monthValue)} ${dayValue.value}`
+	// A recurring anchored date reads day-first too, but with no year ("5/Jun", "5/Tva").
+	return `${dayValue.value}/${shortLabel(monthValue)}`
 }
 
 function shortFrame(frame: Frame): string {
