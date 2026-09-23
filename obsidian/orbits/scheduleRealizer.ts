@@ -10,26 +10,44 @@
 // for everything else.
 
 import type { DurationPart, SetOperator } from './ast'
-import type { Bound, CalendarUnit, ClockTime, CompoundSchedule, Frame, NamedValue, ScheduleModel, Selection, SimpleSchedule } from './scheduleModel'
+import type { Bound, CalendarUnit, ClockTime, CompoundSchedule, Frame, InstantSchedule, NamedValue, ScheduleModel, Selection, SimpleSchedule } from './scheduleModel'
 
 const UNIT_WORD: Record<CalendarUnit, string> = { y: 'year', M: 'month', w: 'week', d: 'day' }
 const DUR_WORD: Record<DurationPart['unit'], string> = { y: 'year', M: 'month', w: 'week', d: 'day', h: 'hour', m: 'minute', s: 'second' }
 
-// Long-register set connectives, reading as "<schedule> <connector> <schedule>".
-const SET_CONNECTOR: Record<SetOperator, string> = {
-	'+': ' and ',                      // union: both schedules fire
-	'&': ' that also fall on ',        // intersection: only when they coincide
-	'-': ', except ',                  // difference: A minus B
-	'^': ' or, but never both, ',      // symmetric difference
+// Long-register set connectives: each reads as "<left><infix><right><suffix?>". A trailing clause (for
+// symmetric difference) is a suffix so the sentence closes cleanly instead of wrapping around the operands.
+const SET_CONNECTOR: Record<SetOperator, { infix: string; suffix?: string }> = {
+	'+': { infix: ', and also ' },                                // union: the two streams combine
+	'&': { infix: ', but only when it also falls on ' },          // intersection: only where they coincide
+	'-': { infix: ', except ' },                                  // difference: A minus B
+	'^': { infix: ', or ', suffix: ', but never both' },          // symmetric difference: one or the other
 }
 
 /** Renders a schedule's meaning as a full English phrase (long register). */
 export function realizeLong(model: ScheduleModel): string {
-	return model.kind === 'compound' ? realizeCompound(model) : realizeSimple(model)
+	switch (model.kind) {
+		case 'compound': return realizeCompound(model)
+		case 'instant': return realizeInstant(model)
+		case 'simple': return realizeSimple(model)
+	}
 }
 
 function realizeCompound(model: CompoundSchedule): string {
-	return `${realizeLong(model.left)}${SET_CONNECTOR[model.operator]}${realizeLong(model.right)}`
+	const { infix, suffix } = SET_CONNECTOR[model.operator]
+	return `${realizeLong(model.left)}${infix}${realizeLong(model.right)}${suffix ?? ''}`
+}
+
+/** A fixed moment: "the 5th of June 2027", "the 5th of June 2027 at 18:00 for 2 hours". */
+function realizeInstant(model: InstantSchedule): string {
+	const monthName = model.month.name ?? `month ${model.month.value}`
+	let text = `the ${ordinal(model.day)} of ${monthName} ${model.year}`
+	if (model.time) text += ` at ${formatClock(model.time)}`
+	if (model.span && model.span.length > 0) text += ` for ${formatDuration(model.span)}`
+
+	const bounds = model.bounds.map(phraseBound)
+	if (bounds.length > 0) text += `, ${bounds.join(', ')}`
+	return text
 }
 
 function realizeSimple(model: SimpleSchedule): string {
@@ -51,12 +69,30 @@ const SHORT_CADENCE: Record<CalendarUnit, string> = { y: 'yearly', M: 'monthly',
 /** Renders a schedule's meaning as a compact, near-spoken phrase (short register). */
 export function realizeShort(model: ScheduleModel): string {
 	if (model.kind === 'compound') {
-		return `${realizeShort(model.left)} ${model.operator} ${realizeShort(model.right)}`
+		return `${shortOperand(model.left)} ${model.operator} ${shortOperand(model.right)}`
+	}
+	if (model.kind === 'instant') {
+		return shortInstant(model)
 	}
 
 	const parts: string[] = []
 	const base = shortFrames(model.frames)
 	if (base) parts.push(base)
+	if (model.time) parts.push(`@${shortClock(model.time)}`)
+	if (model.span && model.span.length > 0) parts.push(`~${shortDuration(model.span)}`)
+	for (const bound of model.bounds) parts.push(shortBound(bound))
+	return parts.join(' ')
+}
+
+/** A set-operation operand, parenthesised when it is itself compound so the grouping stays legible. */
+function shortOperand(model: ScheduleModel): string {
+	const text = realizeShort(model)
+	return model.kind === 'compound' ? `(${text})` : text
+}
+
+/** A fixed moment, terse: "Jun 5 2027", "Jun 5 2027 @18", "Tva 5 2027 ~2h". */
+function shortInstant(model: InstantSchedule): string {
+	const parts = [`${shortLabel(model.month)} ${model.day} ${model.year}`]
 	if (model.time) parts.push(`@${shortClock(model.time)}`)
 	if (model.span && model.span.length > 0) parts.push(`~${shortDuration(model.span)}`)
 	for (const bound of model.bounds) parts.push(shortBound(bound))
@@ -110,7 +146,7 @@ function shortDate(frames: Frame[]): string | null {
 	const monthValue = onlyValue(month.selection)
 	if (!monthValue?.name) return null
 	if (!frames.slice(0, frames.length - 2).every(frame => frame.unit === 'y' && frame.selection.kind === 'all')) return null
-	return `${clip(monthValue.name)} ${dayValue.value}`
+	return `${shortLabel(monthValue)} ${dayValue.value}`
 }
 
 function shortFrame(frame: Frame): string {
@@ -133,11 +169,11 @@ function shortSelection(frame: Frame): string {
 	if (sel.kind === 'all') return SHORT_CADENCE[frame.unit]
 	if (sel.kind === 'random') return `${sel.count}?${prefix}`
 	if (sel.kind === 'range') {
-		if (sel.start.name && sel.end.name) return `${clip(sel.start.name)}-${clip(sel.end.name)}`
+		if (sel.start.name && sel.end.name) return `${shortLabel(sel.start)}-${shortLabel(sel.end)}`
 		return dayOfMonth ? `${ordinal(sel.start.value)}-${ordinal(sel.end.value)}` : `${prefix}${sel.start.value}-${sel.end.value}`
 	}
 	return sel.values.map(value =>
-		value.name ? clip(value.name) : (dayOfMonth ? ordinal(value.value) : `${prefix}${value.value}`)
+		value.name ? shortLabel(value) : (dayOfMonth ? ordinal(value.value) : `${prefix}${value.value}`)
 	).join('&')
 }
 
@@ -170,6 +206,13 @@ function shortBound(bound: Bound): string {
 
 function clip(name: string): string {
 	return name.slice(0, 3)
+}
+
+/** A named value's short label: the calendar's curated short name, else a 3-letter clip of the full name. */
+function shortLabel(value: NamedValue): string {
+	if (value.shortName) return value.shortName
+	if (value.name) return clip(value.name)
+	return String(value.value)
 }
 
 function phraseFrames(frames: Frame[]): string {

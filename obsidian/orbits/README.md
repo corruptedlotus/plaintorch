@@ -22,8 +22,10 @@ convention as `assets/icons/index.ts`).
 vendored modules (and the short humanizer) and adds:
 
 - `humanizeOrbit(orbit, short?)` — parse + humanize a raw notation into a `{ text, invalid }`
-  phrase, falling back to the raw string when it cannot be parsed. With `short`, it returns the
-  terse reading (see below) instead of the full one.
+  phrase. It runs the **model-based humaniser** (parse → normalize → realize; see below), falling
+  back to the vendored humaniser for shapes the model does not cover yet — and, for the short
+  register, to the legacy short humaniser first — and to the raw string when the notation cannot be
+  parsed. With `short`, it returns the terse reading ("Mon @5&16") instead of the full one.
 - `isValidOrbit(orbit)` — whether a raw notation parses.
 
 Only `packages/node/src`'s parser/humanizer/calendar are vendored; the resolution engine
@@ -32,10 +34,12 @@ eventives from the core rather than resolving occurrences client-side.
 
 ### The short humanizer
 
-`shortHumanizer.ts` (`OrbitShortHumanizer`) is **not** vendored — upstream has no short form, so
-this is PLAINTORCH's own rendering and follows the plugin's strict `tsconfig` (no `@ts-nocheck`).
-It exists for space-constrained frontend chips (`p7t-schedule-item short`, the idle face of
-`p7t-editable-schedule`), where the full phrase is too long to sit inline.
+`shortHumanizer.ts` (`OrbitShortHumanizer`) is **not** vendored — it is PLAINTORCH's own rendering
+and follows the plugin's strict `tsconfig` (no `@ts-nocheck`). It predates the model humaniser and is
+now the **fallback** for the short register: `humanizeOrbit(…, true)` tries the model's `realizeShort`
+first and only reaches this for shapes the model does not cover. It exists for space-constrained
+frontend chips (`p7t-schedule-item short`, the idle face of `p7t-editable-schedule`), where the full
+phrase is too long to sit inline.
 
 It mirrors the vendored humanizer's three shapes — the weekly-day shorthand, the clock shorthand,
 and the regular unit assembly — but emits an abbreviated, **prefix-ordered** reading instead of
@@ -57,38 +61,44 @@ notation) — so exotic notation is only ever rendered long, not mangled. Becaus
 shorthands rather than sharing them, keep it loosely in step with `humanizer.ts` when upstream
 changes those.
 
-## The model-based humaniser (in progress)
+## The model-based humaniser
 
-A newer humaniser is being built beside the two above, restructured as a three-stage pipeline — a tiny
-compiler whose target language is English:
+The humaniser that now backs `humanizeOrbit` is restructured as a three-stage pipeline — a tiny compiler
+whose target language is English:
 
 ```
 parse (notation → AST)  →  normalize (AST → ScheduleModel)  →  realize (ScheduleModel → phrase)
 ```
 
-The point is a **meaning layer** (`ScheduleModel`) between the parse tree and the words. It fixes the legacy
-humanisers' two structural faults: they pattern-match parse-tree *shapes* (so they silently drop `limits`
-`*x @x <t >t` and `duration` `=<dur>`), and they are two hand-synced implementations that drift.
+The point is a **meaning layer** (`ScheduleModel`) between the parse tree and the words. It fixes the two
+structural faults of the shape-matching humanisers: they pattern-match parse-tree *shapes* (so they silently
+drop `limits` `*x @x <t >t` and `duration` `=<dur>`), and they are two hand-synced implementations that drift.
 
-- `scheduleModel.ts` — the notation-*independent* meaning (`frames`, `time`, `span`, `bounds`). `z{12:00}` and
-  `h{12}[m{0}]` normalize to the same model. Limits and durations are first-class fields here.
+- `scheduleModel.ts` — the notation-*independent* meaning (`frames`, `time`, `span`, `bounds`, plus an
+  `instant` for a fixed `Z{…}` datetime). `z{12:00}` and `h{12}[m{0}]` normalize to the same model. Limits
+  and durations are first-class fields here. `NamedValue` carries an optional `shortName` for calendars whose
+  short forms are not a plain clip.
 - `scheduleNormalizer.ts` — AST → ScheduleModel (a single-pass structural tree fold; resolves weekday/month
-  names via the `CalendarSystem`). Throws `UnsupportedShapeError` for shapes not yet modelled (a set-op nested
-  mid-chain, a non-clock time unit) so the caller can fall back.
+  names and short names via the `CalendarSystem`). A dated `Z{…}` becomes an `instant`; a bare `z{h:m}` a
+  frameless daily clock. Throws `UnsupportedShapeError` for shapes not yet modelled (a set-op nested mid-chain,
+  a non-clock time unit) so the caller can fall back.
 - `scheduleRealizer.ts` — ScheduleModel → phrase, in **two registers over the same model**: `realizeLong`
-  (full prose, e.g. "Every other Friday at 17:30") and `realizeShort` (compact, e.g. "Fri /2w @17:30",
-  "Mon @5&16"). It does **not** import the calendar — names are already in the model; a register is just a
-  different lexicon + ordering. Both share the same idiom recognizers (weekly-weekday, anchored date,
-  day-of-month) and helpers.
+  (full prose, e.g. "Every other Friday at 17:30", "The 5th of June 2027 at 18:00") and `realizeShort`
+  (compact, e.g. "Fri /2w @17:30", "Mon @5&16", "Jun 5 2027 @18"). It does **not** import the calendar —
+  names are already in the model; a register is just a different lexicon + ordering. Set operations read as
+  connective prose ("…, but only when it also falls on …", "…, or …, but never both"); the short register
+  parenthesises a nested compound. Both registers share the idiom recognizers and helpers.
 - `scheduleDescribe.ts` — `describeOrbit(notation, calendar?)` runs the whole pipeline and returns the model
-  plus both phrases; `resolveCalendar(name)` maps a name to a `CalendarSystem`.
-- `pleiadeanNaming.ts` — a **naming-only** Pleiadean `CalendarSystem` (six months, universal 7-day week,
-  Gregorian arithmetic delegated) so the preview tool can show a non-Gregorian reading. Not resolution-grade —
-  a real Pleiadean calendar belongs upstream in `orbit-scheduler`.
+  plus both phrases; `resolveCalendar(name)` maps a name to a `CalendarSystem`. **Plugin-only** (the preview
+  tool's calendar switch); upstream ships its own calendar-agnostic `describeOrbit`.
+- `pleiadeanNaming.ts` — a **naming-only** Pleiadean `CalendarSystem` (six months, **Saturday-first** week,
+  Gregorian arithmetic delegated, curated `getUnitShortName` → Nil/Sol/Xun/Tar/Lua/Tva) so the preview tool
+  can show a non-Gregorian reading. **Plugin-only** and not resolution-grade — a real Pleiadean calendar
+  belongs upstream in `orbit-scheduler`.
 
-**Not done yet:** it does not replace `humanizeOrbit`; set-op connective prose is rough; the short form's
-Pleiadean month names are approximate 3-letter clips ("Tār", not the canonical "Tva"); the `Z{…}` exact-datetime
-literal is not modelled. Once it covers enough shapes it will fold into `humanizeOrbit` and graduate upstream.
+`scheduleModel.ts`, `scheduleNormalizer.ts` and `scheduleRealizer.ts` have **graduated upstream** to
+`@pleiades/orbits` (`packages/node/src/`) as the canonical model humaniser; the copies here are kept in sync
+with it. They are strict-clean, so — unlike the older vendored files — they carry no `@ts-nocheck`.
 
 ### Preview tool
 

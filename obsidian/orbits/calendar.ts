@@ -15,6 +15,9 @@ export interface CalendarSystem {
 	delta(d1: Date, d2: Date, unit: TimeUnit): number;
 	snapToStart(date: Date, unit: TimeUnit): Date
 	getUnitName(unit: TimeUnit, value: number, parent?: TimeUnit): string | null
+	// A calendar's own curated short name for a value ("Tva" for Tārvan), when a plain clip of
+	// getUnitName would be wrong; optional, so a calendar whose names clip cleanly need not define it.
+	getUnitShortName?(unit: TimeUnit, value: number, parent?: TimeUnit): string | null
 }
 
 export class GregorianCalendar implements CalendarSystem {

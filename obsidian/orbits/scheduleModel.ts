@@ -6,7 +6,10 @@
 // meaning lives here, "how to say it" (scheduleRealizer.ts) and "in which register" become separate,
 // swappable concerns, and fields the old humaniser silently dropped (limits, durations) are just data.
 //
-// Plugin-authored (like shortHumanizer.ts), not vendored: it consumes the vendored AST but is our own layer.
+// The model humaniser (this file + scheduleNormalizer/scheduleRealizer) was built here and has since
+// graduated upstream to @pleiades/orbits; these three files are now kept in sync with it. Unlike the
+// older vendored files they are strict-clean, so they carry no @ts-nocheck. scheduleDescribe.ts and
+// pleiadeanNaming.ts stay plugin-only (the preview tool's calendar resolution and naming shim).
 
 import type { DurationPart, SetOperator, TimeUnit } from './ast'
 
@@ -18,13 +21,32 @@ export type CalendarUnit = 'y' | 'M' | 'w' | 'd'
  * are `simple`; `compound` is the honest representation of genuine set-algebra (`+ & ^ -`) that does not
  * collapse into a single clause, so the realizer can still say *something* true about it.
  */
-export type ScheduleModel = SimpleSchedule | CompoundSchedule
+export type ScheduleModel = SimpleSchedule | CompoundSchedule | InstantSchedule
 
 export interface CompoundSchedule {
 	kind: 'compound'
 	operator: SetOperator
 	left: ScheduleModel
 	right: ScheduleModel
+}
+
+/**
+ * A single fixed moment, from the `Z{y/M/d[Th:m[:s]]}` literal — not a recurrence but one exact
+ * calendar datetime ("5 June 2027 at 18:00"). Its own kind because a pinned date reads as a date,
+ * not as the "which day of which month of which year" chain that its expansion would otherwise produce.
+ */
+export interface InstantSchedule {
+	kind: 'instant'
+	year: number
+	/** The month, carrying the calendar's name (and short name) for it. */
+	month: NamedValue
+	day: number
+	/** The time of day, when the literal pinned one (its `T` part). */
+	time?: ClockTime
+	/** How long the moment lasts, from `=<dur>`. Undefined = a point in time. */
+	span?: DurationPart[]
+	/** Bounds from `*x @x <t >t` — rare on a fixed instant, but modelled rather than dropped. */
+	bounds: Bound[]
 }
 
 export interface SimpleSchedule {
@@ -64,7 +86,10 @@ export type Selection =
 /** A numeric index plus the calendar's name for it when it has one (weekday, month); else name is absent. */
 export interface NamedValue {
 	value: number
+	/** The full name ("Monday", "June"), when the calendar names this value. */
 	name?: string
+	/** The calendar's own short name ("Mon", "Tva"), when it curates one — else the realizer clips {@link name}. */
+	shortName?: string
 }
 
 /** A time of day. Kept as raw numbers so the realizer decides the format ("09:00", "9am", "@9"). */

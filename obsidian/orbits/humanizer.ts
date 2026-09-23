@@ -4,7 +4,7 @@
 // rather than diverging here. @ts-nocheck keeps the plugin's strict tsconfig off
 // upstream code (mirrors assets/icons/index.ts).
 
-import { ASTNode, TimeUnitNode, TimeUnit } from './ast';
+import { ASTNode, TimeUnitNode, DateTimeLiteralNode, TimeUnit } from './ast';
 import { CalendarSystem } from './calendar';
 
 export class OrbitHumanizer {
@@ -26,7 +26,28 @@ export class OrbitHumanizer {
 				case '^': return `${left}, differing from ${right}`;
 			}
 		}
+		if (node.kind === 'DateTimeLiteralNode') {
+			return this.serializeDateTimeLiteral(node, isRoot);
+		}
 		return this.serializeTimeUnit(node, isRoot);
+	}
+
+	// A z/Z literal reads directly off its components: a time-only literal is a daily
+	// clock ("every day at 12:00" / "at 12:00"), a dated one an absolute datetime
+	// ("5 June 2027" / "5 June 2027 at 18:00").
+	private serializeDateTimeLiteral(node: DateTimeLiteralNode, isRoot: boolean): string {
+		const time = node.hour !== undefined
+			? (node.second !== undefined
+				? `${this.pad(node.hour)}:${this.pad(node.minute!)}:${this.pad(node.second)}`
+				: `${this.pad(node.hour)}:${this.pad(node.minute!)}`)
+			: null;
+
+		if (node.year !== undefined) {
+			const monthName = this.calendar.getUnitName('M', node.month!, 'y') ?? `${node.month}`;
+			const date = `${node.day} ${monthName} ${node.year}`;
+			return time ? `${date} at ${time}` : date;
+		}
+		return (isRoot ? 'every day at ' : 'at ') + time;
 	}
 
 	private serializeTimeUnit(node: TimeUnitNode, isRoot: boolean, parentUnit?: TimeUnit): string {

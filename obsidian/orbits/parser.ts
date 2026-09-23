@@ -4,7 +4,7 @@
 // rather than diverging here. @ts-nocheck keeps the plugin's strict tsconfig off
 // upstream code (mirrors assets/icons/index.ts).
 
-import { ASTNode, TimeUnitNode, IndexSpec, TimeUnit, DurationPart } from './ast'
+import { ASTNode, TimeUnitNode, DateTimeLiteralNode, IndexSpec, TimeUnit, DurationPart } from './ast'
 
 const TIME_UNITS = ['y', 'M', 'w', 'd', 'h', 'm', 's']
 
@@ -83,7 +83,13 @@ export class OrbitParser {
 		// Handle Shorthand
 		if (char === 'z') {
 			this.consume()
-			return this.parseZShorthandModifiers()
+			return this.parseTimeLiteral()
+		}
+
+		// Fixed-datetime shorthand: Z{y/M/d[Th:m[:s]]}
+		if (char === 'Z') {
+			this.consume()
+			return this.parseDateTimeLiteral()
 		}
 
 		// Standard Time Unit
@@ -113,48 +119,52 @@ export class OrbitParser {
 		return node
 	}
 
-	private parseZShorthandModifiers(): TimeUnitNode {
+	// z{h:m[:s]} -> a time-of-day literal (no date part; recurs every day at that time).
+	private parseTimeLiteral(): DateTimeLiteralNode {
 		if (!this.match('{')) throw new Error(`Expected '{' after 'z' shorthand`)
 
-		const hIndex = this.parseNumber()
+		const hour = this.parseNumber()
 		if (!this.match(':')) throw new Error(`Expected ':' inside 'z' shorthand`)
-		const mIndex = this.parseNumber()
+		const minute = this.parseNumber()
 
-		let sIndex: number | undefined
+		let second: number | undefined
 		if (this.match(':')) {
-			sIndex = this.parseNumber()
+			second = this.parseNumber()
 		}
 		if (!this.match('}')) throw new Error(`Expected '}' closing 'z' shorthand`)
 
-		// Build nested z structure: h{A}[m{B}[s{C}]]
-		const rootNode: TimeUnitNode = {
-			kind: 'TimeUnitNode',
-			unit: 'h',
-			indices: { type: 'list', values: [hIndex] },
-			limits: []
-		}
+		const node: DateTimeLiteralNode = { kind: 'DateTimeLiteralNode', hour, minute, second, limits: [] }
+		// The literal carries the modifiers the shorthand used to hang on its root 'h'
+		// (e.g. z{12:00}%2 -> interval 2, z{12:00}=2h -> a 2h span from 12:00).
+		this.parseModifiers(node)
+		return node
+	}
 
-		const mNode: TimeUnitNode = {
-			kind: 'TimeUnitNode',
-			unit: 'm',
-			indices: { type: 'list', values: [mIndex] },
-			limits: []
-		}
-		rootNode.child = mNode
+	// Z{y/M/d[Th:m[:s]]} -> a fixed calendar datetime literal (one exact moment). The
+	// time part is optional; the deepest present component fixes the granularity.
+	private parseDateTimeLiteral(): DateTimeLiteralNode {
+		if (!this.match('{')) throw new Error(`Expected '{' after 'Z' shorthand`)
 
-		if (sIndex !== undefined) {
-			mNode.child = {
-				kind: 'TimeUnitNode',
-				unit: 's',
-				indices: { type: 'list', values: [sIndex] },
-				limits: []
+		const year = this.parseNumber()
+		if (!this.match('/')) throw new Error(`Expected '/' after year in 'Z' shorthand`)
+		const month = this.parseNumber()
+		if (!this.match('/')) throw new Error(`Expected '/' after month in 'Z' shorthand`)
+		const day = this.parseNumber()
+
+		let hour: number | undefined, minute: number | undefined, second: number | undefined
+		if (this.match('T')) {
+			hour = this.parseNumber()
+			if (!this.match(':')) throw new Error(`Expected ':' in 'Z' time part`)
+			minute = this.parseNumber()
+			if (this.match(':')) {
+				second = this.parseNumber()
 			}
 		}
+		if (!this.match('}')) throw new Error(`Expected '}' closing 'Z' shorthand`)
 
-		// Shorthand gets modifiers applied to the root 'h' node (e.g. z{12:00}%2 -> interval 2 on 'h')
-		this.parseModifiers(rootNode)
-
-		return rootNode
+		const node: DateTimeLiteralNode = { kind: 'DateTimeLiteralNode', year, month, day, hour, minute, second, limits: [] }
+		this.parseModifiers(node)
+		return node
 	}
 
 	private parseIndexSpec(): IndexSpec {
@@ -187,7 +197,7 @@ export class OrbitParser {
 		return { type: 'list', values }
 	}
 
-	private parseModifiers(node: TimeUnitNode) {
+	private parseModifiers(node: TimeUnitNode | DateTimeLiteralNode) {
 		while (this.pos < this.input.length) {
 			this.skipWhitespace()
 			if (this.match('%')) {

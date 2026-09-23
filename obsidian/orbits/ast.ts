@@ -41,4 +41,24 @@ export interface SetOperationNode {
 	right: ASTNode;
 }
 
-export type ASTNode = TimeUnitNode | SetOperationNode
+// A literal moment written with the `z`/`Z` shorthand: `z{h:m[:s]}` is a daily
+// time-of-day (no date part), `Z{y/M/d[Th:m[:s]]}` a fixed calendar datetime. It is
+// kept as its own node so a humanizer can render it as a clock/date directly; the
+// engine expands it into the equivalent nested TimeUnitNode chain (deepest present
+// component sets the granularity) before resolving, so it needs no solver support.
+// The modifier fields mirror TimeUnitNode: a literal accepts `%interval`, limits and
+// `=<dur>` exactly as the `z` shorthand did.
+export interface DateTimeLiteralNode {
+	kind: 'DateTimeLiteralNode'
+	year?: number;
+	month?: number;
+	day?: number;
+	hour?: number;
+	minute?: number;
+	second?: number;
+	interval?: number;
+	limits: LimitSpec[]
+	duration?: DurationPart[]
+}
+
+export type ASTNode = TimeUnitNode | SetOperationNode | DateTimeLiteralNode
