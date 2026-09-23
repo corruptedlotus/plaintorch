@@ -38,20 +38,20 @@ export class OrbitShortHumanizer {
 		return this.serializeUnit(node, isRoot)
 	}
 
-	/** A z/Z literal, terse: "5 Jun 2027 @18:00" for a dated one, "daily @12:00"/"@12:00" for a time-only one. */
+	/** A z/Z literal, terse: a daily clock ("daily @12:00" / "@12:00") or a fixed date ("5 Jun 2027 @18:00"). */
 	private serializeDateTimeLiteral(node: DateTimeLiteralNode, isRoot: boolean): string {
 		const time = node.hour !== undefined
 			? (node.second !== undefined
-				? `${pad(node.hour)}:${pad(node.minute!)}:${pad(node.second)}`
-				: `${pad(node.hour)}:${pad(node.minute!)}`)
+				? `@${pad(node.hour)}:${pad(node.minute!)}:${pad(node.second)}`
+				: `@${pad(node.hour)}:${pad(node.minute!)}`)
 			: null
-
 		if (node.year !== undefined) {
-			const month = this.calendar.getUnitName('M', node.month!, 'y')?.slice(0, 3) ?? `${node.month}`
+			const monthName = this.calendar.getUnitName('M', node.month!, 'y')
+			const month = monthName ? monthName.slice(0, 3) : `${node.month}`
 			const date = `${node.day} ${month} ${node.year}`
-			return time ? `${date} @${time}` : date
+			return time ? `${date} ${time}` : date
 		}
-		return isRoot ? `daily @${time}` : `@${time}`
+		return isRoot ? `daily ${time}` : time!
 	}
 
 	private serializeUnit(node: TimeUnitNode, isRoot: boolean): string {
