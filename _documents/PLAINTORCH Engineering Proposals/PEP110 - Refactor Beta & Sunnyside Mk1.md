@@ -240,12 +240,12 @@ file"). These are intrinsically editor-bound.
   on-note banner, the command palette) + an **`ObsidianHost`** implementing `PlatformHost` (App/Notice/Modal/getIcon/
   openLinkText) + injecting the node `core` client.
 - **SIPA = the other adapter** (`standalone/`): the renderer mounts `@pleiades/sipa`, provides a **`SipaHost`**
-  (toast/dialog via the in-house `p7t-toast`/`p7t-dialog`, bundled icons; navigation is interim no-op) + injects the
+  (toast/dialog via the in-house `p7t-toast`/`p7t-modal`, bundled icons; navigation is interim no-op) + injects the
   bridge `core` client.
 
 Two inversions carry it:
 - **`PlatformHost`** — the SIPA-first seam the UI depends on instead of `obsidian`. Sketch: `toast(message, kind?)`;
-  a **modal service** that hosts our `P7tModal` / `P7tSuggest` bases (so swapping the underlying dialog engine never
+  a **modal service** that hosts our `ModalBase` / `SuggestModalBase` bases (so swapping the underlying dialog engine never
   touches the 17 dialog classes); `navigate(target)`; an **icon provider** (`getIcon`/`getIconIds`); `activeFile()`
   (Obsidian editor context; SIPA returns none for now). Vault reads/writes go through the `core` client (watcher-
   synced), not the host.
@@ -262,17 +262,23 @@ Two inversions carry it:
   `obsidian` imports are gone, i.e. after the `PlatformHost` inversion.)
 - **Dialog host — in-house on native `<dialog>`, functionality from 3MO controllers** *(decided by the Spike; the
   planning run had left it open between `@3mo/dialog` and a bespoke host)*. The modal service hosts our own
-  `p7t-dialog` (modals) and `p7t-toast` (toasts), drawn with our own markup and `p7t-icon`. Wherever the behaviour is
+  `p7t-modal` (modals) and `p7t-toast` (toasts), drawn with our own markup and `p7t-icon`. Wherever the behaviour is
   something the 3MO suite already provides as a **controller**, the host uses that controller rather than hand-rolling
   it: `@3mo/focus-controller` (focus-within, focus return), `@3mo/slot-controller` (footer/action presence),
   `@3mo/pointer-controller` (hover-pausing a toast), `@3mo/interval-controller` (toast timer ticks). No 3MO
   *components* (`mo-dialog`, `mo-snackbar`, `mo-button`, `mo-icon`) — see *Spike findings* for why.
-- **Pickers — in-house `P7tSuggest` on `@3mo/navigability`** *(decided by the Spike)*. The 9 pickers keep their
+- **Pickers — in-house `SuggestModalBase` on `@3mo/navigability`** *(decided by the Spike)*. The 9 pickers keep their
   `getSuggestions` / `renderSuggestion` / `onChooseSuggestion` / `onClose` contract; the base draws an input plus the
-  results inside `p7t-dialog`, with the cursor owned by 3MO's `NavigabilityController` (the list controller). **Grid
+  results as its own `p7t-suggest-modal`, with the cursor owned by 3MO's `NavigabilityController` (the list controller). **Grid
   is intrinsic**: a picker declares `layout: 'list' | 'grid'` (today `SelectMediaModal` gets its grid by injecting
   `plaintorch-media-selector` into Obsidian's result container); grid mode switches the controller to
   `orientation: 'both'` and moves Up/Down a whole row through its `handleKeyDown` hook.
+- **Naming** *(pinned at P5)*. `p7t-` is for tag names only. Classes: `XxxBase` is the abstraction, `Xxx` its plain
+  implementation, `SomethingXxx` a specific one; tags follow as `p7t-xxx` / `p7t-something-xxx`; CSS classes are
+  `plaintorch-*`; custom properties `--p7t-*`. Hence `ModalBase` / `SuggestModalBase` (what the dialog classes
+  extend) and, in the SIPA host, the elements `Modal` (`p7t-modal`), `SuggestModal` (`p7t-suggest-modal`) and
+  `Toast` (`p7t-toast`). `SelectStatusModal` stops being an abstract intermediate with five near-identical
+  subclasses: it becomes one concrete picker taking its status table (P6).
 - **Interim navigation — no-op + "no editor yet" toast.** SIPA has the vault on disk but no in-app editor yet, so
   `navigate(entity)` just toasts that the editor is coming. (A real in-app read/edit surface is a later effort.)
 - **Branch — `claude/sipa-first`, off the current consolidated tip** (`dev/phase2d` at `2db63a5`). Isolates this
@@ -309,10 +315,10 @@ Two inversions carry it:
 - **P4 — Toasts.** `host.toast(...)` over the host; Obsidian→`Notice`, SIPA→`p7t-toast` (in-house, Notice-like stack
   at the top-right; pointer-controller pause, interval-controller timer). Refactor the 89 sites (mechanical,
   batchable).
-- **P5 — Modals.** `P7tModal` base over the modal service; migrate the 8 plain modals. Obsidian→`Modal`,
-  SIPA→`p7t-dialog` (native `<dialog>` + `showModal()`: top layer, backdrop, Escape through the `cancel` event; a
+- **P5 — Modals.** `ModalBase` base over the modal service; migrate the 8 plain modals. Obsidian→`Modal`,
+  SIPA→`p7t-modal` (native `<dialog>` + `showModal()`: top layer, backdrop, Escape through the `cancel` event; a
   promise-based open/confirm; focus/slot controllers).
-- **P6 — SuggestModals.** `P7tSuggest` base on `NavigabilityController` with intrinsic list/grid layout; migrate the 9
+- **P6 — SuggestModals.** `SuggestModalBase` base on `NavigabilityController` with intrinsic list/grid layout; migrate the 9
   pickers (`SelectMediaModal` drops its injected grid class for `layout: 'grid'`).
 - **P7 — Icons + navigation.** Icon provider (bundle lucide; Obsidian→`getIcon`); SIPA `navigate` = no-op + toast.
   After this the package no longer imports `obsidian`.
@@ -394,7 +400,7 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
   `typecheck` reports exactly the 36 of those that sit in its files.
 - 2026-09-24 — Spike done (no code landed; the probes live outside the repo). `@3mo/dialog` + `@3mo/snackbar`
   restyle well but cost +394 KB, a global `Reflect` patch, a runtime Google Fonts dependency and a second
-  `@a11d/lit`. Decided: in-house `p7t-dialog` / `p7t-toast` on native `<dialog>` using 3MO controllers; pickers
+  `@a11d/lit`. Decided: in-house `p7t-modal` / `p7t-toast` on native `<dialog>` using 3MO controllers; pickers
   in-house on `@3mo/navigability` (+ `@3mo/indexability` pinned `0.2.0`) with intrinsic list/grid, verified on
   `@a11d/lit` 0.11.1. Findings above.
 - 2026-09-24 — P2 landed: `sipa/host/` defines `PlatformHost` (`toast`, `navigation`, `media`, `icons`, optional
@@ -417,8 +423,18 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
   `@pleiades/sdk/plaintorch/node-transport` (for the shell's main process, without the default client the node
   entry constructs); the transport types and `toLines` are public; the per-call debug log no longer throws on an
   empty or non-JSON body. SDK 110/110, plugin green, `tsc` 46 identical.
-- 2026-09-24 — P4 landed: the package's 81 `new Notice(…)` sites are `toast(message, kind)` through the host
-  (a TypeScript-AST codemod keyed on the reader's per-site inventory: 44 error, 24 success, 17 warning, 3 info; the
-  five mixed success/failure messages take their kind from the same condition). `ObsidianHost.toast` stays a plain
+- 2026-09-24 — P4 landed: the package's 80 remaining `new Notice(…)` sites (the 81st, the note-pending notice,
+  moved into `ObsidianHost` in P2) are `toast(message, kind)` through the host — a TypeScript-AST codemod keyed on
+  the per-site inventory: 41 error, 22 success, 15 warning, 2 info; the five mixed success/failure messages take their
+  kind from the same condition as their text. `ObsidianHost.toast` stays a plain
   Notice (kinds ignored), so Obsidian behaves as before. Package files importing `obsidian`: 36 → 19 (the dialogs and
   their `App` handles). Plugin green, `tsc` 46 identical; package typecheck 36.
+- 2026-09-24 — P5 landed: `sipa/host` adds the dialog contract (`DialogHost` → `createModal` / `createSuggest`,
+  views and shells) and the two bases, `ModalBase` and `SuggestModalBase`, which keep the shape the dialogs were
+  written against (`contentEl`, `open`/`close`, `onOpen`/`onClose`; `setTitle` for `titleEl.setText`; `plaintorch-root`
+  and the post-close clearing done once in the base), plus `createChild` for Obsidian's `createEl`.
+  `obsidian/src/host/obsidianDialogs.ts` hosts them on Obsidian's own `Modal` / `SuggestModal`, so the plugin's dialogs
+  look and behave as before. The 8 modals extend `ModalBase` and lose their `App` parameter (`EntityEditModal.forEntity`
+  and `openOccurrenceModal` too; 11 call sites). `PromptTextModal` drops Obsidian's `Setting` for a plain input and a
+  `mod-cta` button row, with a `confirmLabel` (the global-context save now says "Save"). Plugin green; `tsc` 46 with
+  messages identical to P1.

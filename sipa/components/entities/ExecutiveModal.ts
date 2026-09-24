@@ -1,11 +1,10 @@
 import { Component, component, css, html, nothing, property, state } from "@a11d/lit"
 import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, isDecreeIncentive, isObjectiveIncentive, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
-import { App, Modal } from "obsidian"
 import { core, openEntityEditor, SelectObjectiveStatusModal, SelectTimeframeModal } from ".."
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 import type { EditablePart } from "../editing/EditableDataLink"
 import type { EditableTimeUnit } from "../editing/EditableTimeUnit"
-import { toast } from "../../host"
+import { createChild, ModalBase, toast } from "../../host"
 
 type Allocation = 'elapsed' | 'estimation' | 'minimum' | 'maximum'
 
@@ -387,25 +386,20 @@ export class ExecutiveEditor extends Component {
 }
 
 /**
- * Hosts {@link ExecutiveEditor} inside an Obsidian modal, relaying every persisted change to the opener.
+ * Hosts {@link ExecutiveEditor} in a modal, relaying every persisted change to the opener.
  */
-export class ExecutiveModal extends Modal {
+export class ExecutiveModal extends ModalBase {
 	constructor(
-		app: App,
 		private readonly executive: Executive,
 		private readonly onChange?: (executive: Executive) => void,
 	) {
-		super(app)
+		super()
 	}
 
 	override onOpen() {
-		const editor = this.contentEl.createEl('p7t-executive-editor')
+		const editor = createChild(this.contentEl, 'p7t-executive-editor')
 		editor.executive = this.executive
 		editor.addEventListener('executivechange', e => this.onChange?.((e as CustomEvent<Executive>).detail))
-	}
-
-	override onClose() {
-		this.contentEl.empty()
 	}
 }
 

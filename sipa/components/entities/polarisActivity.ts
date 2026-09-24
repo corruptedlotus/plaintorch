@@ -1,5 +1,5 @@
 import type { Executive } from '@pleiades/sdk'
-import { core, getApp, type ContextMenuEntry, type ContextMenuSpec } from '..'
+import { core, type ContextMenuEntry, type ContextMenuSpec } from '..'
 import { ExecutiveModal } from './ExecutiveModal'
 import { openEntityEditor } from './entityMenu'
 import { toast } from '../../host'
@@ -68,7 +68,7 @@ export function polarisActivityMenu(activity: PolarisActivity, changed?: (update
 
 /** Opens the activity's allocation modal — its time, its affinity, its done flag. */
 export function openPolarisActivityAllocation(activity: PolarisActivity, changed?: (updated: PolarisActivity) => void) {
-	new ExecutiveModal(getApp(), activity, executive => changed?.(executive)).open()
+	new ExecutiveModal(activity, executive => changed?.(executive)).open()
 }
 
 /** Marks an activity done or not. Resolves to the updated activity, or `undefined` when the core refused. */

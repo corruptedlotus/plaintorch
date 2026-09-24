@@ -2,7 +2,7 @@ import { component, html, nothing, property } from "@a11d/lit"
 import { Eventive } from "@pleiades/sdk"
 import { OccurrenceItem } from "./OccurrenceItem"
 import { occurrenceMenu, openOccurrenceModal, type OccurrenceTarget } from "./OccurrenceModal"
-import { getApp, type ContextMenuSpec } from ".."
+import { type ContextMenuSpec } from ".."
 
 /**
  * A single upcoming eventive — a per-occurrence instance of a fate or of an objective's due date. Eventives
@@ -58,7 +58,7 @@ export class EventiveItem extends OccurrenceItem {
 	protected override navigate() {
 		const target = this.target
 		if (!this.interactive || !target) return
-		openOccurrenceModal(getApp(), target, this.applyChange)
+		openOccurrenceModal(target, this.applyChange)
 	}
 }
 

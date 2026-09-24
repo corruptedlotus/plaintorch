@@ -338,7 +338,7 @@ export async function saveGraphLayout(sprintId: string, layout: string | undefin
 export async function saveGlobalContextToFile(pinned: readonly EndpointHit[], layout: string | undefined): Promise<void> {
 	let name: string | undefined
 	try {
-		name = await PromptTextModal.prompt('Save global context', 'File name')
+		name = await PromptTextModal.prompt('Save global context', 'File name', '', 'Save')
 	}
 	catch {
 		return

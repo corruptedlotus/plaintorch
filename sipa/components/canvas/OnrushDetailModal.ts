@@ -1,4 +1,4 @@
-import { App, Modal } from 'obsidian'
+import { ModalBase } from '../../host'
 import type { OnrushSprint } from '@pleiades/sdk'
 
 /** The full-banner properties this modal sets; it resolves and observes everything else from the PUCK. */
@@ -14,23 +14,18 @@ interface FullBannerElement extends HTMLElement {
  * is composed by `<p7t-full-banner>`, which used to be assembled here by hand. Handed the type and PUCK it asks the
  * onrush repository for the sprint directly and renders the rest.
  */
-export class OnrushDetailModal extends Modal {
-	public constructor(app: App, private readonly sprint: OnrushSprint) {
-		super(app)
+export class OnrushDetailModal extends ModalBase {
+	public constructor(private readonly sprint: OnrushSprint) {
+		super()
 	}
 
 	public override onOpen(): void {
-		this.titleEl.setText(this.sprint.title)
-		this.contentEl.addClass('plaintorch-root')
+		this.setTitle(this.sprint.title)
 
 		const banner = document.createElement('p7t-full-banner') as FullBannerElement
-		banner.addClass('plaintorch-modal-content')
+		banner.classList.add('plaintorch-modal-content')
 		banner.xtype = 'OnrushSprint'
 		banner.puck = this.sprint.id
 		this.contentEl.appendChild(banner)
-	}
-
-	public override onClose(): void {
-		this.contentEl.empty()
 	}
 }

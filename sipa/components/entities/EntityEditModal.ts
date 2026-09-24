@@ -1,4 +1,4 @@
-import { App, Modal } from 'obsidian'
+import { ModalBase } from '../../host'
 
 /** The runtime type names an entity can be edited through a full banner here — the same set the delete path allows. */
 const editableTypes = new Set(['Objective', 'StellarDirective', 'LunarDirective', 'Fate', 'Decree', 'LorePage'])
@@ -18,13 +18,12 @@ interface FullBannerElement extends HTMLElement {
  * instance, resolves and observes it, and composes the banner, the entity actions, and any special editors the kind
  * carries. An edit made here reaches every other surface at once, and edits made elsewhere reach it.
  */
-export class EntityEditModal extends Modal {
+export class EntityEditModal extends ModalBase {
 	public constructor(
-		app: App,
 		private readonly typeName: string,
 		private readonly entity: { id: string, title: string }
 	) {
-		super(app)
+		super()
 	}
 
 	/** Whether an entity of this type can be edited through a banner here. */
@@ -33,22 +32,17 @@ export class EntityEditModal extends Modal {
 	}
 
 	/** A modal for an entity, or `undefined` when its type has no banner editor. */
-	static forEntity(app: App, typeName: string | undefined, entity: { id: string, title: string }): EntityEditModal | undefined {
-		return EntityEditModal.supports(typeName) ? new EntityEditModal(app, typeName!, entity) : undefined
+	static forEntity(typeName: string | undefined, entity: { id: string, title: string }): EntityEditModal | undefined {
+		return EntityEditModal.supports(typeName) ? new EntityEditModal(typeName!, entity) : undefined
 	}
 
 	public override onOpen(): void {
-		this.titleEl.setText(this.entity.title)
-		this.contentEl.addClass('plaintorch-root')
+		this.setTitle(this.entity.title)
 
 		const banner = document.createElement('p7t-full-banner') as FullBannerElement
-		banner.addClass('plaintorch-modal-content')
+		banner.classList.add('plaintorch-modal-content')
 		banner.xtype = this.typeName
 		banner.puck = this.entity.id
 		this.contentEl.appendChild(banner)
-	}
-
-	public override onClose(): void {
-		this.contentEl.empty()
 	}
 }

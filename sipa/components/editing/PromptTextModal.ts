@@ -1,63 +1,65 @@
 import { createDeferredExecutor, DeferredPromiseExecutor } from '@open-draft/deferred-promise'
-import { Modal, Setting } from 'obsidian'
-import { getApp } from '.'
+import { createChild, ModalBase } from '../../host'
 
 /**
  * Asks for a single line of text.
  *
  * Follows the same deferred-promise shape as the select modals, so a caller awaits a value instead of
  * threading callbacks through the component that opened it.
+ *
+ * The content is plain light-DOM markup — an input and a row of buttons, the confirming one marked `mod-cta` — so it
+ * takes the host's own form styling (Obsidian's, or the standalone shell's stylesheet).
  */
-export class PromptTextModal extends Modal {
+export class PromptTextModal extends ModalBase {
 	protected dpe?: DeferredPromiseExecutor<string | undefined>
 	private value = ''
 	private settled = false
 
 	/**
-	 * Opens the prompt. Resolves with the entered text, or rejects when dismissed without confirming.
+	 * Opens the prompt. Resolves with the entered text, or rejects when dismissed without confirming. `confirmLabel`
+	 * names the confirming button.
 	 */
-	static prompt(heading: string, placeholder = '', initial = '') {
-		const modal = new PromptTextModal(getApp())
+	static prompt(heading: string, placeholder = '', initial = '', confirmLabel = 'Create') {
+		const modal = new PromptTextModal()
 		modal.dpe = createDeferredExecutor()
 		modal.heading = heading
 		modal.placeholder = placeholder
 		modal.value = initial
+		modal.confirmLabel = confirmLabel
 		modal.open()
 		return new Promise<string | undefined>(modal.dpe)
 	}
 
 	private heading = ''
 	private placeholder = ''
+	private confirmLabel = 'Create'
 
 	override onOpen() {
-		this.titleEl.setText(this.heading)
+		this.setTitle(this.heading)
 
-		new Setting(this.contentEl)
-			.addText(text => {
-				text.setPlaceholder(this.placeholder)
-				text.setValue(this.value)
-				text.onChange(value => this.value = value)
-				text.inputEl.addEventListener('keydown', (e: KeyboardEvent) => {
-					if (e.key === 'Enter') {
-						e.preventDefault()
-						this.confirm()
-					}
-				})
-				window.setTimeout(() => text.inputEl.focus(), 0)
-			})
+		const input = createChild(this.contentEl, 'input')
+		input.type = 'text'
+		input.placeholder = this.placeholder
+		input.value = this.value
+		input.style.width = '100%'
+		input.addEventListener('input', () => this.value = input.value)
+		input.addEventListener('keydown', (e: KeyboardEvent) => {
+			if (e.key === 'Enter') {
+				e.preventDefault()
+				this.confirm()
+			}
+		})
+		window.setTimeout(() => input.focus(), 0)
 
-		new Setting(this.contentEl)
-			.addButton(button => button
-				.setButtonText('Create')
-				.setCta()
-				.onClick(() => this.confirm()))
-			.addButton(button => button
-				.setButtonText('Cancel')
-				.onClick(() => this.close()))
+		const buttons = createChild(this.contentEl, 'div')
+		buttons.style.cssText = 'display: flex; justify-content: flex-end; gap: 0.5em; margin-top: 1em;'
+		createChild(buttons, 'button', { text: this.confirmLabel, cls: 'mod-cta' })
+			.addEventListener('click', () => this.confirm())
+		createChild(buttons, 'button', { text: 'Cancel' })
+			.addEventListener('click', () => this.close())
 	}
 
 	override onClose() {
-		this.contentEl.empty()
 		if (!this.settled) {
 			this.dpe?.reject()
 		}

@@ -1,7 +1,7 @@
 import { component, css, html, property } from "@a11d/lit"
 import { Executive, ExecutiveIncentive, isDecreeIncentive } from "@pleiades/sdk"
 import { EntityItem } from "./EntityItem"
-import { ExecutiveModal, getApp, tooltip, type ContextMenuSpec } from ".."
+import { ExecutiveModal, tooltip, type ContextMenuSpec } from ".."
 import { polarisActivityMenu } from "./polarisActivity"
 
 /**
@@ -82,7 +82,7 @@ export class IncentiveItemExecutive extends EntityItem<ExecutiveIncentive> {
 
 	protected override async notchAction() {
 		if (!this.executive) return
-		new ExecutiveModal(getApp(), this.executive, executive => {
+		new ExecutiveModal(this.executive, executive => {
 			this.executive = executive
 			this.dispatchEvent(new CustomEvent<void>('updateRequest', { bubbles: true, composed: true }))
 		}).open()

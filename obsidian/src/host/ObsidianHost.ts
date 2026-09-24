@@ -1,5 +1,14 @@
 import { getIcon, getIconIds, normalizePath, Notice, type App, type TFile } from "obsidian"
-import type { GlobalContextHost, IconHost, MediaHost, NavigationHost, OpenNoteOptions, PlatformHost } from "@pleiades/sipa"
+import type {
+	DialogHost,
+	GlobalContextHost,
+	IconHost,
+	MediaHost,
+	NavigationHost,
+	OpenNoteOptions,
+	PlatformHost
+} from "@pleiades/sipa"
+import { createObsidianDialogs } from "./obsidianDialogs"
 
 /** How often, and for how long, a note the core has just written is looked for before it is opened (PEP110). */
 const noteReadyPollIntervalMs = 120
@@ -9,13 +18,17 @@ const noteReadyPollTimeoutMs = 6_000
 const lucideIdPrefix = "lucide-"
 
 /**
- * The Obsidian implementation of the SIPA {@link PlatformHost}: toasts are Notices, notes open in workspace tabs,
- * vault files load through Obsidian's resource URLs, and the lucide glyphs come from Obsidian's own icon registry.
+ * The Obsidian implementation of the SIPA {@link PlatformHost}: toasts are Notices, dialogs are Obsidian modals, notes
+ * open in workspace tabs, vault files load through Obsidian's resource URLs, and the lucide glyphs come from
+ * Obsidian's own icon registry.
  */
 export class ObsidianHost implements PlatformHost {
 	readonly name = "obsidian"
+	readonly dialogs: DialogHost
 
-	constructor(private readonly app: App) { }
+	constructor(private readonly app: App) {
+		this.dialogs = createObsidianDialogs(app)
+	}
 
 	toast(message: string): void {
 		new Notice(message)

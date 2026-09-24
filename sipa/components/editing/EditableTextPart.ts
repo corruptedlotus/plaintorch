@@ -14,7 +14,7 @@ const warningDelay = 500
  *   Shift+Enter finishes;
  * - Escape cancels and reverts;
  * - `required` refuses an empty commit, `maxLength` caps input, `validateContent` gates syntax;
- * - an invalid value warns (delayed) while editing and, on commit, raises a Notice and reverts;
+ * - an invalid value warns (delayed) while editing and, on commit, raises a warning toast and reverts;
  * - a `placeholder` renders when empty so the box keeps a hit target even when void (the empty-contenteditable
  *   trap), and the caret is placed explicitly on focus.
  *

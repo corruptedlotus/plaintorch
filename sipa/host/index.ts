@@ -1,2 +1,6 @@
 export * from './PlatformHost'
 export * from './provider'
+export * from './dialogs'
+export * from './ModalBase'
+export * from './SuggestModalBase'
+export * from './dom'

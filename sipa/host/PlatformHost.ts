@@ -1,3 +1,5 @@
+import type { DialogHost } from './dialogs'
+
 /**
  * What the UI asks of the application it runs in (PEP110, *Sunnyside Mk1 — SIPA*). The components depend on this
  * seam instead of on Obsidian: the Obsidian plugin provides one implementation, the standalone shell another, and
@@ -20,6 +22,9 @@ export interface PlatformHost {
 	readonly navigation: NavigationHost
 	readonly media: MediaHost
 	readonly icons: IconHost
+
+	/** How modal dialogs and pickers are shown; the dialog classes reach it through `ModalBase` / `SuggestModalBase`. */
+	readonly dialogs: DialogHost
 
 	/**
 	 * Saving a global dependency context to a file of its own. Optional: a host without file-backed canvases leaves

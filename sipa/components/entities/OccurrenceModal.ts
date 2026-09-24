@@ -9,12 +9,11 @@ import {
 	type EventiveOccurrenceRef,
 	type EventiveUpdate
 } from "@pleiades/sdk"
-import { App, Modal } from "obsidian"
-import { core, getApp, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, type IconName } from ".."
+import { core, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, type IconName } from ".."
 import type { EditablePart } from "../editing/EditableDataLink"
 import "../editing/EditableDate"
 import "../editing/EditableTime"
-import { toast } from "../../host"
+import { createChild, ModalBase, toast } from "../../host"
 
 /** The occurrence a single {@link OccurrenceEditor} edits: an attentive of a decree, or an eventive of a fate/objective. */
 export type OccurrenceTarget =
@@ -116,7 +115,7 @@ export function occurrenceMenu(target: OccurrenceTarget, changed?: (updated: Occ
 	const choices: readonly ResolutionChoice<number>[] = target.kind === 'attentive' ? attentiveResolutions : eventiveResolutions
 
 	const entries: ContextMenuEntry[] = [
-		{ label: 'Open', icon: 'lucide:panel-top-open', run: () => openOccurrenceModal(getApp(), target, changed) },
+		{ label: 'Open', icon: 'lucide:panel-top-open', run: () => openOccurrenceModal(target, changed) },
 		{ label: `Open ${owner.label}`, icon: owner.icon, disabled: !ownerId, run: () => { ownerId && void navigateToEntity(ownerId) } },
 		{ separator: true },
 		...choices.map((choice): ContextMenuEntry => ({
@@ -135,8 +134,8 @@ export function occurrenceMenu(target: OccurrenceTarget, changed?: (updated: Occ
 }
 
 /** Opens the occurrence editor modal, relaying each committed change to `changed`. */
-export function openOccurrenceModal(app: App, target: OccurrenceTarget, changed?: (updated: OccurrenceTarget) => void) {
-	new OccurrenceModal(app, target, changed).open()
+export function openOccurrenceModal(target: OccurrenceTarget, changed?: (updated: OccurrenceTarget) => void) {
+	new OccurrenceModal(target, changed).open()
 }
 
 /**
@@ -283,24 +282,19 @@ export class OccurrenceEditor extends Component {
 	}
 }
 
-/** Hosts {@link OccurrenceEditor} inside an Obsidian modal, relaying every persisted change to the opener. */
-export class OccurrenceModal extends Modal {
+/** Hosts {@link OccurrenceEditor} in a modal, relaying every persisted change to the opener. */
+export class OccurrenceModal extends ModalBase {
 	constructor(
-		app: App,
 		private readonly target: OccurrenceTarget,
 		private readonly onChange?: (target: OccurrenceTarget) => void,
 	) {
-		super(app)
+		super()
 	}
 
 	override onOpen() {
-		const editor = this.contentEl.createEl('p7t-occurrence-editor')
+		const editor = createChild(this.contentEl, 'p7t-occurrence-editor')
 		editor.target = this.target
 		editor.addEventListener('occurrencechange', e => this.onChange?.((e as CustomEvent<OccurrenceTarget>).detail))
-	}
-
-	override onClose() {
-		this.contentEl.empty()
 	}
 }
 

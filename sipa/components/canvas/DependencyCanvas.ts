@@ -1,6 +1,6 @@
 import { Component, component, css, event, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
 import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
-import { ContextMenu, core, DerivedRef, getApp, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
+import { ContextMenu, core, DerivedRef, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
 import { activatePlanningOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
 import { OnrushDetailModal } from './OnrushDetailModal'
@@ -722,7 +722,7 @@ export class DependencyCanvas extends Component {
 	private openOnrushDetails() {
 		const sprint = this.sprint
 		if (sprint) {
-			new OnrushDetailModal(getApp(), sprint).open()
+			new OnrushDetailModal(sprint).open()
 		}
 	}
 
@@ -1073,7 +1073,7 @@ export class DependencyCanvas extends Component {
 
 	/** Opens the entity behind a node in its banner, to view or edit. */
 	private openDetails(node: CanvasNode) {
-		new EntityDetailModal(getApp(), node.ref.kind, node.entity, { milestone: node.milestone === true }).open()
+		new EntityDetailModal(node.ref.kind, node.entity, { milestone: node.milestone === true }).open()
 	}
 
 	private setMode(mode: CanvasContextMode) {

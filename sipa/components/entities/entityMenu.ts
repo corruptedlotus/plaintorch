@@ -1,5 +1,5 @@
 import { typeNameOf } from '@pleiades/sdk'
-import { core, getApp, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec } from '..'
+import { core, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec } from '..'
 import { EntityEditModal } from './EntityEditModal'
 import { toast } from '../../host'
 
@@ -44,7 +44,7 @@ export function canDeleteEntity(typeName: string | undefined): boolean {
 
 /** Opens an entity's editing modal (its banner), reporting when a kind has no editor here yet. */
 export function openEntityEditor(entity: InteractableEntity): boolean {
-	const modal = EntityEditModal.forEntity(getApp(), typeNameOf(entity), entity)
+	const modal = EntityEditModal.forEntity(typeNameOf(entity), entity)
 	if (!modal) {
 		toast('That entity has no editor here yet.', 'warning')
 		return false

@@ -1,5 +1,5 @@
 import { Component, component, css, eventListener, html, state } from "@a11d/lit"
-import { core, DerivedRef, getApp, PreferenceModal } from ".."
+import { core, DerivedRef, PreferenceModal } from ".."
 
 @component('p7t-briefing')
 export class Briefing extends Component {
@@ -21,7 +21,7 @@ export class Briefing extends Component {
 
 	/** Opens the settings modal. The settings sit at the end of the tab row but act as a button, not a nav tab. */
 	private openSettings() {
-		new PreferenceModal(getApp()).open()
+		new PreferenceModal().open()
 	}
 
 	static override get styles() {

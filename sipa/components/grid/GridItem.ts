@@ -1,7 +1,7 @@
 import { component, css, html, HTMLTemplateResult, nothing, property, PropertyValues } from '@a11d/lit'
 import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, Directive, Objective, typeNameOf } from '@pleiades/sdk'
 import {
-	getApp, IconName, LunarDirectiveModal, type ScheduleValue,
+	IconName, LunarDirectiveModal, type ScheduleValue,
 	SelectDirectiveStatusModal, SelectLunarDirectiveStatusModal, SelectObjectiveStatusModal
 } from '..'
 import {
@@ -183,7 +183,7 @@ export class GridItem extends GridItemBase {
 
 	/** Opens the lunar directive's editing modal, where its timeframes are defined. */
 	protected openLunarEditor() {
-		new LunarDirectiveModal(getApp(), this.row!.entity as Directive).open()
+		new LunarDirectiveModal(this.row!.entity as Directive).open()
 	}
 
 	/** The workflow state, for the kinds that carry a lifecycle worth shifting from here. */

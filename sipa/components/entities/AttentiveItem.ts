@@ -2,7 +2,7 @@ import { component, html, property } from "@a11d/lit"
 import { Attentive, AttentiveResolution } from "@pleiades/sdk"
 import { OccurrenceItem } from "./OccurrenceItem"
 import { occurrenceMenu, openOccurrenceModal, type OccurrenceTarget } from "./OccurrenceModal"
-import { core, getApp, type ContextMenuSpec } from ".."
+import { core, type ContextMenuSpec } from ".."
 import "../system/DatetimeView"
 import { toast } from "../../host"
 
@@ -46,7 +46,7 @@ export class AttentiveItem extends OccurrenceItem {
 	protected override navigate() {
 		const target = this.target
 		if (!this.interactive || !target) return
-		openOccurrenceModal(getApp(), target, this.applyChange)
+		openOccurrenceModal(target, this.applyChange)
 	}
 
 	protected override get heading() {

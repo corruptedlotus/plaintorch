@@ -1,5 +1,5 @@
 import { DependencyEndpointKind } from '@pleiades/sdk'
-import { App, Modal } from 'obsidian'
+import { ModalBase } from '../../host'
 import type { CanvasEntity } from './graphModel'
 
 /** The banner element each endpoint kind is viewed through; the generic banner covers the rest. */
@@ -30,23 +30,21 @@ export interface EntityDetailOptions {
  * which banner — an objective's, a checkpoint's, a directive's — and the entity supplies a title to show
  * while the resolution settles.
  */
-export class EntityDetailModal extends Modal {
+export class EntityDetailModal extends ModalBase {
 	public constructor(
-		app: App,
 		private readonly kind: DependencyEndpointKind,
 		private readonly entity: CanvasEntity,
 		private readonly options: EntityDetailOptions = {}
 	) {
-		super(app)
+		super()
 	}
 
 	public override onOpen(): void {
-		this.titleEl.setText(`Editing ${this.entity.id}`)
-		this.contentEl.addClass('plaintorch-root')
+		this.setTitle(`Editing ${this.entity.id}`)
 
 		const tag = bannerTagByKind[this.kind] ?? 'p7t-entity-banner'
 		const banner = document.createElement(tag) as BannerElement
-		banner.addClass('plaintorch-modal-content')
+		banner.classList.add('plaintorch-modal-content')
 		// The provided entity shows immediately; the id resolves the canonical instance the banner then edits.
 		banner.entity = this.entity
 		banner.puck = this.entity.id
@@ -55,9 +53,5 @@ export class EntityDetailModal extends Modal {
 		}
 
 		this.contentEl.appendChild(banner)
-	}
-
-	public override onClose(): void {
-		this.contentEl.empty()
 	}
 }

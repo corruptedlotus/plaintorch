@@ -1,6 +1,6 @@
 import { component, css, html, property, state } from "@a11d/lit"
 import { PolarisExecutivePlanningMode, type Activity, type DirectiveTimeframeRecord, type Executive, type PolarisCycle, type PolarisExecutivePlan } from "@pleiades/sdk"
-import { core, ExecutiveModal, getApp, isObjectiveInCycle, type ActivityChoice, type EditableTimeUnit, type TimeframeSelect, type ActivitySelect } from ".."
+import { core, ExecutiveModal, isObjectiveInCycle, type ActivityChoice, type EditableTimeUnit, type TimeframeSelect, type ActivitySelect } from ".."
 import { CreationRowBase } from "../editing/CreationRowBase"
 import { toast } from "../../host"
 
@@ -148,7 +148,7 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 	}
 
 	protected override openEditor(created: PolarisActivityCreated) {
-		new ExecutiveModal(getApp(), created).open()
+		new ExecutiveModal(created).open()
 	}
 
 	protected override reset() {
