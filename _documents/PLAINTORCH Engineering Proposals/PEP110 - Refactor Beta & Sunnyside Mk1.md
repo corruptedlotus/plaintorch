@@ -240,30 +240,39 @@ file"). These are intrinsically editor-bound.
   on-note banner, the command palette) + an **`ObsidianHost`** implementing `PlatformHost` (App/Notice/Modal/getIcon/
   openLinkText) + injecting the node `core` client.
 - **SIPA = the other adapter** (`standalone/`): the renderer mounts `@pleiades/sipa`, provides a **`SipaHost`**
-  (toast/dialog/icons via the chosen libraries; navigation is interim no-op) + injects the bridge `core` client.
+  (toast/dialog via the in-house `p7t-toast`/`p7t-dialog`, bundled icons; navigation is interim no-op) + injects the
+  bridge `core` client.
 
 Two inversions carry it:
 - **`PlatformHost`** — the SIPA-first seam the UI depends on instead of `obsidian`. Sketch: `toast(message, kind?)`;
   a **modal service** that hosts our `P7tModal` / `P7tSuggest` bases (so swapping the underlying dialog engine never
-  touches the 21 dialog classes); `navigate(target)`; an **icon provider** (`getIcon`/`getIconIds`); `activeFile()`
+  touches the 17 dialog classes); `navigate(target)`; an **icon provider** (`getIcon`/`getIconIds`); `activeFile()`
   (Obsidian editor context; SIPA returns none for now). Vault reads/writes go through the `core` client (watcher-
   synced), not the host.
 - **`core` provider** — the UI reads an injected client set at bootstrap (e.g. a module-level `setCore()` mirroring how
   `window.app` is set today), replacing the direct `@pleiades/sdk/plaintorch/node` import. Obsidian bootstrap injects
   the node client; SIPA injects the bridge client.
 
-### Decisions pinned (this planning run)
+### Decisions pinned (planning run, P1 and the Spike)
 - **Shared-code home — extract `@pleiades/sipa` (at `sipa/`) up front.** *(Named at P1; the planning run's working
   name was `@pleiades/client` at `client.ts/`.)* The relocation of `components/` (+ `orbits/`) into the
   package lands *first* (mechanical move, plugin stays green, still transitively importing `obsidian` until the
   inversion), so all subsequent inversion work happens in the code's final SIPA-first home. (Note the sequencing
   consequence: extraction alone does **not** unblock SIPA — the SIPA renderer can only consume the package once the
   `obsidian` imports are gone, i.e. after the `PlatformHost` inversion.)
-- **Dialog host — OPEN, deliberately.** Start the modal service on **`@3mo/dialog`** for the 8 plain modals and
-  **`@3mo/notification`** for toasts (only `@3mo/popover` + `@3mo/tooltip` are deps today). But the modal service is an
-  abstraction: if 3MO's styling proves too restrictive we **retract to a bespoke dialog host** without touching the 21
-  dialog classes. **The 7 `SuggestModal` pickers stay undecided** pending the spike — likely in-house on the existing
-  `SelectBase` / `p7t-popover` / `fuzzy.ts` if 3MO can't stretch. Gated by an early spike (below).
+- **Dialog host — in-house on native `<dialog>`, functionality from 3MO controllers** *(decided by the Spike; the
+  planning run had left it open between `@3mo/dialog` and a bespoke host)*. The modal service hosts our own
+  `p7t-dialog` (modals) and `p7t-toast` (toasts), drawn with our own markup and `p7t-icon`. Wherever the behaviour is
+  something the 3MO suite already provides as a **controller**, the host uses that controller rather than hand-rolling
+  it: `@3mo/focus-controller` (focus-within, focus return), `@3mo/slot-controller` (footer/action presence),
+  `@3mo/pointer-controller` (hover-pausing a toast), `@3mo/interval-controller` (toast timer ticks). No 3MO
+  *components* (`mo-dialog`, `mo-snackbar`, `mo-button`, `mo-icon`) — see *Spike findings* for why.
+- **Pickers — in-house `P7tSuggest` on `@3mo/navigability`** *(decided by the Spike)*. The 9 pickers keep their
+  `getSuggestions` / `renderSuggestion` / `onChooseSuggestion` / `onClose` contract; the base draws an input plus the
+  results inside `p7t-dialog`, with the cursor owned by 3MO's `NavigabilityController` (the list controller). **Grid
+  is intrinsic**: a picker declares `layout: 'list' | 'grid'` (today `SelectMediaModal` gets its grid by injecting
+  `plaintorch-media-selector` into Obsidian's result container); grid mode switches the controller to
+  `orientation: 'both'` and moves Up/Down a whole row through its `handleKeyDown` hook.
 - **Interim navigation — no-op + "no editor yet" toast.** SIPA has the vault on disk but no in-app editor yet, so
   `navigate(entity)` just toasts that the editor is coming. (A real in-app read/edit surface is a later effort.)
 - **Branch — `claude/sipa-first`, off the current consolidated tip** (`dev/phase2d` at `2db63a5`). Isolates this
@@ -290,18 +299,21 @@ Two inversions carry it:
   package.json/tsconfig; rewire `obsidian/` to consume it (as it already consumes `@pleiades/sdk` from source). The
   package may still `import { … } from "obsidian"` transitionally. No behavior change; plugin green. *(done —
   `standalone/` is wired at P8 instead, since nothing there consumes the package before the mount.)*
-- **Spike (gate for P5/P6) — 3MO dialog viability.** Stand up a `@3mo/dialog` + `@3mo/notification` probe inside the
-  package (mind `@3mo/theme`'s global-import side-effects vs the plugin's styles). Decide: 3MO for modals? 3MO or
-  in-house for suggest? Records the choice before the modal phases commit.
+- **Spike (gate for P5/P6) — 3MO dialog viability.** Probe `@3mo/dialog` + the 3MO toast (there is no
+  `@3mo/notification`; it is `@3mo/snackbar`) and decide the modal, toast and suggest hosts. *(done — in-house hosts
+  on native `<dialog>` + 3MO controllers; see Decisions and *Spike findings*)*
 - **P2 — `PlatformHost` + `ObsidianHost`.** Define the interface; route `getApp`/`navigateToEntity`/`Notice`/`Modal`/
   `getIcon` through it; implement the Obsidian adapter. Plugin green, no behavior change.
 - **P3 — `core` provider inversion.** UI consumes injected `core`; Obsidian bootstrap injects the node client. Fix the
   barrel + the 3 direct importers.
-- **P4 — Toasts.** `host.toast(...)` over the host; Obsidian→`Notice`, SIPA→`@3mo/notification`. Refactor the 89 sites
-  (mechanical, batchable).
-- **P5 — Modals.** `P7tModal` base over the modal service; migrate the 8 plain modals. Obsidian→`Modal`, SIPA→(spike
-  result).
-- **P6 — SuggestModals.** `P7tSuggest` base; migrate the 9 pickers per the spike decision.
+- **P4 — Toasts.** `host.toast(...)` over the host; Obsidian→`Notice`, SIPA→`p7t-toast` (in-house, Notice-like stack
+  at the top-right; pointer-controller pause, interval-controller timer). Refactor the 89 sites (mechanical,
+  batchable).
+- **P5 — Modals.** `P7tModal` base over the modal service; migrate the 8 plain modals. Obsidian→`Modal`,
+  SIPA→`p7t-dialog` (native `<dialog>` + `showModal()`: top layer, backdrop, Escape through the `cancel` event; a
+  promise-based open/confirm; focus/slot controllers).
+- **P6 — SuggestModals.** `P7tSuggest` base on `NavigabilityController` with intrinsic list/grid layout; migrate the 9
+  pickers (`SelectMediaModal` drops its injected grid class for `layout: 'grid'`).
 - **P7 — Icons + navigation.** Icon provider (bundle lucide; Obsidian→`getIcon`); SIPA `navigate` = no-op + toast.
   After this the package no longer imports `obsidian`.
 - **P8 — SIPA renderer mount (payoff).** In `standalone/`: depend on `@pleiades/sipa` (package.json + esbuild, and
@@ -315,6 +327,41 @@ P1 is the structural prerequisite; the Spike gates P5/P6; P2–P3 are the founda
 reorderable; P8 is the realization. Obsidian keeps working throughout because every seam ships its `ObsidianHost` impl
 in the same phase.
 
+### Spike findings (3MO dialog viability, 2026-09-24)
+Probed in a real renderer (Electron 44, offscreen): stock `mo-dialog`, a restyled `mo-dialog` subclass, `mo-snackbar`
+stock and restyled, and a prototype picker on `NavigabilityController`.
+
+- **Styling reach was not the problem.** A `mo-dialog` subclass (≈40 lines of CSS + two template overrides) matched an
+  Obsidian modal closely, and the snackbar restyled to a top-right Notice. Behaviour was sound too: native `<dialog>`
+  in the top layer, `DialogComponent.confirm()` resolving on the primary action and rejecting on Escape/close, and no
+  lit-application `Application` root needed (`Application.topLayer` falls back to `document.body`).
+- **The costs were.**
+  - **Bundle: +394 KB unminified / +240 KB minified (≈ +27% on the 1.44 MB plugin).** The dialog itself is 16 KB; the
+    rest is `@material/web` (104 KB), `@a11d/lit-application` + its router, `urlpattern-polyfill` and `path-to-regexp`
+    (≈96 KB), `reflect-metadata` (42 KB) and the 3MO button/selection stack (≈60 KB).
+  - **`reflect-metadata` patches the global `Reflect`**, which inside Obsidian is shared with every other plugin.
+  - **`@3mo/icon` loads Material Icons from `fonts.googleapis.com` at runtime** (an `@import` in a style element it
+    appends to `document.head`). Offline — or on first open, before the font arrives — icons render as their ligature
+    words: the stock dialog's close button reads "close", the snackbar reads "info … close".
+  - **Version drift:** current 3MO (`@3mo/button` 1.2 → `@3mo/indexability` 0.2.1) requires `@a11d/lit` ≥ 0.13; the
+    package is on 0.11.1, so a second `@a11d/lit` copy is bundled (0.11.1 lacks `ElementRefs`).
+  - The restyle replaced everything visible anyway (heading, close button, buttons, surface, placement) and the
+    snackbar's stack layout assumes bottom anchoring (a top-anchored stack pushes older toasts off-screen). What 3MO
+    would really contribute is a thin native-`<dialog>` wrapper, the confirm/cancel promise plumbing and a timer.
+- **The controllers are the useful part, and fit 0.11.1.** `focus-`, `slot-`, `pointer-` and `interval-controller`
+  import only what `@a11d/lit` 0.11.1 exports. `@3mo/navigability` 0.1.0 runs on 0.11.1 **provided `@3mo/indexability`
+  is pinned to `0.2.0`** (0.2.1 is the one needing `ElementRefs`/0.13; 0.2.0 has the `item`/`itemAt`/`observe` API
+  navigability uses). Cost ≈ 21 KB. The prototype picker verified, with real key events: disabled rows skipped both
+  ways, the cursor re-found by key after filtering, Enter choosing, focus kept in the input with
+  `aria-activedescendant` on it, grid Left/Right by cell and Up/Down by a whole row (column count read off the
+  rendered layout), Escape closing the native dialog.
+- **Prototype technique worth keeping for P6:** the input keeps the keys and forwards only the cursor keys to
+  `navigability.handleKeyDown(e)`; `keyboardTarget` is a *getter* returning the rendered input or `null` (null at
+  construction, so the controller attaches no listener of its own; later it is where `aria-activedescendant` lands);
+  `orientation` is a getter too (options are built once, at construction, before attributes apply). Beware a
+  reconnect: `hostConnected` then finds the input and attaches the controller's own listener, doubling the
+  forwarding — P6 must pick one route.
+
 ### Verification (per phase)
 Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors over baseline; SDK `npm test` (vitest);
 `standalone` `typecheck`/`build`; browser smoke where a controller changed ([[obsidian-plugin-verification]]). No core
@@ -327,9 +374,11 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
   target would additionally need the daemon to expose HTTP/WS, which it does not today).
 
 ### Open items to resolve during implementation
-- 3MO dialog/notification styling reach vs `@3mo/theme` global side-effects (the Spike answers this; may flip the modal
-  and/or suggest host to bespoke).
+- ~~3MO dialog/notification viability~~ — resolved by the Spike: in-house hosts on native `<dialog>`, 3MO controllers.
 - ~~Final name/location of the shared package~~ — resolved at P1: `@pleiades/sipa` at `sipa/`.
+- **`@a11d/lit` 0.11 → 0.13 (deferred).** Current 3MO has moved to 0.13 (`ElementRefs`); SIPA stays on 0.11.1 with
+  `@3mo/indexability` pinned at `0.2.0`. Upgrading is its own verified step (the package, `@3mo/popover`/`tooltip`
+  and their tooltip hacks) — not a SIPA Mk1 prerequisite.
 - The exact `core`-injection mechanism (settable module singleton vs lit context) — settle in P3.
 
 ### Status log
@@ -343,3 +392,8 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
   production bundle is **byte-identical** to the baseline once the `../sipa/` module-path comments are normalised
   (one lit runtime, `obsidian` still external); plugin `tsc` 46 errors, identical per file; the package's own
   `typecheck` reports exactly the 36 of those that sit in its files.
+- 2026-09-24 — Spike done (no code landed; the probes live outside the repo). `@3mo/dialog` + `@3mo/snackbar`
+  restyle well but cost +394 KB, a global `Reflect` patch, a runtime Google Fonts dependency and a second
+  `@a11d/lit`. Decided: in-house `p7t-dialog` / `p7t-toast` on native `<dialog>` using 3MO controllers; pickers
+  in-house on `@3mo/navigability` (+ `@3mo/indexability` pinned `0.2.0`) with intrinsic list/grid, verified on
+  `@a11d/lit` 0.11.1. Findings above.
