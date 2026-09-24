@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url"
 import { BrowserWindow, screen, shell } from "electron"
 import type { ShellStatus } from "../shared/contracts"
 import { ipc } from "../shared/contracts"
+import { customFrame, relayFrameState } from "./window-frame"
 
 const splashSize = { width: 943, height: 405 }
 const statusSize = { width: 720, height: 560 }
@@ -34,8 +35,9 @@ function preloadPath(): string {
 const minimumSplashMs = 1_400
 
 /**
- * The shell's windows: the frameless splash that mirrors the old startup popup and the ordinary status window, both
- * rendering the same small bundle behind a different hash, and the briefing — the SIPA UI — on a page of its own.
+ * The shell's windows: the frameless splash that mirrors the old startup popup and the status window, both rendering
+ * the same small bundle behind a different hash, and the briefing — the SIPA UI — on a page of its own. The status and
+ * briefing windows draw their own title bars ({@link customFrame}).
  */
 export class ShellWindows {
 	private splash?: BrowserWindow
@@ -130,16 +132,17 @@ export class ShellWindows {
 
 		this.status = new BrowserWindow({
 			...statusSize,
+			...customFrame(),
 			minWidth: 480,
 			minHeight: 360,
 			title: "PLAINTORCH",
-			autoHideMenuBar: true,
 			show: false,
 			backgroundColor: "#1f1a22",
 			icon: windowIcon(),
 			webPreferences: this.webPreferences()
 		})
 		this.guard(this.status)
+		relayFrameState(this.status)
 		this.status.once("ready-to-show", () => this.status?.show())
 		this.status.on("closed", () => {
 			this.status = undefined
@@ -161,16 +164,17 @@ export class ShellWindows {
 
 		this.briefing = new BrowserWindow({
 			...briefingSize,
+			...customFrame(),
 			minWidth: 720,
 			minHeight: 520,
 			title: "PLAINTORCH Briefing",
-			autoHideMenuBar: true,
 			show: false,
 			backgroundColor: "#1f1a22",
 			icon: windowIcon(),
 			webPreferences: this.webPreferences()
 		})
 		this.guard(this.briefing)
+		relayFrameState(this.briefing)
 		this.briefing.once("ready-to-show", () => this.briefing?.show())
 		this.briefing.on("closed", () => {
 			this.briefing = undefined

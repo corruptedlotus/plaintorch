@@ -115,6 +115,16 @@ export interface BridgeStreamLine {
 	line: string
 }
 
+/** What a window's own title bar draws from the window it frames. */
+export interface WindowFrameState {
+	/** Maximized: the maximize button shows the restore glyph. */
+	maximized: boolean
+	/** The window has the focus; the title bar dims without it, as a system one does. */
+	focused: boolean
+	/** Full screen: the title bar steps aside. */
+	fullScreen: boolean
+}
+
 /**
  * The URL scheme vault files are served under to the renderer (`plaintorch-media://vault/<vault-relative path>`), by
  * the main process from the vault the core serves.
@@ -140,7 +150,12 @@ export const ipc = {
 	coreStreamOpen: "core:stream-open",
 	coreStreamLine: "core:stream-line",
 	coreStreamEnd: "core:stream-end",
-	coreStreamClose: "core:stream-close"
+	coreStreamClose: "core:stream-close",
+	frameGetState: "frame:get-state",
+	frameState: "frame:state",
+	frameMinimize: "frame:minimize",
+	frameToggleMaximize: "frame:toggle-maximize",
+	frameClose: "frame:close"
 } as const
 
 /** The API the preload exposes on `window.plaintorch`. */
@@ -168,5 +183,16 @@ export interface PlaintorchBridge {
 		openStream(path: string, onLine: (line: string) => void, onEnd: () => void): Promise<string | undefined>
 		/** Closes a stream this document opened. */
 		closeStream(id: string): Promise<void>
+	}
+	/** The window this page runs in, for the title bar it draws itself (the status and briefing windows are frameless). */
+	frame: {
+		/** The platform: macOS keeps its own window buttons over the title bar, the others have the page draw them. */
+		platform: NodeJS.Platform
+		getState(): Promise<WindowFrameState | undefined>
+		onState(listener: (state: WindowFrameState) => void): () => void
+		minimize(): Promise<void>
+		/** Maximizes the window, or restores it when it is maximized. */
+		toggleMaximize(): Promise<void>
+		close(): Promise<void>
 	}
 }

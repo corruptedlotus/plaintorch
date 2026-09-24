@@ -9,6 +9,7 @@ import { resolveUserProfile } from "./profile"
 import { refuseRemoteFiles } from "./request-guard"
 import { Shell } from "./shell"
 import { ShellTray } from "./tray"
+import { handleFrameControls } from "./window-frame"
 import { ShellWindows } from "./windows"
 
 /**
@@ -152,6 +153,7 @@ async function run(): Promise<void> {
 	ipcMain.handle(ipc.coreSend, (_, request: BridgeRequest) => shell.transport.send(request))
 
 	relayCoreStreams(shell.transport)
+	handleFrameControls()
 
 	app.on("second-instance", () => !quitting && windows.showBriefing())
 	// A tray app stays alive with no windows.

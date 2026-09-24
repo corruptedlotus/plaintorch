@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-import { ipc, type BridgeRequest, type BridgeResponse, type BridgeStreamLine, type PlaintorchBridge, type ShellStatus } from "../shared/contracts"
+import { ipc, type BridgeRequest, type BridgeResponse, type BridgeStreamLine, type PlaintorchBridge, type ShellStatus, type WindowFrameState } from "../shared/contracts"
 
 /** The streams this document has open, by id: where their lines and their end go. */
 const streams = new Map<string, { onLine: (line: string) => void, onEnd: () => void }>()
@@ -20,7 +20,7 @@ ipcRenderer.on(ipc.coreStreamEnd, (_: Electron.IpcRendererEvent, id: string) => 
 /**
  * The only door between the sandboxed renderer and the main process. Every window shares it: the splash uses the
  * status subscription, the status and briefing windows everything, including the core transport the renderer's SDK
- * client sends through and the change feed it streams.
+ * client sends through, the change feed it streams, and the window their own title bars drive.
  */
 const bridge: PlaintorchBridge = {
 	getStatus: () => ipcRenderer.invoke(ipc.getStatus) as Promise<ShellStatus>,
@@ -60,6 +60,18 @@ const bridge: PlaintorchBridge = {
 		closeStream: async id => {
 			await ipcRenderer.invoke(ipc.coreStreamClose, id)
 		}
+	},
+	frame: {
+		platform: process.platform,
+		getState: () => ipcRenderer.invoke(ipc.frameGetState) as Promise<WindowFrameState | undefined>,
+		onState: listener => {
+			const handler = (_: Electron.IpcRendererEvent, state: WindowFrameState) => listener(state)
+			ipcRenderer.on(ipc.frameState, handler)
+			return () => ipcRenderer.removeListener(ipc.frameState, handler)
+		},
+		minimize: () => ipcRenderer.invoke(ipc.frameMinimize) as Promise<void>,
+		toggleMaximize: () => ipcRenderer.invoke(ipc.frameToggleMaximize) as Promise<void>,
+		close: () => ipcRenderer.invoke(ipc.frameClose) as Promise<void>
 	}
 }
 

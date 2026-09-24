@@ -2,6 +2,7 @@ import { Component, component, css, html, nothing, state, unsafeCSS } from "@a11
 import { PlaintorchCoreClient, type SystemBriefing } from "@pleiades/sdk/plaintorch"
 import type { CorePhase, PlaintorchBridge, ShellStatus } from "../shared/contracts"
 import { BridgeTransport } from "./bridgeTransport"
+import "./WindowFrame"
 import splashArtwork from "../../assets/splash-loading.png"
 
 declare global {
@@ -40,7 +41,7 @@ function phaseLabel(status: ShellStatus): string {
 	return status.phase
 }
 
-/** Routes the window to the splash or the status view from the URL hash. */
+/** Routes the window to the splash or the status view from the URL hash; the status window draws its own frame. */
 @component("p7t-app")
 export class App extends Component {
 	@state() private status?: ShellStatus
@@ -73,7 +74,7 @@ export class App extends Component {
 
 		return this.view === "splash"
 			? html`<p7t-splash .status=${this.status}></p7t-splash>`
-			: html`<p7t-status .status=${this.status}></p7t-status>`
+			: html`<p7t-window-frame><p7t-status .status=${this.status}></p7t-status></p7t-window-frame>`
 	}
 }
 

@@ -136,7 +136,8 @@ export class Toast extends Component {
 }
 
 /**
- * The stack toasts appear in: the top-right corner, newest at the bottom, as Obsidian shows its notices. One per
+ * The stack toasts appear in: the top-right corner, newest at the bottom, as Obsidian shows its notices — below
+ * whatever a page draws across its top edge, which it declares as `--p7t-safe-top` (a window's own title bar). One per
  * document, created on the first toast.
  *
  * It is a manual popover, raised to the top of the top layer on every new toast: a modal `<dialog>` lives in the top
@@ -158,7 +159,7 @@ export class ToastStack extends Component {
 		return css`
 			:host {
 				position: fixed;
-				inset: 16px 16px auto auto;
+				inset: calc(var(--p7t-safe-top, 0px) + 16px) 16px auto auto;
 				margin: 0;
 				padding: 0;
 				border: none;

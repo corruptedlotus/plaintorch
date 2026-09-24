@@ -8,9 +8,14 @@
 	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src data: blob: plaintorch-media:; font-src 'self' data:">
 	<title>PLAINTORCH Briefing</title>
 	<style>
+		:root {
+			/* The title bar's height: toasts appear below it, clear of the window buttons. */
+			--p7t-safe-top: 32px;
+		}
+
 		#briefing {
 			box-sizing: border-box;
-			height: 100vh;
+			height: 100%;
 			padding: 0.2em 1em 1.4em;
 			overflow: auto;
 		}
@@ -43,7 +48,9 @@
 	</style>
 </head>
 <body>
-	<div id="briefing" class="plaintorch-briefing-view plaintorch-root"></div>
+	<p7t-window-frame>
+		<div id="briefing" class="plaintorch-briefing-view plaintorch-root"></div>
+	</p7t-window-frame>
 	<script src="./briefing.js"></script>
 </body>
 </html>

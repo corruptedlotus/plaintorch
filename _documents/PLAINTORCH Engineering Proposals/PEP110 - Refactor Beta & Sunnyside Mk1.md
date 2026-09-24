@@ -476,3 +476,29 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
   feed, also after a reload; the media picker opens as a grid above a modal, searches the lucide catalog, moves by
   row, and sets a lucide and a vault-image icon (both written, both shown); `plaintorch-media` serves vault images and
   refuses `../` escapes; the prompt dialog creates an objective; "Open note" toasts that SIPA has no editor yet.
+- 2026-09-24 — Version `0.2.4` across sipa, sdk.ts, the plugin (package, manifest, `versions.json`) and the shell;
+  PLAINTORCH branding (`abcaa4c`): `/branding/plaintorch.ico` and the NSIS sidebar/header, generated from the marks by
+  `standalone/scripts/make-icons.mjs`, on the installer, uninstaller, shortcuts, the shell's, core's and CLI's
+  executables, the tray and the Linux autostart entry.
+- 2026-09-24 — Adversarial review of the SIPA host, P8 and branding (18 findings, 12 confirmed, all fixed in
+  `f2e554d`). The serious one: on the briefing's `file:` page a vault icon key like `//host/x.png` became a UNC fetch
+  that hands the named host the user's NTLM credentials (CSP `'self'` on a file page admits hosted `file:` URLs). Now
+  closed three ways: no `'self'` in `img-src`, a main-process guard (`request-guard.ts`) cancelling every hosted
+  `file:` request a window makes, and `isImageSource` no longer treating path-like keys as images. Also: toasts over a
+  modal were inert (a click dismissed the modal) — the stack now lives in the topmost modal's overlay slot; stream ids
+  are scoped to the opening document and listened for from before the open, and only a committed navigation closes
+  one; the SDK stream arms its connect timer only after the request exists; Enter waits for the pending search; quit
+  races, the vault picker's parent, a drive-root vault, the ICO's AND mask and `make-icons` hanging on bad input.
+  Verified in the harness: the policy and the guard both refuse (`ERR_BLOCKED_BY_CLIENT`), a toast over a modal is
+  hit-testable and a click on it dismisses the toast only, Enter chooses from the slow search's answer, and the feed
+  delivers an external rename after a reload.
+- 2026-09-24 — **Custom window frames.** The status and briefing windows are frameless (`frame: false`; on macOS
+  `titleBarStyle: "hidden"` keeping the traffic lights) and draw their own title bar, `p7t-window-frame`
+  (`standalone/src/renderer/WindowFrame.ts`): mark, title, a `title-bar` slot, minimize / maximize-restore / close
+  over `frame:*` IPC (`window-frame.ts`), state relayed from the window (maximized, focused, full screen), styling via
+  parts and `--p7t-title-bar-*` properties; the briefing declares `--p7t-safe-top` so toasts stay below the bar.
+  Verified on real (off-screen, unfocusable) windows: `WM_NCHITTEST` gives CAPTION on the bar (through the shadow
+  root), CLIENT on the buttons, on a slotted control and on the page, and the resize codes on every edge and corner;
+  the buttons minimize, maximize (the bar swaps to the restore glyph, and the maximized page fills the work area
+  exactly) and restore, and close. Not available: Windows 11's snap-layout flyout, which belongs to the native
+  maximize button.

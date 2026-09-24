@@ -4,9 +4,11 @@ import { provideCore, provideHost } from "@pleiades/sipa"
 import { createSipaHost } from "@pleiades/sipa/hosts/sipa"
 import { mediaScheme, type PlaintorchBridge, type ShellStatus } from "../shared/contracts"
 import { BridgeTransport } from "./bridgeTransport"
+import "./WindowFrame"
 
 /**
- * The briefing window: the SIPA UI — the same `p7t-briefing` the Obsidian plugin shows — hosted by the shell.
+ * The briefing window: the SIPA UI — the same `p7t-briefing` the Obsidian plugin shows — hosted by the shell, under
+ * the window's own title bar (`p7t-window-frame`, in the page).
  *
  * Bootstrap order matters. The host and the core client are installed before anything renders: the components reach
  * for the host while they draw and take their repositories from the client as they are built. The change feed then

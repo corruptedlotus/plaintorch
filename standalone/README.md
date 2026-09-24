@@ -21,6 +21,8 @@ and one build; the flavour is baked in at build time.
 - A **tray icon** with the phase, the active vault, the briefing and the status window, activate/deactivate,
   start-at-login, the logs folder, restart, updates, and quit.
 - A **status window** with the core, the shell settings, and a summary of the active vault.
+- **Custom window frames**: the status and briefing windows are frameless and draw their own title bar
+  (`p7t-window-frame`, below).
 - **Start at login** through the OS login-item API on Windows and macOS, and an XDG autostart entry on Linux.
 - **Updates** through electron-updater in the "download the new installer and run it" flow; see `../installer`.
 
@@ -44,6 +46,25 @@ The dev shell finds the core at `../core/bin/Debug/net10.0` (build the core firs
 `PLAINTORCH_CORE_PATH` points. `npm run typecheck` runs `tsc` (the package's own pre-existing errors show up there
 too, since the renderer bundles it from source).
 
+## Window frames
+
+The status and briefing windows draw their own title bar: `p7t-window-frame` (`src/renderer/WindowFrame.ts`) wraps
+each page — the PLAINTORCH mark, the window's title, a `title-bar` slot for a page's own controls, and the minimize,
+maximize/restore and close buttons — over the page, which fills and scrolls in the rest of the window.
+
+- **Main process** (`src/main/window-frame.ts`): `customFrame()` gives `frame: false` on Windows and Linux (the window
+  keeps its resizable edges, shadow and snapping) and `titleBarStyle: "hidden"` on macOS, where the system keeps its
+  traffic lights and the bar draws no buttons. `relayFrameState` pushes maximized/focused/full-screen to the page;
+  `handleFrameControls` answers the buttons (`frame:*` IPC), each acting on the window that asked.
+- **Dragging** is `-webkit-app-region: drag` on the bar; the buttons and anything slotted into it are `no-drag`.
+  Double-clicking the bar maximizes, and right-clicking it opens the system menu, as on a system title bar. Windows
+  11's snap-layout flyout on the maximize button belongs to the native caption button and is not available.
+- **Styling**: parts `title-bar`, `icon`, `title`, `controls`, `control` (+ `minimize`, `maximize`, `close`) and
+  `content`; custom properties `--p7t-title-bar-height`, `-background`, `-color`, `-border`, `-control-hover` and
+  `-close-hover`; the host reflects `platform`, `maximized`, `inactive` and `fullscreen`.
+- A page whose chrome covers its top edge declares it as `--p7t-safe-top` (the briefing: 32px), which the SIPA toasts
+  stay below.
+
 ## Icons
 
 The PLAINTORCH marks live in `assets/`: `plaintorch-full.png` (the full-colour mark — window, executable, installer),
@@ -61,9 +82,10 @@ are committed; re-run it after changing a mark.
 
 - `src/main`: the Electron main process. `shell.ts` is the single source of truth; `core-process.ts` supervises the
   spawned core; `core-transport.ts` is HTTP over the pipe/socket (the SDK's socket transport); `core-streams.ts`
-  relays the change feed to the windows; `media-protocol.ts` serves vault files; `windows.ts`, `tray.ts`,
+  relays the change feed to the windows; `media-protocol.ts` serves vault files; `request-guard.ts` refuses hosted
+  `file:` requests (UNC/SMB); `window-frame.ts` makes the custom frames work; `windows.ts`, `tray.ts`,
   `autostart.ts`, `updater.ts`, `config.ts`, `profile.ts` do what their names say.
 - `src/preload`: the only bridge into the sandboxed renderer (`window.plaintorch`).
 - `src/renderer`: `renderer.ts` (the splash and the status window) and `briefing.ts` (the SIPA briefing), each its own
-  bundle and page, sharing `bridgeTransport.ts`. Both resolve `@a11d/lit` to the package's copy, so there is one lit.
+  bundle and page, sharing `bridgeTransport.ts` and `WindowFrame.ts`. Both resolve `@a11d/lit` to the package's copy, so there is one lit.
 - `src/shared/contracts.ts`: the shapes shared by all three, mirroring `core/Plaintorch/Hosting`.
