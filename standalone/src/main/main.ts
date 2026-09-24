@@ -1,7 +1,8 @@
 import { app, dialog, ipcMain, shell as electronShell, nativeTheme } from "electron"
 import { mkdirSync } from "node:fs"
-import { ipc, type BridgeRequest, type BridgeStreamLine, type ShellStatus } from "../shared/contracts"
+import { ipc, type BridgeRequest, type ShellStatus } from "../shared/contracts"
 import { setAutostartEnabled } from "./autostart"
+import { relayCoreStreams } from "./core-streams"
 import { hostsCore } from "./flavor"
 import { handleMediaScheme, registerMediaScheme } from "./media-protocol"
 import { resolveUserProfile } from "./profile"
@@ -128,57 +129,7 @@ async function run(): Promise<void> {
 	ipcMain.handle(ipc.quit, () => quit())
 	ipcMain.handle(ipc.coreSend, (_, request: BridgeRequest) => shell.transport.send(request))
 
-	// Long-lived core responses (the change feed), relayed line by line to the window that opened them and closed when
-	// it asks, navigates or goes away — else the core would keep a feed subscription open for a window long gone.
-	const streams = new Map<string, AbortController>()
-	ipcMain.handle(ipc.coreStreamOpen, async (event, id: number, path: string) => {
-		const sender = event.sender
-		const key = `${sender.id}:${id}`
-		const controller = new AbortController()
-		const lines = await shell.transport.stream(path, controller.signal)
-		if (!lines || sender.isDestroyed()) {
-			controller.abort()
-			return false
-		}
-
-		streams.set(key, controller)
-		const abort = () => controller.abort()
-		// A reload replaces the document that owned the stream; a same-document (hash) navigation does not.
-		const onNavigation = (details: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>) => {
-			if (details.isMainFrame && !details.isSameDocument) {
-				abort()
-			}
-		}
-		sender.once("destroyed", abort)
-		sender.on("did-start-navigation", onNavigation)
-		void (async () => {
-			try {
-				for await (const line of lines) {
-					if (sender.isDestroyed() || controller.signal.aborted) {
-						break
-					}
-
-					sender.send(ipc.coreStreamLine, { id, line } satisfies BridgeStreamLine)
-				}
-			}
-			catch {
-				// A dropped stream simply ends; the feed reconnects on its own.
-			}
-			finally {
-				controller.abort()
-				streams.delete(key)
-				if (!sender.isDestroyed()) {
-					sender.removeListener("destroyed", abort)
-					sender.removeListener("did-start-navigation", onNavigation)
-					sender.send(ipc.coreStreamEnd, id)
-				}
-			}
-		})()
-		return true
-	})
-	ipcMain.handle(ipc.coreStreamClose, (event, id: number) => {
-		streams.get(`${event.sender.id}:${id}`)?.abort()
-	})
+	relayCoreStreams(shell.transport)
 
 	app.on("second-instance", () => windows.showBriefing())
 	// A tray app stays alive with no windows.
