@@ -20,8 +20,11 @@ function isRemoteFile(url: string): boolean {
 	}
 
 	try {
-		// The URL parser folds `file://localhost/…` to an empty host; any host left is a remote one.
-		return new URL(url).host !== ""
+		// The URL parser folds `file://localhost/…` to an empty host; any host left is a remote one. A path that still
+		// begins with two slashes once decoded (`file:////host/share`, `file:///%5C%5Chost`, `\\?\UNC\…`) is a UNC
+		// path too, whatever the host says.
+		const parsed = new URL(url)
+		return parsed.host !== "" || decodeURIComponent(parsed.pathname).replace(/\\/g, "/").startsWith("//")
 	}
 	catch {
 		return true
