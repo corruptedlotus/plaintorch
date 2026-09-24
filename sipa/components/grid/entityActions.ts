@@ -1,7 +1,6 @@
-import { Notice } from 'obsidian'
 import { Directive, Objective, typeNameOf } from '@pleiades/sdk'
 import { addObjectiveToPolaris, core, ExpandingAction, IconName, PromptTextModal, type ScheduleValue } from '..'
-import { host } from '../../host'
+import { host, toast } from '../../host'
 import type { GridEntity } from './entityTree'
 
 /** What kind of thing a row holds, resolved from the runtime type the core stamped on it. */
@@ -79,11 +78,11 @@ export async function createEntity(kind: EntityKind, directiveId?: string): Prom
 
 	const created = await createOfKind(kind, title, directiveId)
 	if (!created) {
-		new Notice(`PLAINTORCH could not create that ${kindLabels[kind].toLowerCase()}.`)
+		toast(`PLAINTORCH could not create that ${kindLabels[kind].toLowerCase()}.`, 'error')
 		return false
 	}
 
-	new Notice(`${kindLabels[kind]} created: ${title}`)
+	toast(`${kindLabels[kind]} created: ${title}`, 'success')
 	await refreshListings()
 	return true
 }
@@ -212,7 +211,7 @@ export function reparentRefusal(entity: GridEntity, parent: Directive | undefine
 export async function reparentEntity(entity: GridEntity, parent: Directive | undefined): Promise<boolean> {
 	const refusal = reparentRefusal(entity, parent)
 	if (refusal) {
-		new Notice(refusal)
+		toast(refusal, 'warning')
 		return false
 	}
 
@@ -244,9 +243,9 @@ export async function reparentEntity(entity: GridEntity, parent: Directive | und
 		console.error('PLAINTORCH: reparenting failed.', error)
 	}
 
-	new Notice(!moved
+	toast(!moved
 		? `PLAINTORCH could not move ${entity.title}.`
-		: parent ? `Moved ${entity.title} under ${parent.title}.` : `Moved ${entity.title} to the top level.`)
+		: parent ? `Moved ${entity.title} under ${parent.title}.` : `Moved ${entity.title} to the top level.`, moved ? 'success' : 'error')
 	return moved
 }
 
@@ -316,7 +315,7 @@ export async function saveFateSchedule(entity: GridEntity, schedule: ScheduleVal
 export async function openEntityNote(entity: { id: string }): Promise<void> {
 	const existence = await core.repos.entityResolution.get(entity.id)
 	if (!existence?.associatedNote) {
-		new Notice('That entity has no note yet.')
+		toast('That entity has no note yet.', 'warning')
 		return
 	}
 
@@ -366,13 +365,13 @@ export async function createEntityNote(entity: { id: string }, kind: string): Pr
 
 	const begin = beginNoteByKind(kind, entity.id)
 	if (!begin) {
-		new Notice('That entity has no note to create here.')
+		toast('That entity has no note to create here.', 'warning')
 		return
 	}
 
 	const begun = await begin
 	if (!begun) {
-		new Notice('PLAINTORCH could not create that note.')
+		toast('PLAINTORCH could not create that note.', 'error')
 		return
 	}
 
@@ -437,13 +436,13 @@ export function objectiveActions(objective: Objective): ExpandingAction[] {
 				// The active sprint when one is running, otherwise the one still being planned.
 				const sprint = await core.onrush.getCurrent() ?? await core.onrush.getPlanning()
 				if (!sprint) {
-					new Notice('There is no Onrush to add to.')
+					toast('There is no Onrush to add to.', 'warning')
 					return
 				}
 
 				const added = await core.repos.objectives.mutate(objectiveId, async () =>
 					await core.objectives.addToOnrush(objectiveId, sprint.id))
-				new Notice(added ? `Added to ${sprint.title}.` : 'Could not add to Onrush.')
+				toast(added ? `Added to ${sprint.title}.` : 'Could not add to Onrush.', added ? 'success' : 'error')
 			}
 		}
 	]

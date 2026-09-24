@@ -1,8 +1,8 @@
 import { Controller, type ReactiveElement } from '@a11d/lit'
 import { EntityDraft, EntityRepository, identify, type EntityKey, type EntitySubscription } from '@pleiades/sdk'
 import { getCore } from './coreProvider'
-import { Notice } from 'obsidian'
 import { ReactiveBinder } from '../editing/ReactiveBinder'
+import { toast } from '../../host'
 
 /** Supplies the identifier a reference should resolve, re-read on every host update. */
 export type EntityRefSource = () => string | undefined
@@ -153,7 +153,7 @@ export class EntityRef<T extends object> extends Controller {
 		// imperative mutate, but the reference owns the cycle now rather than routing an edit through mutate.
 		const saved = await repository.commit(id, async () => await send(entity), snapshot)
 		if (!saved) {
-			new Notice('PLAINTORCH could not save that change.')
+			toast('PLAINTORCH could not save that change.', 'error')
 		}
 
 		await reaction?.(saved)

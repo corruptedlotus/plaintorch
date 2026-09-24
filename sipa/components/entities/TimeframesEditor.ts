@@ -1,8 +1,8 @@
 import { Component, component, css, html, nothing, property, PropertyValues, repeat, state } from '@a11d/lit'
 import { ObjectiveCollege, Timeframe, TimeframeInclusion, TimeframeUpdate } from '@pleiades/sdk'
-import { Notice } from 'obsidian'
 import { core, SelectCollegeModal } from '..'
 import type { EditablePart } from '../editing/EditableDataLink'
+import { toast } from '../../host'
 
 /** A time-of-day (TimeOnly) as the core serialises it, trimmed to the `HH:mm` an `<input type="time">` shows. */
 const timeInputValue = (value: string | undefined) => (value ?? '').slice(0, 5)
@@ -286,7 +286,7 @@ export class TimeframesEditor extends Component {
 	private async saveTimeframe(timeframeId: number, update: TimeframeUpdate) {
 		const saved = await core.directives.updateTimeframe(timeframeId, update)
 		if (!saved) {
-			new Notice('PLAINTORCH could not save that timeframe.')
+			toast('PLAINTORCH could not save that timeframe.', 'error')
 		}
 
 		await this.refresh()
@@ -299,7 +299,7 @@ export class TimeframesEditor extends Component {
 			endTime: '17:00:00',
 		})
 		if (!created) {
-			new Notice('PLAINTORCH could not add that timeframe.')
+			toast('PLAINTORCH could not add that timeframe.', 'error')
 			return
 		}
 
@@ -309,11 +309,11 @@ export class TimeframesEditor extends Component {
 	private async removeTimeframe(timeframe: Timeframe) {
 		const removed = await core.directives.deleteTimeframe(timeframe.id)
 		if (!removed) {
-			new Notice('PLAINTORCH could not remove that timeframe.')
+			toast('PLAINTORCH could not remove that timeframe.', 'error')
 			return
 		}
 
-		new Notice(`Removed ${timeframe.title}.`)
+		toast(`Removed ${timeframe.title}.`, 'success')
 		await this.refresh()
 	}
 }

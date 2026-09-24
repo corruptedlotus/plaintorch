@@ -1,6 +1,6 @@
-import { Notice } from 'obsidian'
 import { core, ExpandingAction, IconName, PromptTextModal } from '..'
 import type { LorePage } from '@pleiades/sdk'
+import { toast } from '../../host'
 
 /**
  * The icon a lore page draws, from its hierarchy level — matching the lore banner.
@@ -86,11 +86,11 @@ export async function createLorePage(parentPuck: string | undefined, levelLabel:
 
 	const created = await core.lore.create({ parentPuck, title })
 	if (!created) {
-		new Notice(`PLAINTORCH could not create that ${levelLabel.toLowerCase()}.`)
+		toast(`PLAINTORCH could not create that ${levelLabel.toLowerCase()}.`, 'error')
 		return false
 	}
 
-	new Notice(`${levelLabel} created: ${title}`)
+	toast(`${levelLabel} created: ${title}`, 'success')
 	await core.repos.loreList.refresh()
 	return true
 }

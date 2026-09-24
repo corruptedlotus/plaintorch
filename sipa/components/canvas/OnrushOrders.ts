@@ -1,8 +1,8 @@
 import { Component, component, css, html, nothing, property, PropertyValues, repeat, state } from '@a11d/lit'
 import { ExecutiveOrder, ExecutiveOrderUpdate } from '@pleiades/sdk'
-import { Notice } from 'obsidian'
 import { core } from '..'
 import type { EditablePart } from '../editing/EditableDataLink'
+import { toast } from '../../host'
 
 /**
  * The executive orders an onrush carries, edited in place (PEP102.5).
@@ -183,7 +183,7 @@ export class OnrushOrders extends Component {
 	private async addOrder() {
 		const created = await core.onrush.issueExecutiveOrder(this.onrushId, { title: 'New order' })
 		if (!created) {
-			new Notice('PLAINTORCH could not add that order.')
+			toast('PLAINTORCH could not add that order.', 'error')
 			return
 		}
 
@@ -194,7 +194,7 @@ export class OnrushOrders extends Component {
 	private async saveOrder(orderId: string, update: ExecutiveOrderUpdate) {
 		const saved = await core.onrush.updateExecutiveOrder(orderId, update)
 		if (!saved) {
-			new Notice('PLAINTORCH could not save that order.')
+			toast('PLAINTORCH could not save that order.', 'error')
 		}
 
 		await this.refresh()
@@ -203,11 +203,11 @@ export class OnrushOrders extends Component {
 	private async removeOrder(order: ExecutiveOrder) {
 		const removed = await core.onrush.deleteExecutiveOrder(order.id)
 		if (!removed) {
-			new Notice('PLAINTORCH could not remove that order.')
+			toast('PLAINTORCH could not remove that order.', 'error')
 			return
 		}
 
-		new Notice(`Removed ${order.title}.`)
+		toast(`Removed ${order.title}.`, 'success')
 		await this.refresh()
 		await this.refreshOwningSprint()
 	}

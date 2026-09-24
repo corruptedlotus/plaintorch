@@ -1,6 +1,6 @@
-import { Notice } from 'obsidian'
 import type { Objective, PolarisCycle } from '@pleiades/sdk'
 import { core } from '..'
+import { toast } from '../../host'
 
 /**
  * Whether a cycle already holds an executive for an objective. A Polaris cycle holds at most one instance of an
@@ -26,7 +26,7 @@ export async function currentPolarisCycle(): Promise<PolarisCycle | undefined> {
  */
 export async function addObjectiveToPolaris(objective: Pick<Objective, 'id' | 'title'>): Promise<boolean> {
 	if (isObjectiveInCycle(objective.id, await currentPolarisCycle())) {
-		new Notice(`${objective.title} is already in the active Polaris cycle.`)
+		toast(`${objective.title} is already in the active Polaris cycle.`, 'info')
 		return false
 	}
 
@@ -34,10 +34,10 @@ export async function addObjectiveToPolaris(objective: Pick<Objective, 'id' | 't
 		await core.polaris.addObjectiveToCurrent(objective.id))
 	if (added) {
 		await core.repos.polaris.revalidateObserved()
-		new Notice(`Added ${objective.title} to the active Polaris cycle.`)
+		toast(`Added ${objective.title} to the active Polaris cycle.`, 'success')
 	}
 	else {
-		new Notice(`PLAINTORCH could not add ${objective.title} to Polaris.`)
+		toast(`PLAINTORCH could not add ${objective.title} to Polaris.`, 'error')
 	}
 
 	return added

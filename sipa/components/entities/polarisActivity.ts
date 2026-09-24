@@ -1,8 +1,8 @@
-import { Notice } from 'obsidian'
 import type { Executive } from '@pleiades/sdk'
 import { core, getApp, type ContextMenuEntry, type ContextMenuSpec } from '..'
 import { ExecutiveModal } from './ExecutiveModal'
 import { openEntityEditor } from './entityMenu'
+import { toast } from '../../host'
 
 /**
  * One thing a Polaris cycle holds to work at: an {@link Executive}. Since PEP111 a decree in a cycle is an
@@ -78,7 +78,7 @@ export async function setPolarisActivityDone(activity: PolarisActivity, done: bo
 	const updated = executive && { ...activity, ...executive, incentive: executive.incentive ?? activity.incentive }
 
 	if (!updated) {
-		new Notice(`PLAINTORCH could not update ${polarisActivityTitle(activity)}.`)
+		toast(`PLAINTORCH could not update ${polarisActivityTitle(activity)}.`, 'error')
 		return undefined
 	}
 
@@ -102,12 +102,12 @@ export async function moveToNextPolaris(activity: PolarisActivity): Promise<bool
 	}
 
 	if (!moved) {
-		new Notice(`PLAINTORCH could not move ${title} to the next Polaris cycle.`)
+		toast(`PLAINTORCH could not move ${title} to the next Polaris cycle.`, 'error')
 		return false
 	}
 
 	await revalidateCycle()
-	new Notice(`Moved ${title} to the next Polaris cycle.`)
+	toast(`Moved ${title} to the next Polaris cycle.`, 'success')
 	return true
 }
 
@@ -126,12 +126,12 @@ export async function removePolarisActivity(activity: PolarisActivity): Promise<
 	}
 
 	if (!removed) {
-		new Notice(`PLAINTORCH could not remove ${title} from the cycle.`)
+		toast(`PLAINTORCH could not remove ${title} from the cycle.`, 'error')
 		return false
 	}
 
 	await revalidateCycle()
-	new Notice(`Removed ${title} from the Polaris cycle.`)
+	toast(`Removed ${title} from the Polaris cycle.`, 'success')
 	return true
 }
 

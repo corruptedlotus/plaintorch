@@ -9,11 +9,12 @@ import {
 	type EventiveOccurrenceRef,
 	type EventiveUpdate
 } from "@pleiades/sdk"
-import { App, Modal, Notice } from "obsidian"
+import { App, Modal } from "obsidian"
 import { core, getApp, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, type IconName } from ".."
 import type { EditablePart } from "../editing/EditableDataLink"
 import "../editing/EditableDate"
 import "../editing/EditableTime"
+import { toast } from "../../host"
 
 /** The occurrence a single {@link OccurrenceEditor} edits: an attentive of a decree, or an eventive of a fate/objective. */
 export type OccurrenceTarget =
@@ -91,7 +92,7 @@ export async function applyOccurrenceUpdate(target: OccurrenceTarget, update: At
 	}
 
 	if (!next) {
-		new Notice(`PLAINTORCH could not update ${occurrenceTitle(target)}.`)
+		toast(`PLAINTORCH could not update ${occurrenceTitle(target)}.`, 'error')
 		return undefined
 	}
 

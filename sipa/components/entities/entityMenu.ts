@@ -1,7 +1,7 @@
-import { Notice } from 'obsidian'
 import { typeNameOf } from '@pleiades/sdk'
 import { core, getApp, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec } from '..'
 import { EntityEditModal } from './EntityEditModal'
+import { toast } from '../../host'
 
 /** The minimal shape every interactable entity shares — a PUCK identity and a title. */
 export interface InteractableEntity {
@@ -46,7 +46,7 @@ export function canDeleteEntity(typeName: string | undefined): boolean {
 export function openEntityEditor(entity: InteractableEntity): boolean {
 	const modal = EntityEditModal.forEntity(getApp(), typeNameOf(entity), entity)
 	if (!modal) {
-		new Notice('That entity has no editor here yet.')
+		toast('That entity has no editor here yet.', 'warning')
 		return false
 	}
 
@@ -71,17 +71,17 @@ async function deleteEntity(entity: InteractableEntity): Promise<boolean> {
 export async function deleteEntityByType(typeName: string | undefined, id: string, title: string): Promise<boolean> {
 	const request = deleteByType(typeName, id)
 	if (!request) {
-		new Notice(`${title} can't be deleted from here.`)
+		toast(`${title} can't be deleted from here.`, 'warning')
 		return false
 	}
 
 	const deleted = await request
 	if (!deleted) {
-		new Notice(`PLAINTORCH could not delete ${title}.`)
+		toast(`PLAINTORCH could not delete ${title}.`, 'error')
 		return false
 	}
 
-	new Notice(`Deleted ${title}.`)
+	toast(`Deleted ${title}.`, 'success')
 	await refreshAfterEntityChange()
 	return true
 }
@@ -102,7 +102,7 @@ function deleteByType(typeName: string | undefined, id: string): Promise<boolean
 /** Takes an objective out of whichever sprint holds it; the objective itself survives. */
 async function removeFromOnrush(objectiveId: string): Promise<void> {
 	const removed = await core.repos.objectives.mutate(objectiveId, async () => await core.objectives.removeFromOnrush(objectiveId))
-	new Notice(removed ? 'Removed from the Onrush.' : 'Could not remove from the Onrush.')
+	toast(removed ? 'Removed from the Onrush.' : 'Could not remove from the Onrush.', removed ? 'success' : 'error')
 	if (removed) {
 		await refreshAfterEntityChange()
 	}

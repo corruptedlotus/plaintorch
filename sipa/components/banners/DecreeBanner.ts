@@ -1,8 +1,8 @@
 import { component, css, html, nothing, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { Decree, DecreeStatus, DecreeUpdate, PolarisCycle } from '@pleiades/sdk'
-import { Notice } from "obsidian"
 import { core, IconName, followRenamedNote, ReactiveBinder, SelectDecreeStatusModal } from ".."
+import { toast } from '../../host'
 
 /**
  * Banner for a Decree declarative (PEP100). Decrees are enduring routines: the banner shows
@@ -77,7 +77,7 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		const executive = await core.repos.decrees.mutate(decreeId, async () =>
 			await core.polaris.addDecreeExecutive({ decreeId }))
 		if (executive) {
-			new Notice('Added to active Polaris cycle.')
+			toast('Added to active Polaris cycle.', 'success')
 			this.activePolaris = await core.polaris.getCurrent()
 		}
 	}

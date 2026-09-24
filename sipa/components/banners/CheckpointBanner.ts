@@ -1,8 +1,8 @@
 import { component, html, nothing } from '@a11d/lit'
 import { Checkpoint, CheckpointUpdate } from '@pleiades/sdk'
-import { Notice } from 'obsidian'
 import { core, IconName, ReactiveBinder } from '..'
 import { EntityBanner } from './EntityBanner'
+import { toast } from '../../host'
 
 /**
  * Banner for a checkpoint (PEP101/102).
@@ -122,7 +122,7 @@ export class CheckpointBanner extends EntityBanner<Checkpoint> {
 		}
 
 		const paid = await core.repos.checkpoints.mutate(checkpoint.id, async () => await core.dependencies.payToll(checkpoint.id))
-		new Notice(paid ? 'Toll paid.' : 'Could not pay the toll.')
+		toast(paid ? 'Toll paid.' : 'Could not pay the toll.', paid ? 'success' : 'error')
 	}
 
 	/** Persists a checkpoint change made through an action rather than an inline edit. */

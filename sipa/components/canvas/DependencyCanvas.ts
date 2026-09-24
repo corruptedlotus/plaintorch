@@ -1,6 +1,5 @@
 import { Component, component, css, event, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
 import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
-import { Notice } from 'obsidian'
 import { ContextMenu, core, DerivedRef, getApp, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
 import { activatePlanningOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
@@ -11,7 +10,7 @@ import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpo
 import { SelectObjectiveModal } from './SelectObjectiveModal'
 import { SelectEndpointModal } from './SelectEndpointModal'
 import type { CanvasNodePointer, NodeLock } from './CanvasNodeItem'
-import { host } from '../../host'
+import { host, toast } from '../../host'
 
 /** A global planning context's persistable state — its pinned set and the positions they were dragged to. */
 export interface GlobalContextSnapshot {
@@ -1103,7 +1102,7 @@ export class DependencyCanvas extends Component {
 	private async addObjective() {
 		const sprint = this.sprint
 		if (!sprint) {
-			new Notice(`There is no ${contextModeLabels[this.mode].toLowerCase()} to add to.`)
+			toast(`There is no ${contextModeLabels[this.mode].toLowerCase()} to add to.`, 'warning')
 			return
 		}
 
@@ -1130,7 +1129,7 @@ export class DependencyCanvas extends Component {
 
 		const sprint = this.sprint
 		if (!sprint) {
-			new Notice(`There is no ${contextModeLabels[this.mode].toLowerCase()} to add to.`)
+			toast(`There is no ${contextModeLabels[this.mode].toLowerCase()} to add to.`, 'warning')
 			return
 		}
 
@@ -1519,12 +1518,12 @@ export class DependencyCanvas extends Component {
 		}
 
 		if (graph.edges.some(edge => edge.source === sourceKey && edge.target === targetKey)) {
-			new Notice('Those are already connected.')
+			toast('Those are already connected.', 'info')
 			return
 		}
 
 		if (wouldCycle(graph.edges, sourceKey, targetKey)) {
-			new Notice('That dependency would close a loop.')
+			toast('That dependency would close a loop.', 'warning')
 			return
 		}
 

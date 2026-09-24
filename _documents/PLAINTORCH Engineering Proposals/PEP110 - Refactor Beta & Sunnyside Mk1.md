@@ -417,3 +417,8 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
   `@pleiades/sdk/plaintorch/node-transport` (for the shell's main process, without the default client the node
   entry constructs); the transport types and `toLines` are public; the per-call debug log no longer throws on an
   empty or non-JSON body. SDK 110/110, plugin green, `tsc` 46 identical.
+- 2026-09-24 — P4 landed: the package's 81 `new Notice(…)` sites are `toast(message, kind)` through the host
+  (a TypeScript-AST codemod keyed on the reader's per-site inventory: 44 error, 24 success, 17 warning, 3 info; the
+  five mixed success/failure messages take their kind from the same condition). `ObsidianHost.toast` stays a plain
+  Notice (kinds ignored), so Obsidian behaves as before. Package files importing `obsidian`: 36 → 19 (the dialogs and
+  their `App` handles). Plugin green, `tsc` 46 identical; package typecheck 36.

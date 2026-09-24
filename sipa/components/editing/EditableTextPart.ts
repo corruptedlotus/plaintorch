@@ -1,6 +1,6 @@
 import { css, eventListener, property, PropertyValues, state } from "@a11d/lit"
-import { Notice } from "obsidian"
 import { EditablePart } from "./EditableDataLink"
+import { toast } from "../../host"
 
 /** How long an invalid value must sit before the warning outline appears, so it does not flash mid-keystroke. */
 const warningDelay = 500
@@ -165,7 +165,7 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 		const raw = this.textContent ?? ''
 		const message = this.validateMessage(raw)
 		if (message !== undefined) {
-			new Notice(message)
+			toast(message, 'warning')
 			this.revert()
 			return
 		}

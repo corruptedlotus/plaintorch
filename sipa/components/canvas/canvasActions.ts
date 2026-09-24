@@ -8,9 +8,8 @@ import {
 	type EndpointRef,
 	type OnrushSprint
 } from '@pleiades/sdk'
-import { Notice } from 'obsidian'
 import { core, PromptTextModal } from '..'
-import { host } from '../../host'
+import { host, toast } from '../../host'
 import { effectiveConstraint, effectiveTrigger, sourceRef, targetRef, type CanvasEdge, type CanvasNode } from './graphModel'
 import type { CanvasContextMode } from './graphContext'
 import { GLOBAL_CONTEXT_EXTENSION, serializeGlobalContext } from './globalContextFile'
@@ -65,7 +64,7 @@ export async function createDependency(
 ): Promise<boolean> {
 	const created = await sendCreate(source, target, trigger, constraint)
 	if (!created) {
-		new Notice('PLAINTORCH refused that dependency.')
+		toast('PLAINTORCH refused that dependency.', 'error')
 		return false
 	}
 
@@ -77,7 +76,7 @@ export async function createDependency(
 export async function deleteDependency(edge: CanvasEdge): Promise<boolean> {
 	const deleted = await core.dependencies.delete(edge.dependency.id)
 	if (!deleted) {
-		new Notice('PLAINTORCH could not remove that dependency.')
+		toast('PLAINTORCH could not remove that dependency.', 'error')
 		return false
 	}
 
@@ -104,13 +103,13 @@ export async function reshapeDependency(
 	const source = sourceRef(edge.dependency)
 	const target = targetRef(edge.dependency)
 	if (!await core.dependencies.delete(edge.dependency.id)) {
-		new Notice('PLAINTORCH could not change that dependency.')
+		toast('PLAINTORCH could not change that dependency.', 'error')
 		return false
 	}
 
 	const recreated = await sendCreate(source, target, trigger, constraint)
 	if (!recreated) {
-		new Notice('PLAINTORCH refused the change; restoring the dependency.')
+		toast('PLAINTORCH refused the change; restoring the dependency.', 'error')
 		await sendCreate(source, target, effectiveTrigger(edge.dependency), effectiveConstraint(edge.dependency))
 		await refreshGraph()
 		return false
@@ -130,7 +129,7 @@ export async function addObjectiveToOnrush(objectiveId: string, sprint: OnrushSp
 	const added = await core.repos.objectives.mutate(objectiveId, async () =>
 		await core.objectives.addToOnrush(objectiveId, sprint.id))
 
-	new Notice(added ? `Added to ${sprint.title}.` : 'Could not add to that Onrush.')
+	toast(added ? `Added to ${sprint.title}.` : 'Could not add to that Onrush.', added ? 'success' : 'error')
 	if (added) {
 		await refreshOnrush()
 	}
@@ -144,7 +143,7 @@ export async function removeObjectiveFromOnrush(objectiveId: string): Promise<bo
 		await core.objectives.removeFromOnrush(objectiveId))
 
 	if (!removed) {
-		new Notice('Could not remove that objective from the Onrush.')
+		toast('Could not remove that objective from the Onrush.', 'error')
 		return false
 	}
 
@@ -174,11 +173,11 @@ export async function createCheckpoint(sprint?: OnrushSprint): Promise<Checkpoin
 
 	const created = await core.dependencies.createCheckpoint({ title, onrushSprintId: sprint?.id })
 	if (!created) {
-		new Notice('PLAINTORCH could not create that checkpoint.')
+		toast('PLAINTORCH could not create that checkpoint.', 'error')
 		return undefined
 	}
 
-	new Notice(`Checkpoint added: ${title}`)
+	toast(`Checkpoint added: ${title}`, 'success')
 	await (sprint ? refreshOnrush() : core.repos.checkpointList.refresh())
 	return created
 }
@@ -193,11 +192,11 @@ export async function createCheckpoint(sprint?: OnrushSprint): Promise<Checkpoin
 export async function deleteEntity(node: CanvasNode): Promise<boolean> {
 	const deleted = await deleteByKind(node.ref.kind, node.ref.id)
 	if (!deleted) {
-		new Notice(`PLAINTORCH could not delete ${node.entity.title}.`)
+		toast(`PLAINTORCH could not delete ${node.entity.title}.`, 'error')
 		return false
 	}
 
-	new Notice(`Deleted ${node.entity.title}.`)
+	toast(`Deleted ${node.entity.title}.`, 'success')
 	await Promise.all([refreshGraph(), refreshOnrush()])
 	return true
 }
@@ -216,7 +215,7 @@ function deleteByKind(kind: DependencyEndpointKind, id: string): Promise<boolean
 export async function deleteCheckpoint(checkpointId: string): Promise<boolean> {
 	const deleted = await core.dependencies.deleteCheckpoint(checkpointId)
 	if (!deleted) {
-		new Notice('PLAINTORCH could not delete that checkpoint.')
+		toast('PLAINTORCH could not delete that checkpoint.', 'error')
 		return false
 	}
 
@@ -236,7 +235,7 @@ export async function deleteCheckpoint(checkpointId: string): Promise<boolean> {
 export async function startActiveOnrush(): Promise<boolean> {
 	const started = await core.onrush.startNew()
 	if (!started) {
-		new Notice('PLAINTORCH could not start a new Onrush.')
+		toast('PLAINTORCH could not start a new Onrush.', 'error')
 		return false
 	}
 
@@ -260,7 +259,7 @@ export async function createPlanningOnrush(): Promise<boolean> {
 
 	const planned = await core.onrush.plan({ title })
 	if (!planned) {
-		new Notice('PLAINTORCH could not create that Onrush.')
+		toast('PLAINTORCH could not create that Onrush.', 'error')
 		return false
 	}
 
@@ -271,13 +270,13 @@ export async function createPlanningOnrush(): Promise<boolean> {
 /** Activates a planning onrush, refusing when one is already active — only one runs at a time. */
 export async function activatePlanningOnrush(sprintId: string): Promise<boolean> {
 	if (await core.onrush.getCurrent()) {
-		new Notice('There is already an active Onrush; conclude it first.')
+		toast('There is already an active Onrush; conclude it first.', 'warning')
 		return false
 	}
 
 	const begun = await core.onrush.begin(sprintId)
 	if (!begun) {
-		new Notice('PLAINTORCH could not activate that Onrush.')
+		toast('PLAINTORCH could not activate that Onrush.', 'error')
 		return false
 	}
 
@@ -289,7 +288,7 @@ export async function activatePlanningOnrush(sprintId: string): Promise<boolean>
 export async function deletePlanningOnrush(sprintId: string): Promise<boolean> {
 	const deleted = await core.onrush.delete(sprintId)
 	if (!deleted) {
-		new Notice('PLAINTORCH could not delete that Onrush.')
+		toast('PLAINTORCH could not delete that Onrush.', 'error')
 		return false
 	}
 
@@ -301,7 +300,7 @@ export async function deletePlanningOnrush(sprintId: string): Promise<boolean> {
 export async function concludeOnrush(sprintId: string): Promise<boolean> {
 	const ended = await core.onrush.end(sprintId)
 	if (!ended) {
-		new Notice('PLAINTORCH could not conclude that Onrush.')
+		toast('PLAINTORCH could not conclude that Onrush.', 'error')
 		return false
 	}
 
@@ -357,11 +356,11 @@ export async function saveGlobalContextToFile(pinned: readonly EndpointHit[], la
 	const fileName = `${name.replace(/[\\/:*?"<>|]/g, '').trim()}.${GLOBAL_CONTEXT_EXTENSION}`
 	const { created, path } = await contexts.createAndOpen(fileName, serializeGlobalContext(pinned, layout))
 	if (!created) {
-		new Notice(`A file named "${path}" already exists.`)
+		toast(`A file named "${path}" already exists.`, 'warning')
 		return
 	}
 
-	new Notice(`Saved global context to ${path}.`)
+	toast(`Saved global context to ${path}.`, 'success')
 }
 
 /** Which repository record a mode reads its sprint from. */

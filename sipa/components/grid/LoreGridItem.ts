@@ -1,10 +1,10 @@
 import { component, css, html, HTMLTemplateResult, nothing } from '@a11d/lit'
-import { Notice } from 'obsidian'
 import { LorePage } from '@pleiades/sdk'
 import { core, ExpandingAction, IconName } from '..'
 import { openNotePath } from './entityActions'
 import { GridItemBase } from './GridItemBase'
 import { loreLevelIcon, loreLevelLabel, loreOwnIndex, loreRowActions } from './loreActions'
+import { toast } from '../../host'
 
 /**
  * One line of the lore grid: an Era, Chapter, Act, or Phase.
@@ -89,12 +89,12 @@ export class LoreGridItem extends GridItemBase {
 
 		const updated = await core.lore.setIndex(page.id, value)
 		if (!updated) {
-			new Notice('Could not renumber that lore page — that index may already be taken.')
+			toast('Could not renumber that lore page — that index may already be taken.', 'error')
 			this.requestUpdate()
 			return
 		}
 
-		new Notice(`Renumbered to ${loreLevelLabel(updated.level)} ${value}.`)
+		toast(`Renumbered to ${loreLevelLabel(updated.level)} ${value}.`, 'success')
 		await core.repos.loreList.refresh()
 	}
 
@@ -123,7 +123,7 @@ export class LoreGridItem extends GridItemBase {
 	protected override async open() {
 		const page = this.row!.entity as LorePage
 		if (!page.relativePath) {
-			new Notice('That lore page has no note yet.')
+			toast('That lore page has no note yet.', 'warning')
 			return
 		}
 

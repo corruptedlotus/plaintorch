@@ -1,8 +1,8 @@
 import { component, css, html, property, state } from "@a11d/lit"
 import { PolarisExecutivePlanningMode, type Activity, type DirectiveTimeframeRecord, type Executive, type PolarisCycle, type PolarisExecutivePlan } from "@pleiades/sdk"
-import { Notice } from "obsidian"
 import { core, ExecutiveModal, getApp, isObjectiveInCycle, type ActivityChoice, type EditableTimeUnit, type TimeframeSelect, type ActivitySelect } from ".."
 import { CreationRowBase } from "../editing/CreationRowBase"
+import { toast } from "../../host"
 
 /** What the Polaris row makes: an executive — either objective- or decree-backed (PEP111). */
 export type PolarisActivityCreated = Executive
@@ -82,7 +82,7 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 	protected override async create(): Promise<PolarisActivityCreated | undefined> {
 		const activity = this.activity
 		if (!activity) {
-			new Notice('Pick an activity, or name a new one.')
+			toast('Pick an activity, or name a new one.', 'warning')
 			return undefined
 		}
 
@@ -100,7 +100,7 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 			? await core.polaris.planExecutive(plan)
 			: await core.repos.objectives.mutate(activity.objective!.id, async () => await core.polaris.planExecutive(plan))
 		if (!result) {
-			new Notice(`PLAINTORCH could not add ${activity.title} to the cycle.`)
+			toast(`PLAINTORCH could not add ${activity.title} to the cycle.`, 'error')
 			return undefined
 		}
 
@@ -111,30 +111,30 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 				executive = { ...executive, ...updated, incentive: updated.incentive ?? executive.incentive, affinityTimeframe: executive.affinityTimeframe }
 			}
 			else {
-				new Notice('The executive was added, but its affinity could not be set.')
+				toast('The executive was added, but its affinity could not be set.', 'warning')
 			}
 		}
 
 		await this.refresh(activity.isNew ? core.repos.objectiveList : undefined)
-		new Notice(`Added ${activity.title} to the active Polaris cycle.`)
+		toast(`Added ${activity.title} to the active Polaris cycle.`, 'success')
 		return executive
 	}
 
 	private async createDecreeExecutive(activity: ActivityChoice): Promise<PolarisActivityCreated | undefined> {
 		const decree = activity.isNew ? await core.declaratives.createDecree({ title: activity.title }) : activity.decree
 		if (!decree) {
-			new Notice(`PLAINTORCH could not create the decree ${activity.title}.`)
+			toast(`PLAINTORCH could not create the decree ${activity.title}.`, 'error')
 			return undefined
 		}
 
 		const executive = await core.polaris.addDecreeExecutive({ decreeId: decree.id, estimation: this.estimation, affinityTimeframeId: this.timeframe?.id })
 		if (!executive) {
-			new Notice(`PLAINTORCH could not add ${activity.title} to the cycle.`)
+			toast(`PLAINTORCH could not add ${activity.title} to the cycle.`, 'error')
 			return undefined
 		}
 
 		await this.refresh(activity.isNew ? core.repos.decreeList : undefined)
-		new Notice(`Added ${activity.title} to the active Polaris cycle.`)
+		toast(`Added ${activity.title} to the active Polaris cycle.`, 'success')
 		return { ...executive, incentive: executive.incentive ?? decree }
 	}
 

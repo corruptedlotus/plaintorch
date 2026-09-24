@@ -1,6 +1,7 @@
 import { Component } from "@a11d/lit";
 import { Objective, ObjectiveStatus } from "@pleiades/sdk";
-import { App, Notice, SuggestModal } from "obsidian"
+import { App, SuggestModal } from "obsidian"
+import { toast } from "../../host"
 import { core } from "..";
 
 export class ChangeStateModal extends SuggestModal<keyof typeof ObjectiveStatus> {
@@ -24,9 +25,9 @@ export class ChangeStateModal extends SuggestModal<keyof typeof ObjectiveStatus>
 		const results = await core.repos.objectives.mutate(objectiveId, async () =>
 			await core.objectives.shiftWorkflow(objectiveId, { status: ObjectiveStatus[item] }))
 		if (!!results) {
-			new Notice(`${results.title}: ${item}`)
+			toast(`${results.title}: ${item}`, 'success')
 		} else {
-			new Notice(`Failed to update objective status.`)
+			toast(`Failed to update objective status.`, 'error')
 		}
 	}
 }

@@ -1,8 +1,8 @@
 import { component, html, property } from "@a11d/lit"
 import { Reflective } from "@pleiades/sdk"
-import { Notice } from "obsidian"
 import { OccurrenceItem } from "./OccurrenceItem"
 import { core } from ".."
+import { toast } from "../../host"
 
 /**
  * A single daily reflective. Its notch quick-switches the executed flag; its toplane surfaces the lunar
@@ -33,7 +33,7 @@ export class ReflectiveItem extends OccurrenceItem {
 
 		const updated = await core.polaris.updateReflective(reflective.id, { executed: !reflective.executed })
 		if (!updated) {
-			new Notice('Failed to update reflective.')
+			toast('Failed to update reflective.', 'error')
 			return
 		}
 

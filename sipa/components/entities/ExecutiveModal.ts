@@ -1,10 +1,11 @@
 import { Component, component, css, html, nothing, property, state } from "@a11d/lit"
 import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, isDecreeIncentive, isObjectiveIncentive, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
-import { App, Modal, Notice } from "obsidian"
+import { App, Modal } from "obsidian"
 import { core, openEntityEditor, SelectObjectiveStatusModal, SelectTimeframeModal } from ".."
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 import type { EditablePart } from "../editing/EditableDataLink"
 import type { EditableTimeUnit } from "../editing/EditableTimeUnit"
+import { toast } from "../../host"
 
 type Allocation = 'elapsed' | 'estimation' | 'minimum' | 'maximum'
 
@@ -309,7 +310,7 @@ export class ExecutiveEditor extends Component {
 
 		const updated = await core.polaris.updateExecutive(this.executive!.id, update)
 		if (!updated) {
-			new Notice('Failed to update executive affinity.')
+			toast('Failed to update executive affinity.', 'error')
 			return
 		}
 
@@ -347,7 +348,7 @@ export class ExecutiveEditor extends Component {
 
 		const updated = await core.objectives.shiftWorkflow(objective.id, { status })
 		if (!updated) {
-			new Notice('Failed to update objective status.')
+			toast('Failed to update objective status.', 'error')
 			return
 		}
 
@@ -361,7 +362,7 @@ export class ExecutiveEditor extends Component {
 
 		const updated = await core.polaris.updateExecutive(executive.id, update)
 		if (!updated) {
-			new Notice('Failed to update executive.')
+			toast('Failed to update executive.', 'error')
 			return
 		}
 

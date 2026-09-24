@@ -1,10 +1,10 @@
 import { component, html, property } from "@a11d/lit"
 import { Attentive, AttentiveResolution } from "@pleiades/sdk"
-import { Notice } from "obsidian"
 import { OccurrenceItem } from "./OccurrenceItem"
 import { occurrenceMenu, openOccurrenceModal, type OccurrenceTarget } from "./OccurrenceModal"
 import { core, getApp, type ContextMenuSpec } from ".."
 import "../system/DatetimeView"
+import { toast } from "../../host"
 
 /**
  * A single attentive occurrence of a decree. Its notch quick-switches between undone (Pending) and done;
@@ -73,7 +73,7 @@ export class AttentiveItem extends OccurrenceItem {
 		const occurrence = { decreeId: attentive.decreeId, recurrenceId: attentive.recurrenceId }
 		const updated = await core.declaratives.updateAttentive(occurrence, { resolution })
 		if (!updated) {
-			new Notice('Failed to update attentive.')
+			toast('Failed to update attentive.', 'error')
 			return
 		}
 

@@ -1,10 +1,11 @@
-import { Notice, SuggestModal } from 'obsidian'
+import { SuggestModal } from 'obsidian'
 import { createDeferredExecutor, DeferredPromiseExecutor } from '@open-draft/deferred-promise'
 import { core, getApp } from '..'
 import { IconName } from '../PleiadesIcon'
 import { ASSET_FOLDER, pickImageFile, resolveMediaUrl } from './mediaAssets'
 import { searchIconKeys } from './iconCatalog'
 import { html } from '@a11d/lit'
+import { toast } from '../../host'
 
 /**
  * Identifies the entity a media field belongs to, for entity-level (`media:`) uploads and browsing. Omit it for a
@@ -194,13 +195,13 @@ export class SelectMediaModal extends SuggestModal<MediaItem> {
 					? await core.media.uploadEntity(this.entity.entityType, this.entity.entityId, picked.fileName, picked.bytes)
 					: undefined
 			if (!key) {
-				new Notice('PLAINTORCH could not store that image.')
+				toast('PLAINTORCH could not store that image.', 'error')
 				return
 			}
 
 			this.settle(key)
 		} catch {
-			new Notice('PLAINTORCH could not store that image.')
+			toast('PLAINTORCH could not store that image.', 'error')
 		}
 	}
 
