@@ -461,3 +461,18 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
   plugin's `styles.css` (`@property --flare-intensity`, the `--p7t-accent-*` tokens) moved into the package
   (`componentStyles`, adopted by both hosts). Pins: `@3mo/navigability@0.1.0`, `@3mo/indexability@0.2.0`,
   `@3mo/interval-controller@0.0.5`, `lucide@1.47.0` exact. Plugin green, `tsc` 35, bundle free of the SIPA host.
+- 2026-09-24 — **P8 landed: the standalone shell shows the real UI.** A briefing window (`briefing.html` /
+  `briefing.js`, its own bundle) installs `createSipaHost` + a bridge-backed core client, starts the change feed and
+  the eviction sweep, and mounts `p7t-briefing` — the plugin's own — once a vault is active and swept. The bridge was
+  made whole: JSON bodies, forwarded `x-note-ready` (every write used to throw after the core applied it), and
+  streaming (`core:stream-*`, relayed by `core-streams.ts` over the SDK's pooled socket transport, closed on
+  ask / reload / destroy). Vault files load through `plaintorch-media://vault/…` (served from the served vault,
+  traversal refused). Tray: "Open briefing" first; click, double-click and a relaunch open it; a visible launch ends
+  in it. Windows never navigate away. One AppUserModelID (`pleiades.plaintorch`). `pt-*` tags and `--pt-*` tokens are
+  `p7t-*`, accent `#71549c`. **Verified end to end** in an offscreen Electron harness running the real
+  `briefing.html`, preload, transport, stream relay and media protocol against a scratch core + vault: the briefing
+  renders seeded data; the settings modal opens and Escape removes it; the status picker walks by keyboard and a
+  choice writes (`/workflow`, no rollback, success toast); an external rename reaches the open window in ≤ 1 s via the
+  feed, also after a reload; the media picker opens as a grid above a modal, searches the lucide catalog, moves by
+  row, and sets a lucide and a vault-image icon (both written, both shown); `plaintorch-media` serves vault images and
+  refuses `../` escapes; the prompt dialog creates an objective; "Open note" toasts that SIPA has no editor yet.
