@@ -2,6 +2,7 @@ import { Component, component, css, html, nothing, property, query, repeat, stat
 import { NavigabilityController } from '@3mo/navigability'
 import type { SuggestLayout, SuggestShell, SuggestView } from '../../host'
 import { isBackdropClick } from './Modal'
+import { modalLayers, overlaySlot } from './modalLayers'
 
 /**
  * A searching picker: a query input over a list — or a grid — of suggestions, in a native modal `<dialog>`.
@@ -10,8 +11,9 @@ import { isBackdropClick } from './Modal'
  * and hands the controller only the keys that move the cursor (the controller's own key listener stays unattached), so
  * the current suggestion is announced through `aria-activedescendant` on the input. In a list, Up and Down walk the
  * rows; in a grid, Up and Down move a whole row of tiles and Left and Right move one tile — at the edges of the typed
- * text, or whenever the query is empty, so the caret still moves inside a query. Enter chooses the current suggestion,
- * a click chooses the one clicked, and Escape or a click on the backdrop asks to be dismissed.
+ * text, or whenever the query is empty, so the caret still moves inside a query. Enter chooses the current suggestion
+ * (once the search for the typed query has answered), a click chooses the one clicked, and Escape or a click on the
+ * backdrop asks to be dismissed.
  *
  * Suggestions are drawn by the view into row elements this picker provides; an answer to a query that has since changed
  * is dropped.
@@ -33,6 +35,8 @@ export class SuggestModal<T = unknown> extends Component {
 
 	private sequence = 0
 	private readonly drawn = new WeakMap<Element, T>()
+	/** An Enter pressed while a search was still out: it chooses from what that search finds, once it lands. */
+	private pendingChoice?: KeyboardEvent
 
 	readonly navigability = new NavigabilityController<T>(this, () => {
 		const picker = this
@@ -149,6 +153,7 @@ export class SuggestModal<T = unknown> extends Component {
 		}
 
 		this.dialog?.showModal()
+		modalLayers.opened(this)
 		this.input?.focus()
 		void this.runSearch(this.input?.value ?? '')
 	}
@@ -156,6 +161,12 @@ export class SuggestModal<T = unknown> extends Component {
 	/** Takes the picker down (without asking). */
 	hide() {
 		this.dialog?.close()
+		modalLayers.closed(this)
+	}
+
+	override disconnectedCallback() {
+		super.disconnectedCallback()
+		modalLayers.closed(this)
 	}
 
 	/** Replaces the query, as if typed, and searches again. */
@@ -180,11 +191,24 @@ export class SuggestModal<T = unknown> extends Component {
 			this.items = found
 			await this.updateComplete
 			this.navigability.goFirst()
+			const pending = this.pendingChoice
+			this.pendingChoice = undefined
+			if (pending && this.dialog?.open) {
+				this.chooseCurrent(pending)
+			}
 		}
 		finally {
 			if (sequence === this.sequence) {
 				this.searching = false
+				this.pendingChoice = undefined
 			}
+		}
+	}
+
+	private chooseCurrent(event: KeyboardEvent) {
+		const current = this.navigability.current ?? this.items[0]
+		if (current !== undefined) {
+			this.choose(current, event)
 		}
 	}
 
@@ -206,9 +230,13 @@ export class SuggestModal<T = unknown> extends Component {
 	private handleKeyDown(event: KeyboardEvent) {
 		if (event.key === 'Enter') {
 			event.preventDefault()
-			const current = this.navigability.current ?? this.items[0]
-			if (current !== undefined) {
-				this.choose(current, event)
+			// The suggestions on screen may still answer an earlier query; choosing among them would pick what the
+			// query no longer asks for.
+			if (this.searching) {
+				this.pendingChoice = event
+			}
+			else {
+				this.chooseCurrent(event)
 			}
 			return
 		}
@@ -256,6 +284,7 @@ export class SuggestModal<T = unknown> extends Component {
 							@click=${(e: MouseEvent) => this.choose(item, e)}></div>
 					`)}
 				</div>
+				<slot name=${overlaySlot}></slot>
 			</dialog>
 		`
 	}

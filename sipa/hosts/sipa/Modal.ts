@@ -1,5 +1,6 @@
 import { Component, component, css, html, property, query } from '@a11d/lit'
 import type { DialogShell, ModalView } from '../../host'
+import { modalLayers, overlaySlot } from './modalLayers'
 
 /** Whether a click landed on a dialog's backdrop rather than on the dialog box itself. */
 export function isBackdropClick(dialog: HTMLDialogElement, event: MouseEvent): boolean {
@@ -15,7 +16,7 @@ export function isBackdropClick(dialog: HTMLDialogElement, event: MouseEvent): b
  * A modal dialog: a native `<dialog>` shown with `showModal()`, so it sits in the top layer with a backdrop, makes the
  * rest of the page inert, and stacks above an earlier one. Its content is its light DOM, slotted under a heading and a
  * close button. Escape, the close button and a click on the backdrop each ask to be dismissed (a `dismiss` event); the
- * {@link ModalShell} owning it decides.
+ * {@link ModalShell} owning it decides. Whatever must stay interactive above it (the toasts) goes into its overlay slot.
  */
 @component('p7t-modal')
 export class Modal extends Component {
@@ -90,14 +91,21 @@ export class Modal extends Component {
 	/** Shows the dialog once it has rendered. */
 	async show() {
 		await this.updateComplete
-		if (this.isConnected && !this.dialog?.open) {
-			this.dialog?.showModal()
+		if (this.isConnected && this.dialog && !this.dialog.open) {
+			this.dialog.showModal()
+			modalLayers.opened(this)
 		}
 	}
 
 	/** Takes the dialog down (without asking). */
 	hide() {
 		this.dialog?.close()
+		modalLayers.closed(this)
+	}
+
+	override disconnectedCallback() {
+		super.disconnectedCallback()
+		modalLayers.closed(this)
 	}
 
 	private requestDismiss() {
@@ -118,6 +126,7 @@ export class Modal extends Component {
 				<div class='content' part='content'>
 					<slot></slot>
 				</div>
+				<slot name=${overlaySlot}></slot>
 			</dialog>
 		`
 	}

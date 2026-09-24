@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain, shell as electronShell, nativeTheme } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, shell as electronShell, nativeTheme } from "electron"
 import { mkdirSync } from "node:fs"
 import { ipc, type BridgeRequest, type ShellStatus } from "../shared/contracts"
 import { setAutostartEnabled } from "./autostart"
@@ -6,6 +6,7 @@ import { relayCoreStreams } from "./core-streams"
 import { hostsCore } from "./flavor"
 import { handleMediaScheme, registerMediaScheme } from "./media-protocol"
 import { resolveUserProfile } from "./profile"
+import { refuseRemoteFiles } from "./request-guard"
 import { Shell } from "./shell"
 import { ShellTray } from "./tray"
 import { ShellWindows } from "./windows"
@@ -42,6 +43,7 @@ async function run(): Promise<void> {
 	const shell = new Shell(profile)
 	const windows = new ShellWindows()
 	let quitting = false
+	let splashTimer: NodeJS.Timeout | undefined
 
 	const quit = async () => {
 		if (quitting) {
@@ -49,21 +51,36 @@ async function run(): Promise<void> {
 		}
 
 		quitting = true
+		clearTimeout(splashTimer)
 		tray.destroy()
 		windows.destroyAll()
 		await shell.shutdown()
 		app.exit(0)
 	}
 
-	const activateVault = async () => {
-		const result = await dialog.showOpenDialog(windows.statusWindow ?? (null as unknown as Electron.BrowserWindow), {
-			title: "Activate a PLAINTORCH vault",
-			message: "Choose an initialized PLAINTORCH vault folder",
-			properties: ["openDirectory"]
-		})
-		const chosen = result.filePaths[0]
-		if (!result.canceled && chosen) {
-			shell.activateVault(chosen)
+	let choosingVault = false
+	/** Asks for a vault folder, modal to the window that asked (the tray has none); one picker at a time. */
+	const activateVault = async (owner?: BrowserWindow) => {
+		if (choosingVault) {
+			return
+		}
+
+		choosingVault = true
+		try {
+			const options: Electron.OpenDialogOptions = {
+				title: "Activate a PLAINTORCH vault",
+				message: "Choose an initialized PLAINTORCH vault folder",
+				properties: ["openDirectory"]
+			}
+			const parent = owner ?? windows.statusWindow
+			const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
+			const chosen = result.filePaths[0]
+			if (!result.canceled && chosen && !quitting) {
+				shell.activateVault(chosen)
+			}
+		}
+		finally {
+			choosingVault = false
 		}
 	}
 
@@ -95,7 +112,12 @@ async function run(): Promise<void> {
 		windows.broadcast(status)
 		// The splash outlives the startup phases only for a failure, which it displays until dismissed.
 		if (windows.isSplashOpen && !shell.isCoreStarting && status.phase !== "Failed") {
-			setTimeout(() => {
+			clearTimeout(splashTimer)
+			splashTimer = setTimeout(() => {
+				if (quitting) {
+					return
+				}
+
 				windows.closeSplash()
 				// A visible launch ends in the main window once the core is up; a login launch stays in the tray.
 				if (!launchedHidden && !briefingShownAfterSplash) {
@@ -107,7 +129,7 @@ async function run(): Promise<void> {
 	}
 
 	ipcMain.handle(ipc.getStatus, () => shell.status)
-	ipcMain.handle(ipc.activateVault, () => activateVault())
+	ipcMain.handle(ipc.activateVault, event => activateVault(BrowserWindow.fromWebContents(event.sender) ?? undefined))
 	ipcMain.handle(ipc.deactivateVault, () => shell.deactivateVault())
 	ipcMain.handle(ipc.setAutostart, (_, enabled: boolean) => {
 		setAutostartEnabled(enabled)
@@ -131,7 +153,7 @@ async function run(): Promise<void> {
 
 	relayCoreStreams(shell.transport)
 
-	app.on("second-instance", () => windows.showBriefing())
+	app.on("second-instance", () => !quitting && windows.showBriefing())
 	// A tray app stays alive with no windows.
 	app.on("window-all-closed", () => { })
 	app.on("before-quit", event => {
@@ -142,7 +164,8 @@ async function run(): Promise<void> {
 	})
 
 	await app.whenReady()
-	handleMediaScheme(() => shell.status.vault)
+	refuseRemoteFiles()
+	handleMediaScheme(() => shell.servedVault)
 	tray.create()
 	nativeTheme.on("updated", () => tray.updateIcon())
 	shell.on("status", publish)

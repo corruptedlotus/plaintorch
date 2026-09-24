@@ -23,11 +23,13 @@ export function mediaUrl(media: MediaReference | undefined): string | undefined 
 }
 
 /**
- * Whether an icon source is an image to draw as a picture rather than a glyph name: a URL the host produced, a
- * web, data or blob URL, or anything path-like.
+ * Whether an icon source is an image to draw as a picture rather than a glyph name: a URL the host produced for a
+ * vault file, or a web, data or blob URL — and nothing merely path-like. A media key comes straight from a note's
+ * frontmatter, which anyone who can write to the vault controls, and a protocol-relative `//host/x.png` loaded on a
+ * page served from a file is fetched from that host (on Windows over SMB, handing it the user's credentials).
  */
 export function isImageSource(source: string): boolean {
-	return /^(https?|data|blob):/i.test(source) || source.includes('/') || host.media.isResourceUrl(source)
+	return /^(https?|data|blob):/i.test(source) || host.media.isResourceUrl(source)
 }
 
 /**

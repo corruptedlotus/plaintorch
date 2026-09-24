@@ -46,7 +46,11 @@ function straightBgra(image) {
 	return pixels
 }
 
-/** One ICO image: a BITMAPINFOHEADER, the XOR bitmap bottom-up, and an all-transparent AND mask (alpha does the work). */
+/**
+ * One ICO image: a BITMAPINFOHEADER, the XOR bitmap bottom-up, and the AND mask derived from alpha — a set bit wherever
+ * a pixel is fully transparent — for whatever draws an icon by its mask rather than its alpha (low colour depths,
+ * masked image lists), which would otherwise paint the transparent corners black.
+ */
 function dibEntry(image, size) {
 	const pixels = straightBgra(image)
 	const header = Buffer.alloc(40)
@@ -62,7 +66,15 @@ function dibEntry(image, size) {
 		pixels.copy(xor, (size - 1 - row) * size * 4, row * size * 4, (row + 1) * size * 4)
 	}
 	const maskStride = Math.ceil(size / 32) * 4
-	return Buffer.concat([header, xor, Buffer.alloc(maskStride * size)])
+	const mask = Buffer.alloc(maskStride * size)
+	for (let row = 0; row < size; row++) {
+		for (let x = 0; x < size; x++) {
+			if (pixels[(row * size + x) * 4 + 3] === 0) {
+				mask[(size - 1 - row) * maskStride + (x >> 3)] |= 0x80 >> (x & 7)
+			}
+		}
+	}
+	return Buffer.concat([header, xor, mask])
 }
 
 function buildIco(mark) {
@@ -124,8 +136,13 @@ function buildBmp(image) {
 const dataUri = file => `data:image/png;base64,${readFileSync(file).toString("base64")}`
 
 /** Draws the sidebar and header on canvases in a hidden window: the art as a cover, the mark on top. */
-const compose = `
-	const load = src => new Promise(resolve => { const image = new Image(); image.onload = () => resolve(image); image.src = src })
+const compose = () => `
+	const load = src => new Promise((resolve, reject) => {
+		const image = new Image()
+		image.onload = () => resolve(image)
+		image.onerror = () => reject(new Error('An input image does not decode.'))
+		image.src = src
+	})
 	const draw = async (width, height, paint) => {
 		const canvas = document.createElement('canvas')
 		canvas.width = width
@@ -156,21 +173,30 @@ const compose = `
 	})()
 `
 
-app.whenReady().then(async () => {
+async function main() {
 	mkdirSync(branding, { recursive: true })
 	const mark = nativeImage.createFromPath(markPath)
 	if (mark.isEmpty()) {
 		throw new Error(`Cannot read ${markPath}`)
 	}
 
+	const script = compose()
 	writeFileSync(path.join(branding, "plaintorch.ico"), buildIco(mark))
 
 	const window = new BrowserWindow({ show: false, webPreferences: { offscreen: true } })
 	await window.loadURL("about:blank")
-	const { sidebar, header } = await window.webContents.executeJavaScript(compose)
+	const { sidebar, header } = await window.webContents.executeJavaScript(script)
 	writeFileSync(path.join(branding, "installer-sidebar.bmp"), buildBmp(nativeImage.createFromDataURL(sidebar)))
 	writeFileSync(path.join(branding, "installer-header.bmp"), buildBmp(nativeImage.createFromDataURL(header)))
 
 	console.log(`Wrote plaintorch.ico (${icoSizes.join(", ")}), installer-sidebar.bmp and installer-header.bmp to ${branding}`)
-	app.quit()
-})
+}
+
+// Electron does not exit on a failure of its own accord, least of all with a hidden window open: a missing or broken
+// input must end the run, with a status a script can see, rather than leave it hanging.
+app.whenReady()
+	.then(main)
+	.then(() => app.exit(0), error => {
+		console.error(error instanceof Error ? error.message : error)
+		app.exit(1)
+	})

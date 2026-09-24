@@ -3,6 +3,7 @@ import { IntervalController } from '@3mo/interval-controller'
 import { PointerController } from '@3mo/pointer-controller'
 import type { ToastKind } from '../../host'
 import type { IconName } from '../../components/PleiadesIcon'
+import { modalLayers, overlaySlot } from './modalLayers'
 
 /** How long a toast of each kind stays up; the more a message matters, the longer it lingers. */
 const durations: Record<ToastKind, number> = { info: 4_500, success: 4_500, warning: 7_000, error: 10_000 }
@@ -33,6 +34,12 @@ export class Toast extends Component {
 	private readonly pointer = new PointerController(this)
 	protected readonly countdown = new IntervalController(this, tickMs, () => this.tick())
 
+	constructor() {
+		super()
+		// The stack moves between the page and the modals; a toast it carries along should not enter a second time.
+		this.addEventListener('animationend', () => this.toggleAttribute('entered', true), { once: true })
+	}
+
 	static override get styles() {
 		return css`
 			:host {
@@ -58,6 +65,10 @@ export class Toast extends Component {
 				cursor: pointer;
 				pointer-events: auto;
 				animation: enter 160ms ease-out;
+			}
+
+			:host([entered]) {
+				animation: none;
 			}
 
 			:host([kind=success]) { --p7t-toast-accent: var(--color-green); }
@@ -130,10 +141,19 @@ export class Toast extends Component {
  *
  * It is a manual popover, raised to the top of the top layer on every new toast: a modal `<dialog>` lives in the top
  * layer, above anything a z-index can reach, and a message raised while one is open — a failed save in an editor —
- * must still be seen.
+ * must still be seen. Seen is not enough: an open modal leaves everything outside itself inert, so a toast shown over
+ * it from the page could be neither clicked away nor held by hovering, and a click on it would land on the modal's
+ * backdrop and dismiss the modal. The stack therefore lives inside the topmost open modal (its overlay slot), and
+ * moves back to the page when the last one closes.
  */
 @component('p7t-toast-stack')
 export class ToastStack extends Component {
+	private static instance?: ToastStack
+
+	static {
+		modalLayers.subscribe(() => ToastStack.instance?.rehome())
+	}
+
 	static override get styles() {
 		return css`
 			:host {
@@ -162,6 +182,23 @@ export class ToastStack extends Component {
 		return html`<slot></slot>`
 	}
 
+	/** Moves the stack into the topmost open modal, or back to the page when none is open, and raises it there. */
+	rehome() {
+		const layer = modalLayers.topmost ?? document.body
+		if (this.parentElement !== layer) {
+			if (layer === document.body) {
+				this.removeAttribute('slot')
+			}
+			else {
+				this.slot = overlaySlot
+			}
+
+			layer.append(this)
+		}
+
+		this.settle()
+	}
+
 	/** Raises the stack above whatever took the top layer since, or hides it once the last toast is gone. */
 	settle() {
 		if (this.matches(':popover-open')) {
@@ -175,7 +212,7 @@ export class ToastStack extends Component {
 
 	/** Shows a message in the document's stack. */
 	static show(message: string, kind: ToastKind = 'info'): Toast {
-		const stack = document.querySelector('p7t-toast-stack') ?? document.body.appendChild(new ToastStack())
+		const stack = ToastStack.instance ??= new ToastStack()
 		while (stack.children.length >= maximumToasts) {
 			stack.firstElementChild?.remove()
 		}
@@ -184,7 +221,7 @@ export class ToastStack extends Component {
 		toast.message = message
 		toast.kind = kind
 		stack.appendChild(toast)
-		stack.settle()
+		stack.rehome()
 		return toast
 	}
 }

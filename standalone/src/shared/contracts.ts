@@ -110,7 +110,8 @@ export interface BridgeResponse {
 
 /** One line of a long-lived core response (the change feed), pushed from the main process to the renderer. */
 export interface BridgeStreamLine {
-	id: number
+	/** The stream's id, as the opening document allocated it. */
+	id: string
 	line: string
 }
 
@@ -161,10 +162,11 @@ export interface PlaintorchBridge {
 		send(request: BridgeRequest): Promise<BridgeResponse | undefined>
 		/**
 		 * Opens a long-lived GET (the change feed) and delivers its body a line at a time. Resolves the stream's id, or
-		 * `undefined` when the core would not open it; `onEnd` follows the last line, however the stream ended.
+		 * `undefined` when the core would not open it; `onEnd` follows the last line, however the stream ended. The
+		 * stream belongs to the document that opened it and closes when that document is replaced.
 		 */
-		openStream(path: string, onLine: (line: string) => void, onEnd: () => void): Promise<number | undefined>
-		/** Closes a stream this window opened. */
-		closeStream(id: number): Promise<void>
+		openStream(path: string, onLine: (line: string) => void, onEnd: () => void): Promise<string | undefined>
+		/** Closes a stream this document opened. */
+		closeStream(id: string): Promise<void>
 	}
 }

@@ -66,7 +66,7 @@ export class PleiadesIcon extends Component {
 		}
 
 		// A custom media icon is a full-colour image, not a tintable glyph mask (PEP105). A bundled glyph name and a
-		// `lucide:` name never contain a slash or a URL scheme the host produces.
+		// `lucide:` name never carry a URL scheme.
 		if (isImageSource(this.icon)) {
 			return html`<img part='icon-image' src=${this.icon} alt='' />`
 		}

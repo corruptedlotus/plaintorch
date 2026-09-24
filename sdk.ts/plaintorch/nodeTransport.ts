@@ -122,9 +122,10 @@ export class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTranspor
 	public async stream(request: PlaintorchCoreRequest, signal: AbortSignal): Promise<AsyncIterable<string> | undefined> {
 		return await new Promise<AsyncIterable<string> | undefined>((resolve) => {
 			let settled = false
+			let httpRequest: ReturnType<typeof sendRequest> | undefined
 			// Bounds only the connect, not the stream: a feed that stays open all day is the point of it.
 			const timer = setTimeout(() => {
-				httpRequest.destroy()
+				httpRequest?.destroy()
 				settle(undefined)
 			}, defaultStreamConnectTimeoutMs)
 
@@ -136,7 +137,7 @@ export class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTranspor
 				}
 			}
 
-			const httpRequest = sendRequest(
+			const open = () => sendRequest(
 				{
 					socketPath: this.socketPath,
 					path: request.path,
@@ -162,9 +163,25 @@ export class NodeSocketPlaintorchCoreTransport implements PlaintorchCoreTranspor
 				}
 			)
 
-			httpRequest.on("error", () => settle(undefined))
-			signal.addEventListener("abort", () => httpRequest.destroy(), { once: true })
-			httpRequest.end()
+			// Building the request throws for a path the request line cannot carry (a space, say); that is no stream.
+			try {
+				httpRequest = open()
+			}
+			catch {
+				settle(undefined)
+				return
+			}
+
+			const opened = httpRequest
+			opened.on("error", () => settle(undefined))
+			if (signal.aborted) {
+				opened.destroy()
+				settle(undefined)
+				return
+			}
+
+			signal.addEventListener("abort", () => opened.destroy(), { once: true })
+			opened.end()
 		})
 	}
 }

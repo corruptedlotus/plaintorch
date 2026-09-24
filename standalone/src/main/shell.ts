@@ -81,6 +81,11 @@ export class Shell extends EventEmitter<{ status: [ShellStatus], log: [string] }
 		}
 	}
 
+	/** The vault the core serves right now, without building the whole {@link status}. */
+	public get servedVault(): string | undefined {
+		return this.vault
+	}
+
 	/**
 	 * Whether the core is still coming up and a splash should stay: a starting/activating phase, or an Active core
 	 * whose startup sweep has not finished yet.

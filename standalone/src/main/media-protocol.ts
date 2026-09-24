@@ -28,7 +28,10 @@ export function handleMediaScheme(servedVault: () => string | undefined): void {
 
 		const root = path.resolve(vault)
 		const target = path.resolve(root, decodeURIComponent(url.pathname).replace(/^\/+/, ""))
-		if (target !== root && !target.startsWith(root + path.sep)) {
+		// Relative rather than a prefix test: a vault at a drive root resolves to `E:\`, whose separator a prefix of
+		// root + sep would double.
+		const inside = path.relative(root, target)
+		if (inside === ".." || inside.startsWith(`..${path.sep}`) || path.isAbsolute(inside)) {
 			return new Response(null, { status: 403 })
 		}
 
