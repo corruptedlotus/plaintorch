@@ -19,7 +19,10 @@
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedIndexedAccess": true,
 		"importHelpers": false,
-		"types": ["node"]
+		"types": ["node"],
+		"paths": {
+			"@a11d/lit": ["../sipa/node_modules/@a11d/lit"]
+		}
 	},
 	"include": ["src/**/*.ts"]
 }

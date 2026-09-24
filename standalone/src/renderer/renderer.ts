@@ -1,6 +1,7 @@
 import { Component, component, css, html, nothing, state, unsafeCSS } from "@a11d/lit"
-import { PlaintorchCoreClient, type PlaintorchCoreClientOptions, type SystemBriefing } from "@pleiades/sdk/plaintorch"
+import { PlaintorchCoreClient, type SystemBriefing } from "@pleiades/sdk/plaintorch"
 import type { CorePhase, PlaintorchBridge, ShellStatus } from "../shared/contracts"
+import { BridgeTransport } from "./bridgeTransport"
 import splashArtwork from "../../assets/splash-loading.png"
 
 declare global {
@@ -11,25 +12,8 @@ declare global {
 
 const bridge = window.plaintorch
 
-// The SDK keeps its transport contract internal; the client options expose it, which is enough to implement one.
-type PlaintorchCoreTransport = NonNullable<PlaintorchCoreClientOptions["transports"]>[number]
-type PlaintorchCoreRequest = Parameters<PlaintorchCoreTransport["send"]>[0]
-type PlaintorchCoreResponse = NonNullable<Awaited<ReturnType<PlaintorchCoreTransport["send"]>>>
-
-/**
- * The SDK client of the status window. Every request crosses the preload bridge to the main process, which sends
- * it over the profile's pipe or socket, so the renderer stays sandboxed and the Node SDK is never bundled here.
- */
-class BridgeTransport implements PlaintorchCoreTransport {
-	public async send(request: PlaintorchCoreRequest): Promise<PlaintorchCoreResponse | undefined> {
-		const response = await bridge.core.send({ method: request.method, path: request.path, body: request.body, headers: request.headers })
-		return response === undefined
-			? undefined
-			: { ok: response.ok, status: response.status, text: async () => response.text }
-	}
-}
-
-const core = new PlaintorchCoreClient({ transports: [new BridgeTransport()] })
+/** The status window's SDK client, for its vault summary. */
+const core = new PlaintorchCoreClient({ transports: [new BridgeTransport(bridge)] })
 
 const phaseTone: Record<CorePhase, "ok" | "warn" | "bad" | "muted"> = {
 	Starting: "warn",
@@ -57,7 +41,7 @@ function phaseLabel(status: ShellStatus): string {
 }
 
 /** Routes the window to the splash or the status view from the URL hash. */
-@component("pt-app")
+@component("p7t-app")
 export class App extends Component {
 	@state() private status?: ShellStatus
 	private unsubscribe?: () => void
@@ -88,13 +72,13 @@ export class App extends Component {
 		}
 
 		return this.view === "splash"
-			? html`<pt-splash .status=${this.status}></pt-splash>`
-			: html`<pt-status .status=${this.status}></pt-status>`
+			? html`<p7t-splash .status=${this.status}></p7t-splash>`
+			: html`<p7t-status .status=${this.status}></p7t-status>`
 	}
 }
 
 /** The frameless startup popup: the artwork with the core's latest phase line over it. */
-@component("pt-splash")
+@component("p7t-splash")
 export class Splash extends Component {
 	@state() status!: ShellStatus
 
@@ -153,7 +137,7 @@ export class Splash extends Component {
 }
 
 /** The status window: core phase and attachment, vault, endpoint, host settings, and a briefing of the vault. */
-@component("pt-status")
+@component("p7t-status")
 export class Status extends Component {
 	@state() status!: ShellStatus
 	@state() private briefing?: SystemBriefing
@@ -165,37 +149,37 @@ export class Status extends Component {
 			:host { display: block; padding: 24px 28px 32px; }
 			header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
 			header h1 { margin: 0; font-size: 20px; letter-spacing: 0.08em; }
-			header .flavor { color: var(--pt-muted); font-size: 12px; }
+			header .flavor { color: var(--p7t-muted); font-size: 12px; }
 			.badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
-			.badge.ok { background: rgba(124, 196, 143, 0.18); color: var(--pt-ok); }
-			.badge.warn { background: rgba(230, 180, 90, 0.18); color: var(--pt-warn); }
-			.badge.bad { background: rgba(226, 109, 109, 0.18); color: var(--pt-bad); }
-			.badge.muted { background: rgba(168, 156, 164, 0.18); color: var(--pt-muted); }
-			section { background: var(--pt-panel); border: 1px solid var(--pt-line); border-radius: 8px; padding: 16px 18px; margin-bottom: 14px; }
-			section h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--pt-muted); }
+			.badge.ok { background: rgba(124, 196, 143, 0.18); color: var(--p7t-ok); }
+			.badge.warn { background: rgba(230, 180, 90, 0.18); color: var(--p7t-warn); }
+			.badge.bad { background: rgba(226, 109, 109, 0.18); color: var(--p7t-bad); }
+			.badge.muted { background: rgba(168, 156, 164, 0.18); color: var(--p7t-muted); }
+			section { background: var(--p7t-panel); border: 1px solid var(--p7t-line); border-radius: 8px; padding: 16px 18px; margin-bottom: 14px; }
+			section h2 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--p7t-muted); }
 			dl { display: grid; grid-template-columns: 140px 1fr; gap: 6px 14px; margin: 0; }
-			dt { color: var(--pt-muted); }
+			dt { color: var(--p7t-muted); }
 			dd { margin: 0; word-break: break-all; }
 			.message { white-space: pre-wrap; }
 			.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 			button {
-				border: 1px solid var(--pt-line);
+				border: 1px solid var(--p7t-line);
 				background: #352c3a;
-				color: var(--pt-text);
+				color: var(--p7t-text);
 				border-radius: 6px;
 				padding: 7px 14px;
 				cursor: pointer;
 				font: inherit;
 			}
-			button:hover:not(:disabled) { border-color: var(--pt-accent); }
+			button:hover:not(:disabled) { border-color: var(--p7t-accent); }
 			button:disabled { opacity: 0.5; cursor: default; }
-			button.primary { background: var(--pt-accent); border-color: var(--pt-accent); color: #1f1a22; font-weight: 600; }
+			button.primary { background: var(--p7t-accent); border-color: var(--p7t-accent); color: #ffffff; font-weight: 600; }
 			label.toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 			.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 			.card { background: rgba(0, 0, 0, 0.18); border-radius: 6px; padding: 10px 12px; }
-			.card .label { color: var(--pt-muted); font-size: 12px; }
+			.card .label { color: var(--p7t-muted); font-size: 12px; }
 			.card .value { font-size: 18px; font-weight: 600; margin-top: 2px; }
-			.hint { color: var(--pt-muted); font-size: 12px; }
+			.hint { color: var(--p7t-muted); font-size: 12px; }
 		`
 	}
 
@@ -252,7 +236,8 @@ export class Status extends Component {
 					${status.pid ? html`<dt>Process</dt><dd>${status.pid}</dd>` : nothing}
 				</dl>
 				<div class="actions">
-					<button class="primary" @click=${() => bridge.activateVault()}>Activate vault…</button>
+					<button class="primary" @click=${() => bridge.openBriefing()}>Open briefing</button>
+					<button @click=${() => bridge.activateVault()}>Activate vault…</button>
 					<button ?disabled=${!status.activeVaultSetting} @click=${() => bridge.deactivateVault()}>Deactivate vault</button>
 					${status.flavor === "standalone" ? html`<button @click=${() => bridge.restartCore()}>Restart core</button>` : nothing}
 					<button @click=${() => bridge.openLogs()}>Open logs</button>

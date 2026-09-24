@@ -4,6 +4,7 @@ import type { ShellStatus } from "../shared/contracts"
 import { hostsCore } from "./flavor"
 
 export interface TrayActions {
+	openBriefing(): void
 	openStatus(): void
 	activateVault(): void
 	deactivateVault(): void
@@ -17,10 +18,12 @@ export interface TrayActions {
 
 /**
  * The tray icon and its menu, rebuilt from every status so the phase line, the vault entries, and the update entry
- * always reflect the shell's state.
+ * always reflect the shell's state. Clicking the icon opens the briefing, the shell's main window.
  */
 export class ShellTray {
 	private tray?: Tray
+	private destroyed = false
+	private latest?: ShellStatus
 
 	public constructor(private readonly actions: TrayActions) { }
 
@@ -37,11 +40,19 @@ export class ShellTray {
 		const icon = this.getPath()
 		this.tray = new Tray(icon)
 		this.tray.setToolTip("PLAINTORCH")
-		this.tray.on("click", () => this.actions.openStatus())
-		this.tray.on("double-click", () => this.actions.openStatus())
+		this.tray.on("click", () => this.actions.openBriefing())
+		this.tray.on("double-click", () => this.actions.openBriefing())
+		if (this.latest) {
+			this.update(this.latest)
+		}
 	}
 
+	/** Follows a light/dark theme change; brings the tray back if the platform dropped it, but never after {@link destroy}. */
 	public updateIcon() {
+		if (this.destroyed) {
+			return
+		}
+
 		if (this.tray && !this.tray.isDestroyed()) {
 			const icon = this.getPath()
 			this.tray.setImage(icon)
@@ -52,6 +63,7 @@ export class ShellTray {
 
 	/** Rebuilds the menu and tooltip for a status. */
 	public update(status: ShellStatus): void {
+		this.latest = status
 		if (!this.tray || this.tray.isDestroyed()) {
 			return
 		}
@@ -62,6 +74,7 @@ export class ShellTray {
 
 	/** Removes the tray icon. */
 	public destroy(): void {
+		this.destroyed = true
 		this.tray?.destroy()
 		this.tray = undefined
 	}
@@ -71,6 +84,7 @@ export class ShellTray {
 			{ label: describe(status), enabled: false },
 			{ label: status.vault ? `Vault: ${status.vault}` : "No vault active", enabled: false },
 			{ type: "separator" },
+			{ label: "Open briefing", click: () => this.actions.openBriefing() },
 			{ label: "Open status", click: () => this.actions.openStatus() },
 			{ label: "Activate vault...", click: () => this.actions.activateVault() },
 			{ label: "Deactivate vault", enabled: !!status.activeVaultSetting, click: () => this.actions.deactivateVault() },

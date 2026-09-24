@@ -15,8 +15,8 @@
 		"make-icons": "electron scripts/make-icons.mjs"
 	},
 	"devDependencies": {
-		"@a11d/lit": "^0.11.1",
 		"@pleiades/sdk": "file:../sdk.ts",
+		"@pleiades/sipa": "file:../sipa",
 		"@types/node": "^22.15.17",
 		"electron": "^44.4.0",
 		"electron-builder": "^26.0.12",

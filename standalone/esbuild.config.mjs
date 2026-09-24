@@ -30,6 +30,7 @@ const copyStaticPlugin = {
 		build.onEnd(() => {
 			mkdirSync(outputDirectory, { recursive: true })
 			cpSync("src/renderer/index.html", path.join(outputDirectory, "index.html"))
+			cpSync("src/renderer/briefing.html", path.join(outputDirectory, "briefing.html"))
 			cpSync("assets", path.join(outputDirectory, "assets"), { recursive: true })
 		})
 	}
@@ -46,6 +47,16 @@ const shared = {
 	// updates). Set here too so a build never depends on tsconfig auto-discovery.
 	tsconfigRaw: { compilerOptions: { experimentalDecorators: true, useDefineForClassFields: false } },
 	loader: { ".png": "dataurl", ".svg": "dataurl" }
+}
+
+// The renderers bundle the SIPA UI from source. Its lit runtime lives in the package's own node_modules, and the
+// renderers' own lit imports must resolve to that same copy — two lit runtimes would each register their own elements.
+const renderer = {
+	...shared,
+	platform: "browser",
+	format: "iife",
+	target: "es2022",
+	nodePaths: [path.resolve("../sipa/node_modules")]
 }
 
 const contexts = await Promise.all([
@@ -70,12 +81,14 @@ const contexts = await Promise.all([
 		external: ["electron"]
 	}),
 	esbuild.context({
-		...shared,
+		...renderer,
 		entryPoints: ["src/renderer/renderer.ts"],
-		platform: "browser",
-		format: "iife",
-		target: "es2022",
 		outfile: `${outputDirectory}/renderer.js`
+	}),
+	esbuild.context({
+		...renderer,
+		entryPoints: ["src/renderer/briefing.ts"],
+		outfile: `${outputDirectory}/briefing.js`
 	})
 ])
 

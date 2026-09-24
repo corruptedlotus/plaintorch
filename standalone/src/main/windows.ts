@@ -1,11 +1,12 @@
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import { BrowserWindow, screen } from "electron"
+import { BrowserWindow, screen, shell } from "electron"
 import type { ShellStatus } from "../shared/contracts"
 import { ipc } from "../shared/contracts"
 
 const splashSize = { width: 943, height: 405 }
 const statusSize = { width: 720, height: 560 }
+const briefingSize = { width: 1180, height: 820 }
 
 function rendererUrl(view: "splash" | "status"): string {
 	// pathToFileURL gives a well-formed file:/// URL; a hand-built "file://" + a Windows path would leave the drive
@@ -15,27 +16,38 @@ function rendererUrl(view: "splash" | "status"): string {
 	return url.href
 }
 
+/** The briefing has a page and a bundle of its own: the whole SIPA UI, which the splash should not have to load. */
+function briefingUrl(): string {
+	return pathToFileURL(path.join(__dirname, "briefing.html")).href
+}
+
+/** The window icon: the full-colour PLAINTORCH mark. */
+function windowIcon(): string {
+	return path.join(__dirname, "assets", "plaintorch-full.png")
+}
+
 function preloadPath(): string {
 	return path.join(__dirname, "preload.cjs")
 }
 
-/**
- * The two windows of the shell, both rendering the same bundle behind a different hash: the frameless splash that
- * mirrors the old startup popup, and the ordinary status window.
- */
 /** How long the splash stays up at minimum, so a fast idle startup shows a graceful splash rather than a blink. */
 const minimumSplashMs = 1_400
 
+/**
+ * The shell's windows: the frameless splash that mirrors the old startup popup and the ordinary status window, both
+ * rendering the same small bundle behind a different hash, and the briefing — the SIPA UI — on a page of its own.
+ */
 export class ShellWindows {
 	private splash?: BrowserWindow
 	private status?: BrowserWindow
+	private briefing?: BrowserWindow
 	private latest?: ShellStatus
 	private splashShownAt = 0
 
 	/** Pushes a status to every open window; windows opened later receive it on load. */
 	public broadcast(status: ShellStatus): void {
 		this.latest = status
-		for (const window of [this.splash, this.status]) {
+		for (const window of [this.splash, this.status, this.briefing]) {
 			if (window && !window.isDestroyed()) {
 				window.webContents.send(ipc.status, status)
 			}
@@ -66,6 +78,7 @@ export class ShellWindows {
 			hasShadow: false,
 			webPreferences: this.webPreferences()
 		})
+		this.guard(this.splash)
 		this.splashShownAt = 0
 		this.splash.once("ready-to-show", () => {
 			this.splash?.showInactive()
@@ -123,14 +136,46 @@ export class ShellWindows {
 			autoHideMenuBar: true,
 			show: false,
 			backgroundColor: "#1f1a22",
-			icon: path.join(__dirname, "assets", "plaintorch-full.png"),
+			icon: windowIcon(),
 			webPreferences: this.webPreferences()
 		})
+		this.guard(this.status)
 		this.status.once("ready-to-show", () => this.status?.show())
 		this.status.on("closed", () => {
 			this.status = undefined
 		})
 		void this.status.loadURL(rendererUrl("status"))
+	}
+
+	/** Opens the briefing window, or brings the existing one forward. */
+	public showBriefing(): void {
+		if (this.briefing && !this.briefing.isDestroyed()) {
+			if (this.briefing.isMinimized()) {
+				this.briefing.restore()
+			}
+
+			this.briefing.show()
+			this.briefing.focus()
+			return
+		}
+
+		this.briefing = new BrowserWindow({
+			...briefingSize,
+			minWidth: 720,
+			minHeight: 520,
+			title: "PLAINTORCH Briefing",
+			autoHideMenuBar: true,
+			show: false,
+			backgroundColor: "#1f1a22",
+			icon: windowIcon(),
+			webPreferences: this.webPreferences()
+		})
+		this.guard(this.briefing)
+		this.briefing.once("ready-to-show", () => this.briefing?.show())
+		this.briefing.on("closed", () => {
+			this.briefing = undefined
+		})
+		void this.briefing.loadURL(briefingUrl())
 	}
 
 	/** The status window, when open. */
@@ -140,7 +185,7 @@ export class ShellWindows {
 
 	/** Destroys every window, for quitting. */
 	public destroyAll(): void {
-		for (const window of [this.splash, this.status]) {
+		for (const window of [this.splash, this.status, this.briefing]) {
 			if (window && !window.isDestroyed()) {
 				window.destroy()
 			}
@@ -148,6 +193,22 @@ export class ShellWindows {
 
 		this.splash = undefined
 		this.status = undefined
+		this.briefing = undefined
+	}
+
+	/**
+	 * Keeps a window on its own page: it never navigates away, and a link that would open a window opens in the
+	 * system browser instead when it is a web link, and nowhere otherwise.
+	 */
+	private guard(window: BrowserWindow): void {
+		window.webContents.setWindowOpenHandler(({ url }) => {
+			if (/^https?:/i.test(url)) {
+				void shell.openExternal(url)
+			}
+
+			return { action: "deny" }
+		})
+		window.webContents.on("will-navigate", event => event.preventDefault())
 	}
 
 	private webPreferences(): Electron.WebPreferences {

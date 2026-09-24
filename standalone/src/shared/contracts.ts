@@ -104,7 +104,21 @@ export interface BridgeResponse {
 	ok: boolean
 	status: number
 	text: string
+	/** The response headers the SDK reads (`x-note-ready`), keyed in lower case. */
+	headers: Record<string, string>
 }
+
+/** One line of a long-lived core response (the change feed), pushed from the main process to the renderer. */
+export interface BridgeStreamLine {
+	id: number
+	line: string
+}
+
+/**
+ * The URL scheme vault files are served under to the renderer (`plaintorch-media://vault/<vault-relative path>`), by
+ * the main process from the vault the core serves.
+ */
+export const mediaScheme = "plaintorch-media"
 
 /** IPC channel names, in one place so the preload and the main process cannot drift. */
 export const ipc = {
@@ -115,12 +129,17 @@ export const ipc = {
 	setAutostart: "shell:set-autostart",
 	openLogs: "shell:open-logs",
 	openStatus: "shell:open-status",
+	openBriefing: "shell:open-briefing",
 	restartCore: "shell:restart-core",
 	checkForUpdates: "shell:check-for-updates",
 	installUpdate: "shell:install-update",
 	closeSplash: "shell:close-splash",
 	quit: "shell:quit",
-	coreSend: "core:send"
+	coreSend: "core:send",
+	coreStreamOpen: "core:stream-open",
+	coreStreamLine: "core:stream-line",
+	coreStreamEnd: "core:stream-end",
+	coreStreamClose: "core:stream-close"
 } as const
 
 /** The API the preload exposes on `window.plaintorch`. */
@@ -132,6 +151,7 @@ export interface PlaintorchBridge {
 	setAutostart(enabled: boolean): Promise<void>
 	openLogs(): Promise<void>
 	openStatus(): Promise<void>
+	openBriefing(): Promise<void>
 	restartCore(): Promise<void>
 	checkForUpdates(): Promise<void>
 	installUpdate(): Promise<void>
@@ -139,5 +159,12 @@ export interface PlaintorchBridge {
 	quit(): Promise<void>
 	core: {
 		send(request: BridgeRequest): Promise<BridgeResponse | undefined>
+		/**
+		 * Opens a long-lived GET (the change feed) and delivers its body a line at a time. Resolves the stream's id, or
+		 * `undefined` when the core would not open it; `onEnd` follows the last line, however the stream ended.
+		 */
+		openStream(path: string, onLine: (line: string) => void, onEnd: () => void): Promise<number | undefined>
+		/** Closes a stream this window opened. */
+		closeStream(id: number): Promise<void>
 	}
 }
