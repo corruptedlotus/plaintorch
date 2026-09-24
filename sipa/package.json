@@ -10,17 +10,25 @@
 	},
 	"exports": {
 		".": "./index.ts",
-		"./orbits": "./orbits/index.ts"
+		"./orbits": "./orbits/index.ts",
+		"./hosts/sipa": "./hosts/sipa/index.ts"
 	},
 	"devDependencies": {
 		"typescript": "^5.9.3"
 	},
 	"dependencies": {
+		"@3mo/focus-controller": "^1.2.1",
+		"@3mo/indexability": "0.2.0",
+		"@3mo/interval-controller": "0.0.5",
+		"@3mo/navigability": "0.1.0",
+		"@3mo/pointer-controller": "^1.5.0",
 		"@3mo/popover": "^0.11.1",
+		"@3mo/slot-controller": "^0.3.6",
 		"@3mo/tooltip": "^0.11.1",
 		"@a11d/lit": "^0.11.1",
 		"@dagrejs/dagre": "^1.1.4",
 		"@open-draft/deferred-promise": "^3.0.0",
-		"@pleiades/sdk": "file:../sdk.ts"
+		"@pleiades/sdk": "file:../sdk.ts",
+		"lucide": "1.47.0"
 	}
 }

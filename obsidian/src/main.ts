@@ -5,7 +5,7 @@ import { PlaintorchGlobalFileView, PLAINTORCH_GLOBAL_VIEW_TYPE } from "./canvas/
 import { PageBannerRenderer } from "./banner/PageBannerRenderer"
 
 import '@pleiades/sipa'
-import { GLOBAL_CONTEXT_EXTENSION, provideCore, provideHost } from "@pleiades/sipa"
+import { adoptComponentStyles, GLOBAL_CONTEXT_EXTENSION, provideCore, provideHost } from "@pleiades/sipa"
 import { plaintorchNodeCoreClient } from "@pleiades/sdk/plaintorch/node"
 import { ObsidianHost } from "./host/ObsidianHost"
 
@@ -15,6 +15,7 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 		// and take their repositories from the core client as they are built.
 		provideHost(new ObsidianHost(this.app))
 		provideCore(plaintorchNodeCoreClient)
+		adoptComponentStyles(document)
 
 		addIcon("plaintorch", `
 			<?xml version="1.0" encoding="UTF-8"?>

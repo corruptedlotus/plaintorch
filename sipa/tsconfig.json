@@ -39,6 +39,7 @@
 	"include": [
 		"index.ts",
 		"host/**/*.ts",
+		"hosts/**/*.ts",
 		"components/**/*.ts",
 		"orbits/**/*.ts",
 		"assets/**/*.ts"

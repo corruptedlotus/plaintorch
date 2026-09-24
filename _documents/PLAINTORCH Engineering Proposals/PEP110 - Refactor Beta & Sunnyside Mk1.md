@@ -449,3 +449,15 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
   gone; the package drops its `obsidian` and `@types/node` dev dependencies and the plugin its `obsidian` path pin —
   the package's own typecheck gains no error without them (36 → 25: only unused locals removed). Plugin green; `tsc`
   46 → 35, nothing new; no package module in the bundle touches `obsidian`.
+- 2026-09-24 — SIPA host landed (`@pleiades/sipa/hosts/sipa`, an export path the main entry never re-exports, so
+  neither it nor `lucide` reaches the plugin bundle): `createSipaHost({ mediaUrl, mediaScheme })`; `Modal`
+  (`p7t-modal`) and `SuggestModal` (`p7t-suggest-modal`) on native `<dialog>` with `ModalShell` / `SuggestModalShell`
+  behind `DialogHost` — the picker's cursor is `NavigabilityController` (list, or grid with Up/Down by row), the
+  toast (`Toast` in a `ToastStack`) counts down on `IntervalController` and holds on hover through
+  `PointerController`, and the stack is a manual popover re-raised per toast so it shows above an open modal; lucide
+  glyphs from `lucide@1.47.0` (aliases resolve, `lucideNames()` for the picker); the shell stylesheet (`sipaStyles`)
+  maps Obsidian's variable names onto the `--p7t-*` palette with accent `#71549c`. Opening a note toasts that SIPA
+  has no editor yet; following a renamed note is silent; no `globalContexts`. The component-facing rules of the
+  plugin's `styles.css` (`@property --flare-intensity`, the `--p7t-accent-*` tokens) moved into the package
+  (`componentStyles`, adopted by both hosts). Pins: `@3mo/navigability@0.1.0`, `@3mo/indexability@0.2.0`,
+  `@3mo/interval-controller@0.0.5`, `lucide@1.47.0` exact. Plugin green, `tsc` 35, bundle free of the SIPA host.
