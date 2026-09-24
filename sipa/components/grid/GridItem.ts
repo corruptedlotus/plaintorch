@@ -1,8 +1,8 @@
 import { component, css, html, HTMLTemplateResult, nothing, property, PropertyValues } from '@a11d/lit'
 import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, Directive, Objective, typeNameOf } from '@pleiades/sdk'
 import {
-	IconName, LunarDirectiveModal, type ScheduleValue,
-	SelectDirectiveStatusModal, SelectLunarDirectiveStatusModal, SelectObjectiveStatusModal
+	IconName, LunarDirectiveModal, type AnyStatus, type ScheduleValue,
+	SelectStatusModal, objectiveStatusDescriptors, directiveStatusDescriptors, lunarDirectiveStatusDescriptors
 } from '..'
 import {
 	directiveActions, entityIcon, entityKindLabel, entityKindOf, isDirectiveKind,
@@ -190,10 +190,11 @@ export class GridItem extends GridItemBase {
 	protected get statusCell(): HTMLTemplateResult | typeof nothing {
 		const entity = this.row!.entity as GridEntity
 		const kind = entityKindOf(entity)
-		const prompt = kind === 'objective' ? SelectObjectiveStatusModal.prompt
-			: kind === 'stellar-directive' ? SelectDirectiveStatusModal.prompt
-			: kind === 'lunar-directive' ? SelectLunarDirectiveStatusModal.prompt
+		const descriptors = kind === 'objective' ? objectiveStatusDescriptors
+			: kind === 'stellar-directive' ? directiveStatusDescriptors
+			: kind === 'lunar-directive' ? lunarDirectiveStatusDescriptors
 			: undefined
+		const prompt = descriptors && (() => SelectStatusModal.prompt<AnyStatus>(descriptors))
 
 		return !prompt ? nothing : html`
 			<p7t-editable .doEdit=${prompt} ${this.binder.bind('status')}>

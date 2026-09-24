@@ -1,6 +1,6 @@
 import { Component, component, css, html, nothing, property, state } from "@a11d/lit"
 import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, isDecreeIncentive, isObjectiveIncentive, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
-import { core, openEntityEditor, SelectObjectiveStatusModal, SelectTimeframeModal } from ".."
+import { core, objectiveStatusDescriptors, openEntityEditor, SelectStatusModal, SelectTimeframeModal } from ".."
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 import type { EditablePart } from "../editing/EditableDataLink"
 import type { EditableTimeUnit } from "../editing/EditableTimeUnit"
@@ -232,7 +232,7 @@ export class ExecutiveEditor extends Component {
 					${!objective ? nothing : html`
 						<p7t-editable
 							.value=${objective.status}
-							.doEdit=${SelectObjectiveStatusModal.prompt}
+							.doEdit=${() => SelectStatusModal.prompt(objectiveStatusDescriptors)}
 							@change=${(e: Event) => this.commitStatus(e)}>
 							<p7t-status-item
 								small

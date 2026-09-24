@@ -1,7 +1,7 @@
 import { createDeferredExecutor, DeferredPromiseExecutor } from '@open-draft/deferred-promise'
 import { DependencyEndpointKind, type EndpointHit } from '@pleiades/sdk'
-import { SuggestModal } from 'obsidian'
-import { core, getApp, type IconName } from '..'
+import { createChild, sleep, SuggestModalBase } from '../../host'
+import { core, type IconName } from '..'
 
 /** The type icon each endpoint kind is drawn with, matching the canvas nodes. */
 const kindIcons: Record<DependencyEndpointKind, IconName> = {
@@ -27,13 +27,13 @@ const kindLabels: Record<DependencyEndpointKind, string> = {
  * anywhere in the backlog; the type icon on each row is what tells the kinds apart, the same distinction the
  * global nodes themselves draw. An empty query opens on a bounded slice so the modal is useful before typing.
  */
-export class SelectEndpointModal extends SuggestModal<EndpointHit> {
+export class SelectEndpointModal extends SuggestModalBase<EndpointHit> {
 	private dpe?: DeferredPromiseExecutor<EndpointHit | undefined>
 	private excluded: ReadonlySet<string> = new Set()
 
 	/** Prompts for an endpoint, resolving to nothing when dismissed. `excluded` holds the `kind:id` keys already pinned. */
 	public static prompt(excluded: ReadonlySet<string> = new Set()): Promise<EndpointHit | undefined> {
-		const modal = new SelectEndpointModal(getApp())
+		const modal = new SelectEndpointModal()
 		modal.excluded = excluded
 		modal.dpe = createDeferredExecutor()
 		modal.setPlaceholder('Search directives, objectives, fates, checkpoints…')
@@ -47,7 +47,7 @@ export class SelectEndpointModal extends SuggestModal<EndpointHit> {
 	}
 
 	override renderSuggestion(hit: EndpointHit, el: HTMLElement) {
-		const item = el.createEl('p7t-icon-item')
+		const item = createChild(el, 'p7t-icon-item')
 		item.data = hit
 		item.icon = kindIcons[hit.kind]
 		// The kind icon tells them apart at a glance; the label follows for the kinds that share an icon.

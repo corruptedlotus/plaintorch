@@ -42,11 +42,6 @@
 		"paths": {
 			"@": [
 				"src"
-			],
-			// @pleiades/sipa still imports obsidian until the PlatformHost inversion (PEP110 SIPA P7); pinning the
-			// module here keeps the program on a single copy of its types instead of the package's own devDependency.
-			"obsidian": [
-				"node_modules/obsidian"
 			]
 		}
 	},

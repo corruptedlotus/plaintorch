@@ -1,7 +1,7 @@
 import { component, css, html, nothing } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { OnrushSprint } from '@pleiades/sdk'
-import { core, followRenamedNote, ReactiveBinder, SelectDirectiveStatusModal } from ".."
+import { core, followRenamedNote, ReactiveBinder } from ".."
 
 @component('p7t-onrush-banner')
 export class OnrushBanner extends EntityBanner<OnrushSprint> {

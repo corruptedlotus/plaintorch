@@ -1,7 +1,7 @@
 import { createDeferredExecutor, DeferredPromiseExecutor } from '@open-draft/deferred-promise'
 import type { Objective } from '@pleiades/sdk'
-import { SuggestModal } from 'obsidian'
-import { core, getApp } from '..'
+import { createChild, sleep, SuggestModalBase } from '../../host'
+import { core } from '..'
 
 /**
  * Asks for an objective by title.
@@ -10,13 +10,13 @@ import { core, getApp } from '..'
  * the point of the picker is to bring something onto the canvas that is not on it yet. An empty query falls
  * back to the full listing, which is what makes the modal useful before anything has been typed.
  */
-export class SelectObjectiveModal extends SuggestModal<Objective> {
+export class SelectObjectiveModal extends SuggestModalBase<Objective> {
 	private dpe?: DeferredPromiseExecutor<Objective | undefined>
 	private excluded: ReadonlySet<string> = new Set()
 
 	/** Prompts for an objective, resolving to nothing when the modal is dismissed. */
 	public static prompt(excluded: ReadonlySet<string> = new Set()): Promise<Objective | undefined> {
-		const modal = new SelectObjectiveModal(getApp())
+		const modal = new SelectObjectiveModal()
 		modal.excluded = excluded
 		modal.dpe = createDeferredExecutor()
 		modal.setPlaceholder('Search objectives…')
@@ -32,7 +32,7 @@ export class SelectObjectiveModal extends SuggestModal<Objective> {
 	}
 
 	override renderSuggestion(objective: Objective, el: HTMLElement) {
-		const item = el.createEl('p7t-icon-item')
+		const item = createChild(el, 'p7t-icon-item')
 		item.data = objective
 		item.icon = 'objective'
 		item.text = objective.title

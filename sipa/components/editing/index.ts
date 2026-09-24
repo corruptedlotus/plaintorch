@@ -1,5 +1,3 @@
-import { App } from 'obsidian'
-
 export * from './ReactiveBinder'
 export * from './EditableDataLink'
 export * from './EditableTextPart'
@@ -21,5 +19,3 @@ export * from './SelectList'
 export * from './SelectBase'
 export * from './CreationRowBase'
 export * from './fuzzy'
-
-export const getApp = () => (window as any).app as App

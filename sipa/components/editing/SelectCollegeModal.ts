@@ -1,14 +1,13 @@
 import { ObjectiveCollege } from "@pleiades/sdk";
-import { SuggestModal } from "obsidian";
-import { getApp } from ".";
+import { createChild, sleep, SuggestModalBase } from "../../host"
 import { collegeDescriptors, collegeDescriptorOf } from "../entities/collegeDescriptors";
 import { createDeferredExecutor, DeferredPromiseExecutor } from "@open-draft/deferred-promise";
 
-export class SelectCollegeModal extends SuggestModal<ObjectiveCollege> {
+export class SelectCollegeModal extends SuggestModalBase<ObjectiveCollege> {
 	protected dpe?: DeferredPromiseExecutor<ObjectiveCollege | undefined>
 
 	static prompt = (_currentValue?: ObjectiveCollege) => {
-		const modal = new SelectCollegeModal(getApp())
+		const modal = new SelectCollegeModal()
 		modal.dpe = createDeferredExecutor()
 		modal.open()
 		return new Promise(modal.dpe)
@@ -19,7 +18,7 @@ export class SelectCollegeModal extends SuggestModal<ObjectiveCollege> {
 	}
 
 	renderSuggestion(college: ObjectiveCollege, el: HTMLElement) {
-		const item = el.createEl('p7t-icon-item')
+		const item = createChild(el, 'p7t-icon-item')
 		const collegeSpec = collegeDescriptorOf(college)
 		item.data = college
 		item.icon = collegeSpec.icon

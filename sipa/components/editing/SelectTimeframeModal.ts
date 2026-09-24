@@ -1,6 +1,5 @@
 import { DirectiveTimeframeRecord } from "@pleiades/sdk"
-import { SuggestModal } from "obsidian"
-import { getApp } from "."
+import { createChild, sleep, SuggestModalBase } from "../../host"
 import { core, resolveMediaIcon } from ".."
 import { IconName } from "../PleiadesIcon"
 import { createDeferredExecutor, DeferredPromiseExecutor } from "@open-draft/deferred-promise"
@@ -13,12 +12,12 @@ export type TimeframeChoice = DirectiveTimeframeRecord | null
  * The list spans every lunar directive's timeframes, fetched once when the modal is opened, and always leads with a
  * "no affinity" choice so an executive can be un-affined the same way.
  */
-export class SelectTimeframeModal extends SuggestModal<TimeframeChoice> {
+export class SelectTimeframeModal extends SuggestModalBase<TimeframeChoice> {
 	protected dpe?: DeferredPromiseExecutor<TimeframeChoice | undefined>
 	private timeframes: DirectiveTimeframeRecord[] = []
 
 	static prompt = async (_current?: unknown): Promise<TimeframeChoice | undefined> => {
-		const modal = new SelectTimeframeModal(getApp())
+		const modal = new SelectTimeframeModal()
 		modal.timeframes = await core.directives.listAllTimeframes()
 		modal.setPlaceholder('Affine to a timeframe…')
 		modal.dpe = createDeferredExecutor()
@@ -34,7 +33,7 @@ export class SelectTimeframeModal extends SuggestModal<TimeframeChoice> {
 	}
 
 	renderSuggestion(choice: TimeframeChoice, el: HTMLElement) {
-		const item = el.createEl('p7t-icon-item')
+		const item = createChild(el, 'p7t-icon-item')
 		if (choice === null) {
 			item.icon = 'lucide:x' as IconName
 			item.text = 'No affinity'

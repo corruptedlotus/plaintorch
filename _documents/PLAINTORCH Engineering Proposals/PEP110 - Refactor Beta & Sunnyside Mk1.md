@@ -321,7 +321,8 @@ Two inversions carry it:
 - **P6 — SuggestModals.** `SuggestModalBase` base on `NavigabilityController` with intrinsic list/grid layout; migrate the 9
   pickers (`SelectMediaModal` drops its injected grid class for `layout: 'grid'`).
 - **P7 — Icons + navigation.** Icon provider (bundle lucide; Obsidian→`getIcon`); SIPA `navigate` = no-op + toast.
-  After this the package no longer imports `obsidian`.
+  After this the package no longer imports `obsidian`. *(done — the icon and navigation half landed with P2, the
+  last `obsidian` import left with P6; what remains is the SIPA side, built with P8.)*
 - **P8 — SIPA renderer mount (payoff).** In `standalone/`: depend on `@pleiades/sipa` (package.json + esbuild, and
   keep the renderer's own lit imports on the package's copy); `SipaHost` + inject the bridge `core` + mount the
   briefing (± dependency canvas) into the renderer, replacing the status-only view; wire the change feed / eviction
@@ -438,3 +439,13 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
   and `openOccurrenceModal` too; 11 call sites). `PromptTextModal` drops Obsidian's `Setting` for a plain input and a
   `mod-cta` button row, with a `confirmLabel` (the global-context save now says "Save"). Plugin green; `tsc` 46 with
   messages identical to P1.
+- 2026-09-24 — P6 landed, and with it P7's goal: **the package no longer imports `obsidian`.** The pickers extend
+  `SuggestModalBase` (Obsidian's `createEl` → `createChild`, the injected global `sleep` → an imported one).
+  `SelectStatusModal` is one concrete picker taking its status table (`SelectStatusModal.prompt(objectiveStatusDescriptors)`)
+  instead of an abstract base with five table-only subclasses; `ChangeStateModal`, a sixth copy, is folded into it —
+  `ObjectiveItem`'s notch prompts and shifts the workflow itself, and now offers *Failed* (the old
+  `Object.keys(typeof ObjectiveStatus)` never did). The media picker asks for `layout = 'grid'` (the plugin maps it to
+  `plaintorch-suggest-grid`, the renamed `plaintorch-media-selector` rule) and uses the base's `setQuery`. `getApp` is
+  gone; the package drops its `obsidian` and `@types/node` dev dependencies and the plugin its `obsidian` path pin —
+  the package's own typecheck gains no error without them (36 → 25: only unused locals removed). Plugin green; `tsc`
+  46 → 35, nothing new; no package module in the bundle touches `obsidian`.

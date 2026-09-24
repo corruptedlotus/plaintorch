@@ -3,9 +3,8 @@ import { EntityBanner } from './EntityBanner'
 import { Objective, ObjectiveUpdate, PolarisCycle } from '@pleiades/sdk'
 import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
 import { OnrushSprint } from "@pleiades/sdk"
-import { App, SuggestModal } from "obsidian"
-import { addObjectiveToPolaris, core, getApp, IconItem, IconName, isObjectiveInCycle, followRenamedNote, SelectCollegeModal, SelectObjectiveStatusModal } from ".."
-import { toast } from '../../host'
+import { addObjectiveToPolaris, core, IconItem, IconName, isObjectiveInCycle, followRenamedNote, objectiveStatusDescriptors, SelectCollegeModal, SelectStatusModal } from ".."
+import { createChild, SuggestModalBase, toast } from '../../host'
 
 @component('p7t-objective-banner')
 export class ObjectiveBanner extends EntityBanner<Objective> {
@@ -35,7 +34,7 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 	}
 
 	pickOnrush = () => {
-		new AddToOnrushModal(getApp(), this).open()
+		new AddToOnrushModal(this).open()
 	}
 
 	addToPolaris = async () => {
@@ -118,7 +117,7 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${SelectObjectiveStatusModal.prompt} ${this.binder.bind('status')}>
+			<p7t-editable .doEdit=${() => SelectStatusModal.prompt(objectiveStatusDescriptors)} ${this.binder.bind('status')}>
 				<p7t-status-item
 					.status=${ObjectiveStatus[this.entity!.status] as keyof typeof ObjectiveStatus}>
 				</p7t-status-item>
@@ -161,28 +160,28 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 	}
 }
 
-class AddToOnrushModal extends SuggestModal<OnrushSprint | null> {
-	constructor(app: App, protected readonly objectiveBanner: ObjectiveBanner) {
-		super(app)
+class AddToOnrushModal extends SuggestModalBase<OnrushSprint | null> {
+	constructor(protected readonly objectiveBanner: ObjectiveBanner) {
+		super()
 	}
 
-	override async getSuggestions(query: string) {
+	override async getSuggestions() {
 		return [...await core.onrush.available(), null]
 	}
 
 	renderSuggestion(sprint: OnrushSprint | null, el: HTMLElement) {
 		if (!sprint) {
-			const item = el.createEl('p7t-icon-item') as IconItem<OnrushSprint | null>
+			const item = createChild(el, 'p7t-icon-item') as IconItem<OnrushSprint | null>
 			item.icon = 'lucide:circle-off'
 			item.text = 'No Onrush'
 			item.small = true
 			return
 		}
-		el.createEl('div', { text: sprint.title })
-		el.createEl('small', { text: (sprint.id === 'x0000' ? 'In-Planning' : 'Active') + ' Onrush' })
+		createChild(el, 'div', { text: sprint.title })
+		createChild(el, 'small', { text: (sprint.id === 'x0000' ? 'In-Planning' : 'Active') + ' Onrush' })
 	}
 
-	override async onChooseSuggestion(item: OnrushSprint | null, evt: MouseEvent | KeyboardEvent) {
+	override async onChooseSuggestion(item: OnrushSprint | null) {
 		const objectiveId = this.objectiveBanner.entity!.id
 		const succeeded = await core.repos.objectives.mutate(objectiveId, async () => !item
 			? await core.objectives.removeFromOnrush(objectiveId)

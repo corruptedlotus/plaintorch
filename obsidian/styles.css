@@ -96,7 +96,8 @@
 	color: var(--text-muted);
 }
 
-.plaintorch-media-selector {
+/* A picker laid out as a grid of tiles (the SIPA suggest modal's layout: 'grid' — the media picker today). */
+.plaintorch-suggest-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(7.2em, 1fr));
 

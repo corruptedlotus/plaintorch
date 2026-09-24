@@ -1,4 +1,3 @@
-export * from './ChangeStateModal'
 export * from './collegeDescriptors'
 export * from './CollegeItem'
 export * from './CelestronItem'

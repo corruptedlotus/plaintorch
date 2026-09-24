@@ -1,7 +1,7 @@
 import { component, css, html } from "@a11d/lit"
 import { DirectiveBanner } from './DirectiveBanner'
 import { Directive, DirectiveStatus, StellarDirectiveUpdate } from '@pleiades/sdk'
-import { core, IconName, followRenamedNote, ReactiveBinder, SelectDirectiveStatusModal } from ".."
+import { core, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, directiveStatusDescriptors } from ".."
 
 /**
  * Banner for a Stellar directive (PEP100) — the classic lifecycle-driven directive kind. It
@@ -113,7 +113,7 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${SelectDirectiveStatusModal.prompt} ${this.binder.bind('status')}>
+			<p7t-editable .doEdit=${() => SelectStatusModal.prompt(directiveStatusDescriptors)} ${this.binder.bind('status')}>
 				<p7t-status-item
 					.status=${DirectiveStatus[this.entity!.status as DirectiveStatus] as keyof typeof DirectiveStatus}>
 				</p7t-status-item>

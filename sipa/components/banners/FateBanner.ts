@@ -1,7 +1,7 @@
 import { component, css, html, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { Eventive, EventiveResolution, Fate, FateStatus, FateUpdate } from '@pleiades/sdk'
-import { core, fateScheduleToOrbit, IconName, followRenamedNote, ReactiveBinder, SelectFateStatusModal } from ".."
+import { core, fateScheduleToOrbit, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, fateStatusDescriptors } from ".."
 import type { ScheduleValue } from "../editing/EditableSchedule"
 
 /**
@@ -173,7 +173,7 @@ export class FateBanner extends EntityBanner<Fate> {
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${SelectFateStatusModal.prompt} ${this.binder.bind('status')}>
+			<p7t-editable .doEdit=${() => SelectStatusModal.prompt(fateStatusDescriptors)} ${this.binder.bind('status')}>
 				<p7t-status-item
 					.status=${FateStatus[this.entity!.status] as keyof typeof FateStatus}>
 				</p7t-status-item>

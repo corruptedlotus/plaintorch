@@ -3,7 +3,7 @@ import { BriefingCard } from "./BriefingCard"
 import { DependencyEndpointKind, Objective, ObjectiveStatus, OnrushSprint } from "@pleiades/sdk"
 import { core, DerivedRef, tooltip, TransferController } from ".."
 import { endpointKey, unresolvedPrerequisites } from "../canvas/graphModel"
-import { App, SuggestModal } from "obsidian"
+import { createChild, SuggestModalBase } from "../../host"
 
 @component('p7t-briefing-onrush')
 export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
@@ -236,7 +236,7 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 
 	private addObjective() {
 		if (!this.data) return
-		new AddObjectiveModal((window as any).app! as App, this).open()
+		new AddObjectiveModal(this).open()
 	}
 }
 
@@ -245,9 +245,9 @@ function hasId<T extends { id?: string }>(value: T | undefined | null): value is
 	return !!value && typeof value.id === 'string' && value.id.length > 0
 }
 
-class AddObjectiveModal extends SuggestModal<Objective> {
-	constructor(app: App, protected readonly host: BriefingCardOnrush) {
-		super(app);
+class AddObjectiveModal extends SuggestModalBase<Objective> {
+	constructor(protected readonly host: BriefingCardOnrush) {
+		super()
 	}
 
 	override async getSuggestions(query: string) {
@@ -256,7 +256,7 @@ class AddObjectiveModal extends SuggestModal<Objective> {
 	}
 
 	renderSuggestion(objective: Objective, el: HTMLElement) {
-		const item = el.createEl('p7t-objective-item')
+		const item = createChild(el, 'p7t-objective-item')
 		item.entity = objective
 	}
 

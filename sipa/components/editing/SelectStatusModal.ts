@@ -6,14 +6,14 @@ import {
 	LunarDirectiveStatus,
 	ObjectiveStatus
 } from "@pleiades/sdk";
-import { SuggestModal } from "obsidian"
-import { getApp, IconName } from "..";
+import { IconName } from "..";
+import { createChild, sleep, SuggestModalBase } from "../../host"
 import { createDeferredExecutor, DeferredPromiseExecutor } from "@open-draft/deferred-promise";
 
 /** Every workflow state the status modals can prompt for (PEP100 adds the declarative + lunar kinds). */
-type AnyStatus = ObjectiveStatus | DirectiveStatus | LunarDirectiveStatus | FateStatus | DecreeStatus
+export type AnyStatus = ObjectiveStatus | DirectiveStatus | LunarDirectiveStatus | FateStatus | DecreeStatus
 
-type StatusDescriptor<T extends AnyStatus> = {
+export type StatusDescriptor<T extends AnyStatus> = {
 	value: T,
 	icon: IconName,
 	label: string,
@@ -59,18 +59,36 @@ export const decreeStatusDescriptors: Record<keyof typeof DecreeStatus, StatusDe
 	Abandoned: { value: DecreeStatus.Abandoned, icon: 'state-archived', label: 'Abandoned' },
 }
 
-abstract class SelectStatusModal<T extends AnyStatus> extends SuggestModal<T> {
+/**
+ * Picks a workflow status from one kind's status table — the objective, directive, lunar directive, fate or decree
+ * descriptors above. One picker for every kind: the table is all that differs between them.
+ */
+export class SelectStatusModal<T extends AnyStatus> extends SuggestModalBase<T> {
 	protected dpe?: DeferredPromiseExecutor<T | undefined>
-	abstract get getDescriptors(): Record<string, StatusDescriptor<T>>
 
-	override getSuggestions(query: string) {
-		return Object.values(this.getDescriptors).map(x => x.value as T)
+	constructor(private readonly descriptors: Record<string, StatusDescriptor<T>>) {
+		super()
+	}
+
+	/**
+	 * Opens the picker over a status table. Resolves with the chosen status and rejects when dismissed, which a
+	 * `p7t-editable`'s `doEdit` reads as a cancel.
+	 */
+	static prompt<T extends AnyStatus>(descriptors: Record<string, StatusDescriptor<T>>): Promise<T | undefined> {
+		const modal = new SelectStatusModal(descriptors)
+		modal.dpe = createDeferredExecutor()
+		modal.open()
+		return new Promise(modal.dpe)
+	}
+
+	override getSuggestions() {
+		return Object.values(this.descriptors).map(x => x.value)
 	}
 
 	renderSuggestion(state: T, el: HTMLElement) {
-		const item = el.createEl('p7t-icon-item')
+		const item = createChild(el, 'p7t-icon-item')
 		item.data = state
-		const descriptor = Object.values(this.getDescriptors).find(x => x.value === state)!
+		const descriptor = Object.values(this.descriptors).find(x => x.value === state)!
 		item.icon = descriptor.icon
 		item.text = descriptor.label
 		item.style.color = descriptor.colour?.toString() || 'currentColor'
@@ -81,72 +99,7 @@ abstract class SelectStatusModal<T extends AnyStatus> extends SuggestModal<T> {
 		this.dpe?.reject()
 	}
 
-	override async onChooseSuggestion(item: T, _: MouseEvent | KeyboardEvent) {
+	override async onChooseSuggestion(item: T) {
 		this.dpe?.resolve(item)
-	}
-}
-
-export class SelectObjectiveStatusModal extends SelectStatusModal<ObjectiveStatus> {
-	static prompt = (currentValue?: ObjectiveStatus) => {
-		const modal = new SelectObjectiveStatusModal(getApp())
-		modal.dpe = createDeferredExecutor()
-		modal.open()
-		return new Promise(modal.dpe)
-	}
-
-	override get getDescriptors() {
-		return objectiveStatusDescriptors
-	}
-}
-
-export class SelectDirectiveStatusModal extends SelectStatusModal<DirectiveStatus> {
-	static prompt = (currentValue?: DirectiveStatus) => {
-		const modal = new SelectDirectiveStatusModal(getApp())
-		modal.dpe = createDeferredExecutor()
-		modal.open()
-		return new Promise(modal.dpe)
-	}
-
-	override get getDescriptors() {
-		return directiveStatusDescriptors
-	}
-}
-
-export class SelectLunarDirectiveStatusModal extends SelectStatusModal<LunarDirectiveStatus> {
-	static prompt = (currentValue?: LunarDirectiveStatus) => {
-		const modal = new SelectLunarDirectiveStatusModal(getApp())
-		modal.dpe = createDeferredExecutor()
-		modal.open()
-		return new Promise(modal.dpe)
-	}
-
-	override get getDescriptors() {
-		return lunarDirectiveStatusDescriptors
-	}
-}
-
-export class SelectFateStatusModal extends SelectStatusModal<FateStatus> {
-	static prompt = (currentValue?: FateStatus) => {
-		const modal = new SelectFateStatusModal(getApp())
-		modal.dpe = createDeferredExecutor()
-		modal.open()
-		return new Promise(modal.dpe)
-	}
-
-	override get getDescriptors() {
-		return fateStatusDescriptors
-	}
-}
-
-export class SelectDecreeStatusModal extends SelectStatusModal<DecreeStatus> {
-	static prompt = (currentValue?: DecreeStatus) => {
-		const modal = new SelectDecreeStatusModal(getApp())
-		modal.dpe = createDeferredExecutor()
-		modal.open()
-		return new Promise(modal.dpe)
-	}
-
-	override get getDescriptors() {
-		return decreeStatusDescriptors
 	}
 }

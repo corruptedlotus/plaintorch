@@ -1,7 +1,7 @@
 import { component, css, html } from "@a11d/lit"
 import { DirectiveBanner } from './DirectiveBanner'
 import { Directive, LunarDirectiveStatus, LunarDirectiveUpdate } from '@pleiades/sdk'
-import { core, IconName, followRenamedNote, ReactiveBinder, SelectLunarDirectiveStatusModal } from ".."
+import { core, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, lunarDirectiveStatusDescriptors } from ".."
 
 /**
  * Banner for a Moonlight (lunar) directive (PEP100). Lunar directives are everglow: they
@@ -111,7 +111,7 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${SelectLunarDirectiveStatusModal.prompt} ${this.binder.bind('status')}>
+			<p7t-editable .doEdit=${() => SelectStatusModal.prompt(lunarDirectiveStatusDescriptors)} ${this.binder.bind('status')}>
 				<p7t-status-item
 					.status=${LunarDirectiveStatus[this.entity!.status as LunarDirectiveStatus] as keyof typeof LunarDirectiveStatus}>
 				</p7t-status-item>

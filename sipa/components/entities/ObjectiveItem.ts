@@ -1,8 +1,8 @@
 import { component, css, html, state } from "@a11d/lit"
 import { EntityItem } from "./EntityItem"
 import { Objective, ObjectiveStatus, OnrushSprint } from "@pleiades/sdk"
-import { App } from "obsidian"
-import { ChangeStateModal } from '..'
+import { core, objectiveStatusDescriptors, SelectStatusModal } from '..'
+import { toast } from '../../host'
 
 @component('p7t-objective-item')
 export class ObjectiveItem extends EntityItem<Objective> {
@@ -32,8 +32,28 @@ export class ObjectiveItem extends EntityItem<Objective> {
 	}
 
 	protected override async notchAction() {
-		if (!this.objective) return
-		new ChangeStateModal((window as any).app! as App, this).open()
+		const objective = this.objective
+		if (!objective) return
+
+		let status: ObjectiveStatus | undefined
+		try {
+			status = await SelectStatusModal.prompt(objectiveStatusDescriptors)
+		}
+		catch {
+			return
+		}
+
+		if (status === undefined) return
+
+		// The response is absorbed into the canonical instance on the way back, so every surface showing this
+		// objective updates without the picker telling any of them.
+		const shifted = await core.repos.objectives.mutate(objective.id, async () =>
+			await core.objectives.shiftWorkflow(objective.id, { status }))
+		if (shifted) {
+			toast(`${shifted.title}: ${ObjectiveStatus[status]}`, 'success')
+		} else {
+			toast('Failed to update objective status.', 'error')
+		}
 	}
 
 	protected override get preTitle() {

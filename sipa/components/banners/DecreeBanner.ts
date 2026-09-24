@@ -1,7 +1,7 @@
 import { component, css, html, nothing, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { Decree, DecreeStatus, DecreeUpdate, PolarisCycle } from '@pleiades/sdk'
-import { core, IconName, followRenamedNote, ReactiveBinder, SelectDecreeStatusModal } from ".."
+import { core, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, decreeStatusDescriptors } from ".."
 import { toast } from '../../host'
 
 /**
@@ -195,7 +195,7 @@ export class DecreeBanner extends EntityBanner<Decree> {
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${SelectDecreeStatusModal.prompt} ${this.binder.bind('status')}>
+			<p7t-editable .doEdit=${() => SelectStatusModal.prompt(decreeStatusDescriptors)} ${this.binder.bind('status')}>
 				<p7t-status-item
 					.status=${DecreeStatus[this.entity!.status] as keyof typeof DecreeStatus}>
 				</p7t-status-item>

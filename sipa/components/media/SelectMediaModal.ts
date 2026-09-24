@@ -1,11 +1,9 @@
-import { SuggestModal } from 'obsidian'
 import { createDeferredExecutor, DeferredPromiseExecutor } from '@open-draft/deferred-promise'
-import { core, getApp } from '..'
+import { core } from '..'
 import { IconName } from '../PleiadesIcon'
 import { ASSET_FOLDER, pickImageFile, resolveMediaUrl } from './mediaAssets'
 import { searchIconKeys } from './iconCatalog'
-import { html } from '@a11d/lit'
-import { toast } from '../../host'
+import { createChild, sleep, SuggestModalBase, toast } from '../../host'
 
 /**
  * Identifies the entity a media field belongs to, for entity-level (`media:`) uploads and browsing. Omit it for a
@@ -39,7 +37,7 @@ const schemeOf = (scope: AssetScope): string => (scope === 'self' ? 'media:' : '
  * icon catalogs, with lucide hits carrying their `lucide:` scheme. Uploads and listings go through the media domain
  * (`core.media`); this modal only ever resolves to a key — to `null` to clear the field, or rejects when dismissed.
  */
-export class SelectMediaModal extends SuggestModal<MediaItem> {
+export class SelectMediaModal extends SuggestModalBase<MediaItem> {
 	private dpe?: DeferredPromiseExecutor<string | null | undefined>
 	private entity?: MediaEntityRef
 	private settled = false
@@ -48,13 +46,13 @@ export class SelectMediaModal extends SuggestModal<MediaItem> {
 
 	/**
 	 * Opens the picker for a media field. `entity` enables the entity-media option (omit it for a field with no
-	 * self asset folder). Resolves to the chosen media key, `null` to clear, or `undefined` when dismissed.
+	 * self asset folder). Resolves to the chosen media key, or `null` to clear; rejects when dismissed.
 	 */
 	static prompt = (entity?: MediaEntityRef): Promise<string | null | undefined> => {
-		const modal = new SelectMediaModal(getApp())
-		modal.resultContainerEl.addClass('plaintorch-media-selector')
+		const modal = new SelectMediaModal()
+		modal.layout = 'grid'
 		modal.entity = entity
-		modal.setPlaceholder('Pleiadean icon, Ludice icon, or custom media...')
+		modal.setPlaceholder('Pleiadean icon, Lucide icon, or custom media...')
 		modal.dpe = createDeferredExecutor()
 		modal.open()
 		return new Promise(modal.dpe)
@@ -110,7 +108,7 @@ export class SelectMediaModal extends SuggestModal<MediaItem> {
 	}
 
 	override renderSuggestion(item: MediaItem, el: HTMLElement) {
-		const row = el.createEl('p7t-icon-item')
+		const row = createChild(el, 'p7t-icon-item')
 		row.thumbnail = true
 		switch (item.kind) {
 			case 'nav':
@@ -173,13 +171,6 @@ export class SelectMediaModal extends SuggestModal<MediaItem> {
 	private navigateTo(to: AssetScope | 'icon') {
 		this.forcedIcon = to === 'icon'
 		this.setQuery(to === 'icon' ? '' : schemeOf(to))
-	}
-
-	/** Rewrites the search box and re-runs the suggestion query, as if the text had been typed. */
-	private setQuery(value: string) {
-		this.inputEl.value = value
-		this.inputEl.dispatchEvent(new Event('input'))
-		this.inputEl.focus()
 	}
 
 	private async upload(scope: AssetScope) {
