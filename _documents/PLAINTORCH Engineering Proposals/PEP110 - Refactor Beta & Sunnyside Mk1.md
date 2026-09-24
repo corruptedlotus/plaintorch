@@ -406,3 +406,14 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
   `.p7tpx` save (`host.globalContexts`; the canvas hides "Save to file" without it). The dead banner `app` property
   and its assignments are gone. Package files importing `obsidian`: 48 → 36 (Notice, the dialogs and their `App`
   handles remain). Plugin esbuild green, `tsc` 46 identical per file; package typecheck 36.
+- 2026-09-24 — P3 landed: the core client is injected. `sipa/components/data/coreProvider.ts` holds `provideCore` /
+  `getCore` and a forwarding `core` proxy (settled over lit context: ~10 plain function modules and the dialogs use
+  `core` outside any element tree, and 23 `DerivedRef` fields read `core.repos` at construction). The barrel's
+  `core` now comes from the provider, so the 50 `import { core } from '..'` sites are untouched; `FullBanner`,
+  `NoteBanner` and `EntityRef` (whose `EntityWatch`/`QueryRef` read the store) no longer import the node client. The
+  plugin calls `provideCore(plaintorchNodeCoreClient)` right after `provideHost` in `onload` and drops its lazy
+  client lookups. A browser-platform bundle of the package no longer reaches `@pleiades/sdk/plaintorch/node`. SDK:
+  `NodeSocketPlaintorchCoreTransport` moves to `plaintorch/nodeTransport.ts`, exported as
+  `@pleiades/sdk/plaintorch/node-transport` (for the shell's main process, without the default client the node
+  entry constructs); the transport types and `toLines` are public; the per-call debug log no longer throws on an
+  empty or non-JSON body. SDK 110/110, plugin green, `tsc` 46 identical.

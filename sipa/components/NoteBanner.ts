@@ -1,6 +1,6 @@
 import { Component, component, css, html, property, literal as l } from '@a11d/lit'
-import { plaintorchNodeCoreClient, EntityExistence } from '@pleiades/sdk/plaintorch/node'
-import { DerivedRef } from './data'
+import type { EntityExistence } from '@pleiades/sdk/plaintorch'
+import { core, DerivedRef } from './data'
 
 @component('p7t-note-banner')
 export class NoteBanner extends Component {
@@ -10,7 +10,7 @@ export class NoteBanner extends Component {
 
 	private readonly noteRef = new DerivedRef(
 		this,
-		plaintorchNodeCoreClient.repos.noteResolution,
+		core.repos.noteResolution,
 		() => this.file
 	)
 

@@ -1,6 +1,6 @@
 import { Controller, type ReactiveElement } from '@a11d/lit'
 import { EntityDraft, EntityRepository, identify, type EntityKey, type EntitySubscription } from '@pleiades/sdk'
-import { plaintorchNodeCoreClient } from '@pleiades/sdk/plaintorch/node'
+import { getCore } from './coreProvider'
 import { Notice } from 'obsidian'
 import { ReactiveBinder } from '../editing/ReactiveBinder'
 
@@ -263,7 +263,7 @@ export class EntityWatch extends Controller {
 	 */
 	public publish(): void {
 		if (this.observedKey !== undefined) {
-			plaintorchNodeCoreClient.store.touch(this.observedKey)
+			getCore().store.touch(this.observedKey)
 		}
 	}
 
@@ -276,7 +276,7 @@ export class EntityWatch extends Controller {
 		this.release()
 		this.observedKey = key
 		if (key !== undefined) {
-			this.subscription = plaintorchNodeCoreClient.store.subscribe(key, () => this.host.requestUpdate())
+			this.subscription = getCore().store.subscribe(key, () => this.host.requestUpdate())
 		}
 	}
 
@@ -314,13 +314,13 @@ export class QueryRef<T extends object> extends Controller {
 
 	/** The type's members matching the predicate, in order — recomputed from the live store on each read. */
 	public get items(): T[] {
-		const all = plaintorchNodeCoreClient.store.entitiesOfType<T>(this.repository.typeName)
+		const all = getCore().store.entitiesOfType<T>(this.repository.typeName)
 		const filtered = this.predicate ? all.filter(this.predicate) : all
 		return this.compare ? filtered.sort(this.compare) : filtered
 	}
 
 	public override hostConnected(): void {
-		this.subscription = plaintorchNodeCoreClient.store.subscribeType(
+		this.subscription = getCore().store.subscribeType(
 			this.repository.typeName,
 			() => this.host.requestUpdate()
 		)

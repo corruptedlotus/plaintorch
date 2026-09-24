@@ -5,17 +5,16 @@ import { PlaintorchGlobalFileView, PLAINTORCH_GLOBAL_VIEW_TYPE } from "./canvas/
 import { PageBannerRenderer } from "./banner/PageBannerRenderer"
 
 import '@pleiades/sipa'
-import { GLOBAL_CONTEXT_EXTENSION, provideHost } from "@pleiades/sipa"
+import { GLOBAL_CONTEXT_EXTENSION, provideCore, provideHost } from "@pleiades/sipa"
+import { plaintorchNodeCoreClient } from "@pleiades/sdk/plaintorch/node"
 import { ObsidianHost } from "./host/ObsidianHost"
-
-type PlaintorchNodeCoreClient = typeof import("@pleiades/sdk/plaintorch/node").plaintorchNodeCoreClient
-
-let cachedCoreClient: PlaintorchNodeCoreClient | undefined
 
 export default class PlaintorchObsidianPlugin extends Plugin {
 	public override async onload(): Promise<void> {
-		// Before anything renders: the SIPA components reach for the host while they draw, not only when acted on.
+		// Before anything renders: the SIPA components reach for the host while they draw, not only when acted on,
+		// and take their repositories from the core client as they are built.
 		provideHost(new ObsidianHost(this.app))
+		provideCore(plaintorchNodeCoreClient)
 
 		addIcon("plaintorch", `
 			<?xml version="1.0" encoding="UTF-8"?>
@@ -121,12 +120,12 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 			}
 		})
 
-		void this.startChangeFeed()
+		this.startChangeFeed()
 	}
 
 	public override onunload(): void {
-		cachedCoreClient?.repos.changeFeed.stop()
-		cachedCoreClient?.repos.stopEvictionSweep()
+		plaintorchNodeCoreClient.repos.changeFeed.stop()
+		plaintorchNodeCoreClient.repos.stopEvictionSweep()
 		this.app.workspace.detachLeavesOfType(PLAINTORCH_BRIEFING_VIEW_TYPE)
 		this.app.workspace.detachLeavesOfType(PLAINTORCH_CANVAS_VIEW_TYPE)
 	}
@@ -138,8 +137,8 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 	 * The feed is an optimization, never a requirement — revalidating on leaf activation covers the case
 	 * where it cannot be established at all, and is what the plugin relied on before it existed.
 	 */
-	private async startChangeFeed(): Promise<void> {
-		const coreClient = await getPlaintorchNodeCoreClient()
+	private startChangeFeed(): void {
+		const coreClient = plaintorchNodeCoreClient
 		coreClient.repos.changeFeed.start()
 		// Bound the identity map over a long session. Housekeeping, so it rides the same session lifecycle as
 		// the feed rather than earning its own; stopped in onunload.
@@ -217,8 +216,7 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 		}
 
 		try {
-			const coreClient = await getPlaintorchNodeCoreClient()
-			const initialized = await coreClient.directives.init({ path: activeFile.path })
+			const initialized = await plaintorchNodeCoreClient.directives.init({ path: activeFile.path })
 			if (!initialized) {
 				new Notice("Directive initialization did not return an entity")
 				return
@@ -240,8 +238,7 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 		}
 
 		try {
-			const coreClient = await getPlaintorchNodeCoreClient()
-			const initialized = await coreClient.objectives.init({ path: activeFile.path })
+			const initialized = await plaintorchNodeCoreClient.objectives.init({ path: activeFile.path })
 			if (!initialized) {
 				new Notice("Objective initialization did not return an entity")
 				return
@@ -254,16 +251,6 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 			new Notice(`Objective initialization failed: ${describeError(error)}`)
 		}
 	}
-}
-
-async function getPlaintorchNodeCoreClient(): Promise<PlaintorchNodeCoreClient> {
-	if (cachedCoreClient) {
-		return cachedCoreClient
-	}
-
-	const module = await import("@pleiades/sdk/plaintorch/node")
-	cachedCoreClient = module.plaintorchNodeCoreClient
-	return cachedCoreClient
 }
 
 function describeError(error: unknown): string {

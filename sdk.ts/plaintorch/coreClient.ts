@@ -207,7 +207,10 @@ export class PlaintorchCoreClient {
 					this.lastWriteNotePendingFlag = response.header(noteReadyHeader) === "false"
 				}
 
-				Promise.resolve().then(async () => console.log('PLAINTORCH called', request.path, JSON.parse(await response.text())))
+				Promise.resolve().then(async () => {
+					const payload = await response.text()
+					console.log('PLAINTORCH called', request.path, payload ? JSON.parse(payload) : undefined)
+				}).catch(() => { })
 				return response
 			}
 		}

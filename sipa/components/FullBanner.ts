@@ -1,6 +1,6 @@
 import { Component, component, css, html, nothing, property } from '@a11d/lit'
-import { plaintorchNodeCoreClient as core, EntityExistence } from '@pleiades/sdk/plaintorch/node'
-import { DerivedRef, EntityRef } from './data'
+import type { EntityExistence } from '@pleiades/sdk/plaintorch'
+import { core, DerivedRef, EntityRef } from './data'
 import { canDeleteEntity, deleteEntityByType } from './entities/entityMenu'
 import { canMaterializeKind, createEntityNote, openEntityNote } from './grid/entityActions'
 
