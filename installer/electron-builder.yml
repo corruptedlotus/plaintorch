@@ -11,7 +11,9 @@ copyright: Pleiades
 directories:
   app: ../standalone
   output: ../bin/installer/${env.PLAINTORCH_FLAVOR}
-  buildResources: ../standalone/assets
+  # Installer-only resources (the .ico, the NSIS art) live in /branding, generated from the PLAINTORCH marks by
+  # standalone/scripts/make-icons.mjs — kept out of standalone/assets, which is copied into the app bundle.
+  buildResources: ../branding
 
 # Only the built bundle, its static files, and the runtime dependency (electron-updater) ship; sources and the
 # bundled devDependencies do not.
@@ -39,7 +41,8 @@ win:
   target:
     - target: nsis
       arch: [x64]
-  icon: icon.png
+  # The executable, its taskbar entry, the Start-menu and desktop shortcuts, Add/Remove Programs and Startup apps.
+  icon: plaintorch.ico
   # Sign before shipping: SmartScreen warns on every unsigned installer and electron-updater refuses to apply an
   # update whose signature differs from the running app's.
   # signtoolOptions: { certificateSubjectName: "..." }
@@ -51,13 +54,19 @@ nsis:
   runAfterFinish: true
   deleteAppDataOnUninstall: false
   shortcutName: PLAINTORCH
+  installerIcon: plaintorch.ico
+  uninstallerIcon: plaintorch.ico
+  installerHeaderIcon: plaintorch.ico
+  installerSidebar: installer-sidebar.bmp
+  uninstallerSidebar: installer-sidebar.bmp
+  installerHeader: installer-header.bmp
 
 mac:
   target:
     - target: dmg
       arch: [x64, arm64]
   category: public.app-category.productivity
-  icon: icon.png
+  icon: ../standalone/assets/plaintorch-full.png
   # Notarization is required for the updater on macOS; supply APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID.
   hardenedRuntime: true
 
@@ -66,7 +75,7 @@ linux:
     - target: AppImage
       arch: [x64]
   category: Utility
-  icon: icon.png
+  icon: ../standalone/assets/plaintorch-full.png
   desktop:
     entry:
       Name: PLAINTORCH

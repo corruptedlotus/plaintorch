@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
 import { app } from "electron"
@@ -11,6 +11,12 @@ import { app } from "electron"
  * `--hidden` from all three so login does not pop the status window.
  */
 const hiddenArgument = "--hidden"
+
+/** Where the autostart entry's icon is installed: the bundled mark is inside the app archive, out of a desktop's reach. */
+function linuxIconPath(): string {
+	const dataHome = process.env.XDG_DATA_HOME || path.join(homedir(), ".local", "share")
+	return path.join(dataHome, "icons", "hicolor", "512x512", "apps", "plaintorch.png")
+}
 
 function linuxAutostartPath(): string {
 	const configHome = process.env.XDG_CONFIG_HOME || path.join(homedir(), ".config")
@@ -40,12 +46,18 @@ export function setAutostartEnabled(enabled: boolean): void {
 		}
 
 		mkdirSync(path.dirname(entryPath), { recursive: true })
+		const iconPath = linuxIconPath()
+		mkdirSync(path.dirname(iconPath), { recursive: true })
+		copyFileSync(path.join(__dirname, "assets", "plaintorch-full.png"), iconPath)
+		// Inside an AppImage the executable lives in a temporary mount; the AppImage file itself is what persists.
+		const executable = process.env.APPIMAGE || process.execPath
 		const entry = [
 			"[Desktop Entry]",
 			"Type=Application",
 			"Name=PLAINTORCH",
 			"Comment=PLAINTORCH background core",
-			`Exec="${process.execPath}" ${hiddenArgument}`,
+			`Exec="${executable}" ${hiddenArgument}`,
+			`Icon=${iconPath}`,
 			"Terminal=false",
 			"X-GNOME-Autostart-enabled=true",
 			""

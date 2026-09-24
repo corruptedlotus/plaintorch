@@ -1,5 +1,5 @@
 import esbuild from "esbuild"
-import { cpSync, mkdirSync } from "node:fs"
+import { cpSync, mkdirSync, rmSync } from "node:fs"
 import path from "node:path"
 
 // Usage: node esbuild.config.mjs --flavor standalone|client [--production]
@@ -15,6 +15,11 @@ if (flavor !== "standalone" && flavor !== "client") {
 }
 
 const outputDirectory = "dist"
+// A production build starts from an empty output: the installer packs dist/ whole, and a file an earlier build left
+// there (an old icon, a bundle since renamed) would otherwise ship with it.
+if (production) {
+	rmSync(outputDirectory, { recursive: true, force: true })
+}
 console.log("---- FOR THE GLORY OF THE TRILUNE ----")
 console.log(`PLAINTORCH desktop shell: ${flavor} flavour, ${production ? "production" : "development"} build`)
 console.log("--------------------------------------")

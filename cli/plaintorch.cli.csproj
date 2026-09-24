@@ -5,6 +5,10 @@
 		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<ApplicationIcon>..\branding\plaintorch.ico</ApplicationIcon>
+		<AssemblyTitle>PLAINTORCH CLI</AssemblyTitle>
+		<Product>PLAINTORCH</Product>
+		<Company>Pleiades</Company>
 	</PropertyGroup>
 
 	<ItemGroup>

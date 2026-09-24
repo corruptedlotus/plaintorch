@@ -23,5 +23,6 @@ the `latest*.yml` manifest electron-builder emits beside it. winget later reuses
 - Sign Windows builds; SmartScreen warns on unsigned installers and electron-updater refuses an update whose signature
   differs from the running app's.
 - Sign and notarize macOS builds; the updater does not work without it.
-- Replace the placeholder icons under `standalone/assets/`.
+- The icons are the PLAINTORCH marks: `branding/plaintorch.ico` and the NSIS art are generated from
+  `standalone/assets` by `npm run make-icons` (in `standalone/`); re-run it after changing a mark.
 - Point `publish.url` at the real update host.

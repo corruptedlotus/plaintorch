@@ -13,8 +13,14 @@ and one build; the flavour is baked in at build time.
   elsewhere) and follows whatever core answers: the standalone app, or the console daemon.
 - A frameless **splash** mirrors the core's startup phases, driven by the JSON lines the core writes to stdout, so
   nothing is probed while the core comes up. A failure stays on screen until dismissed.
-- A **tray icon** with the phase, the active vault, activate/deactivate, start-at-login, the logs folder, restart, updates, and quit.
-- A **status window** with the same, plus a briefing of the active vault read through the SDK over the preload bridge.
+- The **briefing** — the SIPA UI (`@pleiades/sipa`, the same components the Obsidian plugin shows) in a window of its
+  own: the SIPA host (`@pleiades/sipa/hosts/sipa`), an SDK client over the preload bridge (requests, `x-note-ready`,
+  and the change feed streamed line by line), and vault images through the `plaintorch-media://` scheme. It is the
+  shell's main window: clicking the tray icon, relaunching the app, and a visible launch (once the core is up) open it.
+  Notes have no in-app editor yet, so opening one says so.
+- A **tray icon** with the phase, the active vault, the briefing and the status window, activate/deactivate,
+  start-at-login, the logs folder, restart, updates, and quit.
+- A **status window** with the core, the shell settings, and a summary of the active vault.
 - **Start at login** through the OS login-item API on Windows and macOS, and an XDG autostart entry on Linux.
 - **Updates** through electron-updater in the "download the new installer and run it" flow; see `../installer`.
 
@@ -35,10 +41,17 @@ npm start              # run the built shell with Electron
 ```
 
 The dev shell finds the core at `../core/bin/Debug/net10.0` (build the core first) or wherever
-`PLAINTORCH_CORE_PATH` points. `npm run typecheck` runs `tsc`; `npm run make-icons` rasterizes `assets/plaintorch.svg`
-into the app icon (`icon.png`, the mark on transparent) and the tray icons (`tray*.png`, the mark on a dark disc so
-it reads on light and dark taskbars) — it runs under Electron because `nativeImage` cannot load SVG. Edit
-`plaintorch.svg` and re-run to refresh every size.
+`PLAINTORCH_CORE_PATH` points. `npm run typecheck` runs `tsc` (the package's own pre-existing errors show up there
+too, since the renderer bundles it from source).
+
+## Icons
+
+The PLAINTORCH marks live in `assets/`: `plaintorch-full.png` (the full-colour mark — window, executable, installer),
+`plaintorch-mono-{dark,light}{,@2x}.png` (the tray, following the taskbar's theme) and `splash-loading.png`.
+`npm run make-icons` derives the installer branding from them into `../branding` — `plaintorch.ico` (16–256 px, for
+the shell's, the core's and the CLI's executables, the installer, the shortcuts and Startup apps) and the NSIS
+`installer-sidebar.bmp` / `installer-header.bmp` — under Electron, so no image library is needed. The generated files
+are committed; re-run it after changing a mark.
 
 > **Decorators:** `@a11d/lit` installs its reactive accessors through legacy (experimental) decorators, so
 > `useDefineForClassFields` must stay `false` (see `tsconfig.json` and the esbuild `tsconfigRaw`). With it on, a view
@@ -47,8 +60,10 @@ it reads on light and dark taskbars) — it runs under Electron because `nativeI
 ## Layout
 
 - `src/main`: the Electron main process. `shell.ts` is the single source of truth; `core-process.ts` supervises the
-  spawned core; `core-transport.ts` is HTTP over the pipe/socket; `windows.ts`, `tray.ts`, `autostart.ts`,
-  `updater.ts`, `config.ts`, `profile.ts` do what their names say.
+  spawned core; `core-transport.ts` is HTTP over the pipe/socket (the SDK's socket transport); `core-streams.ts`
+  relays the change feed to the windows; `media-protocol.ts` serves vault files; `windows.ts`, `tray.ts`,
+  `autostart.ts`, `updater.ts`, `config.ts`, `profile.ts` do what their names say.
 - `src/preload`: the only bridge into the sandboxed renderer (`window.plaintorch`).
-- `src/renderer`: lit components (`@a11d/lit`) for the splash and the status window, using the SDK client over the bridge.
+- `src/renderer`: `renderer.ts` (the splash and the status window) and `briefing.ts` (the SIPA briefing), each its own
+  bundle and page, sharing `bridgeTransport.ts`. Both resolve `@a11d/lit` to the package's copy, so there is one lit.
 - `src/shared/contracts.ts`: the shapes shared by all three, mirroring `core/Plaintorch/Hosting`.

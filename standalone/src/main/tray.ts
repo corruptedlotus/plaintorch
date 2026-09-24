@@ -27,12 +27,19 @@ export class ShellTray {
 
 	public constructor(private readonly actions: TrayActions) { }
 
+	/**
+	 * The mono PLAINTORCH mark for the taskbar's theme — white on a dark taskbar, black on a light one. On Windows the
+	 * taskbar follows the system mode, which can differ from the apps' mode ("custom" colours), so that is what is read
+	 * there. Falls back to the full-colour mark should a mono icon be missing.
+	 */
 	public getPath() {
-		const iconName = nativeTheme.shouldUseDarkColors
-			? 'plaintorch-mono-dark.png'
-			: 'plaintorch-mono-light.png'
-		const icon = nativeImage.createFromPath(path.join(__dirname, "assets", iconName))
-		return icon
+		const dark = process.platform === "win32"
+			? nativeTheme.shouldUseDarkColorsForSystemIntegratedUI
+			: nativeTheme.shouldUseDarkColors
+		const icon = nativeImage.createFromPath(path.join(__dirname, "assets", dark ? "plaintorch-mono-dark.png" : "plaintorch-mono-light.png"))
+		return icon.isEmpty()
+			? nativeImage.createFromPath(path.join(__dirname, "assets", "plaintorch-full.png")).resize({ width: 32, height: 32 })
+			: icon
 	}
 
 	/** Creates the tray icon. */
