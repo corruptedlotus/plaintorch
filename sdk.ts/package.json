@@ -1,6 +1,6 @@
 {
   "name": "@pleiades/sdk",
-  "version": "0.2c",
+  "version": "0.2.4",
   "private": true,
   "type": "module",
   "scripts": {

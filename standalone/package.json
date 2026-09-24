@@ -1,6 +1,6 @@
 {
 	"name": "@pleiades/plaintorch-standalone",
-	"version": "0.2c",
+	"version": "0.2.4",
 	"private": true,
 	"description": "PLAINTORCH desktop shell: a per-user tray app that hosts (standalone flavour) or attaches to (client flavour) the core.",
 	"main": "dist/main.cjs",

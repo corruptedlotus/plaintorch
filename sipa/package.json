@@ -1,6 +1,6 @@
 {
 	"name": "@pleiades/sipa",
-	"version": "0.2c",
+	"version": "0.2.4",
 	"private": true,
 	"description": "Sunnyside Interface for Pleiades Affairs: the platform-neutral PLAINTORCH UI (lit components, orbit humaniser, assets) bundled from source by the Obsidian plugin and the standalone shell.",
 	"type": "module",
