@@ -58,7 +58,14 @@ maximize/restore and close buttons — over the page, which fills and scrolls in
   `handleFrameControls` answers the buttons (`frame:*` IPC), each acting on the window that asked.
 - **Dragging** is `-webkit-app-region: drag` on the bar; the buttons and anything slotted into it are `no-drag`.
   Double-clicking the bar maximizes, and right-clicking it opens the system menu, as on a system title bar. Windows
-  11's snap-layout flyout on the maximize button belongs to the native caption button and is not available.
+  11's snap-layout flyout on the maximize button belongs to the native caption button and is not available. Only
+  controls in the `title-bar` slot are `no-drag`: page content that scrolls beneath the bar must not cut its drag
+  region.
+- **Under a modal**: a SIPA modal leaves the page — the bar included — inert beneath its backdrop. It offers a click on
+  the backdrop as a cancelable `backdrop-click` event first (`isBackdropDismissal`), and the frame works the window
+  button at that point and keeps the modal open.
+- **Full screen** (F11, the default menu's accelerator) hides the bar; the state is read once the change has settled,
+  since on Windows Electron announces it before the window takes it.
 - **Styling**: parts `title-bar`, `icon`, `title`, `controls`, `control` (+ `minimize`, `maximize`, `close`) and
   `content`; custom properties `--p7t-title-bar-height`, `-background`, `-color`, `-border`, `-control-hover` and
   `-close-hover`; the host reflects `platform`, `maximized`, `inactive` and `fullscreen`.

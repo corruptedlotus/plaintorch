@@ -502,3 +502,11 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
   the buttons minimize, maximize (the bar swaps to the restore glyph, and the maximized page fills the work area
   exactly) and restore, and close. Not available: Windows 11's snap-layout flyout, which belongs to the native
   maximize button.
+- 2026-09-24 — Adversarial review of the frames and the review fixes (7 findings, 3 confirmed, all fixed): the bar's
+  `::slotted(*)` no-drag also covered the page, so content scrolled beneath the bar cut its drag region (now only the
+  `title-bar` slot); a SIPA modal left the window buttons inert and a click on them dismissed the modal (a modal now
+  offers a backdrop click as a cancelable `backdrop-click` event, which the frame takes for its buttons); on Windows
+  the full-screen events fire before the state changes, so F11 twice left a window with no bar (read once settled).
+  Also, the file-request guard refuses UNC paths behind an empty host (`file:///%5C%5Chost…`). Verified on real
+  windows: the bar is CAPTION with the status page and the briefing scrolled to their ends, minimize works under an
+  open modal (which stays; a backdrop click elsewhere still dismisses), and full screen hides and restores the bar.

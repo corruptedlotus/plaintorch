@@ -8,6 +8,15 @@ declare global {
 	}
 }
 
+/** What each window button does. */
+type WindowAction = "minimize" | "toggleMaximize" | "close"
+
+/**
+ * The click a SIPA modal offers before taking a click on its backdrop as a dismissal (`backdrop-click`, see
+ * `isBackdropDismissal` in `@pleiades/sipa/hosts/sipa`): a modal leaves the page — this bar included — inert.
+ */
+type BackdropClick = CustomEvent<{ readonly clientX: number, readonly clientY: number }>
+
 /**
  * A window's own frame, for the shell's frameless windows: a title bar — the PLAINTORCH mark, the window's title, room
  * for a page's own controls, and the minimize, maximize (restore) and close buttons — over the page, which fills and
@@ -16,7 +25,8 @@ declare global {
  * The bar drags the window, and double-clicking it maximizes, as a system title bar does; the buttons and whatever a
  * page slots into the bar do not drag. It follows the window: dimmed while another window has the focus, the restore
  * glyph while maximized, gone in full screen. On macOS the system keeps its own traffic lights over the bar, so it
- * draws no buttons there and leaves them room.
+ * draws no buttons there and leaves them room. While a SIPA modal is open the bar is inert beneath its backdrop; a
+ * click the modal offers (`backdrop-click`) that lands on a window button still works that button.
  *
  * Reflects `platform`, `maximized`, `inactive` and `fullscreen` for styling.
  *
@@ -104,7 +114,8 @@ export class WindowFrame extends Component {
 				opacity: 0.55;
 			}
 
-			::slotted(*) {
+			/* Only what sits in the bar: a no-drag page would cut the bar's drag region wherever it scrolls beneath it. */
+			slot[name=title-bar]::slotted(*) {
 				-webkit-app-region: no-drag;
 			}
 
@@ -154,11 +165,29 @@ export class WindowFrame extends Component {
 		this.platform = frame.platform
 		this.unsubscribe = frame.onState(state => this.follow(state))
 		void frame.getState().then(state => state && this.follow(state))
+		window.addEventListener("backdrop-click", this.takeBackdropClick)
 	}
 
 	override disconnectedCallback() {
 		super.disconnectedCallback()
 		this.unsubscribe?.()
+		window.removeEventListener("backdrop-click", this.takeBackdropClick)
+	}
+
+	private readonly takeBackdropClick = (event: Event) => {
+		const { clientX, clientY } = (event as BackdropClick).detail
+		const button = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("[data-action]")).find(candidate => {
+			const box = candidate.getBoundingClientRect()
+			return clientX >= box.left && clientX < box.right && clientY >= box.top && clientY < box.bottom
+		})
+		if (button) {
+			event.preventDefault()
+			this.act(button.dataset["action"] as WindowAction)
+		}
+	}
+
+	private act(action: WindowAction) {
+		void window.plaintorch.frame[action]()
 	}
 
 	private follow(state: WindowFrameState) {
@@ -183,22 +212,21 @@ export class WindowFrame extends Component {
 
 	/** The window buttons: out of the tab order, as a system title bar's are, the keyboard having the system's shortcuts. */
 	private get controlsTemplate() {
-		const frame = window.plaintorch.frame
 		return html`
 			<div class="controls" part="controls">
-				<button class="control" part="control minimize" tabindex="-1" title="Minimize" aria-label="Minimize"
-					@click=${() => frame.minimize()}>
+				<button class="control" part="control minimize" data-action="minimize" tabindex="-1" title="Minimize"
+					aria-label="Minimize" @click=${() => this.act("minimize")}>
 					<svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg>
 				</button>
-				<button class="control" part="control maximize" tabindex="-1"
+				<button class="control" part="control maximize" data-action="toggleMaximize" tabindex="-1"
 					title=${this.maximized ? "Restore" : "Maximize"} aria-label=${this.maximized ? "Restore" : "Maximize"}
-					@click=${() => frame.toggleMaximize()}>
+					@click=${() => this.act("toggleMaximize")}>
 					${this.maximized
 						? html`<svg viewBox="0 0 10 10"><path d="M.5 2.5h7v7h-7z M2.5 2.5v-2h7v7h-2"/></svg>`
 						: html`<svg viewBox="0 0 10 10"><path d="M.5 .5h9v9h-9z"/></svg>`}
 				</button>
-				<button class="control close" part="control close" tabindex="-1" title="Close" aria-label="Close"
-					@click=${() => frame.close()}>
+				<button class="control close" part="control close" data-action="close" tabindex="-1" title="Close"
+					aria-label="Close" @click=${() => this.act("close")}>
 					<svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg>
 				</button>
 			</div>

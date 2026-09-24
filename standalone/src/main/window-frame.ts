@@ -29,8 +29,9 @@ export function relayFrameState(window: BrowserWindow): void {
 	window.on("restore", send)
 	window.on("focus", send)
 	window.on("blur", send)
-	window.on("enter-full-screen", send)
-	window.on("leave-full-screen", send)
+	// On Windows the full-screen events fire before the window takes its new state, so it is read once that settled.
+	window.on("enter-full-screen", () => setImmediate(send))
+	window.on("leave-full-screen", () => setImmediate(send))
 }
 
 /** Answers a title bar's buttons: each acts on the window whose page asked. */

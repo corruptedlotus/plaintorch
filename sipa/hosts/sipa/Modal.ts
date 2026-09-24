@@ -12,6 +12,30 @@ export function isBackdropClick(dialog: HTMLDialogElement, event: MouseEvent): b
 	return event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom
 }
 
+/** The event a modal raises for a click on its backdrop, before taking it as a request to be dismissed. */
+export const backdropClickEvent = 'backdrop-click'
+
+/** Where a backdrop click landed, in viewport coordinates. */
+export interface BackdropClickDetail {
+	readonly clientX: number
+	readonly clientY: number
+}
+
+/**
+ * Whether a click asks a modal to be dismissed: one on its backdrop that nothing drawn beneath took. A modal leaves the
+ * rest of the page inert, so a control the page keeps on screen — a window's own title-bar buttons — cannot be clicked
+ * while one is open; the modal offers the click as a {@link backdropClickEvent} (bubbling, composed, cancelable), and a
+ * control that sits at the point acts and cancels it, which keeps the modal open.
+ */
+export function isBackdropDismissal(dialog: HTMLDialogElement, event: MouseEvent): boolean {
+	return isBackdropClick(dialog, event) && dialog.dispatchEvent(new CustomEvent<BackdropClickDetail>(backdropClickEvent, {
+		bubbles: true,
+		composed: true,
+		cancelable: true,
+		detail: { clientX: event.clientX, clientY: event.clientY },
+	}))
+}
+
 /**
  * A modal dialog: a native `<dialog>` shown with `showModal()`, so it sits in the top layer with a backdrop, makes the
  * rest of the page inert, and stacks above an earlier one. Its content is its light DOM, slotted under a heading and a
@@ -116,7 +140,7 @@ export class Modal extends Component {
 		return html`
 			<dialog part='dialog' aria-label=${this.heading}
 				@cancel=${(e: Event) => { e.preventDefault(); this.requestDismiss() }}
-				@click=${(e: MouseEvent) => isBackdropClick(this.dialog!, e) && this.requestDismiss()}>
+				@click=${(e: MouseEvent) => isBackdropDismissal(this.dialog!, e) && this.requestDismiss()}>
 				<header part='header'>
 					<h2 class='heading' part='heading'>${this.heading}</h2>
 					<button class='close' aria-label='Close' @click=${() => this.requestDismiss()}>

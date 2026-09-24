@@ -1,7 +1,7 @@
 import { Component, component, css, html, nothing, property, query, repeat, state } from '@a11d/lit'
 import { NavigabilityController } from '@3mo/navigability'
 import type { SuggestLayout, SuggestShell, SuggestView } from '../../host'
-import { isBackdropClick } from './Modal'
+import { isBackdropDismissal } from './Modal'
 import { modalLayers, overlaySlot } from './modalLayers'
 
 /**
@@ -272,7 +272,7 @@ export class SuggestModal<T = unknown> extends Component {
 		return html`
 			<dialog part='dialog'
 				@cancel=${(e: Event) => { e.preventDefault(); this.dispatchEvent(new Event('dismiss')) }}
-				@click=${(e: MouseEvent) => isBackdropClick(this.dialog!, e) && this.dispatchEvent(new Event('dismiss'))}>
+				@click=${(e: MouseEvent) => isBackdropDismissal(this.dialog!, e) && this.dispatchEvent(new Event('dismiss'))}>
 				<input type='text' placeholder=${this.placeholder} autocomplete='off' spellcheck='false'
 					@input=${(e: InputEvent) => void this.runSearch((e.target as HTMLInputElement).value)}
 					@keydown=${(e: KeyboardEvent) => this.handleKeyDown(e)}>
