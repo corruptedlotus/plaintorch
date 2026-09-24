@@ -8,8 +8,9 @@ import {
 	type EndpointRef,
 	type OnrushSprint
 } from '@pleiades/sdk'
-import { Notice, normalizePath } from 'obsidian'
-import { core, getApp, PromptTextModal } from '..'
+import { Notice } from 'obsidian'
+import { core, PromptTextModal } from '..'
+import { host } from '../../host'
 import { effectiveConstraint, effectiveTrigger, sourceRef, targetRef, type CanvasEdge, type CanvasNode } from './graphModel'
 import type { CanvasContextMode } from './graphContext'
 import { GLOBAL_CONTEXT_EXTENSION, serializeGlobalContext } from './globalContextFile'
@@ -348,15 +349,18 @@ export async function saveGlobalContextToFile(pinned: readonly EndpointHit[], la
 		return
 	}
 
-	const app = getApp()
-	const path = normalizePath(`${name.replace(/[\\/:*?"<>|]/g, '').trim()}.${GLOBAL_CONTEXT_EXTENSION}`)
-	if (app.vault.getAbstractFileByPath(path)) {
+	const contexts = host.globalContexts
+	if (!contexts) {
+		return
+	}
+
+	const fileName = `${name.replace(/[\\/:*?"<>|]/g, '').trim()}.${GLOBAL_CONTEXT_EXTENSION}`
+	const { created, path } = await contexts.createAndOpen(fileName, serializeGlobalContext(pinned, layout))
+	if (!created) {
 		new Notice(`A file named "${path}" already exists.`)
 		return
 	}
 
-	const file = await app.vault.create(path, serializeGlobalContext(pinned, layout))
-	await app.workspace.getLeaf(true).openFile(file)
 	new Notice(`Saved global context to ${path}.`)
 }
 

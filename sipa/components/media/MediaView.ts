@@ -1,16 +1,12 @@
 import { Component, component, css, html, property } from '@a11d/lit'
 import type { MediaReference } from '@pleiades/sdk'
-import { getApp } from '..'
-import { ASSET_FOLDER, resolveMediaIcon, resolveMediaUrl } from './mediaAssets'
+import { ASSET_FOLDER, isImageSource, resolveMediaIcon, resolveMediaUrl } from './mediaAssets'
 
 /** The `vault:` scheme, whose file resolves to a deterministic path under the shared asset folder. */
 const vaultScheme = 'vault:'
 
 /** The `media:` scheme, whose self asset folder is only known to the core, so it needs a resolved companion. */
 const selfScheme = 'media:'
-
-/** Whether a source is a resolved image URL (a custom picture) rather than a glyph name — mirrors {@link PleiadesIcon}. */
-const isImageUrl = (source: string): boolean => /^(app|https?|data|blob):/i.test(source) || source.includes('/')
 
 /**
  * Displays a media companion (PEP105) dynamically: a custom uploaded image (self or vault) as a full-colour
@@ -81,7 +77,7 @@ export class MediaView extends Component {
 	/** The source handed to {@link PleiadesIcon}: a resolved image URL, a glyph name, or the default (possibly empty). */
 	private get source(): string {
 		if (this.media) {
-			return resolveMediaIcon(this.media, getApp(), this.default)
+			return resolveMediaIcon(this.media, this.default)
 		}
 
 		const key = this.mediaKey?.trim()
@@ -92,7 +88,7 @@ export class MediaView extends Component {
 		// A vault file lives at a deterministic path, so it previews without waiting on a resolved companion; a
 		// self (media:) file's folder is only known to the core, so it falls to the default until one arrives.
 		if (key.startsWith(vaultScheme)) {
-			return resolveMediaUrl(getApp(), `${ASSET_FOLDER}/${key.slice(vaultScheme.length)}`) ?? this.default
+			return resolveMediaUrl(`${ASSET_FOLDER}/${key.slice(vaultScheme.length)}`) ?? this.default
 		}
 
 		return key.startsWith(selfScheme) ? this.default : key
@@ -106,7 +102,7 @@ export class MediaView extends Component {
 
 		// A free-form (non-icon) custom picture — a banner — renders as a covering image; a glyph, or anything in
 		// icon mode, stays a contained p7t-icon. A custom picture in icon mode is marked so it can be inset (above).
-		const custom = isImageUrl(source)
+		const custom = isImageSource(source)
 		return !this.icon && custom
 			? html`<img part='image' src=${source} alt='' />`
 			: html`<p7t-icon class=${custom ? 'custom' : ''} .icon=${source}></p7t-icon>`

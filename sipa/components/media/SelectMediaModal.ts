@@ -126,7 +126,7 @@ export class SelectMediaModal extends SuggestModal<MediaItem> {
 				return
 			case 'asset': {
 				const preview = item.scope === 'vault'
-					? resolveMediaUrl(getApp(), `${ASSET_FOLDER}/${item.file}`)
+					? resolveMediaUrl(`${ASSET_FOLDER}/${item.file}`)
 					: undefined
 				row.icon = asIcon(preview ?? 'lucide:image')
 				row.text = item.file

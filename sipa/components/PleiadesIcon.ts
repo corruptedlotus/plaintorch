@@ -1,16 +1,10 @@
 import { Component, component, css, html, property } from "@a11d/lit"
 import * as icons from '../assets/icons'
-import { getIcon, IconName as LucideIconName } from "obsidian"
+import { host } from '../host'
+import { isImageSource } from './media/mediaAssets'
 
-export type IconName = keyof typeof icons | `lucide:${LucideIconName}`
-
-/**
- * Recognises a media source (a resolved resource URL or a path) so a custom uploaded image renders in place of
- * a monochrome glyph mask (PEP105). A bundled glyph name and a `lucide:` name never contain a scheme or slash.
- */
-function isMediaSource(value: string): boolean {
-	return /^(app|https?|data|blob):/i.test(value) || value.includes('/')
-}
+/** A bundled Pleiades glyph, or a lucide icon the host draws (`lucide:<name>`). */
+export type IconName = keyof typeof icons | `lucide:${string}`
 
 /**
  * @csspart icon-frame - The element containing the icon's mask image.
@@ -71,13 +65,13 @@ export class PleiadesIcon extends Component {
 			`
 		}
 
-		// A custom media icon is a full-colour image, not a tintable glyph mask (PEP105).
-		if (isMediaSource(this.icon)) {
+		// A custom media icon is a full-colour image, not a tintable glyph mask (PEP105). A bundled glyph name and a
+		// `lucide:` name never contain a slash or a URL scheme the host produces.
+		if (isImageSource(this.icon)) {
 			return html`<img part='icon-image' src=${this.icon} alt='' />`
 		}
 
-		const svg = getIcon(this.icon.replace('lucide:', ''))
-		return html`${svg}`
+		return html`${host.icons.lucide(this.icon) ?? ''}`
 	}
 }
 

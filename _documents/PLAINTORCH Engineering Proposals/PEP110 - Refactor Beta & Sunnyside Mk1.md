@@ -397,3 +397,12 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
   `@a11d/lit`. Decided: in-house `p7t-dialog` / `p7t-toast` on native `<dialog>` using 3MO controllers; pickers
   in-house on `@3mo/navigability` (+ `@3mo/indexability` pinned `0.2.0`) with intrinsic list/grid, verified on
   `@a11d/lit` 0.11.1. Findings above.
+- 2026-09-24 — P2 landed: `sipa/host/` defines `PlatformHost` (`toast`, `navigation`, `media`, `icons`, optional
+  `globalContexts`) with `provideHost` / `getHost` and a forwarding `host` proxy; `obsidian/src/host/ObsidianHost.ts`
+  implements it and `onload` installs it first. Routed through it: note navigation (`navigateToEntity`,
+  `openEntityNote`, `openNotePath`, `openNoteWhenReady`, and a new `followRenamedNote` replacing the seven banner
+  copies of the active-editor check), media URLs (`resolveMediaUrl`/`resolveMediaIcon` lose their `App` argument;
+  one shared `isImageSource`), `p7t-icon` and the icon catalog (`host.icons`, so the icon half of P7 is done), and the
+  `.p7tpx` save (`host.globalContexts`; the canvas hides "Save to file" without it). The dead banner `app` property
+  and its assignments are gone. Package files importing `obsidian`: 48 → 36 (Notice, the dialogs and their `App`
+  handles remain). Plugin esbuild green, `tsc` 46 identical per file; package typecheck 36.

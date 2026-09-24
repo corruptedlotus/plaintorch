@@ -1,8 +1,7 @@
 import { component, css, html, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { Eventive, EventiveResolution, Fate, FateStatus, FateUpdate } from '@pleiades/sdk'
-import { App } from "obsidian"
-import { core, fateScheduleToOrbit, IconName, openNoteWhenReady, ReactiveBinder, SelectFateStatusModal } from ".."
+import { core, fateScheduleToOrbit, IconName, followRenamedNote, ReactiveBinder, SelectFateStatusModal } from ".."
 import type { ScheduleValue } from "../editing/EditableSchedule"
 
 /**
@@ -46,7 +45,7 @@ export class FateBanner extends EntityBanner<Fate> {
 			await this.loadNextEventive(entity.id)
 
 			if (keyPath === 'title') {
-				await this.revealAssociatedNote(entity.id)
+				await followRenamedNote(entity.id)
 			}
 		}
 	})
@@ -62,15 +61,6 @@ export class FateBanner extends EntityBanner<Fate> {
 	private async loadNextEventive(fateId: string) {
 		const eventives = await core.declaratives.listEventives(fateId)
 		this.nextEventive = pickNextEventive(eventives)
-	}
-
-	private async revealAssociatedNote(fateId: string) {
-		const existence = await core.repos.entityResolution.refresh(fateId)
-		const app = (window as any).app as App
-		if (!existence?.associatedNote
-			|| app.workspace.activeEditor?.file?.path === existence.associatedNote) return
-
-		await openNoteWhenReady(existence.associatedNote, core.lastWriteNotePending)
 	}
 
 	/**

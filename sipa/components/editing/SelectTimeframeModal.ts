@@ -42,7 +42,7 @@ export class SelectTimeframeModal extends SuggestModal<TimeframeChoice> {
 		}
 
 		item.data = choice
-		item.icon = resolveMediaIcon(choice.iconMedia, getApp(), 'lucide:clock') as IconName
+		item.icon = resolveMediaIcon(choice.iconMedia, 'lucide:clock') as IconName
 		item.text = `${choice.title} · ${choice.directiveTitle}`
 	}
 

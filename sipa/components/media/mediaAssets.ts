@@ -1,5 +1,5 @@
-import type { App } from 'obsidian'
 import type { MediaReference } from '@pleiades/sdk'
+import { host } from '../../host'
 
 /**
  * The shared asset folder name, matching the core (`VaultMediaService.AssetFolderName`). Its leading underscore
@@ -9,31 +9,34 @@ import type { MediaReference } from '@pleiades/sdk'
 export const ASSET_FOLDER = '_media'
 
 /**
- * Resolves a vault-relative media path (as the core serialises for a directive icon or banner, PEP105) to an
- * Obsidian resource URL usable in an `<img src>` or a CSS `background-image`. Returns undefined when the path
- * is empty or the file is not present in the vault.
+ * Resolves a vault-relative media path (as the core serialises for a directive icon or banner, PEP105) to a URL the
+ * host can load in an `<img src>` or a CSS `background-image`. Returns undefined when the path is empty or the host
+ * cannot reach the file.
  */
-export function resolveMediaUrl(app: App | undefined, vaultRelativePath: string | undefined): string | undefined {
-	if (!app || !vaultRelativePath) {
-		return undefined
-	}
-
-	const file = app.vault.getFileByPath(vaultRelativePath)
-	return file ? app.vault.getResourcePath(file) : undefined
+export function resolveMediaUrl(vaultRelativePath: string | undefined): string | undefined {
+	return vaultRelativePath ? host.media.resourceUrl(vaultRelativePath) : undefined
 }
 
 /** Resolves a media companion's custom image to a resource URL (PEP105); undefined for a glyph or when missing. */
-export function mediaUrl(media: MediaReference | undefined, app: App | undefined): string | undefined {
-	return resolveMediaUrl(app, media?.path)
+export function mediaUrl(media: MediaReference | undefined): string | undefined {
+	return resolveMediaUrl(media?.path)
+}
+
+/**
+ * Whether an icon source is an image to draw as a picture rather than a glyph name: a URL the host produced, a
+ * web, data or blob URL, or anything path-like.
+ */
+export function isImageSource(source: string): boolean {
+	return /^(https?|data|blob):/i.test(source) || source.includes('/') || host.media.isResourceUrl(source)
 }
 
 /**
  * Resolves the icon a media companion should show (PEP105): its custom image (self or vault) as a resource URL,
  * its chosen glyph name, or the supplied default when it resolves to neither.
  */
-export function resolveMediaIcon(media: MediaReference | undefined, app: App | undefined, defaultGlyph: string): string {
+export function resolveMediaIcon(media: MediaReference | undefined, defaultGlyph: string): string {
 	if (media?.path) {
-		return resolveMediaUrl(app, media.path) ?? defaultGlyph
+		return resolveMediaUrl(media.path) ?? defaultGlyph
 	}
 
 	// A glyph key is used as-is; an unresolved custom-media key (missing file) falls back to the default.

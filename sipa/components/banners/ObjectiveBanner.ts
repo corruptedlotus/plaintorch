@@ -4,7 +4,7 @@ import { Objective, ObjectiveUpdate, PolarisCycle } from '@pleiades/sdk'
 import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
 import { OnrushSprint } from "@pleiades/sdk"
 import { App, Notice, SuggestModal } from "obsidian"
-import { addObjectiveToPolaris, core, getApp, IconItem, IconName, isObjectiveInCycle, openNoteWhenReady, SelectCollegeModal, SelectObjectiveStatusModal } from ".."
+import { addObjectiveToPolaris, core, getApp, IconItem, IconName, isObjectiveInCycle, followRenamedNote, SelectCollegeModal, SelectObjectiveStatusModal } from ".."
 
 @component('p7t-objective-banner')
 export class ObjectiveBanner extends EntityBanner<Objective> {
@@ -21,23 +21,12 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 		'*': (entity, keyPath) => core.objectives.update(entity.id, { [keyPath]: entity[keyPath as keyof Objective] } as ObjectiveUpdate)
 	}, (keyPath, entity, saved) => {
 		if (saved && keyPath === 'title') {
-			void this.revealRenamedNote(entity.id)
+			void followRenamedNote(entity.id)
 		}
 	})
 
 	protected override async loadRelated() {
 		this.activePolaris = await core.polaris.getCurrent()
-	}
-
-	/** Opens the objective's note after a rename moved it, unless it is already the active file. */
-	private async revealRenamedNote(objectiveId: string): Promise<void> {
-		const existence = await core.repos.entityResolution.refresh(objectiveId)
-		const app = (window as any).app as App
-		if (!existence?.associatedNote || app.workspace.activeEditor?.file?.path === existence.associatedNote) {
-			return
-		}
-
-		await openNoteWhenReady(existence.associatedNote, core.lastWriteNotePending)
 	}
 
 	protected get isInActivePolaris() {

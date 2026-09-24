@@ -1,8 +1,7 @@
 import { component, css, html } from "@a11d/lit"
 import { DirectiveBanner } from './DirectiveBanner'
 import { Directive, DirectiveStatus, StellarDirectiveUpdate } from '@pleiades/sdk'
-import { core, IconName, openNoteWhenReady, ReactiveBinder, SelectDirectiveStatusModal } from ".."
-import { App } from "obsidian"
+import { core, IconName, followRenamedNote, ReactiveBinder, SelectDirectiveStatusModal } from ".."
 
 /**
  * Banner for a Stellar directive (PEP100) — the classic lifecycle-driven directive kind. It
@@ -45,19 +44,10 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 			})
 
 			if (saved && keyPath === 'title') {
-				await this.revealAssociatedNote(entity.id)
+				await followRenamedNote(entity.id)
 			}
 		}
 	})
-
-	private async revealAssociatedNote(directiveId: string) {
-		const existence = await core.repos.entityResolution.refresh(directiveId)
-		const app = (window as any).app as App
-		if (!existence?.associatedNote
-			|| app.workspace.activeEditor?.file?.path === existence.associatedNote) return
-
-		await openNoteWhenReady(existence.associatedNote, core.lastWriteNotePending)
-	}
 
 	static override get styles() {
 		return css`

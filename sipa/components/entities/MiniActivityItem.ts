@@ -1,6 +1,6 @@
 import { component, html, nothing, property, type HTMLTemplateResult } from '@a11d/lit'
 import type { Activity } from '@pleiades/sdk'
-import { getApp, resolveMediaIcon } from '..'
+import { resolveMediaIcon } from '..'
 import { InfoItem } from '../design/InfoItem'
 
 /**
@@ -22,7 +22,7 @@ export class MiniActivityItem extends InfoItem {
 
 	protected override get bulletIcon(): string {
 		const directive = this.incentive?.directive
-		return directive ? resolveMediaIcon(directive.iconMedia, getApp(), directive.isLunar ? 'directive-lunar' : 'directive') : 'lucide:astroid'
+		return directive ? resolveMediaIcon(directive.iconMedia, directive.isLunar ? 'directive-lunar' : 'directive') : 'lucide:astroid'
 	}
 
 	protected override get bulletText() {

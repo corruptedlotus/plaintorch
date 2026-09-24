@@ -1,5 +1,4 @@
 import { Component, component, css, html, nothing, property } from '@a11d/lit'
-import { App } from 'obsidian'
 import { plaintorchNodeCoreClient as core, EntityExistence } from '@pleiades/sdk/plaintorch/node'
 import { DerivedRef, EntityRef } from './data'
 import { canDeleteEntity, deleteEntityByType } from './entities/entityMenu'
@@ -69,8 +68,6 @@ export class FullBanner extends Component {
 	 */
 	@property() xtype = ''
 
-	/** The Obsidian app, handed down to the banner and its editors for note navigation. */
-	app?: App
 
 	/**
 	 * Resolves an unknown PUCK to its typed entity — used only when no type was supplied. The source returns `undefined`
@@ -182,15 +179,15 @@ export class FullBanner extends Component {
 	 */
 	private renderBanner(kind: string) {
 		switch (kind) {
-			case 'stellar-directive': return html`<p7t-sdirective-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-sdirective-banner>`
-			case 'lunar-directive': return html`<p7t-ldirective-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-ldirective-banner>`
-			case 'objective': return html`<p7t-objective-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-objective-banner>`
-			case 'fate': return html`<p7t-fate-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-fate-banner>`
-			case 'decree': return html`<p7t-decree-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-decree-banner>`
-			case 'onrush-sprint': return html`<p7t-onrush-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-onrush-banner>`
-			case 'executive-order': return html`<p7t-executive-order-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-executive-order-banner>`
-			case 'polaris-cycle': return html`<p7t-polaris-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-polaris-banner>`
-			case 'lore-page': return html`<p7t-lore-banner class='banner plaintorch-modal-content' .app=${this.app} puck=${this.puck}></p7t-lore-banner>`
+			case 'stellar-directive': return html`<p7t-sdirective-banner class='banner plaintorch-modal-content' puck=${this.puck}></p7t-sdirective-banner>`
+			case 'lunar-directive': return html`<p7t-ldirective-banner class='banner plaintorch-modal-content' puck=${this.puck}></p7t-ldirective-banner>`
+			case 'objective': return html`<p7t-objective-banner class='banner plaintorch-modal-content' puck=${this.puck}></p7t-objective-banner>`
+			case 'fate': return html`<p7t-fate-banner class='banner plaintorch-modal-content' puck=${this.puck}></p7t-fate-banner>`
+			case 'decree': return html`<p7t-decree-banner class='banner plaintorch-modal-content' puck=${this.puck}></p7t-decree-banner>`
+			case 'onrush-sprint': return html`<p7t-onrush-banner class='banner plaintorch-modal-content' puck=${this.puck}></p7t-onrush-banner>`
+			case 'executive-order': return html`<p7t-executive-order-banner class='banner plaintorch-modal-content' puck=${this.puck}></p7t-executive-order-banner>`
+			case 'polaris-cycle': return html`<p7t-polaris-banner class='banner plaintorch-modal-content' puck=${this.puck}></p7t-polaris-banner>`
+			case 'lore-page': return html`<p7t-lore-banner class='banner plaintorch-modal-content' puck=${this.puck}></p7t-lore-banner>`
 			default: return this.fallbackBanner
 		}
 	}
@@ -199,7 +196,6 @@ export class FullBanner extends Component {
 	private get fallbackBanner() {
 		return html`<p7t-entity-banner
 			class='banner plaintorch-modal-content'
-			.app=${this.app}
 			.puck=${this.puck}
 			.xtype=${this.kind}
 			.entity=${this.entity ?? { id: this.puck, title: this.title }}></p7t-entity-banner>`

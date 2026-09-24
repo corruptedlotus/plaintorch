@@ -1,6 +1,7 @@
-import { Notice, type App, type TFile } from 'obsidian'
+import { Notice } from 'obsidian'
 import { Directive, Objective, typeNameOf } from '@pleiades/sdk'
-import { addObjectiveToPolaris, core, ExpandingAction, getApp, IconName, PromptTextModal, type ScheduleValue } from '..'
+import { addObjectiveToPolaris, core, ExpandingAction, IconName, PromptTextModal, type ScheduleValue } from '..'
+import { host } from '../../host'
 import type { GridEntity } from './entityTree'
 
 /** What kind of thing a row holds, resolved from the runtime type the core stamped on it. */
@@ -319,57 +320,23 @@ export async function openEntityNote(entity: { id: string }): Promise<void> {
 		return
 	}
 
-	getWorkspace().openLinkText(existence.associatedNote, '', true)
+	await host.navigation.openNote(existence.associatedNote)
 }
 
-/** Opens a known vault-relative markdown path in a new tab, normalizing separators for Obsidian. */
+/** Opens a known vault-relative markdown path in a new tab; either slash is accepted. */
 export function openNotePath(vaultRelativePath: string): void {
-	getWorkspace().openLinkText(vaultRelativePath.replace(/\\/g, '/'), '', true)
+	void host.navigation.openNote(vaultRelativePath.replace(/\\/g, '/'))
 }
-
-const noteReadyPollIntervalMs = 120
-const noteReadyPollTimeoutMs = 6_000
 
 /**
- * Opens a note once its file is on disk and indexed by Obsidian, tolerating a write still draining in the core
- * (PEP110). Pass <c>core.lastWriteNotePending</c> from right after the mutation: when the core reported the write
- * pending it announces the short wait up front. Even a ready write is indexed a beat after it lands, so this polls for
- * the file rather than assuming it is already there — the assumption that made a rename-reveal throw
- * (<c>getFileByPath(...)!</c> → null) or a create-then-open spawn a phantom note. Opens in a new tab once the file
- * appears; gives up quietly if it never does.
+ * Opens a note once its file is on disk, tolerating a write still draining in the core (PEP110). Pass
+ * <c>core.lastWriteNotePending</c> from right after the mutation: when the core reported the write pending the host
+ * announces the short wait up front. Even a ready write lands a beat after the call returns, so the host waits for
+ * the file rather than assuming it is already there — the assumption that made a rename-reveal throw or a
+ * create-then-open spawn a phantom note (see `NavigationHost.openNote`).
  */
 export async function openNoteWhenReady(vaultRelativePath: string, pending = false): Promise<void> {
-	const app = getApp()
-	const path = vaultRelativePath.replace(/\\/g, '/')
-	let file = app.vault.getFileByPath(path)
-	if (!file) {
-		if (pending) {
-			new Notice('The note will be available shortly…')
-		}
-
-		file = await waitForVaultFile(app, path)
-	}
-
-	if (file) {
-		app.workspace.getLeaf(true).openFile(file)
-	}
-}
-
-/** Polls the vault until a path resolves to a file or the wait elapses — the file lands a beat after the core writes it. */
-async function waitForVaultFile(app: App, path: string): Promise<TFile | null> {
-	const deadline = Date.now() + noteReadyPollTimeoutMs
-	for (;;) {
-		const file = app.vault.getFileByPath(path)
-		if (file) {
-			return file
-		}
-
-		if (Date.now() >= deadline) {
-			return null
-		}
-
-		await new Promise((resolve) => setTimeout(resolve, noteReadyPollIntervalMs))
-	}
+	await host.navigation.openNote(vaultRelativePath.replace(/\\/g, '/'), { waitForFile: true, pending })
 }
 
 /** The kinds whose note can be brought into being on demand — the implicit entities the SDK can materialize. */
@@ -490,8 +457,4 @@ export async function refreshListings(): Promise<void> {
 		core.repos.fateList.refresh(),
 		core.repos.decreeList.refresh()
 	])
-}
-
-function getWorkspace() {
-	return (window as unknown as { app: { workspace: { openLinkText(path: string, source: string, newLeaf: boolean): void } } }).app.workspace
 }

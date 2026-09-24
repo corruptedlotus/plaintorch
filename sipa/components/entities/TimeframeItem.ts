@@ -1,7 +1,7 @@
 import { component, css, html, nothing, property } from '@a11d/lit'
 import { ObjectiveCollege, TimeframeInclusion, type Directive, type LunarDirectiveStatus, type MediaReference } from '@pleiades/sdk'
 import { IconName } from '../PleiadesIcon'
-import { core, getApp, resolveMediaIcon } from '..'
+import { core, resolveMediaIcon } from '..'
 import { InfoItem } from '../design/InfoItem'
 import './TimeframeDetails'
 import './DirectiveItem'
@@ -51,7 +51,7 @@ export class TimeframeItem extends InfoItem {
 	}
 
 	private get glyph(): string {
-		return resolveMediaIcon(this.timeframe?.iconMedia, getApp(), 'lucide:clock')
+		return resolveMediaIcon(this.timeframe?.iconMedia, 'lucide:clock')
 	}
 
 	/** The timeframe's media companion (or the polaris glyph for an unset affinity), drawn through the base icon slot. */

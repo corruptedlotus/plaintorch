@@ -11,6 +11,7 @@ import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpo
 import { SelectObjectiveModal } from './SelectObjectiveModal'
 import { SelectEndpointModal } from './SelectEndpointModal'
 import type { CanvasNodePointer, NodeLock } from './CanvasNodeItem'
+import { host } from '../../host'
 
 /** A global planning context's persistable state — its pinned set and the positions they were dragged to. */
 export interface GlobalContextSnapshot {
@@ -682,7 +683,7 @@ export class DependencyCanvas extends Component {
 						<p7t-button ghost icon='lucide:pen' label='Onrush details' @click=${() => this.openOnrushDetails()}></p7t-button>
 					`}
 					<p7t-button ghost icon='lucide:rotate-ccw' label='Reset layout' @click=${() => this.resetLayout()}></p7t-button>
-					${this.mode === 'global' && !this.fileBacked ? html`
+					${this.mode === 'global' && !this.fileBacked && host.globalContexts ? html`
 						<p7t-button ghost icon='lucide:save' label='Save to file' @click=${() => void this.onSaveToFile()}></p7t-button>
 					` : nothing}
 					${this.lifecycleActions.length === 0 ? nothing : html`

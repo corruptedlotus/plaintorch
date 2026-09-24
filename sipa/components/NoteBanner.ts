@@ -1,5 +1,4 @@
 import { Component, component, css, html, property, literal as l } from '@a11d/lit'
-import { App } from 'obsidian'
 import { plaintorchNodeCoreClient, EntityExistence } from '@pleiades/sdk/plaintorch/node'
 import { DerivedRef } from './data'
 
@@ -7,7 +6,6 @@ import { DerivedRef } from './data'
 export class NoteBanner extends Component {
 	@property({ reflect: true, type: Boolean }) invalid = true
 
-	app?: App
 	file: string = ''
 
 	private readonly noteRef = new DerivedRef(
@@ -57,7 +55,7 @@ export class NoteBanner extends Component {
 			case 'polaris-cycle': return html`<p7t-polaris-banner puck=${this.note?.puck}></p7t-polaris-banner>`
 			case 'lore-page': return html`<p7t-lore-banner puck=${this.note?.puck}></p7t-lore-banner>`
 
-			default: return html`<p7t-entity-banner .puck=${this.note?.puck ?? ''} .xtype=${this.note?.entityKind} .entity=${{ id: this.note?.puck ?? '', title: this.entityTitle }} .app=${this.app}></p7t-entity-banner>`
+			default: return html`<p7t-entity-banner .puck=${this.note?.puck ?? ''} .xtype=${this.note?.entityKind} .entity=${{ id: this.note?.puck ?? '', title: this.entityTitle }}></p7t-entity-banner>`
 		}
 	}
 

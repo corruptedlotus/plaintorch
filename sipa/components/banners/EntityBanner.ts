@@ -1,7 +1,6 @@
 import { component, css, html, nothing, property, state } from '@a11d/lit'
 import { CardComponent } from '../design'
 import { IconName } from '../PleiadesIcon'
-import { App } from 'obsidian'
 import { EntityTypeName, isSuccessfulMutation } from '@pleiades/sdk'
 import { core, EntityRef } from '..'
 
@@ -10,7 +9,6 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 	@property() xtype?: string
 	@property() puck = ''
 
-	app?: App
 
 	readonly icon: string = 'plaintorch'
 

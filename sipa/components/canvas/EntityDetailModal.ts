@@ -12,7 +12,6 @@ const bannerTagByKind: Partial<Record<DependencyEndpointKind, string>> = {
 
 /** The banner properties this modal sets; every banner carries these, checkpoints add `milestone`. */
 interface BannerElement extends HTMLElement {
-	app?: App
 	puck?: string
 	entity?: CanvasEntity
 	milestone?: boolean
@@ -48,7 +47,6 @@ export class EntityDetailModal extends Modal {
 		const tag = bannerTagByKind[this.kind] ?? 'p7t-entity-banner'
 		const banner = document.createElement(tag) as BannerElement
 		banner.addClass('plaintorch-modal-content')
-		banner.app = this.app
 		// The provided entity shows immediately; the id resolves the canonical instance the banner then edits.
 		banner.entity = this.entity
 		banner.puck = this.entity.id

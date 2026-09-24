@@ -15,7 +15,6 @@ export class CustomBanner implements PageBannerComponent {
 		const host = document.createElement("p7t-note-banner") as NoteBanner
 		host.className = "plaintorch-note-banner plaintorch-root"
 		host.file = this.file
-		host.app = this.app
 		return host
 	}
 }

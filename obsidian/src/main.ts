@@ -5,7 +5,8 @@ import { PlaintorchGlobalFileView, PLAINTORCH_GLOBAL_VIEW_TYPE } from "./canvas/
 import { PageBannerRenderer } from "./banner/PageBannerRenderer"
 
 import '@pleiades/sipa'
-import { GLOBAL_CONTEXT_EXTENSION } from "@pleiades/sipa"
+import { GLOBAL_CONTEXT_EXTENSION, provideHost } from "@pleiades/sipa"
+import { ObsidianHost } from "./host/ObsidianHost"
 
 type PlaintorchNodeCoreClient = typeof import("@pleiades/sdk/plaintorch/node").plaintorchNodeCoreClient
 
@@ -13,6 +14,8 @@ let cachedCoreClient: PlaintorchNodeCoreClient | undefined
 
 export default class PlaintorchObsidianPlugin extends Plugin {
 	public override async onload(): Promise<void> {
+		// Before anything renders: the SIPA components reach for the host while they draw, not only when acted on.
+		provideHost(new ObsidianHost(this.app))
 
 		addIcon("plaintorch", `
 			<?xml version="1.0" encoding="UTF-8"?>

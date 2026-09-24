@@ -5,7 +5,6 @@ const editableTypes = new Set(['Objective', 'StellarDirective', 'LunarDirective'
 
 /** The full-banner properties this modal sets; it resolves and observes everything else from the PUCK. */
 interface FullBannerElement extends HTMLElement {
-	app?: App
 	puck?: string
 	xtype?: string
 }
@@ -44,7 +43,6 @@ export class EntityEditModal extends Modal {
 
 		const banner = document.createElement('p7t-full-banner') as FullBannerElement
 		banner.addClass('plaintorch-modal-content')
-		banner.app = this.app
 		banner.xtype = this.typeName
 		banner.puck = this.entity.id
 		this.contentEl.appendChild(banner)

@@ -1,26 +1,17 @@
 import * as icons from '../../assets/icons'
-import { getIconIds } from 'obsidian'
+import { host } from '../../host'
 
-/** The `lucide:` scheme p7t-icon uses for a bundled lucide glyph (see {@link PleiadesIcon}). */
+/** The `lucide:` scheme p7t-icon uses for a lucide glyph the host draws (see {@link PleiadesIcon}). */
 const lucideScheme = 'lucide:'
-
-/** The `lucide-` prefix Obsidian registers its bundled lucide icon ids under (as returned by `getIconIds`). */
-const lucideIdPrefix = 'lucide-'
 
 /** Every bundled Pleiades glyph name, each usable directly as a `p7t-icon` key. */
 export function pleiadesIconKeys(): string[] {
 	return Object.keys(icons)
 }
 
-/**
- * Every Obsidian-bundled lucide icon, as a `p7t-icon` key. Obsidian registers them under `lucide-<name>` ids
- * (`getIconIds`), while `p7t-icon` expects the `lucide:<name>` form — so the prefix is rewritten here, the one
- * place the two conventions meet.
- */
+/** Every lucide icon the host can draw, as a `p7t-icon` key (`lucide:<name>`). */
 export function lucideIconKeys(): string[] {
-	return getIconIds()
-		.filter(id => id.startsWith(lucideIdPrefix))
-		.map(id => `${lucideScheme}${id.slice(lucideIdPrefix.length)}`)
+	return host.icons.lucideNames().map(name => `${lucideScheme}${name}`)
 }
 
 /** The full catalog: Pleiades glyphs first, then every bundled lucide icon. */

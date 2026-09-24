@@ -3,7 +3,6 @@ import type { Directive } from '@pleiades/sdk'
 
 /** The full-banner properties this modal sets; it resolves and observes everything else from the PUCK. */
 interface FullBannerElement extends HTMLElement {
-	app?: App
 	puck?: string
 	xtype?: string
 }
@@ -26,7 +25,6 @@ export class LunarDirectiveModal extends Modal {
 
 		const banner = document.createElement('p7t-full-banner') as FullBannerElement
 		banner.addClass('plaintorch-modal-content')
-		banner.app = this.app
 		banner.xtype = 'LunarDirective'
 		banner.puck = this.directive.id
 		this.contentEl.appendChild(banner)

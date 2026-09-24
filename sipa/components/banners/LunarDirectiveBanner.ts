@@ -1,8 +1,7 @@
 import { component, css, html } from "@a11d/lit"
 import { DirectiveBanner } from './DirectiveBanner'
 import { Directive, LunarDirectiveStatus, LunarDirectiveUpdate } from '@pleiades/sdk'
-import { core, IconName, openNoteWhenReady, ReactiveBinder, SelectLunarDirectiveStatusModal } from ".."
-import { App } from "obsidian"
+import { core, IconName, followRenamedNote, ReactiveBinder, SelectLunarDirectiveStatusModal } from ".."
 
 /**
  * Banner for a Moonlight (lunar) directive (PEP100). Lunar directives are everglow: they
@@ -45,7 +44,7 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 			})
 
 			if (saved && keyPath === 'title') {
-				await this.revealAssociatedNote(entity.id)
+				await followRenamedNote(entity.id)
 			}
 		}
 	})
@@ -56,15 +55,6 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 				Part of <span>Project Moonlight</span>
 			</p7t-icon-item>
 		`
-	}
-
-	private async revealAssociatedNote(directiveId: string) {
-		const existence = await core.repos.entityResolution.refresh(directiveId)
-		const app = (window as any).app as App
-		if (!existence?.associatedNote
-			|| app.workspace.activeEditor?.file?.path === existence.associatedNote) return
-
-		await openNoteWhenReady(existence.associatedNote, core.lastWriteNotePending)
 	}
 
 	static override get styles() {
