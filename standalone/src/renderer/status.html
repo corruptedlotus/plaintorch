@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<!-- As on the briefing, no 'self' for images: on a file: page it admits file://host/… too (SMB). -->
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src data: blob:; font-src 'self' data:">
+	<title>PLAINTORCH</title>
+	<style>
+		:root {
+			/* The title bar's height: toasts appear below it, clear of the window buttons. */
+			--p7t-safe-top: 32px;
+		}
+	</style>
+</head>
+<body>
+	<p7t-window-frame class="plaintorch-root">
+		<p7t-status></p7t-status>
+	</p7t-window-frame>
+	<script src="./status.js"></script>
+</body>
+</html>

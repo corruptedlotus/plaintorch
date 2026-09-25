@@ -20,7 +20,8 @@ and one build; the flavour is baked in at build time.
   Notes have no in-app editor yet, so opening one says so.
 - A **tray icon** with the phase, the active vault, the briefing and the status window, activate/deactivate,
   start-at-login, the logs folder, restart, updates, and quit.
-- A **status window** with the core, the shell settings, and a summary of the active vault.
+- A **status window** with the core, the shell settings, and the watcher (`p7t-watcher-status-card`: its health, what
+  it means, and the issues the plugin's status-bar drawer lists), drawn with the SIPA cards, chips and buttons.
 - **Custom window frames**: the status and briefing windows are frameless and draw their own title bar
   (`p7t-window-frame`, below).
 - **Start at login** through the OS login-item API on Windows and macOS, and an XDG autostart entry on Linux.
@@ -93,6 +94,7 @@ are committed; re-run it after changing a mark.
   `file:` requests (UNC/SMB); `window-frame.ts` makes the custom frames work; `windows.ts`, `tray.ts`,
   `autostart.ts`, `updater.ts`, `config.ts`, `profile.ts` do what their names say.
 - `src/preload`: the only bridge into the sandboxed renderer (`window.plaintorch`).
-- `src/renderer`: `renderer.ts` (the splash and the status window) and `briefing.ts` (the SIPA briefing), each its own
-  bundle and page, sharing `bridgeTransport.ts` and `WindowFrame.ts`. Both resolve `@a11d/lit` to the package's copy, so there is one lit.
+- `src/renderer`: `splash.ts` (the splash, kept small), `status.ts` (the status window) and `briefing.ts` (the SIPA
+  briefing), each its own bundle and page; the status window and the briefing install the SIPA host and share
+  `bridgeTransport.ts` and `WindowFrame.ts`. Both resolve `@a11d/lit` to the package's copy, so there is one lit.
 - `src/shared/contracts.ts`: the shapes shared by all three, mirroring `core/Plaintorch/Hosting`.

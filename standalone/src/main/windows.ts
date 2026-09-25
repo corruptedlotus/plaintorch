@@ -9,17 +9,14 @@ const splashSize = { width: 943, height: 405 }
 const statusSize = { width: 720, height: 560 }
 const briefingSize = { width: 1180, height: 820 }
 
-function rendererUrl(view: "splash" | "status"): string {
+/**
+ * A window's page. Each has a bundle of its own: the splash stays small, so it shows the moment the app starts, while
+ * the status window and the briefing carry the SIPA UI.
+ */
+function pageUrl(page: "splash.html" | "status.html" | "briefing.html"): string {
 	// pathToFileURL gives a well-formed file:/// URL; a hand-built "file://" + a Windows path would leave the drive
 	// letter parsed as a host and, depending on the platform, fail to load.
-	const url = pathToFileURL(path.join(__dirname, "index.html"))
-	url.hash = view
-	return url.href
-}
-
-/** The briefing has a page and a bundle of its own: the whole SIPA UI, which the splash should not have to load. */
-function briefingUrl(): string {
-	return pathToFileURL(path.join(__dirname, "briefing.html")).href
+	return pathToFileURL(path.join(__dirname, page)).href
 }
 
 /** The window icon: the full-colour PLAINTORCH mark. */
@@ -35,9 +32,9 @@ function preloadPath(): string {
 const minimumSplashMs = 1_400
 
 /**
- * The shell's windows: the frameless splash that mirrors the old startup popup and the status window, both rendering
- * the same small bundle behind a different hash, and the briefing — the SIPA UI — on a page of its own. The status and
- * briefing windows draw their own title bars ({@link customFrame}).
+ * The shell's windows, each on a page of its own: the frameless splash that mirrors the old startup popup, the status
+ * window, and the briefing — the SIPA UI. The status and briefing windows draw their own title bars
+ * ({@link customFrame}).
  */
 export class ShellWindows {
 	private splash?: BrowserWindow
@@ -89,7 +86,7 @@ export class ShellWindows {
 		this.splash.on("closed", () => {
 			this.splash = undefined
 		})
-		void this.splash.loadURL(rendererUrl("splash"))
+		void this.splash.loadURL(pageUrl("splash.html"))
 	}
 
 	/**
@@ -147,7 +144,7 @@ export class ShellWindows {
 		this.status.on("closed", () => {
 			this.status = undefined
 		})
-		void this.status.loadURL(rendererUrl("status"))
+		void this.status.loadURL(pageUrl("status.html"))
 	}
 
 	/** Opens the briefing window, or brings the existing one forward. */
@@ -179,7 +176,7 @@ export class ShellWindows {
 		this.briefing.on("closed", () => {
 			this.briefing = undefined
 		})
-		void this.briefing.loadURL(briefingUrl())
+		void this.briefing.loadURL(pageUrl("briefing.html"))
 	}
 
 	/** The status window, when open. */

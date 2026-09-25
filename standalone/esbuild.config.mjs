@@ -34,8 +34,9 @@ const copyStaticPlugin = {
 	setup(build) {
 		build.onEnd(() => {
 			mkdirSync(outputDirectory, { recursive: true })
-			cpSync("src/renderer/index.html", path.join(outputDirectory, "index.html"))
-			cpSync("src/renderer/briefing.html", path.join(outputDirectory, "briefing.html"))
+			for (const page of ["splash.html", "status.html", "briefing.html"]) {
+				cpSync(path.join("src/renderer", page), path.join(outputDirectory, page))
+			}
 			cpSync("assets", path.join(outputDirectory, "assets"), { recursive: true })
 		})
 	}
@@ -87,8 +88,13 @@ const contexts = await Promise.all([
 	}),
 	esbuild.context({
 		...renderer,
-		entryPoints: ["src/renderer/renderer.ts"],
-		outfile: `${outputDirectory}/renderer.js`
+		entryPoints: ["src/renderer/splash.ts"],
+		outfile: `${outputDirectory}/splash.js`
+	}),
+	esbuild.context({
+		...renderer,
+		entryPoints: ["src/renderer/status.ts"],
+		outfile: `${outputDirectory}/status.js`
 	}),
 	esbuild.context({
 		...renderer,

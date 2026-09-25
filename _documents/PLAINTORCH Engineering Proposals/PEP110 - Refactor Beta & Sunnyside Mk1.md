@@ -510,3 +510,13 @@ Obsidian `esbuild.config.mjs production` green + no net-new plugin `tsc` errors 
   Also, the file-request guard refuses UNC paths behind an empty host (`file:///%5C%5Chost…`). Verified on real
   windows: the bar is CAPTION with the status page and the briefing scrolled to their ends, minimize works under an
   open modal (which stays; a backdrop click elsewhere still dismisses), and full screen hides and restores the bar.
+- 2026-09-25 — On `claude/sipa-status-canvas` (off `dev/phase2d`): **the status window moves onto SIPA.** It has a page
+  and bundle of its own (`status.html` / `status.ts`, with the SIPA host and a bridge-backed core client; the splash
+  keeps a small bundle, `splash.html` / `splash.ts`), drawn with `p7t-card`, `p7t-icon-item` chips, `p7t-button`
+  and the theme's colours. The vault summary gave way to a **watcher card**, `p7t-watcher-status-card`: the
+  status-bar indicator spelled out (health, what it means, live / critical / dismissed counts) over the very issue
+  list the plugin's status-bar drawer shows. Nothing is duplicated: `WatcherStatusView` was split into a shared
+  report poll on the app-wide clock (`watcherReport.ts`, one fetch per document, refreshed at once after a dismissal),
+  `p7t-watcher-indicator` and `p7t-watcher-issue-list`, which the status bar and the card both compose. Verified
+  in the harness: the card shows a live issue, dismisses and restores it (counts and sections follow), and the
+  status-bar view renders from the same parts.
