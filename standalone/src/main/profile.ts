@@ -4,7 +4,8 @@ import { isDevelopmentBuild } from "./flavor"
 
 /**
  * The per-user PLAINTORCH profile this shell and its core share, mirroring `PlaintorchUserLayout` in the core: the
- * root under `~/.pleiades`, the config file, the log folder, and the transport endpoint clients connect to.
+ * root under `~/.pleiades`, the config file, the log folder, and the transport endpoint clients connect to. The shell
+ * adds one folder of its own, {@link UserProfile.shellDataPath}.
  */
 export interface UserProfile {
 	/** The profile root directory. */
@@ -15,6 +16,12 @@ export interface UserProfile {
 	configurationPath: string
 	/** Where a daemon or spawned core writes its daily logs. */
 	logsPath: string
+	/**
+	 * The shell's Electron `userData` folder (`shell` under the root): the single-instance lock, the Chromium caches
+	 * and the windows' web storage. Electron keys its single-instance lock on this folder, so keeping it inside the
+	 * profile makes the lock one per profile. The core does not use it.
+	 */
+	shellDataPath: string
 	/** The Windows named pipe name (without the `\\.\pipe\` prefix). */
 	pipeName: string
 	/** The AF_UNIX socket path used everywhere but Windows. */
@@ -43,6 +50,7 @@ export function resolveUserProfile(explicitRoot?: string): UserProfile {
 		isDevelopment: !explicitRoot && isDevelopmentBuild,
 		configurationPath: path.join(root, "config.json"),
 		logsPath: path.join(root, "logs"),
+		shellDataPath: path.join(root, "shell"),
 		pipeName,
 		socketPath,
 		transportPath,

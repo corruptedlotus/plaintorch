@@ -25,15 +25,18 @@ function readArgument(name: string): string | undefined {
 
 const launchedHidden = process.argv.includes("--hidden")
 const profile = resolveUserProfile(readArgument("--profile"))
-mkdirSync(profile.root, { recursive: true })
+mkdirSync(profile.shellDataPath, { recursive: true })
+// Electron keys its single-instance lock on the userData folder, so moving it into the profile, before the lock is
+// taken and before anything reads it, is what makes one shell per profile rather than one per app name.
+app.setPath("userData", profile.shellDataPath)
 
 registerMediaScheme()
 
 // One product identity for both flavours, matching the installer's appId, so the taskbar groups the windows under the
-// installed shortcut. A second launch on the same profile only surfaces the running one; two different profiles (a dev
-// build beside an installed one) are two different apps and coexist.
+// installed shortcut. A second launch on the same profile only surfaces the running one; shells on different profiles
+// (a dev build beside an installed one, or two dev shells with different `--profile` folders) coexist.
 app.setAppUserModelId("pleiades.plaintorch")
-if (!app.requestSingleInstanceLock({ profile: profile.root })) {
+if (!app.requestSingleInstanceLock()) {
 	app.quit()
 }
 else {

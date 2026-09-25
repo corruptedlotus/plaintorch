@@ -34,6 +34,19 @@ it never collides with an installed shell on `~/.pleiades/plaintorch`. `--profil
 core inherits it. The shared `config.json` is read and written directly (atomically, via a temp file and rename);
 the core owns `ActiveVaultPath` and reconciles on change, the shell owns the `shell` section.
 
+The shell keeps its Electron `userData` in the profile too, at `<profile>/shell`: the Chromium caches, the windows' web
+storage, electron-updater's `.updaterId`, and the single-instance lock. Electron keys that lock on the `userData`
+folder, so it applies per profile: a second launch on the same profile quits and opens the running shell's briefing,
+while shells on different profiles run side by side. That covers a dev build beside an installed one, and two shells of
+one build with different `--profile` folders (`electron . --profile <scratch dir>` next to a running dev shell).
+Downloaded updates are cached elsewhere, in the OS cache folder (`%LOCALAPPDATA%` on Windows).
+
+Earlier builds used Electron's default `userData`, named after `package.json`'s `name` (the installer's `productName`
+never reaches it): `%APPDATA%\@pleiades\plaintorch-standalone` for installed and dev shells alike, and the platform
+equivalent elsewhere. That also put an installed shell and a dev shell on one lock. Nothing in that folder needs to
+carry over: the caches rebuild, the web storage holds nothing the shell set, and the updater mints a new id. The first
+launch after the change starts with an empty `shell` folder, and the old folder can be deleted.
+
 ## Development
 
 ```bash
