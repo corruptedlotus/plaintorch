@@ -50,6 +50,7 @@ public sealed class MessageSheetCatalogTests
 	[Theory]
 	[InlineData(typeof(WatcherMessages))]
 	[InlineData(typeof(MarkdownMessages))]
+	[InlineData(typeof(VaultMessages))]
 	public void Accessors_and_sheet_entries_agree_one_to_one(Type accessor)
 	{
 		var expected = AccessorKeys(accessor).Keys.Order(StringComparer.Ordinal).ToArray();
@@ -62,6 +63,7 @@ public sealed class MessageSheetCatalogTests
 	[Theory]
 	[InlineData(typeof(WatcherMessages))]
 	[InlineData(typeof(MarkdownMessages))]
+	[InlineData(typeof(VaultMessages))]
 	public void Parameterised_templates_declare_exactly_their_placeholders(Type accessor)
 	{
 		var sheet = SheetFor(accessor);
@@ -84,6 +86,7 @@ public sealed class MessageSheetCatalogTests
 		Assert.Equal("Field is required.", MarkdownMessages.FieldRequired);
 		Assert.Equal("Asserted by 2 files: a, b", WatcherMessages.Details.DuplicateIdentity(2, "a, b"));
 		Assert.Equal(WatcherMessages.Reasons.ForeignFile, WatcherOperations.Describe(WatcherOperations.ForeignFile).Message);
+		Assert.StartsWith("The database of vault 'v' was upgraded by a newer PLAINTORCH core (migration m ", VaultMessages.Activation.DatabaseAheadOfCore("v", "m"));
 	}
 
 	private static ResourceManager SheetFor(Type accessor)

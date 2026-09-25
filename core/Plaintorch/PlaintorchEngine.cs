@@ -42,6 +42,9 @@ public sealed class PlaintorchEngine(
 	/// <summary>
 	/// Initializes the vault directory structure and backing database.
 	/// </summary>
+	/// <exception cref="VaultDatabaseAheadOfCoreException">
+	/// The vault's database was migrated by a newer core; nothing after the check runs, so the database is left untouched.
+	/// </exception>
 	public async Task InitializeVaultAsync(CancellationToken cancellationToken = default)
 	{
 		await bootstrapper.InitializeAsync(cancellationToken);

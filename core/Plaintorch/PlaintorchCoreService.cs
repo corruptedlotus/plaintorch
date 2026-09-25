@@ -1,6 +1,7 @@
 using Pleiades.Plaintorch.Hosting;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Vault;
+using Pleiades.Vault.Database;
 using Pleiades.Puck;
 
 namespace Pleiades.Plaintorch;
@@ -137,6 +138,11 @@ public sealed class PlaintorchCoreService(
 	/// <summary>
 	/// Binds, locks, and initializes the specified vault, then marks the session ready to serve.
 	/// </summary>
+	/// <remarks>
+	/// Any failure releases the vault and reports <see cref="PlaintorchHostPhase.Failed"/>, which <c>/healthz</c> and the
+	/// spawn-mode status stream publish. A database migrated by a newer core is refused before it is written to
+	/// (<see cref="VaultDatabaseAheadOfCoreException"/>), and its message is reported as is.
+	/// </remarks>
 	private async Task ActivateAsync(string vaultPath, CancellationToken stoppingToken)
 	{
 		logger.LogInformation("Activating vault '{VaultPath}'.", vaultPath);
@@ -170,6 +176,18 @@ public sealed class PlaintorchCoreService(
 		{
 			await ReleaseVaultAsync();
 			throw;
+		}
+		catch (VaultDatabaseAheadOfCoreException exception)
+		{
+			// An expected refusal, not a fault: its message already names the vault and says what to do, so the status
+			// carries it as is and the log skips the stack trace.
+			await ReleaseVaultAsync();
+			_failedVaultPath = vaultPath;
+			hostState.Report(PlaintorchHostPhase.Failed, exception.Message, vaultPath);
+			logger.LogError(
+				"Refused to activate vault '{VaultPath}': its database has migrations this core does not contain ({UnknownMigrations}). PLAINTORCH core will remain idle until it is updated or the vault is reconfigured.",
+				vaultPath,
+				string.Join(", ", exception.UnknownMigrations));
 		}
 		catch (Exception exception)
 		{

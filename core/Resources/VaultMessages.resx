@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Vault-level operator messages, keyed by the accessor that reads them (VaultMessages.cs). Group: Activation (why a
+  vault could not be opened; the text reaches the host status, so /healthz and the spawn-mode status stream carry it
+  verbatim). Format placeholders are positional ({0}, {1}).
+  To localise, add a culture sheet beside this one (VaultMessages.<culture>.resx) with the same keys.
+-->
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <data name="Activation.DatabaseAheadOfCore" xml:space="preserve">
+    <value>The database of vault '{0}' was upgraded by a newer PLAINTORCH core (migration {1} is unknown to this core). Update this core to open it; the database was left untouched.</value>
+  </data>
+</root>

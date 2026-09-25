@@ -2,6 +2,7 @@ global using A11d.Module;
 using Pleiades.Calendar;
 using Pleiades.Plaintorch.Hosting;
 using Pleiades.Vault;
+using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch;
 
@@ -85,7 +86,8 @@ public static class Program
 	}
 
 	/// <summary>
-	/// Initializes the current working directory as a PLAINTORCH vault when needed.
+	/// Initializes the current working directory as a PLAINTORCH vault when needed. A vault whose database a newer core
+	/// migrated is refused with the reason on standard error and exit code 1.
 	/// </summary>
 	private static async Task<int> RunInitializeAsync(WebApplication application, string vaultPath)
 	{
@@ -95,7 +97,16 @@ public static class Program
 		var activationService = scope.ServiceProvider.GetRequiredService<PlaintorchVaultActivationService>();
 		var alreadyInitialized = activationService.IsInitialized(vaultPath);
 
-		await engine.InitializeVaultAsync();
+		try
+		{
+			await engine.InitializeVaultAsync();
+		}
+		catch (VaultDatabaseAheadOfCoreException exception)
+		{
+			Console.Error.WriteLine(exception.Message);
+			return 1;
+		}
+
 		RenderHeader(layout);
 		Console.WriteLine(alreadyInitialized ? "Vault already initialized." : "Vault initialized.");
 		Console.WriteLine($"Database: {layout.DatabasePath}");
