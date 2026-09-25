@@ -72,6 +72,10 @@ public sealed class DirectiveModule : Module
 		group.MapPut("/{directiveId}/banner", async (string directiveId, DirectiveBannerRequest request, IDirectiveApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.SetBannerAsync(directiveId, request, cancellationToken)));
 
+		// Availability (PEP100 patch 2) is a database-only base field, so it spans both kinds as well.
+		group.MapPut("/{directiveId}/availability", async (string directiveId, DirectiveAvailabilityRequest request, IDirectiveApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.SetAvailabilityAsync(directiveId, request.TimeframeId, cancellationToken)));
+
 		// Stellar-only surface.
 		var stellar = group.MapGroup("/stellar");
 
@@ -116,6 +120,10 @@ public sealed class DirectiveModule : Module
 
 		timeframes.MapGet("/", async (IDirectiveApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListAllTimeframesAsync(cancellationToken)));
+
+		// The timeframes active right now (PEP100 patch 2); the `:long` constraint on the id routes keeps "active" clear.
+		timeframes.MapGet("/active", async (IDirectiveApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.ListActiveTimeframesAsync(cancellationToken: cancellationToken)));
 
 		timeframes.MapPut("/{timeframeId:long}", async (long timeframeId, TimeframeUpdate request, IDirectiveApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateTimeframeAsync(timeframeId, request, cancellationToken)));

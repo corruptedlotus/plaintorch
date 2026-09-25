@@ -76,14 +76,15 @@ public sealed class ProximityMaterializationService(
 				continue;
 			}
 
-			// Auto-inclusion: a cycle-bound reflective inherits its affinity from the originating decree's college.
+			// Auto-inclusion: a cycle-bound reflective takes the same combined affinity an executive gets — the decree's
+			// nearest directive availability, else its college (PEP100 patch 2).
 			context.Add(new Reflective
 			{
 				Description = decree.Title,
 				PolarisCycleId = cycle.Id,
 				DecreeId = decree.Id,
 				Executed = false,
-				AffinityTimeframeId = await affinityResolver.ResolveForCollegeAsync(decree.College, cancellationToken),
+				AffinityTimeframeId = await affinityResolver.ResolveAsync(decree.DirectiveId, decree.College, cancellationToken),
 			});
 			created++;
 		}

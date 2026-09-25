@@ -237,6 +237,13 @@ public sealed record DirectiveBannerRequest(
 	bool Clear = false);
 
 /// <summary>
+/// Selects a directive's availability timeframe (PEP100 patch 2). Works for both stellar and lunar directives; the
+/// timeframe must exist and be in <see cref="TimeframeInclusion.Availability"/> mode.
+/// </summary>
+/// <param name="TimeframeId">The availability timeframe to set; <see langword="null"/> clears the availability.</param>
+public sealed record DirectiveAvailabilityRequest(long? TimeframeId);
+
+/// <summary>
 /// Represents the mutable fields of an objective for generic update actions.
 /// </summary>
 /// <remarks>
@@ -349,6 +356,12 @@ public enum PolarisExecutivePlanningMode
 /// allocations are whole-minute working time units that are reconciled through <see cref="Executive.NormalizeTimeAllocations"/>.
 /// There is no elapsed-time input here: a freshly planned executive has not been worked yet, so its tracked
 /// minutes always start at <c>0</c> and are only accrued later through <see cref="ExecutiveUpdate"/>.
+/// <para>
+/// <paramref name="AffinityTimeframeId"/> (PEP100 patch 2) is tri-state on the wire: an omitted key is Auto — the
+/// objective's nearest directive availability, else its college auto-inclusion (a one-shot executive has no objective
+/// and so gets none); an explicit <see langword="null"/> is no affinity even when auto-inclusion would match; an id
+/// sets that timeframe (it must exist).
+/// </para>
 /// </remarks>
 public sealed record PolarisExecutivePlan(
 	PolarisExecutivePlanningMode Mode,
@@ -361,7 +374,8 @@ public sealed record PolarisExecutivePlan(
 	int? CelestronValue = null,
 	int? Estimation = null,
 	int? Minimum = null,
-	int? Maximum = null);
+	int? Maximum = null,
+	Optional<long?> AffinityTimeframeId = default);
 
 /// <summary>
 /// Represents the outcome of planning a Polaris executive.
@@ -526,12 +540,17 @@ public sealed record AttentiveUpdateRequest(AttentiveOccurrenceRef Occurrence, A
 /// Represents the data required to add a decree to a Polaris cycle, creating a decree-backed
 /// <see cref="Executive"/> (PEP111). The cycle is the temporal context, so no occurrence date/time is carried.
 /// </summary>
+/// <remarks>
+/// <paramref name="AffinityTimeframeId"/> is tri-state on the wire (PEP100 patch 2): an omitted key is Auto — the
+/// decree's nearest directive availability, else its college auto-inclusion; an explicit <see langword="null"/> is no
+/// affinity even when auto-inclusion would match; an id sets that timeframe (it must exist).
+/// </remarks>
 public sealed record PolarisDecreeAdd(
 	string DecreeId,
 	int? Estimation = null,
 	int? Minimum = null,
 	int? Maximum = null,
-	long? AffinityTimeframeId = null);
+	Optional<long?> AffinityTimeframeId = default);
 
 /// <summary>
 /// Represents the unbound items a Polaris cycle includes non-structurally because they fall within 24h of
@@ -552,7 +571,8 @@ public sealed record PolarisAgenda(
 
 /// <summary>
 /// Represents the data required to define a directive-level timeframe (PEP100). <paramref name="Icon"/> and the
-/// auto-inclusion fields are the PEP100 patch additions.
+/// auto-inclusion fields are the PEP100 patch additions; <paramref name="Exclusive"/> is the PEP100 patch 2 addition
+/// (defaults to a non-exclusive timeframe).
 /// </summary>
 public sealed record TimeframePlan(
 	string Title,
@@ -561,13 +581,14 @@ public sealed record TimeframePlan(
 	string? Orbit = null,
 	string? Icon = null,
 	TimeframeInclusion AutoInclusion = TimeframeInclusion.None,
-	IReadOnlyList<ObjectiveCollege>? AutoInclusionColleges = null);
+	IReadOnlyList<ObjectiveCollege>? AutoInclusionColleges = null,
+	bool Exclusive = false);
 
 /// <summary>
 /// Represents the mutable fields of a timeframe definition. The auto-inclusion and icon fields are PEP100 patch
 /// additions: <paramref name="AutoInclusion"/> and <paramref name="AutoInclusionColleges"/> are applied only when
 /// supplied (a null college list leaves it unchanged; an empty one clears it), while the Orbit/Icon Optionals
-/// distinguish keep/set/clear.
+/// distinguish keep/set/clear. <paramref name="Exclusive"/> (PEP100 patch 2) is keep/set only: null keeps it.
 /// </summary>
 public sealed record TimeframeUpdate(
 	string? Title = null,
@@ -576,7 +597,8 @@ public sealed record TimeframeUpdate(
 	Optional<string?> Orbit = default,
 	Optional<string?> Icon = default,
 	TimeframeInclusion? AutoInclusion = null,
-	IReadOnlyList<ObjectiveCollege>? AutoInclusionColleges = null);
+	IReadOnlyList<ObjectiveCollege>? AutoInclusionColleges = null,
+	bool? Exclusive = null);
 
 /// <summary>
 /// Represents the emitted dependency lock for an entity (PEP101), computed from its unsatisfied incoming
@@ -622,6 +644,10 @@ public sealed record EndpointHit(
 /// <param name="Icon">The optional icon key (PEP100 patch).</param>
 /// <param name="AutoInclusion">How the timeframe auto-includes Polaris workitems (PEP100 patch).</param>
 /// <param name="AutoInclusionColleges">The colleges driving college-based auto-inclusion (PEP100 patch).</param>
+/// <param name="Exclusive">
+/// Whether the timeframe is exclusive: while it is active, active non-exclusive timeframes are dropped from the
+/// active set (PEP100 patch 2). Appended last with a default so positional constructions keep compiling.
+/// </param>
 public sealed record DirectiveTimeframeRecord(
 	long Id,
 	string DirectiveId,
@@ -634,7 +660,8 @@ public sealed record DirectiveTimeframeRecord(
 	string? Orbit,
 	[property: Media] string? Icon,
 	TimeframeInclusion AutoInclusion,
-	IReadOnlyList<ObjectiveCollege> AutoInclusionColleges)
+	IReadOnlyList<ObjectiveCollege> AutoInclusionColleges,
+	bool Exclusive = false)
 {
 	/// <summary>
 	/// Gets or sets the resolved companion of <see cref="Icon"/>, filled after the record is projected (its LINQ

@@ -2,6 +2,7 @@
 status: implemented
 patches:
   - Patch100.1 - Timeframe Auto-Inclusion, Icons & Affinity Surfaces
+  - Patch100.2 - Exclusive & Active Timeframes, Availability & Auto Affinity
 assignee: Copilot 🤖
 phase: 2a
 ---
@@ -120,7 +121,7 @@ A timeframe can carry an **icon**, through the same media companion the directiv
 - **Lunar directive editing modal.** Lunar directives get a dedicated editing modal, modelled on the onrush detail window (ref. [[PEP102 - Backlog Dependencies & Milestones|Patch102.5]]): the directive's own banner at the top — so a rename or moonlight-state shift reaches every other surface at once — with its timeframes listed and edited beneath, each row editing title, window, Orbit scoping, icon key, and the college it auto-includes, addable and removable. A lunar directive carries no measure of its own, so its otherwise-empty measure column in the entity grid hosts the button that opens the modal — the single place a lunar directive's timeframes are managed.
 
 ### Data model
-- `Timeframe` gains `Icon` (`[Media]`-enriched to `IconMedia`), `AutoInclusion` (the inclusion kind, default `None`), and `AutoInclusionCollege` (read only when the kind is `College`).
+- `Timeframe` gains `Icon` (`[Media]`-enriched to `IconMedia`), `AutoInclusion` (the inclusion kind, default `None`), and `AutoInclusionColleges` (the colleges it includes, a JSON list read only when the kind is `College`; it first shipped as a single `AutoInclusionCollege` column, and a follow-up migration turned it into the list, carrying any set college over).
 - `Reflective` gains `AffinityTimeframeId` (+ set-null foreign key).
 - A schema migration adds the three timeframe columns and the reflective affinity column, index, and foreign key.
 
@@ -128,3 +129,96 @@ A timeframe can carry an **icon**, through the same media companion the directiv
 - **Abstract (clockless) timeframes** — a timeframe still carries a wall-clock window; the question of clockless, sprint-scoped timeframes is held separately.
 - **Enforcement** — affinity stays purely semantic. Auto-inclusion decides *what a timeframe is attached to*, never *what the schedule does*.
 - **Richer reflective UI** — reflective affinity is seeded and stored but has no dedicated editing surface here; the fuller reflective experience belongs to [[PEP104 - Reflective Generation Engine]].
+## Patch100.2 - Exclusive & Active Timeframes, Availability & Auto Affinity
+Patch100.1 let a timeframe attach itself to workitems by college. This patch works on both sides of that relation. On the timeframe side it adds **exclusivity**, and it moves the question "which timeframes are in play right now" from the client into the core, which now reads a timeframe's Orbit as well. On the directive side it adds **availability**: a directive picks the timeframe its work belongs in. At creation, a new **Auto** affinity makes the core's choice the default. Timeframes still enforce nothing. Each addition here decides what a timeframe *is attached to* or *is shown as*, never what the schedule does.
+
+### Exclusivity
+A timeframe can be marked **exclusive** (`Exclusive`, off by default, toggled in the lunar directive modal's timeframe editor). Exclusivity is judged among the timeframes that are active at the same moment. When any active timeframe is exclusive, only the active exclusive ones are reported (all of them, if there are several), and every active non-exclusive timeframe is dropped. An exclusive timeframe that is not active suppresses nothing. Exclusivity plays no part in auto-inclusion or affinity: a timeframe hidden behind an active exclusive one is still a valid affinity and still auto-includes.
+
+The editor's toggle is a new general-purpose editable, `p7t-editable-toggle` (`EditableToggle`). It is a boolean editable that commits the moment it is pressed (click, Space or Enter). Its face is an on/off icon and text pair, or a custom face supplied through named slots, and it binds like every other editable. The decree banner's Lunar Reflection row, the pattern the toggle was drawn from, now uses it too.
+
+### Per-cycle candidates & active timeframes in the core
+Until now the client decided which timeframes were active by comparing each window with its own clock, and it ignored the Orbit entirely: a timeframe scoped to weekdays still showed on a weekend. The core now answers at `GET /api/timeframes/active`, in two stages.
+
+**Candidates, per cycle.** When a Polaris cycle begins, the core works out which timeframes apply to it. That is every timeframe without an Orbit (no orbit means every day), plus every timeframe whose Orbit selects the cycle's day. The cycle's day is its local start day, the same day lunar reflection matches against. Orbits are read on the vault's default calendar (PEP116; Pleiadean unless changed). The set is fixed for the cycle's life, even when the cycle stays open past midnight. It is cached as timeframe ids only (`TimeframeCandidateCache`), so a renamed directive or an edited window never goes stale. The cache is warmed at the two moments a begun cycle can be found:
+- when the cycle begins;
+- at vault activation, for a cycle that had already begun before the core booted.
+
+Both warms are best effort. A cache is only a shortcut, so a failed warm is logged and never fails the begin or the activation; the next read computes the set instead.
+
+Any write that can change the set drops the cache, and the next read recomputes it. Those writes are:
+- a timeframe added, edited or deleted;
+- a cycle begun, ended or deleted, including through its note's frontmatter;
+- a directive deleted, since its timeframes cascade away with it;
+- a change to the default-calendar preference.
+
+Releasing a vault purges the cache.
+
+**Active, per request.** Only a strictly active cycle (begun and not ended) has active timeframes; with none, nothing is active. A candidate is active when the local wall-clock time, at minute precision, lies within its window, start inclusive and end exclusive. A window whose start is later than its end wraps midnight (22:00–06:00 is active at 23:00 and at 05:00). A window whose start equals its end is never active. Exclusivity is applied next, and the records come back shaped and ordered like the global timeframe listing (by directive title, then start time).
+
+The active-timeframe chip now only fetches and draws what the core returns. It re-reads on the shared 60-second tick, so a chip can trail a window edge by up to a minute.
+
+### Timeframe orbit schedule state
+Reading a timeframe's Orbit against a day needs the same anchor a declarative's does: an interval orbit (`d%2`) must count from somewhere, and a random index (`{#n}`) needs a pinned seed. Timeframes therefore get persisted orbit state. Rather than growing a second, parallel mechanism, `OrbitScheduleState` expands into a hierarchy. The abstract `OrbitScheduleState` (id, snapshot JSON, last update) has two kinds, which share the one table through a discriminator:
+- `IncentiveOrbitScheduleState` is the existing per-declarative state, unchanged in behaviour;
+- `TimeframeOrbitScheduleState` is new, one per orbit-scoped timeframe.
+
+Each kind is keyed uniquely by its owner and is deleted with it. A timeframe's state also goes when a lunar directive's delete cascades its timeframes away.
+
+A timeframe's state follows the declarative reset policy. It rides the same save hook, so every write pathway behaves alike. Setting or changing the orbit re-anchors the state. Clearing the orbit removes it. A calendar change never resets it, just as it never resets a declarative's.
+
+The anchor differs from a declarative's in one respect. A fixed `Z{…}` literal anchors at its own date, for both. Any other declarative orbit anchors at today. Any other timeframe orbit anchors at the earlier of today and the start day of the open cycle, if there is one. An orbit yields nothing before its anchor, so without this a timeframe orbit set after midnight could never select the day of a cycle begun the evening before and still open. A timeframe state is only previewed and never materializes anything, so anchoring it back has nothing to backfill. A cycle begun later but dated to an earlier day than an existing anchor still misses that timeframe.
+
+Anchoring back is not free for an orbit with a phase. An interval (`%N`), a count limit (`*N`, `@N`) or a seeded random counts from the anchor, so one set while an older cycle is still open counts its phase from that cycle's day, not from the day it was set, however long that cycle has been open. This trade-off is accepted: every orbit set under an open cycle must be evaluable on that cycle's day, and the open cycle's day is the day the product is working in.
+
+A timeframe's `Z{…}` literal names a date on the calendar its orbit is read on, the vault default (Pleiadean unless changed), so its anchor is that calendar date's civil day, the day the engine resolves the literal to. A Pleiadean `Z{3/3/40}` is the 40th day of the third month. A literal naming a day the calendar does not have anchors like any other orbit instead of failing the save. A declarative's literal is still read as a Gregorian date, which suits a fate (its one-offs are pinned to Gregorian) but gives a decree on the Pleiadean calendar a Gregorian-read anchor; that older edge is an open question.
+
+A timeframe whose orbit predates timeframe states gets a state lazily, the first time its cycle candidates are computed. It is anchored like the incentive lazy path (at the day being read if that day is in the past, else today) and saved so the anchor sticks. If an orbit edit or a delete of that timeframe saves first, the lazy state is dropped and the listing still answers. Timeframes are only ever *previewed* against a day, so their state is never advanced. A stored orbit that cannot be read counts as not matching and is logged; it does not fail the listing.
+
+### Availability
+Auto-inclusion gains a third kind, **Availability**, beside `None` and `College`. The timeframe editor now picks the kind explicitly (None, College or Availability) instead of inferring it from whether any college is listed. The college chips appear only in College mode, and emptying the list no longer drops a timeframe back to None. An Availability timeframe has no parameter of its own; the choice lives on the directive. **Every directive**, stellar or lunar, can name one Availability-mode timeframe as its **availability**, from any lunar directive, and picks it from its banner.
+
+A workitem is auto-affined to a directive's availability when its owning incentive belongs to that directive or to any of its descendants:
+- **The nearest directive wins.** The walk starts at the incentive's own directive and climbs the parent-directive lineage. The first directive whose availability still names an Availability-mode timeframe decides. A hand-edited vault may loop a lineage, so the walk stops at the first repeat.
+- **What does not count.** Availability does not inherit through a parent incentive. The owning lunar directive's moonlight status plays no part, as with college.
+- **Availability takes precedence over College.** The college rule (lowest id wins) applies only when no directive in the lineage has an availability.
+
+Both rules live in one resolver (`TimeframeAffinityResolver.ResolveAsync`), and every auto-assignment goes through it:
+- executives planned from an objective;
+- executives created by adding a decree to a cycle;
+- the reflectives lunar reflection creates when a cycle begins.
+
+Like college, availability only seeds at creation. Changing a directive's availability later never re-affines existing workitems.
+
+Everywhere else, an Availability timeframe is an ordinary timeframe: it appears among the active timeframes and can still be picked as a manual affinity. When a timeframe leaves Availability mode, or is deleted (on its own or with its lunar directive), every directive naming it as its availability is cleared in the same save. The clear rides the state-policy save hook, so it holds on every write pathway and the change feed announces each cleared directive; the set-null foreign key is only the database's backstop. As defence in depth, the resolver also ignores an availability that does not point at an Availability-mode timeframe.
+
+Availability is database-only. A timeframe id is a database row id, not a PUCK, so it has no place in a directive's frontmatter, and the watcher's note sync keeps it instead of clearing it.
+
+### Auto affinity
+The Polaris creation row's affinity picker now offers **Auto**, and Auto is the default. The affinity travels inside the create request on both paths: planning an executive (`PolarisExecutivePlan`) and adding a decree (`PolarisDecreeAdd`). It is tri-state:
+- **Key omitted: Auto.** The resolver above decides. A title-only one-shot executive gets none, since it has no incentive to resolve from.
+- **Explicit `null`: none,** even when auto-inclusion would match.
+- **An id: that timeframe.** The timeframe must exist. An unknown id is refused before any cycle is started or objective created.
+
+The executive comes back carrying its resolved affinity, so the creation row no longer patches the affinity on afterwards. Before this patch, leaving the picker empty silently meant auto, and choosing no affinity at creation was impossible.
+
+### Data model
+- `Timeframe` gains `Exclusive` (default `false`). `TimeframePlan`, `TimeframeUpdate` and the `DirectiveTimeframeRecord` listing carry it too.
+- `TimeframeInclusion` gains `Availability`, appended as value 2. The enum is stored and sent as an integer, so members are only ever appended.
+- `Directive` (the abstract base, so both kinds) gains `AvailabilityTimeframeId`, a set-null foreign key to `Timeframe`. It is database-only, and its navigation is never auto-included or served; clients resolve it from the global listing.
+- `OrbitScheduleState` becomes an abstract TPH base in the `OrbitScheduleStates` table. Its kinds are `IncentiveOrbitScheduleState` (`IncentiveId`, unique, cascading) and `TimeframeOrbitScheduleState` (`TimeframeId`, unique, cascading). Rows are keyed by a new autoincrement `Id` instead of the incentive id.
+- `PolarisExecutivePlan` gains a tri-state `Optional<long?> AffinityTimeframeId`, and `PolarisDecreeAdd`'s affinity changes from `long?` to the same type.
+- New routes: `GET /api/timeframes/active`, and `PUT /api/directives/{id}/availability` with body `{ timeframeId }` (`null` clears).
+- Two schema migrations:
+  - `OrbitScheduleStateHierarchy` rebuilds the state table. Every existing state becomes an incentive state, with its incentive, snapshot and timestamp intact under a fresh id. Its Down drops the timeframe states, which the old table has no key for.
+  - `TimeframeExclusiveAndDirectiveAvailability` adds the timeframe column and the directive column, index and foreign key.
+
+  Both migrations are tested in both directions against rows written before them.
+
+### Held over
+- **Enforcement.** Still none. Exclusivity filters what is reported as active, never what may be scheduled or affined.
+- **Push instead of poll.** Active timeframes are re-read on a one-minute tick instead of being pushed when a window opens or closes.
+- **Retroactive assignment.** A new availability, or a timeframe moved into a mode, never re-affines workitems created before it. Re-resolving existing workitems would need its own ruling on what counts as a manual choice.
+- **Serving the availability navigation.** A directive is served with its availability id only, so a client resolves the timeframe from the global listing.
+- **Route-level tests.** The new wire shapes are pinned against the host's own serializer settings, but the two new routes are tested only through the services. Testing them over HTTP waits for an in-process host harness.
+- **Abstract (clockless) timeframes** and **richer reflective UI** are still held, as in Patch100.1.

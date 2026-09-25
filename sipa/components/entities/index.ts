@@ -1,4 +1,5 @@
 export * from './collegeDescriptors'
+export * from './inclusionDescriptors'
 export * from './CollegeItem'
 export * from './CelestronItem'
 export * from './DirectiveItem'

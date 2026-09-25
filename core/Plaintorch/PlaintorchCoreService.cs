@@ -1,4 +1,5 @@
 using Pleiades.Plaintorch.Hosting;
+using Pleiades.Plaintorch.Materialization;
 using Pleiades.Vault;
 using Pleiades.Puck;
 
@@ -25,7 +26,8 @@ public sealed class PlaintorchCoreService(
 	ActiveVaultSession session,
 	PlaintorchVaultLockService lockService,
 	PlaintorchHostState hostState,
-	PuckRuntimeCompilationCatalog puckRuntimeCompilationCatalog) : BackgroundService
+	PuckRuntimeCompilationCatalog puckRuntimeCompilationCatalog,
+	TimeframeCandidateCache timeframeCandidateCache) : BackgroundService
 {
 	private static readonly TimeSpan ReconcileInterval = TimeSpan.FromSeconds(2);
 
@@ -232,6 +234,7 @@ public sealed class PlaintorchCoreService(
 		}
 
 		puckRuntimeCompilationCatalog.Purge();
+		timeframeCandidateCache.Purge();
 		layout.Unbind();
 	}
 

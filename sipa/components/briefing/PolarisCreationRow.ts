@@ -1,6 +1,6 @@
 import { component, css, html, property, state } from "@a11d/lit"
-import { PolarisExecutivePlanningMode, type Activity, type DirectiveTimeframeRecord, type Executive, type PolarisCycle, type PolarisExecutivePlan } from "@pleiades/sdk"
-import { core, ExecutiveModal, isObjectiveInCycle, type ActivityChoice, type EditableTimeUnit, type TimeframeSelect, type ActivitySelect } from ".."
+import { PolarisExecutivePlanningMode, type Activity, type Executive, type PolarisCycle, type PolarisExecutivePlan } from "@pleiades/sdk"
+import { core, ExecutiveModal, isObjectiveInCycle, type ActivityChoice, type EditableTimeUnit, type TimeframeChoice, type TimeframeSelect, type ActivitySelect } from ".."
 import { CreationRowBase } from "../editing/CreationRowBase"
 import { toast } from "../../host"
 
@@ -13,9 +13,13 @@ export type PolarisActivityCreated = Executive
  *
  * Committing plans the activity into the cycle as an executive (PEP111): an objective is planned (a new one
  * created standalone by the same plan call), a decree is added as a decree-backed executive (a new decree is
- * created first). The estimation seeds the allocation; the affinity is applied to the executive afterwards for
- * an objective, or passed straight to the decree-add. Objectives already in the cycle are listed but cannot be
+ * created first). The estimation seeds the allocation. Objectives already in the cycle are listed but cannot be
  * chosen — a cycle holds one instance of an objective.
+ *
+ * The affinity is sent inside the create request itself, on both paths (PEP100 patch 2), and defaults to **Auto**:
+ * left on Auto the key is omitted and the core assigns the affinity — the incentive's directive availability, else
+ * its college; an explicit none sends `null`; a picked timeframe sends its id. The core returns the executive with
+ * its resolved affinity, so nothing is patched afterwards.
  *
  * The editor a committed row opens is the executive's allocation modal.
  */
@@ -26,7 +30,8 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 
 	@state() private estimation?: number
 	@state() private activity?: ActivityChoice
-	@state() private timeframe?: DirectiveTimeframeRecord
+	/** The affinity: undefined is Auto (the reset default), `null` an explicit none, a record a picked timeframe. */
+	@state() private timeframe?: TimeframeChoice
 
 	/** A cycle holds one instance of an objective, so one already in it is found but cannot be added again. */
 	private readonly unavailableInCycle = (activity: Activity) =>
@@ -72,6 +77,7 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 				<span class='caption'>Affinity</span>
 				<p7t-timeframe-select
 					thumbnail
+					auto
 					.value=${this.timeframe}
 					@change=${(e: Event) => this.timeframe = (e.target as TimeframeSelect).value}>
 				</p7t-timeframe-select>
@@ -89,10 +95,19 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 		return activity.kind === 'decree' ? await this.createDecreeExecutive(activity) : await this.createExecutive(activity)
 	}
 
+	/**
+	 * The affinity as the create requests carry it: undefined (Auto) omits the key so the core assigns it, `null`
+	 * asks for none, and a picked timeframe sends its id.
+	 */
+	private get affinityTimeframeId(): number | null | undefined {
+		return this.timeframe === undefined ? undefined : this.timeframe?.id ?? null
+	}
+
 	private async createExecutive(activity: ActivityChoice): Promise<PolarisActivityCreated | undefined> {
+		const affinityTimeframeId = this.affinityTimeframeId
 		const plan: PolarisExecutivePlan = activity.isNew
-			? { mode: PolarisExecutivePlanningMode.Standalone, title: activity.title, estimation: this.estimation }
-			: { mode: PolarisExecutivePlanningMode.FromObjective, objectiveId: activity.objective!.id, estimation: this.estimation }
+			? { mode: PolarisExecutivePlanningMode.Standalone, title: activity.title, estimation: this.estimation, affinityTimeframeId }
+			: { mode: PolarisExecutivePlanningMode.FromObjective, objectiveId: activity.objective!.id, estimation: this.estimation, affinityTimeframeId }
 
 		// An existing objective changes state when planned, so its write runs through its repository; a new one
 		// has no canonical instance yet and is simply created.
@@ -104,17 +119,7 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 			return undefined
 		}
 
-		let executive: Executive = { ...result.executive, incentive: result.executive.incentive ?? result.objective ?? activity.objective }
-		if (this.timeframe) {
-			const updated = await core.polaris.updateExecutive(executive.id, { affinityTimeframeId: this.timeframe.id })
-			if (updated) {
-				executive = { ...executive, ...updated, incentive: updated.incentive ?? executive.incentive, affinityTimeframe: executive.affinityTimeframe }
-			}
-			else {
-				toast('The executive was added, but its affinity could not be set.', 'warning')
-			}
-		}
-
+		const executive: Executive = { ...result.executive, incentive: result.executive.incentive ?? result.objective ?? activity.objective }
 		await this.refresh(activity.isNew ? core.repos.objectiveList : undefined)
 		toast(`Added ${activity.title} to the active Polaris cycle.`, 'success')
 		return executive
@@ -127,7 +132,7 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 			return undefined
 		}
 
-		const executive = await core.polaris.addDecreeExecutive({ decreeId: decree.id, estimation: this.estimation, affinityTimeframeId: this.timeframe?.id })
+		const executive = await core.polaris.addDecreeExecutive({ decreeId: decree.id, estimation: this.estimation, affinityTimeframeId: this.affinityTimeframeId })
 		if (!executive) {
 			toast(`PLAINTORCH could not add ${activity.title} to the cycle.`, 'error')
 			return undefined

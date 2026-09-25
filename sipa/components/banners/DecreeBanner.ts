@@ -112,7 +112,8 @@ export class DecreeBanner extends EntityBanner<Decree> {
 				height: 1.4em;
 			}
 
-			.reflection p7t-icon-item {
+			/* On the host so it inherits into the toggle's face, which lives in its shadow root. */
+			.reflection {
 				font-weight: 300;
 			}
 
@@ -150,17 +151,15 @@ export class DecreeBanner extends EntityBanner<Decree> {
 
 	/** Editable Lunar Reflection toggle; shown only inside a lunar hierarchy. */
 	protected get reflectionRow() {
-		const reflected = this.entity!.reflect
 		return html`
-			<p7t-editable
+			<p7t-editable-toggle
 				class='reflection'
-				.doEdit=${(current?: boolean) => Promise.resolve(!current)}
+				onIcon='reflective'
+				offIcon='attentive'
+				onText='Lunar Reflection Enabled'
+				offText='Not Reflected'
 				${this.binder.bind('reflect')}>
-				<p7t-icon-item
-					.icon=${reflected ? 'reflective' : ('attentive' as IconName)}>
-					${reflected ? 'Lunar Reflection Enabled' : 'Not Reflected'}
-				</p7t-icon-item>
-			</p7t-editable>
+			</p7t-editable-toggle>
 		`
 	}
 

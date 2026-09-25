@@ -44,8 +44,12 @@ public interface IPolarisCycleApi
 	Task<PolarisCycle> UpdateAsync(string polarisCycleId, PolarisCycleUpdate update, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Plans an executive against a Polaris cycle.
+	/// Plans an executive against a Polaris cycle. The executive's affinity follows the plan's tri-state
+	/// <see cref="PolarisExecutivePlan.AffinityTimeframeId"/> (PEP100 patch 2): omitted is Auto (the objective's
+	/// nearest directive availability, else its college; none for a one-shot), <see langword="null"/> is none, and an
+	/// id is used as given. The returned executive carries the resolved <see cref="Executive.AffinityTimeframe"/>.
 	/// </summary>
+	/// <exception cref="InvalidOperationException">An explicit affinity names a timeframe that does not exist.</exception>
 	Task<PolarisExecutivePlanResult> PlanExecutiveAsync(PolarisExecutivePlan plan, string? polarisCycleId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
@@ -81,8 +85,12 @@ public interface IPolarisCycleApi
 
 	/// <summary>
 	/// Adds a decree to a Polaris cycle, creating a decree-backed executive (PEP111). Removal is through
-	/// <see cref="RemoveExecutiveAsync"/>, like any other executive.
+	/// <see cref="RemoveExecutiveAsync"/>, like any other executive. The executive's affinity follows the request's
+	/// tri-state <see cref="PolarisDecreeAdd.AffinityTimeframeId"/> (PEP100 patch 2): omitted is Auto (the decree's
+	/// nearest directive availability, else its college), <see langword="null"/> is none, and an id is used as given.
+	/// The returned executive carries the resolved <see cref="Executive.AffinityTimeframe"/>.
 	/// </summary>
+	/// <exception cref="InvalidOperationException">An explicit affinity names a timeframe that does not exist.</exception>
 	Task<Executive> AddDecreeExecutiveAsync(PolarisDecreeAdd request, string? polarisCycleId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>

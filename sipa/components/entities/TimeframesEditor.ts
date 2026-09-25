@@ -1,7 +1,9 @@
-import { Component, component, css, html, nothing, property, PropertyValues, repeat, state } from '@a11d/lit'
+import { Component, component, css, html, live, nothing, property, PropertyValues, repeat, state } from '@a11d/lit'
 import { ObjectiveCollege, Timeframe, TimeframeInclusion, TimeframeUpdate } from '@pleiades/sdk'
-import { core, SelectCollegeModal } from '..'
+import { core, SelectCollegeModal, SelectInclusionModal } from '..'
 import type { EditablePart } from '../editing/EditableDataLink'
+import type { EditableToggle } from '../editing/EditableToggle'
+import { inclusionDescriptorOf } from './inclusionDescriptors'
 import { toast } from '../../host'
 
 /** A time-of-day (TimeOnly) as the core serialises it, trimmed to the `HH:mm` an `<input type="time">` shows. */
@@ -14,9 +16,15 @@ const toTimeOnly = (value: string) => (value.length === 5 ? `${value}:00` : valu
  * The timeframes a lunar directive defines, edited in place (PEP100 patch).
  *
  * Modelled on the onrush detail window's orders list: the lunar directive editing modal shows this beneath the
- * directive's banner, each row editing one timeframe's title, its window, its Orbit scoping, its icon key, and the
- * college it auto-includes. Timeframes are not a tracked repository, so the list is fetched here and re-read after
- * each write rather than observed through the store.
+ * directive's banner, each row editing one timeframe's title, its window, its Orbit scoping, whether it is exclusive,
+ * its icon key, and how it auto-includes workitems. Timeframes are not a tracked repository, so the list is fetched
+ * here and re-read after each write rather than observed through the store.
+ *
+ * Auto-inclusion is an explicit mode (PEP100 patch 2) — None, College or Availability — chosen through
+ * {@link SelectInclusionModal}. Saving a mode sends only the mode: the core clears the colleges of any non-College
+ * mode, and a college list sent alongside would be re-applied. The college chips show only in College mode and save
+ * only the list, never the mode. An Availability timeframe carries no parameter of its own: directives name it as
+ * their availability.
  */
 @component('p7t-timeframes-editor')
 export class TimeframesEditor extends Component {
@@ -124,6 +132,11 @@ export class TimeframesEditor extends Component {
 				opacity: .7;
 			}
 
+			.note {
+				font-weight: 300;
+				opacity: .6;
+			}
+
 			.include {
 				display: flex;
 				align-items: center;
@@ -219,6 +232,17 @@ export class TimeframesEditor extends Component {
 						</p7t-editable-orbit>
 					</div>
 					<div class='field'>
+						<span class='caption'>Exclusive</span>
+						<p7t-editable-toggle
+							onIcon='lucide:lock'
+							offIcon='lucide:lock-open'
+							onText='Exclusive'
+							offText='Shared'
+							.value=${live(timeframe.exclusive)}
+							@change=${(e: Event) => this.saveTimeframe(timeframe.id, { exclusive: (e.target as EditableToggle).value ?? false })}>
+						</p7t-editable-toggle>
+					</div>
+					<div class='field'>
 						<span class='caption'>Icon</span>
 						<p7t-editable-media
 							icon
@@ -230,16 +254,38 @@ export class TimeframesEditor extends Component {
 					</div>
 					<div class='field'>
 						<span class='caption'>Auto-include</span>
-						<p7t-item-group
-							.items=${timeframe.autoInclusionColleges ?? []}
-							.renderItem=${(college: unknown) => html`<p7t-college-item mode='named' .college=${college as ObjectiveCollege}></p7t-college-item>`}
-							.onAdd=${() => void this.addCollege(timeframe)}
-							.onRemove=${(college: unknown) => this.removeCollege(timeframe, college as ObjectiveCollege)}>
-						</p7t-item-group>
+						<p7t-editable
+							.value=${live(timeframe.autoInclusion)}
+							.doEdit=${SelectInclusionModal.prompt}
+							@change=${(e: Event) => this.saveInclusion(timeframe, (e.target as EditablePart<TimeframeInclusion>).value)}>
+							<p7t-icon-item .icon=${inclusionDescriptorOf(timeframe.autoInclusion).icon}>
+								${inclusionDescriptorOf(timeframe.autoInclusion).fullName}
+							</p7t-icon-item>
+						</p7t-editable>
+						${this.inclusionParameterTemplate(timeframe)}
 					</div>
 				</div>
 			</div>
 		`
+	}
+
+	/** What the auto-inclusion mode is parameterised by: the college chips in College mode, a note in Availability mode. */
+	private inclusionParameterTemplate(timeframe: Timeframe) {
+		switch (timeframe.autoInclusion) {
+			case TimeframeInclusion.College:
+				return html`
+					<p7t-item-group
+						.items=${timeframe.autoInclusionColleges ?? []}
+						.renderItem=${(college: unknown) => html`<p7t-college-item mode='named' .college=${college as ObjectiveCollege}></p7t-college-item>`}
+						.onAdd=${() => void this.addCollege(timeframe)}
+						.onRemove=${(college: unknown) => this.removeCollege(timeframe, college as ObjectiveCollege)}>
+					</p7t-item-group>
+				`
+			case TimeframeInclusion.Availability:
+				return html`<span class='note'>Assigned through directive availability</span>`
+			default:
+				return nothing
+		}
 	}
 
 	private saveTime(timeframeId: number, field: 'startTime' | 'endTime', e: Event) {
@@ -275,12 +321,25 @@ export class TimeframesEditor extends Component {
 		this.saveColleges(timeframe.id, (timeframe.autoInclusionColleges ?? []).filter(item => item !== college))
 	}
 
-	/** Persists the college list; a non-empty list turns on college auto-inclusion, an empty one turns it off. */
+	/**
+	 * Persists the college list alone. The mode is its own control now (PEP100 patch 2), so emptying the list keeps
+	 * College mode — matching nothing — rather than silently dropping the timeframe to None.
+	 */
 	private saveColleges(timeframeId: number, colleges: ObjectiveCollege[]) {
-		void this.saveTimeframe(timeframeId, {
-			autoInclusion: colleges.length > 0 ? TimeframeInclusion.College : TimeframeInclusion.None,
-			autoInclusionColleges: colleges,
-		})
+		void this.saveTimeframe(timeframeId, { autoInclusionColleges: colleges })
+	}
+
+	/**
+	 * Persists an auto-inclusion mode, sending only the mode (PEP100 patch 2): the core clears the colleges of any
+	 * non-College mode, and colleges sent alongside would be re-applied. A cancelled pick (undefined) or an unchanged
+	 * mode saves nothing.
+	 */
+	private saveInclusion(timeframe: Timeframe, inclusion: TimeframeInclusion | undefined) {
+		if (inclusion === undefined || inclusion === timeframe.autoInclusion) {
+			return
+		}
+
+		void this.saveTimeframe(timeframe.id, { autoInclusion: inclusion })
 	}
 
 	private async saveTimeframe(timeframeId: number, update: TimeframeUpdate) {

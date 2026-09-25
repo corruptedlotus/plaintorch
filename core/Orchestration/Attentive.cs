@@ -43,9 +43,10 @@ public sealed class Attentive : Occurrence
 	public DateTimeOffset? ResolvedOn { get; set; }
 
 	/// <summary>
-	/// Gets or sets the optional timeframe this attentive is affined to. Seeded from the owning decree's college
-	/// through timeframe auto-inclusion when added to a cycle, overridable per instance; purely semantic, enforcing
-	/// nothing — the same affinity an executive carries.
+	/// Gets or sets the optional timeframe this attentive is affined to. Set per instance only: attentives are never
+	/// auto-seeded (since PEP111 an attentive never joins a cycle — adding its decree to a cycle creates an executive,
+	/// which is the one that gets auto-inclusion). Purely semantic, enforcing nothing — the same affinity an executive
+	/// carries.
 	/// </summary>
 	public long? AffinityTimeframeId { get; set; }
 

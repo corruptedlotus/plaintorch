@@ -57,8 +57,9 @@ public sealed class Reflective
 	public Decree? Decree { get; set; }
 
 	/// <summary>
-	/// Gets or sets the optional timeframe this reflective is affined to (PEP100 patch). Seeded automatically from
-	/// the originating decree's college through timeframe auto-inclusion; purely semantic, enforcing nothing.
+	/// Gets or sets the optional timeframe this reflective is affined to (PEP100 patch). Seeded automatically at cycle
+	/// begin through timeframe auto-inclusion — the originating decree's nearest directive availability, else its
+	/// college (PEP100 patch 2) — and never re-resolved afterwards; purely semantic, enforcing nothing.
 	/// </summary>
 	public long? AffinityTimeframeId { get; set; }
 

@@ -130,14 +130,40 @@ public static class OrbitDays
 	}
 
 	/// <summary>
-	/// The calendar date a notation resolves to when it is a lone fixed-datetime literal (a one-off
+	/// The Gregorian calendar date a notation resolves to when it is a lone fixed-datetime literal (a one-off
 	/// <c>Z{y/M/d[Th:m]}</c>, with or without a span), else <see langword="null"/>. A one-off's schedule cursor is
 	/// anchored at this date rather than today, so its single occurrence is caught by a seek whether it lies in the
 	/// past or the future. A recurring notation — or a bare time-of-day <c>z{h:m}</c>, which recurs daily and has no
 	/// fixed date — returns <see langword="null"/> and anchors at today as usual.
 	/// </summary>
+	/// <remarks>
+	/// The literal's numbers are read as a Gregorian year, month and day (one-off fates are pinned to Gregorian,
+	/// PEP111). The method is total: a literal naming an impossible Gregorian date, such as <c>Z{2026/2/30}</c>, which
+	/// the parser accepts because it does no range check, returns <see langword="null"/> rather than throwing. Use
+	/// <see cref="FixedLiteralDate(string, IOrbitCalendar)"/> for an orbit read on another calendar.
+	/// </remarks>
 	public static DateOnly? FixedLiteralDate(string notation)
+		=> FixedLiteralDate(notation, Gregorian);
+
+	/// <summary>
+	/// The civil (Gregorian) date of the day a lone fixed-datetime literal <c>Z{y/M/d[Th:m]}</c> names when its year,
+	/// month and day are read on <paramref name="calendar"/>, else <see langword="null"/>. This is the day the engine
+	/// resolves the literal to on that calendar, so a schedule state anchored here starts exactly at the literal's
+	/// single occurrence.
+	/// </summary>
+	/// <remarks>
+	/// The engine desugars <c>Z{y/M/d}</c> into the pinned chain <c>y{y}[M{M}[d{d}]]</c> and positions it layer by layer
+	/// in its calendar: it sets the year, snaps to the year's start, sets the month, snaps to the month's start, then
+	/// sets the day. This mirrors that walk with the same <see cref="IOrbitCalendar"/> calls, so the Pleiadean
+	/// <c>Z{3/3/40}</c> is the 40th day of the third 61-day month rather than an invalid Gregorian date. A component the
+	/// calendar cannot hold (a month or day outside its <see cref="IOrbitCalendar.Min"/>..<see cref="IOrbitCalendar.Max"/>
+	/// range, a year above its maximum) or a day outside the <see cref="DateOnly"/> range returns
+	/// <see langword="null"/>; the engine would never select such a literal either. Returns <see langword="null"/> for a
+	/// notation that does not parse, is not a lone literal, or lacks a year, month or day.
+	/// </remarks>
+	public static DateOnly? FixedLiteralDate(string notation, IOrbitCalendar calendar)
 	{
+		ArgumentNullException.ThrowIfNull(calendar);
 		if (string.IsNullOrWhiteSpace(notation))
 		{
 			return null;
@@ -148,14 +174,52 @@ public static class OrbitDays
 		{
 			ast = new OrbitParser(notation).Parse();
 		}
-		catch (FormatException)
+		catch (Exception exception) when (exception is FormatException or OverflowException)
+		{
+			// The parser reads numbers with int.Parse, so an overlong component overflows rather than failing to parse.
+			return null;
+		}
+
+		if (ast is not OrbitDateTimeLiteralNode { Year: { } year, Month: { } month, Day: { } day })
 		{
 			return null;
 		}
 
-		return ast is OrbitDateTimeLiteralNode { Year: { } year, Month: { } month, Day: { } day }
-			? new DateOnly(year, month, day)
-			: null;
+		long ms;
+		try
+		{
+			// The year is checked against the maximum only: the calendars report a generic minimum of 1, yet the
+			// Pleiadean calendar has a real year 0 (and earlier), and the engine never consults the minimum for a
+			// pinned year either. An unrepresentable result is caught by the DateOnly range check below.
+			ms = calendar.SnapToStart(0, OrbitUnit.Year);
+			if (year > calendar.Max(OrbitUnit.Year, ms))
+			{
+				return null;
+			}
+
+			ms = calendar.SnapToStart(calendar.Set(ms, OrbitUnit.Year, year), OrbitUnit.Year);
+			if (month < calendar.Min(OrbitUnit.Month, ms) || month > calendar.Max(OrbitUnit.Month, ms))
+			{
+				return null;
+			}
+
+			ms = calendar.SnapToStart(calendar.Set(ms, OrbitUnit.Month, month), OrbitUnit.Month);
+			if (day < calendar.Min(OrbitUnit.Day, ms) || day > calendar.Max(OrbitUnit.Day, ms))
+			{
+				return null;
+			}
+
+			ms = calendar.SnapToStart(calendar.Set(ms, OrbitUnit.Day, day), OrbitUnit.Day);
+		}
+		catch (ArgumentOutOfRangeException)
+		{
+			// A calendar backed by a bounded one (the Pleiadean leap rule reads the Persian calendar) throws beyond
+			// that range; such a year has no day to anchor at.
+			return null;
+		}
+
+		var (civilYear, civilMonth, civilDay) = JsDate.CivilFromDays(JsDate.EpochDays(ms));
+		return civilYear is >= 1 and <= 9999 ? new DateOnly(civilYear, civilMonth, civilDay) : null;
 	}
 
 	/// <summary>

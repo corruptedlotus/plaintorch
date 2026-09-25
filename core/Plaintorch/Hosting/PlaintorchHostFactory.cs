@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -84,19 +85,29 @@ public static class PlaintorchHostFactory
 
 	private static void ConfigureJson(IServiceCollection services)
 	{
-		services.ConfigureHttpJsonOptions(json =>
+		services.ConfigureHttpJsonOptions(json => ConfigureSerializer(json.SerializerOptions));
+	}
+
+	/// <summary>
+	/// Applies the PLAINTORCH wire conventions to serializer options: cycle-tolerant references, the tri-state
+	/// <see cref="Optional{T}"/> converter, and the <c>@type</c> runtime-name property on every object. The host applies
+	/// it to its HTTP options (which start from the web defaults: camelCase names, numeric enums); wire-contract tests
+	/// apply it to <c>new JsonSerializerOptions(JsonSerializerDefaults.Web)</c> to serialize exactly as the host does.
+	/// </summary>
+	/// <param name="options">The options to configure; must not be frozen yet.</param>
+	public static void ConfigureSerializer(JsonSerializerOptions options)
+	{
+		ArgumentNullException.ThrowIfNull(options);
+		options.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+		// Tri-state update fields: a present key (value or explicit null) applies; an omitted key leaves unchanged.
+		options.Converters.Add(new OptionalJsonConverterFactory());
+		options.TypeInfoResolver = new DefaultJsonTypeInfoResolver
 		{
-			json.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-			// Tri-state update fields: a present key (value or explicit null) applies; an omitted key leaves unchanged.
-			json.SerializerOptions.Converters.Add(new OptionalJsonConverterFactory());
-			json.SerializerOptions.TypeInfoResolver = new DefaultJsonTypeInfoResolver
+			Modifiers =
 			{
-				Modifiers =
-				{
-					AddRuntimeTypeNameProperty,
-				},
-			};
-		});
+				AddRuntimeTypeNameProperty,
+			},
+		};
 	}
 
 	/// <summary>

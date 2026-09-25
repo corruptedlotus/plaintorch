@@ -23,8 +23,16 @@ namespace Pleiades.Plaintorch;
 /// The resolver calendar is modular: an explicit per-declarative calendar wins, otherwise the vault's global
 /// default-calendar preference (PEP116) decides — a single default, no longer a fate-vs-decree split.
 /// </para>
+/// <para>
+/// Timeframe orbits (PEP100 patch 2) are anchored by their own persisted <see cref="TimeframeOrbitScheduleState"/>
+/// and are only ever previewed against a day (<see cref="MatchesTimeframeDayAsync"/>), always on the vault default
+/// calendar (<see cref="ResolveDefaultCalendar"/>).
+/// </para>
 /// </remarks>
-public sealed class PlaintorchOrbitService(PlainfraContext context, IOptionsSnapshot<AgendaPreferences> agendaPreferences)
+public sealed class PlaintorchOrbitService(
+	PlainfraContext context,
+	IOptionsSnapshot<AgendaPreferences> agendaPreferences,
+	ILogger<PlaintorchOrbitService> logger)
 {
 	/// <summary>
 	/// Resolves the calendar an incentive's orbit is resolved against: an explicit per-declarative
@@ -99,17 +107,17 @@ public sealed class PlaintorchOrbitService(PlainfraContext context, IOptionsSnap
 	public async Task ResetStateAsync(Incentive incentive, string? orbit, DateOnly epoch, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
-		var existing = await context.OrbitScheduleStates
+		var existing = await context.IncentiveOrbitScheduleStates
 			.Where(state => state.IncentiveId == incentive.Id)
 			.ToListAsync(cancellationToken);
 		if (existing.Count > 0)
 		{
-			context.OrbitScheduleStates.RemoveRange(existing);
+			context.IncentiveOrbitScheduleStates.RemoveRange(existing);
 		}
 
 		if (!string.IsNullOrWhiteSpace(orbit))
 		{
-			context.OrbitScheduleStates.Add(new OrbitScheduleState
+			context.IncentiveOrbitScheduleStates.Add(new IncentiveOrbitScheduleState
 			{
 				IncentiveId = incentive.Id,
 				StateJson = OrbitDays.CreateState(orbit, epoch, ResolveCalendar(incentive)),
@@ -216,11 +224,11 @@ public sealed class PlaintorchOrbitService(PlainfraContext context, IOptionsSnap
 	public async Task<DateTime?> ComputeNextOccurrenceAsync(Incentive incentive, DateTime from, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
-		var tracked = context.ChangeTracker.Entries<OrbitScheduleState>()
+		var tracked = context.ChangeTracker.Entries<IncentiveOrbitScheduleState>()
 			.FirstOrDefault(entry => entry.State != Microsoft.EntityFrameworkCore.EntityState.Deleted
 				&& entry.Entity.IncentiveId == incentive.Id)?.Entity;
 		var state = tracked
-			?? await context.OrbitScheduleStates.FirstOrDefaultAsync(item => item.IncentiveId == incentive.Id, cancellationToken);
+			?? await context.IncentiveOrbitScheduleStates.FirstOrDefaultAsync(item => item.IncentiveId == incentive.Id, cancellationToken);
 		return state is null ? null : OrbitDays.NextOccurrence(state.StateJson, from, ResolveCalendar(incentive));
 	}
 
@@ -258,22 +266,167 @@ public sealed class PlaintorchOrbitService(PlainfraContext context, IOptionsSnap
 	/// <paramref name="fallbackEpoch"/>) when the orbit has never been resolved before.
 	/// The lazy row is what pins the schedule's random seed, so previews stay deterministic.
 	/// </summary>
-	private async Task<OrbitScheduleState> GetOrCreateStateAsync(Incentive incentive, string orbit, DateOnly fallbackEpoch, CancellationToken cancellationToken)
+	private async Task<IncentiveOrbitScheduleState> GetOrCreateStateAsync(Incentive incentive, string orbit, DateOnly fallbackEpoch, CancellationToken cancellationToken)
 	{
-		var state = await context.OrbitScheduleStates
+		var state = await context.IncentiveOrbitScheduleStates
 			.FirstOrDefaultAsync(item => item.IncentiveId == incentive.Id, cancellationToken);
 		if (state is not null)
 		{
 			return state;
 		}
 
-		state = new OrbitScheduleState
+		state = new IncentiveOrbitScheduleState
 		{
 			IncentiveId = incentive.Id,
 			StateJson = OrbitDays.CreateState(orbit, fallbackEpoch, ResolveCalendar(incentive)),
 			UpdatedUtc = DateTimeOffset.UtcNow,
 		};
-		context.OrbitScheduleStates.Add(state);
+		context.IncentiveOrbitScheduleStates.Add(state);
 		return state;
+	}
+
+	/// <summary>
+	/// Resolves the calendar timeframe orbits are read on: the vault-wide default from
+	/// <see cref="AgendaPreferences.DefaultCalendar"/> (PEP116; Pleiadean unless changed). Timeframes carry no
+	/// calendar of their own and need no incentive to resolve it (PEP100 patch 2).
+	/// </summary>
+	public IOrbitCalendar ResolveDefaultCalendar()
+	{
+		return agendaPreferences.Value.DefaultCalendar == DeclarativeCalendar.Pleiadean ? OrbitDays.Pleiadean : OrbitDays.Gregorian;
+	}
+
+	/// <summary>
+	/// Resets a timeframe's persisted orbit state after its orbit was assigned, changed, or cleared (PEP100 patch 2),
+	/// mirroring <see cref="ResetStateAsync"/>: any existing state is removed, and a new one anchored at
+	/// <paramref name="epoch"/> on the vault default calendar is added when an orbit is present. Nothing is saved here;
+	/// the change rides the caller's unit of work.
+	/// </summary>
+	public async Task ResetTimeframeStateAsync(Timeframe timeframe, string? orbit, DateOnly epoch, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(timeframe);
+
+		// A state added earlier in this unit of work is not in the database yet, so the tracked ones are swept too.
+		var existing = context.TimeframeOrbitScheduleStates.Local
+			.Where(state => ReferenceEquals(state.Timeframe, timeframe) || (timeframe.Id != 0 && state.TimeframeId == timeframe.Id))
+			.ToList();
+		if (timeframe.Id != 0)
+		{
+			existing.AddRange(await context.TimeframeOrbitScheduleStates
+				.Where(state => state.TimeframeId == timeframe.Id)
+				.ToListAsync(cancellationToken));
+		}
+
+		if (existing.Count > 0)
+		{
+			context.TimeframeOrbitScheduleStates.RemoveRange(existing.Distinct());
+		}
+
+		if (!string.IsNullOrWhiteSpace(orbit))
+		{
+			context.TimeframeOrbitScheduleStates.Add(new TimeframeOrbitScheduleState
+			{
+				TimeframeId = timeframe.Id,
+				// A timeframe created in this unit of work has no identity yet; the navigation lets EF fix the key up.
+				Timeframe = timeframe.Id == 0 ? timeframe : null,
+				StateJson = OrbitDays.CreateState(orbit, epoch, ResolveDefaultCalendar()),
+				UpdatedUtc = DateTimeOffset.UtcNow,
+			});
+		}
+	}
+
+	/// <summary>
+	/// PREVIEW: whether a timeframe's orbit selects the given day (PEP100 patch 2), read on the vault default calendar.
+	/// A timeframe without an orbit applies to every day. The persisted state is never advanced; a timeframe that has
+	/// an orbit but no state yet (data from before timeframe states existed) gets one lazily, anchored like the
+	/// incentive lazy path (<paramref name="day"/> when it lies in the past, else today) — the caller saves it so the
+	/// seed stays pinned. A malformed stored orbit never throws: it is logged and reads as non-matching.
+	/// </summary>
+	public async Task<bool> MatchesTimeframeDayAsync(Timeframe timeframe, DateOnly day, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(timeframe);
+		if (string.IsNullOrWhiteSpace(timeframe.Orbit))
+		{
+			return true;
+		}
+
+		var state = context.TimeframeOrbitScheduleStates.Local.FirstOrDefault(item => item.TimeframeId == timeframe.Id)
+			?? await context.TimeframeOrbitScheduleStates.FirstOrDefaultAsync(item => item.TimeframeId == timeframe.Id, cancellationToken);
+		return MatchTimeframeDay(timeframe, day, state, ResolveDefaultCalendar(), created: null);
+	}
+
+	/// <summary>
+	/// PREVIEW, batched: the ids of the given timeframes whose orbit selects <paramref name="day"/>, in input order, with
+	/// exactly the per-timeframe semantics of <see cref="MatchesTimeframeDayAsync"/> (PEP100 patch 2). The timeframe
+	/// states are loaded in one query and the tracked ones read in one pass, instead of a lookup per timeframe; lazily
+	/// created states are added to the unit of work for the caller to save.
+	/// </summary>
+	public async Task<IReadOnlyList<long>> MatchTimeframesDayAsync(IReadOnlyList<Timeframe> timeframes, DateOnly day, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(timeframes);
+		var matching = new List<long>(timeframes.Count);
+		if (timeframes.All(timeframe => string.IsNullOrWhiteSpace(timeframe.Orbit)))
+		{
+			matching.AddRange(timeframes.Select(timeframe => timeframe.Id));
+			return matching;
+		}
+
+		// Stored states first, then the unit of work's live (not deleted) ones on top — the same precedence as the
+		// single-timeframe lookup, which prefers a tracked state over the database row.
+		var states = new Dictionary<long, TimeframeOrbitScheduleState>();
+		foreach (var stored in await context.TimeframeOrbitScheduleStates.ToListAsync(cancellationToken))
+		{
+			states.TryAdd(stored.TimeframeId, stored);
+		}
+
+		foreach (var entry in context.ChangeTracker.Entries<TimeframeOrbitScheduleState>())
+		{
+			if (entry.State != EntityState.Deleted)
+			{
+				states[entry.Entity.TimeframeId] = entry.Entity;
+			}
+		}
+
+		var calendar = ResolveDefaultCalendar();
+		foreach (var timeframe in timeframes)
+		{
+			if (string.IsNullOrWhiteSpace(timeframe.Orbit)
+				|| MatchTimeframeDay(timeframe, day, states.GetValueOrDefault(timeframe.Id), calendar, created => states[timeframe.Id] = created))
+			{
+				matching.Add(timeframe.Id);
+			}
+		}
+
+		return matching;
+	}
+
+	/// <summary>
+	/// Matches one orbit-bearing timeframe against a day from its already looked-up state, lazily creating (and adding)
+	/// the state when it has none. A malformed orbit or state is logged and reads as non-matching.
+	/// </summary>
+	private bool MatchTimeframeDay(Timeframe timeframe, DateOnly day, TimeframeOrbitScheduleState? state, IOrbitCalendar calendar, Action<TimeframeOrbitScheduleState>? created)
+	{
+		var orbit = timeframe.Orbit!;
+		try
+		{
+			if (state is null)
+			{
+				var today = DateOnly.FromDateTime(DateTime.Today);
+				state = new TimeframeOrbitScheduleState
+				{
+					TimeframeId = timeframe.Id,
+					StateJson = OrbitDays.CreateState(orbit, day < today ? day : today, calendar),
+					UpdatedUtc = DateTimeOffset.UtcNow,
+				};
+				context.TimeframeOrbitScheduleStates.Add(state);
+				created?.Invoke(state);
+			}
+
+			return OrbitDays.MatchesDay(state.StateJson, day, calendar);
+		}
+		catch (Exception exception) when (exception is FormatException or ArgumentException or InvalidOperationException or System.Text.Json.JsonException)
+		{
+			logger.LogWarning(exception, "Timeframe {TimeframeId} has an unreadable orbit '{Orbit}'; it is treated as not matching {Day}.", timeframe.Id, orbit, day);
+			return false;
+		}
 	}
 }

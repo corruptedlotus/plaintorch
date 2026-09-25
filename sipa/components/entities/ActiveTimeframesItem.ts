@@ -1,26 +1,27 @@
 import { Component, component, css, html, nothing, state } from "@a11d/lit"
 import type { DirectiveTimeframeRecord } from "@pleiades/sdk"
 import { core } from ".."
-import { TickController } from "../system/globalTick"
-
-/** How often the timeframe list is re-read, so a timeframe edited elsewhere shows up without a reopen. */
-const refreshIntervalMs = 5 * 60_000
+import { subscribeTick } from "../system/globalTick"
 
 /**
- * The timeframe(s) in play right now, as small chips — every lunar directive's timeframes whose window of the
- * day contains the current time. An overnight window (a start later than its end) wraps midnight. Nothing
- * renders while no timeframe is active.
+ * The timeframe(s) in play right now, as small chips. Nothing renders while no timeframe is active.
  *
- * Judged by time of day alone: a timeframe's orbit narrows which *days* it applies to, and that day-level
- * reading is not evaluated here yet, so a timeframe scoped to weekdays still shows on a weekend.
+ * The core decides which ones those are (PEP100 patch 2), so this element only fetches and draws: it asks for the
+ * active timeframes of the strictly active Polaris cycle, which the core picks from the cycle's cached candidates —
+ * the timeframes whose orbit matches the cycle's day (no orbit is every day) — narrowed to those whose window holds
+ * the current minute (an overnight window wraps midnight), and, when any of those is exclusive, to the exclusive
+ * ones alone.
+ *
+ * It re-reads once on connect and then on the shared 60-second tick, so a chip can appear or vanish up to about a
+ * minute after its window edge.
  */
 @component('p7t-active-timeframes')
 export class ActiveTimeframesItem extends Component {
+	/** The active timeframes as the core last returned them, in its order. */
 	@state() private timeframes: DirectiveTimeframeRecord[] = []
 
-	/** Re-renders every second, so a chip appears and vanishes on the minute its window opens or closes. */
-	protected readonly tick = new TickController(this)
-	private refreshTimer?: ReturnType<typeof setInterval>
+	/** Ends the 60-second tick subscription; set while connected. */
+	private unsubscribeTick?: () => void
 
 	static override get styles() {
 		return css`
@@ -40,45 +41,30 @@ export class ActiveTimeframesItem extends Component {
 		`
 	}
 
+	/** Reads the active timeframes at once and subscribes to the shared 60-second tick to re-read them. */
 	protected override connected() {
 		void this.load()
-		this.refreshTimer = setInterval(() => void this.load(), refreshIntervalMs)
+		this.unsubscribeTick?.()
+		this.unsubscribeTick = subscribeTick(() => void this.load(), '60s')
 	}
 
+	/** Drops the tick subscription. */
 	protected override disconnected() {
-		clearInterval(this.refreshTimer)
+		this.unsubscribeTick?.()
+		this.unsubscribeTick = undefined
 	}
 
+	/** Asks the core for the timeframes active right now. */
 	private async load() {
-		this.timeframes = await core.directives.listAllTimeframes()
+		this.timeframes = await core.directives.listActiveTimeframes()
 	}
 
-	/** The timeframes whose daily window contains the given moment. */
-	private activeAt(now: Date): DirectiveTimeframeRecord[] {
-		const minute = now.getHours() * 60 + now.getMinutes()
-		return this.timeframes.filter(timeframe => {
-			const start = minutesOf(timeframe.startTime)
-			const end = minutesOf(timeframe.endTime)
-			if (start === undefined || end === undefined) {
-				return false
-			}
-
-			return start <= end ? minute >= start && minute < end : minute >= start || minute < end
-		})
-	}
-
+	/** One small chip per active timeframe; nothing while none is active. */
 	protected override get template() {
-		const active = this.activeAt(new Date())
 		return html`
-			${active.length === 0 ? nothing : active.map(timeframe => html`<p7t-timeframe-item small .timeframe=${timeframe}></p7t-timeframe-item>`)}
+			${this.timeframes.length === 0 ? nothing : this.timeframes.map(timeframe => html`<p7t-timeframe-item small .timeframe=${timeframe}></p7t-timeframe-item>`)}
 		`
 	}
-}
-
-/** Minutes past midnight of an `HH:mm[:ss]` time, or nothing for a malformed one. */
-function minutesOf(time: string | undefined): number | undefined {
-	const match = /^(\d{1,2}):(\d{2})/.exec(time ?? '')
-	return match ? Number(match[1]) * 60 + Number(match[2]) : undefined
 }
 
 declare global {

@@ -157,6 +157,9 @@ namespace plaintorch.Vault.Database.Migrations
                     b.Property<string>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("AvailabilityTimeframeId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Banner")
                         .HasColumnType("TEXT");
 
@@ -183,6 +186,8 @@ namespace plaintorch.Vault.Database.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AvailabilityTimeframeId");
 
                     b.HasIndex("Codename")
                         .IsUnique();
@@ -360,7 +365,13 @@ namespace plaintorch.Vault.Database.Migrations
 
             modelBuilder.Entity("Pleiades.Orchestration.OrbitScheduleState", b =>
                 {
-                    b.Property<string>("IncentiveId")
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Discriminator")
+                        .IsRequired()
+                        .HasMaxLength(34)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("StateJson")
@@ -370,9 +381,13 @@ namespace plaintorch.Vault.Database.Migrations
                     b.Property<DateTimeOffset>("UpdatedUtc")
                         .HasColumnType("TEXT");
 
-                    b.HasKey("IncentiveId");
+                    b.HasKey("Id");
 
-                    b.ToTable("OrbitScheduleStates");
+                    b.ToTable("OrbitScheduleStates", (string)null);
+
+                    b.HasDiscriminator<string>("Discriminator").HasValue("OrbitScheduleState");
+
+                    b.UseTphMappingStrategy();
                 });
 
             modelBuilder.Entity("Pleiades.Orchestration.PolarisCycle", b =>
@@ -472,6 +487,9 @@ namespace plaintorch.Vault.Database.Migrations
 
                     b.Property<TimeOnly>("EndTime")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("Exclusive")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Icon")
                         .HasColumnType("TEXT");
@@ -977,6 +995,33 @@ namespace plaintorch.Vault.Database.Migrations
                     b.HasDiscriminator().HasValue("Objective");
                 });
 
+            modelBuilder.Entity("Pleiades.Orchestration.IncentiveOrbitScheduleState", b =>
+                {
+                    b.HasBaseType("Pleiades.Orchestration.OrbitScheduleState");
+
+                    b.Property<string>("IncentiveId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasIndex("IncentiveId")
+                        .IsUnique();
+
+                    b.HasDiscriminator().HasValue("IncentiveOrbitScheduleState");
+                });
+
+            modelBuilder.Entity("Pleiades.Orchestration.TimeframeOrbitScheduleState", b =>
+                {
+                    b.HasBaseType("Pleiades.Orchestration.OrbitScheduleState");
+
+                    b.Property<long>("TimeframeId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasIndex("TimeframeId")
+                        .IsUnique();
+
+                    b.HasDiscriminator().HasValue("TimeframeOrbitScheduleState");
+                });
+
             modelBuilder.Entity("Pleiades.Orchestration.Decree", b =>
                 {
                     b.HasBaseType("Pleiades.Orchestration.Declarative");
@@ -1103,9 +1148,16 @@ namespace plaintorch.Vault.Database.Migrations
 
             modelBuilder.Entity("Pleiades.Orchestration.Directive", b =>
                 {
+                    b.HasOne("Pleiades.Orchestration.Timeframe", "AvailabilityTimeframe")
+                        .WithMany()
+                        .HasForeignKey("AvailabilityTimeframeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Pleiades.Orchestration.Directive", "ParentDirective")
                         .WithMany("Subdirectives")
                         .HasForeignKey("ParentDirectiveId");
+
+                    b.Navigation("AvailabilityTimeframe");
 
                     b.Navigation("ParentDirective");
                 });
@@ -1216,17 +1268,6 @@ namespace plaintorch.Vault.Database.Migrations
                     b.Navigation("MilestoneCheckpoint");
                 });
 
-            modelBuilder.Entity("Pleiades.Orchestration.OrbitScheduleState", b =>
-                {
-                    b.HasOne("Pleiades.Orchestration.Incentive", "Incentive")
-                        .WithMany()
-                        .HasForeignKey("IncentiveId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Incentive");
-                });
-
             modelBuilder.Entity("Pleiades.Orchestration.PolarisCycle", b =>
                 {
                     b.OwnsOne("Pleiades.Orchestration.PolarisForecast", "Forecast", b1 =>
@@ -1324,6 +1365,28 @@ namespace plaintorch.Vault.Database.Migrations
                     b.Navigation("Due");
 
                     b.Navigation("OnrushSprint");
+                });
+
+            modelBuilder.Entity("Pleiades.Orchestration.IncentiveOrbitScheduleState", b =>
+                {
+                    b.HasOne("Pleiades.Orchestration.Incentive", "Incentive")
+                        .WithMany()
+                        .HasForeignKey("IncentiveId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Incentive");
+                });
+
+            modelBuilder.Entity("Pleiades.Orchestration.TimeframeOrbitScheduleState", b =>
+                {
+                    b.HasOne("Pleiades.Orchestration.Timeframe", "Timeframe")
+                        .WithMany()
+                        .HasForeignKey("TimeframeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Timeframe");
                 });
 
             modelBuilder.Entity("Pleiades.Orchestration.Directive", b =>

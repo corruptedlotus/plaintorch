@@ -89,8 +89,11 @@ export interface PolarisDecreeAdd {
 	estimation?: number | undefined
 	minimum?: number | undefined
 	maximum?: number | undefined
-	/** Affinity to seed; omitted, the decree's college auto-inclusion decides. */
-	affinityTimeframeId?: number | undefined
+	/**
+	 * Affinity to seed (PEP100 patch 2). Omit for auto (the incentive's directive availability, then its college), an
+	 * id to set, `null` for none.
+	 */
+	affinityTimeframeId?: number | null | undefined
 }
 
 export interface Executive {
@@ -131,7 +134,10 @@ export interface Reflective {
 	decreeId: string | undefined
 	/** Originating decree, carrying the relevant lunar directive when served. Absent for manual/drawn reflectives. */
 	decree?: Decree | undefined
-	/** Preferred timeframe for this reflective (affinity, PEP100 patch). Seeded from the decree's college via auto-inclusion. */
+	/**
+	 * Preferred timeframe for this reflective (affinity, PEP100 patch). Seeded at cycle begin through auto-inclusion:
+	 * the decree's directive availability, then its college (PEP100 patch 2).
+	 */
 	affinityTimeframeId?: number | undefined
 }
 
@@ -150,6 +156,12 @@ export interface PolarisExecutivePlan {
 	minimum?: number | undefined
 	/** Maximum time allocation to seed on the planned executive, as a whole-minute working time unit. */
 	maximum?: number | undefined
+	/**
+	 * Affinity to seed on the planned executive (PEP100 patch 2). Omit for auto (the incentive's directive
+	 * availability, then its college), an id to set, `null` for none. A one-shot executive has no incentive, so auto
+	 * leaves it without an affinity.
+	 */
+	affinityTimeframeId?: number | null | undefined
 }
 
 export interface PolarisExecutivePlanResult {

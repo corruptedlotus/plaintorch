@@ -68,9 +68,20 @@ public class PlainfraContext : DbContext
 	public DbSet<Timeframe> Timeframes => Set<Timeframe>();
 
 	/// <summary>
-	/// Gets the persisted orbit engine states for orbit-bearing declaratives (PEP100).
+	/// Gets every persisted orbit engine state — the incentive and timeframe kinds alike (PEP100, hierarchy per
+	/// PEP100 patch 2).
 	/// </summary>
 	public DbSet<OrbitScheduleState> OrbitScheduleStates => Set<OrbitScheduleState>();
+
+	/// <summary>
+	/// Gets the persisted orbit engine states of orbit-bearing declaratives (PEP100).
+	/// </summary>
+	public DbSet<IncentiveOrbitScheduleState> IncentiveOrbitScheduleStates => Set<IncentiveOrbitScheduleState>();
+
+	/// <summary>
+	/// Gets the persisted orbit engine states of orbit-scoped timeframes (PEP100 patch 2).
+	/// </summary>
+	public DbSet<TimeframeOrbitScheduleState> TimeframeOrbitScheduleStates => Set<TimeframeOrbitScheduleState>();
 
 	/// <summary>
 	/// Gets the onrush sprints tracked in the database.
@@ -378,9 +389,44 @@ public class PlainfraContext : DbContext
 			.WithMany()
 			.OnDelete(DeleteBehavior.SetNull);
 
+		// PEP100 patch 2: a directive's availability is likewise only cleared when its timeframe goes away — also when
+		// a lunar directive delete cascades its timeframes. Configured explicitly (and never auto-included) so EF does
+		// not pair it with Timeframe.Directive, which runs the other way.
+		modelBuilder.Entity<Directive>()
+			.HasOne(x => x.AvailabilityTimeframe)
+			.WithMany()
+			.HasForeignKey(x => x.AvailabilityTimeframeId)
+			.OnDelete(DeleteBehavior.SetNull);
+
 		modelBuilder.Entity<Attentive>()
 			.Navigation(x => x.AffinityTimeframe)
 			.AutoInclude();
+
+		// PEP100 patch 2: orbit schedule states are one TPH family in the OrbitScheduleStates table. Each kind is keyed
+		// uniquely by its owner and dies with it — a timeframe's state also goes when a lunar directive delete
+		// cascades the timeframe away.
+		modelBuilder.Entity<OrbitScheduleState>()
+			.ToTable("OrbitScheduleStates");
+
+		modelBuilder.Entity<IncentiveOrbitScheduleState>()
+			.HasIndex(x => x.IncentiveId)
+			.IsUnique();
+
+		modelBuilder.Entity<IncentiveOrbitScheduleState>()
+			.HasOne(x => x.Incentive)
+			.WithMany()
+			.HasForeignKey(x => x.IncentiveId)
+			.OnDelete(DeleteBehavior.Cascade);
+
+		modelBuilder.Entity<TimeframeOrbitScheduleState>()
+			.HasIndex(x => x.TimeframeId)
+			.IsUnique();
+
+		modelBuilder.Entity<TimeframeOrbitScheduleState>()
+			.HasOne(x => x.Timeframe)
+			.WithMany()
+			.HasForeignKey(x => x.TimeframeId)
+			.OnDelete(DeleteBehavior.Cascade);
 
 		modelBuilder.Entity<TagDefinition>()
 			.Property(x => x.Color)

@@ -1,7 +1,7 @@
 import { Component, component, css, html, nothing, property } from '@a11d/lit'
 import { TimeframeInclusion } from '@pleiades/sdk'
 import { humanizeOrbit } from '../../orbits'
-import { collegeDescriptorOf } from './collegeDescriptors'
+import { inclusionDescriptors } from './inclusionDescriptors'
 import type { TimeframeLike } from './TimeframeItem'
 import '../PleiadesIcon'
 
@@ -10,7 +10,8 @@ const hhmm = (time: string | undefined): string => (time ?? '').slice(0, 5)
 
 /**
  * The full timeframe detail drawn in {@link TimeframeItem}'s tooltip — its window, the cycles it scopes to (an
- * Orbit, or every cycle), and the college it auto-includes. A self-contained element (its own shadow root and
+ * Orbit, or every cycle), whether it is exclusive, and how it auto-includes: the colleges it affines in College mode,
+ * or directive availability in Availability mode (PEP100 patch 2). A self-contained element (its own shadow root and
  * styles) so it renders identically wherever the tooltip system places it, independent of any host's shadow scope.
  */
 @component('p7t-timeframe-details')
@@ -67,6 +68,10 @@ export class TimeframeDetails extends Component {
 				<div class='title'>${timeframe.title}</div>
 				${!window ? nothing : html`<div class='row'><p7t-icon icon='lucide:clock'></p7t-icon><span>${window}</span></div>`}
 				<div class='row'><p7t-icon icon='lucide:repeat'></p7t-icon><span>${scope}</span></div>
+				${!timeframe.exclusive ? nothing : html`<div class='row'><p7t-icon icon='lucide:lock'></p7t-icon><span>Exclusive</span></div>`}
+				${timeframe.autoInclusion !== TimeframeInclusion.Availability ? nothing : html`
+					<div class='row'><p7t-icon icon=${inclusionDescriptors.Availability.icon}></p7t-icon><span>${inclusionDescriptors.Availability.fullName}</span></div>
+				`}
 				${colleges.length === 0 ? nothing : html`
 					<div class='row'>
 						<p7t-icon icon='lucide:layers'></p7t-icon>

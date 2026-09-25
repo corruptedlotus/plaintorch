@@ -274,6 +274,14 @@ public sealed class VaultWatcherSyncService(
 			existingSprint.GraphLayout = existingEntry.OriginalValues.GetValue<string?>(nameof(OnrushSprint.GraphLayout));
 		}
 
+		if (existing is Directive existingDirective)
+		{
+			// A directive's availability timeframe is database-only (PEP100 patch 2) — a timeframe id is a row id, not
+			// a PUCK, so it never reaches frontmatter — and a frontmatter sync must not clear it, for the same reason
+			// as parenting and the sprint fields above.
+			existingDirective.AvailabilityTimeframeId = existingEntry.OriginalValues.GetValue<long?>(nameof(Directive.AvailabilityTimeframeId));
+		}
+
 		if (existing is Fate or Decree)
 		{
 			await NormalizeIncentiveDirectiveAsync((Incentive)existing, candidate.VaultRelativePath, cancellationToken);
@@ -435,10 +443,6 @@ public sealed class VaultWatcherSyncService(
 	}
 
 	/// <summary>
-	/// Resets the persisted orbit schedule state when a file sync changed a declarative's orbit notation.
-	/// A fresh state (anchored at reset time) is lazily rebuilt on the next seeking resolution.
-	/// </summary>
-	/// <summary>
 	/// Whether a frontmatter sync actually changed the entity: a modified scalar property, or a changed owned
 	/// reference it maps (Objective.Due, PEP111) — SetValues never touches an owned reference, so it is applied
 	/// separately and the scalar-only modified check would otherwise miss it.
@@ -449,6 +453,10 @@ public sealed class VaultWatcherSyncService(
 				&& owned.Metadata.IsOwned()
 				&& owned.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
 
+	/// <summary>
+	/// Resets the persisted orbit schedule state when a file sync changed a declarative's orbit notation.
+	/// A fresh state (anchored at reset time) is lazily rebuilt on the next seeking resolution.
+	/// </summary>
 	private async Task ResetOrbitStateOnChangeAsync(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry, string incentiveId, CancellationToken cancellationToken)
 	{
 		var originalOrbit = entry.OriginalValues.GetValue<string?>("Orbit");
@@ -458,7 +466,7 @@ public sealed class VaultWatcherSyncService(
 			return;
 		}
 
-		var states = await context.Set<OrbitScheduleState>()
+		var states = await context.Set<IncentiveOrbitScheduleState>()
 			.Where(state => state.IncentiveId == incentiveId)
 			.ToListAsync(cancellationToken);
 		if (states.Count > 0)

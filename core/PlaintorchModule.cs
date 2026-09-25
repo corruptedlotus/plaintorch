@@ -51,6 +51,10 @@ public sealed class PlaintorchModule : Module
 		// than hand-computed at each lore endpoint; the interceptor drops the cache when a lore page is written.
 		services.AddSingleton<LoreActiveCache>();
 		services.AddScoped<LoreActiveCacheInterceptor>();
+		// The active Polaris cycle's timeframe candidates (PEP100 patch 2), warmed at cycle begin and vault activation;
+		// the interceptor drops them on any write that can change the set, across every write pathway.
+		services.AddSingleton<TimeframeCandidateCache>();
+		services.AddScoped<TimeframeCandidateCacheInterceptor>();
 		services.AddDbContext<PlainfraContext>((serviceProvider, options) =>
 		{
 			var layout = serviceProvider.GetRequiredService<VaultLayout>();
@@ -64,6 +68,7 @@ public sealed class PlaintorchModule : Module
 			// behind rather than what the caller originally asked for.
 			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchChangeFeedInterceptor>());
 			options.AddInterceptors(serviceProvider.GetRequiredService<LoreActiveCacheInterceptor>());
+			options.AddInterceptors(serviceProvider.GetRequiredService<TimeframeCandidateCacheInterceptor>());
 		});
 
 		services.AddScoped<PlainfraContextInitializer>();
@@ -149,6 +154,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<IVaultMigration, FateOrbitOnlyMigration>();
 		services.AddScoped<PlaintorchEngine>();
 		services.AddScoped<TimeframeAffinityResolver>();
+		services.AddScoped<TimeframeCandidateService>();
 		services.AddSingleton<MaterializationPolicyOptions>();
 		services.AddScoped<OccurrenceHardeningService>();
 		services.AddScoped<AgendaProjectionService>();

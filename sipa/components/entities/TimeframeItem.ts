@@ -20,13 +20,21 @@ export interface TimeframeLike {
 	iconMedia?: MediaReference
 	autoInclusion?: TimeframeInclusion
 	autoInclusionColleges?: ObjectiveCollege[]
+	/** Whether the timeframe, while active, suppresses the non-exclusive active ones (PEP100 patch 2). */
+	exclusive?: boolean
 }
+
+/** The auto-affinity tooltip: what the core does with an affinity left on Auto (PEP100 patch 2). */
+const autoAffinityTooltip = 'Assigned automatically: the activity\'s directive availability, else its college'
 
 /**
  * A timeframe (PEP100) drawn one unified way — its icon, and (in `named` mode) its title. The built-in tooltip is
  * the timeframe's detail (see {@link TimeframeDetails}): its window, the cycles it scopes to (an Orbit, or every
- * cycle), and the college it auto-includes. `icon` mode is the compact form an affined executive shows in place of
- * its Celestron.
+ * cycle), whether it is exclusive, and how it auto-includes. `icon` mode is the compact form an affined executive
+ * shows in place of its Celestron.
+ *
+ * Two flavours draw the chip as a *role* a timeframe plays rather than the timeframe in the abstract: {@link affinity}
+ * (an executive's preferred timeframe) and {@link availability} (a directive's availability, PEP100 patch 2).
  */
 @component('p7t-timeframe-item')
 export class TimeframeItem extends InfoItem {
@@ -39,6 +47,29 @@ export class TimeframeItem extends InfoItem {
 	 * scheduling detail (window, scope, college) — an affinity is only *which* timeframe, not its mechanics.
 	 */
 	@property({ type: Boolean }) affinity = false
+
+	/**
+	 * Draws the chip as a directive's **availability** (PEP100 patch 2), mirroring {@link affinity}: an empty one reads
+	 * as "No Availability", a set one suffixes "Availability" to the name, and the tooltip is only the name.
+	 */
+	@property({ type: Boolean }) availability = false
+
+	/**
+	 * With {@link affinity} and no timeframe, reads as an **automatic** affinity (PEP100 patch 2) — "Auto Affinity"
+	 * behind its own glyph — rather than none: the core assigns it from the activity's directive availability, else
+	 * its college. Ignored once a timeframe is set.
+	 */
+	@property({ type: Boolean }) auto = false
+
+	/** The role the chip is drawn in, if any: availability wins over affinity should a consumer set both. */
+	private get flavour(): 'affinity' | 'availability' | undefined {
+		return this.availability ? 'availability' : this.affinity ? 'affinity' : undefined
+	}
+
+	/** Whether the chip is the Auto face: an unset affinity the core will assign. */
+	private get isAuto() {
+		return !this.timeframe && this.flavour === 'affinity' && this.auto
+	}
 
 	static override get styles() {
 		return css`
@@ -54,22 +85,41 @@ export class TimeframeItem extends InfoItem {
 		return resolveMediaIcon(this.timeframe?.iconMedia, 'lucide:clock')
 	}
 
-	/** The timeframe's media companion (or the polaris glyph for an unset affinity), drawn through the base icon slot. */
+	/**
+	 * The timeframe's media companion, drawn through the base icon slot. Unset, a flavoured chip keeps a glyph of its
+	 * own: polaris for no affinity, a wand for the Auto affinity, a crossed calendar for no availability.
+	 */
 	protected override get bulletIcon(): IconName | (string & {}) | undefined {
 		if (!this.timeframe) {
-			return this.affinity ? 'polaris' : undefined
+			switch (this.flavour) {
+				case 'affinity':
+					return this.isAuto ? 'lucide:wand-sparkles' : 'polaris'
+				case 'availability':
+					return 'lucide:calendar-off'
+				default:
+					return undefined
+			}
 		}
 
 		return this.glyph
 	}
 
+	/** The chip's label: the flavoured name when drawn as an affinity or availability, else the timeframe's title. */
 	protected override get bulletText() {
-		const timeframe = this.timeframe
-		if (!timeframe) {
-			return 'No Affinity'
-		}
+		return this.flavouredName ?? this.timeframe?.title ?? ''
+	}
 
-		return this.affinity ? `${timeframe.title} Affinity` : timeframe.title
+	/** The name a flavoured chip reads as ("Morning Affinity", "No Availability", "Auto Affinity"); undefined when unflavoured. */
+	private get flavouredName() {
+		const timeframe = this.timeframe
+		switch (this.flavour) {
+			case 'affinity':
+				return timeframe ? `${timeframe.title} Affinity` : this.isAuto ? 'Auto Affinity' : 'No Affinity'
+			case 'availability':
+				return timeframe ? `${timeframe.title} Availability` : 'No Availability'
+			default:
+				return undefined
+		}
 	}
 
 	/**
@@ -93,22 +143,32 @@ export class TimeframeItem extends InfoItem {
 		return this.mode === 'icon'
 	}
 
+	/** The chip's body: the icon-text layout, or the null glyph (or nothing) for an unflavoured chip with no timeframe. */
 	protected override get content() {
-		// Only a non-affinity empty timeframe steps outside the icon-text layout, for the null glyph (or nothing);
-		// an empty affinity keeps the layout to read "No Affinity" behind the polaris glyph.
-		if (!this.timeframe && !this.affinity) {
+		// Only an unflavoured empty timeframe steps outside the icon-text layout, for the null glyph (or nothing);
+		// an empty affinity or availability keeps the layout to read "No Affinity"/"No Availability" behind its glyph.
+		if (!this.timeframe && !this.flavour) {
 			return this.nullable ? this.nullGlyphTemplate : nothing
 		}
 
 		return super.content
 	}
 
+	/**
+	 * The Auto explanation for the Auto face, the flavoured name for an affinity or availability chip, and otherwise
+	 * the full {@link TimeframeDetails}.
+	 */
 	protected override get tooltip() {
 		const timeframe = this.timeframe
 
-		// An affinity is just which timeframe it is: its name suffixed with "Affinity", or "No Affinity" when unset.
-		if (this.affinity) {
-			return timeframe ? `${timeframe.title} Affinity` : 'No Affinity'
+		if (this.isAuto) {
+			return autoAffinityTooltip
+		}
+
+		// A flavoured chip is just which timeframe it is: its name suffixed with its role, or "No …" when unset.
+		const flavouredName = this.flavouredName
+		if (flavouredName !== undefined) {
+			return flavouredName
 		}
 
 		// The full timeframe detail is a self-contained element so it survives the tooltip system's shadow isolation.

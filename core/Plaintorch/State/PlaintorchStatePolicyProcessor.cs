@@ -41,6 +41,7 @@ public sealed class PlaintorchStatePolicyProcessor(
 	{
 		ArgumentNullException.ThrowIfNull(context);
 
+		await ClearStaleAvailabilityReferencesAsync(context, cancellationToken);
 		await ResetChangedScheduleCursorsAsync(context, cancellationToken);
 		await RefreshNextOccurrencesAsync(context, cancellationToken);
 		await EnforceOnrushRulesAsync(context, cancellationToken);
@@ -58,17 +59,76 @@ public sealed class PlaintorchStatePolicyProcessor(
 	}
 
 	/// <summary>
-	/// Deep-interception enforcement (Strategy 1 / PEP101): a reference to an occurrence must harden it. Every
-	/// dependency added in this unit of work — from any write pathway (API, CLI, scheduler, markdown watcher) —
-	/// has each of its eventive endpoints hardened into the same save, so the reconciler resolves a real row
-	/// rather than reading an absent projection as unsatisfied.
+	/// Deep-interception availability hygiene (PEP100 patch 2, D9): a directive availability never outlives its
+	/// timeframe's role. In the same unit of work that deletes a timeframe, switches one away from
+	/// <see cref="TimeframeInclusion.Availability"/>, or deletes a lunar directive (whose timeframes the database cascade
+	/// removes out of EF's sight, so their ids are read from the store), every directive pointing at one of those
+	/// timeframes is loaded tracked and cleared. Riding the save hook covers any save that deletes a lunar directive or
+	/// touches a timeframe, whatever its pathway: the API, the CLI, or the markdown watcher's delete-from-database action.
+	/// Note that the watcher does not reach that action for a deleted lunar note today: discovery cannot recover a
+	/// Quiet/Freeform note's identity once the file is gone and ignores the removal (an open gap recorded in
+	/// <c>core/.DISCUSSION.md</c>); once discovery produces the action, the hook covers it unchanged. The tracked clear is
+	/// what the change feed announces; the SetNull foreign key stays only as the database-level backstop.
 	/// </summary>
+	private static async Task ClearStaleAvailabilityReferencesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var staleIds = new HashSet<long>();
+		foreach (var entry in context.ChangeTracker.Entries<Timeframe>())
+		{
+			var leftAvailability = entry.State == EntityState.Modified
+				&& entry.Property(nameof(Timeframe.AutoInclusion)).IsModified
+				&& entry.OriginalValues.GetValue<TimeframeInclusion>(nameof(Timeframe.AutoInclusion)) == TimeframeInclusion.Availability
+				&& entry.Entity.AutoInclusion != TimeframeInclusion.Availability;
+			if (entry.State == EntityState.Deleted || leftAvailability)
+			{
+				staleIds.Add(entry.Entity.Id);
+			}
+		}
+
+		var deletedLunarIds = context.ChangeTracker.Entries<Directive>()
+			.Where(entry => entry.State == EntityState.Deleted && entry.Entity is LunarDirective)
+			.Select(entry => entry.Entity.Id)
+			.ToList();
+		if (deletedLunarIds.Count > 0)
+		{
+			staleIds.UnionWith(await context.Timeframes
+				.AsNoTracking()
+				.Where(timeframe => deletedLunarIds.Contains(timeframe.DirectiveId))
+				.Select(timeframe => timeframe.Id)
+				.ToListAsync(cancellationToken));
+		}
+
+		if (staleIds.Count == 0)
+		{
+			return;
+		}
+
+		// Loading brings every stored reference into the tracker; the clear then runs over the tracker, so a directive
+		// whose availability this same save changes is judged by its pending value rather than the stored one.
+		var staleKeys = staleIds.Select(id => (long?)id).ToList();
+		await context.Directives
+			.Where(directive => staleKeys.Contains(directive.AvailabilityTimeframeId))
+			.LoadAsync(cancellationToken);
+		foreach (var entry in context.ChangeTracker.Entries<Directive>().ToList())
+		{
+			if (entry.State != EntityState.Deleted
+				&& entry.Entity.AvailabilityTimeframeId is { } timeframeId
+				&& staleIds.Contains(timeframeId))
+			{
+				entry.Entity.AvailabilityTimeframeId = null;
+			}
+		}
+	}
+
 	/// <summary>
 	/// Deep-interception schedule-change rule (Strategy 1): when a fate or decree is created with, or changed
 	/// to, a different orbit, its seek cursor is reset to a fresh state anchored today. Riding the save hook
 	/// covers every write pathway — API, CLI, scheduler, and the markdown watcher — so editing an orbit in
 	/// frontmatter resets the cursor exactly as an API edit does, and the projection recomputes on the new orbit
-	/// while already-hardened occurrences persist untouched.
+	/// while already-hardened occurrences persist untouched. Timeframes created with, or changed to, a different
+	/// orbit get the same treatment for their orbit state (PEP100 patch 2), except that a recurring timeframe orbit
+	/// anchors at the earlier of today and the open Polaris cycle's day, and a timeframe's fixed <c>Z{…}</c> literal is
+	/// read on the timeframe calendar (the vault default) rather than as a Gregorian date.
 	/// </summary>
 	private async Task ResetChangedScheduleCursorsAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
@@ -89,7 +149,14 @@ public sealed class PlaintorchStatePolicyProcessor(
 			}
 		}
 
-		if (toReset.Count == 0)
+		// Timeframe orbits (PEP100 patch 2) follow the declarative reset policy: set or changed re-anchors, cleared
+		// removes the state. A calendar change never resets them, as it never resets a declarative's.
+		var timeframesToReset = context.ChangeTracker.Entries<Timeframe>()
+			.Where(entry => OrbitCursorNeedsReset(entry, entry.Entity.Orbit))
+			.Select(entry => entry.Entity)
+			.ToList();
+
+		if (toReset.Count == 0 && timeframesToReset.Count == 0)
 		{
 			return;
 		}
@@ -100,10 +167,67 @@ public sealed class PlaintorchStatePolicyProcessor(
 		{
 			// A one-off fixed-datetime orbit (a Z{…} literal) anchors its cursor at the literal's own date, so its
 			// single occurrence is caught by a seek whether it is in the past or the future (PEP111); a recurring
-			// schedule anchors today so it generates forward with no backfill.
-			var epoch = (orbit is not null ? OrbitDays.FixedLiteralDate(orbit) : null) ?? today;
-			await orbitService.ResetStateAsync(incentive, orbit, epoch, cancellationToken);
+			// schedule anchors today so it generates forward with no backfill. The literal is read as Gregorian, as a
+			// one-off fate is pinned to that calendar.
+			await orbitService.ResetStateAsync(incentive, orbit, ResetEpoch(orbit, today, OrbitDays.Gregorian), cancellationToken);
 		}
+
+		if (timeframesToReset.Count == 0)
+		{
+			return;
+		}
+
+		// A timeframe anchors no later than the open cycle's day, or an orbit set after midnight could never select the
+		// cycle begun the evening before (an orbit yields nothing before its epoch). Unlike a declarative, a timeframe
+		// state is only ever previewed and never hardens occurrences, so anchoring back costs no backfill.
+		var activeCycleDay = await ResolveActiveCycleDayAsync(context, cancellationToken);
+		var timeframeAnchor = activeCycleDay is { } cycleDay && cycleDay < today ? cycleDay : today;
+		// A timeframe's Z{…} literal names a day on the calendar its orbit is read on, not a Gregorian one.
+		var timeframeCalendar = orbitService.ResolveDefaultCalendar();
+		foreach (var timeframe in timeframesToReset)
+		{
+			await orbitService.ResetTimeframeStateAsync(
+				timeframe,
+				timeframe.Orbit,
+				ResetEpoch(timeframe.Orbit, timeframeAnchor, timeframeCalendar),
+				cancellationToken);
+		}
+	}
+
+	/// <summary>
+	/// The epoch a reset schedule cursor anchors at: a lone fixed-datetime literal's own date with its year, month and
+	/// day read on <paramref name="literalCalendar"/> (Gregorian for a declarative, the vault default calendar for a
+	/// timeframe), otherwise <paramref name="anchor"/> — today for a declarative, the earlier of today and the open
+	/// cycle's day for a timeframe. A literal naming a day the calendar cannot hold falls back to
+	/// <paramref name="anchor"/> as well, so an out-of-range literal never fails the save.
+	/// </summary>
+	private static DateOnly ResetEpoch(string? orbit, DateOnly anchor, IOrbitCalendar literalCalendar)
+		=> (orbit is not null ? OrbitDays.FixedLiteralDate(orbit, literalCalendar) : null) ?? anchor;
+
+	/// <summary>
+	/// Resolves the candidate day (<see cref="TimeframeCandidateService.CycleDay"/>) of the strictly active Polaris cycle
+	/// — begun and not ended — as this unit of work leaves it, or <see langword="null"/> when no cycle is open. A tracked
+	/// cycle's pending state wins over its stored row.
+	/// </summary>
+	private static async Task<DateOnly?> ResolveActiveCycleDayAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var trackedCycles = context.ChangeTracker.Entries<PolarisCycle>().ToList();
+		var trackedActive = trackedCycles
+			.Where(entry => entry.State != EntityState.Deleted && IsActivePolaris(entry.Entity))
+			.Select(entry => entry.Entity)
+			.FirstOrDefault();
+		if (trackedActive is not null)
+		{
+			return TimeframeCandidateService.CycleDay(trackedActive);
+		}
+
+		var trackedIds = trackedCycles.Select(entry => entry.Entity.Id).ToList();
+		var storedActive = await context.PolarisCycles
+			.AsNoTracking()
+			.Where(cycle => cycle.StartTime != null && cycle.EndTime == null && !trackedIds.Contains(cycle.Id))
+			.OrderByDescending(cycle => cycle.Id)
+			.FirstOrDefaultAsync(cancellationToken);
+		return storedActive is null ? null : TimeframeCandidateService.CycleDay(storedActive);
 	}
 
 	/// <summary>
@@ -158,6 +282,12 @@ public sealed class PlaintorchStatePolicyProcessor(
 		};
 	}
 
+	/// <summary>
+	/// Deep-interception enforcement (Strategy 1 / PEP101): a reference to an occurrence must harden it. Every
+	/// dependency added in this unit of work — from any write pathway (API, CLI, scheduler, markdown watcher) —
+	/// has each of its eventive endpoints hardened into the same save, so the reconciler resolves a real row
+	/// rather than reading an absent projection as unsatisfied.
+	/// </summary>
 	private async Task HardenReferencedOccurrencesAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
 		var addedDependencies = context.ChangeTracker.Entries<Dependency>()

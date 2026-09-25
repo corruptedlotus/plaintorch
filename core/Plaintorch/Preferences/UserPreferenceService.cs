@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Pleiades.Plaintorch.Materialization;
 using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch.Preferences;
@@ -12,14 +13,22 @@ namespace Pleiades.Plaintorch.Preferences;
 /// Writes are write-through — the database row and the in-memory <see cref="UserPreferenceStore"/> (the Options
 /// read path) are updated together, so a change takes effect immediately and survives restarts. Scoped, because
 /// it holds the vault database context; the store it writes through is the singleton.
+/// <para>
+/// Every store write that can change <see cref="PreferenceKeys.DefaultCalendar"/> also invalidates the
+/// <see cref="TimeframeCandidateCache"/> once the new value is visible (PEP100 patch 2). The save interceptor
+/// invalidates too, but it fires before the store is updated, so a recompute racing that gap could otherwise cache
+/// candidates read on the old calendar with nothing left to drop them.
+/// </para>
 /// </remarks>
-public sealed class UserPreferenceService(PlainfraContext context, UserPreferenceStore store)
+public sealed class UserPreferenceService(PlainfraContext context, UserPreferenceStore store, TimeframeCandidateCache timeframeCandidateCache)
 {
 	/// <summary>Loads every stored override for the active vault into the store (called on vault activation).</summary>
 	public async Task LoadAsync(CancellationToken cancellationToken = default)
 	{
 		var rows = await context.UserPreferences.AsNoTracking().ToListAsync(cancellationToken);
 		store.Load(rows.Select(row => new KeyValuePair<string, string>(row.Key, row.Value)));
+		// A wholesale reload may swap the default calendar.
+		timeframeCandidateCache.Invalidate();
 	}
 
 	/// <summary>
@@ -62,6 +71,7 @@ public sealed class UserPreferenceService(PlainfraContext context, UserPreferenc
 
 		await context.SaveChangesAsync(cancellationToken);
 		store.Set(key, rawValue);
+		InvalidateCandidatesFor(key);
 	}
 
 	/// <summary>Clears a preference back to its default (delete), writing through to the store.</summary>
@@ -76,6 +86,19 @@ public sealed class UserPreferenceService(PlainfraContext context, UserPreferenc
 		}
 
 		store.Remove(key);
+		InvalidateCandidatesFor(key);
 		return existing is not null;
+	}
+
+	/// <summary>
+	/// Drops the cached timeframe candidates after a store write to the default calendar, which decides how timeframe
+	/// orbits read (PEP100 patch 2). Other keys leave the candidates alone.
+	/// </summary>
+	private void InvalidateCandidatesFor(string key)
+	{
+		if (string.Equals(key, PreferenceKeys.DefaultCalendar, StringComparison.Ordinal))
+		{
+			timeframeCandidateCache.Invalidate();
+		}
 	}
 }
