@@ -6,7 +6,8 @@ and one build; the flavour is baked in at build time.
 
 ## What it does
 
-- **Standalone flavour** spawns the published core beside the app (`resources/core`) in spawn mode
+- **Standalone flavour** spawns the published core beside the app (`resources/core`; a development run uses the core
+  project's own build, see [Which core the shell spawns](#which-core-the-shell-spawns)) in spawn mode
   (`plaintorch serve --spawn --profile <root>`), supervises it, restarts it after an unexpected exit, and stops it
   gracefully on quit by closing its stdin.
 - **Client flavour** ships no core. It probes the profile's endpoint (the named pipe on Windows, the unix socket
@@ -56,9 +57,25 @@ npm run dev:client     # client flavour, watch mode
 npm start              # run the built shell with Electron
 ```
 
-The dev shell finds the core at `../core/bin/Debug/net10.0` (build the core first) or wherever
-`PLAINTORCH_CORE_PATH` points. `npm run typecheck` runs `tsc` (the package's own pre-existing errors show up there
-too, since the renderer bundles it from source).
+Build the core first (`dotnet build core`); the dev shell runs that build (see below). `npm run typecheck` runs `tsc`
+(the package's own pre-existing errors show up there too, since the renderer bundles it from source).
+
+### Which core the shell spawns
+
+The standalone flavour resolves the core afresh on every start (`src/main/core-location.ts`); the first match wins:
+
+1. `PLAINTORCH_CORE_PATH`, whenever it is set, packaged or not.
+2. A packaged app: the core it ships, `resources/core`, and nothing else.
+3. A development (unpackaged) run: the core project's own build, `../core/bin/Debug/net10.0` and then
+   `../core/bin/Release/net10.0`, so a fresh `dotnet build` is what runs.
+4. Only when there is no build at all: `core-dist`, the installer's publish (`installer/build.mjs`). It is
+   git-ignored, outlives the installer build, and stays pinned to that build's commit, so against a vault a newer core
+   has migrated it fails with errors like `SQLite Error 1: 'no such column: …'`. Choosing it always warns.
+
+The shell logs its pick on the console: the origin, the path and the version (`<version>+<commit>`, the assembly's
+`ProductVersion`), as `[core] Using the Debug build: … (1.0.0+33ac9b7…)`. A `[core] WARNING: …` line follows when it
+fell back to `core-dist`, or when a candidate it passed over has a newer `plaintorch.dll` than the one it chose;
+rebuild the chosen one, or point `PLAINTORCH_CORE_PATH` at the newer one.
 
 ## Window frames
 
@@ -102,7 +119,7 @@ are committed; re-run it after changing a mark.
 ## Layout
 
 - `src/main`: the Electron main process. `shell.ts` is the single source of truth; `core-process.ts` supervises the
-  spawned core; `core-transport.ts` is HTTP over the pipe/socket (the SDK's socket transport); `core-streams.ts`
+  spawned core and `core-location.ts` picks which core that is; `core-transport.ts` is HTTP over the pipe/socket (the SDK's socket transport); `core-streams.ts`
   relays the change feed to the windows; `media-protocol.ts` serves vault files; `request-guard.ts` refuses hosted
   `file:` requests (UNC/SMB); `window-frame.ts` makes the custom frames work; `windows.ts`, `tray.ts`,
   `autostart.ts`, `updater.ts`, `config.ts`, `profile.ts` do what their names say.

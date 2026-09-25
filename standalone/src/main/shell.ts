@@ -57,6 +57,7 @@ export class Shell extends EventEmitter<{ status: [ShellStatus], log: [string] }
 				this.publish()
 			})
 			this.core.on("noise", line => this.emit("log", line))
+			this.core.on("log", line => this.emit("log", line))
 		}
 	}
 

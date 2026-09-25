@@ -9,7 +9,9 @@ node installer/build.mjs --flavor client                # no core inside
 ```
 
 Outputs land in `bin/installer/<flavor>/`. The standalone flavour first runs `dotnet publish` (self-contained, for the
-target runtime identifier) into `standalone/core-dist`, which electron-builder packs as `resources/core`.
+target runtime identifier) into `standalone/core-dist`, which electron-builder packs as `resources/core`. The folder
+is git-ignored and stays after the build; a development shell runs it only when the core has no build of its own, and
+warns when it does (see `standalone/README.md`).
 
 ## Updates
 
