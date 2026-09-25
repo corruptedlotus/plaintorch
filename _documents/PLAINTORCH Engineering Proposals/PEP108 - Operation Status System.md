@@ -121,12 +121,12 @@ showed a sleeping watcher as `issues`. It is regraded by *what the issue means* 
 | `discovery-failed` / `sync-failed` (reconcile) | critical | a file could not be inspected / a change could not be applied | retried per path, 2 s → 60 s |
 | `permission-denied` (reconcile) | critical | the file may not be read or written | retried per path |
 | `root-init-failed` (root) | critical | one root is not observed | the other roots carry on |
-| `root-error` (root) | critical | an observer errored (events may be lost) | re-sweeps the vault, then resolves |
+| `root-error` (root) | critical | an observer errored (events may be lost) | an overflow re-sweeps the vault, then resolves; any other error killed the observer, so the span restarts with a sweep and fresh observers (backing off if it keeps dying) |
 | `markdown-invalid` / `puck-violation` / `policy-violation` (reconcile) | error, or **warning** when the watcher enforced it (rewrote or purged the file) | invalid content left in the user's file | stands until the user's edit re-inspects the file (never retried on a timer) |
 | `foreign-file` (reconcile) | error | an identity the vault does not recognise, left in place | stands until the file is gone or managed, or is dismissed |
 | `duplicate-identity` (identity) | error | two files assert one identity | stands until one file asserts it |
 | `file-in-use` (reconcile) | warning | locked by another process | retried per path until it frees up |
-| `relocation-failed` (relocation) | warning | the move fast path threw | the file is inspected in place instead |
+| `relocation-failed` (relocation) | warning | the move fast path threw | logged only: both paths are re-inspected the plain way, which reports what stands |
 | unknown reason | critical | unclassified means technical | — |
 
 Alongside it:

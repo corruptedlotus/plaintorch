@@ -120,4 +120,28 @@ public sealed class PlaintorchHostState
 
 		Changed?.Invoke(snapshot);
 	}
+
+	/// <summary>
+	/// Sets the message of an active, served vault — the watcher going on standby, and live again — and ends any sweep in
+	/// progress. Unlike <see cref="EndSweep"/> it applies after the startup sweep too, so a watcher that recovers on a
+	/// later retry says so. A no-op outside <see cref="PlaintorchHostPhase.Active"/> (the coordinator owns the other
+	/// phases' messages) or when nothing would change.
+	/// </summary>
+	/// <param name="message">The message to show, for example "Serving vault.".</param>
+	public void SetServingMessage(string message)
+	{
+		PlaintorchHostStatus snapshot;
+		lock (_gate)
+		{
+			if (_current.Phase != PlaintorchHostPhase.Active || (!_current.Sweeping && string.Equals(_current.Message, message, StringComparison.Ordinal)))
+			{
+				return;
+			}
+
+			snapshot = _current with { Sweeping = false, Message = message, At = DateTimeOffset.UtcNow };
+			_current = snapshot;
+		}
+
+		Changed?.Invoke(snapshot);
+	}
 }

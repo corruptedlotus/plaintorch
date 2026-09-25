@@ -60,8 +60,9 @@ export interface HealthStatus {
  * - `error`: invalid or illegal content the user must resolve; left unresolved, an entity may not sync or may corrupt.
  * - `critical`: a technical failure keeps the watcher from part of its job (permission denied, a failed sync, a root not
  *   watched).
- * - `fatal`: the watcher cannot run or do its job at all (the vault inaccessible, the startup sweep failed, a crash); it
- *   sleeps and retries, and health reads `standby`. A fatal issue cannot be dismissed.
+ * - `fatal`: the watcher cannot run or do its job at all, and health reads `standby`. An unreachable vault, a failed
+ *   sweep or unresolvable roots put it to sleep and it retries on its own; a crashed session waits for the next vault
+ *   activation (each issue's message says which). A fatal issue cannot be dismissed.
  */
 export type WatcherSeverity = "info" | "warning" | "error" | "critical" | "fatal"
 

@@ -491,17 +491,48 @@ public sealed class WatcherStatusTests : VaultTestBase
 	}
 
 	[Fact]
-	public void A_failed_relocation_fast_path_is_only_a_warning()
+	public void A_relocation_carries_its_content_statuses_to_the_new_path()
 	{
+		// The relocation fast path applies a move without a plain inspection of either path: the old path's flags must
+		// resolve (the file is gone) and the moved file's concerns must stand at its new path, as a sweep would report.
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
-		watcher.ReportRelocationFailed(Vault.AbsolutePath("Objectives/Moved.md"), "boom");
-		var status = Assert.Single(registry.GetActiveStatuses());
-		Assert.Equal(WatcherOperations.RelocationFailed, status.ReasonCode);
-		Assert.Equal(OperationSeverity.Warning, status.Severity);
+		var before = Candidate(
+			"Objectives/Plan.md",
+			VaultSyncAction.Conflict,
+			"Invalid candidate is held in conflict.",
+			VaultSyncConcern.MarkdownInvalid,
+			issues: [new MarkdownValidationIssue("status", "Unknown enum value.")]);
+		watcher.ReportInspectCandidate(before);
+		watcher.ReportSyncSucceeded(before);
+		Assert.Single(registry.GetActiveStatuses());
 
-		watcher.ReportRelocationSucceeded(Vault.AbsolutePath("Objectives/Moved.md"));
+		var after = Candidate(
+			"Objectives/Plan v2.md",
+			VaultSyncAction.Conflict,
+			"Invalid candidate is held in conflict.",
+			VaultSyncConcern.MarkdownInvalid,
+			issues: [new MarkdownValidationIssue("status", "Unknown enum value.")]);
+		watcher.ReportRelocated(Vault.AbsolutePath("Objectives/Plan.md"), after);
+
+		var status = Assert.Single(registry.GetActiveStatuses());
+		Assert.Equal(WatcherOperations.MarkdownInvalid, status.ReasonCode);
+		Assert.Equal(Vault.AbsolutePath("Objectives/Plan v2.md"), status.ScopeKey);
+		Assert.Equal(OperationSeverity.Warning, WatcherOperations.Describe(WatcherOperations.RelocationFailed).Severity);
+	}
+
+	[Fact]
+	public void A_fresh_observer_resolves_its_roots_error()
+	{
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+		var root = Vault.AbsolutePath("Objectives");
+
+		watcher.ReportRootError(root, "The network name is no longer available.");
+		Assert.Single(registry.GetActiveStatuses());
+
+		watcher.ReportRootInitialized(root);
 		Assert.Empty(registry.GetActiveStatuses());
 	}
 

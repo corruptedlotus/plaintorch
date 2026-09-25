@@ -25,20 +25,29 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 	public void ReportDrainTick(bool succeeded, string? detail = null)
 		=> Report(WatcherOperations.DrainTick, WatcherOperations.GlobalScope, Check(WatcherOperations.TickFailed, failed: !succeeded, detail));
 
-	/// <summary>Reports that a filesystem root observer initialized successfully.</summary>
+	/// <summary>
+	/// Reports that a filesystem root observer initialized successfully. A fresh observer also resolves any error the
+	/// root's previous observer raised: that observer is gone, and the span that attached this one began with a sweep.
+	/// </summary>
 	public void ReportRootInitialized(string root)
-		=> Report(WatcherOperations.Root, root, Check(WatcherOperations.RootInitFailed, failed: false));
+		=> Report(WatcherOperations.Root, root, Pass(WatcherOperations.RootInitFailed), Pass(WatcherOperations.RootError));
 
 	/// <summary>Reports that a filesystem root observer failed to initialize.</summary>
 	public void ReportRootInitializationFailed(string root, string? detail)
 		=> Report(WatcherOperations.Root, root, Check(WatcherOperations.RootInitFailed, failed: true, detail, files: [root], fingerprint: root));
 
 	/// <summary>
-	/// Reports a runtime error raised by a filesystem root observer — typically an overflowing event buffer, so changes
-	/// under the root may have been missed. <see cref="ReportRootRecovered"/> resolves it once the watcher has re-swept.
+	/// Reports a runtime error raised by a filesystem root observer, so changes under the root may have been missed. An
+	/// overflowing event buffer leaves the observer running and <see cref="ReportRootRecovered"/> resolves it once the
+	/// watcher has re-swept; any other error kills the observer, and a fresh one resolves it
+	/// (<see cref="ReportRootInitialized"/>).
 	/// </summary>
 	public void ReportRootError(string root, string? detail)
 		=> Report(WatcherOperations.Root, root, Check(WatcherOperations.RootError, failed: true, detail, files: [root], fingerprint: root));
+
+	/// <summary>Reports that a root does not exist: with nothing to observe, any flag against it resolves.</summary>
+	public void ReportRootAbsent(string root)
+		=> Report(WatcherOperations.Root, root, Pass(WatcherOperations.RootInitFailed), Pass(WatcherOperations.RootError));
 
 	/// <summary>Reports that a root whose observer errored has been re-swept, resolving its root-error flag.</summary>
 	public void ReportRootRecovered(string root)
@@ -56,11 +65,19 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		=> Report(WatcherOperations.Relocation, WatcherOperations.GlobalScope, Check(WatcherOperations.RelocationFailed, failed: false));
 
 	/// <summary>
-	/// Reports that the relocation fast path threw for a moved or renamed file. It is only a warning: the file is
-	/// re-queued for a plain inspection, which reaches the same result the slow way.
+	/// Reports a relocation the fast path applied: the old path is gone, so every reconcile flag it carried resolves, and
+	/// the moved candidate is reported at its new path — its content concerns move with the file, exactly as a plain
+	/// inspection of the new path would report them.
 	/// </summary>
-	public void ReportRelocationFailed(string newPath, string? detail)
-		=> Report(WatcherOperations.Relocation, WatcherOperations.GlobalScope, Check(WatcherOperations.RelocationFailed, failed: true, detail, files: [newPath], fingerprint: newPath));
+	public void ReportRelocated(string oldPath, VaultSyncCandidate candidate)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(oldPath);
+		ArgumentNullException.ThrowIfNull(candidate);
+		ReportReconcileHealthy(oldPath);
+		ReportInspectCandidate(candidate);
+		ReportSyncSucceeded(candidate);
+		ReportRelocationSucceeded(candidate.AbsolutePath);
+	}
 
 	/// <summary>
 	/// Reports a fatal, watcher-halting failure: a vault session that fell through every inner guard. The watcher stays
