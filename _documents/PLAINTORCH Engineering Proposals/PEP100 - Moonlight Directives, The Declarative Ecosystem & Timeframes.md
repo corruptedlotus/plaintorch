@@ -222,3 +222,31 @@ The executive comes back carrying its resolved affinity, so the creation row no 
 - **Serving the availability navigation.** A directive is served with its availability id only, so a client resolves the timeframe from the global listing.
 - **Route-level tests.** The new wire shapes are pinned against the host's own serializer settings, but the two new routes are tested only through the services. Testing them over HTTP waits for an in-process host harness.
 - **Abstract (clockless) timeframes** and **richer reflective UI** are still held, as in Patch100.1.
+## Patch100.3 - The Timeframe Flare
+Patch100.2 made the core the judge of which timeframes are active, but only the heading chip showed it. This patch shows it on the work itself. While a timeframe is active, every executive and reflective affined to it wears the **flare**: a glass glow down the row's left side in the card's flare accent (the Polaris teal in the briefing). It is still presentation only. The flare points at the work whose timeframe is now; it schedules nothing.
+
+### Which rows flare
+An executive or reflective row flares while its affinity timeframe is among the active timeframes the core reports. It follows that answer exactly:
+- a row with no affinity never flares;
+- a done executive or reflective never flares, since there is nothing left to point at;
+- a row affined to a timeframe hidden behind an active exclusive one does not flare, because that timeframe is not reported as active.
+
+The reflective rows flare, but the Daily Reflectives group that holds them does not. The group is collapsed by default, so an active reflective shows its flare once the group is opened.
+
+Only the active cycle's card draws these rows, and only a strictly active cycle has active timeframes, so no past cycle's row can flare.
+
+### One listing, shared
+The active timeframes become a derived record in the SDK, `core.repos.activeTimeframes`, beside the agenda. Every reader shares it through one controller, `ActiveTimeframesRef`: the heading chips, every executive row and every reflective row. A chip and a glowing row therefore never disagree. Like every record, it is revalidated while observed whenever the client hears of a change, whether its own write or one announced on the change feed. Editing a window, toggling exclusivity or beginning a cycle updates the flare at once. The passing of time announces nothing, so each holder also asks again on the shared 60-second tick. The repository coalesces concurrent reads, so a card full of rows still makes one request a minute. A window edge can therefore still show up to a minute late, as the chip already did.
+
+### The glow
+The flare belongs to the shared item styles (`itemLayoutStyles`), so any list row can wear it by carrying the `flare` attribute. An entity row and an occurrence row each say when through a `flaring` hook, which is reflected to that attribute on each render; the executive row and the reflective row override it. It is built in layers:
+- **Body**, drawn as the row's own background layers so it sits beneath the content without a stacking context: a bloom spreading in from the left edge, a bleed hugging that edge, a lit strip down the edge that fades toward the rounded corners, and a faint specular sheen in the top-left corner.
+- **Spill**: a soft light past the left edge that slowly breathes.
+- **Rim**: a hairline lit from the left, with a glint that runs along it once as the flare ignites.
+
+Every layer scales with `--flare-intensity`, a registered, animatable percentage. The flare ignites and fades over about a second instead of snapping. Motion is dropped under `prefers-reduced-motion`.
+
+That registration had never taken effect. The `@property` rule declaring `--flare-intensity` omitted the required `inherits` descriptor, so every host's stylesheet silently dropped it and the property stayed unregistered. The rule now names `inherits: true`. Inheritance matters here, because the spill and rim read the intensity their row transitions.
+
+### Held over
+- **Push instead of poll**, as in Patch100.2: a window edge still reaches the flare on the next minute tick.

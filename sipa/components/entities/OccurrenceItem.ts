@@ -1,4 +1,4 @@
-import { Component, component, css, html, HTMLTemplateResult, nothing, property } from "@a11d/lit"
+import { Component, component, css, html, HTMLTemplateResult, nothing, property, type PropertyValues } from "@a11d/lit"
 import type { Directive } from "@pleiades/sdk"
 import { ContextMenuController, type ContextMenuSpec } from ".."
 import { itemLayoutStyles } from "./itemStyles"
@@ -19,6 +19,13 @@ export class OccurrenceItem extends Component {
 	get disabled() { return false }
 
 	/**
+	 * Whether the row wears the flare — the side glass glow of {@link itemLayoutStyles} (PEP100 patch 3), as on an
+	 * entity row. Derived rather than set, so it is reflected to the host's `flare` attribute once each render; none
+	 * by default.
+	 */
+	protected get flaring() { return false }
+
+	/**
 	 * Raises the occurrence's context menu on right-click. As a controller it needs no template handler; it
 	 * withholds the menu (passing the event through) whenever {@link contextMenuSpec} returns nothing. Subclasses
 	 * override the spec to offer their own actions.
@@ -36,6 +43,11 @@ export class OccurrenceItem extends Component {
 				font-size: .9em;
 			}
 		`
+	}
+
+	protected override updated(changed: PropertyValues) {
+		super.updated?.(changed)
+		this.toggleAttribute('flare', this.flaring)
 	}
 
 	protected override get template() {

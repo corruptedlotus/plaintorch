@@ -1,4 +1,4 @@
-import { component, Component, css, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
+import { component, Component, css, html, HTMLTemplateResult, nothing, property, type PropertyValues } from '@a11d/lit'
 import { ContextMenuController, EntityWatch, type ContextMenuSpec } from '..'
 import { entityContextMenu, openEntityEditor } from './entityMenu'
 import { itemLayoutStyles } from './itemStyles'
@@ -17,6 +17,13 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 	menu?: ContextMenuSpec
 
 	get disabled() { return false }
+
+	/**
+	 * Whether the item wears the flare — the side glass glow of {@link itemLayoutStyles} (PEP100 patch 3). Derived
+	 * rather than set, so it is reflected to the host's `flare` attribute once each render; none by default, and a
+	 * subclass says when something about its row is live right now.
+	 */
+	protected get flaring() { return false }
 
 	/**
 	 * The entity arrives as a property from whichever aggregate rendered this item, and that instance is
@@ -87,6 +94,11 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 				}
 			}
 		`
+	}
+
+	protected override updated(changed: PropertyValues) {
+		super.updated?.(changed)
+		this.toggleAttribute('flare', this.flaring)
 	}
 
 	protected override get template() {

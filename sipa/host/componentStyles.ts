@@ -5,10 +5,15 @@ import { css, type CSSResult } from '@a11d/lit'
  * `--flare-intensity` (the item flare) and the Polaris / Onrush accent tokens scoped to `.plaintorch-root`. Every host
  * installs them once with {@link adoptComponentStyles}, so they live beside the components rather than in one host's
  * stylesheet.
+ *
+ * The registration is what lets the flare ignite and fade: a registered `<percentage>` interpolates, an unregistered
+ * custom property only snaps. It must name `inherits` — a rule without it is invalid and silently dropped — and it
+ * inherits so an item's pseudo-elements read the intensity their host transitions.
  */
 export const componentStyles: CSSResult = css`
 	@property --flare-intensity {
 		syntax: '<percentage>';
+		inherits: true;
 		initial-value: 0%;
 	}
 

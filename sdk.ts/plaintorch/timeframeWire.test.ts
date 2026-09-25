@@ -112,6 +112,44 @@ describe("active timeframes (PEP100 patch 2)", () => {
 	})
 })
 
+describe("active timeframes record (PEP100 patch 3)", () => {
+	const listing = JSON.stringify([{ id: 7, title: "Morning", exclusive: false }])
+	const activeReads = (requests: WireRequest[]) => requests.filter(request => request.path === "/api/timeframes/active").length
+
+	it("resolves the core's active listing", async () => {
+		const { client, requests } = recordingClient(listing)
+
+		const timeframes = await client.repos.activeTimeframes.get()
+
+		expect(timeframes?.map(timeframe => timeframe.id)).toEqual([7])
+		expect(activeReads(requests)).toBe(1)
+	})
+
+	it("coalesces concurrent re-reads into one request", async () => {
+		const { client, requests } = recordingClient(listing)
+
+		await Promise.all(Array.from({ length: 12 }, () => client.repos.activeTimeframes.revalidateIfObserved()))
+		expect(activeReads(requests)).toBe(0)
+
+		const unsubscribe = client.repos.activeTimeframes.subscribe("", () => { })
+		await Promise.all(Array.from({ length: 12 }, () => client.repos.activeTimeframes.revalidateIfObserved()))
+		unsubscribe()
+
+		expect(activeReads(requests)).toBe(1)
+	})
+
+	it("is revalidated with the other observed records", async () => {
+		const { client, requests } = recordingClient(listing)
+		const unsubscribe = client.repos.activeTimeframes.subscribe("", () => { })
+
+		await client.repos.revalidateObservedRecords()
+		unsubscribe()
+		await client.repos.revalidateObservedRecords()
+
+		expect(activeReads(requests)).toBe(1)
+	})
+})
+
 describe("directive availability (PEP100 patch 2)", () => {
 	it("sets an availability by timeframe id", async () => {
 		const { client, requests } = recordingClient()

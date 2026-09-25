@@ -1,7 +1,7 @@
 import { component, css, html, property } from "@a11d/lit"
 import { Executive, ExecutiveIncentive, isDecreeIncentive } from "@pleiades/sdk"
 import { EntityItem } from "./EntityItem"
-import { ExecutiveModal, tooltip, type ContextMenuSpec } from ".."
+import { ActiveTimeframesRef, ExecutiveModal, tooltip, type ContextMenuSpec } from ".."
 import { polarisActivityMenu } from "./polarisActivity"
 
 /**
@@ -9,7 +9,8 @@ import { polarisActivityMenu } from "./polarisActivity"
  * DecreeItemAttentive. Since PEP111 an executive backs an objective **or** a decree, so this one component
  * draws both: the incentive's directive glyph and college chrome, an allocation notch, and a timeframe-affinity
  * chip where a bare incentive would show its Celestron. A decree-backed executive carries a small decree glyph
- * so the two kinds still read apart.
+ * so the two kinds still read apart. While its affinity timeframe is active the row wears the item flare, a side
+ * glass glow in the flare accent (PEP100 patch 3).
  *
  * A committed change is announced upward with a bubbling `updateRequest` event so the hosting cycle reconciles.
  */
@@ -23,8 +24,22 @@ export class IncentiveItemExecutive extends EntityItem<ExecutiveIncentive> {
 		}
 	}) executive?: Executive
 
+	/** The timeframes active right now — the one listing the active-timeframe chips read too. */
+	private readonly activeTimeframes = new ActiveTimeframesRef(this)
+
 	override get disabled() {
 		return !!this.executive?.executed
+	}
+
+	/**
+	 * An open executive flares while its affinity timeframe is active (PEP100 patch 3): the row is where its work
+	 * belongs right now. A done one never does — there is nothing left to point at.
+	 */
+	protected override get flaring() {
+		const executive = this.executive
+		return !!executive
+			&& !executive.executed
+			&& this.activeTimeframes.isActive(executive.affinityTimeframeId ?? executive.affinityTimeframe?.id)
 	}
 
 	static override get styles() {
