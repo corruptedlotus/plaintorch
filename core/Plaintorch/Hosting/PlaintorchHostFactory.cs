@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Pleiades.Plaintorch.Api.Contracts;
 
 namespace Pleiades.Plaintorch.Hosting;
@@ -26,6 +27,11 @@ public static class PlaintorchHostFactory
 	/// <summary>
 	/// Composes and builds a host for the given options. The returned application is configured but not started.
 	/// </summary>
+	/// <remarks>
+	/// The content root is the directory of the core's binaries, not the working directory, so <c>appsettings.json</c>
+	/// (and with it the log filters) is found however the core was launched: a desktop shell, a service manager, or a
+	/// console in another directory.
+	/// </remarks>
 	/// <param name="options">The launch options.</param>
 	/// <returns>The built application.</returns>
 	public static WebApplication Create(PlaintorchHostOptions options)
@@ -34,7 +40,11 @@ public static class PlaintorchHostFactory
 		var userLayout = options.UserLayout;
 		userLayout.EnsureExists();
 
-		var builder = WebApplication.CreateBuilder(options.Arguments);
+		var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+		{
+			Args = options.Arguments,
+			ContentRootPath = AppContext.BaseDirectory,
+		});
 		builder.Host.UseSystemd();
 		ConfigureLogging(builder, options);
 		ConfigureJson(builder.Services);
@@ -73,14 +83,26 @@ public static class PlaintorchHostFactory
 		switch (options.LaunchMode)
 		{
 			case PlaintorchLaunchMode.Daemon:
-				builder.Logging.AddProvider(new PlaintorchFileLoggerProvider(options.UserLayout.LogsRootPath));
+				AddFileLogging(builder.Services, options.UserLayout);
 				break;
 
 			case PlaintorchLaunchMode.Spawn:
 				builder.Logging.ClearProviders();
-				builder.Logging.AddProvider(new PlaintorchFileLoggerProvider(options.UserLayout.LogsRootPath));
+				AddFileLogging(builder.Services, options.UserLayout);
 				break;
 		}
+	}
+
+	/// <summary>
+	/// Registers the daily file sink through a factory, so the container owns it and disposes it when the host is
+	/// disposed, which drains and flushes the queued tail. An instance registration (<c>AddProvider</c>) is never
+	/// disposed by the container. The <c>Logging:PlaintorchFile</c> filters still apply: the logging framework matches
+	/// them against the provider's type and its <see cref="ProviderAliasAttribute"/>, not against how it was registered.
+	/// </summary>
+	private static void AddFileLogging(IServiceCollection services, PlaintorchUserLayout userLayout)
+	{
+		var directory = userLayout.LogsRootPath;
+		services.TryAddEnumerable(ServiceDescriptor.Singleton<ILoggerProvider, PlaintorchFileLoggerProvider>(_ => new PlaintorchFileLoggerProvider(directory)));
 	}
 
 	private static void ConfigureJson(IServiceCollection services)
