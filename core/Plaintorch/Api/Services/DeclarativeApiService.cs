@@ -175,7 +175,7 @@ public sealed class DeclarativeApiService(
 			throw new InvalidOperationException("Fate cannot be deleted while other incentives still name it as their parent.");
 		}
 
-		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(fate, "api-delete", Environment.UserName, cancellationToken);
+		var graveyardEntry = temporalDataService.StageEntityArchive(fate, "api-delete", Environment.UserName);
 		context.Fates.Remove(fate);
 		await writeQueue.RecordRemoveAsync(fate, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
@@ -311,7 +311,7 @@ public sealed class DeclarativeApiService(
 		var decree = await context.Decrees.FirstOrDefaultAsync(item => item.Id == decreeId, cancellationToken)
 			?? throw new InvalidOperationException($"Decree '{decreeId}' was not found.");
 
-		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(decree, "api-delete", Environment.UserName, cancellationToken);
+		var graveyardEntry = temporalDataService.StageEntityArchive(decree, "api-delete", Environment.UserName);
 		context.Decrees.Remove(decree);
 		await writeQueue.RecordRemoveAsync(decree, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);

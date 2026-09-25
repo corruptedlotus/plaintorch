@@ -18,9 +18,17 @@ public sealed class VaultTemporalDataService(
 	};
 
 	/// <summary>
-	/// Archives a deleted entity into the database graveyard.
+	/// Stages a deleted entity's snapshot into the database graveyard <em>without saving it</em>. The entry is committed
+	/// by the caller's own <c>SaveChanges</c> — the same one that removes the entity — so the archive and the removal
+	/// land in one transaction: a removal the database refuses leaves no graveyard entry behind. Archiving used to save
+	/// on its own first, so every refused delete still wrote an entry, and a delete retried against a standing refusal
+	/// (the watcher re-deleting an objective that still had executive records) wrote one per attempt.
 	/// </summary>
-	public async Task<DatabaseGraveyardEntry> ArchiveEntityAsync(object entity, string reason, string? archivedBy = null, CancellationToken cancellationToken = default)
+	/// <param name="entity">The entity about to be removed; its serialized form is the graveyard payload.</param>
+	/// <param name="reason">Why the entity is being removed (for example <c>api-delete</c>, <c>watcher-file-delete</c>).</param>
+	/// <param name="archivedBy">Who removed it, when known.</param>
+	/// <returns>The staged entry. Its key, type, id, and title are set; its database id is assigned on save.</returns>
+	public DatabaseGraveyardEntry StageEntityArchive(object entity, string reason, string? archivedBy = null)
 	{
 		ArgumentNullException.ThrowIfNull(entity);
 		ArgumentException.ThrowIfNullOrWhiteSpace(reason);
@@ -39,7 +47,6 @@ public sealed class VaultTemporalDataService(
 		};
 
 		context.DatabaseGraveyardEntries.Add(entry);
-		await context.SaveChangesAsync(cancellationToken);
 		return entry;
 	}
 

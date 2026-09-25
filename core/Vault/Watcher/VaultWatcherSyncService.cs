@@ -32,6 +32,11 @@ public sealed class VaultWatcherSyncService(
 	/// <param name="candidate">The discovered candidate to reconcile.</param>
 	/// <param name="origin">The source initiating the reconciliation.</param>
 	/// <param name="cancellationToken">A token used to cancel reconciliation.</param>
+	/// <remarks>
+	/// A candidate that throws leaves nothing staged on the scope's context, so a failure is contained to its own
+	/// candidate even when many are reconciled in one scope. A file-driven delete that other rows still block throws
+	/// <see cref="VaultEntityDeleteBlockedException"/> having written nothing.
+	/// </remarks>
 	public async Task ExecuteAsync(VaultSyncCandidate candidate, string origin, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(candidate);
@@ -41,6 +46,22 @@ public sealed class VaultWatcherSyncService(
 		// apply what comes out of this even over an edit it has in flight.
 		using var critical = PlaintorchChangeOrigin.Critical();
 
+		try
+		{
+			await ExecuteCoreAsync(candidate, origin, cancellationToken);
+		}
+		catch
+		{
+			// A candidate that fails leaves nothing staged behind. The startup sweep reconciles every candidate in one
+			// scope, so a change the database refused would otherwise stay tracked and be re-flushed — and fail again —
+			// by the next candidate's save, failing the rest of the sweep with it.
+			context.ChangeTracker.Clear();
+			throw;
+		}
+	}
+
+	private async Task ExecuteCoreAsync(VaultSyncCandidate candidate, string origin, CancellationToken cancellationToken)
+	{
 		switch (candidate.SuggestedAction)
 		{
 			case VaultSyncAction.CreateFromFile:
@@ -637,7 +658,38 @@ public sealed class VaultWatcherSyncService(
 			return;
 		}
 
-		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(existing, "watcher-file-delete", Environment.UserName, cancellationToken);
+		// Rows that still reference the entity through a restricting relationship (an objective's executive records, a
+		// directive's children) make the database refuse the removal — and the API refuses the same deletes. Attempting it
+		// anyway failed on every retry, so the blocked delete is reported as such and nothing is written.
+		var blockers = await entityGateway.FindDeleteBlockersAsync(existing, cancellationToken);
+		if (blockers.Count > 0)
+		{
+			logger.LogWarning(
+				"Watcher did not delete {EntityType} '{EntityId}' after file '{Path}' was removed: it is still referenced by {Blockers}.",
+				candidate.Model.EntityName,
+				candidate.PathId,
+				candidate.VaultRelativePath,
+				string.Join(", ", blockers.Select(blocker => $"{blocker.Count} {blocker.DependentEntity}.{blocker.ForeignKeyProperty}")));
+
+			await auditLogService.WriteAsync(
+				"sync",
+				"delete-blocked",
+				subjectType: candidate.Model.EntityName,
+				subjectId: candidate.PathId,
+				subjectTitle: candidate.PathTitle,
+				details: new { origin, candidate.VaultRelativePath, blockers },
+				cancellationToken: cancellationToken);
+
+			throw new VaultEntityDeleteBlockedException(
+				candidate.Model.EntityName,
+				candidate.PathId,
+				(existing as IPuckNamedEntity)?.Title ?? candidate.PathTitle,
+				blockers);
+		}
+
+		// Staged, not saved: the graveyard entry commits in the same save that removes the entity, so a removal the
+		// database still refuses leaves no entry behind.
+		var graveyardEntry = temporalDataService.StageEntityArchive(existing, "watcher-file-delete", Environment.UserName);
 		context.Remove(existing);
 		await context.SaveChangesAsync(cancellationToken);
 

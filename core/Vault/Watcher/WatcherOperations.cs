@@ -44,6 +44,7 @@ public static class WatcherOperations
 	public const string Fatal = "fatal";
 	public const string VaultInaccessible = "vault-inaccessible";
 	public const string DuplicateIdentity = "duplicate-identity";
+	public const string DeleteBlocked = "delete-blocked";
 
 	/// <summary>
 	/// Describes a reason code: its diagnostic category, default severity, and the <see cref="WatcherMessages.Reasons"/>
@@ -88,6 +89,7 @@ public static class WatcherOperations
 		// Warning: nothing breaks, and the watcher gets past it on its own.
 		[FileInUse] = new("filesystem", OperationSeverity.Warning, nameof(WatcherMessages.Reasons.FileInUse)),
 		[RelocationFailed] = new("runtime", OperationSeverity.Warning, nameof(WatcherMessages.Reasons.RelocationFailed)),
+		[DeleteBlocked] = new("integrity", OperationSeverity.Error, nameof(WatcherMessages.Reasons.DeleteBlocked)),
 	};
 
 	/// <summary>Every catalogued reason code (the keys of the descriptor table).</summary>

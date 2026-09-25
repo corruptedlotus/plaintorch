@@ -234,7 +234,7 @@ public sealed class ObjectiveApiService(
 			throw new InvalidOperationException("Objective cannot be deleted while it still has executive records.");
 		}
 
-		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(objective, "api-delete", Environment.UserName, cancellationToken);
+		var graveyardEntry = temporalDataService.StageEntityArchive(objective, "api-delete", Environment.UserName);
 		context.Objectives.Remove(objective);
 		await writeQueue.RecordRemoveAsync(objective, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);

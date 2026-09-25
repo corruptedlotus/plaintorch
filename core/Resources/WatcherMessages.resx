@@ -72,6 +72,9 @@
   <data name="Reasons.DuplicateIdentity" xml:space="preserve">
     <value>Watcher found more than one file asserting the same entity identity.</value>
   </data>
+  <data name="Reasons.DeleteBlocked" xml:space="preserve">
+    <value>A note was deleted, but its entity cannot be removed while other records still reference it. Restore the note, or remove those records.</value>
+  </data>
 
   <!-- Details: parameterised detail lines appended to a reason message. -->
   <data name="Details.DuplicateIdentity" xml:space="preserve">
@@ -88,6 +91,12 @@
   </data>
   <data name="Details.VaultPathBecameInaccessible" xml:space="preserve">
     <value>Vault path '{0}' became inaccessible.</value>
+  </data>
+  <data name="Details.DeleteBlocked" xml:space="preserve">
+    <value>{0} '{1}' ({2}) was not removed: it is still referenced by {3}. Nothing was deleted; the next vault sweep removes it once nothing references it.</value>
+  </data>
+  <data name="Details.DeleteBlocker" xml:space="preserve">
+    <value>{0} {1} record(s)</value>
   </data>
 
   <!-- Decisions: the reason a storage-mode policy gives for its reconciliation action. -->

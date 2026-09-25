@@ -184,7 +184,7 @@ public sealed class OnrushSprintApiService(
 		// Executive orders belong to the sprint outright, so they go with it — markdown and all.
 		foreach (var order in sprint.ExecutiveOrders.ToList())
 		{
-			await temporalDataService.ArchiveEntityAsync(order, "api-delete", Environment.UserName, cancellationToken);
+			temporalDataService.StageEntityArchive(order, "api-delete", Environment.UserName);
 			context.ExecutiveOrders.Remove(order);
 			await markdownFileService.DeleteExecutiveOrderAsync(order, cancellationToken);
 		}
@@ -208,7 +208,7 @@ public sealed class OnrushSprintApiService(
 		// any other checkpoints it merely tracked — they live on, detached — and EF drops the reference on each
 		// tracked one, which is what the markdown re-save below then records.
 		var detached = sprint.Objectives.ToList();
-		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(sprint, "api-delete", Environment.UserName, cancellationToken);
+		var graveyardEntry = temporalDataService.StageEntityArchive(sprint, "api-delete", Environment.UserName);
 		context.OnrushSprints.Remove(sprint);
 		await context.SaveChangesAsync(cancellationToken);
 
@@ -476,7 +476,7 @@ public sealed class OnrushSprintApiService(
 		var order = await context.ExecutiveOrders.FirstOrDefaultAsync(item => item.Id == executiveOrderId, cancellationToken)
 			?? throw new InvalidOperationException($"Executive order '{executiveOrderId}' was not found.");
 
-		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(order, "api-delete", Environment.UserName, cancellationToken);
+		var graveyardEntry = temporalDataService.StageEntityArchive(order, "api-delete", Environment.UserName);
 		context.ExecutiveOrders.Remove(order);
 		await writeQueue.RecordRemoveAsync(order, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);

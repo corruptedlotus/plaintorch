@@ -80,6 +80,18 @@ public sealed class WatcherRetrySchedulerTests
 	}
 
 	[Fact]
+	public void A_blocked_delete_is_never_retried_even_long_stuck()
+	{
+		// The entity is still referenced; re-checking its path on a timer cannot change that. It used to be re-attempted at
+		// the capped cadence forever (a graveyard entry a minute) — it is a standing status, re-evaluated only by a sweep
+		// or a file event at the path.
+		var scheduler = new WatcherRetryScheduler();
+		var stuck = Status(WatcherOperations.DeleteBlocked, "C:/vault/Objectives/Gone.md", occurrenceCount: 2000, sinceObserved: TimeSpan.FromDays(1));
+		Assert.False(WatcherRetryScheduler.IsRetryable(stuck));
+		Assert.Empty(scheduler.DuePaths([stuck], Now));
+	}
+
+	[Fact]
 	public void Global_scope_and_non_reconcile_conditions_are_not_path_retried()
 	{
 		var scheduler = new WatcherRetryScheduler();

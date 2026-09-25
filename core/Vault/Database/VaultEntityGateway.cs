@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
 using Pleiades.Puck;
 
 namespace Pleiades.Vault.Database;
@@ -63,6 +65,61 @@ public sealed class VaultEntityGateway(PlainfraContext context)
 
 		var closed = ClosedLoadKnownIdsMethods.GetOrAdd(entityType, static type => LoadKnownIdsCoreMethod.MakeGenericMethod(type));
 		return (Task<HashSet<string>>)closed.Invoke(null, [context, cancellationToken])!;
+	}
+
+	/// <summary>
+	/// Finds what would make the database refuse to delete an entity: rows that still reference it through a restricting
+	/// relationship — a foreign key that neither cascades nor nulls on delete (an objective's executive records, a
+	/// directive's child objectives). A caller that removes an entity without loading its dependents (the watcher's
+	/// file-driven delete) asks this first, so a removal the database would reject is reported as blocked instead of
+	/// attempted. It reads the model's own relationship metadata, so a new restricting relationship is covered without a
+	/// per-type rule list.
+	/// </summary>
+	/// <param name="entity">The entity about to be removed; it does not need to be tracked.</param>
+	/// <param name="cancellationToken">A token used to cancel the lookup.</param>
+	/// <returns>One blocker per restricting relationship that still has referencing rows; empty when nothing blocks the delete.</returns>
+	public async Task<IReadOnlyList<VaultEntityDeleteBlocker>> FindDeleteBlockersAsync(object entity, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		var entityType = context.Model.FindEntityType(entity.GetType())
+			?? throw new InvalidOperationException($"Type '{entity.GetType().Name}' is not part of the database model.");
+
+		var keyValue = entityType.FindPrimaryKey() is { Properties: [var keyProperty] }
+			? keyProperty.PropertyInfo?.GetValue(entity)
+			: null;
+		if (keyValue is null)
+		{
+			return [];
+		}
+
+		var sqlHelper = context.GetService<ISqlGenerationHelper>();
+		var blockers = new List<VaultEntityDeleteBlocker>();
+		foreach (var foreignKey in entityType.GetReferencingForeignKeys())
+		{
+			// Cascade and set-null are carried out by the database itself; only a restricting key can refuse the delete.
+			if (foreignKey.IsOwnership
+				|| foreignKey.DeleteBehavior is DeleteBehavior.Cascade or DeleteBehavior.SetNull
+				|| foreignKey.Properties is not [var foreignKeyProperty])
+			{
+				continue;
+			}
+
+			var dependent = foreignKey.DeclaringEntityType;
+			if (StoreObjectIdentifier.Create(dependent, StoreObjectType.Table) is not { } table
+				|| foreignKeyProperty.GetColumnName(table) is not { } column)
+			{
+				continue;
+			}
+
+			var sql = $"SELECT COUNT(*) AS \"Value\" FROM {sqlHelper.DelimitIdentifier(table.Name, table.Schema)} WHERE {sqlHelper.DelimitIdentifier(column)} = {{0}}";
+			var count = (await context.Database.SqlQueryRaw<int>(sql, keyValue).ToListAsync(cancellationToken)).Single();
+			if (count > 0)
+			{
+				blockers.Add(new VaultEntityDeleteBlocker(dependent.ClrType.Name, foreignKeyProperty.Name, count));
+			}
+		}
+
+		return blockers;
 	}
 
 	/// <summary>

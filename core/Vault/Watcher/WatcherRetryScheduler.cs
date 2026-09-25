@@ -10,15 +10,22 @@ namespace Pleiades.Vault.Watcher;
 /// count grows, its backoff widens, and it keeps being retried indefinitely at the capped cadence.
 /// </summary>
 /// <remarks>
-/// Only per-path reconcile issues about <em>reading or applying</em> a file are retryable — a locked or forbidden file,
-/// a failed inspection or sync — since those clear on their own once the obstacle does. Global-scope conditions (a
-/// structural vault failure, a failed tick) are driven by the watcher's own supervision loop, not by re-queuing a path.
-/// Content issues (invalid markdown, a PUCK or policy violation, a foreign file) are deliberately excluded: they stand
-/// in the user's file until the user edits it, and that edit re-inspects the path by itself — re-checking them on a
-/// timer would never resolve them and would only churn (a conflict records itself on every pass).
+/// Only per-path reconcile issues are retryable. Global-scope conditions (a structural vault failure, a failed tick)
+/// are driven by the watcher's own supervision loop, not by re-queuing a path. Two <em>standing</em> reasons are
+/// deliberately excluded, because re-checking the path on a timer can never resolve them and would only churn:
+/// a <see cref="WatcherOperations.ForeignFile"/> advisory (leaving the unmanaged file in place is already the successful
+/// outcome), and a <see cref="WatcherOperations.DeleteBlocked"/> delete (the entity is still referenced, and nothing at
+/// the path will change that). Both are re-evaluated by a file event at their path and by every sweep (startup and
+/// wakeup), and can be dismissed.
 /// </remarks>
 public sealed class WatcherRetryScheduler
 {
+	private static readonly HashSet<string> StandingReasonCodes = new(StringComparer.Ordinal)
+	{
+		WatcherOperations.ForeignFile,
+		WatcherOperations.DeleteBlocked,
+	};
+
 	// Escalating backoff keyed off the status's own occurrence count, capped so a genuinely stuck scope keeps being
 	// retried forever at a slow, cheap cadence rather than either giving up or hot-looping.
 	private static readonly TimeSpan InitialBackoff = TimeSpan.FromSeconds(2);
@@ -46,7 +53,8 @@ public sealed class WatcherRetryScheduler
 		return string.Equals(status.OperationId, WatcherOperations.Reconcile, StringComparison.Ordinal)
 			&& !string.Equals(status.ScopeKey, WatcherOperations.GlobalScope, StringComparison.Ordinal)
 			&& !string.IsNullOrWhiteSpace(status.ScopeKey)
-			&& !ContentReasonCodes.Contains(status.ReasonCode);
+			&& !ContentReasonCodes.Contains(status.ReasonCode)
+			&& !StandingReasonCodes.Contains(status.ReasonCode);
 	}
 
 	// The reasons that stand in the user's file until they edit it: never retried on a timer.

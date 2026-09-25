@@ -215,12 +215,43 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		Report(WatcherOperations.Reconcile, candidate.AbsolutePath, Array.ConvertAll(cleared, Pass));
 	}
 
-	/// <summary>Reports that a candidate's sync execution threw, classified to a concrete cause.</summary>
+	/// <summary>
+	/// Reports that a candidate's sync execution threw, classified to a concrete cause. A delete the database would
+	/// refuse (<see cref="VaultEntityDeleteBlockedException"/>) is the standing <see cref="WatcherOperations.DeleteBlocked"/>
+	/// status, which the retry sweep leaves alone; anything else is a retryable failure. The two sync-only reasons are
+	/// reported as one outcome, so whichever this attempt raised supersedes the other rather than leaving a stale
+	/// <see cref="WatcherOperations.SyncFailed"/> to keep re-queuing a path that is now known to be blocked.
+	/// </summary>
 	public void ReportSyncFailure(VaultSyncCandidate candidate, Exception exception)
 	{
 		ArgumentNullException.ThrowIfNull(candidate);
+		ArgumentNullException.ThrowIfNull(exception);
+		var path = candidate.AbsolutePath;
+		if (exception is VaultEntityDeleteBlockedException blocked)
+		{
+			// The same blocked delete is the same problem across passes and restarts — the entity and which relationships
+			// hold it — never the reference counts or the message, so an Instance dismissal holds until the blockers change.
+			var fingerprint = Fingerprint(
+			[
+				blocked.EntityId,
+				..blocked.Blockers
+					.Select(static blocker => $"{blocker.DependentEntity}.{blocker.ForeignKeyProperty}")
+					.Order(StringComparer.Ordinal),
+			]);
+			Report(
+				WatcherOperations.Reconcile,
+				path,
+				Pass(WatcherOperations.SyncFailed),
+				Check(WatcherOperations.DeleteBlocked, failed: true, blocked.Message, files: [path], entityId: candidate.PathId, fingerprint));
+			return;
+		}
+
 		var reason = ClassifyOperationalFailure(exception, WatcherOperations.SyncFailed);
-		Report(WatcherOperations.Reconcile, candidate.AbsolutePath, Check(reason, failed: true, exception.Message, files: [candidate.AbsolutePath], entityId: candidate.PathId, fingerprint: exception.GetType().Name));
+		Report(
+			WatcherOperations.Reconcile,
+			path,
+			Pass(WatcherOperations.DeleteBlocked),
+			Check(reason, failed: true, exception.Message, files: [path], entityId: candidate.PathId, fingerprint: exception.GetType().Name));
 	}
 
 	// Every reason code the reconcile operation can raise across inspection and sync. A path that no longer resolves to
@@ -237,6 +268,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		WatcherOperations.PolicyViolation,
 		WatcherOperations.ForeignFile,
 		WatcherOperations.SyncFailed,
+		WatcherOperations.DeleteBlocked,
 	];
 
 	// The reasons about reading and applying a file, which any successful sync clears.

@@ -327,7 +327,7 @@ public sealed class DirectiveApiService(
 		}
 
 		var snapshot = Clone(directive);
-		var databaseGraveyard = await temporalDataService.ArchiveEntityAsync(snapshot, "api-delete", Environment.UserName, cancellationToken);
+		var databaseGraveyard = temporalDataService.StageEntityArchive(snapshot, "api-delete", Environment.UserName);
 		// A lunar directive's timeframes go by the database cascade; the state-policy save hook clears the availabilities
 		// pointing at them, tracked, in this same save (PEP100 patch 2, D9).
 		context.Directives.Remove(directive);

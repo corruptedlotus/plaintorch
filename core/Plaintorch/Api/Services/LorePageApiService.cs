@@ -167,7 +167,7 @@ public sealed class LorePageApiService(
 		}
 
 		var snapshot = (LorePage)entityGateway.CloneScalars(lorePage);
-		var databaseGraveyard = await temporalDataService.ArchiveEntityAsync(snapshot, "api-delete", Environment.UserName, cancellationToken);
+		var databaseGraveyard = temporalDataService.StageEntityArchive(snapshot, "api-delete", Environment.UserName);
 		context.LorePages.Remove(lorePage);
 		await writeQueue.RecordRemoveAsync(snapshot, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);

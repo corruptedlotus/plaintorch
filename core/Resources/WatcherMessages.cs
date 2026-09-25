@@ -41,6 +41,7 @@ public static class WatcherMessages
 		public static string Fatal => Get();
 		public static string VaultInaccessible => Get();
 		public static string DuplicateIdentity => Get();
+		public static string DeleteBlocked => Get();
 	}
 
 	/// <summary>Parameterised detail lines the reporter appends to a reason message.</summary>
@@ -64,6 +65,12 @@ public static class WatcherMessages
 
 		/// <summary>"Vault path '{path}' became inaccessible."</summary>
 		public static string VaultPathBecameInaccessible(string path) => Format([path]);
+
+		/// <summary>"{entity type} '{title}' ({id}) was not removed: it is still referenced by {blockers}. …"</summary>
+		public static string DeleteBlocked(string entityType, string? title, string entityId, string blockers) => Format([entityType, title, entityId, blockers]);
+
+		/// <summary>"{count} {dependent entity} record(s)" — one restricting relationship in a <see cref="DeleteBlocked"/> line.</summary>
+		public static string DeleteBlocker(int count, string dependentEntity) => Format([count, dependentEntity]);
 	}
 
 	/// <summary>The reason a storage-mode policy gives for its reconciliation decision (<c>VaultSyncDecision.Reason</c>).</summary>

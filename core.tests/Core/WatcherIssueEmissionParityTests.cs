@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Pleiades.Diagnostics;
 using Pleiades.Plaintorch.Api.Abstractions;
+using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Tests.Harness;
 using Pleiades.Vault.Watcher;
 using Xunit;
@@ -130,5 +131,25 @@ public sealed class WatcherIssueEmissionParityTests
 		});
 
 		Assert.Equal(sweep, runtime);
+	}
+
+	[Fact]
+	public async Task A_blocked_delete_emits_the_same_standing_error_in_sweep_and_runtime()
+	{
+		// A begun objective's note is deleted while executive records still reference it: the sweep reaches it through the
+		// orphan pass, runtime through the delete event, and both must raise the one delete-blocked error — no sync-failed.
+		var (sweep, runtime) = await RunBothWaysAsync(async vault =>
+		{
+			var objective = await vault.SeedStandaloneObjectiveAsync("Held");
+			await vault.BeginObjectiveBoundaryAsync(objective.Id);
+			await vault.WithScopeAsync(services => services.GetRequiredService<IPolarisCycleApi>().PlanExecutiveAsync(
+				new PolarisExecutivePlan(PolarisExecutivePlanningMode.FromObjective, ObjectiveId: objective.Id),
+				cancellationToken: TestContext.Current.CancellationToken));
+			File.Delete(vault.AbsolutePath("Objectives/Held.md"));
+			return "Objectives/Held.md";
+		});
+
+		Assert.Equal(sweep, runtime);
+		Assert.Equal([Issue("Objectives/Held.md", WatcherOperations.DeleteBlocked, OperationSeverity.Error)], sweep);
 	}
 }
