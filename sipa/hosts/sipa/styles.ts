@@ -22,6 +22,7 @@ export const sipaStyles: CSSResult = css`
 		--p7t-accent-soft: #b994d8;
 		--p7t-ok: #7cc48f;
 		--p7t-warn: #e6b45a;
+		--p7t-critical: #e8894a;
 		--p7t-bad: #e26d6d;
 
 		--background-primary: var(--p7t-bg);
@@ -48,6 +49,7 @@ export const sipaStyles: CSSResult = css`
 
 		--color-green: var(--p7t-ok);
 		--color-yellow: var(--p7t-warn);
+		--color-orange: var(--p7t-critical);
 		--color-red: var(--p7t-bad);
 
 		--font-interface: "Outfit", "Space Grotesk", "Segoe UI", system-ui, sans-serif;

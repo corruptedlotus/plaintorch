@@ -1,22 +1,27 @@
 import { Controller, type ReactiveElement } from "@a11d/lit"
+import type { WatcherHealth as CoreWatcherHealth } from "@pleiades/sdk"
 import { core } from "../data"
 import { subscribeTick } from "./globalTick"
 
 export type WatcherIssueReport = NonNullable<Awaited<ReturnType<typeof core.system.getWatcherIssues>>>
 export type WatcherIssueRecord = WatcherIssueReport["issues"][number]
 
-/** The report's rolled-up health (PEP108) — `ok`, `standby` (suspended), `issues` — or `offline` when there is none. */
-export type WatcherHealth = "ok" | "standby" | "issues" | "offline" | (string & {})
+/**
+ * The report's rolled-up health (PEP108) — the core's `ok`, `issues`, `critical` or `standby` (a fatal problem, the
+ * watcher asleep, or no vault active) — or `offline` when no report can be fetched.
+ */
+export type WatcherHealth = CoreWatcherHealth | "offline" | (string & {})
 
 /** How often the report is fetched while anything shows it, in ticks of the app-wide clock (seconds). */
 const pollTicks = 5
 
-const healthLabels: Record<string, string> = {
+const healthLabels: Readonly<Record<string, string>> = {
 	ok: "Healthy",
-	standby: "Suspended",
 	issues: "Issues",
+	critical: "Critical",
+	standby: "Standby",
 	offline: "Offline",
-}
+} satisfies Record<CoreWatcherHealth | "offline", string>
 
 /** The display name of a health. */
 export function watcherHealthLabel(health: WatcherHealth): string {

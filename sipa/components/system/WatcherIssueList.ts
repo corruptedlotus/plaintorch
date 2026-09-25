@@ -5,10 +5,13 @@ import type { IconName } from "../PleiadesIcon"
 import { refreshWatcherReport, type WatcherIssueRecord, type WatcherIssueReport } from "./watcherReport"
 
 /**
- * The watcher's issues (PEP108): each live one with its severity, message, detail and file, then a "Dismissed" section.
- * An issue can be dismissed — snoozed until a different problem arises — and a dismissed one restored; either way the
- * report is fetched again, so every surface showing it agrees. With no report it says the core is offline, and with
- * nothing to list, that there are no active issues. The status-bar drawer and the status card both show it.
+ * The watcher's issues (PEP108), worst first as the core sorts them: each live one with its severity badge — info
+ * muted, warning and error yellow, critical orange, fatal red (a fatal issue puts the watcher on standby) — message,
+ * detail and file, then a "Dismissed" section. An issue short of fatal can be dismissed — snoozed until a different
+ * problem arises — and a dismissed one restored; either way the report is fetched again, so every surface showing it
+ * agrees. A fatal issue offers no dismissal: the core refuses one, since the watcher cannot run until it clears. With
+ * no report it says the core is offline, and with nothing to list, that the watcher is on standby or that there are no
+ * active issues. The status-bar drawer and the status card both show it.
  */
 @component('p7t-watcher-issue-list')
 export class WatcherIssueList extends Component {
@@ -45,9 +48,10 @@ export class WatcherIssueList extends Component {
 
 				& p7t-icon { font-size: 1.4em; }
 			}
-			.badge.critical, .badge.error { color: var(--color-red); }
-			.badge.suspended, .badge.warning { color: var(--color-yellow); }
 			.badge.info { color: var(--text-muted); }
+			.badge.warning, .badge.error { color: var(--color-yellow); }
+			.badge.critical { color: var(--color-orange); }
+			.badge.fatal { color: var(--color-red); }
 
 			.msg { min-width: 0; }
 
@@ -71,9 +75,7 @@ export class WatcherIssueList extends Component {
 		const live = issues.filter(issue => !issue.dismissed)
 		const dismissed = issues.filter(issue => issue.dismissed)
 		return html`
-			${live.length === 0 && dismissed.length === 0
-				? (this.report?.status ?? "offline") === "offline" ? html`<div class="empty">The PLAINTORCH core is offline for this user and vault.</div>` : html`<div class="empty">No active issues.</div>`
-				: nothing}
+			${live.length === 0 && dismissed.length === 0 ? this.emptyTemplate : nothing}
 			${live.map(issue => this.renderIssue(issue))}
 			${dismissed.length > 0
 				? html`
@@ -84,24 +86,37 @@ export class WatcherIssueList extends Component {
 		`
 	}
 
+	/** What stands in for the list when there is nothing to list: why, as far as the report tells. */
+	private get emptyTemplate() {
+		switch (this.report?.status ?? "offline") {
+			case "offline": return html`<div class="empty">The PLAINTORCH core is offline for this user and vault.</div>`
+			case "standby": return html`<div class="empty">The watcher is on standby.</div>`
+			default: return html`<div class="empty">No active issues.</div>`
+		}
+	}
+
 	private renderIssue(issue: WatcherIssueRecord) {
 		const path = issue.originVaultRelativePath ?? issue.files[0]
 		const busy = this.busyKeys.has(issue.key)
+		// The core refuses to dismiss a fatal issue; restoring a dismissed one is always offered.
+		const toggleable = issue.dismissed || issue.severity !== 'fatal'
 		return html`
 			<div class="issue ${issue.dismissed ? 'is-dismissed' : ''}">
 				<span class="badge ${issue.severity}" ${tooltip(severityName(issue.severity))}>
 					<p7t-icon icon=${severityIcon(issue.severity)}></p7t-icon>
 				</span>
 				<span class="msg">${issue.message}</span>
-				<p7t-button
-					class='dismiss-button'
-					ghost
-					danger
-					?disabled=${busy}
-					@click=${() => void this.toggleDismissal(issue)}
-					icon=${issue.dismissed ? 'lucide:undo-2' : 'lucide:ban'}
-					label=${issue.dismissed ? 'Undo' : 'Dismiss'}>
-				</p7t-button>
+				${toggleable ? html`
+					<p7t-button
+						class='dismiss-button'
+						ghost
+						danger
+						?disabled=${busy}
+						@click=${() => void this.toggleDismissal(issue)}
+						icon=${issue.dismissed ? 'lucide:undo-2' : 'lucide:ban'}
+						label=${issue.dismissed ? 'Undo' : 'Dismiss'}>
+					</p7t-button>
+				` : nothing}
 				${issue.detail ? html`<span class="detail">${issue.detail}</span>` : nothing}
 				${path ? html`<span class="path">${path.replaceAll("\\", "/")}</span>` : nothing}
 			</div>
@@ -132,30 +147,27 @@ export class WatcherIssueList extends Component {
 	}
 }
 
-function severityIcon(severity: string): IconName {
+/** A severity's badge glyph; `fatal` shows a pause, since a fatal issue puts the watcher on standby. */
+function severityIcon(severity: WatcherIssueRecord["severity"]): IconName {
 	switch (severity) {
-		case 'info': return 'lucide:info';
-
-		case 'warning': return 'lucide:circle-alert';
-		case 'suspended': return 'lucide:circle-pause';
-
-		case 'error': return 'lucide:octagon-alert';
-		case 'critical': return 'lucide:octagon-x';
-
-		default: return 'lucide:badge-question-mark';
+		case 'info': return 'lucide:info'
+		case 'warning': return 'lucide:circle-alert'
+		case 'error': return 'lucide:octagon-alert'
+		case 'critical': return 'lucide:octagon-x'
+		case 'fatal': return 'lucide:circle-pause'
+		default: return 'lucide:badge-question-mark'
 	}
 }
 
-function severityName(severity: string): string {
+/** A severity's display name, the badge's tooltip. */
+function severityName(severity: WatcherIssueRecord["severity"]): string {
 	switch (severity) {
-		case 'info': return 'Info';
-
-		case 'warning': return 'Warning';
-		case 'suspended': return 'Suspended';
-
-		case 'error': return 'Error';
-		case 'critical': return 'Critical';
-		default: return 'Unknown';
+		case 'info': return 'Info'
+		case 'warning': return 'Warning'
+		case 'error': return 'Error'
+		case 'critical': return 'Critical'
+		case 'fatal': return 'Fatal'
+		default: return 'Unknown'
 	}
 }
 

@@ -13,7 +13,7 @@ namespace Pleiades.Vault.Watcher;
 /// </summary>
 public static class WatcherOperations
 {
-	/// <summary>Scope key used for operations that are not scoped to a single path (startup, drain, fatal).</summary>
+	/// <summary>Scope key used for operations that are not scoped to a single path (startup, drain, roots, fatal).</summary>
 	public const string GlobalScope = "*";
 
 	// Operation identifiers.
@@ -40,6 +40,7 @@ public static class WatcherOperations
 	public const string RelocationFailed = "relocation-failed";
 	public const string RootInitFailed = "root-init-failed";
 	public const string RootError = "root-error";
+	public const string RootsUnresolved = "roots-unresolved";
 	public const string Fatal = "fatal";
 	public const string VaultInaccessible = "vault-inaccessible";
 	public const string DuplicateIdentity = "duplicate-identity";
@@ -57,37 +58,50 @@ public static class WatcherOperations
 		public string Message => WatcherMessages.Reasons.Resolve(MessageKey);
 	}
 
+	// One severity per reason, graded by what the issue means for the watcher (see OperationSeverity) rather than by the
+	// stage that noticed it. The three content reasons (markdown-invalid, puck-violation, policy-violation) are errors
+	// only while the problem stands in the user's file: when the watcher enforced it (rewrote or purged the file) the
+	// reporter records them as warnings instead (see WatcherStatusReporter.ContentSeverity).
 	private static readonly IReadOnlyDictionary<string, ReasonDescriptor> Descriptors = new Dictionary<string, ReasonDescriptor>(StringComparer.Ordinal)
 	{
-		[ScanFailed] = new("startup", OperationSeverity.Error, nameof(WatcherMessages.Reasons.ScanFailed)),
-		[TickFailed] = new("runtime", OperationSeverity.Error, nameof(WatcherMessages.Reasons.TickFailed)),
-		[DiscoveryFailed] = new("runtime", OperationSeverity.Error, nameof(WatcherMessages.Reasons.DiscoveryFailed)),
-		[PermissionDenied] = new("filesystem", OperationSeverity.Error, nameof(WatcherMessages.Reasons.PermissionDenied)),
-		[FileInUse] = new("filesystem", OperationSeverity.Suspended, nameof(WatcherMessages.Reasons.FileInUse)),
+		// Fatal: the watcher cannot do its job at all; it sleeps and retries, and health reads standby.
+		[ScanFailed] = new("startup", OperationSeverity.Fatal, nameof(WatcherMessages.Reasons.ScanFailed)),
+		[VaultInaccessible] = new("filesystem", OperationSeverity.Fatal, nameof(WatcherMessages.Reasons.VaultInaccessible)),
+		[RootsUnresolved] = new("filesystem", OperationSeverity.Fatal, nameof(WatcherMessages.Reasons.RootsUnresolved)),
+		[Fatal] = new("runtime", OperationSeverity.Fatal, nameof(WatcherMessages.Reasons.Fatal)),
+
+		// Critical: a technical failure blocks part of the job (a file, a root, a tick).
+		[TickFailed] = new("runtime", OperationSeverity.Critical, nameof(WatcherMessages.Reasons.TickFailed)),
+		[DiscoveryFailed] = new("runtime", OperationSeverity.Critical, nameof(WatcherMessages.Reasons.DiscoveryFailed)),
+		[PermissionDenied] = new("filesystem", OperationSeverity.Critical, nameof(WatcherMessages.Reasons.PermissionDenied)),
+		[SyncFailed] = new("runtime", OperationSeverity.Critical, nameof(WatcherMessages.Reasons.SyncFailed)),
+		[RootInitFailed] = new("filesystem", OperationSeverity.Critical, nameof(WatcherMessages.Reasons.RootInitFailed)),
+		[RootError] = new("filesystem", OperationSeverity.Critical, nameof(WatcherMessages.Reasons.RootError)),
+
+		// Error: invalid or illegal content the user must resolve.
 		[MarkdownInvalid] = new("validation", OperationSeverity.Error, nameof(WatcherMessages.Reasons.MarkdownInvalid)),
 		[PuckViolation] = new("identity", OperationSeverity.Error, nameof(WatcherMessages.Reasons.PuckViolation)),
 		[PolicyViolation] = new("policy", OperationSeverity.Error, nameof(WatcherMessages.Reasons.PolicyViolation)),
 		[ForeignFile] = new("policy", OperationSeverity.Error, nameof(WatcherMessages.Reasons.ForeignFile)),
-		[SyncFailed] = new("runtime", OperationSeverity.Error, nameof(WatcherMessages.Reasons.SyncFailed)),
-		[RelocationFailed] = new("runtime", OperationSeverity.Error, nameof(WatcherMessages.Reasons.RelocationFailed)),
-		[RootInitFailed] = new("filesystem", OperationSeverity.Error, nameof(WatcherMessages.Reasons.RootInitFailed)),
-		[RootError] = new("filesystem", OperationSeverity.Warning, nameof(WatcherMessages.Reasons.RootError)),
-		[Fatal] = new("runtime", OperationSeverity.Critical, nameof(WatcherMessages.Reasons.Fatal)),
-		[VaultInaccessible] = new("filesystem", OperationSeverity.Error, nameof(WatcherMessages.Reasons.VaultInaccessible)),
 		[DuplicateIdentity] = new("identity", OperationSeverity.Error, nameof(WatcherMessages.Reasons.DuplicateIdentity)),
+
+		// Warning: nothing breaks, and the watcher gets past it on its own.
+		[FileInUse] = new("filesystem", OperationSeverity.Warning, nameof(WatcherMessages.Reasons.FileInUse)),
+		[RelocationFailed] = new("runtime", OperationSeverity.Warning, nameof(WatcherMessages.Reasons.RelocationFailed)),
 	};
 
 	/// <summary>Every catalogued reason code (the keys of the descriptor table).</summary>
 	public static IReadOnlyCollection<string> ReasonCodes => Descriptors.Keys.ToArray();
 
 	/// <summary>
-	/// Resolves the descriptor for a reason code, defaulting to a runtime error for unknown codes (whose message is the
-	/// code itself, since no sheet entry names it).
+	/// Resolves the descriptor for a reason code, defaulting to a critical runtime failure for unknown codes (an
+	/// unclassified failure is technical, not a matter of content; its message is the code itself, since no sheet entry
+	/// names it).
 	/// </summary>
 	public static ReasonDescriptor Describe(string reasonCode)
 		=> Descriptors.TryGetValue(reasonCode, out var descriptor)
 			? descriptor
-			: new ReasonDescriptor("runtime", OperationSeverity.Error, reasonCode);
+			: new ReasonDescriptor("runtime", OperationSeverity.Critical, reasonCode);
 
 	// The opaque issue key the API exposes on each WatcherIssueRecord and accepts back to dismiss/restore it. It packs
 	// the status identity as operationId::reasonCode::scopeKey; operation ids and reason codes never contain "::", so

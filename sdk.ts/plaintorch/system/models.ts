@@ -17,8 +17,10 @@ export interface SystemBriefing {
 	activeVaultPath: string
 	pleiadeanToday: string
 	celestronBanked: number
-	watcherStatus: string
+	/** The watcher's rolled-up health, as {@link WatcherIssueReport.status} reports it (see {@link WatcherHealth}). */
+	watcherStatus: WatcherHealth | (string & {})
 	watcherIssueCount: number
+	/** How many live (undismissed) issues are critical or fatal — those whose {@link WatcherIssueRecord.isCritical} is set. */
 	watcherCriticalIssueCount: number
 	watcherCriteriaCount: number
 	watcherFailedCriteriaCount: number
@@ -51,6 +53,29 @@ export interface HealthStatus {
 	since: string
 }
 
+/**
+ * A watcher issue's graded severity (PEP108), mildest first — the core sorts a report's issues worst-first:
+ * - `info`: rare, with no consequence; it does not affect health.
+ * - `warning`: no breaking consequence, but best resolved (a locked file, content the core already enforced).
+ * - `error`: invalid or illegal content the user must resolve; left unresolved, an entity may not sync or may corrupt.
+ * - `critical`: a technical failure keeps the watcher from part of its job (permission denied, a failed sync, a root not
+ *   watched).
+ * - `fatal`: the watcher cannot run or do its job at all (the vault inaccessible, the startup sweep failed, a crash); it
+ *   sleeps and retries, and health reads `standby`. A fatal issue cannot be dismissed.
+ */
+export type WatcherSeverity = "info" | "warning" | "error" | "critical" | "fatal"
+
+/**
+ * The watcher's rolled-up health (PEP108), from the worst live (undismissed) severity:
+ * - `ok`: no live issues, or only `info` ones.
+ * - `issues`: the worst is an `error` or a `warning`.
+ * - `critical`: the worst is `critical`; the watcher runs, but part of its work is blocked.
+ * - `standby`: the worst is `fatal`, or the watcher sleeps, or no vault is active; it is not watching.
+ *
+ * A client that cannot fetch a report at all synthesises its own `offline`; the core never sends it.
+ */
+export type WatcherHealth = "ok" | "issues" | "critical" | "standby"
+
 export interface WatcherIssueRecord {
 	key: string
 	type: string
@@ -62,9 +87,13 @@ export interface WatcherIssueRecord {
 	 * undefined when the reason alone says it all. Separate from `message` so a surface can show, fold, or hide it.
 	 */
 	detail: string | undefined
+	/** Whether the severity is `critical` or `fatal`: the watcher cannot do part, or all, of its job. */
 	isCritical: boolean
-	/** Graded severity: `info` | `warning` | `suspended` | `error` | `critical` (PEP108). */
-	severity: string
+	/**
+	 * The graded severity (PEP108; see {@link WatcherSeverity}): `info` < `warning` < `error` < `critical` < `fatal`.
+	 * Typed open so a severity a newer core adds still reads.
+	 */
+	severity: WatcherSeverity | (string & {})
 	/** The vault-relative files involved in this status. */
 	files: string[]
 	criterion: string
@@ -74,7 +103,10 @@ export interface WatcherIssueRecord {
 	originVaultRelativePath: string | undefined
 	firstObservedUtc: string | undefined
 	lastObservedUtc: string | undefined
-	/** Whether the user has dismissed this issue (PEP108): excluded from health and counts, kept for a "Dismissed" view. */
+	/**
+	 * Whether the user has dismissed this issue (PEP108): excluded from health and counts, kept for a "Dismissed" view.
+	 * Never set on a `fatal` issue — the core refuses to dismiss one.
+	 */
 	dismissed: boolean
 }
 
@@ -89,8 +121,10 @@ export interface WatcherCriterionRecord {
 }
 
 export interface WatcherIssueReport {
-	status: string
+	/** The watcher's rolled-up health (see {@link WatcherHealth}). Typed open so a health a newer core adds still reads. */
+	status: WatcherHealth | (string & {})
 	issueCount: number
+	/** How many live (undismissed) issues are critical or fatal — those whose {@link WatcherIssueRecord.isCritical} is set. */
 	criticalIssueCount: number
 	criteriaCount: number
 	failedCriteriaCount: number

@@ -91,9 +91,11 @@ public sealed class OperationStatusRegistry
 	}
 
 	/// <summary>
-	/// Derives subsystem health from active statuses, unless a lifecycle override is set. Dismissed statuses (PEP108
-	/// dismiss feature) are excluded from the rollup, so a subsystem whose only remaining statuses are dismissed reads
-	/// <see cref="OperationHealth.Ok"/>.
+	/// Derives subsystem health from active statuses, unless a lifecycle override is set. The worst live status decides:
+	/// <see cref="OperationSeverity.Fatal"/> reads <see cref="OperationHealth.Standby"/>, <see cref="OperationSeverity.Critical"/>
+	/// reads <see cref="OperationHealth.Critical"/>, a warning or an error reads <see cref="OperationHealth.Issues"/>, and
+	/// informational statuses never change health. Dismissed statuses (PEP108 dismiss feature) are excluded from the
+	/// rollup — except that a fatal status is never dismissed, so it always holds its subsystem on standby.
 	/// </summary>
 	public OperationHealth GetHealth()
 	{
@@ -109,19 +111,43 @@ public sealed class OperationStatusRegistry
 				.Select(status => (OperationSeverity?)status.Severity)
 				.Max();
 
-			if (worst is not { } severity)
+			return worst switch
 			{
-				return OperationHealth.Ok;
-			}
+				OperationSeverity.Fatal => OperationHealth.Standby,
+				OperationSeverity.Critical => OperationHealth.Critical,
+				OperationSeverity.Error or OperationSeverity.Warning => OperationHealth.Issues,
+				_ => OperationHealth.Ok,
+			};
+		}
+	}
 
-			if (severity >= OperationSeverity.Error)
-			{
-				return OperationHealth.Issues;
-			}
+	/// <summary>
+	/// Forgets every active status and recently-resolved transition without recording anything — for a subsystem whose
+	/// subject changes (a watcher starting or ending a vault session), so no status of the previous subject lingers into
+	/// the next one. Dismissals and the health override are left to their own lifecycle.
+	/// </summary>
+	public void Reset()
+	{
+		lock (_gate)
+		{
+			_active.Clear();
+			_recentResolved.Clear();
+		}
+	}
 
-			return severity == OperationSeverity.Suspended
-				? OperationHealth.Suspended
-				: OperationHealth.Ok;
+	/// <summary>Whether a status may be dismissed: every severity but <see cref="OperationSeverity.Fatal"/>.</summary>
+	public static bool IsDismissible(OperationStatus status)
+	{
+		ArgumentNullException.ThrowIfNull(status);
+		return status.Severity < OperationSeverity.Fatal;
+	}
+
+	/// <summary>Gets the active status with the given identity, or <see langword="null"/> when none is active.</summary>
+	public OperationStatus? FindActive(string operationId, string scopeKey, string reasonCode)
+	{
+		lock (_gate)
+		{
+			return _active.TryGetValue((operationId, scopeKey, reasonCode), out var status) ? status : null;
 		}
 	}
 
@@ -155,7 +181,8 @@ public sealed class OperationStatusRegistry
 	/// Records a dismissal for a status identity and returns the stored record so the caller can persist it. For an
 	/// <see cref="OperationStatusDismissalScope.Instance"/> dismissal the current active status's structural fingerprint is
 	/// captured (so the snooze lifts when a different problem arises); this returns <see langword="null"/>
-	/// when no such status is currently active — there is nothing to dismiss. File and Reason dismissals always record.
+	/// when no such status is currently active — there is nothing to dismiss — or when it is fatal, which may not be
+	/// dismissed. File and Reason dismissals always record, though none ever suppresses a fatal status.
 	/// </summary>
 	public OperationStatusDismissal? Dismiss(OperationStatusDismissalScope scope, string operationId, string scopeKey, string reasonCode)
 	{
@@ -168,7 +195,7 @@ public sealed class OperationStatusRegistry
 			string? fingerprint = null;
 			if (scope == OperationStatusDismissalScope.Instance)
 			{
-				if (!_active.TryGetValue((operationId, scopeKey, reasonCode), out var status))
+				if (!_active.TryGetValue((operationId, scopeKey, reasonCode), out var status) || !IsDismissible(status))
 				{
 					return null;
 				}
@@ -207,6 +234,12 @@ public sealed class OperationStatusRegistry
 
 	private bool IsDismissedUnlocked(OperationStatus status)
 	{
+		// A fatal status is the reason its subsystem is on standby; no dismissal hides it.
+		if (!IsDismissible(status))
+		{
+			return false;
+		}
+
 		foreach (var dismissal in _dismissals.Values)
 		{
 			if (dismissal.Matches(status))
@@ -220,7 +253,7 @@ public sealed class OperationStatusRegistry
 
 	/// <summary>
 	/// Sets a lifecycle health override that wins over the derived rollup (for example a watcher forcing
-	/// <see cref="OperationHealth.Offline"/> when stopped), or clears it with <see langword="null"/>.
+	/// <see cref="OperationHealth.Standby"/> while asleep or with no vault to serve), or clears it with <see langword="null"/>.
 	/// </summary>
 	public void SetHealthOverride(OperationHealth? health)
 	{

@@ -63,6 +63,23 @@ public sealed class WatcherRetrySchedulerTests
 	}
 
 	[Fact]
+	public void Content_issues_wait_for_the_users_edit_and_are_never_retried()
+	{
+		// Invalid content stands in the file until the user edits it (which re-inspects the path by itself); a timer
+		// would never resolve it and a conflict would record itself on every pass.
+		foreach (var reason in new[] { WatcherOperations.MarkdownInvalid, WatcherOperations.PuckViolation, WatcherOperations.PolicyViolation })
+		{
+			Assert.False(WatcherRetryScheduler.IsRetryable(Status(reason, "C:/vault/Objectives/Invalid.md")));
+		}
+
+		// What clears once an obstacle does is retried.
+		foreach (var reason in new[] { WatcherOperations.FileInUse, WatcherOperations.PermissionDenied, WatcherOperations.DiscoveryFailed, WatcherOperations.SyncFailed })
+		{
+			Assert.True(WatcherRetryScheduler.IsRetryable(Status(reason, "C:/vault/Objectives/Locked.md")));
+		}
+	}
+
+	[Fact]
 	public void Global_scope_and_non_reconcile_conditions_are_not_path_retried()
 	{
 		var scheduler = new WatcherRetryScheduler();

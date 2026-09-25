@@ -11,8 +11,9 @@ namespace Pleiades.Tests.Core;
 
 /// <summary>
 /// The watcher adopts the operation-status core (PEP108 phase B): each pipeline stage reports a check-set that the
-/// status core diffs into raise/resolve transitions, replacing the hand-marked issue registry. The system API keeps
-/// its existing wire contract, and a locked file now surfaces as a first-class suspension.
+/// status core diffs into raise/resolve transitions, replacing the hand-marked issue registry. Each reason carries one
+/// severity wherever it is raised — a locked file a warning, invalid content left to the user an error, a forbidden file
+/// or failed sync critical, and whatever stops the watcher fatal, holding it on standby.
 /// </summary>
 public sealed class WatcherStatusTests : VaultTestBase
 {
@@ -60,24 +61,28 @@ public sealed class WatcherStatusTests : VaultTestBase
 	}
 
 	[Fact]
-	public void Locked_file_sync_failure_surfaces_as_a_suspension()
+	public void Locked_file_is_a_retryable_warning_wherever_it_is_met()
 	{
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
-		// A sharing-violation IOException (classified by HResult, not message text).
-		watcher.ReportSyncFailure(
-			Candidate("Objectives/Locked.md"),
-			new IOException("locked", unchecked((int)0x80070020)));
+		// A sharing-violation IOException (classified by HResult, not message text), met while applying a sync.
+		var locked = new IOException("locked", unchecked((int)0x80070020));
+		watcher.ReportSyncFailure(Candidate("Objectives/Locked.md"), locked);
 
 		var status = Assert.Single(registry.GetActiveStatuses());
 		Assert.Equal(WatcherOperations.FileInUse, status.ReasonCode);
-		Assert.Equal(OperationSeverity.Suspended, status.Severity);
-		Assert.Equal(OperationHealth.Suspended, registry.GetHealth());
+		Assert.Equal(OperationSeverity.Warning, status.Severity);
+		Assert.Equal(OperationHealth.Issues, registry.GetHealth());
+		Assert.True(WatcherRetryScheduler.IsRetryable(status));
+
+		// Met again while reading, it keeps the one severity: no escalate/de-escalate flapping between stages.
+		watcher.ReportInspectFailure(Vault.AbsolutePath("Objectives/Locked.md"), locked);
+		Assert.Equal(OperationSeverity.Warning, Assert.Single(registry.GetActiveStatuses()).Severity);
 	}
 
 	[Fact]
-	public void A_passive_read_failure_surfaces_as_a_retryable_warning_keeping_its_cause()
+	public void A_forbidden_read_is_critical_keeping_its_cause_and_is_retried()
 	{
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
@@ -86,12 +91,13 @@ public sealed class WatcherStatusTests : VaultTestBase
 			Vault.AbsolutePath("Objectives/Denied.md"),
 			new VaultFileAccessException(VaultFileAccessKind.PermissionDenied, "Objectives/Denied.md", new UnauthorizedAccessException()));
 
-		// Tier 1: a passive-read failure is advisory. The underlying cause is preserved in the reason code, but the
-		// severity is a warning that does not, on its own, degrade health — the file is simply left and re-checked.
+		// The watcher physically cannot read the file: a technical block on part of its job, so critical. The cause is
+		// preserved in the reason code, and the file is left in place and re-checked until it reads.
 		var status = Assert.Single(registry.GetActiveStatuses());
 		Assert.Equal(WatcherOperations.PermissionDenied, status.ReasonCode);
-		Assert.Equal(OperationSeverity.Warning, status.Severity);
-		Assert.Equal(OperationHealth.Ok, registry.GetHealth());
+		Assert.Equal(OperationSeverity.Critical, status.Severity);
+		Assert.Equal(OperationHealth.Critical, registry.GetHealth());
+		Assert.True(WatcherRetryScheduler.IsRetryable(status));
 
 		// A later clean inspection of the same path resolves the flag through ordinary diff-based reporting.
 		watcher.ReportInspectIgnored(Vault.AbsolutePath("Objectives/Denied.md"));
@@ -108,11 +114,16 @@ public sealed class WatcherStatusTests : VaultTestBase
 			Vault.AbsolutePath("Objectives/Broken.md"),
 			new MarkdownDeserializationException("Failed to deserialize markdown into 'Objective'."));
 
-		Assert.Equal(WatcherOperations.MarkdownInvalid, Assert.Single(registry.GetActiveStatuses()).ReasonCode);
+		var status = Assert.Single(registry.GetActiveStatuses());
+		Assert.Equal(WatcherOperations.MarkdownInvalid, status.ReasonCode);
+		Assert.Equal(OperationSeverity.Error, status.Severity);
+
+		// Unreadable content is the user's to fix; re-reading it on a timer would never help.
+		Assert.False(WatcherRetryScheduler.IsRetryable(status));
 	}
 
 	[Fact]
-	public void Validation_issue_maps_to_a_critical_markdown_status()
+	public void Validation_issue_left_in_the_file_is_a_markdown_error()
 	{
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
@@ -138,7 +149,11 @@ public sealed class WatcherStatusTests : VaultTestBase
 
 		var candidate = Candidate("Objectives/Stray.md", VaultSyncAction.PurgeFile, "Unknown file is disallowed by enforced storage policy.", VaultSyncConcern.PolicyViolation);
 		watcher.ReportInspectCandidate(candidate);
-		Assert.Equal(WatcherOperations.PolicyViolation, Assert.Single(registry.GetActiveStatuses()).ReasonCode);
+		var raised = Assert.Single(registry.GetActiveStatuses());
+		Assert.Equal(WatcherOperations.PolicyViolation, raised.ReasonCode);
+
+		// The watcher enforces it itself (the purge), so nothing is left broken: only a warning.
+		Assert.Equal(OperationSeverity.Warning, raised.Severity);
 
 		watcher.ReportSyncSucceeded(candidate);
 
@@ -276,14 +291,14 @@ public sealed class WatcherStatusTests : VaultTestBase
 	}
 
 	[Fact]
-	public void Vault_inaccessibility_is_an_error_that_sleeps_and_resolves_on_recovery()
+	public void Vault_inaccessibility_is_fatal_holds_standby_and_resolves_on_recovery()
 	{
 		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 
-		// Tier 2: a whole-of-vault access failure is an error-level issue (it degrades health to "issues"). It is keyed on
-		// the global scope so there is exactly one such status regardless of which root is currently unreachable; the
-		// offending root is carried in its files. This is the signal the watcher goes to sleep on.
+		// Tier 2: a whole-of-vault access failure stops the watcher's whole job — fatal, so health reads standby. It is
+		// keyed on the global scope so there is exactly one such status regardless of which root is currently
+		// unreachable; the offending root is carried in its files. This is the signal the watcher goes to sleep on.
 		var root = Vault.AbsolutePath("Directives");
 		watcher.ReportVaultInaccessible(root, "permission denied");
 
@@ -291,8 +306,8 @@ public sealed class WatcherStatusTests : VaultTestBase
 		Assert.Equal(WatcherOperations.VaultInaccessible, status.ReasonCode);
 		Assert.Equal(WatcherOperations.VaultAccess, status.OperationId);
 		Assert.Equal(WatcherOperations.GlobalScope, status.ScopeKey);
-		Assert.Equal(OperationSeverity.Error, status.Severity);
-		Assert.Equal(OperationHealth.Issues, registry.GetHealth());
+		Assert.Equal(OperationSeverity.Fatal, status.Severity);
+		Assert.Equal(OperationHealth.Standby, registry.GetHealth());
 		Assert.Contains(status.Files, file => file.Replace('\\', '/').EndsWith("Directives", StringComparison.Ordinal));
 
 		// A different root failing next re-uses the same status rather than stranding the first (the offending root just
@@ -318,11 +333,12 @@ public sealed class WatcherStatusTests : VaultTestBase
 
 		Assert.Equal("issues", report.Status);
 		Assert.Equal(1, report.IssueCount);
-		Assert.Equal(1, report.CriticalIssueCount);
+		// A content error is the user's to fix; it does not block the watcher, so it is not critical.
+		Assert.Equal(0, report.CriticalIssueCount);
 		var record = Assert.Single(report.Issues);
 		Assert.Equal(WatcherOperations.Reconcile, record.Type);
 		Assert.Equal("policy", record.Category);
-		Assert.True(record.IsCritical);
+		Assert.False(record.IsCritical);
 		Assert.Equal(WatcherOperations.PolicyViolation, record.Criterion);
 		Assert.Equal("error", record.Severity);
 		Assert.Contains(record.Files, file => file.Replace('\\', '/') == "Objectives/Bad.md");
@@ -380,4 +396,143 @@ public sealed class WatcherStatusTests : VaultTestBase
 		watcher.ReportInspectCandidate(Invalid("Candidate has validation issues.", new("forecast", "Field is required.")));
 		Assert.NotEqual(first, Assert.Single(registry.GetActiveStatuses()).Fingerprint);
 	}
+
+	[Fact]
+	public void A_conflicts_content_error_outlives_its_successful_sync()
+	{
+		// A conflict "sync" only records the conflict: the invalid content stays in the user's file, so the error must
+		// stand until the user fixes the file — not be cleared the moment it was raised.
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		var candidate = Candidate(
+			"Objectives/Invalid.md",
+			VaultSyncAction.Conflict,
+			"Invalid candidate is held in conflict.",
+			VaultSyncConcern.MarkdownInvalid,
+			issues: [new MarkdownValidationIssue("status", "Unknown enum value.")]);
+		watcher.ReportInspectCandidate(candidate);
+		watcher.ReportSyncSucceeded(candidate);
+
+		var status = Assert.Single(registry.GetActiveStatuses());
+		Assert.Equal(WatcherOperations.MarkdownInvalid, status.ReasonCode);
+		Assert.Equal(OperationSeverity.Error, status.Severity);
+		Assert.Equal(OperationHealth.Issues, registry.GetHealth());
+
+		// It is resolved by the user's edit (which re-inspects the path), not by a retry timer.
+		Assert.False(WatcherRetryScheduler.IsRetryable(status));
+		watcher.ReportInspectCandidate(Candidate("Objectives/Invalid.md"));
+		Assert.Empty(registry.GetActiveStatuses());
+	}
+
+	[Fact]
+	public void A_rewrite_enforces_invalid_content_as_a_warning_and_clears_it()
+	{
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		var candidate = Candidate(
+			"Objectives/Reverted.md",
+			VaultSyncAction.RewriteFromDatabase,
+			"Invalid candidate is rewritten from the database.",
+			VaultSyncConcern.MarkdownInvalid,
+			issues: [new MarkdownValidationIssue("status", "Unknown enum value.")]);
+		watcher.ReportInspectCandidate(candidate);
+		Assert.Equal(OperationSeverity.Warning, Assert.Single(registry.GetActiveStatuses()).Severity);
+
+		watcher.ReportSyncSucceeded(candidate);
+		Assert.Empty(registry.GetActiveStatuses());
+	}
+
+	[Fact]
+	public void Operational_failures_are_critical_and_the_whole_watcher_failures_fatal()
+	{
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		watcher.ReportSyncFailure(Candidate("Objectives/Broken.md"), new InvalidOperationException("database said no"));
+		var syncFailed = Assert.Single(registry.GetActiveStatuses());
+		Assert.Equal(WatcherOperations.SyncFailed, syncFailed.ReasonCode);
+		Assert.Equal(OperationSeverity.Critical, syncFailed.Severity);
+		Assert.Equal(OperationHealth.Critical, registry.GetHealth());
+
+		// A startup sweep that fails stops the watcher: fatal, standby.
+		watcher.ReportStartupScan(succeeded: false, "SQLite Error 1: 'no such column: d.SourceRecurrenceDate'.");
+		Assert.Equal(OperationSeverity.Fatal, registry.GetActiveStatuses()[0].Severity);
+		Assert.Equal(OperationHealth.Standby, registry.GetHealth());
+
+		// So do unresolvable roots and a crashed session.
+		watcher.ReportRootsResolved(succeeded: false, "no roots");
+		watcher.ReportFatal("boom");
+		Assert.All(
+			registry.GetActiveStatuses().Where(status => status.ReasonCode is WatcherOperations.RootsUnresolved or WatcherOperations.Fatal),
+			status => Assert.Equal(OperationSeverity.Fatal, status.Severity));
+
+		// Each clears when the watcher gets past it.
+		watcher.ReportStartupScan(succeeded: true);
+		watcher.ReportRootsResolved(succeeded: true);
+		Assert.DoesNotContain(registry.GetActiveStatuses(), status => status.ReasonCode is WatcherOperations.ScanFailed or WatcherOperations.RootsUnresolved);
+	}
+
+	[Fact]
+	public void An_observer_error_is_critical_until_the_resweep_resolves_it()
+	{
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+		var root = Vault.AbsolutePath("Objectives");
+
+		watcher.ReportRootError(root, "Too many changes at once in directory.");
+		var status = Assert.Single(registry.GetActiveStatuses());
+		Assert.Equal(WatcherOperations.RootError, status.ReasonCode);
+		Assert.Equal(OperationSeverity.Critical, status.Severity);
+
+		watcher.ReportRootRecovered(root);
+		Assert.Empty(registry.GetActiveStatuses());
+	}
+
+	[Fact]
+	public void A_failed_relocation_fast_path_is_only_a_warning()
+	{
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		watcher.ReportRelocationFailed(Vault.AbsolutePath("Objectives/Moved.md"), "boom");
+		var status = Assert.Single(registry.GetActiveStatuses());
+		Assert.Equal(WatcherOperations.RelocationFailed, status.ReasonCode);
+		Assert.Equal(OperationSeverity.Warning, status.Severity);
+
+		watcher.ReportRelocationSucceeded(Vault.AbsolutePath("Objectives/Moved.md"));
+		Assert.Empty(registry.GetActiveStatuses());
+	}
+
+	[Fact]
+	public async Task System_api_reports_the_new_healths_and_refuses_to_dismiss_a_fatal_issue()
+	{
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var cancellationToken = TestContext.Current.CancellationToken;
+
+		watcher.ReportSyncFailure(Candidate("Objectives/Broken.md"), new InvalidOperationException("database said no"));
+		var critical = await Vault.WithScopeAsync(services => services.GetRequiredService<ISystemApi>().GetWatcherIssuesAsync(cancellationToken));
+		Assert.Equal("critical", critical.Status);
+		Assert.Equal(1, critical.CriticalIssueCount);
+		Assert.Equal("critical", Assert.Single(critical.Issues).Severity);
+
+		watcher.ReportVaultInaccessible(Vault.AbsolutePath("Directives"), "permission denied");
+		var standby = await Vault.WithScopeAsync(services => services.GetRequiredService<ISystemApi>().GetWatcherIssuesAsync(cancellationToken));
+		Assert.Equal("standby", standby.Status);
+		Assert.Equal(2, standby.CriticalIssueCount);
+		var fatal = Assert.Single(standby.Issues, issue => issue.Severity == "fatal");
+		Assert.True(fatal.IsCritical);
+
+		// Dismissing it is refused, at any scope, and it stays live.
+		foreach (var scope in new string?[] { null, "file", "reason" })
+		{
+			Assert.False(await Vault.WithScopeAsync(services => services.GetRequiredService<ISystemApi>().DismissWatcherIssueAsync(fatal.Key, scope, cancellationToken)));
+		}
+
+		var after = await Vault.WithScopeAsync(services => services.GetRequiredService<ISystemApi>().GetWatcherIssuesAsync(cancellationToken));
+		Assert.Equal("standby", after.Status);
+		Assert.False(Assert.Single(after.Issues, issue => issue.Severity == "fatal").Dismissed);
+	}
 }
+

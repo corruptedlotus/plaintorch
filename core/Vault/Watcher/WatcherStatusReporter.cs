@@ -33,23 +33,48 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 	public void ReportRootInitializationFailed(string root, string? detail)
 		=> Report(WatcherOperations.Root, root, Check(WatcherOperations.RootInitFailed, failed: true, detail, files: [root], fingerprint: root));
 
-	/// <summary>Reports a runtime error raised by a filesystem root observer.</summary>
+	/// <summary>
+	/// Reports a runtime error raised by a filesystem root observer — typically an overflowing event buffer, so changes
+	/// under the root may have been missed. <see cref="ReportRootRecovered"/> resolves it once the watcher has re-swept.
+	/// </summary>
 	public void ReportRootError(string root, string? detail)
 		=> Report(WatcherOperations.Root, root, Check(WatcherOperations.RootError, failed: true, detail, files: [root], fingerprint: root));
+
+	/// <summary>Reports that a root whose observer errored has been re-swept, resolving its root-error flag.</summary>
+	public void ReportRootRecovered(string root)
+		=> Report(WatcherOperations.Root, root, Pass(WatcherOperations.RootError));
+
+	/// <summary>
+	/// Reports whether the watcher could resolve the roots it observes. Failing to is fatal — with no roots there is no
+	/// live observation at all — so the watcher sleeps and retries; a later resolution resolves the flag.
+	/// </summary>
+	public void ReportRootsResolved(bool succeeded, string? detail = null)
+		=> Report(WatcherOperations.Root, WatcherOperations.GlobalScope, Check(WatcherOperations.RootsUnresolved, failed: !succeeded, detail));
 
 	/// <summary>Reports that a relocation candidate synced successfully.</summary>
 	public void ReportRelocationSucceeded(string newPath)
 		=> Report(WatcherOperations.Relocation, WatcherOperations.GlobalScope, Check(WatcherOperations.RelocationFailed, failed: false));
 
-	/// <summary>Reports a fatal, watcher-halting failure.</summary>
+	/// <summary>
+	/// Reports that the relocation fast path threw for a moved or renamed file. It is only a warning: the file is
+	/// re-queued for a plain inspection, which reaches the same result the slow way.
+	/// </summary>
+	public void ReportRelocationFailed(string newPath, string? detail)
+		=> Report(WatcherOperations.Relocation, WatcherOperations.GlobalScope, Check(WatcherOperations.RelocationFailed, failed: true, detail, files: [newPath], fingerprint: newPath));
+
+	/// <summary>
+	/// Reports a fatal, watcher-halting failure: a vault session that fell through every inner guard. The watcher stays
+	/// down until the next activation, which starts from a clean status set.
+	/// </summary>
 	public void ReportFatal(string? detail)
 		=> Report(WatcherOperations.Process, WatcherOperations.GlobalScope, Check(WatcherOperations.Fatal, failed: true, detail));
 
 	/// <summary>
 	/// Reports that the vault or one of its entity roots cannot be reached (tier 2): a whole-of-vault condition the
-	/// watcher answers by going to sleep. It is a single error-level issue on the vault-access operation, keyed on the
-	/// global scope so that whichever root is currently inaccessible, there is exactly one such status; the offending
-	/// path is carried in its files and detail. <see cref="ReportVaultAccessible"/> resolves it once access recovers.
+	/// watcher answers by going to sleep. It is a single fatal issue on the vault-access operation — health reads standby
+	/// while it stands — keyed on the global scope so that whichever root is currently inaccessible, there is exactly one
+	/// such status; the offending path is carried in its files and detail. <see cref="ReportVaultAccessible"/> resolves
+	/// it once access recovers.
 	/// </summary>
 	public void ReportVaultInaccessible(string offendingPath, string? detail)
 	{
@@ -86,17 +111,17 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 	}
 
 	/// <summary>
-	/// Reports that discovery threw while passively inspecting a path (tier 1). A passive-read failure is advisory: we
-	/// could not read the file this pass, so it is left in place and re-checked. It surfaces at warning severity — it
-	/// does not, on its own, degrade health — and the retry sweep keeps re-inspecting the path until it reads cleanly,
-	/// which resolves the flag. The underlying cause (in use, permission, malformed) is preserved in the reason code.
+	/// Reports that discovery threw while passively inspecting a path (tier 1). The file is left in place and the retry
+	/// sweep keeps re-inspecting it until it reads cleanly, which resolves the flag. The cause is classified into its
+	/// reason — a locked file is a warning, a malformed one an error, a forbidden or otherwise failing read critical — and
+	/// carries that reason's one severity, the same as when a sync meets it.
 	/// </summary>
 	public void ReportInspectFailure(string path, Exception exception)
 	{
 		ArgumentNullException.ThrowIfNull(exception);
 		var reason = ClassifyOperationalFailure(exception, WatcherOperations.DiscoveryFailed);
 		var detail = string.IsNullOrWhiteSpace(exception.Message) ? null : exception.Message;
-		Report(WatcherOperations.Reconcile, path, OperationCheck.Fail(reason, OperationSeverity.Warning, detail, files: [path], fingerprint: exception.GetType().Name));
+		Report(WatcherOperations.Reconcile, path, Check(reason, failed: true, detail, files: [path], fingerprint: exception.GetType().Name));
 	}
 
 	/// <summary>Reports that a path was inspected cleanly but is not a managed candidate: all reconcile checks pass.</summary>
@@ -128,6 +153,10 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		var markdownInvalid = concern == VaultSyncConcern.MarkdownInvalid
 			|| (concern == VaultSyncConcern.None && candidate.Issues.Count > 0);
 
+		// A content problem the watcher enforced (it rewrote or purged the file) no longer stands, so it is only a warning;
+		// one left in the file for the user (a conflict, an ignored or partly synced file) keeps its error severity.
+		var contentSeverity = ContentSeverity(candidate.SuggestedAction);
+
 		// What makes this the *same* problem next time: the classified concern, the action it led to, and which fields
 		// are wrong (with their offending values) — never the reason's prose, which is localisable and presentational.
 		var fingerprint = Fingerprint(
@@ -145,25 +174,28 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 			Pass(WatcherOperations.DiscoveryFailed),
 			Pass(WatcherOperations.PermissionDenied),
 			Pass(WatcherOperations.FileInUse),
-			Check(WatcherOperations.MarkdownInvalid, markdownInvalid, validationDetail ?? candidate.SuggestedReason, files: [path], entityId: candidate.PathId, fingerprint),
-			Check(WatcherOperations.PuckViolation, puckViolation, candidate.SuggestedReason ?? firstIssue?.Message, files: [path], entityId: candidate.PathId, fingerprint),
-			Check(WatcherOperations.PolicyViolation, policyViolation, candidate.SuggestedReason, files: [path], entityId: candidate.PathId, fingerprint),
+			Check(WatcherOperations.MarkdownInvalid, markdownInvalid, validationDetail ?? candidate.SuggestedReason, files: [path], entityId: candidate.PathId, fingerprint, contentSeverity),
+			Check(WatcherOperations.PuckViolation, puckViolation, candidate.SuggestedReason ?? firstIssue?.Message, files: [path], entityId: candidate.PathId, fingerprint, contentSeverity),
+			Check(WatcherOperations.PolicyViolation, policyViolation, candidate.SuggestedReason, files: [path], entityId: candidate.PathId, fingerprint, contentSeverity),
 			Check(WatcherOperations.ForeignFile, foreignFile, candidate.SuggestedReason, files: [path], entityId: candidate.PathId, fingerprint));
 	}
 
 	/// <summary>
-	/// Reports that a candidate synced successfully. A successful sync clears every <em>actionable</em> reconcile
-	/// reason for the path — this resolves any issue an earlier <see cref="ReportInspectCandidate"/> raised, and is the
-	/// only resolution path for a purged file (the purge suppresses its own delete through the write barrier, so no
-	/// later re-inspection will ever clear the flag; a report that passed only <see cref="WatcherOperations.SyncFailed"/>
-	/// would strand it). It deliberately does <em>not</em> clear <see cref="WatcherOperations.ForeignFile"/>: leaving an
-	/// unmanaged file in place is itself the successful outcome, and the standing advisory persists until the file is
-	/// gone or becomes managed (a clean re-inspection), or the user dismisses it.
+	/// Reports that a candidate synced successfully. A successful sync always clears the operational reconcile reasons
+	/// for the path (the file could be read and the change applied). It clears the <em>content</em> reasons only when the
+	/// sync itself fixed the content — the watcher rewrote the file from the database or purged it. That is the only
+	/// resolution path for a purged file (the purge suppresses its own delete through the write barrier, so no later
+	/// re-inspection will ever clear the flag). Any other action leaves the content as the user wrote it, so the
+	/// inspection's verdict stands until the file is fixed: a conflict is resolved by the user, not by recording it.
+	/// It never clears <see cref="WatcherOperations.ForeignFile"/>: leaving an unmanaged file in place is itself the
+	/// successful outcome, and the standing error persists until the file is gone or becomes managed (a clean
+	/// re-inspection), or the user dismisses it.
 	/// </summary>
 	public void ReportSyncSucceeded(VaultSyncCandidate candidate)
 	{
 		ArgumentNullException.ThrowIfNull(candidate);
-		Report(WatcherOperations.Reconcile, candidate.AbsolutePath, Array.ConvertAll(SyncClearedReasonCodes, Pass));
+		var cleared = EnforcesContent(candidate.SuggestedAction) ? EnforcedSyncClearedReasonCodes : OperationalReasonCodes;
+		Report(WatcherOperations.Reconcile, candidate.AbsolutePath, Array.ConvertAll(cleared, Pass));
 	}
 
 	/// <summary>Reports that a candidate's sync execution threw, classified to a concrete cause.</summary>
@@ -190,11 +222,32 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		WatcherOperations.SyncFailed,
 	];
 
-	// The subset a successful sync clears: every actionable reason, but NOT foreign-file. A foreign file left in place
-	// is the successful outcome, so its standing advisory outlives the sync; only a clean re-inspection (file gone or
-	// now managed) or an explicit dismissal clears it.
-	private static readonly string[] SyncClearedReasonCodes =
+	// The reasons about reading and applying a file, which any successful sync clears.
+	private static readonly string[] OperationalReasonCodes =
+	[
+		WatcherOperations.DiscoveryFailed,
+		WatcherOperations.PermissionDenied,
+		WatcherOperations.FileInUse,
+		WatcherOperations.SyncFailed,
+	];
+
+	// The reasons a sync that enforced the content (a rewrite or a purge) clears: every reason but foreign-file. A foreign
+	// file left in place is the successful outcome, so its standing error outlives the sync; only a clean re-inspection
+	// (file gone or now managed) or an explicit dismissal clears it.
+	private static readonly string[] EnforcedSyncClearedReasonCodes =
 		[.. ReconcileReasonCodes.Where(static reason => reason != WatcherOperations.ForeignFile)];
+
+	/// <summary>Whether an action puts the file's content right itself — rewriting it from the database, or purging it.</summary>
+	private static bool EnforcesContent(VaultSyncAction action)
+		=> action is VaultSyncAction.RewriteFromDatabase or VaultSyncAction.PurgeFile;
+
+	/// <summary>
+	/// The severity of a content reason (invalid markdown, a PUCK or policy violation) for the action it led to: a
+	/// warning when the watcher enforced it, since nothing is left broken; otherwise the reason's own error severity
+	/// (<see langword="null"/>), since the problem stands in the user's file until they fix it.
+	/// </summary>
+	private static OperationSeverity? ContentSeverity(VaultSyncAction action)
+		=> EnforcesContent(action) ? OperationSeverity.Warning : null;
 
 	/// <summary>Reports every reconcile reason code as passing for a scope, resolving any active reconcile flag on it.</summary>
 	private void ReportReconcileHealthy(string path)
@@ -210,7 +263,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 	// status is presented (the system API looks it up per request), so the wire carries the two halves separately and a
 	// client can show, fold, or hide the detail independently. The detail is presentation only: what identifies *this*
 	// problem for an Instance dismissal is the structural, culture-invariant fingerprint composed from facts.
-	private static OperationCheck Check(string reasonCode, bool failed, string? detail = null, IReadOnlyList<string>? files = null, string? entityId = null, string? fingerprint = null)
+	private static OperationCheck Check(string reasonCode, bool failed, string? detail = null, IReadOnlyList<string>? files = null, string? entityId = null, string? fingerprint = null, OperationSeverity? severity = null)
 	{
 		if (!failed)
 		{
@@ -218,7 +271,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		}
 
 		var descriptor = WatcherOperations.Describe(reasonCode);
-		return OperationCheck.Fail(reasonCode, descriptor.Severity, string.IsNullOrWhiteSpace(detail) ? null : detail, files, entityId, fingerprint);
+		return OperationCheck.Fail(reasonCode, severity ?? descriptor.Severity, string.IsNullOrWhiteSpace(detail) ? null : detail, files, entityId, fingerprint);
 	}
 
 	/// <summary>Composes a structural fingerprint from its parts (order-significant, unit-separated).</summary>

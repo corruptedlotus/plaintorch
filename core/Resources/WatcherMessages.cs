@@ -37,6 +37,7 @@ public static class WatcherMessages
 		public static string RelocationFailed => Get();
 		public static string RootInitFailed => Get();
 		public static string RootError => Get();
+		public static string RootsUnresolved => Get();
 		public static string Fatal => Get();
 		public static string VaultInaccessible => Get();
 		public static string DuplicateIdentity => Get();

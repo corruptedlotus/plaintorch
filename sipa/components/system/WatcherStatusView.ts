@@ -2,10 +2,12 @@ import { Component, component, css, html } from "@a11d/lit"
 import { WatcherReportController, watcherHealthLabel } from "./watcherReport"
 
 /**
- * Status-bar indicator for core/watcher health (PEP108). The watcher's glyph in its health's colour (ok / standby /
- * issues / offline) with the live issue count, and a click opens a popover listing the active statuses — the
- * {@link WatcherIssueList}, where an issue can be dismissed (snoozed until a different problem arises) and a dismissed
- * one restored. The glyph and the count exclude dismissed issues; the report is the document's shared poll.
+ * Status-bar indicator for core/watcher health (PEP108). The watcher's glyph in its health's colour (ok green, issues
+ * yellow, critical orange, standby red, offline faint — the {@link WatcherIndicator}'s mapping, which the popover's
+ * title pill repeats) with the live issue count, and a click opens a popover listing the active statuses — the
+ * {@link WatcherIssueList}, where an issue short of fatal can be dismissed (snoozed until a different problem arises)
+ * and a dismissed one restored. The glyph and the count exclude dismissed issues; the report is the document's shared
+ * poll.
  */
 @component('p7t-watcher-status')
 export class WatcherStatusView extends Component {
@@ -32,11 +34,14 @@ export class WatcherStatusView extends Component {
 					&.ok {
 						color: var(--color-green);
 					}
-					&.standby {
-						color: var(--color-red);
-					}
 					&.issues {
 						color: var(--color-yellow);
+					}
+					&.critical {
+						color: var(--color-orange);
+					}
+					&.standby {
+						color: var(--color-red);
 					}
 					&.offline {
 						color: var(--text-faint);

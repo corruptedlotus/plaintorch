@@ -45,6 +45,13 @@ public sealed record EntityExistence(
 /// <summary>
 /// Represents a watcher issue record exposed through system diagnostics APIs.
 /// </summary>
+/// <param name="IsCritical">Whether the issue blocks the watcher's work: its severity is <c>critical</c> or <c>fatal</c>.</param>
+/// <param name="Severity">
+/// The graded severity (PEP108): <c>info</c> (no consequence; never affects health), <c>warning</c> (no breaking
+/// consequence, best resolved), <c>error</c> (invalid content the user must resolve), <c>critical</c> (a technical failure
+/// blocking part of the watcher's job) or <c>fatal</c> (the watcher cannot run; it is on standby, and the issue cannot be
+/// dismissed).
+/// </param>
 /// <param name="Message">The reason's generic descriptor message (what this kind of issue means), resolved per request.</param>
 /// <param name="Detail">
 /// The specific detail of this occurrence — the policy's reason, an exception message, the offending files — or

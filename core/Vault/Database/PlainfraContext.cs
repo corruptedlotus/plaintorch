@@ -175,20 +175,34 @@ public class PlainfraContext : DbContext
 	public DbSet<UserPreferenceRecord> UserPreferences => Set<UserPreferenceRecord>();
 
 	/// <inheritdoc />
+	/// <summary>
+	/// Reads a stored severity name. <c>Suspended</c> predates the PEP108 regrading and only ever came from a file locked
+	/// by another process, which is now a <see cref="Pleiades.Diagnostics.OperationSeverity.Warning"/>; every other name
+	/// is current.
+	/// </summary>
+	private static Pleiades.Diagnostics.OperationSeverity ReadStoredSeverity(string stored)
+		=> string.Equals(stored, "Suspended", StringComparison.OrdinalIgnoreCase)
+			? Pleiades.Diagnostics.OperationSeverity.Warning
+			: Enum.Parse<Pleiades.Diagnostics.OperationSeverity>(stored, ignoreCase: true);
+
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
 		base.OnModelCreating(modelBuilder);
 
-		// PEP108: operation-status transition log. Enum columns are stored as readable strings.
+		// PEP108: operation-status transition log. Enum columns are stored as readable strings; severities read back
+		// through a converter that also understands names retired by the regrading (see ReadStoredSeverity).
 		modelBuilder.Entity<OperationStatusEvent>()
 			.Property(x => x.Transition)
 			.HasConversion<string>();
+		var severityConverter = new ValueConverter<Pleiades.Diagnostics.OperationSeverity, string>(
+			severity => severity.ToString(),
+			stored => ReadStoredSeverity(stored));
 		modelBuilder.Entity<OperationStatusEvent>()
 			.Property(x => x.Severity)
-			.HasConversion<string>();
+			.HasConversion(severityConverter);
 		modelBuilder.Entity<OperationStatusEvent>()
 			.Property(x => x.PreviousSeverity)
-			.HasConversion<string>();
+			.HasConversion(severityConverter);
 
 		// PEP108 dismiss feature: durable dismissals, with the scope enum stored as a readable string.
 		modelBuilder.Entity<OperationStatusDismissalRecord>()
