@@ -151,3 +151,11 @@ The canvas emits a `contextChanged` snapshot (pins + positions) on every change.
 - **Eventive occurrence nodes** are deferred — the search returns whole fates; pinning a specific `RECURRENCE-ID` occurrence is a follow-up over the same recurrence mechanism dependency edges already use.
 - The endpoint search is a bounded three-table title match, not a real global search index; a proper search service is later work, and a better picker UI can sit on top of it.
 - A ghostly-blocker overlay (as the onrush contexts draw) is not applied here — a global context is an explicit set, so nothing is pulled in uninvited beyond the optional add-with-dependencies.
+
+## Patch102.7 - Canvas input
+
+### Touch moves only what is chosen
+On a touch screen a node moves only once it is selected — the other way round from the mouse, whose press moves any node but the active one. A finger that presses any other node and moves pans the canvas, as on the backdrop, and lifted in place it is the tap that selects the node. A finger that presses the selected node and moves drags it, from anywhere on it, its live contents included; lifted in place, the tap still reaches those contents. Neither takes the pointer until it passes the drag threshold, so a tap's click lands where it was aimed.
+
+### The wheel
+A mouse wheel zooms about the cursor; Shift pans sideways and Ctrl (or ⌘) up and down. A trackpad keeps its own reading: a two-finger scroll pans both ways and a pinch (Chromium's Ctrl-wheel) zooms. The two are told apart by the legacy `wheelDelta`: a notch is a whole multiple of 120, a trackpad's continuous deltas are not — so a high-resolution wheel reporting fractions of a notch reads as a trackpad and pans.

@@ -18,10 +18,15 @@ export interface GlobalContextSnapshot {
 	readonly layout: string | undefined
 }
 
-/** Which gesture a pointer is currently carrying out. */
+/**
+ * Which gesture a pointer is currently carrying out.
+ *
+ * A pan or a drag that a finger began on a node is `deferred`: it neither moves anything nor captures the pointer until
+ * the finger has travelled past the threshold, so a tap on the node still lands as the click it was aimed as.
+ */
 type Gesture =
-	| { readonly sort: 'pan', readonly pointerId: number, readonly originX: number, readonly originY: number, readonly fromX: number, readonly fromY: number }
-	| { readonly sort: 'drag', readonly pointerId: number, readonly nodeKey: string, readonly offsetX: number, readonly offsetY: number, readonly originX: number, readonly originY: number }
+	| { readonly sort: 'pan', readonly pointerId: number, readonly originX: number, readonly originY: number, readonly fromX: number, readonly fromY: number, readonly deferred?: boolean }
+	| { readonly sort: 'drag', readonly pointerId: number, readonly nodeKey: string, readonly offsetX: number, readonly offsetY: number, readonly originX: number, readonly originY: number, readonly deferred?: boolean }
 	| { readonly sort: 'link', readonly pointerId: number, readonly nodeKey: string, readonly at: Point }
 	/**
 	 * Two fingers on the viewport: pinching zooms, and moving them together pans. `pointerId` is the first
@@ -58,6 +63,22 @@ const dragThreshold = 3
  * mouse (a touch double-tap survives it). Timing the pair ourselves opens the details for either input.
  */
 const doubleClickWindow = 450
+
+/**
+ * Whether a wheel event is a mouse wheel's notch rather than a trackpad's scroll or pinch. A notch carries a legacy
+ * `wheelDelta` that is a whole multiple of 120 (the Windows notch), which a trackpad's continuous deltas — and the
+ * pinch Chromium encodes as a Ctrl-wheel — do not; a line- or page-mode delta is a wheel wherever it comes from.
+ * High-resolution wheels that report fractions of a notch read as a trackpad, and so pan.
+ */
+function isMouseWheel(e: WheelEvent): boolean {
+	if (e.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) {
+		return true
+	}
+
+	const legacy = e as WheelEvent & { readonly wheelDeltaX?: number, readonly wheelDeltaY?: number }
+	const wheelDelta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? legacy.wheelDeltaX : legacy.wheelDeltaY
+	return wheelDelta !== undefined && wheelDelta !== 0 && wheelDelta % 120 === 0
+}
 
 /**
  * The dependency canvas: the backlog as a graph you can draw on.
@@ -1281,6 +1302,11 @@ export class DependencyCanvas extends Component {
 			return
 		}
 
+		if (e.pointerType === 'touch') {
+			this.onNodeTouchDown(e, nodeKey, box)
+			return
+		}
+
 		// The active node's body is live, so a press there belongs to whatever control is under it — dragging
 		// would fight it. Its handles still start edges; moving it means dropping focus (a backdrop press) first.
 		if (this.activeKey === nodeKey) {
@@ -1301,6 +1327,46 @@ export class DependencyCanvas extends Component {
 			originY: e.clientY
 		}
 		this.capture(e.pointerId)
+	}
+
+	/**
+	 * A finger pressed on a node. On a touch screen a node moves only once it is chosen — the other way round from a
+	 * mouse, whose press moves any node but the active one. A finger that presses any other node and moves pans the
+	 * canvas, as on the backdrop: with the canvas full of nodes it could hardly be panned otherwise; lifted in place,
+	 * it is the tap that selects the node (its click). A finger that presses the selected node and moves drags it, from
+	 * anywhere on it, its live contents included; lifted in place, the tap still reaches those contents. Either way
+	 * nothing moves or is captured until the finger passes the threshold (`deferred`), so a tap's click lands where it
+	 * was aimed.
+	 */
+	private onNodeTouchDown(e: PointerEvent, nodeKey: string, box: NodeBox) {
+		e.stopPropagation()
+		// Live from the press, not only once captured: a second finger must find this one down to begin a pinch.
+		this.livePointers.add(e.pointerId)
+		this.dragged = false
+		if (this.selected === nodeKey) {
+			const point = this.toCanvas(e.clientX, e.clientY)
+			this.gesture = {
+				sort: 'drag',
+				pointerId: e.pointerId,
+				nodeKey,
+				offsetX: point.x - box.x,
+				offsetY: point.y - box.y,
+				originX: e.clientX,
+				originY: e.clientY,
+				deferred: true
+			}
+			return
+		}
+
+		this.gesture = {
+			sort: 'pan',
+			pointerId: e.pointerId,
+			originX: e.clientX,
+			originY: e.clientY,
+			fromX: this.pan.x,
+			fromY: this.pan.y,
+			deferred: true
+		}
 	}
 
 	/**
@@ -1424,6 +1490,17 @@ export class DependencyCanvas extends Component {
 				return
 			}
 			case 'pan':
+				// A finger that began on a node is still a tap until it passes the threshold; past it, the tap's
+				// click is swallowed and the pan owns the pointer.
+				if (gesture.deferred && !this.dragged) {
+					if (Math.hypot(e.clientX - gesture.originX, e.clientY - gesture.originY) < dragThreshold) {
+						return
+					}
+
+					this.dragged = true
+					this.capture(e.pointerId)
+				}
+
 				this.pan = {
 					x: gesture.fromX + (e.clientX - gesture.originX),
 					y: gesture.fromY + (e.clientY - gesture.originY)
@@ -1434,6 +1511,10 @@ export class DependencyCanvas extends Component {
 				// the click that follows — would be reading intent into an unsteady hand.
 				if (!this.dragged && Math.hypot(e.clientX - gesture.originX, e.clientY - gesture.originY) < dragThreshold) {
 					return
+				}
+
+				if (gesture.deferred && !this.dragged) {
+					this.capture(e.pointerId)
 				}
 
 				this.dragged = true
@@ -1492,6 +1573,23 @@ export class DependencyCanvas extends Component {
 	 * it owned, so a stale gesture never lingers to hijack the next lone touch into a phantom pinch.
 	 */
 	private onLostPointerCapture(e: PointerEvent) {
+		// A finger is captured to the element it pressed until the canvas takes it: that element losing it — to the
+		// canvas taking over, or to a re-render removing it — is not the end of the gesture. The canvas takes the
+		// pointer instead, if it is still down.
+		if (e.target !== this.viewportElement) {
+			if (this.gesture && this.owns(this.gesture, e.pointerId) && !this.viewportElement.hasPointerCapture(e.pointerId)) {
+				try {
+					this.viewportElement.setPointerCapture(e.pointerId)
+				}
+				catch {
+					this.livePointers.delete(e.pointerId)
+					this.endGesture()
+				}
+			}
+
+			return
+		}
+
 		this.livePointers.delete(e.pointerId)
 		if (this.gesture && this.owns(this.gesture, e.pointerId)) {
 			this.endGesture()
@@ -1531,23 +1629,45 @@ export class DependencyCanvas extends Component {
 	}
 
 	/**
-	 * Wheel input, read the way a trackpad delivers it: a two-finger scroll arrives as plain deltas and pans;
-	 * a pinch arrives as a wheel with `ctrlKey` set (how Chromium encodes it) and zooms about the cursor. A mouse
-	 * wheel therefore pans too, and zooms with Ctrl (or ⌘) held — the convention Obsidian's own canvas keeps.
-	 * Line- and page-mode deltas are scaled to pixels so a mouse notch moves a sensible distance.
+	 * Wheel input. A mouse wheel zooms about the cursor; with Shift held it pans sideways, and with Ctrl (or ⌘) up and
+	 * down. A trackpad is read the way it delivers itself instead: a two-finger scroll arrives as plain deltas and pans
+	 * both ways, and a pinch arrives as a wheel with `ctrlKey` set (how Chromium encodes it) and zooms about the
+	 * cursor. Line- and page-mode deltas are scaled to pixels so a notch moves a sensible distance.
 	 */
 	private onWheel(e: WheelEvent) {
 		e.preventDefault()
 		const unit = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? 240 : 1
-		if (!e.ctrlKey && !e.metaKey) {
-			this.pan = { x: this.pan.x - e.deltaX * unit, y: this.pan.y - e.deltaY * unit }
+		if (!isMouseWheel(e)) {
+			if (e.ctrlKey || e.metaKey) {
+				this.zoomByWheel(e.clientX, e.clientY, e.deltaY * unit)
+			}
+			else {
+				this.pan = { x: this.pan.x - e.deltaX * unit, y: this.pan.y - e.deltaY * unit }
+			}
+
 			return
 		}
 
-		// A pinch reports small deltas many times a second, a ctrl-wheel a whole notch at once; the clamp keeps
-		// one notch to a modest step while a pinch's stream still adds up smoothly.
-		const delta = Math.max(-30, Math.min(30, e.deltaY * unit))
-		this.zoomAbout(e.clientX, e.clientY, this.scale * Math.exp(-delta * 0.01))
+		// Chromium turns a shifted notch into a horizontal one, so the notch is whichever axis carries it.
+		const notch = (e.deltaY || e.deltaX) * unit
+		if (e.shiftKey) {
+			this.pan = { x: this.pan.x - notch, y: this.pan.y }
+		}
+		else if (e.ctrlKey || e.metaKey) {
+			this.pan = { x: this.pan.x, y: this.pan.y - notch }
+		}
+		else {
+			this.zoomByWheel(e.clientX, e.clientY, notch)
+		}
+	}
+
+	/**
+	 * Zooms about a client point by a wheel's delta. A pinch reports small deltas many times a second, a notch a whole
+	 * step at once; the clamp keeps one notch to a modest step while a pinch's stream still adds up smoothly.
+	 */
+	private zoomByWheel(clientX: number, clientY: number, delta: number) {
+		const clamped = Math.max(-30, Math.min(30, delta))
+		this.zoomAbout(clientX, clientY, this.scale * Math.exp(-clamped * 0.01))
 	}
 
 	/** Zooms to a scale about a client point: whatever is under it stays under it. */
