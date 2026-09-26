@@ -47,10 +47,15 @@ public sealed record OrbitSpanEntry(long StartMs, long EndMs, OrbitUnit Granular
 /// <item><c>@x</c> limits a node's <b>emission</b>: its own instances (what its subtree produces, before any enclosing
 /// set operation acts on them) are counted per life in time order, and only the first x fire — so
 /// <c>M[w[d{1}%2]@7]</c> fires up to seven times a month, and a top-level <c>d{2,4,6,8}@2</c> fires twice in all.</item>
-/// <item>A week inside a month (written, or implied by a top-level week index) is numbered from the month's first
-/// complete week: the week the month starts in belongs to it only when every instance the week node asks for falls
-/// inside the month, so <c>M[w{1}[d{1}]]</c> is the first Monday of every month. The weeks run to the one the month
-/// ends in, whose days past the month's end are cut off.</item>
+/// <item>A week inside a month (written, or implied by a top-level week index) or inside a written year (a calendar
+/// week) is numbered from that cycle's first complete week: the week the cycle starts in belongs to it only when every
+/// instance the week node asks for falls inside the cycle, so <c>M[w{1}[d{1}]]</c> is the first Monday of every month
+/// and <c>y[w{1}[d{1}]]</c> the first of every year. The weeks run to the one the cycle ends in, whose days past its end
+/// are cut off. A bare top-level week (<c>w[d{1,5}]</c>) belongs to no cycle: it runs week after week across months. A
+/// day inside a written year is its day of the year (<c>y[d{100}]</c>).</item>
+/// <item>A set operation may sit inside a chain (<c>M[d{15}+d{4}%4]</c>); its operands share the node above as their
+/// parent. A span schedule lifts it to the top — <c>P[A op B]</c> reads as <c>P[A] op P[B]</c> — so its interval
+/// algebra runs exactly as it would on top-level operands.</item>
 /// </list>
 /// Every limit is a pure function of the notation, epoch and seed: the engine keeps no running counters, a snapshot
 /// is its cursor, and a preview seeks straight to its window.
@@ -130,7 +135,6 @@ public sealed class OrbitEngine
 		// front, so every downstream pass (limits, normalize, span-building) only ever sees
 		// OrbitTimeUnitNode / OrbitSetOperationNode and needs no literal awareness.
 		var source = ExpandLiterals(ast);
-		_rawAst = source;
 		// Record each node's written parent BEFORE normalization adds synthetic y>M>...
 		// wrappers, then normalize.
 		IndexNodes(source, null);
@@ -143,6 +147,7 @@ public sealed class OrbitEngine
 		_cursor = SeededStart();
 
 		_spanFormat = !granularOnly && HasDuration(source);
+		_rawAst = _spanFormat ? LiftSets(source) : source;
 		if (_spanFormat)
 		{
 			ValidateSpanFormat();
@@ -668,6 +673,61 @@ public sealed class OrbitEngine
 		return OrbitSpanStreams.Coalesce(Raw);
 	}
 
+	// A span schedule's interval algebra runs over whole operands, so a set operation nested in a chain is lifted to the
+	// top: P[A op B] becomes P[A] op P[B], the chain above repeated in each operand, exactly as it would be written at the
+	// top level. A *x or @x above such a set would count the set's combined instances, which no top-level operand can
+	// say, so it is refused.
+	private static OrbitAstNode LiftSets(OrbitAstNode node)
+	{
+		if (node is OrbitSetOperationNode set)
+		{
+			return new OrbitSetOperationNode
+			{
+				Operator = set.Operator,
+				Left = LiftSets(set.Left),
+				Right = LiftSets(set.Right),
+			};
+		}
+
+		if (node is not OrbitTimeUnitNode { Child: not null } unitNode)
+		{
+			return node;
+		}
+
+		var child = LiftSets(unitNode.Child);
+		if (child is not OrbitSetOperationNode lifted)
+		{
+			return ReferenceEquals(child, unitNode.Child) ? unitNode : WithChild(unitNode, child);
+		}
+
+		if (unitNode.Limits.Any(limit => limit.Kind is OrbitLimitKind.Iterations or OrbitLimitKind.Instances))
+		{
+			throw new FormatException("A span set operation cannot sit under a node with a * or @ limit; write it at the top level.");
+		}
+
+		return new OrbitSetOperationNode
+		{
+			Operator = lifted.Operator,
+			Left = LiftSets(WithChild(unitNode, lifted.Left)),
+			Right = LiftSets(WithChild(unitNode, lifted.Right)),
+		};
+	}
+
+	// A copy of a time-unit node with another child, its own index and modifiers kept.
+	private static OrbitTimeUnitNode WithChild(OrbitTimeUnitNode node, OrbitAstNode child)
+	{
+		var copy = new OrbitTimeUnitNode
+		{
+			Unit = node.Unit,
+			Indices = node.Indices,
+			Child = child,
+			Interval = node.Interval,
+			Duration = node.Duration,
+		};
+		copy.Limits.AddRange(node.Limits);
+		return copy;
+	}
+
 	private long ApplyDuration(long startMs, List<OrbitDurationPart> parts)
 	{
 		var current = startMs;
@@ -920,8 +980,9 @@ public sealed class OrbitEngine
 			var childCursor = new Cursor(cursor.Ms);
 			var childSuccess = SolveNext(node.Child, childCursor, node.Unit);
 
-			// Verify the child match didn't bleed outside this parent's window.
-			if (childSuccess && IsSameContext(node.Unit, cursor.Ms, childCursor.Ms, parentUnit))
+			// Verify the child match didn't bleed outside this parent's window — unless the node is a week that runs
+			// across months.
+			if (childSuccess && (RunsAcrossMonths(node, parentUnit) || IsSameContext(node.Unit, cursor.Ms, childCursor.Ms, parentUnit)))
 			{
 				cursor.Ms = childCursor.Ms;
 				return WithinEmission(node, cursor.Ms, parentUnit);
@@ -1427,6 +1488,12 @@ public sealed class OrbitEngine
 			return _calendar.Get(originalMs, OrbitUnit.Year) == _calendar.Get(updatedMs, OrbitUnit.Year);
 		}
 
+		// A week or a day counted within a year is cut at the year's end, as one within a month is at the month's.
+		if ((unit is OrbitUnit.Week or OrbitUnit.Day) && parentUnit == OrbitUnit.Year)
+		{
+			return _calendar.Get(originalMs, OrbitUnit.Year) == _calendar.Get(updatedMs, OrbitUnit.Year);
+		}
+
 		if (unit == OrbitUnit.Week)
 		{
 			return _calendar.Get(originalMs, OrbitUnit.Month) == _calendar.Get(updatedMs, OrbitUnit.Month)
@@ -1445,41 +1512,65 @@ public sealed class OrbitEngine
 	}
 
 	// --- Node-aware unit helpers ---
-	// A week inside a month is numbered from the month's first complete week (see WeekOffset); every other node reads
-	// its unit as the parent-aware unit helpers below do.
+	// A week inside a month or a year is numbered from that cycle's first complete week (see WeekOffset), and a day inside
+	// a year is its day of the year; every other node reads its unit as the parent-aware unit helpers below do.
 
-	// Whether a node is a week counted within a month: nested in a written month, or a top-level week whose index
-	// addresses the month it is implicitly wrapped in. A bare top-level week is not: it runs week after week.
-	private bool IsWeekInMonth(OrbitTimeUnitNode node, OrbitUnit? parentUnit)
+	// The cycle a week node is counted within: a month — written, or the one a top-level week index addresses — or a
+	// written year (a calendar week). A bare top-level week has none: it runs week after week.
+	private OrbitUnit? WeekCycle(OrbitTimeUnitNode node, OrbitUnit? parentUnit)
 	{
-		if (node.Unit != OrbitUnit.Week || parentUnit != OrbitUnit.Month)
+		if (node.Unit != OrbitUnit.Week || !_nodes.TryGetValue(node, out var info))
 		{
-			return false;
+			return null;
 		}
 
-		return _nodes.TryGetValue(node, out var info) && (info.Parent is not null || node.Indices is not null);
+		if (parentUnit == OrbitUnit.Year && info.Parent == OrbitUnit.Year)
+		{
+			return OrbitUnit.Year;
+		}
+
+		if (parentUnit == OrbitUnit.Month && (info.Parent is not null || node.Indices is not null))
+		{
+			return OrbitUnit.Month;
+		}
+
+		return null;
 	}
 
-	// 1 when the week the month starts in is not the month's, else 0. That week belongs to the month only when the
-	// first instance its node asks for (a leaf week asks for the whole week) falls inside the month — so a month that
-	// starts midweek has M[w{1}[d{1}]] land on its first Monday, not on the Monday of the week before.
-	private int WeekOffset(OrbitTimeUnitNode node, long cursorMs)
+	// Whether a node is a bare top-level week: it runs week after week, so the month it is implicitly wrapped in does not
+	// cut it, and a week that straddles two months keeps its days in both. (Cut there, the days past the seam were lost:
+	// stepping on to the next week lands in the new month's second week.)
+	private bool RunsAcrossMonths(OrbitTimeUnitNode node, OrbitUnit? parentUnit)
+		=> node.Unit == OrbitUnit.Week && parentUnit == OrbitUnit.Month && _nodes.TryGetValue(node, out var info) && info.Parent is null && node.Indices is null;
+
+	// Whether a node is a day counted within a written year: its day of the year.
+	private static bool IsDayOfYear(OrbitTimeUnitNode node, OrbitUnit? parentUnit)
+		=> node.Unit == OrbitUnit.Day && parentUnit == OrbitUnit.Year;
+
+	// A week's place in a cycle, counting the week the cycle starts in as the first (before any offset).
+	private int WeekOfCycle(long cursorMs, long cycleStartMs)
+		=> (int)_calendar.Delta(_calendar.SnapToStart(cursorMs, OrbitUnit.Week), _calendar.SnapToStart(cycleStartMs, OrbitUnit.Week), OrbitUnit.Week) + 1;
+
+	// 1 when the week a cycle starts in is not the cycle's, else 0. That week belongs to the cycle only when the first
+	// instance its node asks for (a leaf week asks for the whole week) falls inside the cycle — so a month that starts
+	// midweek has M[w{1}[d{1}]] land on its first Monday, not on the Monday of the week before.
+	private int WeekOffset(OrbitTimeUnitNode node, long cursorMs, OrbitUnit cycle)
 	{
-		var month = _calendar.SnapToStart(cursorMs, OrbitUnit.Month);
-		if (!_weekOffsets.TryGetValue(node, out var byMonth))
+		var start = _calendar.SnapToStart(cursorMs, cycle);
+		if (!_weekOffsets.TryGetValue(node, out var byCycle))
 		{
-			byMonth = [];
-			_weekOffsets[node] = byMonth;
+			byCycle = [];
+			_weekOffsets[node] = byCycle;
 		}
 
-		if (byMonth.TryGetValue(month, out var cached))
+		if (byCycle.TryGetValue(start, out var cached))
 		{
 			return cached;
 		}
 
 		var offset = 0;
-		var week = _calendar.SnapToStart(month, OrbitUnit.Week);
-		if (week < month)
+		var week = _calendar.SnapToStart(start, OrbitUnit.Week);
+		if (week < start)
 		{
 			var first = week;
 			if (node.Child is not null)
@@ -1489,21 +1580,26 @@ public sealed class OrbitEngine
 				first = SolveNext(node.Child, probe, OrbitUnit.Week) && probe.Ms < weekEnd ? probe.Ms : long.MaxValue;
 			}
 
-			if (first < month)
+			if (first < start)
 			{
 				offset = 1;
 			}
 		}
 
-		byMonth[month] = offset;
+		byCycle[start] = offset;
 		return offset;
 	}
 
 	private int NodeGet(OrbitTimeUnitNode node, long cursorMs, OrbitUnit? parentUnit)
 	{
-		if (IsWeekInMonth(node, parentUnit))
+		if (WeekCycle(node, parentUnit) is { } cycle)
 		{
-			return _calendar.Get(cursorMs, OrbitUnit.Week) - WeekOffset(node, cursorMs);
+			return WeekOfCycle(cursorMs, _calendar.SnapToStart(cursorMs, cycle)) - WeekOffset(node, cursorMs, cycle);
+		}
+
+		if (IsDayOfYear(node, parentUnit))
+		{
+			return (int)_calendar.Delta(_calendar.SnapToStart(cursorMs, OrbitUnit.Day), _calendar.SnapToStart(cursorMs, OrbitUnit.Year), OrbitUnit.Day) + 1;
 		}
 
 		return _calendar.Get(cursorMs, node.Unit, parentUnit);
@@ -1511,16 +1607,24 @@ public sealed class OrbitEngine
 
 	private int NodeMin(OrbitTimeUnitNode node, OrbitUnit? parentUnit, long contextMs)
 	{
-		return IsWeekInMonth(node, parentUnit) ? 1 : UnitMin(node.Unit, parentUnit, contextMs);
+		return WeekCycle(node, parentUnit) is not null || IsDayOfYear(node, parentUnit) ? 1 : UnitMin(node.Unit, parentUnit, contextMs);
 	}
 
-	// A week-in-month node's last week is the one the month ends in, so a week index never overflows into the next month.
+	// A week's last in its cycle is the one the cycle ends in, so a week index never overflows into the next cycle; a
+	// day's last in its year is the year's last day.
 	private int NodeMax(OrbitTimeUnitNode node, OrbitUnit? parentUnit, long contextMs)
 	{
-		if (IsWeekInMonth(node, parentUnit))
+		if (WeekCycle(node, parentUnit) is { } cycle)
 		{
-			var lastDay = _calendar.Add(_calendar.Add(_calendar.SnapToStart(contextMs, OrbitUnit.Month), OrbitUnit.Month, 1), OrbitUnit.Day, -1);
-			return _calendar.Get(lastDay, OrbitUnit.Week) - WeekOffset(node, contextMs);
+			var start = _calendar.SnapToStart(contextMs, cycle);
+			var lastDay = _calendar.Add(_calendar.Add(start, cycle, 1), OrbitUnit.Day, -1);
+			return WeekOfCycle(lastDay, start) - WeekOffset(node, contextMs, cycle);
+		}
+
+		if (IsDayOfYear(node, parentUnit))
+		{
+			var start = _calendar.SnapToStart(contextMs, OrbitUnit.Year);
+			return (int)_calendar.Delta(_calendar.Add(start, OrbitUnit.Year, 1), start, OrbitUnit.Day);
 		}
 
 		return UnitMax(node.Unit, parentUnit, contextMs);
@@ -1528,9 +1632,15 @@ public sealed class OrbitEngine
 
 	private long NodeSet(OrbitTimeUnitNode node, long cursorMs, int value, OrbitUnit? parentUnit)
 	{
-		if (IsWeekInMonth(node, parentUnit))
+		if (WeekCycle(node, parentUnit) is { } cycle)
 		{
-			return _calendar.Set(cursorMs, OrbitUnit.Week, value + WeekOffset(node, cursorMs));
+			var current = WeekOfCycle(cursorMs, _calendar.SnapToStart(cursorMs, cycle));
+			return _calendar.Add(cursorMs, OrbitUnit.Week, value + WeekOffset(node, cursorMs, cycle) - current);
+		}
+
+		if (IsDayOfYear(node, parentUnit))
+		{
+			return _calendar.Add(cursorMs, OrbitUnit.Day, value - NodeGet(node, cursorMs, parentUnit));
 		}
 
 		return UnitSet(cursorMs, node.Unit, value, parentUnit);

@@ -63,6 +63,18 @@ export interface SimpleSchedule {
 	span?: DurationPart[]
 	/** Bounds that cap or window the stream, from `@x <t >t` (a `*x` lives on its frame or clock instead). */
 	bounds: Bound[]
+	/**
+	 * A set operation under the finest frame (`M[d{15}+d{4}%4]`): each branch is a schedule of its own read under the
+	 * frames above it, which both share. The frames' own run, span and bounds apply to the set as a whole.
+	 */
+	branches?: Branches
+}
+
+/** The two sides of a set operation nested under a schedule's frames, each read relative to the finest of them. */
+export interface Branches {
+	operator: SetOperator
+	left: ScheduleModel
+	right: ScheduleModel
 }
 
 /** One addressed calendar unit: which values of it, how often, and what it sits inside (for naming/phrasing). */

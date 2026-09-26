@@ -6,7 +6,8 @@
 // narrowing the one above. We collect calendar units (y/M/w/d) as `frames`, fold the h/m/s tail into a
 // clock `time`, and pick up `bounds` (`<t >t`) and `span` (duration) wherever they hang. Set-operations
 // (`+ & ^ -`) are the one non-linear shape, so they become a `compound` node the realizer can still voice.
-// A z/Z datetime literal is its own leaf: a dated one is a fixed `instant`, a bare time one a daily clock.
+// A z/Z datetime literal is its own leaf: a dated one is a fixed `instant`, a bare time one a daily clock. A set operation
+// nested under the frames (`M[d{15}+d{4}%4]`) becomes the schedule's `branches`, each read under the frames above it.
 //
 // A node's own limits are read against that node, as the engine resolves them: `*x` caps its repetition — the first x
 // values of a bare unit, or the first x steps of each run of a `%`-stepped index, and nothing at all on an index `%`
@@ -18,7 +19,7 @@
 import type { ASTNode, DateTimeLiteralNode, DurationPart, IndexSpec, LimitSpec, TimeUnit, TimeUnitNode } from './ast'
 import type { CalendarSystem } from './calendar'
 import {
-	Bound, CalendarUnit, ClockStep, ClockTime, Frame, NamedValue, ScheduleModel, Selection,
+	Bound, Branches, CalendarUnit, ClockStep, ClockTime, Frame, NamedValue, ScheduleModel, Selection,
 	isClockUnit, naturalParent,
 } from './scheduleModel'
 
@@ -42,6 +43,29 @@ export function normalizeSchedule(node: ASTNode, calendar: CalendarSystem): Sche
 }
 
 /**
+ * One side of a set operation nested under a frame of unit `enclosing`: a schedule of its own whose frames are read
+ * relative to that frame (its parent), or a compound of two such sides.
+ */
+function normalizeBranch(node: ASTNode, enclosing: CalendarUnit, calendar: CalendarSystem): ScheduleModel {
+	if (node.kind === 'SetOperationNode') {
+		return {
+			kind: 'compound',
+			operator: node.operator,
+			left: normalizeBranch(node.left, enclosing, calendar),
+			right: normalizeBranch(node.right, enclosing, calendar),
+		}
+	}
+	if (node.kind === 'DateTimeLiteralNode') {
+		// A time-only z{h:m} is a clock under the frame; a dated literal cannot sit inside a chain.
+		if (node.year !== undefined) throw new UnsupportedShapeError('dated literal inside a chain')
+		const bounds = windowBounds(node.limits)
+		const span = node.duration && node.duration.length > 0 ? node.duration : undefined
+		return { kind: 'simple', frames: [], time: readLiteralClock(node, enclosing, bounds), span, bounds }
+	}
+	return normalizeChain(node, calendar, enclosing)
+}
+
+/**
  * A z/Z literal. A dated one (`Z{…}`, year present) is a fixed {@link InstantSchedule}; a bare time one
  * (`z{h:m}`, no date) is just a daily clock — a frameless simple schedule with only a `time`.
  */
@@ -58,19 +82,29 @@ function normalizeLiteral(node: DateTimeLiteralNode, calendar: CalendarSystem): 
 	return { kind: 'simple', frames: [], time: readLiteralClock(node, undefined, bounds), span, bounds }
 }
 
-function normalizeChain(root: TimeUnitNode, calendar: CalendarSystem): ScheduleModel {
+/**
+ * A chain of nodes from `root` down. `enclosing` is the unit of the frame the chain sits under when it is one side of a
+ * nested set operation, else undefined for a top-level chain.
+ */
+function normalizeChain(root: TimeUnitNode, calendar: CalendarSystem, enclosing?: CalendarUnit): ScheduleModel {
 	const frames: Frame[] = []
 	const bounds: Bound[] = []
 	let time: ClockTime | undefined
 	let span: DurationPart[] | undefined
+	let branches: Branches | undefined
 
 	let node: ASTNode | undefined = root
-	let enclosing: CalendarUnit | undefined
 
 	while (node) {
 		if (node.kind === 'SetOperationNode') {
-			// A set-operation nested inside the chain (e.g. d[h{1}+h{3}]). Rare; defer to the legacy humaniser.
-			throw new UnsupportedShapeError('set operation inside a chain')
+			// A set operation nested under the frames (`M[d{15}+d{4}%4]`): each side reads under them.
+			if (!enclosing) throw new UnsupportedShapeError('set operation above the frames')
+			branches = {
+				operator: node.operator,
+				left: normalizeBranch(node.left, enclosing, calendar),
+				right: normalizeBranch(node.right, enclosing, calendar),
+			}
+			break
 		}
 
 		// Window bounds and the span can hang off any node in the spine; gather them wherever they are.
@@ -102,7 +136,7 @@ function normalizeChain(root: TimeUnitNode, calendar: CalendarSystem): ScheduleM
 		node = node.child
 	}
 
-	return { kind: 'simple', frames, time, span, bounds }
+	return branches ? { kind: 'simple', frames, time, span, bounds, branches } : { kind: 'simple', frames, time, span, bounds }
 }
 
 /**

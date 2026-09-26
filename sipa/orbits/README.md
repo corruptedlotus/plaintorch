@@ -90,7 +90,8 @@ drop `limits` `*x @x <t >t` and `duration` `=<dur>`), and they are two hand-sync
   nothing and is dropped. An `@x` keeps a nested list's first x values (`d[h{9,12,15,18}@2]` is 09:00 and 12:00), else it
   becomes a `count` bound per period of the node's written parent ("up to 7 times a month"), or in all at the top level.
   A `%` on a weekday or month is spelled out too (`w[d{1}%2]` is Monday, Wednesday, Friday and Sunday), bounded by the
-  values the calendar names. A dated `Z{…}` becomes an `instant`; a bare `z{h:m}` a
+  values the calendar names. A set operation nested under the frames (`M[d{15}+d{4}%4]`) becomes the schedule's
+  `branches`: each side is a schedule of its own, read relative to the frame above it. A dated `Z{…}` becomes an `instant`; a bare `z{h:m}` a
   frameless daily clock. Throws `UnsupportedShapeError` for shapes not yet modelled (a set-op nested mid-chain,
   a non-clock time unit, a clock shape it cannot express) so the caller can fall back. A `%N` on a clock unit
   becomes the clock time's `step`: `h{9}%2` runs from 09:00 to the end of the day, `h{9}[m{10}%15]` to the end
@@ -99,7 +100,11 @@ drop `limits` `*x @x <t >t` and `duration` `=<dur>`), and they are two hand-sync
   weekday of a month's week ("the 1st Monday of every month", "the first 2 Mondays of every month") and the weekdays of
   each week of a month, which a month counts from its first complete week ("every Monday, Wednesday, Friday, and Sunday
   from each month's first Monday, up to 7 times a month"); a plain parent that adds nothing is left out ("every day",
-  not "every day of every month"; "every June", not "June of every year"). The registers: `realizeLong`
+  not "every day of every month"; "every June", not "June of every year"). A week within a year reads as a calendar
+  week ("calendar week 12", "Monday of calendar week 1", "CW12"). A nested set reads each side under the shared frames
+  and says a shared parent once ("the 15th and every 4 days from the 4th of every month", "the 1st and 15th, except
+  the 15th, of every month"), and two times of day under the same frames read as one clock ("every day at 09:00 and
+  17:30"); top-level sets share a parent the same way ("the 1st and the 15th of every month"). The registers: `realizeLong`
   (full prose, e.g. "Every other Friday at 17:30", "The 5th of June 2027 at 18:00") and `realizeShort`
   (compact, e.g. "Fri /2w @17:30", "Mon @5&16", "5/Jun 2027 @18"). It does **not** import the calendar —
   names are already in the model; a register is just a different lexicon + ordering. Set operations read as

@@ -39,8 +39,20 @@ export function realizeLong(model: ScheduleModel): string {
 }
 
 function realizeCompound(model: CompoundSchedule): string {
-	const { infix, suffix } = SET_CONNECTOR[model.operator]
-	return `${realizeLong(model.left)}${infix}${realizeLong(model.right)}${suffix ?? ''}`
+	return joinSides(model.operator, realizeLong(model.left), realizeLong(model.right))
+}
+
+/**
+ * Two sides of a set operation, joined by its connective. When both end in the same parent ("… of every month"), it is
+ * said once: "the 1st and the 15th of every month", "the 1st and 15th, except the 15th, of every month".
+ */
+function joinSides(operator: SetOperator, left: string, right: string): string {
+	const { infix, suffix } = SET_CONNECTOR[operator]
+	const tail = commonTail(left, right)
+	if (!tail) return `${left}${infix}${right}${suffix ?? ''}`
+	const head = left.slice(0, -tail.length)
+	const other = right.slice(0, -tail.length)
+	return operator === '+' ? `${head} and ${other}${tail}` : `${head}${infix}${other}${suffix ?? ''},${tail}`
 }
 
 /** A fixed moment: "the 5th of June 2027", "the 5th of June 2027 at 18:00 for 2 hours". */
@@ -56,9 +68,10 @@ function realizeInstant(model: InstantSchedule): string {
 }
 
 function realizeSimple(model: SimpleSchedule): string {
-	let text = phraseFrames(model.frames)
+	let text = model.branches ? phraseBranches(model) : phraseFrames(model.frames)
 	if (model.time) text += clockClause(model.time)
-	if (model.span && model.span.length > 0) text += ` for ${formatDuration(model.span)}`
+	// A span above a nested set is said on each of its sides.
+	if (model.span && model.span.length > 0 && !model.branches) text += ` for ${formatDuration(model.span)}`
 
 	const clauses: string[] = []
 	const outer = model.frames[0]
@@ -66,6 +79,55 @@ function realizeSimple(model: SimpleSchedule): string {
 	clauses.push(...model.bounds.map(phraseBound))
 	if (clauses.length > 0) text += `, ${clauses.join(', ')}`
 	return text
+}
+
+/**
+ * A set operation nested under the frames: each side reads as its own schedule under them, joined like a top-level set
+ * ("the 15th and every 4 days from the 4th of every month"). Two times of day under the same frames read as one clock:
+ * "every day at 09:00 and 17:30".
+ */
+function phraseBranches(model: SimpleSchedule): string {
+	const shared = withoutOuterRun(model.frames)
+	const { operator, left, right } = model.branches!
+	const sides = [underFrames(shared, left, model.span), underFrames(shared, right, model.span)] as const
+	const clocks = operator === '+' ? sharedClock(sides[0], sides[1]) : null
+	return clocks ?? joinSides(operator, realizeLong(sides[0]), realizeLong(sides[1]))
+}
+
+/**
+ * A branch of a nested set read as a schedule of its own: the shared frames above, then its own, with the span above
+ * the set when the branch has none of its own.
+ */
+function underFrames(frames: Frame[], branch: ScheduleModel, span?: DurationPart[]): ScheduleModel {
+	if (branch.kind === 'compound') return { ...branch, left: underFrames(frames, branch.left, span), right: underFrames(frames, branch.right, span) }
+	if (branch.kind === 'instant') return branch
+	const spanned = branch.span && branch.span.length > 0 ? branch.span : span
+	return spanned ? { ...branch, frames: [...frames, ...branch.frames], span: spanned } : { ...branch, frames: [...frames, ...branch.frames] }
+}
+
+/**
+ * Two sides that differ only in a plain time of day, read as one: "every day at 09:00 and 17:30". Null when they
+ * differ in anything else.
+ */
+function sharedClock(left: ScheduleModel, right: ScheduleModel): string | null {
+	if (left.kind !== 'simple' || right.kind !== 'simple') return null
+	if (!left.time || !right.time || left.time.step || right.time.step) return null
+	if (left.bounds.length > 0 || right.bounds.length > 0 || left.branches || right.branches) return null
+	const frames = phraseFrames(left.frames)
+	if (frames !== phraseFrames(right.frames)) return null
+	const spans = [left.span, right.span].map(span => span && span.length > 0 ? formatDuration(span) : '')
+	if (spans[0] !== spans[1]) return null
+	const times = [...clockParts(left.time), ...clockParts(right.time)].filter((time, index, all) => all.indexOf(time) === index)
+	return `${frames} at ${joinAnd(times)}${spans[0] ? ` for ${spans[0]}` : ''}`
+}
+
+/** The longest " of …" tail two phrases share, each keeping something before it; null when they share none. */
+function commonTail(left: string, right: string): string | null {
+	for (let at = left.indexOf(' of '); at > 0; at = left.indexOf(' of ', at + 1)) {
+		const tail = left.slice(at)
+		if (right.endsWith(tail) && right.length > tail.length) return tail
+	}
+	return null
 }
 
 /**
@@ -98,7 +160,7 @@ export function realizeShort(model: ScheduleModel): string {
 	}
 
 	const parts: string[] = []
-	const base = shortFrames(model.frames)
+	const base = model.branches ? shortBranches(model) : shortFrames(model.frames)
 	if (base) parts.push(base)
 	if (model.time) parts.push(...shortClockParts(model.time))
 	if (model.span && model.span.length > 0) parts.push(`~${shortDuration(model.span)}`)
@@ -106,6 +168,15 @@ export function realizeShort(model: ScheduleModel): string {
 	if (outer?.repeat !== undefined) parts.push(shortOuterRun(outer, model))
 	for (const bound of model.bounds) parts.push(shortBound(bound))
 	return parts.join(' ')
+}
+
+/** A nested set, terse: each side under the frames, joined by the operator, and grouped when more follows it. */
+function shortBranches(model: SimpleSchedule): string {
+	const shared = withoutOuterRun(model.frames)
+	const { operator, left, right } = model.branches!
+	const set = `${shortOperand(underFrames(shared, left))} ${operator} ${shortOperand(underFrames(shared, right))}`
+	const more = model.time || (model.span && model.span.length > 0) || model.frames[0]?.repeat !== undefined || model.bounds.length > 0
+	return more ? `(${set})` : set
 }
 
 /** The outermost frame's run, terse: "×10w" for ten weeks, "×3" for three single occurrences stepped by `%N`. */
@@ -133,8 +204,8 @@ function shortFrames(frames: Frame[]): string {
 	if (frames.length === 0) return 'daily'
 	// The outermost frame's own run follows the frames ("×10w"), so it reads plain here.
 	frames = withoutOuterRun(frames)
-	const monthly = shortMonthlyWeekday(frames)
-	if (monthly) return monthly
+	const cycled = shortCycleWeekday(frames)
+	if (cycled) return cycled
 
 	const kept = frames.filter((frame, index) => !isRedundantParent(frame, frames[index + 1]))
 	const coarsest = kept[0]!
@@ -173,12 +244,13 @@ function shortWeekly(week: Frame, day: Frame): string {
 	return `${shortWeekValues(week)} ${days}`
 }
 
-/** A weekday of a month's week, terse: "1st Mon", "2nd&4th Fri", "1st-2nd Mon", or the weekdays of each week. */
-function shortMonthlyWeekday(frames: Frame[]): string | null {
-	const shape = monthlyWeekdayShape(frames)
+/** A weekday of a month's or year's week, terse: "1st Mon", "2nd&4th Fri", "CW1 Mon", or the weekdays of each week. */
+function shortCycleWeekday(frames: Frame[]): string | null {
+	const shape = cycleWeekdayShape(frames)
 	if (!shape) return null
-	const { week, day } = shape
+	const { cycle, week, day } = shape
 	if (week.selection.kind === 'all') return shortSelection(day)
+	if (cycle.unit === 'y') return `${shortSelection(week)} ${shortSelection(day)}`
 	return `${shortWeekValues(week)} ${shortSelection(day)}`
 }
 
@@ -225,7 +297,8 @@ function shortFrame(frame: Frame, inner = false): string {
 function shortSelection(frame: Frame): string {
 	const sel = frame.selection
 	const dayOfMonth = isDayOfMonth(frame)
-	const prefix = SHORT_DUR[frame.unit]
+	// A calendar week (a week within a year) reads "CW12".
+	const prefix = isCalendarWeek(frame) ? 'CW' : SHORT_DUR[frame.unit]
 	if (sel.kind === 'all') return SHORT_CADENCE[frame.unit]
 	if (sel.kind === 'random') return `${sel.count}?${prefix}`
 	if (sel.kind === 'range' || sel.kind === 'first') {
@@ -292,10 +365,11 @@ function phraseFrames(frames: Frame[]): string {
 	// The outermost frame's own run is voiced after the phrase ("for 10 weeks"), so it reads plain here.
 	frames = withoutOuterRun(frames)
 
-	// Idiom 1 — a weekday of a month's weeks: M[w{1}[d{1}]] -> "the 1st Monday of every month". The month numbers the
-	// weeks, so this reads before any plain parent is left out.
-	const monthly = monthlyWeekday(frames)
-	if (monthly) return monthly
+	// Idiom 1 — a weekday of a month's or year's weeks: M[w{1}[d{1}]] -> "the 1st Monday of every month",
+	// y[w{1}[d{1}]] -> "Monday of calendar week 1". The cycle numbers the weeks, so this reads before any plain parent
+	// is left out.
+	const cycled = cycleWeekday(frames)
+	if (cycled) return cycled
 
 	// A plain parent that adds nothing is left out, and the rest reads without it.
 	const kept = frames.filter((frame, index) => !isRedundantParent(frame, frames[index + 1]))
@@ -330,7 +404,14 @@ function phraseFrames(frames: Frame[]): string {
 function isRedundantParent(frame: Frame, child: Frame | undefined): boolean {
 	if (!child || !isPlain(frame)) return false
 	if (isBare(child)) return true
+	// Naming June, or calendar week 12, already says "every year".
+	if (frame.unit === 'y' && isCalendarWeek(child)) return true
 	return frame.unit === 'y' && child.unit === 'M' && !(child.interval && child.interval > 1) && namedDays(child.selection)
+}
+
+/** A week within a year: a calendar week. */
+function isCalendarWeek(frame: Frame): boolean {
+	return frame.unit === 'w' && frame.parent === 'y'
 }
 
 /** The frames with the outermost one's own run (`*x`) set aside, for the phrase that reads the run separately. */
@@ -352,7 +433,7 @@ function isBare(frame: Frame): boolean {
 /** w[d] shapes the weekly idiom voices: a bare or single-valued week over a weekday selection. */
 function isWeeklyWeekday(week: Frame, day: Frame): boolean {
 	return week.unit === 'w' && day.unit === 'd' && day.parent === 'w' && !(day.interval && day.interval > 1) && day.repeat === undefined
-		&& (week.selection.kind === 'all' || onlyValue(week.selection) !== null)
+		&& (week.selection.kind === 'all' || (onlyValue(week.selection) !== null && !isCalendarWeek(week)))
 }
 
 /** w[d{…}] shapes: "every Monday", "every other Friday", "Mon & Wed, every 3 weeks", "the 1st Wednesday of every month". */
@@ -374,40 +455,42 @@ function weeklyWeekday(week: Frame, day: Frame): string {
 }
 
 /**
- * The weekday frames of a month's weeks, when the frames are M[w[d]] with a plain month and a weekday selection over
- * named days. Null for any other shape.
+ * The weekday frames of a month's or year's weeks, when the frames are M[w[d]] or y[w[d]] with a plain cycle and a
+ * weekday selection over named days. Null for any other shape.
  */
-function monthlyWeekdayShape(frames: Frame[]): { month: Frame; week: Frame; day: Frame } | null {
+function cycleWeekdayShape(frames: Frame[]): { cycle: Frame; week: Frame; day: Frame } | null {
 	if (frames.length !== 3) return null
-	const [month, week, day] = frames as [Frame, Frame, Frame]
-	if (month.unit !== 'M' || week.unit !== 'w' || day.unit !== 'd' || day.parent !== 'w') return null
-	if (!isPlain(month)) return null
+	const [cycle, week, day] = frames as [Frame, Frame, Frame]
+	if ((cycle.unit !== 'M' && cycle.unit !== 'y') || week.unit !== 'w' || day.unit !== 'd' || day.parent !== 'w') return null
+	if (!isPlain(cycle)) return null
 	if (week.interval && week.interval > 1) return null
 	if (day.interval && day.interval > 1) return null
 	if (day.selection.kind !== 'list' && day.selection.kind !== 'range') return null
 	if (!namedDays(day.selection)) return null
-	return { month, week, day }
+	return { cycle, week, day }
 }
 
 /**
- * M[w[d{weekday}]] shapes. A week is counted within the month from its first complete one, so a week index is the
- * n-th occurrence of the weekday in the month: "the 1st Monday of every month", "the 2nd and 4th Friday of every
- * month", "the first 2 Mondays of every month". A bare week over several weekdays reads as the weekdays of each
- * week, which a month starts counting at its first complete week — that is, from the month's first occurrence of
- * the earliest of them: "every Monday, Wednesday, and Friday from each month's first Monday".
+ * M[w[d{weekday}]] and y[w[d{weekday}]] shapes. A week is counted within its month or year from the first complete
+ * one, so a month's week index is the n-th occurrence of the weekday in the month: "the 1st Monday of every month",
+ * "the 2nd and 4th Friday of every month", "the first 2 Mondays of every month"; a year's reads as its calendar week:
+ * "Monday of calendar week 1". A bare week over several weekdays reads as the weekdays of each week, which a cycle
+ * starts counting at its first complete week — that is, from the cycle's first occurrence of the earliest of them:
+ * "every Monday, Wednesday, and Friday from each month's first Monday".
  */
-function monthlyWeekday(frames: Frame[]): string | null {
-	const shape = monthlyWeekdayShape(frames)
+function cycleWeekday(frames: Frame[]): string | null {
+	const shape = cycleWeekdayShape(frames)
 	if (!shape) return null
-	const { week, day } = shape
+	const { cycle, week, day } = shape
 	const single = onlyValue(day.selection)
 	const days = phraseFrame(day)
 
 	if (week.selection.kind === 'all') {
 		if (single) return `every ${days}`
 		const first = day.selection.kind === 'list' ? day.selection.values.reduce((a, b) => (b.value < a.value ? b : a)) : (day.selection as Extract<Selection, { kind: 'range' }>).start
-		return `every ${days} from each month's first ${first.name}`
+		return `every ${days} from each ${UNIT_WORD[cycle.unit]}'s first ${first.name}`
 	}
+	if (cycle.unit === 'y') return `${days} of ${phraseFrame(week)}`
 	if (!single) return `${days} of ${phraseFrame(week)} of every month`
 	const plural = `${single.name}s`
 	switch (week.selection.kind) {
@@ -451,6 +534,7 @@ function tryDate(frames: Frame[]): string | null {
 
 /** One frame in isolation: "every month", "Monday and Wednesday", "the 1st and 15th", "3 random weeks", "the first 3 days". */
 function phraseFrame(frame: Frame): string {
+	if (isCalendarWeek(frame)) return phraseCalendarWeeks(frame)
 	const unit = UNIT_WORD[frame.unit]
 	const interval = frame.interval && frame.interval > 1 ? frame.interval : undefined
 	const sel = frame.selection
@@ -473,6 +557,31 @@ function phraseFrame(frame: Frame): string {
 	}
 	const inner = valueList(sel, unit, dayOfMonth)
 	return interval ? `${intervalWord(frame.unit, interval)} from ${inner}` : inner
+}
+
+/**
+ * Weeks within a year, read as calendar weeks: "calendar week 12", "calendar weeks 1 and 26", "calendar weeks 10
+ * through 12", "the first 2 calendar weeks", "3 random calendar weeks". A bare one is just "every week".
+ */
+function phraseCalendarWeeks(frame: Frame): string {
+	const sel = frame.selection
+	const interval = frame.interval && frame.interval > 1 ? frame.interval : undefined
+	let weeks: string
+	switch (sel.kind) {
+		case 'all':
+			return interval ? intervalWord('w', interval) : 'every week'
+		case 'random':
+			return `${sel.count} random calendar week${sel.count > 1 ? 's' : ''}`
+		case 'first':
+			return sel.count === 1 ? 'the first calendar week' : `the first ${sel.count} calendar weeks`
+		case 'range':
+			weeks = `calendar weeks ${sel.start.value} through ${sel.end.value}`
+			break
+		case 'list':
+			weeks = `calendar week${sel.values.length > 1 ? 's' : ''} ${joinAnd(sel.values.map(value => String(value.value)))}`
+			break
+	}
+	return interval ? `${intervalWord('w', interval)} from ${weeks}` : weeks
 }
 
 function valueList(sel: Extract<Selection, { kind: 'list' }>, unit: string, dayOfMonth: boolean): string {
@@ -566,6 +675,11 @@ function clockEvery(step: ClockStep): string {
 }
 
 function formatClock(time: ClockTime): string {
+	return joinAnd(clockParts(time))
+}
+
+/** Each time of day a clock names, formatted: "09:00", "09:00:30". */
+function clockParts(time: ClockTime): string[] {
 	const parts: string[] = []
 	// Streaming minutes leave only the hours to name.
 	const minutes = time.minutes.length > 0 ? time.minutes : [0]
@@ -578,7 +692,7 @@ function formatClock(time: ClockTime): string {
 			}
 		}
 	}
-	return joinAnd(parts)
+	return parts
 }
 
 function formatDuration(parts: DurationPart[]): string {
