@@ -21,6 +21,11 @@ namespace Pleiades.Vault.Watcher;
 /// The structured classification of the decision's root concern (PEP108 phase D). The watcher's status reporter reads
 /// this instead of parsing <paramref name="SuggestedReason"/>, so one root cause yields one classified issue.
 /// </param>
+/// <param name="Vanished">
+/// Whether the candidate is an entity whose note is gone, found by identity rather than at a path
+/// (<see cref="VaultMarkdownDiscoveryService.FindVanishedNoteCandidatesAsync"/>): its <paramref name="AbsolutePath"/> is
+/// only the entity's canonical location, so its issues are keyed on the identity.
+/// </param>
 public sealed record VaultSyncCandidate(
 	string AbsolutePath,
 	string VaultRelativePath,
@@ -34,7 +39,8 @@ public sealed record VaultSyncCandidate(
 	bool FileExists,
 	VaultSyncAction SuggestedAction,
 	string? SuggestedReason = null,
-	VaultSyncConcern Concern = VaultSyncConcern.None)
+	VaultSyncConcern Concern = VaultSyncConcern.None,
+	bool Vanished = false)
 {
 	/// <summary>
 	/// Gets a value indicating whether the candidate mapped without validation issues.

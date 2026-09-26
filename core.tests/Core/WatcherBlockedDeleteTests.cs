@@ -66,10 +66,11 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 			.Where(item => item.ParentIncentiveId == id)
 			.ExecuteUpdateAsync(setters => setters.SetProperty(item => item.ParentIncentiveId, (string?)null), Token));
 
-	private IReadOnlyList<OperationStatus> StatusesAt(string vaultRelativePath)
+	// A quiet note that is gone is found by identity, so its issues are keyed on the entity, not on a path.
+	private IReadOnlyList<OperationStatus> StatusesOf(string entityId)
 		=> Vault.GetSingleton<OperationStatusRegistry>()
 			.GetActiveStatuses()
-			.Where(status => string.Equals(status.ScopeKey, Vault.AbsolutePath(vaultRelativePath), StringComparison.OrdinalIgnoreCase))
+			.Where(status => string.Equals(status.EntityId, entityId, StringComparison.OrdinalIgnoreCase))
 			.ToList();
 
 	[Fact] // Fixed — the removal is checked against the model's restricting relationships first; nothing is written when it is blocked.
@@ -98,8 +99,10 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 		await Vault.ReconcileWithIssuesAsync(path);
 		await Vault.SweepWithIssuesAsync();
 
-		var status = Assert.Single(StatusesAt(NoteOf("Blocked")));
+		var status = Assert.Single(StatusesOf(objective.Id));
 		Assert.Equal(WatcherOperations.DeleteBlocked, status.ReasonCode);
+		Assert.Equal(WatcherOperations.Identity, status.OperationId);
+		Assert.Equal(Vault.AbsolutePath(NoteOf("Blocked")), Assert.Single(status.Files));
 		Assert.Equal(OperationSeverity.Error, status.Severity);
 		Assert.Equal(objective.Id, status.EntityId);
 		Assert.Contains("Incentive", status.Detail);
@@ -110,6 +113,7 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 		var registry = Vault.GetSingleton<OperationStatusRegistry>();
 		Assert.False(WatcherRetryScheduler.IsRetryable(status));
 		Assert.Empty(new WatcherRetryScheduler().DuePaths(registry.GetActiveStatuses(), DateTimeOffset.UtcNow.AddDays(1)));
+		Assert.False(new WatcherRetryScheduler().VanishedNoteCheckDue(registry.GetActiveStatuses(), DateTimeOffset.UtcNow.AddDays(1)));
 	}
 
 	[Fact] // Fixed — restoring the note is a clean sync at the path, which clears the standing status.
@@ -120,12 +124,12 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 		var content = Vault.ReadVaultFile(note);
 		File.Delete(Vault.AbsolutePath(note));
 		await Vault.ReconcileWithIssuesAsync(Vault.AbsolutePath(note));
-		Assert.Single(StatusesAt(note));
+		Assert.Single(StatusesOf(objective.Id));
 
 		Vault.WriteVaultFile(note, content);
 		await Vault.ReconcileWithIssuesAsync(Vault.AbsolutePath(note));
 
-		Assert.Empty(StatusesAt(note));
+		Assert.Empty(StatusesOf(objective.Id));
 		Assert.True(await ObjectiveExistsAsync(objective.Id));
 		Assert.Equal(0, await GraveyardEntriesForAsync(objective.Id));
 	}
@@ -136,14 +140,14 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 		var objective = await SeedBegunObjectiveWithChildAsync("Blocked");
 		File.Delete(Vault.AbsolutePath(NoteOf("Blocked")));
 		await Vault.SweepWithIssuesAsync();
-		Assert.Single(StatusesAt(NoteOf("Blocked")));
+		Assert.Single(StatusesOf(objective.Id));
 
 		await ReleaseChildrenOfAsync(objective.Id);
 		await Vault.SweepWithIssuesAsync();
 
 		Assert.False(await ObjectiveExistsAsync(objective.Id));
 		Assert.Equal(1, await GraveyardEntriesForAsync(objective.Id));
-		Assert.Empty(StatusesAt(NoteOf("Blocked")));
+		Assert.Empty(StatusesOf(objective.Id));
 	}
 
 	[Fact] // Fixed — the blocked delete sits beside an ordinary one in the same sweep, and only the blocked one is held back.
@@ -161,8 +165,8 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 		Assert.Equal(0, await GraveyardEntriesForAsync(alpha.Id));
 		Assert.False(await ObjectiveExistsAsync(beta.Id));
 		Assert.Equal(1, await GraveyardEntriesForAsync(beta.Id));
-		Assert.Equal(WatcherOperations.DeleteBlocked, Assert.Single(StatusesAt(NoteOf("Alpha"))).ReasonCode);
-		Assert.Empty(StatusesAt(NoteOf("Beta")));
+		Assert.Equal(WatcherOperations.DeleteBlocked, Assert.Single(StatusesOf(alpha.Id)).ReasonCode);
+		Assert.Empty(StatusesOf(beta.Id));
 	}
 
 	[Fact] // Fixed — the graveyard entry commits with the removal, and a failed candidate discards what it staged.
@@ -180,14 +184,15 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 		// Atomic: the refused removal rolled its staged graveyard entry back with it.
 		Assert.True(await ObjectiveExistsAsync(alpha.Id));
 		Assert.Equal(0, await GraveyardEntriesForAsync(alpha.Id));
-		// An unforeseen failure stays an ordinary, retryable sync failure.
-		var status = Assert.Single(StatusesAt(NoteOf("Alpha")));
+		// An unforeseen failure stays an ordinary sync failure, retried by re-running the vanished-note check (it has no path
+		// to re-queue).
+		var status = Assert.Single(StatusesOf(alpha.Id));
 		Assert.Equal(WatcherOperations.SyncFailed, status.ReasonCode);
-		Assert.True(WatcherRetryScheduler.IsRetryable(status));
+		Assert.True(new WatcherRetryScheduler().VanishedNoteCheckDue([status], DateTimeOffset.UtcNow.AddDays(1)));
 		// Beta ran in the same scope after Alpha failed, and was not dragged down by Alpha's refused changes.
 		Assert.False(await ObjectiveExistsAsync(beta.Id));
 		Assert.Equal(1, await GraveyardEntriesForAsync(beta.Id));
-		Assert.Empty(StatusesAt(NoteOf("Beta")));
+		Assert.Empty(StatusesOf(beta.Id));
 	}
 
 	[Fact] // Fixed — the API deletes share the staged archive, so a refused API delete leaves no graveyard entry either.

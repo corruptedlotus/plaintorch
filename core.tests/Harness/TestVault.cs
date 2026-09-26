@@ -155,9 +155,10 @@ public sealed class TestVault : IAsyncLifetime
 		=> WithScopeAsync(services => services.GetRequiredService<VaultMarkdownDiscoveryService>().InspectPathAsync(absolutePath, "test"));
 
 	/// <summary>
-	/// Inspects a path and executes its suggested reconciliation action, in one scope (as a watcher event would). A
-	/// deleted note that names no identity (a quiet implicit note) also executes the deletion of every begun note that is
-	/// gone, found by identity as the live reconciler does; the candidate returned is the one standing at the path.
+	/// Inspects a path and executes its suggested reconciliation action, in one scope (as a watcher event would). A change
+	/// that may have withdrawn an identity (<see cref="VaultWatcherReconciler.MayWithdrawIdentity"/>) also executes the
+	/// deletion of every note found gone by identity, as the watcher's drain does; the candidate returned is the one
+	/// standing at the path.
 	/// </summary>
 	public Task<VaultSyncCandidate?> ReconcileAsync(string absolutePath)
 	{
@@ -171,9 +172,9 @@ public sealed class TestVault : IAsyncLifetime
 				await sync.ExecuteAsync(candidate, "test");
 			}
 
-			if (!File.Exists(absolutePath) && (candidate is null || string.IsNullOrWhiteSpace(candidate.PathId)))
+			if (VaultWatcherReconciler.MayWithdrawIdentity(absolutePath))
 			{
-				foreach (var vanished in await discovery.FindVanishedBoundaryCandidatesAsync())
+				foreach (var vanished in await discovery.FindVanishedNoteCandidatesAsync())
 				{
 					await sync.ExecuteAsync(vanished, "test");
 					if (string.Equals(vanished.AbsolutePath, Path.GetFullPath(absolutePath), StringComparison.OrdinalIgnoreCase))
@@ -213,7 +214,27 @@ public sealed class TestVault : IAsyncLifetime
 	/// exactly as a live filesystem event does. Use this (not <see cref="ReconcileAsync"/>) to assert issue emission.
 	/// </summary>
 	public Task ReconcileWithIssuesAsync(string absolutePath)
-		=> WithScopeAsync(services => services.GetRequiredService<VaultWatcherReconciler>().ReconcilePathAsync(absolutePath, "test-runtime"));
+		=> ReconcileEventsWithIssuesAsync([absolutePath]);
+
+	/// <summary>
+	/// Reconciles a batch of changed paths the way the watcher's drain does (<c>VaultWatcherService.DrainPendingAsync</c>):
+	/// each path in its own scope through the real <see cref="VaultWatcherReconciler"/>, then — when any of them may have
+	/// withdrawn an identity — one vanished-note check for the batch. This is the runtime leg of the parity tests.
+	/// </summary>
+	public async Task ReconcileEventsWithIssuesAsync(IEnumerable<string> absolutePaths)
+	{
+		var vanishedNoteCheckDue = false;
+		foreach (var path in absolutePaths)
+		{
+			vanishedNoteCheckDue |= VaultWatcherReconciler.MayWithdrawIdentity(path);
+			await WithScopeAsync(services => services.GetRequiredService<VaultWatcherReconciler>().ReconcilePathAsync(path, "test-runtime"));
+		}
+
+		if (vanishedNoteCheckDue)
+		{
+			await WithScopeAsync(services => services.GetRequiredService<VaultWatcherReconciler>().ReconcileVanishedNotesAsync("test-runtime"));
+		}
+	}
 
 	/// <summary>
 	/// Runs the startup sweep: a full discovery scan, then executes every candidate's action in the same priority

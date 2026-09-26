@@ -91,10 +91,10 @@ public sealed class VaultMarkdownDiscoveryService(
 			candidates.Add(candidate);
 		}
 
-		// Vanished-note pass (offline-deletion parity): a begun note deleted while the daemon was off produces no event,
-		// so the file scan above never sees it. It is found by identity — the boundary records no path — and reconciled
-		// like a live delete, so a sweep reaches the same state a live deletion would.
-		candidates.AddRange(await FindVanishedBoundaryCandidatesAsync(knownIdsByType, cancellationToken));
+		// Vanished-note pass: a note deleted, moved into an ignored folder or stripped of its identity while the daemon was
+		// off produces no event, so the file scan above never sees it. It is found by identity — nothing records a note's
+		// path — exactly as the running watcher finds it after a change, so a sweep reaches the same state.
+		candidates.AddRange(await FindVanishedNoteCandidatesAsync(knownIdsByType, cancellationToken));
 
 		await auditLogService.WriteAsync(
 			"discovery",
@@ -106,63 +106,111 @@ public sealed class VaultMarkdownDiscoveryService(
 	}
 
 	/// <summary>
-	/// Finds the implicit entities whose note is gone: a standing boundary, an entity that still exists, and no note in the
-	/// vault asserting its identity any more. Each comes back as a deletion candidate the mode policy decides (a begun
-	/// implicit entity whose note is gone is deleted). A boundary records no path — an implicit note carries its identity
-	/// inside the file and may live anywhere — so this is how both the sweep and a live delete event (whose missing path
-	/// cannot say what it held) see a deleted note. When any part of the vault cannot be read, nothing is reported: a note
-	/// that could not be read is not a deleted one.
+	/// Finds the identity-driven entities whose note is gone: the entity still exists, it is expected to have a note (an
+	/// implicit entity whose boundary stands, or any freeform entity, which is materialized on create), no write of its
+	/// note is pending, and no note in the vault asserts its identity any more. Each comes back as a deletion candidate
+	/// (<see cref="VaultSyncCandidate.Vanished"/>) the mode policy decides, ordered so dependents go first: implicit
+	/// entities before the directives that own them, and subdirectives before their parents.
 	/// </summary>
-	public async Task<IReadOnlyList<VaultSyncCandidate>> FindVanishedBoundaryCandidatesAsync(CancellationToken cancellationToken = default)
-		=> await FindVanishedBoundaryCandidatesAsync(await LoadKnownIdsAsync(cancellationToken), cancellationToken);
+	/// <remarks>
+	/// Nothing records where a note is — an identity-driven note carries its identity inside the file and may live
+	/// anywhere — so this is how the sweep and the running watcher alike see a note deleted, moved into an ignored folder,
+	/// or stripped of its identity, whatever event (if any) announced it. When any part of the vault cannot be read,
+	/// nothing is reported: a note that could not be read is not a deleted one.
+	/// </remarks>
+	public async Task<IReadOnlyList<VaultSyncCandidate>> FindVanishedNoteCandidatesAsync(CancellationToken cancellationToken = default)
+		=> await FindVanishedNoteCandidatesAsync(await LoadKnownIdsAsync(cancellationToken), cancellationToken);
 
-	private async Task<IReadOnlyList<VaultSyncCandidate>> FindVanishedBoundaryCandidatesAsync(
+	private async Task<IReadOnlyList<VaultSyncCandidate>> FindVanishedNoteCandidatesAsync(
 		IReadOnlyDictionary<Type, HashSet<string>> knownIdsByType,
 		CancellationToken cancellationToken)
 	{
-		var boundaryModels = pathSyncModelCatalog.GetModels()
-			.Where(model => policyEngine.PolicyFor(model.Mode).BeginsSyncBoundaryOnFirstFile)
-			.ToList();
-		var standing = new List<(VaultPathSyncModel Model, string EntityId)>();
+		var expected = new List<(VaultPathSyncModel Model, string EntityId)>();
+		var models = pathSyncModelCatalog.GetModels().Where(model => policyEngine.PolicyFor(model.Mode).IsIdentityDriven).ToList();
+
+		// Implicit: only an entity whose boundary stands has (had) a note. Ids are unique across types, and a boundary of an
+		// entity that no longer exists has nothing left to reconcile.
+		var implicitModels = models.Where(model => policyEngine.PolicyFor(model.Mode).BeginsSyncBoundaryOnFirstFile).ToList();
 		foreach (var boundary in await implicitBoundaryService.EnumerateBegunBoundariesAsync(cancellationToken))
 		{
-			// Ids are unique across types. A boundary of an entity that no longer exists (one that predates boundaries ending
-			// with their entity) has nothing left to reconcile.
-			var model = boundaryModels.FirstOrDefault(model =>
-				knownIdsByType.TryGetValue(model.EntityType, out var ids) && ids.Contains(boundary.EntityId));
-			if (model is not null)
+			if (implicitModels.FirstOrDefault(model => knownIdsByType.TryGetValue(model.EntityType, out var ids) && ids.Contains(boundary.EntityId)) is { } model)
 			{
-				standing.Add((model, boundary.EntityId));
+				expected.Add((model, boundary.EntityId));
 			}
 		}
 
-		if (standing.Count == 0)
+		// Freeform: every entity is materialized on create, so every one is expected to have a note.
+		foreach (var model in models.Where(model => policyEngine.PolicyFor(model.Mode) is { BeginsSyncBoundaryOnFirstFile: false, MaterializesOnCreate: true }))
+		{
+			if (knownIdsByType.TryGetValue(model.EntityType, out var ids))
+			{
+				expected.AddRange(ids.Select(id => (model, id)));
+			}
+		}
+
+		if (expected.Count == 0)
 		{
 			return [];
 		}
 
+		// A note whose write is still in flight (its intent committed with the entity, the file not yet on disk) is not a
+		// deleted one.
+		var pendingWrites = await context.VaultWriteIntents
+			.AsNoTracking()
+			.Select(intent => intent.EntityId)
+			.ToListAsync(cancellationToken);
 		var asserted = await CollectAssertedIdentitiesAsync(cancellationToken);
 		if (asserted is null)
 		{
 			return [];
 		}
 
-		var vanished = new List<VaultSyncCandidate>();
-		foreach (var (model, entityId) in standing.Where(entry => !asserted.Contains(entry.EntityId)))
+		var pending = new HashSet<string>(pendingWrites, StringComparer.OrdinalIgnoreCase);
+		var vanished = new List<(VaultSyncCandidate Candidate, int Order)>();
+		foreach (var (model, entityId) in expected.Where(entry => !asserted.Contains(entry.EntityId) && !pending.Contains(entry.EntityId)))
 		{
 			if (await CreateVanishedCandidateAsync(model, entityId, knownIdsByType[model.EntityType], cancellationToken) is { } candidate)
 			{
-				vanished.Add(candidate);
+				vanished.Add((candidate, await DeletionOrderAsync(model, candidate.ParsedModel, cancellationToken)));
 			}
 		}
 
-		return vanished;
+		return vanished
+			.OrderBy(static entry => entry.Order)
+			.ThenBy(static entry => entry.Candidate.VaultRelativePath, StringComparer.OrdinalIgnoreCase)
+			.Select(static entry => entry.Candidate)
+			.ToList();
+	}
+
+	/// <summary>
+	/// Orders vanished entities so each goes before what it depends on: implicit entities (which a directive owns) first,
+	/// then directives from the deepest subdirective up, since a directive's delete is refused while children remain.
+	/// </summary>
+	private async Task<int> DeletionOrderAsync(VaultPathSyncModel model, object entity, CancellationToken cancellationToken)
+	{
+		if (policyEngine.PolicyFor(model.Mode).BeginsSyncBoundaryOnFirstFile || entity is not Directive directive)
+		{
+			return 0;
+		}
+
+		var depth = 0;
+		for (var parentId = directive.ParentDirectiveId; !string.IsNullOrWhiteSpace(parentId) && depth < 64; depth++)
+		{
+			var current = parentId;
+			parentId = await context.Directives.AsNoTracking()
+				.Where(item => item.Id == current)
+				.Select(item => item.ParentDirectiveId)
+				.FirstOrDefaultAsync(cancellationToken);
+		}
+
+		return 1000 - depth;
 	}
 
 	/// <summary>
 	/// Reads the identity every note in the vault asserts (its frontmatter PUCK), wherever the note lives; ignored folders
-	/// (<c>.trash</c>, <c>_assets</c>, the data folder, …) hold no notes. Returns <see langword="null"/> when a folder or a
-	/// note cannot be read, since an unread note might still assert an identity.
+	/// (<c>.trash</c>, <c>_assets</c>, the data folder, …) hold no notes. A note deleted while it is read asserts nothing.
+	/// Returns <see langword="null"/> when a folder or a note cannot be read, since an unread note might still assert an
+	/// identity.
 	/// </summary>
 	private async Task<HashSet<string>?> CollectAssertedIdentitiesAsync(CancellationToken cancellationToken)
 	{
@@ -175,7 +223,19 @@ public sealed class VaultMarkdownDiscoveryService(
 			{
 				cancellationToken.ThrowIfCancellationRequested();
 				var directory = pending.Pop();
-				foreach (var child in Directory.EnumerateDirectories(directory))
+				string[] children;
+				string[] notes;
+				try
+				{
+					children = Directory.GetDirectories(directory);
+					notes = Directory.GetFiles(directory, "*.md");
+				}
+				catch (DirectoryNotFoundException)
+				{
+					continue;
+				}
+
+				foreach (var child in children)
 				{
 					if (!pathPolicy.ShouldIgnorePath(child))
 					{
@@ -183,9 +243,9 @@ public sealed class VaultMarkdownDiscoveryService(
 					}
 				}
 
-				foreach (var note in Directory.EnumerateFiles(directory, "*.md"))
+				foreach (var note in notes)
 				{
-					if (!pathPolicy.ShouldIgnorePath(note) && ReadAssertedIdentity(await VaultFileAccess.ReadAllTextAsync(note, cancellationToken)) is { } id)
+					if (!pathPolicy.ShouldIgnorePath(note) && await ReadAssertedIdentityAsync(note, cancellationToken) is { } id)
 					{
 						asserted.Add(id);
 					}
@@ -194,33 +254,49 @@ public sealed class VaultMarkdownDiscoveryService(
 		}
 		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
 		{
-			logger.LogWarning(exception, "Could not read every note in the vault; deleted implicit notes are not reconciled on this pass.");
+			logger.LogWarning(exception, "Could not read every note in the vault; notes that are gone are not reconciled on this pass.");
 			return null;
 		}
 
 		return asserted;
 	}
 
-	/// <summary>Reads the identity a note's frontmatter asserts, leniently (a line-level match, no YAML parse).</summary>
-	private static string? ReadAssertedIdentity(string markdown)
+	/// <summary>
+	/// Reads the identity a note's frontmatter asserts, leniently (a line-level match, no YAML parse) and only as far as
+	/// the frontmatter goes. A note deleted meanwhile asserts nothing.
+	/// </summary>
+	private static async Task<string?> ReadAssertedIdentityAsync(string path, CancellationToken cancellationToken)
 	{
-		using var reader = new StringReader(markdown);
-		if (reader.ReadLine()?.TrimStart('\uFEFF').Trim() != "---")
+		FileStream stream;
+		try
+		{
+			stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, useAsync: true);
+		}
+		catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
 		{
 			return null;
 		}
 
-		for (var line = reader.ReadLine(); line is not null; line = reader.ReadLine())
+		await using (stream)
 		{
-			if (line.Trim() == "---")
+			using var reader = new StreamReader(stream);
+			if ((await reader.ReadLineAsync(cancellationToken))?.TrimStart('﻿').Trim() != "---")
 			{
 				return null;
 			}
 
-			var match = PuckLine.Match(line);
-			if (match.Success)
+			while (await reader.ReadLineAsync(cancellationToken) is { } line)
 			{
-				return match.Groups["id"].Value;
+				if (line.Trim() == "---")
+				{
+					return null;
+				}
+
+				var match = PuckLine.Match(line);
+				if (match.Success)
+				{
+					return match.Groups["id"].Value;
+				}
 			}
 		}
 
@@ -228,8 +304,8 @@ public sealed class VaultMarkdownDiscoveryService(
 	}
 
 	/// <summary>
-	/// Builds the deletion candidate for an implicit entity whose note is gone. With no path on record, it stands at the
-	/// entity's canonical location, which scopes any issue its reconcile raises (e.g. a blocked delete).
+	/// Builds the deletion candidate for an entity whose note is gone. With no path on record, it names the entity's
+	/// canonical location for display; its issues are keyed on the identity, not on that path.
 	/// </summary>
 	private async Task<VaultSyncCandidate?> CreateVanishedCandidateAsync(
 		VaultPathSyncModel model,
@@ -268,7 +344,8 @@ public sealed class VaultMarkdownDiscoveryService(
 			FileExists: false,
 			decision.Action,
 			decision.Reason,
-			decision.Concern);
+			decision.Concern,
+			Vanished: true);
 	}
 
 	/// <summary>
@@ -615,7 +692,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		}
 
 		// A missing quiet (title-only) note names no entity, and a boundary records no path to recover one from: its
-		// deletion is found by identity instead (FindVanishedBoundaryCandidatesAsync), not by where it used to be.
+		// deletion is found by identity instead (FindVanishedNoteCandidatesAsync), not by where it used to be.
 		var boundaryBegun = true;
 		if (modePolicy.BeginsSyncBoundaryOnFirstFile && !string.IsNullOrWhiteSpace(pathId))
 		{

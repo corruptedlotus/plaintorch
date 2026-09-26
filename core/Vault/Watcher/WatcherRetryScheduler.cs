@@ -45,6 +45,19 @@ public sealed class WatcherRetryScheduler
 			.ToList();
 	}
 
+	/// <summary>
+	/// Whether a failed reconcile of a note found gone — an identity-keyed <see cref="WatcherOperations.SyncFailed"/>, which
+	/// has no path to re-queue — is due for another try on the same widening backoff; the watcher then re-runs its
+	/// vanished-note check.
+	/// </summary>
+	public bool VanishedNoteCheckDue(IReadOnlyList<OperationStatus> activeStatuses, DateTimeOffset now)
+	{
+		ArgumentNullException.ThrowIfNull(activeStatuses);
+		return activeStatuses.Any(status => string.Equals(status.OperationId, WatcherOperations.Identity, StringComparison.Ordinal)
+			&& string.Equals(status.ReasonCode, WatcherOperations.SyncFailed, StringComparison.Ordinal)
+			&& now - status.LastObservedUtc >= BackoffFor(status.OccurrenceCount));
+	}
+
 	/// <summary>Determines whether a status participates in path-based retry.</summary>
 	public static bool IsRetryable(OperationStatus status)
 	{

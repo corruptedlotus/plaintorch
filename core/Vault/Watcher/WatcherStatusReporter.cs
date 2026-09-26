@@ -200,24 +200,86 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter, Oper
 	}
 
 	/// <summary>
-	/// Reports that a note asserts an entity's identity: a blocked delete raised for that entity resolves wherever it
-	/// stood. A vanished note's issue is scoped to the entity's canonical location (a boundary records no path), so a note
-	/// restored anywhere else would otherwise leave it standing.
+	/// Reports that a note asserts an entity's identity: whatever was flagged because that entity's note was gone (a
+	/// blocked or failed delete) resolves, wherever the note now is.
 	/// </summary>
-	public void ReportIdentityAsserted(string entityId, string path)
+	public void ReportIdentityAsserted(string entityId)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(entityId);
-		foreach (var status in registry.GetActiveStatuses().ToList())
+		Report(WatcherOperations.Identity, entityId, Array.ConvertAll(VanishedNoteReasonCodes, Pass));
+	}
+
+	/// <summary>
+	/// Reports that an entity whose note is gone was reconciled (deleted). Its issues are keyed on the identity, since the
+	/// note was found gone by identity and no path is on record.
+	/// </summary>
+	public void ReportVanishedNoteReconciled(string entityId)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(entityId);
+		Report(WatcherOperations.Identity, entityId, Array.ConvertAll(VanishedNoteReasonCodes, Pass));
+	}
+
+	/// <summary>
+	/// Reports that reconciling an entity whose note is gone threw: a delete the database would refuse is the standing
+	/// <see cref="WatcherOperations.DeleteBlocked"/> status, anything else a failure the watcher retries by re-running its
+	/// vanished-note check. Keyed on the identity; <paramref name="path"/> (the entity's canonical location) is only shown.
+	/// </summary>
+	public void ReportVanishedNoteFailure(string entityId, string path, Exception exception)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(entityId);
+		ArgumentException.ThrowIfNullOrWhiteSpace(path);
+		ArgumentNullException.ThrowIfNull(exception);
+		if (exception is VaultEntityDeleteBlockedException blocked)
 		{
-			if (string.Equals(status.OperationId, WatcherOperations.Reconcile, StringComparison.Ordinal)
-				&& string.Equals(status.ReasonCode, WatcherOperations.DeleteBlocked, StringComparison.Ordinal)
-				&& string.Equals(status.EntityId, entityId, StringComparison.OrdinalIgnoreCase)
-				&& !string.Equals(status.ScopeKey, path, StringComparison.OrdinalIgnoreCase))
-			{
-				Report(WatcherOperations.Reconcile, status.ScopeKey, Pass(WatcherOperations.DeleteBlocked));
-			}
+			var fingerprint = Fingerprint(
+			[
+				blocked.EntityId,
+				..blocked.Blockers
+					.Select(static blocker => $"{blocker.DependentEntity}.{blocker.ForeignKeyProperty}")
+					.Order(StringComparer.Ordinal),
+			]);
+			Report(
+				WatcherOperations.Identity,
+				entityId,
+				Pass(WatcherOperations.SyncFailed),
+				Check(WatcherOperations.DeleteBlocked, failed: true, blocked.Message, files: [path], entityId: entityId, fingerprint));
+			return;
+		}
+
+		Report(
+			WatcherOperations.Identity,
+			entityId,
+			Pass(WatcherOperations.DeleteBlocked),
+			Check(WatcherOperations.SyncFailed, failed: true, exception.Message, files: [path], entityId: entityId, fingerprint: exception.GetType().Name));
+	}
+
+	/// <summary>
+	/// Settles the identity-keyed issues of notes found gone: any raised for an entity that is not among
+	/// <paramref name="vanishedIds"/> — the entities a vanished-note check just found — resolves, since its note is back,
+	/// or the entity itself is gone.
+	/// </summary>
+	public void SettleVanishedNotes(IReadOnlySet<string> vanishedIds)
+	{
+		ArgumentNullException.ThrowIfNull(vanishedIds);
+		var settled = registry.GetActiveStatuses()
+			.Where(static status => string.Equals(status.OperationId, WatcherOperations.Identity, StringComparison.Ordinal)
+				&& VanishedNoteReasonCodes.Contains(status.ReasonCode, StringComparer.Ordinal))
+			.Select(static status => status.ScopeKey)
+			.Where(entityId => !vanishedIds.Contains(entityId))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
+		foreach (var entityId in settled)
+		{
+			Report(WatcherOperations.Identity, entityId, Array.ConvertAll(VanishedNoteReasonCodes, Pass));
 		}
 	}
+
+	// The reasons reconciling a note found gone can raise, keyed on the identity.
+	private static readonly string[] VanishedNoteReasonCodes =
+	[
+		WatcherOperations.DeleteBlocked,
+		WatcherOperations.SyncFailed,
+	];
 
 	/// <summary>
 	/// Reports that a candidate synced successfully. A successful sync always clears the operational reconcile reasons

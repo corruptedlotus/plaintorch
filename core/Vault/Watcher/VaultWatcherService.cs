@@ -364,6 +364,11 @@ public sealed class VaultWatcherService(
 						}
 
 						RequeueDueIssueScopes(now);
+						if (retryScheduler.VanishedNoteCheckDue(statusRegistry.GetActiveStatuses(), now))
+						{
+							await CheckVanishedNotesAsync(stoppingToken);
+						}
+
 						if (_observerLost)
 						{
 							logger.LogWarning("Vault watcher lost a filesystem observer; restarting live observation with a fresh sweep.");
@@ -655,7 +660,11 @@ public sealed class VaultWatcherService(
 			var fullPath = Path.GetFullPath(path);
 			var isDirectoryEvent = Directory.Exists(fullPath);
 			var isMarkdownPath = string.Equals(Path.GetExtension(fullPath), ".md", StringComparison.OrdinalIgnoreCase);
-			if (!isDirectoryEvent && !isMarkdownPath)
+			// A folder that is gone — deleted, or moved away or into an ignored folder (the system trash, .trash) — raises
+			// one event for itself alone, not for the notes it held, and a name cannot say whether it was a folder. It is
+			// queued so the drain's vanished-note check sees its notes go.
+			var isGone = !isDirectoryEvent && !File.Exists(fullPath);
+			if (!isDirectoryEvent && !isMarkdownPath && !isGone)
 			{
 				return;
 			}
@@ -694,6 +703,10 @@ public sealed class VaultWatcherService(
 			.Where(pair => pair.Value.DueAt <= now)
 			.Select(pair => (OldPath: pair.Key, pair.Value.NewPath))
 			.ToList();
+
+		// Any change that may have withdrawn an identity (a note or folder edited, moved or gone) is followed by one
+		// vanished-note check for the whole batch — the same check the sweep makes, so running and startup agree.
+		var vanishedNoteCheckDue = dueRelocations.Count > 0;
 
 		foreach (var relocation in dueRelocations)
 		{
@@ -739,6 +752,7 @@ public sealed class VaultWatcherService(
 				continue;
 			}
 
+			vanishedNoteCheckDue |= !pathPolicy.ShouldIgnorePath(path) && VaultWatcherReconciler.MayWithdrawIdentity(path);
 			try
 			{
 				await InspectPathAsync(path, cancellationToken);
@@ -753,6 +767,32 @@ public sealed class VaultWatcherService(
 				// can never abort the drain of the rest.
 				logger.LogError(exception, "Watcher failed to inspect path '{Path}'. Processing will continue.", path);
 			}
+		}
+
+		if (vanishedNoteCheckDue)
+		{
+			await CheckVanishedNotesAsync(cancellationToken);
+		}
+	}
+
+	/// <summary>
+	/// Runs the vanished-note check (<see cref="VaultWatcherReconciler.ReconcileVanishedNotesAsync"/>) in its own scope:
+	/// every identity-driven entity whose note no note in the vault asserts any more is reconciled, as the sweep would.
+	/// </summary>
+	private async Task CheckVanishedNotesAsync(CancellationToken cancellationToken)
+	{
+		try
+		{
+			using var scope = scopeFactory.CreateScope();
+			await scope.ServiceProvider.GetRequiredService<VaultWatcherReconciler>().ReconcileVanishedNotesAsync("watcher", cancellationToken);
+		}
+		catch (OperationCanceledException)
+		{
+			throw;
+		}
+		catch (Exception exception)
+		{
+			logger.LogError(exception, "Watcher failed to check which notes are gone. Processing will continue.");
 		}
 	}
 
