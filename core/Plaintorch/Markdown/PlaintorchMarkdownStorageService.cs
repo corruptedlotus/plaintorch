@@ -328,7 +328,6 @@ public sealed class PlaintorchMarkdownStorageService(
 				entity.GetType().Name,
 				boundaryEntity.Id,
 				boundaryEntity.Title,
-				Path.GetRelativePath(layout.VaultRoot, newPath),
 				cancellationToken);
 		}
 	}

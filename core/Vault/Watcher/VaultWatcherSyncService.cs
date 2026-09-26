@@ -514,7 +514,6 @@ public sealed class VaultWatcherSyncService(
 			candidate.Model.EntityName,
 			namedEntity.Id,
 			namedEntity.Title,
-			candidate.VaultRelativePath,
 			cancellationToken);
 	}
 

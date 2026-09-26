@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
@@ -31,8 +32,13 @@ public sealed class VaultMarkdownDiscoveryService(
 	VaultFamilyInstantiationResolver familyInstantiationResolver,
 	PuckIdentityGate identityGate,
 	VaultStoragePathComposer pathComposer,
+	VaultEntityGateway entityGateway,
 	ILogger<VaultMarkdownDiscoveryService> logger)
 {
+	// A frontmatter line asserting an identity. Read leniently (no YAML parse), so a note whose frontmatter is otherwise
+	// broken still counts as asserting its identity and is never mistaken for a deleted one.
+	private static readonly Regex PuckLine = new(@"^\s*puck\s*:\s*[""']?(?<id>[^""'\s#]+)", RegexOptions.CultureInvariant);
+
 	/// <summary>
 	/// Scans all catalog-backed markdown paths and produces sync candidates.
 	/// </summary>
@@ -85,40 +91,10 @@ public sealed class VaultMarkdownDiscoveryService(
 			candidates.Add(candidate);
 		}
 
-		// Orphan pass (offline-deletion parity): a boundary-begun file deleted while the daemon was off produces no
-		// filesystem event, so the file scan above never sees it. Reconcile those entities by inspecting each begun
-		// boundary's recorded path — when the file is now absent, discovery recovers the identity and the mode policy
-		// decides the authoritative action (implicit deletes), so a sweep reaches the same state a live delete would.
-		var discoveredPaths = new HashSet<string>(allPaths.Select(Path.GetFullPath), StringComparer.OrdinalIgnoreCase);
-		// The identities the scan already found asserted by a file on disk. A begun boundary whose recorded file is gone
-		// but whose identity is still asserted somewhere has MOVED, not been deleted — the user relocated the note within
-		// the vault — so the moved file's own candidate re-homes it and it must not be orphan-deleted here.
-		var assertedIdentities = new HashSet<string>(
-			candidates
-				.Where(candidate => candidate.FileExists && !string.IsNullOrWhiteSpace(candidate.PathId))
-				.Select(candidate => candidate.PathId!),
-			StringComparer.OrdinalIgnoreCase);
-		// A boundary outlives its entity (the audit entry that records it is history), so one whose entity is already gone
-		// has nothing left to delete and is skipped rather than re-inspected at a path that no longer exists every sweep.
-		var knownIdentities = new HashSet<string>(knownIdsByType.Values.SelectMany(static ids => ids), StringComparer.OrdinalIgnoreCase);
-		foreach (var boundary in await implicitBoundaryService.EnumerateBegunBoundariesAsync(cancellationToken))
-		{
-			cancellationToken.ThrowIfCancellationRequested();
-			var absolutePath = Path.GetFullPath(Path.Combine(layout.VaultRoot, boundary.VaultRelativePath));
-			if (File.Exists(absolutePath)
-				|| discoveredPaths.Contains(absolutePath)
-				|| (!string.IsNullOrWhiteSpace(boundary.EntityId) && assertedIdentities.Contains(boundary.EntityId))
-				|| !knownIdentities.Contains(boundary.EntityId))
-			{
-				continue;
-			}
-
-			var candidate = await InspectPathCoreAsync(absolutePath, knownIdsByType, cancellationToken);
-			if (candidate is not null)
-			{
-				candidates.Add(candidate);
-			}
-		}
+		// Vanished-note pass (offline-deletion parity): a begun note deleted while the daemon was off produces no event,
+		// so the file scan above never sees it. It is found by identity — the boundary records no path — and reconciled
+		// like a live delete, so a sweep reaches the same state a live deletion would.
+		candidates.AddRange(await FindVanishedBoundaryCandidatesAsync(knownIdsByType, cancellationToken));
 
 		await auditLogService.WriteAsync(
 			"discovery",
@@ -127,6 +103,172 @@ public sealed class VaultMarkdownDiscoveryService(
 			cancellationToken: cancellationToken);
 
 		return new VaultDiscoveryScanResult(candidates, ignored, missing);
+	}
+
+	/// <summary>
+	/// Finds the implicit entities whose note is gone: a standing boundary, an entity that still exists, and no note in the
+	/// vault asserting its identity any more. Each comes back as a deletion candidate the mode policy decides (a begun
+	/// implicit entity whose note is gone is deleted). A boundary records no path — an implicit note carries its identity
+	/// inside the file and may live anywhere — so this is how both the sweep and a live delete event (whose missing path
+	/// cannot say what it held) see a deleted note. When any part of the vault cannot be read, nothing is reported: a note
+	/// that could not be read is not a deleted one.
+	/// </summary>
+	public async Task<IReadOnlyList<VaultSyncCandidate>> FindVanishedBoundaryCandidatesAsync(CancellationToken cancellationToken = default)
+		=> await FindVanishedBoundaryCandidatesAsync(await LoadKnownIdsAsync(cancellationToken), cancellationToken);
+
+	private async Task<IReadOnlyList<VaultSyncCandidate>> FindVanishedBoundaryCandidatesAsync(
+		IReadOnlyDictionary<Type, HashSet<string>> knownIdsByType,
+		CancellationToken cancellationToken)
+	{
+		var boundaryModels = pathSyncModelCatalog.GetModels()
+			.Where(model => policyEngine.PolicyFor(model.Mode).BeginsSyncBoundaryOnFirstFile)
+			.ToList();
+		var standing = new List<(VaultPathSyncModel Model, string EntityId)>();
+		foreach (var boundary in await implicitBoundaryService.EnumerateBegunBoundariesAsync(cancellationToken))
+		{
+			// Ids are unique across types. A boundary of an entity that no longer exists (one that predates boundaries ending
+			// with their entity) has nothing left to reconcile.
+			var model = boundaryModels.FirstOrDefault(model =>
+				knownIdsByType.TryGetValue(model.EntityType, out var ids) && ids.Contains(boundary.EntityId));
+			if (model is not null)
+			{
+				standing.Add((model, boundary.EntityId));
+			}
+		}
+
+		if (standing.Count == 0)
+		{
+			return [];
+		}
+
+		var asserted = await CollectAssertedIdentitiesAsync(cancellationToken);
+		if (asserted is null)
+		{
+			return [];
+		}
+
+		var vanished = new List<VaultSyncCandidate>();
+		foreach (var (model, entityId) in standing.Where(entry => !asserted.Contains(entry.EntityId)))
+		{
+			if (await CreateVanishedCandidateAsync(model, entityId, knownIdsByType[model.EntityType], cancellationToken) is { } candidate)
+			{
+				vanished.Add(candidate);
+			}
+		}
+
+		return vanished;
+	}
+
+	/// <summary>
+	/// Reads the identity every note in the vault asserts (its frontmatter PUCK), wherever the note lives; ignored folders
+	/// (<c>.trash</c>, <c>_assets</c>, the data folder, …) hold no notes. Returns <see langword="null"/> when a folder or a
+	/// note cannot be read, since an unread note might still assert an identity.
+	/// </summary>
+	private async Task<HashSet<string>?> CollectAssertedIdentitiesAsync(CancellationToken cancellationToken)
+	{
+		var asserted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var pending = new Stack<string>();
+		pending.Push(layout.VaultRoot);
+		try
+		{
+			while (pending.Count > 0)
+			{
+				cancellationToken.ThrowIfCancellationRequested();
+				var directory = pending.Pop();
+				foreach (var child in Directory.EnumerateDirectories(directory))
+				{
+					if (!pathPolicy.ShouldIgnorePath(child))
+					{
+						pending.Push(child);
+					}
+				}
+
+				foreach (var note in Directory.EnumerateFiles(directory, "*.md"))
+				{
+					if (!pathPolicy.ShouldIgnorePath(note) && ReadAssertedIdentity(await VaultFileAccess.ReadAllTextAsync(note, cancellationToken)) is { } id)
+					{
+						asserted.Add(id);
+					}
+				}
+			}
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+		{
+			logger.LogWarning(exception, "Could not read every note in the vault; deleted implicit notes are not reconciled on this pass.");
+			return null;
+		}
+
+		return asserted;
+	}
+
+	/// <summary>Reads the identity a note's frontmatter asserts, leniently (a line-level match, no YAML parse).</summary>
+	private static string? ReadAssertedIdentity(string markdown)
+	{
+		using var reader = new StringReader(markdown);
+		if (reader.ReadLine()?.TrimStart('\uFEFF').Trim() != "---")
+		{
+			return null;
+		}
+
+		for (var line = reader.ReadLine(); line is not null; line = reader.ReadLine())
+		{
+			if (line.Trim() == "---")
+			{
+				return null;
+			}
+
+			var match = PuckLine.Match(line);
+			if (match.Success)
+			{
+				return match.Groups["id"].Value;
+			}
+		}
+
+		return null;
+	}
+
+	/// <summary>
+	/// Builds the deletion candidate for an implicit entity whose note is gone. With no path on record, it stands at the
+	/// entity's canonical location, which scopes any issue its reconcile raises (e.g. a blocked delete).
+	/// </summary>
+	private async Task<VaultSyncCandidate?> CreateVanishedCandidateAsync(
+		VaultPathSyncModel model,
+		string entityId,
+		ISet<string> knownIds,
+		CancellationToken cancellationToken)
+	{
+		var entity = await entityGateway.FindByIdAsync(model.EntityType, entityId, track: false, cancellationToken: cancellationToken);
+		if (entity is null)
+		{
+			return null;
+		}
+
+		var title = (entity as IPuckNamedEntity)?.Title is { Length: > 0 } named ? named : entityId;
+		string fullPath;
+		try
+		{
+			fullPath = Path.GetFullPath(pathComposer.GetFilePath(entity, immediateParent: null));
+		}
+		catch (InvalidOperationException)
+		{
+			fullPath = Path.GetFullPath(Path.Combine(layout.VaultRoot, $"{entityId}.md"));
+		}
+
+		var decision = decisionService.Decide(model, entityId, title, [], knownIds, fileExists: false, boundaryBegun: true);
+		return new VaultSyncCandidate(
+			fullPath,
+			Path.GetRelativePath(layout.VaultRoot, fullPath),
+			model,
+			entityId,
+			title,
+			entity,
+			[],
+			ComputeHash(ExtractBody(string.Empty)),
+			DateTime.UtcNow,
+			FileExists: false,
+			decision.Action,
+			decision.Reason,
+			decision.Concern);
 	}
 
 	/// <summary>
@@ -472,27 +614,12 @@ public sealed class VaultMarkdownDiscoveryService(
 			issues.Add(new MarkdownValidationIssue("id", MarkdownMessages.MissingRequiredPuckInput, Code: MarkdownValidationCodes.MissingRequiredPuckInput));
 		}
 
+		// A missing quiet (title-only) note names no entity, and a boundary records no path to recover one from: its
+		// deletion is found by identity instead (FindVanishedBoundaryCandidatesAsync), not by where it used to be.
 		var boundaryBegun = true;
-		if (modePolicy.BeginsSyncBoundaryOnFirstFile)
+		if (modePolicy.BeginsSyncBoundaryOnFirstFile && !string.IsNullOrWhiteSpace(pathId))
 		{
-			if (!string.IsNullOrWhiteSpace(pathId))
-			{
-				boundaryBegun = await implicitBoundaryService.HasBoundaryBegunAsync(model.EntityName, pathId, cancellationToken);
-			}
-			else if (!fileExists)
-			{
-				// A quiet (title-only) file carries no filename identity, so a deletion recovers its identity
-				// from the boundary entry recorded for that path when the file first began existing.
-				var recoveredId = await implicitBoundaryService.TryRecoverEntityIdByLocationAsync(
-					model.EntityName,
-					Path.GetRelativePath(layout.VaultRoot, fullPath),
-					cancellationToken);
-				if (!string.IsNullOrWhiteSpace(recoveredId))
-				{
-					pathId = recoveredId;
-					boundaryBegun = true;
-				}
-			}
+			boundaryBegun = await implicitBoundaryService.HasBoundaryBegunAsync(model.EntityName, pathId, cancellationToken);
 		}
 
 		var issueMessages = issues.Select(issue => $"{issue.FieldPath}: {issue.Message}").ToArray();

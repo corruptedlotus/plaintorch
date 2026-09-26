@@ -15,7 +15,7 @@ namespace Pleiades.Vault.Watcher;
 /// decision's typed <see cref="VaultSyncConcern"/> rather than by sniffing its reason string. The reason string is
 /// carried through only as human-readable detail.
 /// </remarks>
-public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
+public sealed class WatcherStatusReporter(OperationStatusReporter reporter, OperationStatusRegistry registry)
 {
 	/// <summary>Reports the outcome of the startup discovery scan.</summary>
 	public void ReportStartupScan(bool succeeded, string? detail = null)
@@ -197,6 +197,26 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 			Check(WatcherOperations.PuckViolation, puckViolation, candidate.SuggestedReason ?? firstIssue?.Message, files: [path], entityId: candidate.PathId, fingerprint, contentSeverity),
 			Check(WatcherOperations.PolicyViolation, policyViolation, candidate.SuggestedReason, files: [path], entityId: candidate.PathId, fingerprint, contentSeverity),
 			Check(WatcherOperations.ForeignFile, foreignFile, candidate.SuggestedReason, files: [path], entityId: candidate.PathId, fingerprint));
+	}
+
+	/// <summary>
+	/// Reports that a note asserts an entity's identity: a blocked delete raised for that entity resolves wherever it
+	/// stood. A vanished note's issue is scoped to the entity's canonical location (a boundary records no path), so a note
+	/// restored anywhere else would otherwise leave it standing.
+	/// </summary>
+	public void ReportIdentityAsserted(string entityId, string path)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(entityId);
+		foreach (var status in registry.GetActiveStatuses().ToList())
+		{
+			if (string.Equals(status.OperationId, WatcherOperations.Reconcile, StringComparison.Ordinal)
+				&& string.Equals(status.ReasonCode, WatcherOperations.DeleteBlocked, StringComparison.Ordinal)
+				&& string.Equals(status.EntityId, entityId, StringComparison.OrdinalIgnoreCase)
+				&& !string.Equals(status.ScopeKey, path, StringComparison.OrdinalIgnoreCase))
+			{
+				Report(WatcherOperations.Reconcile, status.ScopeKey, Pass(WatcherOperations.DeleteBlocked));
+			}
+		}
 	}
 
 	/// <summary>

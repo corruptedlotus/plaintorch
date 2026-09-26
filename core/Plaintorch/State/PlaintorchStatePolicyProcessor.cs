@@ -41,7 +41,8 @@ public sealed class PlaintorchStatePolicyProcessor(
 	{
 		ArgumentNullException.ThrowIfNull(context);
 
-		await ReleaseDeletedIncentiveExecutivesAsync(context, cancellationToken);
+		await ReleaseDeletedIncentiveWorkAsync(context, cancellationToken);
+		await EndDeletedBoundariesAsync(context, cancellationToken);
 		await ClearStaleAvailabilityReferencesAsync(context, cancellationToken);
 		await ResetChangedScheduleCursorsAsync(context, cancellationToken);
 		await RefreshNextOccurrencesAsync(context, cancellationToken);
@@ -61,14 +62,14 @@ public sealed class PlaintorchStatePolicyProcessor(
 
 	/// <summary>
 	/// Deleting an incentive keeps the work already recorded against it. In the same unit of work that deletes an
-	/// objective or a decree (a fate is never worked), each of its executives in an <em>ended</em> Polaris cycle is kept
-	/// with its incentive reference cleared, so the cycle's record of the work — executed, elapsed, allocations — survives
-	/// the backlog item; each in the active cycle or a planned/forecast one is removed with it, since that plan can no
-	/// longer be worked. Riding the save hook covers every pathway: the API deletes and the markdown watcher's
-	/// delete-from-database action, whose delete-blocker check therefore does not count executives
-	/// (<see cref="VaultEntityGateway.FindDeleteBlockersAsync"/>).
+	/// objective or a decree (a fate is never worked), each of its work records in an <em>ended</em> Polaris cycle — an
+	/// executive, or a decree's reflective — is kept with its reference cleared, so the cycle's record of the work
+	/// (executed, elapsed, allocations) survives the backlog item; each in the active cycle or a planned/forecast one is
+	/// removed with it, since that plan can no longer be worked. Riding the save hook covers every pathway: the API
+	/// deletes and the markdown watcher's delete-from-database action, whose delete-blocker check therefore does not
+	/// count these records (<see cref="VaultEntityGateway.FindDeleteBlockersAsync"/>).
 	/// </summary>
-	private static async Task ReleaseDeletedIncentiveExecutivesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	private static async Task ReleaseDeletedIncentiveWorkAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
 		var deletedIds = context.ChangeTracker.Entries<Incentive>()
 			.Where(entry => entry.State == EntityState.Deleted)
@@ -95,6 +96,38 @@ public sealed class PlaintorchStatePolicyProcessor(
 				context.Remove(executive);
 			}
 		}
+
+		var reflectives = await context.Set<Reflective>()
+			.Include(reflective => reflective.PolarisCycle)
+			.Where(reflective => reflective.DecreeId != null && deletedIds.Contains(reflective.DecreeId))
+			.ToListAsync(cancellationToken);
+		foreach (var reflective in reflectives)
+		{
+			if (reflective.PolarisCycle?.EndTime is not null)
+			{
+				reflective.Decree = null;
+				reflective.DecreeId = null;
+			}
+			else
+			{
+				context.Remove(reflective);
+			}
+		}
+	}
+
+	/// <summary>
+	/// A deleted entity's synchronization boundary ends with it, in the same save and whatever the pathway (an API delete,
+	/// or the watcher's delete after the note went): the boundary is the entity's own state, never outliving it.
+	/// </summary>
+	private static Task EndDeletedBoundariesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var deleted = context.ChangeTracker.Entries()
+			.Where(entry => entry.State == EntityState.Deleted && entry.Entity is IPuckNamedEntity)
+			.Select(entry => (IPuckNamedEntity)entry.Entity)
+			.ToList();
+		return deleted.Count == 0
+			? Task.CompletedTask
+			: VaultImplicitBoundaryService.StageBoundaryEndsAsync(context, deleted, cancellationToken);
 	}
 
 	/// <summary>

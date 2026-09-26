@@ -60,7 +60,9 @@ public sealed class VaultWatcherReconciler(
 
 	/// <summary>
 	/// Reconciles a single path as a live event would: inspect it, then either report it ignored (not a candidate),
-	/// report a passive-read failure (tier 1), or reconcile the resolved candidate.
+	/// report a passive-read failure (tier 1), or reconcile the resolved candidate. A deleted note that names no identity
+	/// (an implicit note carries its identity only inside the file) also reconciles, by identity, every begun note that
+	/// no longer exists (<see cref="VaultMarkdownDiscoveryService.FindVanishedBoundaryCandidatesAsync"/>).
 	/// </summary>
 	public async Task ReconcilePathAsync(string absolutePath, string origin, CancellationToken cancellationToken = default)
 	{
@@ -85,6 +87,15 @@ public sealed class VaultWatcherReconciler(
 			return;
 		}
 
+		// The vanished notes' own reconcile is the definitive report for a path it stands at (their issues are scoped to
+		// the entity's canonical location), so the path's plain "nothing here" outcome must not clear, say, a sync failure
+		// the deletion just raised there — which would reset its retry backoff into a two-second loop.
+		if (IsDeletionWithoutIdentity(absolutePath, candidate)
+			&& await ReconcileVanishedNotesAsync(absolutePath, origin, cancellationToken))
+		{
+			return;
+		}
+
 		if (candidate is null)
 		{
 			statusReporter.ReportInspectIgnored(absolutePath);
@@ -93,6 +104,52 @@ public sealed class VaultWatcherReconciler(
 		}
 
 		await ReconcileCandidateAsync(candidate, origin, cancellationToken);
+	}
+
+	/// <summary>
+	/// Whether a path is a note (or a folder of notes) that is gone without naming what it held: a missing quiet implicit
+	/// note resolves no identity, and a boundary records no path to recover one from.
+	/// </summary>
+	private static bool IsDeletionWithoutIdentity(string absolutePath, VaultSyncCandidate? candidate)
+	{
+		var extension = Path.GetExtension(absolutePath);
+		return !File.Exists(absolutePath)
+			&& !Directory.Exists(absolutePath)
+			&& (string.IsNullOrEmpty(extension) || string.Equals(extension, ".md", StringComparison.OrdinalIgnoreCase))
+			&& (candidate is null || (!candidate.FileExists && string.IsNullOrWhiteSpace(candidate.PathId)));
+	}
+
+	/// <summary>
+	/// Reconciles every implicit entity whose note is gone — found by identity, the sweep's own check — after a deletion.
+	/// Returns whether one of them stands at <paramref name="eventPath"/>.
+	/// </summary>
+	private async Task<bool> ReconcileVanishedNotesAsync(string eventPath, string origin, CancellationToken cancellationToken)
+	{
+		IReadOnlyList<VaultSyncCandidate> vanished;
+		try
+		{
+			vanished = await discovery.FindVanishedBoundaryCandidatesAsync(cancellationToken);
+		}
+		catch (OperationCanceledException)
+		{
+			throw;
+		}
+		catch (Exception exception)
+		{
+			logger.LogWarning(exception, "Watcher could not check which implicit notes are gone after '{Path}' was removed.", eventPath);
+			return false;
+		}
+
+		var fullEventPath = Path.GetFullPath(eventPath);
+		var standsHere = false;
+		foreach (var candidate in vanished)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			await ReconcileCandidateCoreAsync(candidate, NoDuplicates, origin, cancellationToken);
+			standsHere |= string.Equals(candidate.AbsolutePath, fullEventPath, StringComparison.OrdinalIgnoreCase);
+		}
+
+		return standsHere;
 	}
 
 	/// <summary>
@@ -129,6 +186,10 @@ public sealed class VaultWatcherReconciler(
 
 		statusReporter.ReportInspectCandidate(candidate);
 		ReportIdentityStatus(candidate, duplicateIdentities);
+		if (candidate.FileExists && !string.IsNullOrWhiteSpace(candidate.PathId))
+		{
+			statusReporter.ReportIdentityAsserted(candidate.PathId!, candidate.AbsolutePath);
+		}
 
 		try
 		{

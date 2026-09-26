@@ -154,7 +154,11 @@ public sealed class TestVault : IAsyncLifetime
 	public Task<VaultSyncCandidate?> InspectAsync(string absolutePath)
 		=> WithScopeAsync(services => services.GetRequiredService<VaultMarkdownDiscoveryService>().InspectPathAsync(absolutePath, "test"));
 
-	/// <summary>Inspects a path and executes its suggested reconciliation action, in one scope (as a watcher event would).</summary>
+	/// <summary>
+	/// Inspects a path and executes its suggested reconciliation action, in one scope (as a watcher event would). A
+	/// deleted note that names no identity (a quiet implicit note) also executes the deletion of every begun note that is
+	/// gone, found by identity as the live reconciler does; the candidate returned is the one standing at the path.
+	/// </summary>
 	public Task<VaultSyncCandidate?> ReconcileAsync(string absolutePath)
 	{
 		return WithScopeAsync(async services =>
@@ -165,6 +169,18 @@ public sealed class TestVault : IAsyncLifetime
 			if (candidate is not null)
 			{
 				await sync.ExecuteAsync(candidate, "test");
+			}
+
+			if (!File.Exists(absolutePath) && (candidate is null || string.IsNullOrWhiteSpace(candidate.PathId)))
+			{
+				foreach (var vanished in await discovery.FindVanishedBoundaryCandidatesAsync())
+				{
+					await sync.ExecuteAsync(vanished, "test");
+					if (string.Equals(vanished.AbsolutePath, Path.GetFullPath(absolutePath), StringComparison.OrdinalIgnoreCase))
+					{
+						candidate = vanished;
+					}
+				}
 			}
 
 			return candidate;

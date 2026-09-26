@@ -110,4 +110,35 @@ public sealed class IncentiveDeletionTests : VaultTestBase
 
 		await AssertReleasedAsync(decree.Id, executives);
 	}
+
+	[Fact]
+	public async Task Deleting_a_decree_keeps_its_ended_reflectives_and_drops_its_live_ones()
+	{
+		// A decree's reflectives are work records too: they used to block its delete outright.
+		var decree = await Vault.WithScopeAsync(services => services.GetRequiredService<IDeclarativeApi>()
+			.CreateDecreeAsync(new DecreePlan("Reflect", Reflect: true), Token));
+		async Task<long> DrawAsync(string? cycleId)
+		{
+			var reflective = Assert.Single(await Polaris(api => api.DrawReflectivesAsync(new ReflectiveDrawRequest(cycleId), Token)));
+			await Vault.QueryAsync(context => context.Set<Reflective>()
+				.Where(item => item.Id == reflective.Id)
+				.ExecuteUpdateAsync(setters => setters.SetProperty(item => item.DecreeId, decree.Id), Token));
+			return reflective.Id;
+		}
+
+		var past = await Polaris(api => api.StartNewAsync(DateTimeOffset.Now.AddDays(-3), cancellationToken: Token));
+		var ended = await DrawAsync(past.Id);
+		await Polaris(api => api.EndAsync(past.Id, DateTimeOffset.Now.AddDays(-3).AddHours(2), Token));
+		var active = await DrawAsync(null);
+		var forecastCycle = await Polaris(api => api.PlanAsync(DateOnly.FromDateTime(DateTime.Today), 2, cancellationToken: Token));
+		var forecast = await DrawAsync(forecastCycle.Id);
+
+		await Vault.WithScopeAsync(services => services.GetRequiredService<IDeclarativeApi>().DeleteDecreeAsync(decree.Id, Token));
+
+		Assert.False(await IncentiveExistsAsync(decree.Id));
+		var kept = await Vault.QueryAsync(context => context.Set<Reflective>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == ended, Token));
+		Assert.NotNull(kept);
+		Assert.Null(kept.DecreeId);
+		Assert.False(await Vault.QueryAsync(context => context.Set<Reflective>().AnyAsync(item => item.Id == active || item.Id == forecast, Token)));
+	}
 }
