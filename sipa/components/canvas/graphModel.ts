@@ -219,6 +219,76 @@ export function unresolvedPrerequisites(
 	return reachable
 }
 
+/**
+ * The keys of each root's transitive unmet prerequisites that hold it back *now*: those reached from the root through
+ * edges that gate their target's next lifecycle transition alone (the core's {@link Dependency.gatesNextTransition}).
+ * The rest of {@link unresolvedPrerequisites} is still in the way, but of a later transition, or of one a link in the
+ * chain has already made — which a list draws faint.
+ */
+export function immediatePrerequisites(dependencies: readonly Dependency[], roots: ReadonlySet<string>): Map<string, Set<string>> {
+	const next = dependencies.filter(dependency => dependency.gatesNextTransition)
+	const immediate = new Map<string, Set<string>>()
+	for (const [root, refs] of unresolvedPrerequisites(next, roots)) {
+		immediate.set(root, new Set(refs.map(endpointKey)))
+	}
+
+	return immediate
+}
+
+/** One side of an entity's {@link DependencyRoute}: its unmet edges that way, and the entities at their far ends. */
+export interface RouteSide {
+	/** The unmet dependency edges on this side. */
+	readonly dependencies: readonly Dependency[]
+	/** The endpoints at the far ends of those edges, once each, the ones gating a next transition first. */
+	readonly endpoints: readonly EndpointRef[]
+	/** Keys of the {@link endpoints} none of whose edges here gates a next transition — in the way, but not now. */
+	readonly nonImmediate: ReadonlySet<string>
+}
+
+/** An entity's place in the dependency graph, as its banner reads it: what blocks it, what it blocks. */
+export interface DependencyRoute {
+	/** The unmet dependencies blocking the entity in any way, by their sources. */
+	readonly blockedBy: RouteSide
+	/** The unmet dependencies the entity blocks, by their targets. */
+	readonly blocks: RouteSide
+	/** Whether anything blocks the entity's own next lifecycle transition. */
+	readonly nextBlocked: boolean
+}
+
+/**
+ * Reads an entity's route from the whole edge set: its unmet incoming dependencies (what blocks it, in any way) and its
+ * unmet outgoing ones (what it blocks). Only the entity's own edges count — no walk down the chain — and an edge on one
+ * of its occurrences addresses that occurrence, not the entity. Whether an edge holds its target back now is the core's
+ * {@link Dependency.gatesNextTransition}, so it reads the same on both sides.
+ */
+export function dependencyRoute(dependencies: readonly Dependency[], endpoint: EndpointRef): DependencyRoute {
+	const key = endpointKey(endpoint)
+	const incoming = dependencies.filter(dependency => !dependency.satisfied && endpointKey(targetRef(dependency)) === key)
+	const outgoing = dependencies.filter(dependency => !dependency.satisfied && endpointKey(sourceRef(dependency)) === key)
+	return {
+		blockedBy: routeSide(incoming, sourceRef),
+		blocks: routeSide(outgoing, targetRef),
+		nextBlocked: incoming.some(dependency => dependency.gatesNextTransition),
+	}
+}
+
+function routeSide(dependencies: readonly Dependency[], farEnd: (dependency: Dependency) => EndpointRef): RouteSide {
+	const endpoints = new Map<string, { ref: EndpointRef, immediate: boolean }>()
+	for (const dependency of dependencies) {
+		const ref = farEnd(dependency)
+		const key = endpointKey(ref)
+		const known = endpoints.get(key)
+		endpoints.set(key, { ref, immediate: (known?.immediate ?? false) || dependency.gatesNextTransition })
+	}
+
+	const ordered = [...endpoints.entries()].sort(([, a], [, b]) => Number(b.immediate) - Number(a.immediate))
+	return {
+		dependencies,
+		endpoints: ordered.map(([, entry]) => entry.ref),
+		nonImmediate: new Set(ordered.filter(([, entry]) => !entry.immediate).map(([key]) => key)),
+	}
+}
+
 /** The trigger an edge acts on, resolving the empty value the core leaves for a checkpoint source. */
 export function effectiveTrigger(dependency: Dependency): DependencyTrigger {
 	return dependency.trigger ?? DependencyTrigger.OnFinish

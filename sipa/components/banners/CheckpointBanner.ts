@@ -1,5 +1,5 @@
 import { component, html, nothing } from '@a11d/lit'
-import { Checkpoint, CheckpointUpdate } from '@pleiades/sdk'
+import { Checkpoint, CheckpointUpdate, DependencyEndpointKind } from '@pleiades/sdk'
 import { core, IconName, ReactiveBinder } from '..'
 import { EntityBanner } from './EntityBanner'
 import { toast } from '../../host'
@@ -17,6 +17,11 @@ export class CheckpointBanner extends EntityBanner<Checkpoint> {
 	override icon: IconName = 'checkpoint'
 
 	protected override readonly entityTypeName = 'Checkpoint' as const
+
+	/** Takes part in dependencies as a checkpoint endpoint, so the banner carries its dependency route. */
+	protected override get dependencyEndpoint() {
+		return this.entity ? { kind: DependencyEndpointKind.Checkpoint, id: this.entity.id } : undefined
+	}
 
 	/** Set by the opener when this checkpoint is the milestone of the sprint being planned. */
 	milestone = false

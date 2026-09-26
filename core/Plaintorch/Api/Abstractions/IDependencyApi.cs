@@ -18,7 +18,8 @@ public interface IDependencyApi
 	Task<Dependency> CreateAsync(EndpointRef source, EndpointRef target, DependencyTrigger? trigger = null, DependencyConstraint? constraint = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Lists dependency edges, optionally filtered to those touching a given endpoint id (as source or target).
+	/// Lists dependency edges, optionally filtered to those touching a given endpoint id (as source or target). Each
+	/// edge carries <see cref="Dependency.GatesNextTransition"/>, stamped as it is served.
 	/// </summary>
 	Task<IReadOnlyList<Dependency>> ListAsync(string? entityId = null, CancellationToken cancellationToken = default);
 
@@ -35,8 +36,8 @@ public interface IDependencyApi
 	Task DeleteAsync(long dependencyId, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Gets the emitted dependency lock for an entity id (its unsatisfied incoming dependencies), separate from
-	/// the entity's status.
+	/// Gets the emitted dependency lock for an entity id (its unsatisfied incoming dependencies, each stamped with
+	/// <see cref="Dependency.GatesNextTransition"/>), separate from the entity's status.
 	/// </summary>
 	Task<DependencyLockView> GetLockAsync(string entityId, CancellationToken cancellationToken = default);
 

@@ -59,6 +59,77 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 	}
 
 	/// <summary>
+	/// Stamps each dependency's <see cref="Dependency.GatesNextTransition"/>: whether, still unsatisfied, it gates the
+	/// next lifecycle transition its target has to make. This is what separates what holds an entity back right now
+	/// from what will only matter later (a finish gate on an entity that has not begun) or no longer matters (a begin
+	/// gate on one that already has). Each distinct target is resolved once.
+	/// </summary>
+	public async Task StampNextTransitionAsync(IEnumerable<Dependency> dependencies, CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(dependencies);
+		var nextByTarget = new Dictionary<EndpointRef, NextTransition>();
+		foreach (var dependency in dependencies)
+		{
+			if (dependency.Satisfied)
+			{
+				dependency.GatesNextTransition = false;
+				continue;
+			}
+
+			var target = dependency.Target;
+			if (!nextByTarget.TryGetValue(target, out var next))
+			{
+				next = await ResolveNextTransitionAsync(target, cancellationToken);
+				nextByTarget[target] = next;
+			}
+
+			dependency.GatesNextTransition = next switch
+			{
+				NextTransition.Unlock => true,
+				// The default constraint (null) is ToBegin, as in IsLockedAsync.
+				NextTransition.Begin => dependency.Constraint is null or DependencyConstraint.ToBegin,
+				NextTransition.Finish => dependency.Constraint is DependencyConstraint.ToFinish,
+				_ => false,
+			};
+		}
+	}
+
+	/// <summary>
+	/// The transition a target has to make next. A checkpoint is not a lifecycle kind: its next transition is its
+	/// unlock, which every incoming dependency gates. An endpoint with no entity behind it — an occurrence still
+	/// projected from its schedule — has not begun.
+	/// </summary>
+	private async Task<NextTransition> ResolveNextTransitionAsync(EndpointRef target, CancellationToken cancellationToken)
+	{
+		if (target.Kind == DependencyEndpointKind.Checkpoint)
+		{
+			return NextTransition.Unlock;
+		}
+
+		var entity = await DependencyEndpoints.ResolveEntityAsync(context, target, cancellationToken);
+		if (entity is null)
+		{
+			return NextTransition.Begin;
+		}
+
+		if (lifecycleResolver.HasFinished(entity))
+		{
+			return NextTransition.None;
+		}
+
+		return lifecycleResolver.HasBegun(entity) ? NextTransition.Finish : NextTransition.Begin;
+	}
+
+	/// <summary>The lifecycle transition a dependency target has to make next.</summary>
+	private enum NextTransition
+	{
+		Begin,
+		Finish,
+		Unlock,
+		None,
+	}
+
+	/// <summary>
 	/// Determines whether materializing a fate occurrence is blocked (PEP101): either the whole fate is frozen
 	/// (a locked whole-fate begin constraint pauses orbit generation and blocks all single events) or the
 	/// specific occurrence slot is itself locked.

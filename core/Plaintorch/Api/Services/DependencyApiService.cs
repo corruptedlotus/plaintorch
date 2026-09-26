@@ -13,12 +13,14 @@ namespace Pleiades.Plaintorch.Api.Services;
 /// <summary>
 /// Implements the dependency-facing PLAINTORCH application API (PEP101). Structural rules are enforced by
 /// <see cref="DependencyRules"/>; endpoint existence and kind are validated here (they require resolving loose
-/// references). Satisfaction and checkpoint unlock are computed by <see cref="DependencyReconciler"/> on save.
+/// references). Satisfaction and checkpoint unlock are computed by <see cref="DependencyReconciler"/> on save; whether
+/// an unsatisfied edge gates its target's next transition is stamped by <see cref="DependencyGateService"/> as it is served.
 /// </summary>
 public sealed class DependencyApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
 	PlaintorchStateService stateService,
+	DependencyGateService gateService,
 	VaultAuditLogService auditLogService) : IDependencyApi
 {
 	private const string CheckpointTollDescriptionPrefix = "PLAINTORCH checkpoint toll";
@@ -54,6 +56,7 @@ public sealed class DependencyApiService(
 			subjectId: dependency.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
 			details: new { source = Describe(source), target = Describe(target), trigger, constraint, dependency.Satisfied },
 			cancellationToken: cancellationToken);
+		await gateService.StampNextTransitionAsync([dependency], cancellationToken);
 		return dependency;
 	}
 
@@ -66,7 +69,9 @@ public sealed class DependencyApiService(
 			query = query.Where(dependency => dependency.SourceId == entityId || dependency.TargetId == entityId);
 		}
 
-		return await query.OrderBy(dependency => dependency.Id).ToListAsync(cancellationToken);
+		var dependencies = await query.OrderBy(dependency => dependency.Id).ToListAsync(cancellationToken);
+		await gateService.StampNextTransitionAsync(dependencies, cancellationToken);
+		return dependencies;
 	}
 
 	/// <inheritdoc />
@@ -144,6 +149,7 @@ public sealed class DependencyApiService(
 			.Where(dependency => dependency.TargetId == entityId && !dependency.Satisfied)
 			.OrderBy(dependency => dependency.Id)
 			.ToListAsync(cancellationToken);
+		await gateService.StampNextTransitionAsync(unsatisfied, cancellationToken);
 
 		var blockedBegin = unsatisfied.Any(dependency => dependency.Constraint is null or DependencyConstraint.ToBegin);
 		var blockedFinish = unsatisfied.Any(dependency => dependency.Constraint is DependencyConstraint.ToFinish);

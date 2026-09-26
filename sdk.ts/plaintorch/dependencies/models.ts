@@ -50,6 +50,12 @@ export class Dependency {
 	/** Target-side constraint; undefined resolves to ToBegin (empty for checkpoint targets). */
 	constraint: DependencyConstraint | undefined
 	satisfied: boolean = false
+	/**
+	 * Server-computed: whether this dependency, while unsatisfied, gates the next lifecycle transition its target has to
+	 * make — its begin while it has not begun, its finish once begun, a checkpoint's unlock. False once satisfied, and
+	 * for a gate on a transition the target has already made or is not yet up to. Read-only.
+	 */
+	gatesNextTransition: boolean = false
 
 	get source(): EndpointRef {
 		return { kind: this.sourceKind, id: this.sourceId, recurrenceId: this.sourceRecurrenceId }

@@ -1,6 +1,6 @@
 import { component, css, html } from "@a11d/lit"
 import { DirectiveBanner } from './DirectiveBanner'
-import { Directive, DirectiveStatus, StellarDirectiveUpdate } from '@pleiades/sdk'
+import { DependencyEndpointKind, Directive, DirectiveStatus, StellarDirectiveUpdate } from '@pleiades/sdk'
 import { core, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, directiveStatusDescriptors } from ".."
 
 /**
@@ -21,6 +21,11 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 	}
 
 	protected override readonly entityTypeName = 'StellarDirective' as const
+
+	/** Takes part in dependencies as a directive endpoint, so the banner carries its dependency route. */
+	protected override get dependencyEndpoint() {
+		return this.entity ? { kind: DependencyEndpointKind.Directive, id: this.entity.id } : undefined
+	}
 
 	protected binder = new ReactiveBinder<Directive>(this, 'entity', {
 		sourceUpdate: () => this.beginEntityEdit(),

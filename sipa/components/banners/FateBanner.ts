@@ -1,6 +1,6 @@
 import { component, css, html, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { Eventive, EventiveResolution, Fate, FateStatus, FateUpdate } from '@pleiades/sdk'
+import { DependencyEndpointKind, Eventive, EventiveResolution, Fate, FateStatus, FateUpdate } from '@pleiades/sdk'
 import { core, fateScheduleToOrbit, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, fateStatusDescriptors } from ".."
 import type { ScheduleValue } from "../editing/EditableSchedule"
 
@@ -51,6 +51,11 @@ export class FateBanner extends EntityBanner<Fate> {
 	})
 
 	protected override readonly entityTypeName = 'Fate' as const
+
+	/** Takes part in dependencies as a fate endpoint, so the banner carries its dependency route. */
+	protected override get dependencyEndpoint() {
+		return this.entity ? { kind: DependencyEndpointKind.Fate, id: this.entity.id } : undefined
+	}
 
 	protected override async loadRelated() {
 		if (this.puck) {

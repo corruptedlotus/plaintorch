@@ -1,8 +1,9 @@
 import { component, css, html, nothing, property, state } from '@a11d/lit'
 import { CardComponent } from '../design'
 import { IconName } from '../PleiadesIcon'
-import { EntityTypeName, isSuccessfulMutation } from '@pleiades/sdk'
+import { EntityTypeName, isSuccessfulMutation, type EndpointRef } from '@pleiades/sdk'
 import { core, EntityRef } from '..'
+import '../entities/DependencyRouteItem'
 
 @component('p7t-entity-banner')
 export class EntityBanner<T extends { id: string, title: string }> extends CardComponent {
@@ -136,15 +137,22 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 			.render-grid {
 				margin: 5px;
 				display: grid;
-				grid-template-columns: 48px 1fr;
+				grid-template-columns: 48px 1fr auto;
 				grid-template-rows: auto auto 1fr auto;
 				grid-template-areas:
-					'icon		header'
-					'horizon	secondary'
-					'stamp		info'
-					'puck		actions';
+					'icon		header		corner'
+					'horizon	secondary	secondary'
+					'stamp		info		info'
+					'puck		actions		actions';
 				gap: 1.2em .6em;
 				align-items: center;
+
+				/* The top-right corner, beside the header: the dependency route of an entity that takes part in dependencies. */
+				& .corner {
+					grid-area: corner;
+					align-self: start;
+					justify-self: end;
+				}
 
 				& .icon {
 					grid-area: icon;
@@ -259,6 +267,15 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 	}
 
 	/**
+	 * The dependency endpoint the banner's entity stands for, when its kind takes part in dependencies (PEP101). A banner
+	 * that names one carries the entity's dependency route (`p7t-dependency-route`) in the identity grid's top-right
+	 * corner — the banner's own corner, or just below a directive's banner image. None by default.
+	 */
+	protected get dependencyEndpoint(): EndpointRef | undefined {
+		return undefined
+	}
+
+	/**
 	 * An optional full-width header image rendered above the identity grid (PEP105). Defaults to none; a banner
 	 * whose entity carries a banner image (a directive with a banner asset) overrides this.
 	 */
@@ -275,11 +292,13 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 	}
 
 	protected override get template() {
+		const endpoint = this.dependencyEndpoint
 		return !this.entity ? html`` : html`
 			${this.bannerImageTemplate}
 			<div class='render-grid'>
 				${this.iconTemplate}
 				${this.headerTemplate}
+				${!endpoint ? nothing : html`<p7t-dependency-route class='corner' .endpoint=${endpoint}></p7t-dependency-route>`}
 
 				<span class='indicator'>
 					<span class='notch-start'></span>

@@ -1,6 +1,6 @@
 import { component, css, html, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { Objective, ObjectiveUpdate, PolarisCycle } from '@pleiades/sdk'
+import { DependencyEndpointKind, Objective, ObjectiveUpdate, PolarisCycle } from '@pleiades/sdk'
 import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
 import { OnrushSprint } from "@pleiades/sdk"
 import { addObjectiveToPolaris, core, IconItem, IconName, isObjectiveInCycle, followRenamedNote, objectiveStatusDescriptors, SelectCollegeModal, SelectStatusModal } from ".."
@@ -13,6 +13,11 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 	@state() activePolaris?: PolarisCycle
 
 	protected override readonly entityTypeName = 'Objective' as const
+
+	/** Takes part in dependencies as an objective endpoint, so the banner carries its dependency route. */
+	protected override get dependencyEndpoint() {
+		return this.entity ? { kind: DependencyEndpointKind.Objective, id: this.entity.id } : undefined
+	}
 
 	protected binder = this.ref.binder('entity', {
 		status: (entity) => core.objectives.shiftWorkflow(entity.id, { status: entity.status }),

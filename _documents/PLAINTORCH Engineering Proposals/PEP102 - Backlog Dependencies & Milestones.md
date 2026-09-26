@@ -159,3 +159,29 @@ On a touch screen a node moves only once it is selected — the other way round 
 
 ### The wheel
 A mouse wheel zooms about the cursor; Shift pans sideways and Ctrl (or ⌘) up and down. A trackpad keeps its own reading: a two-finger scroll pans both ways and a pinch (Chromium's Ctrl-wheel) zooms. The two are told apart by the legacy `wheelDelta`: a notch is a whole multiple of 120, a trackpad's continuous deltas are not — so a high-resolution wheel reporting fractions of a notch reads as a trackpad and pans.
+
+## Patch102.8 - Dependency Routes on Banners
+The graph shows where an entity stands among its dependencies, but only when the graph is open. This patch puts that standing on the entity's own banner, and makes the dependency lists say which blocks matter now.
+
+### The route
+Every banner whose entity can be a dependency endpoint (an objective, a fate, a stellar directive, a checkpoint) carries a route glyph in the top-right corner of its identity grid. On a directive, that is just below the editable banner image. Two counts flank the glyph:
+- **Left:** the unmet dependencies blocking the entity in any way, whether they gate its begin or its finish.
+- **Right:** the unmet dependencies the entity blocks.
+
+Only the entity's own edges count, with no walk down the chain. An edge on one of a fate's or objective's occurrences addresses that occurrence, not its owner.
+
+Hovering a count lists the entities on that side through the same endpoint list the onrush card's dependency groups use, with every kind shown. When anything blocks the entity's *next* lifecycle transition (its begin before it has begun, its finish once it has, a checkpoint's unlock), the glyph turns to the broken route (`lucide:route-off`; lucide has no `no-route`), and the glyph and the left count take the warning colour.
+
+### Immediate and later blocks
+Which blocks concern the next transition is the core's call, because the lifecycle phases live there, declared on the status enums. The dependency listing, the lock view and a created edge now carry `gatesNextTransition`. It is computed as the edge is served and never stored. It is true when an unsatisfied edge gates the transition its target has to make next:
+- a begin gate on a target that has not begun;
+- a finish gate on one that has begun and not finished;
+- any gate into a checkpoint, whose next transition is its unlock.
+
+A finish gate on something not yet begun, or a begin gate on something already running, is still unmet but not in the way now. Each distinct target is resolved once per listing.
+
+The endpoint list takes a `nonImmediate` set and draws those endpoints faint, after the immediate ones. On a banner, an endpoint is immediate when any of its edges to or from the entity gates a next transition, so the same flag reads the same on both sides. In an onrush group, whose list is the whole prerequisite chain, a prerequisite is immediate when it reaches the member through next-transition gates alone. Anything reached only through a later gate, or through one already passed, is faint.
+
+### Open edges
+- A fate's or objective's occurrence-level edges are not rolled up into its banner's route.
+- An eventive's phase is temporal, so its begin and finish arrive with the clock. The listing only revalidates on a write, so a stamp on an eventive endpoint can trail the moment it passes, the same as `satisfied` already does.

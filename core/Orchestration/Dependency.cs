@@ -71,6 +71,16 @@ public sealed class Dependency
 	/// </summary>
 	public bool Satisfied { get; set; }
 
+	/// <summary>
+	/// Gets or sets whether this dependency, while unsatisfied, gates the next lifecycle transition its target has to
+	/// make: its begin while it has not begun, its finish once it has begun and not yet finished, or a checkpoint's
+	/// unlock. <see langword="false"/> once satisfied, and for a dependency whose constraint concerns a transition the
+	/// target has already made or is not yet up to. Computed when the edge is served
+	/// (<c>DependencyGateService.StampNextTransitionAsync</c>), never stored.
+	/// </summary>
+	[NotMapped]
+	public bool GatesNextTransition { get; set; }
+
 	[NotMapped]
 	/// <summary>
 	/// Gets the source endpoint as a reference value.

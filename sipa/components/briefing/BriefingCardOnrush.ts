@@ -2,7 +2,7 @@ import { component, css, html, nothing } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
 import { DependencyEndpointKind, Objective, ObjectiveStatus, OnrushSprint } from "@pleiades/sdk"
 import { core, DerivedRef, tooltip, TransferController } from ".."
-import { endpointKey, unresolvedPrerequisites } from "../canvas/graphModel"
+import { endpointKey, immediatePrerequisites, unresolvedPrerequisites } from "../canvas/graphModel"
 import { createChild, SuggestModalBase } from "../../host"
 
 @component('p7t-briefing-onrush')
@@ -107,7 +107,9 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 	 * A group appears for every objective or checkpoint with at least one unmet prerequisite, walked
 	 * recursively down the blocking chain. The count is the true total across every kind of prerequisite;
 	 * the rows are the objective ones — the other kinds (checkpoints, directives, fates) count but do not
-	 * list, so a group can read a higher number than the rows beneath it.
+	 * list, so a group can read a higher number than the rows beneath it. In the count's tooltip, a prerequisite that is
+	 * not holding the member's next transition back right now — one reached only through a gate on a later transition,
+	 * or on one already made — is drawn faint.
 	 */
 	private get dependencySection() {
 		const groups = this.unresolvedGroups
@@ -125,7 +127,7 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 							?data-detail=${group.nonObjectiveCount > 0}
 							${group.nonObjectiveCount > 0
 								? tooltip(() => html`
-									<p7t-endpoint-list .endpoints=${group.refs} filter='non-objective'>
+									<p7t-endpoint-list .endpoints=${group.refs} .nonImmediate=${group.nonImmediate} filter='non-objective'>
 										Blocked by
 									</p7t-endpoint-list>
 								`)
@@ -160,7 +162,9 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 		]
 
 		const memberKeys = new Set(members.map(member => member.key))
-		const reachable = unresolvedPrerequisites(this.dependencies.value ?? [], memberKeys)
+		const dependencies = this.dependencies.value ?? []
+		const reachable = unresolvedPrerequisites(dependencies, memberKeys)
+		const immediate = immediatePrerequisites(dependencies, memberKeys)
 
 		return members.flatMap(member => {
 			const refs = reachable.get(member.key)
@@ -173,7 +177,9 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 				.map(ref => this.objectiveFor(ref.id))
 				.filter(hasId)
 			const nonObjectiveCount = refs.filter(ref => ref.kind !== DependencyEndpointKind.Objective).length
-			return [{ title: member.title, total: refs.length, objectives, refs, nonObjectiveCount }]
+			const holding = immediate.get(member.key)
+			const nonImmediate = new Set(refs.map(endpointKey).filter(key => !holding?.has(key)))
+			return [{ title: member.title, total: refs.length, objectives, refs, nonObjectiveCount, nonImmediate }]
 		})
 	}
 

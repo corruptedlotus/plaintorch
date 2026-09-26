@@ -1,6 +1,7 @@
 import { Component, component, css, html, nothing, property } from '@a11d/lit'
 import { DependencyEndpointKind, type EndpointRef } from '@pleiades/sdk'
 import { core, DerivedRef, IconName } from '..'
+import { endpointKey } from '../canvas/graphModel'
 import './IncentiveItem'
 import './DirectiveItem'
 import '../design/IconItem'
@@ -27,11 +28,18 @@ const kindIcons: Record<DependencyEndpointKind, IconName> = {
  * non-objective ones another (the onrush card's count tooltip, where the objectives already list as rows). The
  * entities behind the endpoints are resolved from the shared listings, so a name appears as soon as its listing
  * is loaded and an id stands in until then.
+ *
+ * An endpoint whose block does not concern the next lifecycle transition — a finish gate on something not yet begun,
+ * a link further down a chain that is not holding anything back right now — can be marked {@link nonImmediate}: it
+ * is drawn faint and listed after the rest, so what is in the way *now* reads first.
  */
 @component('p7t-endpoint-list')
 export class EndpointList extends Component {
 	@property({ attribute: false }) endpoints: readonly EndpointRef[] = []
 	@property() filter?: EndpointFilter
+
+	/** Keys (`endpointKey`) of the endpoints whose block does not concern the next lifecycle transition, drawn faint. */
+	@property({ attribute: false }) nonImmediate: ReadonlySet<string> = new Set()
 
 	private readonly objectiveList = new DerivedRef(this, core.repos.objectiveList)
 	private readonly fateList = new DerivedRef(this, core.repos.fateList)
@@ -58,6 +66,11 @@ export class EndpointList extends Component {
 				gap: .35em;
 			}
 
+			/* In the way, but not of the next transition. */
+			.distant {
+				opacity: .4;
+			}
+
 			.endpoint {
 				display: flex;
 				flex-direction: column;
@@ -74,10 +87,16 @@ export class EndpointList extends Component {
 		`
 	}
 
+	/** The endpoints to draw, after the {@link filter}: the immediate ones first, the {@link nonImmediate} ones after. */
 	private get shown(): readonly EndpointRef[] {
-		return this.filter === 'non-objective'
+		const filtered = this.filter === 'non-objective'
 			? this.endpoints.filter(endpoint => endpoint.kind !== DependencyEndpointKind.Objective)
 			: this.endpoints
+		return [...filtered].sort((a, b) => Number(this.isDistant(a)) - Number(this.isDistant(b)))
+	}
+
+	private isDistant(endpoint: EndpointRef): boolean {
+		return this.nonImmediate.has(endpointKey(endpoint))
 	}
 
 	protected override get template() {
@@ -88,7 +107,7 @@ export class EndpointList extends Component {
 
 		return html`
 			<div class='heading'><slot></slot></div>
-			<div class='list'>${shown.map(endpoint => this.endpointTemplate(endpoint))}</div>
+			<div class='list'>${shown.map(endpoint => html`<div class='${this.isDistant(endpoint) ? 'distant' : ''}'>${this.endpointTemplate(endpoint)}</div>`)}</div>
 		`
 	}
 
