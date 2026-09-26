@@ -143,7 +143,12 @@ export class FateBanner extends EntityBanner<Fate> {
 		return html`
 			<div class='next-eventive'>
 				<span class='label'>Next</span>
-				<p7t-datetime-view .date=${this.nextEventive.epoch.date} .time=${this.nextEventive.epoch.timeOfDay}></p7t-datetime-view>
+				<p7t-datetime-view
+					.date=${this.nextEventive.epoch.date}
+					.time=${this.nextEventive.epoch.timeOfDay}
+					.granularity=${this.nextEventive.epoch.granularity}
+					.calendar=${this.entity!.calendar}>
+				</p7t-datetime-view>
 			</div>
 		`
 	}
@@ -155,6 +160,7 @@ export class FateBanner extends EntityBanner<Fate> {
 		return html`
 			<p7t-editable-schedule
 				range
+				.calendar=${this.entity!.calendar}
 				.orbit=${this.entity!.orbit}
 				@schedulechange=${(e: CustomEvent<ScheduleValue>) => void this.onScheduleChange(e.detail)}>
 			</p7t-editable-schedule>

@@ -1,6 +1,7 @@
 import { Component, component, css, html, nothing, property } from '@a11d/lit'
 import { TimeframeInclusion } from '@pleiades/sdk'
 import { humanizeOrbit } from '../../orbits'
+import { CalendarRef } from '../data/CalendarRef'
 import { inclusionDescriptors } from './inclusionDescriptors'
 import type { TimeframeLike } from './TimeframeItem'
 import '../PleiadesIcon'
@@ -11,12 +12,16 @@ const hhmm = (time: string | undefined): string => (time ?? '').slice(0, 5)
 /**
  * The full timeframe detail drawn in {@link TimeframeItem}'s tooltip — its window, the cycles it scopes to (an
  * Orbit, or every cycle), whether it is exclusive, and how it auto-includes: the colleges it affines in College mode,
- * or directive availability in Availability mode (PEP100 patch 2). A self-contained element (its own shadow root and
+ * or directive availability in Availability mode (PEP100 patch 2). The Orbit is read on the vault's preferred calendar,
+ * the one the core reads every timeframe orbit on. A self-contained element (its own shadow root and
  * styles) so it renders identically wherever the tooltip system places it, independent of any host's shadow scope.
  */
 @component('p7t-timeframe-details')
 export class TimeframeDetails extends Component {
 	@property({ type: Object }) timeframe?: TimeframeLike
+
+	/** The calendar the Orbit is read on: a timeframe names none, so the vault's preferred one. */
+	private readonly calendars = new CalendarRef(this, () => undefined, () => !!this.timeframe?.orbit)
 
 	static override get styles() {
 		return css`
@@ -58,7 +63,7 @@ export class TimeframeDetails extends Component {
 			? `${hhmm(timeframe.startTime)} – ${hhmm(timeframe.endTime)}`
 			: undefined
 		// No Orbit means the timeframe applies to every Polaris cycle (PEP100).
-		const scope = timeframe.orbit ? (humanizeOrbit(timeframe.orbit).text || timeframe.orbit) : 'Every cycle'
+		const scope = timeframe.orbit ? (humanizeOrbit(timeframe.orbit, false, this.calendars.orbitCalendar).text || timeframe.orbit) : 'Every cycle'
 		const colleges = timeframe.autoInclusion === TimeframeInclusion.College
 			? timeframe.autoInclusionColleges ?? []
 			: []

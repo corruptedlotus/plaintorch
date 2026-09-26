@@ -10,9 +10,10 @@
 // for everything else.
 
 import type { DurationPart, SetOperator } from './ast'
-import type { Bound, CalendarUnit, ClockTime, CompoundSchedule, Frame, InstantSchedule, NamedValue, ScheduleModel, Selection, SimpleSchedule } from './scheduleModel'
+import type { Bound, CalendarUnit, ClockStep, ClockTime, CompoundSchedule, Frame, InstantSchedule, NamedValue, ScheduleModel, Selection, SimpleSchedule } from './scheduleModel'
 
 const UNIT_WORD: Record<CalendarUnit, string> = { y: 'year', M: 'month', w: 'week', d: 'day' }
+const CLOCK_WORD: Record<ClockStep['unit'], string> = { h: 'hour', m: 'minute', s: 'second' }
 const DUR_WORD: Record<DurationPart['unit'], string> = { y: 'year', M: 'month', w: 'week', d: 'day', h: 'hour', m: 'minute', s: 'second' }
 
 // Long-register set connectives: each reads as "<left><infix><right><suffix?>". A trailing clause (for
@@ -42,7 +43,7 @@ function realizeCompound(model: CompoundSchedule): string {
 function realizeInstant(model: InstantSchedule): string {
 	const monthName = model.month.name ?? `month ${model.month.value}`
 	let text = `the ${ordinal(model.day)} of ${monthName} ${model.year}`
-	if (model.time) text += ` at ${formatClock(model.time)}`
+	if (model.time) text += clockClause(model.time)
 	if (model.span && model.span.length > 0) text += ` for ${formatDuration(model.span)}`
 
 	const bounds = model.bounds.map(phraseBound)
@@ -52,7 +53,7 @@ function realizeInstant(model: InstantSchedule): string {
 
 function realizeSimple(model: SimpleSchedule): string {
 	let text = phraseFrames(model.frames)
-	if (model.time) text += ` at ${formatClock(model.time)}`
+	if (model.time) text += clockClause(model.time)
 	if (model.span && model.span.length > 0) text += ` for ${formatDuration(model.span)}`
 
 	const bounds = model.bounds.map(phraseBound)
@@ -78,7 +79,7 @@ export function realizeShort(model: ScheduleModel): string {
 	const parts: string[] = []
 	const base = shortFrames(model.frames)
 	if (base) parts.push(base)
-	if (model.time) parts.push(`@${shortClock(model.time)}`)
+	if (model.time) parts.push(...shortClockParts(model.time))
 	if (model.span && model.span.length > 0) parts.push(`~${shortDuration(model.span)}`)
 	for (const bound of model.bounds) parts.push(shortBound(bound))
 	return parts.join(' ')
@@ -93,7 +94,7 @@ function shortOperand(model: ScheduleModel): string {
 /** A fixed moment, terse: dates read day-first as "d/MMM y" — "5/Jun 2027", "5/Jun 2027 @18", "35/Xun 3 ~2h". */
 function shortInstant(model: InstantSchedule): string {
 	const parts = [`${model.day}/${shortLabel(model.month)} ${model.year}`]
-	if (model.time) parts.push(`@${shortClock(model.time)}`)
+	if (model.time) parts.push(...shortClockParts(model.time))
 	if (model.span && model.span.length > 0) parts.push(`~${shortDuration(model.span)}`)
 	for (const bound of model.bounds) parts.push(shortBound(bound))
 	return parts.join(' ')
@@ -178,7 +179,16 @@ function shortSelection(frame: Frame): string {
 	).join('&')
 }
 
+/** The clock, terse: "@9", and a step after it as its cadence ("@9 /2h", "@9 /15m" within the 9 o'clock hour). */
+function shortClockParts(time: ClockTime): string[] {
+	const clock = `@${shortClock(time)}`
+	return time.step ? [clock, `/${time.step.interval}${SHORT_DUR[time.step.unit]}`] : [clock]
+}
+
 function shortClock(time: ClockTime): string {
+	// Streaming minutes leave only the hours to name ("@9" for every 15 minutes within the 9 o'clock hour).
+	if (time.minutes.length === 0) return time.hours.map(String).join('&')
+
 	const parts: string[] = []
 	for (const hour of time.hours) {
 		for (const minute of time.minutes) {
@@ -323,13 +333,51 @@ function phraseBound(bound: Bound): string {
 	}
 }
 
+/**
+ * The time-of-day clause after the frames. A plain clock reads " at 09:00". A {@link ClockStep} reads as a cadence
+ * instead: an hour step runs from each listed time to the end of the day (", every 2 hours from 09:00"); a listed
+ * minute or second step runs to the end of its hour or minute (", every 15 minutes from 09:10 to the end of the
+ * hour"); and a streaming minute or second stays within the coarser values (", every 15 minutes within the 09:00
+ * hour", ", every 10 seconds within the 09:00 minute").
+ */
+function clockClause(time: ClockTime): string {
+	const step = time.step
+	if (!step) return ` at ${formatClock(time)}`
+
+	const every = clockEvery(step)
+	if (step.unit === 'h') return `, ${every} from ${formatClock(time)}`
+
+	const window = step.unit === 'm' ? 'hour' : 'minute'
+	const streaming = (step.unit === 'm' ? time.minutes : time.seconds).length === 0
+	if (!streaming) {
+		const windows = step.unit === 'm' ? time.hours.length : time.hours.length * time.minutes.length
+		return `, ${every} from ${formatClock(time)} to the end of ${windows > 1 ? 'each' : 'the'} ${window}`
+	}
+
+	const windows = step.unit === 'm'
+		? time.hours.map(hour => `${pad(hour)}:00`)
+		: time.hours.flatMap(hour => time.minutes.map(minute => `${pad(hour)}:${pad(minute)}`))
+	return `, ${every} within the ${joinAnd(windows)} ${window}${windows.length > 1 ? 's' : ''}`
+}
+
+/** "every hour", "every other minute", "every 15 minutes" — the cadence of a clock step. */
+function clockEvery(step: ClockStep): string {
+	const word = CLOCK_WORD[step.unit]
+	if (step.interval <= 1) return `every ${word}`
+	return step.interval === 2 ? `every other ${word}` : `every ${step.interval} ${word}s`
+}
+
 function formatClock(time: ClockTime): string {
 	const parts: string[] = []
+	// Streaming minutes leave only the hours to name.
+	const minutes = time.minutes.length > 0 ? time.minutes : [0]
 	for (const hour of time.hours) {
-		for (const minute of time.minutes) {
-			parts.push(time.seconds.length > 0
-				? time.seconds.map(second => `${pad(hour)}:${pad(minute)}:${pad(second)}`).join(', ')
-				: `${pad(hour)}:${pad(minute)}`)
+		for (const minute of minutes) {
+			if (time.seconds.length > 0) {
+				for (const second of time.seconds) parts.push(`${pad(hour)}:${pad(minute)}:${pad(second)}`)
+			} else {
+				parts.push(`${pad(hour)}:${pad(minute)}`)
+			}
 		}
 	}
 	return joinAnd(parts)

@@ -17,7 +17,8 @@ export enum DecreeStatus {
 /**
  * The calendar a declarative's Orbit resolves against (PEP100/PEP111). Resolution-only: only month/week/year
  * boundaries differ, and resolved occurrence instants are stored as concrete civil datetimes. `undefined` (null
- * on the wire) falls back to the kind default (decrees Pleiadean, fates Gregorian) until a preference lands.
+ * on the wire) falls back to the vault's preferred calendar (PEP116, `preferredCalendar`), which is Pleiadean unless
+ * changed; `resolveEntityCalendar` applies the rule.
  */
 export enum DeclarativeCalendar {
 	Gregorian = 0,
@@ -91,7 +92,10 @@ export class Fate {
 	parentIncentiveId: string | undefined
 	status: FateStatus = FateStatus.Active
 	orbit: string | undefined
-	/** The calendar the orbit resolves against (PEP111); undefined falls back to the kind default (Gregorian for fates). */
+	/**
+	 * The calendar the orbit resolves against (PEP111); undefined falls back to the vault's preferred calendar. A
+	 * one-off (`Z{…}`) fate is pinned to Gregorian by the core.
+	 */
 	calendar: DeclarativeCalendar | undefined
 	/** Read-only denormalized moment of the next upcoming occurrence, or undefined when none is scheduled (PEP111). */
 	nextOccurrence: string | undefined
@@ -107,7 +111,7 @@ export class Decree {
 	directive?: Directive | undefined
 	status: DecreeStatus = DecreeStatus.Active
 	orbit: string | undefined
-	/** The calendar the orbit resolves against (PEP111); undefined falls back to the kind default (Pleiadean for decrees). */
+	/** The calendar the orbit resolves against (PEP111); undefined falls back to the vault's preferred calendar. */
 	calendar: DeclarativeCalendar | undefined
 	/** Read-only denormalized moment of the next upcoming occurrence, or undefined when none is scheduled (PEP111). */
 	nextOccurrence: string | undefined

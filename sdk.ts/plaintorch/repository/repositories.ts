@@ -7,6 +7,7 @@ import type { PolarisAgenda, PolarisCycle } from "../polaris/models"
 import type { LorePage } from "../lore/models"
 import type { Checkpoint, Dependency } from "../dependencies/models"
 import type { EntityExistence, SystemBriefing } from "../system/models"
+import type { PreferenceView } from "../preferences/contracts"
 import { EntityRepository, type EntityFetcher } from "./entityRepository"
 import { DerivedRepository } from "./derivedRepository"
 import { InvalidationScheduler, type InvalidationTarget } from "./invalidation"
@@ -123,6 +124,15 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	 */
 	public readonly activeTimeframes: DerivedRepository<DirectiveTimeframeRecord[]>
 
+	/**
+	 * Every vault-bound user preference with its resolved value (PEP116), cached under {@link briefingRecordKey}.
+	 *
+	 * Surfaces read settings that shape how they draw from here — above all the preferred calendar an orbit is read on
+	 * when its entity names none (`preferredCalendar`) — so one listing serves every chip. The core announces a
+	 * preference write on the change feed, which revalidates this while observed like every record.
+	 */
+	public readonly preferences: DerivedRepository<PreferenceView[]>
+
 	/** The system briefing, cached under {@link briefingRecordKey}. */
 	public readonly briefing: DerivedRepository<SystemBriefing>
 	/** Note-to-entity resolutions, keyed by vault-relative path. */
@@ -181,6 +191,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		this.onrushPlanning = new DerivedRepository(async () => await client.onrush.getPlanning())
 		this.agenda = new DerivedRepository(async () => await client.polaris.getAgenda())
 		this.activeTimeframes = new DerivedRepository(async () => await client.directives.listActiveTimeframes())
+		this.preferences = new DerivedRepository(async () => await client.preferences.list())
 
 		const resolution = { freshnessMs: options.resolutionFreshnessMs }
 		this.briefing = new DerivedRepository(async () => await client.system.getBriefing())
@@ -227,7 +238,8 @@ export class PlaintorchRepositories implements InvalidationTarget {
 			this.onrushCurrent as DerivedRepository<unknown>,
 			this.onrushPlanning as DerivedRepository<unknown>,
 			this.agenda as DerivedRepository<unknown>,
-			this.activeTimeframes as DerivedRepository<unknown>
+			this.activeTimeframes as DerivedRepository<unknown>,
+			this.preferences as DerivedRepository<unknown>
 		]
 	}
 

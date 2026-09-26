@@ -1,15 +1,27 @@
 import { component, css, property } from "@a11d/lit"
+import type { DeclarativeCalendar } from "@pleiades/sdk"
 import { humanizeOrbit } from "../../orbits"
+import { CalendarRef } from "../data/CalendarRef"
 import { EditableTextPart } from "./EditableTextPart"
 
 /**
  * Editable Orbit scheduling notation (PEP100). Idle shows the humanized definition; editing swaps to the raw
  * notation so the user works against the real syntax. Unparseable notation warns (delayed) and reverts on
- * commit; an empty value clears the schedule.
+ * commit; an empty value clears the schedule. The definition is read on the calendar the orbit resolves on — its
+ * entity's own {@link calendar}, else the vault's preferred one — so its months and weekdays are the core's.
  */
 @component('p7t-editable-orbit')
 export class EditableOrbit extends EditableTextPart<string> {
 	@property({ type: Boolean }) short = false
+
+	/**
+	 * The calendar the orbit resolves on, when its entity names one (a declarative's own calendar). Unset — as for a
+	 * timeframe, which has none — the orbit is read on the vault's preferred calendar.
+	 */
+	@property({ type: Number }) calendar?: DeclarativeCalendar
+
+	/** The calendar the definition is read on: {@link calendar}, else the vault's preferred one. */
+	private readonly calendars = new CalendarRef(this, () => this.calendar)
 
 	override label = 'Orbit'
 
@@ -34,7 +46,7 @@ export class EditableOrbit extends EditableTextPart<string> {
 	}
 
 	protected override toDisplayText(value: string | undefined): string {
-		const { text } = humanizeOrbit(value, this.short)
+		const { text } = humanizeOrbit(value, this.short, this.calendars.orbitCalendar)
 		return text || 'No schedule'
 	}
 

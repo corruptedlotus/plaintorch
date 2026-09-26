@@ -1,5 +1,5 @@
 import { component, html, property } from "@a11d/lit"
-import { Attentive, AttentiveResolution } from "@pleiades/sdk"
+import { Attentive, AttentiveResolution, type DeclarativeCalendar } from "@pleiades/sdk"
 import { OccurrenceItem } from "./OccurrenceItem"
 import { occurrenceMenu, openOccurrenceModal, type OccurrenceTarget } from "./OccurrenceModal"
 import { core, type ContextMenuSpec } from ".."
@@ -16,6 +16,12 @@ import { toast } from "../../host"
 @component('p7t-attentive-item')
 export class AttentiveItem extends OccurrenceItem {
 	@property({ type: Object }) attentive?: Attentive
+
+	/**
+	 * The owning decree's calendar, supplied by a host that knows it when the attentive arrives without its decree (a
+	 * decree's own agenda lists them bare). The attentive's own decree wins when it carries one.
+	 */
+	@property({ type: Number }) calendar?: DeclarativeCalendar
 
 	private get done() {
 		return this.attentive?.resolution === AttentiveResolution.Done
@@ -91,10 +97,16 @@ export class AttentiveItem extends OccurrenceItem {
 
 		// The relative chip states the direction itself ("in 2 hours", "3 minutes ago"), ticking live off the shared
 		// clock, and — while pending — flags an overdue occurrence red with a clock-alert via warn="past". It carries
-		// the exact date/time in its tooltip.
+		// the exact date/time in its tooltip. It reads the occurrence at its granularity, so an all-day attentive is "Today"
+		// rather than overdue from midnight, and a week-born one is "This week" on its decree's calendar.
 		if (!this.done) {
 			return html`
-				<p7t-datetime-view relative warn='past' .date=${attentive.epoch.date} .time=${attentive.epoch.timeOfDay}></p7t-datetime-view>
+				<p7t-datetime-view relative warn='past'
+					.date=${attentive.epoch.date}
+					.time=${attentive.epoch.timeOfDay}
+					.granularity=${attentive.epoch.granularity}
+					.calendar=${attentive.decree?.calendar ?? this.calendar}>
+				</p7t-datetime-view>
 			`
 		}
 

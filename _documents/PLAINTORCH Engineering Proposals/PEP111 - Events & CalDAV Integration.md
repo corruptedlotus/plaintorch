@@ -155,3 +155,37 @@ landed. 2h brought the occurrence spine in line with the locked model, which 2b/
    - **SDK**: `Occurrence` abstract base; `Eventive`/`Attentive` are `@model` classes, so the transport revives them
      from the runtime `@type` the core stamps; `recurrenceId` replaces the date/time pair on occurrences, occurrence
      refs, and dependency endpoints; `periodEndDate` is gone.
+
+2i. **Client readings of granular moments and calendar-true orbits — Done.** Occurrences carry a granularity, and
+   their entities a calendar, but the client read neither: every moment was minute-accurate, and every orbit was named
+   on the Gregorian calendar.
+   - **Granular moments.** `p7t-datetime-view` takes an optional `granularity` (an `OrbitUnit`) and `calendar`. The
+     moment then stands for its whole window of that unit.
+     - *Inside the window it is current.* An hour-grained 18:00 reads "This hour" at 18:36; a month-grained moment
+       reads "This month" all month. A `warn='past'` flags only once the window has closed.
+     - *References move to the unit.* A week-grained moment is "Next week" rather than "Monday"; a month-grained one
+       is "Last month" or "in 3 months".
+     - *Second granularity shows the seconds*, both in the face and in "Yesterday at 12:19:05".
+     - *The absolute face shows as much as the unit carries.* An hour reads as the date "at 9" (or "at 9AM" where
+       the locale marks AM/PM), a day as the date alone, a week as "Week of" its first day, and a month or year as
+       itself ("Sol 3", "Sep 2026", "Year 3", "2026"). The tooltip spells the window out, with a Pleiadean month's
+       or year's Gregorian span.
+     - *Windows are the calendar's own.* A week starts on Monday (Gregorian) or Saturday (Pleiadean); a Pleiadean
+       month runs 60 or 61 days.
+     - *Without a granularity the view reads as before.*
+
+     The eventive and attentive rows and a fate banner's "Next" moment pass their epoch's granularity and their
+     declarative's calendar. A declarative's own agenda lists its occurrences without it, so the banner hands its
+     calendar down to those rows. The eventive row gave up its own date formatter for the shared view, and every
+     occurrence row (eventive, attentive, reflective) now draws its directive small, like the entity rows. The arithmetic lives in
+     `sipa/components/system/momentGranularity.ts`.
+   - **Calendar-true orbit readings.** The client now resolves a calendar as the core does
+     (`resolveEntityCalendar`): the entity's own, else the vault's preferred one (PEP116), which it reads from a
+     shared `repos.preferences` record through SIPA's `CalendarRef`. `humanizeOrbit(orbit, short, calendar)` names
+     months and weekdays on that calendar: a decree's `y[M{6}[d{5}]]` reads "the 5th of Tārvan" and `w[d{1}]` reads
+     "every Saturday" on the Pleiadean calendar. A Gregorian-pinned one-off fate still reads "June". The core
+     announces a preference write on the change feed, so a calendar switch reaches every open surface.
+   - **`%` on a clock unit.** The orbit model now carries a clock step, where it used to drop it. `h{9}%2` reads
+     "every other hour from 09:00", `h{9}[m%15]` reads "every 15 minutes within the 09:00 hour", and `z{09:00}%3`
+     steps its hour. A clock shape the model cannot express defers to the shape-matching humaniser instead of being
+     read partly. The fix is mirrored upstream in `@pleiades/orbits`.

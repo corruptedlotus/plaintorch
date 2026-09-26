@@ -1,8 +1,13 @@
 import { Component, component, css, html, nothing, property } from "@a11d/lit"
-import { PleiadeanDate } from "@pleiades/sdk"
+import { OrbitUnit, PleiadeanDate, type DeclarativeCalendar } from "@pleiades/sdk"
 import { TickController } from "./globalTick"
 import { gregorianDateLabel } from "./PleiadeanDateView"
 import { localeTimeLabel } from "./TimeView"
+import {
+	calendarWindowFace, calendarWindowLabel, civilDay, civilDayDate, clockFace, grainedPhase, isCalendarGranularity,
+	relativeGrainedLabel, weekWindow,
+} from "./momentGranularity"
+import { CalendarRef } from "../data/CalendarRef"
 import "./PleiadeanDateView"
 import "./TimeView"
 import "../PleiadesIcon"
@@ -25,11 +30,19 @@ export type DatetimeWarn = 'past' | 'future' | 'none'
  * 12:19", "In 2 hours", "Last Wednesday" — and re-renders every second off the shared app tick so it stays live.
  * The exact date/time stays in the tooltip regardless. Beyond a week either way the face falls back to the absolute
  * reading.
+ *
+ * A {@link granularity} (an occurrence's, PEP111) says how much of the moment is meaningful, and the moment then
+ * stands for its whole window of that unit — the whole hour, the whole month. Inside that window the moment is not
+ * past but current ("This hour", "This month"), relative references move to the unit ("Next week" rather than
+ * "Monday"), a second granularity shows the seconds, and the absolute face shows as much as the unit carries: the
+ * date and "at 9" (or "at 9AM", as the locale reads a clock) for an hour, the date alone for a day, the week's first
+ * day for a week, the month or year alone for those. Weeks, months and years are the {@link calendar}'s.
  */
 @component('p7t-datetime-view')
 export class DatetimeView extends Component {
 	/** The date as an ISO 'YYYY-MM-DD' string (a full timestamp is also accepted, e.g. a resolution instant). */
 	@property() date?: string
+	/** The time of day as 'HH:MM[:SS]'. */
 	@property() time?: string
 	/** The end of a time range, drawn after an en dash and folded into the one tooltip. */
 	@property() endTime?: string
@@ -40,8 +53,23 @@ export class DatetimeView extends Component {
 	/** Flags the moment (error colour + clock-alert) once it is {@link DatetimeWarn | past or future}; off by default. */
 	@property() warn: DatetimeWarn = 'none'
 
+	/**
+	 * How much of the moment is meaningful — an occurrence's granularity (PEP111). Unset, the moment is read as it
+	 * always was: to the minute, with no window around it.
+	 */
+	@property({ type: Number }) granularity?: OrbitUnit
+
+	/**
+	 * The calendar the moment was resolved on, when its entity names one; a week, month or year {@link granularity}
+	 * is that calendar's window. Unset, the vault's preferred calendar.
+	 */
+	@property({ type: Number }) calendar?: DeclarativeCalendar
+
 	/** Ticks off the shared app clock while a live reading is on ({@link relative} phrase or a {@link warn} threshold). */
 	protected readonly tick = new TickController(this, () => this.relative || this.warn !== 'none')
+
+	/** The calendar a week, month or year window is taken on: {@link calendar}, else the vault's preferred one. */
+	private readonly calendars = new CalendarRef(this, () => this.calendar, () => isCalendarGranularity(this.granularity))
 
 	static override get styles() {
 		return css`
@@ -74,12 +102,22 @@ export class DatetimeView extends Component {
 			.relative {
 				white-space: nowrap;
 			}
+
+			.window {
+				font-weight: 250;
+				white-space: nowrap;
+			}
 		`
 	}
 
 	/** The fixed date as a Pleiadean date, or undefined when it cannot be parsed. Anchored in UTC via the calculator. */
 	private get pleiadean(): PleiadeanDate | undefined {
 		return PleiadeanDate.tryFromISO(this.date)
+	}
+
+	/** The moment as a local wall-clock instant, or undefined when it cannot be read. */
+	private get target(): RelativeTarget | undefined {
+		return this.date ? relativeTarget(this.date, this.time) : undefined
 	}
 
 	override get template() {
@@ -93,15 +131,23 @@ export class DatetimeView extends Component {
 		`
 	}
 
-	/** Whether the {@link warn} threshold is met right now — the moment has passed (`past`) or is still ahead (`future`). */
+	/**
+	 * Whether the {@link warn} threshold is met right now — the moment has passed (`past`) or is still ahead
+	 * (`future`). With a {@link granularity} the moment's whole window counts: inside it the moment is neither.
+	 */
 	private get isWarning(): boolean {
-		if (this.warn === 'none' || !this.date) {
+		if (this.warn === 'none') {
 			return false
 		}
 
-		const target = relativeTarget(this.date, this.time)
+		const target = this.target
 		if (!target) {
 			return false
+		}
+
+		if (this.granularity !== undefined) {
+			const phase = grainedPhase(target.at, this.granularity, this.calendars.calendar, new Date())
+			return this.warn === 'future' ? phase === 'ahead' : phase === 'past'
 		}
 
 		const future = target.at.getTime() >= Date.now()
@@ -110,9 +156,11 @@ export class DatetimeView extends Component {
 
 	/** The relative phrase when in relative mode and within its window; otherwise the absolute date + time reading. */
 	private faceTemplate(pleiadean: PleiadeanDate | undefined) {
-		if (this.relative && this.date) {
-			const target = relativeTarget(this.date, this.time)
-			const label = target ? relativeMomentLabel(target.at, target.hasTime, new Date()) : ''
+		if (this.relative) {
+			const target = this.target
+			const label = !target ? '' : this.granularity === undefined
+				? relativeMomentLabel(target.at, target.hasTime, new Date())
+				: relativeGrainedLabel(target.at, this.granularity, this.calendars.calendar, new Date())
 			if (label) {
 				return html`<span class='relative'>${label}</span>`
 			}
@@ -122,29 +170,75 @@ export class DatetimeView extends Component {
 		return this.absoluteFace(pleiadean)
 	}
 
+	/** The fixed reading, carrying as much of the moment as its {@link granularity} makes meaningful. */
 	private absoluteFace(pleiadean: PleiadeanDate | undefined) {
+		const granularity = this.granularity
+		const target = this.target
+		if (target && (granularity === OrbitUnit.Month || granularity === OrbitUnit.Year)) {
+			return html`<span class='window'>${calendarWindowFace(civilDay(target.at), granularity, this.calendars.calendar)}</span>`
+		}
+
+		if (target && granularity === OrbitUnit.Week) {
+			const start = PleiadeanDate.fromDate(civilDayDate(weekWindow(civilDay(target.at), this.calendars.calendar).start))
+			return html`
+				<span class='window'>Week of</span>
+				<p7t-date-view short bare .date=${start}></p7t-date-view>
+			`
+		}
+
+		const dateFace = pleiadean ? html`<p7t-date-view short bare .date=${pleiadean}></p7t-date-view>` : html`<span>${this.date}</span>`
+		if (!this.time || granularity === OrbitUnit.Day) {
+			return dateFace
+		}
+
+		if (target && granularity === OrbitUnit.Hour) {
+			// The hour is the quirky one: a bare hour reads as "at 9" (or "at 9AM" where the locale marks the half day).
+			const end = this.endTime ? relativeTarget(this.date!, this.endTime) : undefined
+			return html`
+				${dateFace}
+				<span class='window'>at ${clockFace(target.at, OrbitUnit.Hour)}${end ? html` – ${clockFace(end.at, OrbitUnit.Hour)}` : nothing}</span>
+			`
+		}
+
+		const seconds = granularity === OrbitUnit.Second
 		return html`
-			${pleiadean ? html`<p7t-date-view short bare .date=${pleiadean}></p7t-date-view>` : html`<span>${this.date}</span>`}
-			${!this.time ? nothing : html`
-				<span class='sep'>·</span>
-				<p7t-time-view bare .time=${this.time}></p7t-time-view>
-				${!this.endTime ? nothing : html`
-					<span class='sep'>–</span>
-					<p7t-time-view bare .time=${this.endTime}></p7t-time-view>
-				`}
+			${dateFace}
+			<span class='sep'>·</span>
+			<p7t-time-view bare ?seconds=${seconds} .time=${this.time}></p7t-time-view>
+			${!this.endTime ? nothing : html`
+				<span class='sep'>–</span>
+				<p7t-time-view bare ?seconds=${seconds} .time=${this.endTime}></p7t-time-view>
 			`}
 		`
 	}
 
-	/** The full Gregorian date and locale time (with the range end, if any) as one line — the shared tooltip. */
+	/**
+	 * The full Gregorian date and locale time (with the range end, if any) as one line — the shared tooltip. A
+	 * {@link granularity} narrows or widens it like the face: the hour alone, the seconds too, the date alone, or the
+	 * window it names ("Week of …", "September 2026", a Pleiadean month with its Gregorian span).
+	 */
 	private unifiedLabel(pleiadean: PleiadeanDate | undefined): string {
+		const granularity = this.granularity
+		const target = this.target
+		if (target && isCalendarGranularity(granularity)) {
+			return calendarWindowLabel(civilDay(target.at), granularity as OrbitUnit.Week | OrbitUnit.Month | OrbitUnit.Year, this.calendars.calendar)
+		}
+
 		const dateLabel = pleiadean ? gregorianDateLabel(pleiadean) : (this.date ?? '')
-		if (!this.time) {
+		if (!this.time || granularity === OrbitUnit.Day) {
 			return dateLabel
 		}
 
-		const end = this.endTime ? ` – ${localeTimeLabel(this.endTime)}` : ''
-		return `${dateLabel} · ${localeTimeLabel(this.time)}${end}`
+		if (target && granularity === OrbitUnit.Hour) {
+			// The whole hour the moment stands for (or up to the range end): "04:00 – 05:00", "4:00 AM – 5:00 AM".
+			const hour = target.at.getHours()
+			const end = this.endTime ?? `${pad2((hour + 1) % 24)}:00`
+			return `${dateLabel} · ${localeTimeLabel(`${pad2(hour)}:00`)} – ${localeTimeLabel(end)}`
+		}
+
+		const seconds = granularity === OrbitUnit.Second
+		const end = this.endTime ? ` – ${localeTimeLabel(this.endTime, seconds)}` : ''
+		return `${dateLabel} · ${localeTimeLabel(this.time, seconds)}${end}`
 	}
 }
 
@@ -155,15 +249,20 @@ function pad2(value: number): string {
 	return String(value).padStart(2, '0')
 }
 
+interface RelativeTarget {
+	at: Date
+	hasTime: boolean
+}
+
 /** The wall-clock instant a stored date (+ optional time) denotes, for relative comparison against the local now. */
-function relativeTarget(date: string, time?: string): { at: Date; hasTime: boolean } | undefined {
+function relativeTarget(date: string, time?: string): RelativeTarget | undefined {
 	const bare = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim())
 	if (bare) {
 		// A bare calendar day + optional clock time is read as local wall-clock, so "Tomorrow at 18:00" means 18:00
 		// where the reader is, not a timezone-shifted instant.
 		const hasTime = !!time
 		const parts = hasTime ? time!.split(':') : []
-		const at = new Date(Number(bare[1]), Number(bare[2]) - 1, Number(bare[3]), Number(parts[0]) || 0, Number(parts[1]) || 0)
+		const at = new Date(Number(bare[1]), Number(bare[2]) - 1, Number(bare[3]), Number(parts[0]) || 0, Number(parts[1]) || 0, Number(parts[2]) || 0)
 		return Number.isNaN(at.getTime()) ? undefined : { at, hasTime }
 	}
 
@@ -182,7 +281,8 @@ function calendarDayDiff(now: Date, at: Date): number {
 /**
  * A human relative reading of a moment — "3 minutes ago", "in 2 hours", "Yesterday at 12:19", "Tomorrow at 18:00",
  * "Last Wednesday". A time-of-day is appended as " at HH:MM" only when the source carried one. Returns '' beyond a
- * week in either direction, so the caller can fall back to the absolute reading.
+ * week in either direction, so the caller can fall back to the absolute reading. This is the reading without a
+ * granularity; with one, {@link relativeGrainedLabel} reads the moment as its whole window.
  */
 export function relativeMomentLabel(at: Date, hasTime: boolean, now: Date): string {
 	const diff = at.getTime() - now.getTime()

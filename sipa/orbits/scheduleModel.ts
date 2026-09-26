@@ -95,8 +95,24 @@ export interface NamedValue {
 /** A time of day. Kept as raw numbers so the realizer decides the format ("09:00", "9am", "@9"). */
 export interface ClockTime {
 	hours: number[]
+	/** The listed minutes; empty when the minutes run as a {@link ClockTime.step} stream. */
 	minutes: number[]
+	/** The listed seconds; empty when there are none, or when they run as a {@link ClockTime.step} stream. */
 	seconds: number[]
+	/** A `%N` (or a bare, streaming unit) on one clock unit, when the time recurs within the day rather than once. */
+	step?: ClockStep
+}
+
+/**
+ * How a clock unit (h/m/s) recurs within the day: every {@link interval} of {@link unit}. When that unit lists
+ * values, each listed value starts a run to the end of the enclosing unit — `h{9}%2` is 09:00, 11:00, … 23:00, and
+ * `h{9}[m{10}%15]` is 09:10, 09:25, 09:40, 09:55. When it lists none, the unit streams inside the coarser clock
+ * values, phased from the schedule's anchor — `h{9}[m%15]` is every 15 minutes within the 09:00 hour, and a bare
+ * `h{9}[m]` every minute of it.
+ */
+export interface ClockStep {
+	unit: 'h' | 'm' | 's'
+	interval: number
 }
 
 /** A bound on the stream. */
