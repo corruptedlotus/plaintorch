@@ -5,7 +5,7 @@ namespace Pleiades.Vault.Watcher;
 
 /// <summary>
 /// Thrown by a file-driven delete that cannot remove its entity because other rows still reference it through a
-/// restricting relationship (an objective with executive records, a directive with child objectives) — the removal the
+/// restricting relationship (a directive with subdirectives, an incentive other incentives name as their parent) — the removal the
 /// database would refuse. Nothing is written: neither the removal nor a graveyard entry. The status reporter classifies
 /// it as the standing <see cref="WatcherOperations.DeleteBlocked"/> status rather than a retryable sync failure, because
 /// re-checking the path on a timer cannot succeed until the note returns or the references go.

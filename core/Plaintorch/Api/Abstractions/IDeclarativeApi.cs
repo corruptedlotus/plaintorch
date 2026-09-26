@@ -60,7 +60,9 @@ public interface IDeclarativeApi
 	Task<Decree> UpdateDecreeAsync(string decreeId, DecreeUpdate update, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Deletes a decree declarative along with its materialized attentives.
+	/// Deletes a decree declarative along with its materialized attentives. Its executives in ended Polaris cycles stay as
+	/// work records with the reference cleared; its executives in the active cycle and in planned or forecast cycles are
+	/// removed with it.
 	/// </summary>
 	Task DeleteDecreeAsync(string decreeId, CancellationToken cancellationToken = default);
 

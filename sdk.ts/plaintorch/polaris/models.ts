@@ -100,7 +100,10 @@ export interface Executive {
 	id: number
 	polarisCycleId: string
 	polarisCycle?: PolarisCycle | undefined
-	/** The incentive this executive works at (PEP111): an objective or a decree id. Reassignable, never cleared. */
+	/**
+	 * The incentive this executive works at (PEP111): an objective or a decree id. Reassignable, never cleared by an edit;
+	 * absent on an ended cycle's work record whose objective or decree was since deleted.
+	 */
 	incentiveId: string | undefined
 	/** The incentive this executive works at — an objective or a decree; told apart by {@link incentiveKind}. */
 	incentive?: ExecutiveIncentive | undefined

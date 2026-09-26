@@ -41,6 +41,7 @@ public sealed class PlaintorchStatePolicyProcessor(
 	{
 		ArgumentNullException.ThrowIfNull(context);
 
+		await ReleaseDeletedIncentiveExecutivesAsync(context, cancellationToken);
 		await ClearStaleAvailabilityReferencesAsync(context, cancellationToken);
 		await ResetChangedScheduleCursorsAsync(context, cancellationToken);
 		await RefreshNextOccurrencesAsync(context, cancellationToken);
@@ -56,6 +57,44 @@ public sealed class PlaintorchStatePolicyProcessor(
 		return supersededForecasts.Count == 0
 			? PlaintorchStatePolicyResult.Empty
 			: new PlaintorchStatePolicyResult(supersededForecasts);
+	}
+
+	/// <summary>
+	/// Deleting an incentive keeps the work already recorded against it. In the same unit of work that deletes an
+	/// objective or a decree (a fate is never worked), each of its executives in an <em>ended</em> Polaris cycle is kept
+	/// with its incentive reference cleared, so the cycle's record of the work — executed, elapsed, allocations — survives
+	/// the backlog item; each in the active cycle or a planned/forecast one is removed with it, since that plan can no
+	/// longer be worked. Riding the save hook covers every pathway: the API deletes and the markdown watcher's
+	/// delete-from-database action, whose delete-blocker check therefore does not count executives
+	/// (<see cref="VaultEntityGateway.FindDeleteBlockersAsync"/>).
+	/// </summary>
+	private static async Task ReleaseDeletedIncentiveExecutivesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var deletedIds = context.ChangeTracker.Entries<Incentive>()
+			.Where(entry => entry.State == EntityState.Deleted)
+			.Select(entry => entry.Entity.Id)
+			.ToList();
+		if (deletedIds.Count == 0)
+		{
+			return;
+		}
+
+		var executives = await context.Set<Executive>()
+			.Include(executive => executive.PolarisCycle)
+			.Where(executive => executive.IncentiveId != null && deletedIds.Contains(executive.IncentiveId))
+			.ToListAsync(cancellationToken);
+		foreach (var executive in executives)
+		{
+			if (executive.PolarisCycle?.EndTime is not null)
+			{
+				executive.Incentive = null;
+				executive.IncentiveId = null;
+			}
+			else
+			{
+				context.Remove(executive);
+			}
+		}
 	}
 
 	/// <summary>

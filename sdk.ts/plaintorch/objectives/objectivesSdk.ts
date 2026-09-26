@@ -64,6 +64,10 @@ export class PlaintorchObjectivesSdk {
 		)
 	}
 
+	/**
+	 * Deletes an objective. Its executives in ended Polaris cycles stay as work records with no incentive; those in the
+	 * active cycle and in planned or forecast cycles are removed with it.
+	 */
 	public async delete(objectiveId: string): Promise<boolean> {
 		return await this.client.delete(`/api/objectives/${encodeURIComponent(objectiveId)}`)
 	}

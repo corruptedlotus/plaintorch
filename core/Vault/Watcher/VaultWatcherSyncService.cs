@@ -658,9 +658,10 @@ public sealed class VaultWatcherSyncService(
 			return;
 		}
 
-		// Rows that still reference the entity through a restricting relationship (an objective's executive records, a
-		// directive's children) make the database refuse the removal — and the API refuses the same deletes. Attempting it
-		// anyway failed on every retry, so the blocked delete is reported as such and nothing is written.
+		// Rows that still reference the entity through a restricting relationship (a directive's children, an incentive's
+		// child incentives) make the database refuse the removal — and the API refuses the same deletes. Attempting it
+		// anyway failed on every retry, so the blocked delete is reported as such and nothing is written. An incentive's
+		// executives do not block: the save-time state rule releases them in the removing save.
 		var blockers = await entityGateway.FindDeleteBlockersAsync(existing, cancellationToken);
 		if (blockers.Count > 0)
 		{

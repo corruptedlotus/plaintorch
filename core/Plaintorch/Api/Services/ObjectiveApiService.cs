@@ -224,15 +224,10 @@ public sealed class ObjectiveApiService(
 	public async Task DeleteAsync(string objectiveId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(objectiveId);
-		var objective = await context.Objectives
-			.Include(item => item.Executives)
-			.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
+		// Its executives are released by the save-time state rule: kept, reference cleared, in ended Polaris cycles, and
+		// removed from the active and planned ones.
+		var objective = await context.Objectives.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
 			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
-
-		if (objective.Executives.Count > 0)
-		{
-			throw new InvalidOperationException("Objective cannot be deleted while it still has executive records.");
-		}
 
 		var graveyardEntry = temporalDataService.StageEntityArchive(objective, "api-delete", Environment.UserName);
 		context.Objectives.Remove(objective);

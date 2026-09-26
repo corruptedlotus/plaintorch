@@ -31,7 +31,8 @@ public sealed class Executive : ITimeAllocated
 	/// Gets or sets the incentive this execution record works at — an <see cref="Objective"/> or a
 	/// <see cref="Decree"/>, never an occurrence (PEP111). An objective-backed executive is the day's plan to work
 	/// that objective; a decree-backed one is the cycle's execution of that decree's routine (replacing the former
-	/// Polaris-bound attentive).
+	/// Polaris-bound attentive). <see langword="null"/> on an ended cycle's work record whose incentive was since
+	/// deleted: the record of the work is kept, the reference cleared.
 	/// </summary>
 	public string? IncentiveId { get; set; }
 

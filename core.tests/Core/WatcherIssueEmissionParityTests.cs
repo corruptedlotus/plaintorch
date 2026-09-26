@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Pleiades.Diagnostics;
 using Pleiades.Plaintorch.Api.Abstractions;
@@ -136,15 +137,17 @@ public sealed class WatcherIssueEmissionParityTests
 	[Fact]
 	public async Task A_blocked_delete_emits_the_same_standing_error_in_sweep_and_runtime()
 	{
-		// A begun objective's note is deleted while executive records still reference it: the sweep reaches it through the
-		// orphan pass, runtime through the delete event, and both must raise the one delete-blocked error — no sync-failed.
+		// A begun objective's note is deleted while another incentive still names it as its parent: the sweep reaches it
+		// through the orphan pass, runtime through the delete event, and both must raise the one delete-blocked error — no
+		// sync-failed.
 		var (sweep, runtime) = await RunBothWaysAsync(async vault =>
 		{
 			var objective = await vault.SeedStandaloneObjectiveAsync("Held");
 			await vault.BeginObjectiveBoundaryAsync(objective.Id);
-			await vault.WithScopeAsync(services => services.GetRequiredService<IPolarisCycleApi>().PlanExecutiveAsync(
-				new PolarisExecutivePlan(PolarisExecutivePlanningMode.FromObjective, ObjectiveId: objective.Id),
-				cancellationToken: TestContext.Current.CancellationToken));
+			var child = await vault.SeedStandaloneObjectiveAsync("Held Child");
+			await vault.QueryAsync(context => context.Incentives
+				.Where(item => item.Id == child.Id)
+				.ExecuteUpdateAsync(setters => setters.SetProperty(item => item.ParentIncentiveId, objective.Id), TestContext.Current.CancellationToken));
 			File.Delete(vault.AbsolutePath("Objectives/Held.md"));
 			return "Objectives/Held.md";
 		});

@@ -24,6 +24,9 @@ namespace Pleiades.Tests.Core;
 /// the model's restricting relationships and surfaces once as a standing <c>delete-blocked</c> status that the retry sweep
 /// leaves alone (resolved by restoring the note, or by the next sweep once nothing references the entity); and a failed
 /// candidate discards whatever it staged, so it can never fail the rest of a sweep.
+///
+/// Executives no longer block at all (a deleted item keeps its ended work and drops its live plans; see
+/// <see cref="IncentiveDeletionTests"/>), so the blocked objective here is one another incentive names as its parent.
 /// </summary>
 public sealed class WatcherBlockedDeleteTests : VaultTestBase
 {
@@ -31,13 +34,14 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 
 	private static string NoteOf(string title) => $"Objectives/{title}.md";
 
-	/// <summary>Seeds a begun objective (its note on disk) and plans it into the current Polaris cycle as an executive.</summary>
-	private async Task<Objective> SeedBegunObjectiveWithExecutiveAsync(string title)
+	/// <summary>Seeds a begun objective (its note on disk) that another objective names as its parent — a restricting relationship.</summary>
+	private async Task<Objective> SeedBegunObjectiveWithChildAsync(string title)
 	{
 		var objective = await SeedBegunObjectiveAsync(title);
-		await Vault.WithScopeAsync(services => services.GetRequiredService<IPolarisCycleApi>().PlanExecutiveAsync(
-			new PolarisExecutivePlan(PolarisExecutivePlanningMode.FromObjective, ObjectiveId: objective.Id),
-			cancellationToken: Token));
+		var child = await Vault.SeedStandaloneObjectiveAsync(title + " Child");
+		await Vault.QueryAsync(context => context.Incentives
+			.Where(item => item.Id == child.Id)
+			.ExecuteUpdateAsync(setters => setters.SetProperty(item => item.ParentIncentiveId, objective.Id), Token));
 		return objective;
 	}
 
@@ -54,8 +58,13 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 	private Task<int> GraveyardEntriesForAsync(string id)
 		=> Vault.QueryAsync(context => context.DatabaseGraveyardEntries.CountAsync(item => item.EntityId == id, Token));
 
-	private Task<int> ExecutivesOfAsync(string id)
-		=> Vault.QueryAsync(context => context.Set<Executive>().CountAsync(item => item.IncentiveId == id, Token));
+	private Task<int> ChildrenOfAsync(string id)
+		=> Vault.QueryAsync(context => context.Incentives.CountAsync(item => item.ParentIncentiveId == id, Token));
+
+	private Task<int> ReleaseChildrenOfAsync(string id)
+		=> Vault.QueryAsync(context => context.Incentives
+			.Where(item => item.ParentIncentiveId == id)
+			.ExecuteUpdateAsync(setters => setters.SetProperty(item => item.ParentIncentiveId, (string?)null), Token));
 
 	private IReadOnlyList<OperationStatus> StatusesAt(string vaultRelativePath)
 		=> Vault.GetSingleton<OperationStatusRegistry>()
@@ -64,9 +73,9 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 			.ToList();
 
 	[Fact] // Fixed — the removal is checked against the model's restricting relationships first; nothing is written when it is blocked.
-	public async Task Deleting_the_note_of_an_objective_with_executive_records_writes_nothing_and_keeps_it()
+	public async Task Deleting_the_note_of_an_objective_with_child_incentives_writes_nothing_and_keeps_it()
 	{
-		var objective = await SeedBegunObjectiveWithExecutiveAsync("Blocked");
+		var objective = await SeedBegunObjectiveWithChildAsync("Blocked");
 		var path = Vault.AbsolutePath(NoteOf("Blocked"));
 		File.Delete(path);
 
@@ -75,14 +84,14 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 		await Vault.ReconcileWithIssuesAsync(path);
 
 		Assert.True(await ObjectiveExistsAsync(objective.Id));
-		Assert.Equal(1, await ExecutivesOfAsync(objective.Id));
+		Assert.Equal(1, await ChildrenOfAsync(objective.Id));
 		Assert.Equal(0, await GraveyardEntriesForAsync(objective.Id));
 	}
 
 	[Fact] // Fixed — a blocked delete is its own standing reason, raised once and refreshed, never re-queued by the retry sweep.
 	public async Task The_blocked_delete_surfaces_once_as_a_standing_status_the_retry_sweep_leaves_alone()
 	{
-		var objective = await SeedBegunObjectiveWithExecutiveAsync("Blocked");
+		var objective = await SeedBegunObjectiveWithChildAsync("Blocked");
 		var path = Vault.AbsolutePath(NoteOf("Blocked"));
 		File.Delete(path);
 
@@ -93,7 +102,7 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 		Assert.Equal(WatcherOperations.DeleteBlocked, status.ReasonCode);
 		Assert.Equal(OperationSeverity.Error, status.Severity);
 		Assert.Equal(objective.Id, status.EntityId);
-		Assert.Contains("Executive", status.Detail);
+		Assert.Contains("Incentive", status.Detail);
 		// The sweep refreshed the one status raised by the live event rather than raising another.
 		Assert.Equal(2, status.OccurrenceCount);
 
@@ -106,7 +115,7 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 	[Fact] // Fixed — restoring the note is a clean sync at the path, which clears the standing status.
 	public async Task Restoring_the_note_resolves_the_blocked_delete()
 	{
-		var objective = await SeedBegunObjectiveWithExecutiveAsync("Blocked");
+		var objective = await SeedBegunObjectiveWithChildAsync("Blocked");
 		var note = NoteOf("Blocked");
 		var content = Vault.ReadVaultFile(note);
 		File.Delete(Vault.AbsolutePath(note));
@@ -124,14 +133,12 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 	[Fact] // Fixed — once nothing references the entity, the next sweep removes it with exactly one graveyard entry.
 	public async Task Once_nothing_references_it_the_next_sweep_completes_the_removal()
 	{
-		var objective = await SeedBegunObjectiveWithExecutiveAsync("Blocked");
+		var objective = await SeedBegunObjectiveWithChildAsync("Blocked");
 		File.Delete(Vault.AbsolutePath(NoteOf("Blocked")));
 		await Vault.SweepWithIssuesAsync();
 		Assert.Single(StatusesAt(NoteOf("Blocked")));
 
-		await Vault.QueryAsync(context => context.Set<Executive>()
-			.Where(item => item.IncentiveId == objective.Id)
-			.ExecuteDeleteAsync(Token));
+		await ReleaseChildrenOfAsync(objective.Id);
 		await Vault.SweepWithIssuesAsync();
 
 		Assert.False(await ObjectiveExistsAsync(objective.Id));
@@ -143,7 +150,7 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 	public async Task A_blocked_delete_does_not_hold_back_the_rest_of_the_sweep()
 	{
 		// Alpha sorts first, so its delete runs before Beta's in the sweep's one scope.
-		var alpha = await SeedBegunObjectiveWithExecutiveAsync("Alpha");
+		var alpha = await SeedBegunObjectiveWithChildAsync("Alpha");
 		var beta = await SeedBegunObjectiveAsync("Beta");
 		File.Delete(Vault.AbsolutePath(NoteOf("Alpha")));
 		File.Delete(Vault.AbsolutePath(NoteOf("Beta")));
