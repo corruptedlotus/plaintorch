@@ -166,7 +166,7 @@ export class DecreeBanner extends EntityBanner<Decree> {
 	protected override get info() {
 		return html`
 			<div class='schedule'>
-				<p7t-editable-orbit ${this.binder.bind('orbit')}></p7t-editable-orbit>
+				<p7t-editable-orbit .calendar=${this.entity?.calendar} ${this.binder.bind('orbit')}></p7t-editable-orbit>
 			</div>
 		`
 	}

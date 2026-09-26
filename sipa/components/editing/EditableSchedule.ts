@@ -197,6 +197,7 @@ export class EditableSchedule extends ScheduleItem {
 			<p7t-editable-orbit
 				?disabled=${!this.editing}
 				?short=${this.shortOrbit}
+				.calendar=${this.calendar}
 				.value=${this.orbit}
 				@change=${(e: Event) => this.commit('orbit', (e.target as EditablePart<string>).value)}>
 			</p7t-editable-orbit>

@@ -1,4 +1,5 @@
 export * from './EntityRef'
 export * from './DerivedRef'
 export * from './ActiveTimeframesRef'
+export * from './CalendarRef'
 export * from './coreProvider'

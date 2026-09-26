@@ -21,11 +21,15 @@ convention as `assets/icons/index.ts`).
 `index.ts` and `shortHumanizer.ts` are the plugin-authored files. `index.ts` re-exports the
 vendored modules (and the short humanizer) and adds:
 
-- `humanizeOrbit(orbit, short?)` — parse + humanize a raw notation into a `{ text, invalid }`
+- `humanizeOrbit(orbit, short?, calendar?)` — parse + humanize a raw notation into a `{ text, invalid }`
   phrase. It runs the **model-based humaniser** (parse → normalize → realize; see below), falling
   back to the vendored humaniser for shapes the model does not cover yet — and, for the short
   register, to the legacy short humaniser first — and to the raw string when the notation cannot be
-  parsed. With `short`, it returns the terse reading ("Mon @5&16") instead of the full one.
+  parsed. With `short`, it returns the terse reading ("Mon @5&16") instead of the full one. `calendar`
+  (`'gregorian'` | `'pleiadean'`, or a `CalendarSystem`) names months and weekdays; it defaults to Gregorian, so a
+  surface must pass the calendar its entity resolves on — the SIPA components do, through `CalendarRef` (the
+  entity's own calendar, else the vault's preferred one).
+- `orbitCalendar(name)` — the shared `CalendarSystem` for a calendar name.
 - `isValidOrbit(orbit)` — whether a raw notation parses.
 
 Only `packages/node/src`'s parser/humanizer/calendar are vendored; the resolution engine
@@ -81,7 +85,9 @@ drop `limits` `*x @x <t >t` and `duration` `=<dur>`), and they are two hand-sync
 - `scheduleNormalizer.ts` — AST → ScheduleModel (a single-pass structural tree fold; resolves weekday/month
   names and short names via the `CalendarSystem`). A dated `Z{…}` becomes an `instant`; a bare `z{h:m}` a
   frameless daily clock. Throws `UnsupportedShapeError` for shapes not yet modelled (a set-op nested mid-chain,
-  a non-clock time unit) so the caller can fall back.
+  a non-clock time unit, a clock shape it cannot express) so the caller can fall back. A `%N` on a clock unit
+  becomes the clock time's `step`: `h{9}%2` runs from 09:00 to the end of the day, `h{9}[m{10}%15]` to the end
+  of the hour, and a bare `h{9}[m%15]` streams within the 09:00 hour. Before the step it was dropped outright.
 - `scheduleRealizer.ts` — ScheduleModel → phrase, in **two registers over the same model**: `realizeLong`
   (full prose, e.g. "Every other Friday at 17:30", "The 5th of June 2027 at 18:00") and `realizeShort`
   (compact, e.g. "Fri /2w @17:30", "Mon @5&16", "Jun 5 2027 @18"). It does **not** import the calendar —
@@ -92,9 +98,9 @@ drop `limits` `*x @x <t >t` and `duration` `=<dur>`), and they are two hand-sync
   plus both phrases; `resolveCalendar(name)` maps a name to a `CalendarSystem`. **Plugin-only** (the preview
   tool's calendar switch); upstream ships its own calendar-agnostic `describeOrbit`.
 - `pleiadeanNaming.ts` — a **naming-only** Pleiadean `CalendarSystem` (six months, **Saturday-first** week,
-  Gregorian arithmetic delegated, curated `getUnitShortName` → Nil/Sol/Xun/Tar/Lua/Tva) so the preview tool
-  can show a non-Gregorian reading. **Plugin-only** and not resolution-grade — a real Pleiadean calendar
-  belongs upstream in `orbit-scheduler`.
+  Gregorian arithmetic delegated, curated `getUnitShortName` → Nil/Sol/Xun/Tar/Lua/Tva). `humanizeOrbit` reads an
+  orbit on it whenever the orbit's entity resolves on the Pleiadean calendar, and the preview tool uses it too.
+  **Plugin-only** and not resolution-grade — a real Pleiadean calendar belongs upstream in `orbit-scheduler`.
 
 `scheduleModel.ts`, `scheduleNormalizer.ts` and `scheduleRealizer.ts` have **graduated upstream** to
 `@pleiades/orbits` (`packages/node/src/`) as the canonical model humaniser; the copies here are kept in sync

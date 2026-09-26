@@ -1,5 +1,5 @@
 import { Component, component, css, html, nothing, property, PropertyValues, repeat, state } from '@a11d/lit'
-import { Attentive, Eventive } from '@pleiades/sdk'
+import { Attentive, Eventive, type DeclarativeCalendar } from '@pleiades/sdk'
 import { core } from '..'
 
 /**
@@ -20,6 +20,12 @@ export class DeclarativeAgendaEditor extends Component {
 
 	/** The decree whose attentives these are, when this agenda belongs to a decree. */
 	@property() decreeId = ''
+
+	/**
+	 * The declarative's own calendar, when it names one. The listed occurrences arrive without their declarative, so each
+	 * row is handed this to read a week, month or year granularity on the right calendar.
+	 */
+	@property({ type: Number }) calendar?: DeclarativeCalendar
 
 	@state() private eventives: readonly Eventive[] = []
 	@state() private attentives: readonly Attentive[] = []
@@ -95,10 +101,10 @@ export class DeclarativeAgendaEditor extends Component {
 				`}
 				${this.fateId
 					? repeat(this.eventives, eventive => eventive.id, eventive => html`
-						<p7t-eventive-item interactive .eventive=${eventive}></p7t-eventive-item>
+						<p7t-eventive-item interactive .calendar=${this.calendar} .eventive=${eventive}></p7t-eventive-item>
 					`)
 					: repeat(this.attentives, attentive => attentive.id, attentive => html`
-						<p7t-attentive-item interactive .attentive=${attentive}></p7t-attentive-item>
+						<p7t-attentive-item interactive .calendar=${this.calendar} .attentive=${attentive}></p7t-attentive-item>
 					`)}
 			</div>
 		`

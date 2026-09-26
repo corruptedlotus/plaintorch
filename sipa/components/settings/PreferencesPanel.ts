@@ -6,7 +6,9 @@ import type { PreferenceView } from "@pleiades/sdk"
  * The settings panel (PEP116). It renders whatever the core's preference catalog reports — a control per
  * preference, grouped by section — so a new preference appears here automatically with no client change. Each
  * control writes straight through to the core; the reset button clears the override back to its default. Hosted
- * inside {@link PreferenceModal}, opened from the briefing.
+ * inside {@link PreferenceModal}, opened from the briefing. A committed write also refreshes the shared preference
+ * record every other surface reads (the preferred calendar an orbit is read on) at once, rather than waiting for the
+ * change feed's echo.
  */
 @component('p7t-preferences')
 export class PreferencesPanel extends Component {
@@ -31,6 +33,7 @@ export class PreferencesPanel extends Component {
 		const updated = await core.preferences.set(preference.key, value)
 		if (updated) {
 			this.preferences = this.preferences?.map(item => item.key === preference.key ? updated : item)
+			void core.repos.preferences.revalidateIfObserved()
 		}
 	}
 
@@ -38,6 +41,7 @@ export class PreferencesPanel extends Component {
 		if (await core.preferences.reset(preference.key)) {
 			this.preferences = this.preferences?.map(item =>
 				item.key === preference.key ? { ...item, value: item.default } : item)
+			void core.repos.preferences.revalidateIfObserved()
 		}
 	}
 

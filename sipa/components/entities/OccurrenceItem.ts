@@ -74,9 +74,10 @@ export class OccurrenceItem extends Component {
 
 	protected get preTitle(): HTMLTemplateResult | typeof nothing {
 		const directive = this.directive
-		// An occurrence with no directive shows nothing here (not the objective's "World Quest" placeholder).
+		// An occurrence with no directive shows nothing here (not the objective's "World Quest" placeholder). It is drawn
+		// small, as the entity rows (objective, decree, executive) draw theirs, so the two kinds of row read alike.
 		if (!directive) return nothing
-		return html`<p7t-directive-item .directive=${directive}></p7t-directive-item>`
+		return html`<p7t-directive-item small .directive=${directive}></p7t-directive-item>`
 	}
 
 	protected get info(): HTMLTemplateResult | typeof nothing { return nothing }

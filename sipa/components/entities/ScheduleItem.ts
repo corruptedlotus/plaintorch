@@ -1,6 +1,7 @@
 import { component, css, html, nothing, property } from '@a11d/lit'
-import { PleiadeanDate } from '@pleiades/sdk'
+import { PleiadeanDate, type DeclarativeCalendar } from '@pleiades/sdk'
 import { humanizeOrbit } from '../../orbits'
+import { CalendarRef } from '../data/CalendarRef'
 import { InfoItem } from '../design/InfoItem'
 import { gregorianDateLabel } from '../system/PleiadeanDateView'
 import { localeTimeLabel } from '../system/TimeView'
@@ -42,6 +43,15 @@ export class ScheduleItem extends InfoItem {
 	 * roomy surfaces keep the long phrase; the tooltip always carries the full reading regardless.
 	 */
 	@property({ type: Boolean }) short = false
+
+	/**
+	 * The calendar the entity's orbit resolves on, when the entity names one (a declarative's own calendar). Unset, the
+	 * orbit is read on the vault's preferred calendar, as the core resolves it.
+	 */
+	@property({ type: Number }) calendar?: DeclarativeCalendar
+
+	/** The calendar the orbit is read on: {@link calendar}, else the vault's preferred one. */
+	protected readonly calendars = new CalendarRef(this, () => this.calendar, () => this.scheduleMode === 'orbit')
 
 	static override get styles() {
 		return css`
@@ -96,7 +106,7 @@ export class ScheduleItem extends InfoItem {
 	/** The orbit chip: the humanized recurrence, length-capped by {@link max}. Overridden by the editable schedule. */
 	protected orbitTemplate(): unknown {
 		const clip = this.max > 0
-		const { text } = humanizeOrbit(this.orbit, this.short)
+		const { text } = humanizeOrbit(this.orbit, this.short, this.calendars.orbitCalendar)
 		return html`
 			<span class='label ${clip ? 'clip' : ''}' style=${clip ? `max-width:${this.max}ch` : nothing}>${text || this.orbit}</span>
 		`
@@ -152,7 +162,7 @@ export class ScheduleItem extends InfoItem {
 	protected override get tooltip() {
 		if (this.scheduleMode === 'orbit') {
 			// The full humanized reading (never truncated) over the raw notation it stands for.
-			const { text, invalid } = humanizeOrbit(this.orbit)
+			const { text, invalid } = humanizeOrbit(this.orbit, false, this.calendars.orbitCalendar)
 			return html`
 				<style>
 					.schedule-tip .tip-phrase { font-weight: 400; }

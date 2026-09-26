@@ -1,5 +1,5 @@
 import { Component, component, css, html, nothing, property } from '@a11d/lit'
-import type { EntityExistence } from '@pleiades/sdk/plaintorch'
+import type { DeclarativeCalendar, EntityExistence } from '@pleiades/sdk/plaintorch'
 import { core, DerivedRef, EntityRef } from './data'
 import { canDeleteEntity, deleteEntityByType } from './entities/entityMenu'
 import { canMaterializeKind, createEntityNote, openEntityNote } from './grid/entityActions'
@@ -201,13 +201,18 @@ export class FullBanner extends Component {
 			.entity=${this.entity ?? { id: this.puck, title: this.title }}></p7t-entity-banner>`
 	}
 
-	/** The special in-place editors an entity carries beneath its banner, handed only the owner's PUCK, as the modals did. */
+	/** A declarative's own calendar (PEP111), when the resolved entity is one that names it. */
+	private get declarativeCalendar(): DeclarativeCalendar | undefined {
+		return (this.entity as { calendar?: DeclarativeCalendar } | undefined)?.calendar
+	}
+
+	/** The special in-place editors an entity carries beneath its banner, handed the owner's PUCK (and a declarative its calendar). */
 	private renderEditors(kind: string) {
 		switch (kind) {
 			case 'lunar-directive': return html`<p7t-timeframes-editor class='editor' .directiveId=${this.puck}></p7t-timeframes-editor>`
 			case 'onrush-sprint': return html`<p7t-onrush-orders class='editor' .onrushId=${this.puck}></p7t-onrush-orders>`
-			case 'fate': return html`<p7t-declarative-agenda class='editor' .fateId=${this.puck}></p7t-declarative-agenda>`
-			case 'decree': return html`<p7t-declarative-agenda class='editor' .decreeId=${this.puck}></p7t-declarative-agenda>`
+			case 'fate': return html`<p7t-declarative-agenda class='editor' .fateId=${this.puck} .calendar=${this.declarativeCalendar}></p7t-declarative-agenda>`
+			case 'decree': return html`<p7t-declarative-agenda class='editor' .decreeId=${this.puck} .calendar=${this.declarativeCalendar}></p7t-declarative-agenda>`
 			default: return nothing
 		}
 	}

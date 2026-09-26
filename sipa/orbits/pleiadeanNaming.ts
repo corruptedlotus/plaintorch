@@ -1,9 +1,11 @@
-// A CalendarSystem for humaniser PREVIEW that names months the Pleiadean way (six months) and keeps the
-// universal 7-day week, delegating all date ARITHMETIC to a Gregorian calendar. The humaniser only ever calls
-// getUnitName, so the arithmetic is never exercised — this is a NAMING calendar, not a resolution-grade one.
+// A CalendarSystem that names months the Pleiadean way (six months) and starts the 7-day week on Saturday,
+// delegating all date ARITHMETIC to a Gregorian calendar. Every humaniser only ever calls getUnitName (and
+// getUnitShortName), so the arithmetic is never exercised — this is a NAMING calendar, not a resolution-grade one.
 //
-// Plugin-authored. It exists so the preview tool can show how an orbit reads under a non-Gregorian calendar;
-// a real Pleiadean CalendarSystem (with its own month lengths and epoch) belongs upstream in orbit-scheduler.
+// Plugin-authored. humanizeOrbit reads an orbit on it when the orbit's entity resolves on the Pleiadean calendar
+// (its own calendar, else the vault's preferred one), so the reading names what the core resolves; the preview
+// tool uses it too. A real Pleiadean CalendarSystem (with its own month lengths and epoch) belongs upstream in
+// orbit-scheduler.
 
 import type { TimeUnit } from './ast'
 import { CalendarSystem, GregorianCalendar } from './calendar'

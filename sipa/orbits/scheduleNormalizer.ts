@@ -11,7 +11,7 @@
 import type { ASTNode, DateTimeLiteralNode, DurationPart, IndexSpec, LimitSpec, TimeUnitNode } from './ast'
 import type { CalendarSystem } from './calendar'
 import {
-	Bound, CalendarUnit, ClockTime, Frame, NamedValue, ScheduleModel, Selection,
+	Bound, CalendarUnit, ClockStep, ClockTime, Frame, NamedValue, ScheduleModel, Selection,
 	isClockUnit, naturalParent,
 } from './scheduleModel'
 
@@ -76,7 +76,12 @@ function normalizeChain(root: TimeUnitNode, calendar: CalendarSystem): ScheduleM
 		}
 
 		if (isClockUnit(node.unit)) {
-			time = readClock(node)   // the h/m/s tail is the time of day; nothing calendar follows it
+			// The h/m/s tail is the time of day; nothing calendar follows it. Its minute and second nodes can carry
+			// bounds and a span too, gathered like the spine's.
+			time = readClock(node, clockNode => {
+				for (const limit of clockNode.limits) bounds.push(toBound(limit))
+				if (clockNode.duration && clockNode.duration.length > 0) span = clockNode.duration
+			})
 			break
 		}
 
@@ -100,33 +105,84 @@ function toBound(limit: LimitSpec): Bound {
 	}
 }
 
-/** Reads the clock components of a z/Z literal into a {@link ClockTime}, or undefined when it has no time part. */
+/**
+ * Reads the clock components of a z/Z literal into a {@link ClockTime}, or undefined when it has no time part. A
+ * time-only `z{h:m}` hangs its modifiers on the hour it stands for, so its `%N` steps the hour (`z{09:00}%2` is every
+ * 2 hours from 09:00). A dated `Z{…}` hangs them on its year instead, which is no clock step.
+ */
 function readLiteralClock(node: DateTimeLiteralNode): ClockTime | undefined {
 	if (node.hour === undefined) return undefined
-	return { hours: [node.hour], minutes: [node.minute ?? 0], seconds: node.second !== undefined ? [node.second] : [] }
+	const time: ClockTime = { hours: [node.hour], minutes: [node.minute ?? 0], seconds: node.second !== undefined ? [node.second] : [] }
+	if (node.year === undefined && node.interval !== undefined && node.interval > 1) {
+		time.step = { unit: 'h', interval: node.interval }
+	}
+	return time
 }
 
-/** Reads an `h{…}[m{…}[s{…}]]` clock tail into a {@link ClockTime}. Only the list form is modelled here. */
-function readClock(hNode: TimeUnitNode): ClockTime {
+/**
+ * Reads an `h{…}[m{…}[s{…}]]` clock tail into a {@link ClockTime}, handing each minute and second node to `gather`
+ * for its bounds and span. The hours must be listed. A minute or second node may be listed or bare, and a `%N` on any
+ * of the three becomes the time's {@link ClockStep}; a bare minute or second streams, so it must be the finest unit.
+ * Any other shape — a bare or ranged hour, a ranged or random minute, a second clock step — is deferred rather than
+ * read partly, since reading it partly would drop what it says.
+ */
+function readClock(hNode: TimeUnitNode, gather: (node: TimeUnitNode) => void): ClockTime {
 	if (!hNode.indices || hNode.indices.type !== 'list') {
 		// A bare `h` (hourly) or a fancy hour index is a selection, not a wall-clock reading — defer it.
 		throw new UnsupportedShapeError('non-clock time unit')
 	}
+
+	const steps: ClockStep[] = []
+	if (hNode.interval !== undefined && hNode.interval > 1) steps.push({ unit: 'h', interval: hNode.interval })
 
 	const hours = hNode.indices.values
 	let minutes = [0]
 	let seconds: number[] = []
 
 	let current: ASTNode | undefined = hNode.child
-	if (current?.kind === 'TimeUnitNode' && current.unit === 'm' && current.indices?.type === 'list') {
-		minutes = current.indices.values
-		current = current.child
+	if (current) {
+		const minuteNode = clockChild(current, 'm')
+		gather(minuteNode)
+		minutes = readClockValues(minuteNode, steps)
+		current = minuteNode.child
 	}
-	if (current?.kind === 'TimeUnitNode' && current.unit === 's' && current.indices?.type === 'list') {
-		seconds = current.indices.values
+	if (current) {
+		if (minutes.length === 0) throw new UnsupportedShapeError('seconds under streaming minutes')
+		const secondNode = clockChild(current, 's')
+		gather(secondNode)
+		seconds = readClockValues(secondNode, steps)
+		current = secondNode.child
 	}
+	if (current) throw new UnsupportedShapeError('a node below the seconds')
+	if (steps.length > 1) throw new UnsupportedShapeError('more than one clock step')
 
-	return { hours, minutes, seconds }
+	const time: ClockTime = { hours, minutes, seconds }
+	if (steps.length === 1) time.step = steps[0]
+	return time
+}
+
+/** The node under an hour or minute, which must be the next finer clock unit on its own (not a set-operation). */
+function clockChild(node: ASTNode, unit: 'm' | 's'): TimeUnitNode {
+	if (node.kind !== 'TimeUnitNode' || node.unit !== unit) throw new UnsupportedShapeError(`unmodelled clock child`)
+	return node
+}
+
+/**
+ * A minute or second node's listed values, pushing its step onto `steps`: a listed node steps on a `%N`, and a bare
+ * node always streams (every 1 of the unit, or every N with a `%N`), reading as no listed values.
+ */
+function readClockValues(node: TimeUnitNode, steps: ClockStep[]): number[] {
+	const unit = node.unit as ClockStep['unit']
+	const interval = node.interval ?? 1
+	if (node.indices?.type === 'list') {
+		if (interval > 1) steps.push({ unit, interval })
+		return node.indices.values
+	}
+	if (!node.indices) {
+		steps.push({ unit, interval })
+		return []
+	}
+	throw new UnsupportedShapeError(`unmodelled ${unit} selection`)
 }
 
 function toSelection(indices: IndexSpec | undefined, unit: CalendarUnit, parent: CalendarUnit | undefined, calendar: CalendarSystem): Selection {
