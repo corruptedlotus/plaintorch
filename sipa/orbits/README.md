@@ -83,14 +83,25 @@ drop `limits` `*x @x <t >t` and `duration` `=<dur>`), and they are two hand-sync
   and durations are first-class fields here. `NamedValue` carries an optional `shortName` for calendars whose
   short forms are not a plain clip.
 - `scheduleNormalizer.ts` — AST → ScheduleModel (a single-pass structural tree fold; resolves weekday/month
-  names and short names via the `CalendarSystem`). A dated `Z{…}` becomes an `instant`; a bare `z{h:m}` a
+  names and short names via the `CalendarSystem`). Each node's own limits are read against it, as the engine resolves
+  them: a `*x` on an inner bare unit becomes a `first` selection ("the first 3 days of every week"), on the outermost
+  frame the schedule's run (`Frame.repeat`, "for 10 weeks"); on a `%`-stepped index it keeps each run's first x steps,
+  spelled out as the values they land on (`d{5}%3*4` is the 5th, 8th, 11th and 14th); on any other index it means
+  nothing and is dropped. An `@x` keeps a nested list's first x values (`d[h{9,12,15,18}@2]` is 09:00 and 12:00), else it
+  becomes a `count` bound per period of the node's written parent ("up to 7 times a month"), or in all at the top level.
+  A `%` on a weekday or month is spelled out too (`w[d{1}%2]` is Monday, Wednesday, Friday and Sunday), bounded by the
+  values the calendar names. A dated `Z{…}` becomes an `instant`; a bare `z{h:m}` a
   frameless daily clock. Throws `UnsupportedShapeError` for shapes not yet modelled (a set-op nested mid-chain,
   a non-clock time unit, a clock shape it cannot express) so the caller can fall back. A `%N` on a clock unit
   becomes the clock time's `step`: `h{9}%2` runs from 09:00 to the end of the day, `h{9}[m{10}%15]` to the end
   of the hour, and a bare `h{9}[m%15]` streams within the 09:00 hour. Before the step it was dropped outright.
-- `scheduleRealizer.ts` — ScheduleModel → phrase, in **two registers over the same model**: `realizeLong`
+- `scheduleRealizer.ts` — ScheduleModel → phrase, in **two registers over the same model**. Idioms cover the
+  weekday of a month's week ("the 1st Monday of every month", "the first 2 Mondays of every month") and the weekdays of
+  each week of a month, which a month counts from its first complete week ("every Monday, Wednesday, Friday, and Sunday
+  from each month's first Monday, up to 7 times a month"); a plain parent that adds nothing is left out ("every day",
+  not "every day of every month"; "every June", not "June of every year"). The registers: `realizeLong`
   (full prose, e.g. "Every other Friday at 17:30", "The 5th of June 2027 at 18:00") and `realizeShort`
-  (compact, e.g. "Fri /2w @17:30", "Mon @5&16", "Jun 5 2027 @18"). It does **not** import the calendar —
+  (compact, e.g. "Fri /2w @17:30", "Mon @5&16", "5/Jun 2027 @18"). It does **not** import the calendar —
   names are already in the model; a register is just a different lexicon + ordering. Set operations read as
   connective prose ("…, but only when it also falls on …", "…, or …, but never both"); the short register
   parenthesises a nested compound. Both registers share the idiom recognizers and helpers.
@@ -98,7 +109,9 @@ drop `limits` `*x @x <t >t` and `duration` `=<dur>`), and they are two hand-sync
   plus both phrases; `resolveCalendar(name)` maps a name to a `CalendarSystem`. **Plugin-only** (the preview
   tool's calendar switch); upstream ships its own calendar-agnostic `describeOrbit`.
 - `pleiadeanNaming.ts` — a **naming-only** Pleiadean `CalendarSystem` (six months, **Saturday-first** week,
-  Gregorian arithmetic delegated, curated `getUnitShortName` → Nil/Sol/Xun/Tar/Lua/Tva). `humanizeOrbit` reads an
+  Gregorian arithmetic delegated, curated `getUnitShortName` → Nil/Sol/Xun/Tar/Lua/Tva). Its `max` is Pleiadean
+  (61-day months, up to 10 weeks a month, six months a year), since the normalizer asks how far a unit runs when it
+  spells a stepped index out. `humanizeOrbit` reads an
   orbit on it whenever the orbit's entity resolves on the Pleiadean calendar, and the preview tool uses it too.
   **Plugin-only** and not resolution-grade — a real Pleiadean calendar belongs upstream in `orbit-scheduler`.
 

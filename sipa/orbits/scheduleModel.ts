@@ -45,7 +45,7 @@ export interface InstantSchedule {
 	time?: ClockTime
 	/** How long the moment lasts, from `=<dur>`. Undefined = a point in time. */
 	span?: DurationPart[]
-	/** Bounds from `*x @x <t >t` — rare on a fixed instant, but modelled rather than dropped. */
+	/** Bounds from `@x <t >t` — rare on a fixed instant, but modelled rather than dropped. */
 	bounds: Bound[]
 }
 
@@ -61,7 +61,7 @@ export interface SimpleSchedule {
 	time?: ClockTime
 	/** How long each occurrence lasts, from `=<dur>`. Undefined = a point in time. */
 	span?: DurationPart[]
-	/** Bounds that cap or window the stream, from `*x @x <t >t`. */
+	/** Bounds that cap or window the stream, from `@x <t >t` (a `*x` lives on its frame or clock instead). */
 	bounds: Bound[]
 }
 
@@ -74,14 +74,26 @@ export interface Frame {
 	interval?: number
 	/** Which values within the parent this frame selects. */
 	selection: Selection
+	/**
+	 * A `*x` on a bare unit that no selection can express: on the outermost frame, the schedule's whole run is x of the
+	 * unit's periods ("for 10 weeks"); on an inner frame stepped by a continuous `%N`, each parent period keeps the first
+	 * x of its on-phase values. Every other `*x` is folded into the selection (`first`, or a stepped index spelled out)
+	 * or, on an index `%` does not step, means nothing and is dropped.
+	 */
+	repeat?: number
 }
 
-/** Which occurrences of a unit are chosen. `all` = the bare unit with no `{}`. */
+/**
+ * Which occurrences of a unit are chosen. `all` = the bare unit with no `{}`. `first` = the first `count` values of
+ * a bare unit within its parent (a nested `*x`, e.g. `w[d*3]`, "the first 3 days of every week"), with the first and
+ * last of them named for a register that spells the run out ("Mon-Wed").
+ */
 export type Selection =
 	| { kind: 'all' }
 	| { kind: 'list'; values: NamedValue[] }
 	| { kind: 'range'; start: NamedValue; end: NamedValue }
 	| { kind: 'random'; count: number }
+	| { kind: 'first'; count: number; start: NamedValue; end: NamedValue }
 
 /** A numeric index plus the calendar's name for it when it has one (weekday, month); else name is absent. */
 export interface NamedValue {
@@ -113,14 +125,15 @@ export interface ClockTime {
 export interface ClockStep {
 	unit: 'h' | 'm' | 's'
 	interval: number
+	/** A streaming unit's `*x` (or `@x` on the finest one): only the first x values of each coarser clock value. */
+	times?: number
 }
 
 /** A bound on the stream. */
 export type Bound =
-	| { kind: 'count'; times: number }       // @x — at most x occurrences in total
-	| { kind: 'perCycle'; times: number }    // *x — at most x per enclosing cycle
-	| { kind: 'after'; at: string }          // >t — not before this timestamp
-	| { kind: 'before'; at: string }         // <t — not after this timestamp
+	| { kind: 'count'; times: number; per?: TimeUnit } // @x — at most x of a node's instances per period of its parent, or in all
+	| { kind: 'after'; at: string }                    // >t — not before this timestamp
+	| { kind: 'before'; at: string }                   // <t — not after this timestamp
 
 /** The natural enclosing unit of a calendar unit when it is not explicitly nested under another. */
 export function naturalParent(unit: CalendarUnit): CalendarUnit | undefined {

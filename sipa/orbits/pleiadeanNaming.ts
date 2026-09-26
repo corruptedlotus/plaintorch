@@ -1,6 +1,7 @@
 // A CalendarSystem that names months the Pleiadean way (six months) and starts the 7-day week on Saturday,
-// delegating all date ARITHMETIC to a Gregorian calendar. Every humaniser only ever calls getUnitName (and
-// getUnitShortName), so the arithmetic is never exercised — this is a NAMING calendar, not a resolution-grade one.
+// delegating all date ARITHMETIC to a Gregorian calendar. The humanisers only ask it for names (getUnitName,
+// getUnitShortName) and for how far a unit runs (max, when a stepped index is spelled out), so the arithmetic is
+// never exercised — this is a NAMING calendar, not a resolution-grade one.
 //
 // Plugin-authored. humanizeOrbit reads an orbit on it when the orbit's entity resolves on the Pleiadean calendar
 // (its own calendar, else the vault's preferred one), so the reading names what the core resolves; the preview
@@ -25,7 +26,14 @@ export class PleiadeanNamingCalendar implements CalendarSystem {
 	public set(date: Date, unit: TimeUnit, value: number): Date { return this.gregorian.set(date, unit, value) }
 	public add(date: Date, unit: TimeUnit, amount: number): Date { return this.gregorian.add(date, unit, amount) }
 	public min(unit: TimeUnit, context: Date): number { return this.gregorian.min(unit, context) }
-	public max(unit: TimeUnit, context: Date): number { return this.gregorian.max(unit, context) }
+	// How far a unit runs is a naming-level fact here: a Pleiadean month has up to 61 days, and so up to 10 of its
+	// Saturday-first weeks; a year has six months.
+	public max(unit: TimeUnit, context: Date): number {
+		if (unit === 'M') return PLEIADEAN_MONTHS.length
+		if (unit === 'd') return 61
+		if (unit === 'w') return 10
+		return this.gregorian.max(unit, context)
+	}
 	public delta(d1: Date, d2: Date, unit: TimeUnit): number { return this.gregorian.delta(d1, d2, unit) }
 	public snapToStart(date: Date, unit: TimeUnit): Date { return this.gregorian.snapToStart(date, unit) }
 

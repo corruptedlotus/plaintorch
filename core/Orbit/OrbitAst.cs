@@ -85,9 +85,17 @@ public sealed class OrbitIndexSpec
 /// </summary>
 public enum OrbitLimitKind
 {
-	/// <summary><c>*x</c>: iterations per enclosing parent cycle.</summary>
+	/// <summary>
+	/// <c>*x</c>: the node's repetition. Each of its runs keeps its first x values: a bare unit is one run from the
+	/// start of the node's life (<c>d*5</c> is five days, <c>w[d*3]</c> the first three days of every week), and an
+	/// index is a run of one value unless <c>%</c> steps it (<c>d{5}%3*4</c> is the 5th, 8th, 11th and 14th), so on
+	/// an index <c>%</c> does not step — a list or a range — it does nothing.
+	/// </summary>
 	Iterations,
-	/// <summary><c>@x</c>: total instances across the stream.</summary>
+	/// <summary>
+	/// <c>@x</c>: the node's emission. Only its first x instances in each life fire — per period of its written
+	/// parent when nested (<c>M[w[d{1}%2]@7]</c> fires up to seven times a month), once in all at the top level.
+	/// </summary>
 	Instances,
 	/// <summary><c>&lt;t</c>: until before a timestamp.</summary>
 	Before,
