@@ -22,7 +22,8 @@ public sealed class WatcherStatusTests : VaultTestBase
 		VaultSyncAction action = VaultSyncAction.UpdateFromFile,
 		string? reason = null,
 		VaultSyncConcern concern = VaultSyncConcern.None,
-		IReadOnlyList<MarkdownValidationIssue>? issues = null)
+		IReadOnlyList<MarkdownValidationIssue>? issues = null,
+		bool fileExists = true)
 	{
 		var model = Vault.GetSingleton<VaultPathSyncModelCatalog>().GetModels().First(item => item.EntityType == typeof(Objective));
 		return new VaultSyncCandidate(
@@ -35,7 +36,7 @@ public sealed class WatcherStatusTests : VaultTestBase
 			Issues: issues ?? [],
 			BodyHash: "hash",
 			LastWriteUtc: DateTimeOffset.UtcNow,
-			FileExists: true,
+			FileExists: fileExists,
 			SuggestedAction: action,
 			SuggestedReason: reason,
 			Concern: concern);
@@ -422,6 +423,35 @@ public sealed class WatcherStatusTests : VaultTestBase
 		// It is resolved by the user's edit (which re-inspects the path), not by a retry timer.
 		Assert.False(WatcherRetryScheduler.IsRetryable(status));
 		watcher.ReportInspectCandidate(Candidate("Objectives/Invalid.md"));
+		Assert.Empty(registry.GetActiveStatuses());
+	}
+
+	[Fact]
+	public void A_deleted_files_content_error_resolves_on_its_reinspection()
+	{
+		// The inspection of a deleted file still parses an (empty) read and may still carry the policy's verdict, but a
+		// missing file has no content to be wrong: its content flags resolve rather than outlive the file. The sandbox's
+		// deleted "Evanesca" order re-raised its PUCK violation on every re-inspection instead, which the vanished-file
+		// re-check then repeated every maintenance pass.
+		var watcher = Vault.GetSingleton<WatcherStatusReporter>();
+		var registry = Vault.GetSingleton<OperationStatusRegistry>();
+
+		var invalid = Candidate(
+			"Onrush/Sprint/ExecutiveOrders/Evanesca.md",
+			VaultSyncAction.Conflict,
+			"Path identity is missing required caller-provided PUCK input.",
+			VaultSyncConcern.PuckViolation);
+		watcher.ReportInspectCandidate(invalid);
+		watcher.ReportSyncSucceeded(invalid);
+		Assert.Equal(WatcherOperations.PuckViolation, Assert.Single(registry.GetActiveStatuses()).ReasonCode);
+
+		watcher.ReportInspectCandidate(Candidate(
+			"Onrush/Sprint/ExecutiveOrders/Evanesca.md",
+			VaultSyncAction.Conflict,
+			"Path identity is missing required caller-provided PUCK input.",
+			VaultSyncConcern.PuckViolation,
+			issues: [new MarkdownValidationIssue("onrush", "The owning sprint could not be resolved.")],
+			fileExists: false));
 		Assert.Empty(registry.GetActiveStatuses());
 	}
 

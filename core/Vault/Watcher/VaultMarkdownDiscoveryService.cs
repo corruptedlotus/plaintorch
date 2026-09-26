@@ -98,13 +98,17 @@ public sealed class VaultMarkdownDiscoveryService(
 				.Where(candidate => candidate.FileExists && !string.IsNullOrWhiteSpace(candidate.PathId))
 				.Select(candidate => candidate.PathId!),
 			StringComparer.OrdinalIgnoreCase);
+		// A boundary outlives its entity (the audit entry that records it is history), so one whose entity is already gone
+		// has nothing left to delete and is skipped rather than re-inspected at a path that no longer exists every sweep.
+		var knownIdentities = new HashSet<string>(knownIdsByType.Values.SelectMany(static ids => ids), StringComparer.OrdinalIgnoreCase);
 		foreach (var boundary in await implicitBoundaryService.EnumerateBegunBoundariesAsync(cancellationToken))
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 			var absolutePath = Path.GetFullPath(Path.Combine(layout.VaultRoot, boundary.VaultRelativePath));
 			if (File.Exists(absolutePath)
 				|| discoveredPaths.Contains(absolutePath)
-				|| (!string.IsNullOrWhiteSpace(boundary.EntityId) && assertedIdentities.Contains(boundary.EntityId)))
+				|| (!string.IsNullOrWhiteSpace(boundary.EntityId) && assertedIdentities.Contains(boundary.EntityId))
+				|| !knownIdentities.Contains(boundary.EntityId))
 			{
 				continue;
 			}

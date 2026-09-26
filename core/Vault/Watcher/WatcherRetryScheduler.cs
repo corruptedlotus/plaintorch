@@ -11,18 +11,17 @@ namespace Pleiades.Vault.Watcher;
 /// </summary>
 /// <remarks>
 /// Only per-path reconcile issues are retryable. Global-scope conditions (a structural vault failure, a failed tick)
-/// are driven by the watcher's own supervision loop, not by re-queuing a path. Two <em>standing</em> reasons are
-/// deliberately excluded, because re-checking the path on a timer can never resolve them and would only churn:
-/// a <see cref="WatcherOperations.ForeignFile"/> advisory (leaving the unmanaged file in place is already the successful
-/// outcome), and a <see cref="WatcherOperations.DeleteBlocked"/> delete (the entity is still referenced, and nothing at
-/// the path will change that). Both are re-evaluated by a file event at their path and by every sweep (startup and
-/// wakeup), and can be dismissed.
+/// are driven by the watcher's own supervision loop, not by re-queuing a path. Two kinds of reason are deliberately
+/// excluded, because re-checking the path on a timer can never resolve them and would only churn: the
+/// <em>content</em> reasons (invalid markdown, a PUCK or policy violation, a foreign file), which stand in the user's file
+/// until they edit it, and a <see cref="WatcherOperations.DeleteBlocked"/> delete (the entity is still referenced, and
+/// nothing at the path will change that). Both are re-evaluated by a file event at their path and by every sweep
+/// (startup and wakeup), and can be dismissed.
 /// </remarks>
 public sealed class WatcherRetryScheduler
 {
 	private static readonly HashSet<string> StandingReasonCodes = new(StringComparer.Ordinal)
 	{
-		WatcherOperations.ForeignFile,
 		WatcherOperations.DeleteBlocked,
 	};
 
@@ -55,6 +54,19 @@ public sealed class WatcherRetryScheduler
 			&& !string.IsNullOrWhiteSpace(status.ScopeKey)
 			&& !ContentReasonCodes.Contains(status.ReasonCode)
 			&& !StandingReasonCodes.Contains(status.ReasonCode);
+	}
+
+	/// <summary>
+	/// Determines whether a status is a per-path <em>content</em> status: a problem with what the file at the path says,
+	/// which only an edit (or the file's removal) resolves.
+	/// </summary>
+	public static bool IsContentStatus(OperationStatus status)
+	{
+		ArgumentNullException.ThrowIfNull(status);
+		return string.Equals(status.OperationId, WatcherOperations.Reconcile, StringComparison.Ordinal)
+			&& !string.Equals(status.ScopeKey, WatcherOperations.GlobalScope, StringComparison.Ordinal)
+			&& !string.IsNullOrWhiteSpace(status.ScopeKey)
+			&& ContentReasonCodes.Contains(status.ReasonCode);
 	}
 
 	// The reasons that stand in the user's file until they edit it: never retried on a timer.

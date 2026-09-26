@@ -145,6 +145,12 @@ public sealed class VaultWatcherReconciler(
 			// so if the file is later gone, no longer in violation, or the entity has changed, the recomputed decision
 			// resolves or supersedes the flag.
 			statusReporter.ReportSyncFailure(candidate, exception);
+			if (exception is VaultEntityDeleteBlockedException)
+			{
+				// A refused delete is a standing status, not a failure to retry, and the sync service has already said why.
+				return;
+			}
+
 			logger.LogError(
 				exception,
 				"Watcher failed to process candidate '{Path}' for {EntityType}; flagged for retry. Processing will continue.",

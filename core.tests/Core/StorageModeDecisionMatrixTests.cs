@@ -124,6 +124,31 @@ public sealed class StorageModeDecisionMatrixTests
 	}
 
 	[Fact]
+	public void A_missing_file_without_an_identity_is_ignored_by_every_path_bound_mode()
+	{
+		// A note deleted before it was ever synced — or the "<dir>/<dir>.md" primary a folder event synthesizes for a
+		// self-named-directory model — reaches the policy as a missing, identity-less path. There is nothing on disk to
+		// create from, purge or hold in conflict, so every path-bound mode ignores it with no concern (the sandbox's
+		// deleted "Evanesca" order otherwise re-raised a PUCK violation for a file that no longer existed).
+		IVaultStorageModePolicyService[] modes =
+		[
+			new EnforcedVaultStorageModePolicyService(),
+			new SyncedVaultStorageModePolicyService(),
+			new FileFirstVaultStorageModePolicyService(),
+			new OptionalVaultStorageModePolicyService(),
+		];
+		foreach (var mode in modes)
+		{
+			foreach (var requiresCallerInput in new[] { false, true })
+			{
+				var decision = mode.Decide(Ctx(pathId: null, fileExists: false, requiresCallerInput: requiresCallerInput, hasIssues: true));
+				Assert.Equal(VaultSyncAction.Ignore, decision.Action);
+				Assert.Equal(VaultSyncConcern.None, decision.Concern);
+			}
+		}
+	}
+
+	[Fact]
 	public void Decision_concerns_classify_the_single_root_cause_structurally()
 	{
 		// Phase D: each Decide emits exactly one structured concern so the watcher raises one classified reason per

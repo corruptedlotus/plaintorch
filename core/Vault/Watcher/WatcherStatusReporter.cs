@@ -163,12 +163,14 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		// validation issues; markdown-invalid is raised by an explicit markdown concern or, only when the decision
 		// surfaced no concern at all, by the mere presence of raw validation issues (the reporter's markdown floor).
 		// All checks are reported every run so the status core resolves whichever was previously raised.
-		var concern = candidate.Concern;
+		// A missing file has no content, so whatever the inspection made of its empty read is not a content problem: a
+		// deleted file's content flags resolve here instead of outliving it.
+		var concern = candidate.FileExists ? candidate.Concern : VaultSyncConcern.None;
 		var puckViolation = concern == VaultSyncConcern.PuckViolation;
 		var policyViolation = concern == VaultSyncConcern.PolicyViolation;
 		var foreignFile = concern == VaultSyncConcern.ForeignFile;
 		var markdownInvalid = concern == VaultSyncConcern.MarkdownInvalid
-			|| (concern == VaultSyncConcern.None && candidate.Issues.Count > 0);
+			|| (concern == VaultSyncConcern.None && candidate.FileExists && candidate.Issues.Count > 0);
 
 		// A content problem the watcher enforced (it rewrote or purged the file) no longer stands, so it is only a warning;
 		// one left in the file for the user (a conflict, an ignored or partly synced file) keeps its error severity.
@@ -271,13 +273,15 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter)
 		WatcherOperations.DeleteBlocked,
 	];
 
-	// The reasons about reading and applying a file, which any successful sync clears.
+	// The reasons about reading and applying a file, which any successful sync clears — a refused delete included: the
+	// restored note's sync, or the delete that finally goes through once nothing references the entity, resolves it.
 	private static readonly string[] OperationalReasonCodes =
 	[
 		WatcherOperations.DiscoveryFailed,
 		WatcherOperations.PermissionDenied,
 		WatcherOperations.FileInUse,
 		WatcherOperations.SyncFailed,
+		WatcherOperations.DeleteBlocked,
 	];
 
 	// The reasons a sync that enforced the content (a rewrite or a purge) clears: every reason but foreign-file. A foreign

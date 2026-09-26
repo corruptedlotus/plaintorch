@@ -64,6 +64,9 @@ public sealed class VaultWatcherService(
 	// Set when an observer failed for any other reason: it delivers nothing more, so the span restarts with fresh ones.
 	private volatile bool _observerLost;
 
+	// The vanished-file content statuses already re-queued for their one re-inspection (see VanishedContentPaths).
+	private readonly HashSet<string> _vanishedRequeued = new(StringComparer.OrdinalIgnoreCase);
+
 	/// <summary>How a live-observation session ended, so the supervisor knows whether to sleep or exit.</summary>
 	private enum LiveSessionExit
 	{
@@ -323,6 +326,7 @@ public sealed class VaultWatcherService(
 		// Fresh observers for this span: nothing flagged against the previous span's ones carries over.
 		_resweepRoots.Clear();
 		_observerLost = false;
+		_vanishedRequeued.Clear();
 		if (!InitializeWatchers())
 		{
 			DisposeWatchers();
@@ -488,19 +492,22 @@ public sealed class VaultWatcherService(
 
 	/// <summary>
 	/// The paths of standing content statuses (invalid markdown, a PUCK or policy violation, a foreign file) whose file no
-	/// longer exists. Content statuses wait for the user's edit rather than a retry timer, but a file deleted while its
-	/// events were lost — an observer overflow, a sleep with the observers down — sends no edit; one inspection of the
-	/// missing path resolves them.
+	/// longer exists, each returned once while it stands. Content statuses wait for the user's edit rather than a retry
+	/// timer, but a file deleted while its events were lost — an observer overflow, a sleep with the observers down —
+	/// sends no edit; one inspection of the missing path resolves them. Only content reasons qualify: a delete-blocked
+	/// status is keyed on a path that is missing by definition, and re-running its refused delete every pass would churn.
 	/// </summary>
-	private static IEnumerable<string> VanishedContentPaths(IReadOnlyList<OperationStatus> active)
-		=> active
-			.Where(static status => string.Equals(status.OperationId, WatcherOperations.Reconcile, StringComparison.Ordinal)
-				&& !string.Equals(status.ScopeKey, WatcherOperations.GlobalScope, StringComparison.Ordinal)
-				&& !string.IsNullOrWhiteSpace(status.ScopeKey)
-				&& !WatcherRetryScheduler.IsRetryable(status)
-				&& !File.Exists(status.ScopeKey))
+	private List<string> VanishedContentPaths(IReadOnlyList<OperationStatus> active)
+	{
+		var vanished = active
+			.Where(static status => WatcherRetryScheduler.IsContentStatus(status) && !File.Exists(status.ScopeKey))
 			.Select(static status => status.ScopeKey)
-			.Distinct(StringComparer.OrdinalIgnoreCase);
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+		// Forget the paths whose status resolved (or whose file came back), so a later vanishing is re-inspected again.
+		_vanishedRequeued.IntersectWith(vanished);
+		return vanished.Where(_vanishedRequeued.Add).ToList();
+	}
 
 	/// <summary>Loads the active vault's durable status dismissals into the registry (PEP108 dismiss feature).</summary>
 	private async Task LoadDismissalsAsync(CancellationToken cancellationToken)

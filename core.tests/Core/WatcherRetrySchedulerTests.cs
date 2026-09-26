@@ -80,6 +80,24 @@ public sealed class WatcherRetrySchedulerTests
 	}
 
 	[Fact]
+	public void Only_content_reasons_are_content_statuses()
+	{
+		// The watcher re-inspects a content status once when its file has vanished. A blocked delete is keyed on a path
+		// that is missing by definition, so counting it as content re-ran the refused delete on every maintenance pass.
+		foreach (var reason in new[] { WatcherOperations.MarkdownInvalid, WatcherOperations.PuckViolation, WatcherOperations.PolicyViolation, WatcherOperations.ForeignFile })
+		{
+			Assert.True(WatcherRetryScheduler.IsContentStatus(Status(reason, "C:/vault/Objectives/Invalid.md")));
+		}
+
+		foreach (var reason in new[] { WatcherOperations.DeleteBlocked, WatcherOperations.SyncFailed, WatcherOperations.FileInUse })
+		{
+			Assert.False(WatcherRetryScheduler.IsContentStatus(Status(reason, "C:/vault/Objectives/Gone.md")));
+		}
+
+		Assert.False(WatcherRetryScheduler.IsContentStatus(Status(WatcherOperations.MarkdownInvalid, WatcherOperations.GlobalScope)));
+	}
+
+	[Fact]
 	public void A_blocked_delete_is_never_retried_even_long_stuck()
 	{
 		// The entity is still referenced; re-checking its path on a timer cannot change that. It used to be re-attempted at

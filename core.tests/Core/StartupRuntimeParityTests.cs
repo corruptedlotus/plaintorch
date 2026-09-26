@@ -166,6 +166,29 @@ public sealed class StartupRuntimeParityTests
 	}
 
 	[Fact]
+	public async Task The_orphan_pass_leaves_a_boundary_whose_entity_is_already_gone()
+	{
+		// A begun boundary is an audit entry, so it outlives the delete it enabled. Once the entity and its file are both
+		// gone there is nothing left to reconcile, and the sweep must not re-inspect the dead path on every startup.
+		var vault = new TestVault();
+		await vault.InitializeAsync();
+		try
+		{
+			await SeedBegunObjectiveAsync(vault);
+			File.Delete(vault.AbsolutePath(ObjectiveRelativePath));
+			await vault.SweepAsync(); // the orphan pass deletes the entity
+			Assert.Equal(0, await vault.QueryAsync(context => context.Incentives.CountAsync(TestContext.Current.CancellationToken)));
+
+			var next = await vault.ScanAsync();
+			Assert.DoesNotContain(next.Candidates, candidate => string.Equals(candidate.AbsolutePath, vault.AbsolutePath(ObjectiveRelativePath), StringComparison.OrdinalIgnoreCase));
+		}
+		finally
+		{
+			await vault.DisposeAsync();
+		}
+	}
+
+	[Fact]
 	public async Task Deleting_a_begun_objective_file_reconciles_identically_at_startup_wakeup_and_runtime()
 	{
 		// The trickiest wakeup case: the initial sweep confirms the begun boundary, then the file is deleted while the
