@@ -78,7 +78,7 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 		this.dataset.placeholder = this.placeholder
 		this.toggleAttribute('warning', this.warning)
 		// An inert field is not editable at all — it renders its read-only face and never takes the caret.
-		this.contentEditable = this.disabled ? 'false' : 'plaintext-only'
+		this.contentEditable = (this.disabled) ? 'false' : 'plaintext-only'
 		// While editing, the caret lives in this text; rewriting it would collapse the selection, so the text
 		// is synced only when idle. The editing form is installed once, on focus.
 		if (this.active) return
@@ -95,6 +95,7 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 
 	/** A text field edits by holding the caret. */
 	public override startEditing() {
+		this.active = true
 		this.focus()
 	}
 
@@ -106,6 +107,12 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 
 	@eventListener({ type: 'focus', target: this })
 	protected handleFocus() {
+		if (!this.active && this.editButton) {
+			console.warn("hi!")
+			this.blur()
+			return
+		}
+
 		if (!this.beginManualEditing()) {
 			this.blur()
 			return

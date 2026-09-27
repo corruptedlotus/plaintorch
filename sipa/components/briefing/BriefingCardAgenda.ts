@@ -25,6 +25,7 @@ export class BriefingCardAgenda extends CardComponent {
 				background: none;
 				border: none;
 				padding-block: .2em;
+				margin-block: .3em .5em;
 			}
 
 			:host::part(content) {

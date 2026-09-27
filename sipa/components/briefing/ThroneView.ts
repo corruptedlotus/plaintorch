@@ -18,7 +18,7 @@ export class ThroneView extends Component {
 			:host {
 				display: flex;
 				align-items: stretch;
-				gap: 1em;
+				gap: .6em;
 				flex-wrap: wrap;
 			}
 

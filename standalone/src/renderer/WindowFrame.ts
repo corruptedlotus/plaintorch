@@ -1,6 +1,6 @@
 import { Component, component, css, html, nothing, property } from "@a11d/lit"
 import type { PlaintorchBridge, WindowFrameState } from "../shared/contracts"
-import mark from "../../assets/plaintorch-full.png"
+import mark from "../../assets/plaintorch-mono-dark.png"
 
 declare global {
 	interface Window {
@@ -61,7 +61,7 @@ export class WindowFrame extends Component {
 	static override get styles() {
 		return css`
 			:host {
-				--p7t-title-bar-height: 32px;
+				--p7t-title-bar-height: 36px;
 				--p7t-title-bar-background: var(--p7t-bg, #1f1a22);
 				--p7t-title-bar-color: var(--p7t-text, #f2ebe4);
 				--p7t-title-bar-border: var(--p7t-line, #3d3342);
@@ -74,14 +74,14 @@ export class WindowFrame extends Component {
 
 			header {
 				flex: none;
-				display: flex;
+				display: grid;
+				grid-template-columns: [icon] 1fr [title] auto [controls] 1fr;
 				align-items: center;
 				gap: 8px;
 				height: var(--p7t-title-bar-height);
 				padding-inline-start: 10px;
-				border-bottom: 1px solid var(--p7t-title-bar-border);
 				background: var(--p7t-title-bar-background);
-				color: var(--p7t-title-bar-color);
+				color: color-mix(in srgb, var(--p7t-title-bar-color) 60%, transparent);
 				font-size: 12px;
 				user-select: none;
 				-webkit-app-region: drag;
@@ -99,15 +99,18 @@ export class WindowFrame extends Component {
 			.icon {
 				width: 16px;
 				height: 16px;
+				grid-column: icon;
 			}
 
 			.title {
-				flex: 1;
 				min-width: 0;
 				overflow: hidden;
+				display: flex;
+				justify-content: center;
 				white-space: nowrap;
 				text-overflow: ellipsis;
 				letter-spacing: 0.04em;
+				grid-column: title;
 			}
 
 			:host([inactive]) .icon, :host([inactive]) .title, :host([inactive]) .control {
@@ -122,13 +125,17 @@ export class WindowFrame extends Component {
 			.controls {
 				display: flex;
 				align-self: stretch;
+				justify-content: flex-end;
+				justify-self: flex-end;
+				gap: 4px;
+				grid-column: controls;
 			}
 
 			.control {
 				all: unset;
 				display: inline-grid;
 				place-items: center;
-				width: 46px;
+				width: 48px;
 				color: inherit;
 				-webkit-app-region: no-drag;
 			}

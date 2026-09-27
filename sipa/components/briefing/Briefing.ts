@@ -41,7 +41,6 @@ export class Briefing extends Component {
 				padding-inline: .5em;
 				margin-block: -1em .5em;
 				align-items: center;
-				gap: .3em;
 				
 				/*&::before, &::after {
 					content: '';
@@ -52,12 +51,12 @@ export class Briefing extends Component {
 					}*/
 					
 				& + * {
-					border: 1px solid color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+					background-color: color-mix(in srgb, black 20%, transparent);
 					border-radius: 16px;
-					padding-inline: 0.3em;
+					padding-inline: 0.5em;
 					padding-block: 0.4em 0em;
 					margin-block: -1em -0.1em;
-					margin-inline: -0.2em;
+					margin-inline: -0.5em;
 				}
 			}
 
@@ -66,21 +65,8 @@ export class Briefing extends Component {
 				right: .4em;
 				top: 50%;
 				transform: translateY(-50%);
-				display: inline-flex;
-				align-items: center;
-				justify-content: center;
-				padding: 6px;
-				border: none;
-				border-radius: 8px;
-				background: transparent;
 				color: var(--text-muted);
-				cursor: pointer;
-				transition: .2s ease;
-			}
-
-			.settings:hover {
-				background-color: var(--background-secondary);
-				color: var(--text-normal);
+				font-size: .9em;
 			}
 
 			.settings p7t-icon {
@@ -98,9 +84,7 @@ export class Briefing extends Component {
 				<p7t-navitem key='planning' icon='onrush' ?active=${this.page === 'planning'}>Planning</p7t-navitem>
 				<p7t-navitem key='backlog' icon='directive' ?active=${this.page === 'backlog'}>Backlog</p7t-navitem>
 				<p7t-navitem key='lore' icon='lorepage' ?active=${this.page === 'lore'}>Lore</p7t-navitem>
-				<button class='settings' aria-label='Settings' @click=${() => this.openSettings()}>
-					<p7t-icon icon='lucide:settings'></p7t-icon>
-				</button>
+				<p7t-button ghost emphasis label='Settings' class='settings' icon='lucide:settings' aria-label='Settings' @click=${() => this.openSettings()}></p7t-button>
 			</div>
 			${this.content}
 		`

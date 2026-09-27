@@ -56,16 +56,10 @@ export const itemLayoutStyles = css`
 		animation: fade-in .3s ease;
 		/* The flare's body, transparent while --flare-intensity rests at 0%. */
 		background-image:
-			/* the specular sheen across the top of the glass, brightest in the lit corner */
-			radial-gradient(90% 110% at 0% 0%, color-mix(in oklab, white calc(var(--flare-intensity) * .08), transparent), transparent),
-			/* the edge light down the left side, fading toward the rounded corners */
-			linear-gradient(to bottom, transparent 10%, color-mix(in oklab, color-mix(in oklab, var(--p7t-item-flare) 55%, white) var(--flare-intensity), transparent) 50%, transparent 90%),
-			/* the bleed hugging that edge */
-			linear-gradient(to right, color-mix(in oklab, var(--p7t-item-flare) calc(var(--flare-intensity) * .4), transparent), transparent 1.8em),
 			/* the bloom spreading into the row */
 			radial-gradient(farthest-side at 0% 50%, color-mix(in oklab, var(--p7t-item-flare) calc(var(--flare-intensity) * .34), transparent), transparent);
-		background-size: 100% 100%, 2px 100%, 100% 100%, 65% 100%;
-		background-position: 0 0, left center, 0 0, left center;
+		background-size: 12em 100%;
+		background-position: -10% center;
 		background-repeat: no-repeat;
 	}
 
@@ -75,7 +69,7 @@ export const itemLayoutStyles = css`
 		}
 
 		:host([interactive]:hover) {
-			background-color: color-mix(in srgb, var(--text-normal) 10%, transparent);
+			background-color: color-mix(in srgb, color-mix(in srgb, var(--text-normal), var(--p7t-item-flare) var(--flare-intensity)) 10%, transparent);
 		}
 
 		:host([flare]) {
@@ -90,7 +84,7 @@ export const itemLayoutStyles = css`
 			left: -8px;
 			width: 16px;
 			background-image: radial-gradient(closest-side, color-mix(in oklab, var(--p7t-item-flare) 70%, white), color-mix(in oklab, var(--p7t-item-flare) 30%, transparent) 55%, transparent);
-			opacity: calc(var(--flare-intensity) * .8);
+			opacity: calc(var(--flare-intensity) * .6);
 			pointer-events: none;
 		}
 
@@ -107,7 +101,7 @@ export const itemLayoutStyles = css`
 			border-radius: inherit;
 			background-image:
 				linear-gradient(to right, transparent, rgb(255 255 255 / .7), transparent),
-				radial-gradient(70% 170% at 0% 40%, color-mix(in oklab, var(--p7t-item-flare) 80%, white), color-mix(in oklab, var(--p7t-item-flare) 40%, transparent) 45%, transparent);
+				radial-gradient(1em 60% at 0% 50%, var(--p7t-item-flare), transparent);
 			background-size: 40% 100%, 100% 100%;
 			background-position: -100% 0, 0 0;
 			background-repeat: no-repeat;

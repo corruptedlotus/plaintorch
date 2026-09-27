@@ -195,7 +195,7 @@ export class EditablePart<T> extends Component {
 				to { outline-color: var(--text-normal); }
 			}
 
-			:host(:hover), :host(:focus) {
+			:host(:not([editbutton]):hover), :host(:focus) {
 				outline-color: var(--p7t-flare-accent, var(--interactive-accent));
 			}
 
@@ -253,12 +253,11 @@ export class EditablePart<T> extends Component {
 
 			/* Flush against the field, so the pointer crosses from one to the other without losing the hover. */
 			.edit {
-				anchor-try: normal flip-inline;
+				/*anchor-try: normal flip-inline;*/
 				inset-inline-start: anchor(end);
 				top: anchor(top);
 				padding: .1em;
 				opacity: 0;
-				pointer-events: none;
 
 				:host(:hover) & {
 					opacity: .7;
@@ -267,7 +266,7 @@ export class EditablePart<T> extends Component {
 
 				&:hover {
 					opacity: 1;
-					color: var(--p7t-flare-accent, var(--interactive-accent));
+					color: var(--text-accent);
 				}
 			}
 		`

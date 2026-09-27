@@ -1,15 +1,16 @@
+![[Overview.base#p3a]]
 # Probably for Phase 3
-- [ ] [[PEP107 - Forecast View & Agenda Display (Mitra)]]
-- [ ] Bug: Today resolves to yesterday in Pleiadean, sometimes?
-- [ ] Improve issue descriptions and names + dismissed pane
 - [ ] Core domain sanity
 - [ ] Mass-init + context-menu initialisation
 - [ ] Convert Directive ↔ Incentive
 - [ ] New PUCK notations
-- [ ] [[PEP103 - State Enforcement Engine]]
-	- [ ] assess the possibility and requirements of adding entire directives to an onrush as well, with the law in mind that "a directive is automatically dependent on all of its children and incentives without requiring any definition".
-- [ ] [[PEP104 - Reflective Generation Engine]]
+- [ ] Directive intrinsic-dependency and add-to-onrush
 - [ ] Markdown parent override + solidify parent option/command (Patch for [[PEP083 - Parent Folder Partitioning]])
+- [ ] `boundaryStop` for Implicit notes.
+- [ ] Some issues should have special dismiss behaviour, reflected in the UI as well: be destroyed forever when dismissed and resolve its underlying ticker. (eg. `delete-blocked` when the note is already deleted, allowing the user to restore normal watcher function when there's basically no threat anymore)
+- [ ] Onrush card dependencies: unison
+- [ ] Improve issue descriptions and names + dismissed pane
+- [ ] Fix humaniser for real this time
 # Infrastructure
 - [ ] Separate Orbit library
 - [ ] Separate Localrepo library

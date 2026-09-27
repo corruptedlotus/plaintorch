@@ -77,17 +77,17 @@ function describe(health: WatcherHealth, live: readonly WatcherIssueRecord[], di
 
 	switch (health) {
 		case 'ok':
-			return `Watching the vault. ${counts}.`
+			return `Observing the vault.`
 		case 'issues':
-			return `Watching the vault, with problems to look at. ${counts}.`
+			return `Observing the vault, but has encountered issues.`
 		case 'critical':
-			return `Watching the vault, but part of its work is blocked. ${counts}.`
+			return `Observing the vault with critical blockage.`
 		case 'standby':
 			return live.length > 0
-				? `On standby: a fatal problem stops the watcher (see below). ${counts}.`
+				? `On standby: a fatal problem stops the watcher (see below).`
 				: 'On standby: no vault is being watched.'
 		case 'offline':
-			return 'No report — the PLAINTORCH core is offline, or serves no vault.'
+			return 'The PLAINTORCH core is offline, or serves no vault.'
 		default:
 			return counts
 	}

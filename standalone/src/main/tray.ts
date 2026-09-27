@@ -90,14 +90,9 @@ export class ShellTray {
 		const items: MenuItemConstructorOptions[] = [
 			{ label: describe(status), enabled: false },
 			{ label: status.vault ? `Vault: ${status.vault}` : "No vault active", enabled: false },
+			{ label: "Check Status", click: () => this.actions.openStatus() },
 			{ type: "separator" },
-			{ label: "Open briefing", click: () => this.actions.openBriefing() },
-			{ label: "Open status", click: () => this.actions.openStatus() },
-			{ label: "Activate vault...", click: () => this.actions.activateVault() },
-			{ label: "Deactivate vault", enabled: !!status.activeVaultSetting, click: () => this.actions.deactivateVault() },
-			{ type: "separator" },
-			{ label: "Start at login", type: "checkbox", checked: status.autostart, click: item => this.actions.setAutostart(item.checked) },
-			{ label: "Open logs folder", click: () => this.actions.openLogs() }
+			{ label: "Open Briefing", click: () => this.actions.openBriefing() },
 		]
 		if (hostsCore) {
 			items.push({ label: "Restart core", click: () => this.actions.restartCore() })
@@ -129,18 +124,18 @@ export class ShellTray {
 /** One line for the tooltip and the first menu entry. */
 export function describe(status: ShellStatus): string {
 	if (status.sweeping) {
-		return status.attachment === "attached" ? "attached, startup sweep" : "startup sweep"
+		return status.attachment === "attached" ? "Attached, Startup sweep" : "Startup sweep"
 	}
 
 	switch (status.attachment) {
 		case "absent":
-			return "no core running"
+			return "No Core"
 		case "exited":
-			return "core exited"
+			return "Offline"
 		case "starting":
-			return "core starting"
+			return "Starting"
 		case "attached":
-			return `attached, ${status.phase.toLowerCase()}`
+			return `Attached, ${status.phase.toLowerCase()}`
 		default:
 			return status.phase.toLowerCase()
 	}

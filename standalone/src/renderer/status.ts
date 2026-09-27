@@ -139,6 +139,13 @@ export class Status extends Component {
 				color: var(--text-muted);
 			}
 
+			.action-row {
+				font-size: .8em;
+				display: flex;
+				gap: .4em;
+				color: var(--text-accent);
+			}
+
 			.actions {
 				display: flex;
 				flex-wrap: wrap;
@@ -206,7 +213,13 @@ export class Status extends Component {
 				${status.message ? html`<p class="message">${status.message}</p>` : nothing}
 				<dl class="facts">
 					<dt>Vault</dt>
-					<dd><p7t-icon-item small icon="lucide:folder-open" text=${status.vault ?? status.activeVaultSetting ?? "none"}></p7t-icon-item></dd>
+					<dd>
+						<p7t-icon-item small icon="lucide:folder-open" text=${status.vault ?? status.activeVaultSetting ?? "none"}></p7t-icon-item>
+						<span class='action-row'>
+							<p7t-button ghost emphasis icon="lucide:folder-open" @click=${() => bridge.activateVault()}>Activate vault…</p7t-button>
+							<p7t-button ghost danger icon="lucide:folder-x" ?disabled=${!status.activeVaultSetting} @click=${() => bridge.deactivateVault()}>Deactivate vault</p7t-button>
+						</span>
+					</dd>
 					<dt>Endpoint</dt>
 					<dd><p7t-icon-item small icon="lucide:plug" text=${status.endpoint}></p7t-icon-item></dd>
 					<dt>Profile</dt>
@@ -218,8 +231,6 @@ export class Status extends Component {
 				</dl>
 				<div class="actions" slot="footer">
 					<p7t-button emphasis icon="lucide:layout-dashboard" @click=${() => bridge.openBriefing()}>Open briefing</p7t-button>
-					<p7t-button icon="lucide:folder-open" @click=${() => bridge.activateVault()}>Activate vault…</p7t-button>
-					<p7t-button icon="lucide:folder-x" ?disabled=${!status.activeVaultSetting} @click=${() => bridge.deactivateVault()}>Deactivate vault</p7t-button>
 					${status.flavor === "standalone" ? html`<p7t-button icon="lucide:rotate-cw" @click=${() => bridge.restartCore()}>Restart core</p7t-button>` : nothing}
 					<p7t-button icon="lucide:scroll-text" @click=${() => bridge.openLogs()}>Open logs</p7t-button>
 				</div>

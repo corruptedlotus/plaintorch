@@ -209,7 +209,7 @@ export class PlaintorchCoreClient {
 
 				Promise.resolve().then(async () => {
 					const payload = await response.text()
-					console.log('PLAINTORCH called', request.path, payload ? JSON.parse(payload) : undefined)
+					console.debug('PLAINTORCH called', request.path, payload ? JSON.parse(payload) : undefined)
 				}).catch(() => { })
 				return response
 			}

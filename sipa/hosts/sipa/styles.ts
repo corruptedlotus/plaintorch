@@ -52,8 +52,8 @@ export const sipaStyles: CSSResult = css`
 		--color-orange: var(--p7t-critical);
 		--color-red: var(--p7t-bad);
 
-		--font-interface: "Outfit", "Space Grotesk", "Segoe UI", system-ui, sans-serif;
-		--font-text: var(--font-interface);
+		--font-interface: "Outfit", "Segoe UI", system-ui, sans-serif;
+		--font-text: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
 		--font-monospace: "Cascadia Code", Consolas, ui-monospace, monospace;
 
 		--modal-radius: 12px;
@@ -65,6 +65,7 @@ export const sipaStyles: CSSResult = css`
 		background: var(--background-primary);
 		color: var(--text-normal);
 		font: 14px/1.45 var(--font-interface);
+		
 	}
 
 	input[type=text], input:not([type]), textarea {

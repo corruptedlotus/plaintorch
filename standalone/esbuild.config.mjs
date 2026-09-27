@@ -1,6 +1,31 @@
 import esbuild from "esbuild"
+import { spawn } from "node:child_process"
 import { cpSync, mkdirSync, rmSync } from "node:fs"
 import path from "node:path"
+import { run } from "node:test"
+import electronPath from 'electron'
+
+let electronProcess = null;
+
+function startElectron() {
+	// Kill existing process if running (useful for rebuilds)
+	if (electronProcess && !electronProcess.killed) {
+		electronProcess.kill('SIGTERM');
+	}
+
+	// Spawn `electron .` using the binary provided by the `electron` NPM package
+	electronProcess = spawn(electronPath, ['.'], {
+		stdio: 'inherit',
+		env: process.env,
+	});
+
+	// Handle process exit
+	electronProcess.on('close', (code) => {
+		if (code !== null) {
+			process.exit(code);
+		}
+	});
+}
 
 // Usage: node esbuild.config.mjs --flavor standalone|client [--production]
 // Development builds watch, target the dev sub-profile, and bake the flavour in exactly like the Obsidian plugin bakes
@@ -110,4 +135,6 @@ if (production) {
 else {
 	console.warn("Initiating watcher...")
 	await Promise.all(contexts.map(context => context.watch()))
+	console.warn("Starting Electron...")
+	startElectron()
 }

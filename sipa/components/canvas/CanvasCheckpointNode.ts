@@ -92,7 +92,7 @@ export class CanvasCheckpointNode extends CanvasNodeItem {
 				}
 
 				&:has(.celestron.paid) {
-					background-color: color-mix(in srgb, var(--background-modifier-message) 20%, transparent);
+					background-color: color-mix(in srgb, var(--background-modifier-message) 30%, transparent);
 				}
 			}
 

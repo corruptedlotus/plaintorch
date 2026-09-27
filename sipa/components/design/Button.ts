@@ -30,9 +30,9 @@ export class Button extends Component {
 
 			button {
 				pointer-events: auto;
-				background-color: color-mix(in srgb, var(--text-normal) 10%, transparent);
+				background-color: color-mix(in srgb, currentColor 10%, transparent);
 				outline: none;
-				border: 1px solid transparent;
+				border: 0px solid transparent;
 				display: flex;
 				align-items: center;
 				gap: 1ch;
@@ -46,7 +46,7 @@ export class Button extends Component {
 				cursor: pointer;
 
 				:host([disabled]) & {
-					background-color: color-mix(in srgb, var(--text-normal) 5%, transparent);
+					background-color: color-mix(in srgb, currentColor 5%, transparent);
 					opacity: 0.6;
 					pointer-events: none;
 				}
@@ -64,8 +64,8 @@ export class Button extends Component {
 				}
 
 				&:hover {
-					background-color: color-mix(in srgb, var(--text-normal) 20%, transparent);
-					border-color: color-mix(in srgb, var(--text-normal) 30%, transparent);
+					background-color: color-mix(in srgb, currentColor 20%, transparent);
+					border-color: color-mix(in srgb, currentColor 30%, transparent);
 				}
 
 				/* Ghost: no chrome at rest, only a faint hover — for icon-only affordances. */
@@ -76,7 +76,7 @@ export class Button extends Component {
 				}
 
 				:host([ghost]) &:hover {
-					background-color: color-mix(in srgb, var(--text-normal) 14%, transparent);
+					background-color: color-mix(in srgb, currentColor 14%, transparent);
 					border-color: transparent;
 				}
 
@@ -84,7 +84,21 @@ export class Button extends Component {
 				:host([danger]) &:hover {
 					color: var(--text-error, crimson);
 					background-color: color-mix(in srgb, var(--text-error, crimson) 12%, transparent);
+					border-color: var(--text-error, crimson);
+				}
+
+				:host([emphasis][ghost]) &:hover {
+					color: var(--text-accent);
+					background-color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 12%, transparent);
 					border-color: transparent;
+				}
+
+				:host([emphasis]:not([ghost])) & {
+					background-color: var(--p7t-flare-accent, var(--interactive-accent));
+
+					&:hover {
+						background-color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 70%, transparent);
+					}
 				}
 			}
 

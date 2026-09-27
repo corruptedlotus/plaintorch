@@ -80,8 +80,8 @@ function waitingTemplate(status: ShellStatus) {
 			<p7t-icon class='glyph' icon='plaintorch'></p7t-icon>
 			<div class='message'>${waitingMessage(status)}</div>
 			<div class='actions'>
-				${idle ? html`<button class='mod-cta' @click=${() => bridge.activateVault()}>Activate vault…</button>` : ""}
-				<button @click=${() => bridge.openStatus()}>Open status</button>
+				${idle ? html`<p7t-button large emphasis class='mod-cta' @click=${() => bridge.activateVault()}>Activate vault…</p7t-button>` : ""}
+				<p7t-button large @click=${() => bridge.openStatus()}>Open status</p7t-button>
 			</div>
 		</div>
 	`

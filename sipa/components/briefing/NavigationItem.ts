@@ -13,15 +13,16 @@ export class NavigationItem extends Component {
 			:host {
 				display: flex;
 				flex-direction: column;
-				gap: .2em;
+				gap: .3em;
 				align-items: center;
 				font-family: var(--font-text);
 				border-radius: 12px 12px 0 0;
-				padding-inline: 8px;
-				padding-top: 5px;
+				padding-inline: 12px;
+				padding-top: .3em;
 				transition: .3s ease;
 				border: 1px solid transparent;
 				border-bottom: none;
+				cursor: pointer;
 			}
 
 			:host(:hover) {
@@ -31,14 +32,13 @@ export class NavigationItem extends Component {
 			:host([active]) {
 				color: color-mix(in srgb, var(--interactive-accent) 70%, var(--text-normal));
 				/*border-color: color-mix(in srgb, var(--interactive-accent) 30%, transparent);*/
-				background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+				background-color: color-mix(in srgb, black 20%, transparent);
 			}
 
 			.main {
 				display: flex;
 				align-items: center;
 				gap: 0;
-				cursor: pointer;
 				transition: ease .3s;
 				
 				:host([active]) & {
@@ -54,7 +54,7 @@ export class NavigationItem extends Component {
 			.title {
 				width: 0px;
 				transition: ease .3s;
-				font-size: 1.2em;
+				font-size: 1.05em;
 				font-weight: 300;
 				interpolate-size: allow-keywords;
 				overflow: hidden;
@@ -75,9 +75,15 @@ export class NavigationItem extends Component {
 				transition: ease .6s;
 				opacity: 0;
 
-				:host([active]) & {
-					width: 2em;
-					opacity: 1;
+				:host(:not([active])) & {
+					width: .6em;
+					opacity: .3;
+					border-radius: 3px 3px 0 0;
+				}
+
+				:host(:not([active]):hover) & {
+					width: 1em;
+					opacity: .3;
 					border-radius: 3px 3px 0 0;
 				}
 			}
