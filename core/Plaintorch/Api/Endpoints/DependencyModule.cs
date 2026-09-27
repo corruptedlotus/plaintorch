@@ -83,6 +83,6 @@ public sealed class DependencyModule : Module
 
 	private static EndpointRef ToRef(DependencyEndpointRequest request)
 	{
-		return new EndpointRef(request.Kind, request.Id, request.RecurrenceDate, request.RecurrenceTime);
+		return new EndpointRef(request.Kind, request.Id, request.RecurrenceId);
 	}
 }

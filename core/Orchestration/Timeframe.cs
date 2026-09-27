@@ -71,16 +71,35 @@ public sealed class Timeframe
 	public MediaReference? IconMedia { get; set; }
 
 	/// <summary>
-	/// Gets or sets how this timeframe auto-includes Polaris workitems (PEP100 patch). Defaults to
-	/// <see cref="TimeframeInclusion.None"/>; the criteria for <see cref="TimeframeInclusion.College"/> are
-	/// <see cref="AutoInclusionColleges"/>.
+	/// Gets or sets how this timeframe auto-includes Polaris workitems (PEP100 patch; Availability per PEP100 patch 2).
+	/// Defaults to <see cref="TimeframeInclusion.None"/>. The criteria for <see cref="TimeframeInclusion.College"/> are
+	/// <see cref="AutoInclusionColleges"/>. An <see cref="TimeframeInclusion.Availability"/> timeframe carries no
+	/// criteria of its own: its parameter lives on the directives that pick it as their
+	/// <see cref="Directive.AvailabilityTimeframeId"/>, and it is assigned to workitems whose owning incentive's
+	/// directive — or nearest ancestor directive — picked it.
 	/// </summary>
+	/// <remarks>
+	/// Availability takes precedence over College: a new executive or reflective is affined to the nearest directive
+	/// availability when its lineage has one, and only otherwise to a College timeframe. Either way the choice is made
+	/// once, at creation.
+	/// </remarks>
 	public TimeframeInclusion AutoInclusion { get; set; } = TimeframeInclusion.None;
 
 	/// <summary>
 	/// Gets or sets the colleges that drive auto-inclusion when <see cref="AutoInclusion"/> is
-	/// <see cref="TimeframeInclusion.College"/> — every executive or reflective whose owning incentive carries any of
-	/// these colleges is affined to this timeframe on creation. Ignored for other inclusion kinds. Stored as JSON.
+	/// <see cref="TimeframeInclusion.College"/>. They are consulted only when no directive availability applies to the
+	/// new executive or reflective (availability precedes college, PEP100 patch 2); then a workitem whose owning
+	/// incentive carries one of these colleges is affined, on creation, to the lowest-id College timeframe listing that
+	/// college — so several timeframes listing the same college do not all receive it. Ignored for other inclusion
+	/// kinds. Stored as JSON.
 	/// </summary>
 	public List<ObjectiveCollege> AutoInclusionColleges { get; set; } = [];
+
+	/// <summary>
+	/// Gets or sets whether the timeframe is exclusive (PEP100 patch 2). Exclusivity is judged among the timeframes
+	/// active at a given moment: when any of them is exclusive, only the active exclusive ones are reported and every
+	/// active non-exclusive timeframe is dropped. An exclusive timeframe that is not active suppresses nothing.
+	/// Defaults to <see langword="false"/>.
+	/// </summary>
+	public bool Exclusive { get; set; }
 }

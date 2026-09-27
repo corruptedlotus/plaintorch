@@ -53,7 +53,7 @@ export class PlaintorchSystemSdk {
 	 * Dismisses a watcher issue (PEP108 dismiss feature) by its opaque {@link WatcherIssueRecord.key}, so it stops
 	 * counting toward health and nagging. The default `instance` scope snoozes just this issue until a different
 	 * problem arises on the same file; `file` / `reason` are the reserved broader scopes. Resolves to whether a
-	 * dismissal was recorded.
+	 * dismissal was recorded — false for a `fatal` issue, which the core refuses to dismiss.
 	 */
 	public async dismissWatcherIssue(issueKey: string, scope?: WatcherIssueDismissalScope): Promise<boolean> {
 		const result = await this.client.postForJson<boolean>("/api/system/watcher/issues/dismiss", { key: issueKey, scope })

@@ -3,12 +3,14 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Pleiades.Orchestration;
 using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
+using Pleiades.Saga;
 using Pleiades.Diagnostics;
 using Pleiades.Plaintorch.Api.Changes;
 using Pleiades.Plaintorch.Diagnostics;
 using Pleiades.Plaintorch.Hosting;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.Media;
+using Pleiades.Plaintorch.Preferences;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault;
 using Pleiades.Vault.Database;
@@ -45,6 +47,14 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<PlaintorchStatePolicyInterceptor>();
 		services.AddSingleton<PlaintorchChangeBroker>();
 		services.AddScoped<PlaintorchChangeFeedInterceptor>();
+		// The active lore spine, cached once per vault session and stamped onto responses by a filter rather
+		// than hand-computed at each lore endpoint; the interceptor drops the cache when a lore page is written.
+		services.AddSingleton<LoreActiveCache>();
+		services.AddScoped<LoreActiveCacheInterceptor>();
+		// The active Polaris cycle's timeframe candidates (PEP100 patch 2), warmed at cycle begin and vault activation;
+		// the interceptor drops them on any write that can change the set, across every write pathway.
+		services.AddSingleton<TimeframeCandidateCache>();
+		services.AddScoped<TimeframeCandidateCacheInterceptor>();
 		services.AddDbContext<PlainfraContext>((serviceProvider, options) =>
 		{
 			var layout = serviceProvider.GetRequiredService<VaultLayout>();
@@ -57,6 +67,8 @@ public sealed class PlaintorchModule : Module
 			// Registered after the state policy, so the changes it announces are the ones policy left
 			// behind rather than what the caller originally asked for.
 			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchChangeFeedInterceptor>());
+			options.AddInterceptors(serviceProvider.GetRequiredService<LoreActiveCacheInterceptor>());
+			options.AddInterceptors(serviceProvider.GetRequiredService<TimeframeCandidateCacheInterceptor>());
 		});
 
 		services.AddScoped<PlainfraContextInitializer>();
@@ -96,6 +108,25 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<IOperationStatusSink>(provider => provider.GetRequiredService<OperationStatusEventBuffer>());
 		services.AddSingleton<OperationStatusReporter>();
 		services.AddScoped<OperationStatusDismissalService>();
+		// PEP116 user preferences: a sparse, vault-bound key/value store with code-owned defaults, surfaced
+		// through .NET Options. The store is the singleton hot-read cache (loaded on activation, kept current by
+		// write-through); the service owns the database read/write; each Options group binds its keys off the
+		// store, so an unset preference falls through to its POCO-default and adding one needs no migration.
+		services.AddSingleton<UserPreferenceStore>();
+		services.AddScoped<UserPreferenceService>();
+		services.AddOptions<WatcherPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
+		{
+			preferences.NoteQueueTimeout = store.Get(PreferenceKeys.NoteQueueTimeout, preferences.NoteQueueTimeout);
+		});
+		services.AddOptions<AgendaPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
+		{
+			preferences.AutoMaterialiseOptOut = store.Get(PreferenceKeys.AutoMaterialiseOptOut, preferences.AutoMaterialiseOptOut);
+			preferences.DefaultCalendar = store.Get(PreferenceKeys.DefaultCalendar, preferences.DefaultCalendar);
+		});
+		services.AddOptions<CalDavPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
+		{
+			preferences.FloatingRender = store.Get(PreferenceKeys.CalDavFloatingRender, preferences.FloatingRender);
+		});
 		services.AddSingleton<WatcherStatusReporter>();
 		services.AddSingleton<WatcherRetryScheduler>();
 		services.AddSingleton<VaultStorageTopologyValidator>();
@@ -120,8 +151,10 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<VaultMigrationRunner>();
 		services.AddScoped<IVaultMigration, ObjectiveQuietCanonicalizationMigration>();
 		services.AddScoped<IVaultMigration, OnrushPlanningPlaceholderRenameMigration>();
+		services.AddScoped<IVaultMigration, FateOrbitOnlyMigration>();
 		services.AddScoped<PlaintorchEngine>();
 		services.AddScoped<TimeframeAffinityResolver>();
+		services.AddScoped<TimeframeCandidateService>();
 		services.AddSingleton<MaterializationPolicyOptions>();
 		services.AddScoped<OccurrenceHardeningService>();
 		services.AddScoped<AgendaProjectionService>();

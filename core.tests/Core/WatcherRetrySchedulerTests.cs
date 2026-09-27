@@ -63,6 +63,53 @@ public sealed class WatcherRetrySchedulerTests
 	}
 
 	[Fact]
+	public void Content_issues_wait_for_the_users_edit_and_are_never_retried()
+	{
+		// Invalid content stands in the file until the user edits it (which re-inspects the path by itself); a timer
+		// would never resolve it and a conflict would record itself on every pass.
+		foreach (var reason in new[] { WatcherOperations.MarkdownInvalid, WatcherOperations.PuckViolation, WatcherOperations.PolicyViolation })
+		{
+			Assert.False(WatcherRetryScheduler.IsRetryable(Status(reason, "C:/vault/Objectives/Invalid.md")));
+		}
+
+		// What clears once an obstacle does is retried.
+		foreach (var reason in new[] { WatcherOperations.FileInUse, WatcherOperations.PermissionDenied, WatcherOperations.DiscoveryFailed, WatcherOperations.SyncFailed })
+		{
+			Assert.True(WatcherRetryScheduler.IsRetryable(Status(reason, "C:/vault/Objectives/Locked.md")));
+		}
+	}
+
+	[Fact]
+	public void Only_content_reasons_are_content_statuses()
+	{
+		// The watcher re-inspects a content status once when its file has vanished. A blocked delete is keyed on a path
+		// that is missing by definition, so counting it as content re-ran the refused delete on every maintenance pass.
+		foreach (var reason in new[] { WatcherOperations.MarkdownInvalid, WatcherOperations.PuckViolation, WatcherOperations.PolicyViolation, WatcherOperations.ForeignFile })
+		{
+			Assert.True(WatcherRetryScheduler.IsContentStatus(Status(reason, "C:/vault/Objectives/Invalid.md")));
+		}
+
+		foreach (var reason in new[] { WatcherOperations.DeleteBlocked, WatcherOperations.SyncFailed, WatcherOperations.FileInUse })
+		{
+			Assert.False(WatcherRetryScheduler.IsContentStatus(Status(reason, "C:/vault/Objectives/Gone.md")));
+		}
+
+		Assert.False(WatcherRetryScheduler.IsContentStatus(Status(WatcherOperations.MarkdownInvalid, WatcherOperations.GlobalScope)));
+	}
+
+	[Fact]
+	public void A_blocked_delete_is_never_retried_even_long_stuck()
+	{
+		// The entity is still referenced; re-checking its path on a timer cannot change that. It used to be re-attempted at
+		// the capped cadence forever (a graveyard entry a minute) — it is a standing status, re-evaluated only by a sweep
+		// or a file event at the path.
+		var scheduler = new WatcherRetryScheduler();
+		var stuck = Status(WatcherOperations.DeleteBlocked, "C:/vault/Objectives/Gone.md", occurrenceCount: 2000, sinceObserved: TimeSpan.FromDays(1));
+		Assert.False(WatcherRetryScheduler.IsRetryable(stuck));
+		Assert.Empty(scheduler.DuePaths([stuck], Now));
+	}
+
+	[Fact]
 	public void Global_scope_and_non_reconcile_conditions_are_not_path_retried()
 	{
 		var scheduler = new WatcherRetryScheduler();

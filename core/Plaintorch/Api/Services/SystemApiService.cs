@@ -263,6 +263,12 @@ public sealed class SystemApiService(
 			return false;
 		}
 
+		// A fatal issue is why the watcher is on standby; it is not the user's to snooze, whatever the dismissal's scope.
+		if (statusRegistry.FindActive(operationId, scopeKey, reasonCode) is { } active && !OperationStatusRegistry.IsDismissible(active))
+		{
+			return false;
+		}
+
 		return await dismissalService.DismissAsync(dismissalScope, operationId, scopeKey, reasonCode, cancellationToken);
 	}
 
@@ -313,13 +319,15 @@ public sealed class SystemApiService(
 	private static string? ScopePathOf(OperationStatus status)
 		=> string.Equals(status.ScopeKey, WatcherOperations.GlobalScope, StringComparison.Ordinal) ? null : status.ScopeKey;
 
-	private static bool IsCriticalSeverity(OperationSeverity severity) => severity >= OperationSeverity.Error;
+	/// <summary>Whether a severity counts as critical on the wire: critical or fatal — the ones that block the watcher's work.</summary>
+	private static bool IsCriticalSeverity(OperationSeverity severity) => severity >= OperationSeverity.Critical;
 
 	private static string MapHealthStatus(OperationHealth health) => health switch
 	{
 		OperationHealth.Ok => "ok",
-		OperationHealth.Suspended => "standby",
 		OperationHealth.Issues => "issues",
+		OperationHealth.Critical => "critical",
+		OperationHealth.Standby => "standby",
 		OperationHealth.Offline => "offline",
 		_ => "ok",
 	};
@@ -603,10 +611,8 @@ public sealed class SystemApiService(
 		var cycle = await context.PolarisCycles
 			.AsNoTracking()
 			.Include(item => item.Executives)
-				.ThenInclude(item => item.Objective)
+				.ThenInclude(item => item.Incentive)
 			.Include(item => item.Reflectives)
-				.ThenInclude(item => item.Decree)
-			.Include(item => item.Attentives)
 				.ThenInclude(item => item.Decree)
 			.FirstOrDefaultAsync(item => item.Id == cycleId, cancellationToken);
 

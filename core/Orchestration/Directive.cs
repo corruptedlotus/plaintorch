@@ -88,6 +88,22 @@ public abstract class Directive : PuckNamedEntity
 	[NotMapped]
 	public MediaReference? BannerMedia { get; set; }
 
+	/// <summary>
+	/// Gets or sets the directive's availability timeframe identifier (PEP100 patch 2): an
+	/// <see cref="TimeframeInclusion.Availability"/>-mode timeframe of any lunar directive. Workitems created for an
+	/// incentive of this directive or of any descendant are auto-affined to it (the nearest directive with an
+	/// availability wins, ahead of college auto-inclusion). Database-only — never written to frontmatter, since a
+	/// timeframe id is a database row id rather than a PUCK — so the watcher restores it across note syncs.
+	/// </summary>
+	public long? AvailabilityTimeframeId { get; set; }
+
+	/// <summary>
+	/// Gets or sets the availability timeframe (PEP100 patch 2). Not auto-included; clients resolve the timeframe
+	/// from the global timeframe listing by <see cref="AvailabilityTimeframeId"/>.
+	/// </summary>
+	[ForeignKey(nameof(AvailabilityTimeframeId))]
+	public Timeframe? AvailabilityTimeframe { get; set; }
+
 	[InverseProperty(nameof(Incentive.Directive))]
 	/// <summary>
 	/// Gets the incentives (objectives and declaratives) attached to this directive.

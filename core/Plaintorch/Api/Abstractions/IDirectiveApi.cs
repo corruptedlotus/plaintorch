@@ -91,6 +91,17 @@ public interface IDirectiveApi
 	Task<Directive> SetBannerAsync(string directiveId, DirectiveBannerRequest request, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Sets or clears a directive's availability timeframe (PEP100 patch 2). Applies to either kind. A non-null
+	/// <paramref name="timeframeId"/> must name an existing timeframe in <see cref="TimeframeInclusion.Availability"/>
+	/// mode (any lunar directive's); <see langword="null"/> clears the availability. The field is database-only, so
+	/// the directive's note is not rewritten.
+	/// </summary>
+	/// <exception cref="InvalidOperationException">
+	/// The directive or timeframe was not found, or the timeframe is not in Availability mode.
+	/// </exception>
+	Task<Directive> SetAvailabilityAsync(string directiveId, long? timeframeId, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Initializes a stellar directive from an existing vault markdown path using watcher creation policy.
 	/// </summary>
 	Task<Directive> InitializeFromPathAsync(string vaultRelativePath, CancellationToken cancellationToken = default);
@@ -111,12 +122,36 @@ public interface IDirectiveApi
 	Task<IReadOnlyList<DirectiveTimeframeRecord>> ListAllTimeframesAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Updates a timeframe definition.
+	/// Lists the timeframes active right now (PEP100 patch 2), shaped and ordered like
+	/// <see cref="ListAllTimeframesAsync"/> (directive title, then start time).
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Only a strictly active Polaris cycle (begun and not ended) has active timeframes; with none, the list is empty.
+	/// The cycle's candidates — every timeframe without an orbit, plus those whose orbit selects the cycle's local start
+	/// day on the vault default calendar — are cached per cycle, and the set stays fixed for the cycle's life even past
+	/// midnight.
+	/// </para>
+	/// <para>
+	/// A candidate is active when the local wall-clock time, truncated to the minute, lies in its
+	/// <c>[StartTime, EndTime)</c> window; a window whose start is after its end wraps midnight, and one whose start
+	/// equals its end is never active. When any active timeframe is <see cref="Timeframe.Exclusive"/>, only the active
+	/// exclusive ones are returned (all of them); an exclusive timeframe that is not active suppresses nothing.
+	/// </para>
+	/// </remarks>
+	/// <param name="at">The instant to evaluate at; defaults to now.</param>
+	/// <param name="cancellationToken">A token to cancel the listing.</param>
+	Task<IReadOnlyList<DirectiveTimeframeRecord>> ListActiveTimeframesAsync(DateTimeOffset? at = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Updates a timeframe definition. A timeframe leaving <see cref="TimeframeInclusion.Availability"/> mode clears
+	/// every directive availability pointing at it in the same save (PEP100 patch 2).
 	/// </summary>
 	Task<Timeframe> UpdateTimeframeAsync(long timeframeId, TimeframeUpdate update, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Deletes a timeframe definition, clearing any executive affinity references to it.
+	/// Deletes a timeframe definition, clearing any executive, reflective and attentive affinity references and any
+	/// directive availability references to it (PEP100 patch 2).
 	/// </summary>
 	Task DeleteTimeframeAsync(long timeframeId, CancellationToken cancellationToken = default);
 }

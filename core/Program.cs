@@ -2,6 +2,7 @@ global using A11d.Module;
 using Pleiades.Calendar;
 using Pleiades.Plaintorch.Hosting;
 using Pleiades.Vault;
+using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch;
 
@@ -25,6 +26,8 @@ public static class Program
 	/// Exit code returned when <c>serve</c> finds another core already serving the same profile.
 	/// </summary>
 	public const int AlreadyRunningExitCode = 3;
+
+	private static readonly string ProgramCategory = typeof(Program).FullName!;
 
 	/// <summary>
 	/// Runs the PLAINTORCH command-line shell.
@@ -65,19 +68,26 @@ public static class Program
 			RenderServeBanner(userLayout);
 		}
 
+		var fileLogs = app.Services.GetServices<ILoggerProvider>().OfType<PlaintorchFileLoggerProvider>().FirstOrDefault();
+		if (fileLogs is not null)
+		{
+			ObserveProcessFailures(fileLogs);
+		}
+
 		return launch.Command switch
 		{
 			"init" => await RunInitializeAsync(app, launch.ResolveCommandVaultPath()!),
 			"activate" => RunActivate(app, launch.ResolveCommandVaultPath()!),
 			"deactivate" => RunDeactivate(app),
-			"serve" => await RunServeAsync(app, launchMode),
+			"serve" => await RunServeAsync(app, launchMode, fileLogs),
 			"bootstrap-service" => RunBootstrapService(app),
 			_ => 1,
 		};
 	}
 
 	/// <summary>
-	/// Initializes the current working directory as a PLAINTORCH vault when needed.
+	/// Initializes the current working directory as a PLAINTORCH vault when needed. A vault whose database a newer core
+	/// migrated is refused with the reason on standard error and exit code 1.
 	/// </summary>
 	private static async Task<int> RunInitializeAsync(WebApplication application, string vaultPath)
 	{
@@ -87,7 +97,16 @@ public static class Program
 		var activationService = scope.ServiceProvider.GetRequiredService<PlaintorchVaultActivationService>();
 		var alreadyInitialized = activationService.IsInitialized(vaultPath);
 
-		await engine.InitializeVaultAsync();
+		try
+		{
+			await engine.InitializeVaultAsync();
+		}
+		catch (VaultDatabaseAheadOfCoreException exception)
+		{
+			Console.Error.WriteLine(exception.Message);
+			return 1;
+		}
+
 		RenderHeader(layout);
 		Console.WriteLine(alreadyInitialized ? "Vault already initialized." : "Vault initialized.");
 		Console.WriteLine($"Database: {layout.DatabasePath}");
@@ -128,9 +147,10 @@ public static class Program
 	/// The host starts idle without a vault. Vault activation, lock ownership, and vault initialization are
 	/// coordinated at runtime by <see cref="PlaintorchCoreService"/> in response to user settings, so that a
 	/// vault can be activated and deactivated without restarting the host. In spawn mode a startup failure is
-	/// also reported on the status stream before the process exits, so the shell can show it.
+	/// also reported on the status stream before the process exits, so the shell can show it. With file logging
+	/// (daemon and spawn modes) the failure, stack trace included, is also written to the profile's day log.
 	/// </remarks>
-	private static async Task<int> RunServeAsync(WebApplication application, PlaintorchLaunchMode launchMode)
+	private static async Task<int> RunServeAsync(WebApplication application, PlaintorchLaunchMode launchMode, PlaintorchFileLoggerProvider? fileLogs)
 	{
 		try
 		{
@@ -139,7 +159,10 @@ public static class Program
 		}
 		catch (Exception exception)
 		{
-			// The host is already disposed here, and its status stream with it, so the failure is written directly.
+			// The host is already disposed here, and its status stream and file sink with it, so the failure is
+			// written directly (the disposed sink appends straight to the day file).
+			fileLogs?.Append(LogLevel.Critical, ProgramCategory, "The PLAINTORCH core host failed to start or stopped with an error.", exception);
+			fileLogs?.Dispose();
 			var failure = new PlaintorchHostStatus(
 				PlaintorchHostPhase.Failed,
 				$"PLAINTORCH core failed to start.{Environment.NewLine}{exception.Message}",
@@ -156,6 +179,34 @@ public static class Program
 
 			return 1;
 		}
+	}
+
+	/// <summary>
+	/// Records process-level failures of a file-logging host in its day log as critical entries, stack traces
+	/// included: an exception that escaped onto any thread, after which the runtime terminates the process, so the
+	/// sink is drained and flushed before the handler returns; and a faulted task that nobody observed, which the
+	/// process survives, so the entry is flushed with the sink's next batch.
+	/// </summary>
+	/// <remarks>
+	/// Both go through <see cref="PlaintorchFileLoggerProvider.Append"/>, which queues while the host is running and
+	/// appends straight to the file once the host, and the sink with it, has been disposed.
+	/// </remarks>
+	private static void ObserveProcessFailures(PlaintorchFileLoggerProvider fileLogs)
+	{
+		AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+		{
+			var exception = args.ExceptionObject as Exception;
+			var message = exception is null
+				? $"Unhandled exception ({args.ExceptionObject}); the PLAINTORCH core is terminating."
+				: "Unhandled exception; the PLAINTORCH core is terminating.";
+			fileLogs.Append(LogLevel.Critical, ProgramCategory, message, exception);
+			if (args.IsTerminating)
+			{
+				fileLogs.Dispose();
+			}
+		};
+		TaskScheduler.UnobservedTaskException += (_, args) =>
+			fileLogs.Append(LogLevel.Critical, ProgramCategory, "A faulted task was never observed.", args.Exception);
 	}
 
 	/// <summary>

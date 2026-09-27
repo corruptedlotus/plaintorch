@@ -7,7 +7,8 @@ namespace Pleiades.Orbits;
 // TypeScript OrbitSnapshot exactly so blobs are interchangeable between engines.
 
 /// <summary>
-/// Per-node running-counter state for <c>@x</c>/<c>*x</c> limits.
+/// The per-node running counters that engines kept for <c>@x</c>/<c>*x</c> before the limits became structural. Kept
+/// only so an old snapshot still reads: a snapshot is never written with counters, and they are ignored on resume.
 /// </summary>
 public sealed class OrbitCounterState
 {
@@ -33,8 +34,8 @@ public sealed class OrbitCounterState
 /// <summary>
 /// A self-contained, JSON-serializable snapshot that lets a fresh engine resume a
 /// stream exactly where a previous one left off. <c>(notation, epoch, seed)</c> fixes the
-/// candidate stream; cursor + counters capture how far it has progressed and how much
-/// of each <c>@x</c>/<c>*x</c> budget has been consumed.
+/// stream — every limit is a pure function of the three — and the cursor records how far
+/// it has progressed.
 /// </summary>
 public sealed class OrbitSnapshot
 {
@@ -66,11 +67,16 @@ public sealed class OrbitSnapshot
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public bool? Exhausted { get; set; }
 
-	/// <summary><c>@x</c>/<c>*x</c> progress, keyed by node id.</summary>
+	/// <summary>
+	/// Legacy running counters from the engines that counted <c>@x</c>/<c>*x</c> as they went: never written, and
+	/// ignored on resume — except that a snapshot carrying them has its exhaustion re-derived, since those counters
+	/// could end a stream the structural limits do not.
+	/// </summary>
 	[JsonPropertyName("counters")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public Dictionary<string, OrbitCounterState>? Counters { get; set; }
 
+	/// <summary>Legacy epoch-rebasing flag: never written, and ignored on resume.</summary>
 	[JsonPropertyName("autoReset")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public bool? AutoReset { get; set; }

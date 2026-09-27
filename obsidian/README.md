@@ -22,17 +22,11 @@ It prefers the local loopback HTTP transport at `http://127.0.0.1:43118`, with t
 If the core is unavailable, entity detection and PLAINTORCH rendering do not run.
 
 ## Development
-1. Install dependencies with `npm install`.
+1. Install dependencies with `npm install` here, in `../sipa`, and in `../sdk.ts` (both packages are bundled from source and resolve their own dependencies).
 2. Build once with `npm run build` or run watch mode with `npm run dev`.
 3. Copy or symlink this folder into your Obsidian vault plugins directory.
 
-## Bundled webcomponent library placeholder
-The plugin currently imports a local placeholder bundle from `src/webcomponents/bundle/plaintorch-elements.ts`.
+## The element library (`@pleiades/sipa`)
+The lit components, the orbit humaniser and the icon/design assets live in the shared `@pleiades/sipa` package (`../sipa`), which the plugin bundles from source exactly like `@pleiades/sdk`. `src/main.ts` imports the package once to register every custom element; the views and the on-note banner import what they need from it.
 
-That is the handoff point for the future real bundle. When the actual PLAINTORCH element library exists, replace the placeholder implementation or redirect `ensurePlaintorchElementsRegistered()` to the final bundle entry.
-
-A realistic future import shape would look like one of these:
-- `await import("./vendor/plaintorch-elements.js")`
-- `await import("@pleiades/plaintorch-elements/register")`
-
-The current placeholder bundle keeps the plugin scaffold functional until that library exists.
+This plugin is the Obsidian adapter around that library: the plugin shell, the `ItemView`/`TextFileView` hosts, the on-note banner and the note command palette stay here (PEP110, *Sunnyside Mk1 — SIPA*).

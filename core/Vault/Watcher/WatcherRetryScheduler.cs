@@ -11,12 +11,20 @@ namespace Pleiades.Vault.Watcher;
 /// </summary>
 /// <remarks>
 /// Only per-path reconcile issues are retryable. Global-scope conditions (a structural vault failure, a failed tick)
-/// are driven by the watcher's own supervision loop, not by re-queuing a path; and a <see cref="WatcherOperations.ForeignFile"/>
-/// advisory is deliberately excluded — leaving the unmanaged file in place is already the successful outcome, so
-/// re-checking it would never resolve the flag and would only churn.
+/// are driven by the watcher's own supervision loop, not by re-queuing a path. Two kinds of reason are deliberately
+/// excluded, because re-checking the path on a timer can never resolve them and would only churn: the
+/// <em>content</em> reasons (invalid markdown, a PUCK or policy violation, a foreign file), which stand in the user's file
+/// until they edit it, and a <see cref="WatcherOperations.DeleteBlocked"/> delete (the entity is still referenced, and
+/// nothing at the path will change that). Both are re-evaluated by a file event at their path and by every sweep
+/// (startup and wakeup), and can be dismissed.
 /// </remarks>
 public sealed class WatcherRetryScheduler
 {
+	private static readonly HashSet<string> StandingReasonCodes = new(StringComparer.Ordinal)
+	{
+		WatcherOperations.DeleteBlocked,
+	};
+
 	// Escalating backoff keyed off the status's own occurrence count, capped so a genuinely stuck scope keeps being
 	// retried forever at a slow, cheap cadence rather than either giving up or hot-looping.
 	private static readonly TimeSpan InitialBackoff = TimeSpan.FromSeconds(2);
@@ -37,6 +45,19 @@ public sealed class WatcherRetryScheduler
 			.ToList();
 	}
 
+	/// <summary>
+	/// Whether a failed reconcile of a note found gone — an identity-keyed <see cref="WatcherOperations.SyncFailed"/>, which
+	/// has no path to re-queue — is due for another try on the same widening backoff; the watcher then re-runs its
+	/// vanished-note check.
+	/// </summary>
+	public bool VanishedNoteCheckDue(IReadOnlyList<OperationStatus> activeStatuses, DateTimeOffset now)
+	{
+		ArgumentNullException.ThrowIfNull(activeStatuses);
+		return activeStatuses.Any(status => string.Equals(status.OperationId, WatcherOperations.Identity, StringComparison.Ordinal)
+			&& string.Equals(status.ReasonCode, WatcherOperations.SyncFailed, StringComparison.Ordinal)
+			&& now - status.LastObservedUtc >= BackoffFor(status.OccurrenceCount));
+	}
+
 	/// <summary>Determines whether a status participates in path-based retry.</summary>
 	public static bool IsRetryable(OperationStatus status)
 	{
@@ -44,8 +65,31 @@ public sealed class WatcherRetryScheduler
 		return string.Equals(status.OperationId, WatcherOperations.Reconcile, StringComparison.Ordinal)
 			&& !string.Equals(status.ScopeKey, WatcherOperations.GlobalScope, StringComparison.Ordinal)
 			&& !string.IsNullOrWhiteSpace(status.ScopeKey)
-			&& !string.Equals(status.ReasonCode, WatcherOperations.ForeignFile, StringComparison.Ordinal);
+			&& !ContentReasonCodes.Contains(status.ReasonCode)
+			&& !StandingReasonCodes.Contains(status.ReasonCode);
 	}
+
+	/// <summary>
+	/// Determines whether a status is a per-path <em>content</em> status: a problem with what the file at the path says,
+	/// which only an edit (or the file's removal) resolves.
+	/// </summary>
+	public static bool IsContentStatus(OperationStatus status)
+	{
+		ArgumentNullException.ThrowIfNull(status);
+		return string.Equals(status.OperationId, WatcherOperations.Reconcile, StringComparison.Ordinal)
+			&& !string.Equals(status.ScopeKey, WatcherOperations.GlobalScope, StringComparison.Ordinal)
+			&& !string.IsNullOrWhiteSpace(status.ScopeKey)
+			&& ContentReasonCodes.Contains(status.ReasonCode);
+	}
+
+	// The reasons that stand in the user's file until they edit it: never retried on a timer.
+	private static readonly HashSet<string> ContentReasonCodes = new(StringComparer.Ordinal)
+	{
+		WatcherOperations.MarkdownInvalid,
+		WatcherOperations.PuckViolation,
+		WatcherOperations.PolicyViolation,
+		WatcherOperations.ForeignFile,
+	};
 
 	/// <summary>Computes the retry backoff for a status that has been observed <paramref name="occurrenceCount"/> times.</summary>
 	public static TimeSpan BackoffFor(int occurrenceCount)

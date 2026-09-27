@@ -12,4 +12,4 @@
 - [x] Launcher process
 - [x] Multifaceted graph edge positioning
 - [ ] Package
-- [ ] UI improvements
+- [x] UI improvements

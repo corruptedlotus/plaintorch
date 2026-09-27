@@ -50,14 +50,83 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 			? query.Where(dependency => dependency.Constraint == DependencyConstraint.ToBegin || dependency.Constraint == null)
 			: query.Where(dependency => dependency.Constraint == phase);
 
-		if (target.Kind == DependencyEndpointKind.Eventive && target.RecurrenceDate is DateOnly date)
+		if (target.Kind == DependencyEndpointKind.Eventive && target.RecurrenceId is { } slot)
 		{
-			query = target.RecurrenceTime is TimeOnly time
-				? query.Where(dependency => dependency.TargetRecurrenceDate == date && dependency.TargetRecurrenceTime == time)
-				: query.Where(dependency => dependency.TargetRecurrenceDate == date && dependency.TargetRecurrenceTime == null);
+			query = query.Where(dependency => dependency.TargetRecurrenceId == slot);
 		}
 
 		return await query.AnyAsync(cancellationToken);
+	}
+
+	/// <summary>
+	/// Stamps each dependency's <see cref="Dependency.GatesNextTransition"/>: whether, still unsatisfied, it gates the
+	/// next lifecycle transition its target has to make. This is what separates what holds an entity back right now
+	/// from what will only matter later (a finish gate on an entity that has not begun) or no longer matters (a begin
+	/// gate on one that already has). Each distinct target is resolved once.
+	/// </summary>
+	public async Task StampNextTransitionAsync(IEnumerable<Dependency> dependencies, CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(dependencies);
+		var nextByTarget = new Dictionary<EndpointRef, NextTransition>();
+		foreach (var dependency in dependencies)
+		{
+			if (dependency.Satisfied)
+			{
+				dependency.GatesNextTransition = false;
+				continue;
+			}
+
+			var target = dependency.Target;
+			if (!nextByTarget.TryGetValue(target, out var next))
+			{
+				next = await ResolveNextTransitionAsync(target, cancellationToken);
+				nextByTarget[target] = next;
+			}
+
+			dependency.GatesNextTransition = next switch
+			{
+				NextTransition.Unlock => true,
+				// The default constraint (null) is ToBegin, as in IsLockedAsync.
+				NextTransition.Begin => dependency.Constraint is null or DependencyConstraint.ToBegin,
+				NextTransition.Finish => dependency.Constraint is DependencyConstraint.ToFinish,
+				_ => false,
+			};
+		}
+	}
+
+	/// <summary>
+	/// The transition a target has to make next. A checkpoint is not a lifecycle kind: its next transition is its
+	/// unlock, which every incoming dependency gates. An endpoint with no entity behind it — an occurrence still
+	/// projected from its schedule — has not begun.
+	/// </summary>
+	private async Task<NextTransition> ResolveNextTransitionAsync(EndpointRef target, CancellationToken cancellationToken)
+	{
+		if (target.Kind == DependencyEndpointKind.Checkpoint)
+		{
+			return NextTransition.Unlock;
+		}
+
+		var entity = await DependencyEndpoints.ResolveEntityAsync(context, target, cancellationToken);
+		if (entity is null)
+		{
+			return NextTransition.Begin;
+		}
+
+		if (lifecycleResolver.HasFinished(entity))
+		{
+			return NextTransition.None;
+		}
+
+		return lifecycleResolver.HasBegun(entity) ? NextTransition.Finish : NextTransition.Begin;
+	}
+
+	/// <summary>The lifecycle transition a dependency target has to make next.</summary>
+	private enum NextTransition
+	{
+		Begin,
+		Finish,
+		Unlock,
+		None,
 	}
 
 	/// <summary>
@@ -65,7 +134,7 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 	/// (a locked whole-fate begin constraint pauses orbit generation and blocks all single events) or the
 	/// specific occurrence slot is itself locked.
 	/// </summary>
-	public async Task<bool> IsFateMaterializationBlockedAsync(string fateId, DateOnly? occurrenceDate, TimeOnly? occurrenceTime, CancellationToken cancellationToken)
+	public async Task<bool> IsFateMaterializationBlockedAsync(string fateId, DateTime? recurrenceId, CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(fateId);
 		if (await IsLockedAsync(new EndpointRef(DependencyEndpointKind.Fate, fateId), DependencyConstraint.ToBegin, cancellationToken))
@@ -73,19 +142,19 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 			return true;
 		}
 
-		if (occurrenceDate is null)
+		if (recurrenceId is null)
 		{
 			return false;
 		}
 
-		return await IsLockedAsync(new EndpointRef(DependencyEndpointKind.Eventive, fateId, occurrenceDate, occurrenceTime), DependencyConstraint.ToBegin, cancellationToken);
+		return await IsLockedAsync(new EndpointRef(DependencyEndpointKind.Eventive, fateId, recurrenceId), DependencyConstraint.ToBegin, cancellationToken);
 	}
 
 	private static string Describe(EndpointRef target)
 	{
 		return target.Kind switch
 		{
-			DependencyEndpointKind.Eventive => $"Occurrence {target.RecurrenceDate:yyyy-MM-dd} of '{target.Id}'",
+			DependencyEndpointKind.Eventive => $"Occurrence {target.RecurrenceId:yyyy-MM-dd} of '{target.Id}'",
 			_ => $"{target.Kind} '{target.Id}'",
 		};
 	}

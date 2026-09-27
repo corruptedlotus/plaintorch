@@ -29,7 +29,8 @@ public sealed class SoftAgendaEndToEndTests : VaultTestBase
 	private Task<AgendaProjection> Project(DateOnly start, DateOnly end) => Vault.WithScopeAsync(s => s.GetRequiredService<AgendaProjectionService>().ProjectAsync(start, end, Ct));
 
 	private static EndpointRef DirectiveRef(string id) => new(DependencyEndpointKind.Directive, id);
-	private static EndpointRef EventiveRef(string ownerId, DateOnly date, TimeOnly? time = null) => new(DependencyEndpointKind.Eventive, ownerId, date, time);
+	private static EndpointRef EventiveRef(string ownerId, DateTime slot) => new(DependencyEndpointKind.Eventive, ownerId, slot);
+	private static DateTime At(DateOnly day, int hour) => day.ToDateTime(new TimeOnly(hour, 0));
 
 	[Fact]
 	public async Task Referencing_a_projected_occurrence_hardens_it_into_a_row()
@@ -44,11 +45,10 @@ public sealed class SoftAgendaEndToEndTests : VaultTestBase
 		// Referencing that occurrence as a dependency endpoint must harden it (deep-interception enforcement),
 		// so the reconciler resolves a real row rather than reading an absent projection as unsatisfied.
 		var downstream = await Directive(api => api.CreateStandaloneAsync("Downstream", cancellationToken: Ct));
-		await Deps(api => api.CreateAsync(EventiveRef(fate.Id, slot, new TimeOnly(14, 0)), DirectiveRef(downstream.Id), cancellationToken: Ct));
+		await Deps(api => api.CreateAsync(EventiveRef(fate.Id, At(slot, 14)), DirectiveRef(downstream.Id), cancellationToken: Ct));
 
-		var eventive = await Vault.QueryAsync(context => context.Eventives.SingleAsync(item => item.FateId == fate.Id && item.RecurrenceDate == slot, Ct));
-		Assert.Equal(new TimeOnly(14, 0), eventive.RecurrenceTime);
-		Assert.Equal(45, eventive.Estimation);
+		var eventive = await Vault.QueryAsync(context => context.Eventives.SingleAsync(item => item.FateId == fate.Id, Ct));
+		Assert.Equal(At(slot, 14), eventive.RecurrenceId);
 
 		// The now-real, still-pending source occurrence gates the target.
 		var lockView = await Deps(api => api.GetLockAsync(downstream.Id, Ct));
@@ -68,43 +68,42 @@ public sealed class SoftAgendaEndToEndTests : VaultTestBase
 
 		// 2. Forecast forward: the agenda projects the upcoming occurrences with nothing persisted yet.
 		var forecast = await Agenda();
-		Assert.Contains(forecast.Attentives, item => item.DecreeId == decree.Id && item.RecurrenceTime == new TimeOnly(9, 0));
-		Assert.Contains(forecast.Eventives, item => item.FateId == fate.Id && item.RecurrenceTime == new TimeOnly(15, 0));
+		Assert.Contains(forecast.Attentives, item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId) == new TimeOnly(9, 0));
+		Assert.Contains(forecast.Eventives, item => item.FateId == fate.Id && TimeOnly.FromDateTime(item.RecurrenceId) == new TimeOnly(15, 0));
 		var persistedBefore = await Vault.QueryAsync(context => context.Attentives.CountAsync(Ct));
 		Assert.Equal(0, persistedBefore);
 
-		// 3a. Modify a far-future occurrence: interacting hardens the decree's day+20 attentive into a row.
-		var farAttentive = await Declarative(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, farAttentiveDay), new AttentiveUpdate(), Ct));
-		Assert.Equal(new TimeOnly(9, 0), farAttentive.RecurrenceTime);
+		// 3a. Modify a far-future occurrence: interacting hardens the decree's day+20 attentive into a row. It is
+		//     addressed by its day alone (midnight), which snaps to that day's orbit occurrence — the 09:00 slot.
+		var farAttentive = await Declarative(api => api.UpdateAttentiveAsync(new AttentiveOccurrenceRef(decree.Id, farAttentiveDay.ToDateTime(TimeOnly.MinValue)), new AttentiveUpdate(), Ct));
+		Assert.Equal(At(farAttentiveDay, 9), farAttentive.RecurrenceId);
 
 		// 3b. Reference another far-future occurrence: a dependency hardens the fate's day+25 eventive.
 		var downstream = await Directive(api => api.CreateStandaloneAsync("Downstream", cancellationToken: Ct));
-		await Deps(api => api.CreateAsync(EventiveRef(fate.Id, farEventiveDay, new TimeOnly(15, 0)), DirectiveRef(downstream.Id), cancellationToken: Ct));
+		await Deps(api => api.CreateAsync(EventiveRef(fate.Id, At(farEventiveDay, 15)), DirectiveRef(downstream.Id), cancellationToken: Ct));
 
-		// Both far-future occurrences are now durable rows.
+		// Both far-future occurrences are now durable rows, each at its exact slot.
 		var hardenedAttentiveId = await Vault.QueryAsync(context => context.Attentives
-			.Where(item => item.DecreeId == decree.Id && item.RecurrenceDate == farAttentiveDay).Select(item => item.Id).SingleAsync(Ct));
+			.Where(item => item.DecreeId == decree.Id && item.RecurrenceId == At(farAttentiveDay, 9)).Select(item => item.Id).SingleAsync(Ct));
 		Assert.True(hardenedAttentiveId > 0);
-		var hardenedEventive = await Vault.QueryAsync(context => context.Eventives.SingleAsync(item => item.FateId == fate.Id && item.RecurrenceDate == farEventiveDay, Ct));
-		Assert.Equal(new TimeOnly(15, 0), hardenedEventive.RecurrenceTime);
+		await Vault.QueryAsync(context => context.Eventives.SingleAsync(item => item.FateId == fate.Id && item.RecurrenceId == At(farEventiveDay, 15), Ct));
 
 		// 4. Advance time part-way (day+10 noon) — not far enough to reach the two manual cases. Normal
 		//    time-based hardening catches up the intervening occurrences.
 		await HardenAt(today.AddDays(10), 12);
 		var midDay = today.AddDays(5);
-		var midHardened = await Vault.QueryAsync(context => context.Attentives.CountAsync(item => item.DecreeId == decree.Id && item.RecurrenceDate == midDay, Ct));
+		var midHardened = await Vault.QueryAsync(context => context.Attentives.CountAsync(item => item.DecreeId == decree.Id && item.RecurrenceId == At(midDay, 9), Ct));
 		Assert.Equal(1, midHardened);
 		// The two manual far-future occurrences are untouched by the tick (still exactly one each).
-		var farStillOne = await Vault.QueryAsync(context => context.Attentives.CountAsync(item => item.DecreeId == decree.Id && item.RecurrenceDate == farAttentiveDay, Ct));
+		var farStillOne = await Vault.QueryAsync(context => context.Attentives.CountAsync(item => item.DecreeId == decree.Id && item.RecurrenceId == At(farAttentiveDay, 9), Ct));
 		Assert.Equal(1, farStillOne);
 
 		// 5. Change the decree's orbit (09:00 → 17:00).
 		await Declarative(api => api.UpdateDecreeAsync(decree.Id, new DecreeUpdate(Orbit: "d[h{17}]"), Ct));
 
-		// 5a. The hardened far-future attentive remains as-is (same row, same slot).
-		var survivor = await Vault.QueryAsync(context => context.Attentives.SingleAsync(item => item.DecreeId == decree.Id && item.RecurrenceDate == farAttentiveDay, Ct));
+		// 5a. The hardened far-future attentive remains as-is (same row, same 09:00 slot).
+		var survivor = await Vault.QueryAsync(context => context.Attentives.SingleAsync(item => item.DecreeId == decree.Id && item.RecurrenceId == At(farAttentiveDay, 9), Ct));
 		Assert.Equal(hardenedAttentiveId, survivor.Id);
-		Assert.Equal(new TimeOnly(9, 0), survivor.RecurrenceTime);
 
 		// 5b. The referenced fate eventive is still referenceable — the dependency still gates the target.
 		var lockView = await Deps(api => api.GetLockAsync(downstream.Id, Ct));
@@ -113,10 +112,10 @@ public sealed class SoftAgendaEndToEndTests : VaultTestBase
 		// 5c. The forecast now shows only NEW-orbit (17:00) occurrences plus the hardened old-orbit ones: every
 		//     remaining 09:00 occurrence is a hardened row (Id > 0); no un-hardened old-orbit projection survives.
 		var projection = await Project(today, today.AddDays(30));
-		Assert.Contains(projection.Attentives, item => item.DecreeId == decree.Id && item.RecurrenceTime == new TimeOnly(17, 0));
-		Assert.Contains(projection.Attentives, item => item.DecreeId == decree.Id && item.RecurrenceDate == farAttentiveDay && item.RecurrenceTime == new TimeOnly(9, 0));
+		Assert.Contains(projection.Attentives, item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId) == new TimeOnly(17, 0));
+		Assert.Contains(projection.Attentives, item => item.DecreeId == decree.Id && item.RecurrenceId == At(farAttentiveDay, 9));
 		var oldOrbitOccurrences = projection.Attentives
-			.Where(item => item.DecreeId == decree.Id && item.RecurrenceTime == new TimeOnly(9, 0))
+			.Where(item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId) == new TimeOnly(9, 0))
 			.ToList();
 		Assert.NotEmpty(oldOrbitOccurrences);
 		Assert.All(oldOrbitOccurrences, item => Assert.True(item.Id > 0));

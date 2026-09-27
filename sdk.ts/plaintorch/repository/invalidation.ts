@@ -37,7 +37,7 @@ const dependents: Partial<Record<EntityTypeName, DependentResolver>> = {
 	Decree: (decree) => [
 		key("StellarDirective", decree.directiveId),
 		key("LunarDirective", decree.directiveId),
-		...asArray(decree.attentives).map((attentive) => key("PolarisCycle", attentive.polarisCycleId))
+		...asArray(decree.executives).map((executive) => key("PolarisCycle", executive.polarisCycleId))
 	],
 	StellarDirective: (directive) => [
 		key("StellarDirective", directive.parentDirectiveId),

@@ -1,6 +1,31 @@
 import esbuild from "esbuild"
-import { cpSync, mkdirSync } from "node:fs"
+import { spawn } from "node:child_process"
+import { cpSync, mkdirSync, rmSync } from "node:fs"
 import path from "node:path"
+import { run } from "node:test"
+import electronPath from 'electron'
+
+let electronProcess = null;
+
+function startElectron() {
+	// Kill existing process if running (useful for rebuilds)
+	if (electronProcess && !electronProcess.killed) {
+		electronProcess.kill('SIGTERM');
+	}
+
+	// Spawn `electron .` using the binary provided by the `electron` NPM package
+	electronProcess = spawn(electronPath, ['.'], {
+		stdio: 'inherit',
+		env: process.env,
+	});
+
+	// Handle process exit
+	electronProcess.on('close', (code) => {
+		if (code !== null) {
+			process.exit(code);
+		}
+	});
+}
 
 // Usage: node esbuild.config.mjs --flavor standalone|client [--production]
 // Development builds watch, target the dev sub-profile, and bake the flavour in exactly like the Obsidian plugin bakes
@@ -15,6 +40,11 @@ if (flavor !== "standalone" && flavor !== "client") {
 }
 
 const outputDirectory = "dist"
+// A production build starts from an empty output: the installer packs dist/ whole, and a file an earlier build left
+// there (an old icon, a bundle since renamed) would otherwise ship with it.
+if (production) {
+	rmSync(outputDirectory, { recursive: true, force: true })
+}
 console.log("---- FOR THE GLORY OF THE TRILUNE ----")
 console.log(`PLAINTORCH desktop shell: ${flavor} flavour, ${production ? "production" : "development"} build`)
 console.log("--------------------------------------")
@@ -29,7 +59,9 @@ const copyStaticPlugin = {
 	setup(build) {
 		build.onEnd(() => {
 			mkdirSync(outputDirectory, { recursive: true })
-			cpSync("src/renderer/index.html", path.join(outputDirectory, "index.html"))
+			for (const page of ["splash.html", "status.html", "briefing.html"]) {
+				cpSync(path.join("src/renderer", page), path.join(outputDirectory, page))
+			}
 			cpSync("assets", path.join(outputDirectory, "assets"), { recursive: true })
 		})
 	}
@@ -46,6 +78,16 @@ const shared = {
 	// updates). Set here too so a build never depends on tsconfig auto-discovery.
 	tsconfigRaw: { compilerOptions: { experimentalDecorators: true, useDefineForClassFields: false } },
 	loader: { ".png": "dataurl", ".svg": "dataurl" }
+}
+
+// The renderers bundle the SIPA UI from source. Its lit runtime lives in the package's own node_modules, and the
+// renderers' own lit imports must resolve to that same copy — two lit runtimes would each register their own elements.
+const renderer = {
+	...shared,
+	platform: "browser",
+	format: "iife",
+	target: "es2022",
+	nodePaths: [path.resolve("../sipa/node_modules")]
 }
 
 const contexts = await Promise.all([
@@ -70,12 +112,19 @@ const contexts = await Promise.all([
 		external: ["electron"]
 	}),
 	esbuild.context({
-		...shared,
-		entryPoints: ["src/renderer/renderer.ts"],
-		platform: "browser",
-		format: "iife",
-		target: "es2022",
-		outfile: `${outputDirectory}/renderer.js`
+		...renderer,
+		entryPoints: ["src/renderer/splash.ts"],
+		outfile: `${outputDirectory}/splash.js`
+	}),
+	esbuild.context({
+		...renderer,
+		entryPoints: ["src/renderer/status.ts"],
+		outfile: `${outputDirectory}/status.js`
+	}),
+	esbuild.context({
+		...renderer,
+		entryPoints: ["src/renderer/briefing.ts"],
+		outfile: `${outputDirectory}/briefing.js`
 	})
 ])
 
@@ -86,4 +135,6 @@ if (production) {
 else {
 	console.warn("Initiating watcher...")
 	await Promise.all(contexts.map(context => context.watch()))
+	console.warn("Starting Electron...")
+	startElectron()
 }

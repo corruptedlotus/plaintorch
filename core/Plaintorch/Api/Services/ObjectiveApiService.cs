@@ -16,7 +16,7 @@ namespace Pleiades.Plaintorch.Api.Services;
 public sealed class ObjectiveApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
-	PlaintorchMarkdownStorageService markdownStorageService,
+	VaultWriteQueue writeQueue,
 	VaultTemporalDataService temporalDataService,
 	DependencyGateService dependencyGate,
 	VaultEntityLifecycleService lifecycleService,
@@ -104,9 +104,10 @@ public sealed class ObjectiveApiService(
 			objective.Title = update.Title;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.DirectiveId))
+		if (update.DirectiveId.IsSet)
 		{
-			objective.DirectiveId = update.DirectiveId;
+			// A present directive is applied: a value moves the objective under it, an explicit null makes it standalone.
+			objective.DirectiveId = string.IsNullOrWhiteSpace(update.DirectiveId.Value) ? null : update.DirectiveId.Value;
 		}
 
 		if (!string.IsNullOrWhiteSpace(update.OnrushSprintId))
@@ -147,8 +148,7 @@ public sealed class ObjectiveApiService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveObjectiveAsync(objective, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(objective, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.update", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}
@@ -167,8 +167,7 @@ public sealed class ObjectiveApiService(
 		var previous = Clone(objective);
 
 		objective.Status = shift.Status;
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveObjectiveAsync(objective, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(objective, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.workflow-shift", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}
@@ -190,8 +189,7 @@ public sealed class ObjectiveApiService(
 
 		objective.OnrushSprintId = onrushSprintId;
 		objective.Status = IsAutoPromotableToOnrush(objective.Status) ? ObjectiveStatus.Onrush : objective.Status;
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.add-to-onrush", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}
@@ -204,8 +202,7 @@ public sealed class ObjectiveApiService(
 			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
 
 		objective.OnrushSprintId = null;
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.remove-from-onrush", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}
@@ -227,20 +224,16 @@ public sealed class ObjectiveApiService(
 	public async Task DeleteAsync(string objectiveId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(objectiveId);
-		var objective = await context.Objectives
-			.Include(item => item.Executives)
-			.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
+		// Its executives are released by the save-time state rule: kept, reference cleared, in ended Polaris cycles, and
+		// removed from the active and planned ones.
+		var objective = await context.Objectives.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
 			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
 
-		if (objective.Executives.Count > 0)
-		{
-			throw new InvalidOperationException("Objective cannot be deleted while it still has executive records.");
-		}
-
-		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(objective, "api-delete", Environment.UserName, cancellationToken);
+		var graveyardEntry = temporalDataService.StageEntityArchive(objective, "api-delete", Environment.UserName);
 		context.Objectives.Remove(objective);
+		await writeQueue.RecordRemoveAsync(objective, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.DeleteObjectiveAsync(objective, cancellationToken);
+		await writeQueue.DrainRemoveAsync(objective, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"objective.delete",
@@ -268,8 +261,7 @@ public sealed class ObjectiveApiService(
 		};
 
 		context.Objectives.Add(objective);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.create", subject: objective, cancellationToken: cancellationToken);
 		return objective;
 	}

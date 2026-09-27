@@ -14,6 +14,7 @@ import { PlaintorchActivitiesSdk } from "./activities/activitiesSdk"
 import { PlaintorchLoreSdk } from "./lore/loreSdk"
 import { PlaintorchDependenciesSdk } from "./dependencies/dependenciesSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
+import { PlaintorchPreferencesSdk } from "./preferences/preferencesSdk"
 import { PlaintorchMediaSdk } from "./media/mediaSdk"
 import { createAbsorbingReviver, EntityStore, PlaintorchRepositories, type AbsorptionContext } from "./repository"
 
@@ -30,9 +31,12 @@ export interface PlaintorchCoreClientOptions {
 
 const defaultLoopbackPort = 43118
 const defaultHost = "127.0.0.1"
+/** Response header the core sets to `false` when a write's note is still draining past the note-queue timeout (PEP110). */
+const noteReadyHeader = "X-Note-Ready"
 export class PlaintorchCoreClient {
 	private readonly baseUrl: string
 	private readonly transports: PlaintorchCoreTransport[]
+	private lastWriteNotePendingFlag = false
 	/**
 	 * Canonical instances of every entity this client has seen. Populated by every response the client
 	 * reads, so call sites that have not moved onto repositories still contribute to it.
@@ -54,6 +58,8 @@ export class PlaintorchCoreClient {
 	public readonly activities: PlaintorchActivitiesSdk
 	public readonly lore: PlaintorchLoreSdk
 	public readonly dependencies: PlaintorchDependenciesSdk
+	/** Vault-bound user preferences (PEP116). */
+	public readonly preferences: PlaintorchPreferencesSdk
 	public constructor(options: PlaintorchCoreClientOptions = {}) {
 		const host = options.host ?? defaultHost
 		const loopbackPort = options.loopbackPort ?? defaultLoopbackPort
@@ -76,12 +82,23 @@ export class PlaintorchCoreClient {
 		this.activities = new PlaintorchActivitiesSdk(this)
 		this.lore = new PlaintorchLoreSdk(this)
 		this.dependencies = new PlaintorchDependenciesSdk(this)
+		this.preferences = new PlaintorchPreferencesSdk(this)
 		// Constructed last: the repositories delegate to the SDKs above.
 		this.repos = new PlaintorchRepositories(this, { resolutionFreshnessMs: options.cacheTtlMs })
 	}
 
 	public icon(icon: string): string {
 		return `${this.baseUrl}/assets/icons/${encodeURIComponent(icon)}.svg`
+	}
+
+	/**
+	 * Whether the most recent write's note did not land within the core's note-queue timeout and is finishing in the
+	 * background (PEP110). Read it immediately after awaiting a mutation — before issuing another write — to decide
+	 * whether to wait for the note (poll a resolution) rather than open a file that may not be on disk yet. Reads
+	 * (GETs) leave it untouched, so re-resolving between the write and this read is safe.
+	 */
+	public get lastWriteNotePending(): boolean {
+		return this.lastWriteNotePendingFlag
 	}
 
 	/**
@@ -185,7 +202,15 @@ export class PlaintorchCoreClient {
 		for (const transport of this.transports) {
 			const response = await transport.send(request)
 			if (response?.ok) {
-				Promise.resolve().then(async () => console.log('PLAINTORCH called', request.path, JSON.parse(await response.text())))
+				// A write records whether its note is still draining; reads leave the flag for the write before them.
+				if (request.method !== "GET") {
+					this.lastWriteNotePendingFlag = response.header(noteReadyHeader) === "false"
+				}
+
+				Promise.resolve().then(async () => {
+					const payload = await response.text()
+					console.debug('PLAINTORCH called', request.path, payload ? JSON.parse(payload) : undefined)
+				}).catch(() => { })
 				return response
 			}
 		}

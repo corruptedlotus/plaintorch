@@ -19,6 +19,9 @@ namespace Pleiades.Plaintorch.Api.Changes;
 /// </remarks>
 public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broker) : SaveChangesInterceptor
 {
+	/// <summary>The type a user-preference write is announced under, keyed by the preference key (PEP116).</summary>
+	public const string UserPreferenceChangeType = "UserPreference";
+
 	private readonly ConcurrentDictionary<Guid, List<EntityChange>> _pendingByContextId = new();
 
 	/// <inheritdoc />
@@ -98,6 +101,16 @@ public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broke
 				// tracked type, which still carries: any announcement revalidates the observed listings.
 				Add(changes, seen, dependency.Source.Kind.ToString(), dependency.Source.Id, EntityChangeOperation.Modified, critical);
 				Add(changes, seen, dependency.Target.Kind.ToString(), dependency.Target.Id, EntityChangeOperation.Modified, critical);
+				continue;
+			}
+
+			if (entry.Entity is UserPreferenceRecord preference)
+			{
+				// A preference shapes how a client draws (the preferred calendar an orbit is read on) but has neither
+				// an identity a client tracks nor an owner to walk to, so it is announced under its own type, keyed by
+				// its preference key. A client matches it to no entity; the announcement only revalidates the observed
+				// records, the preference listing among them.
+				Add(changes, seen, UserPreferenceChangeType, preference.Key, operation.Value, critical);
 				continue;
 			}
 

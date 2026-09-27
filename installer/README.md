@@ -9,7 +9,9 @@ node installer/build.mjs --flavor client                # no core inside
 ```
 
 Outputs land in `bin/installer/<flavor>/`. The standalone flavour first runs `dotnet publish` (self-contained, for the
-target runtime identifier) into `standalone/core-dist`, which electron-builder packs as `resources/core`.
+target runtime identifier) into `standalone/core-dist`, which electron-builder packs as `resources/core`. The folder
+is git-ignored and stays after the build; a development shell runs it only when the core has no build of its own, and
+warns when it does (see `standalone/README.md`).
 
 ## Updates
 
@@ -23,5 +25,6 @@ the `latest*.yml` manifest electron-builder emits beside it. winget later reuses
 - Sign Windows builds; SmartScreen warns on unsigned installers and electron-updater refuses an update whose signature
   differs from the running app's.
 - Sign and notarize macOS builds; the updater does not work without it.
-- Replace the placeholder icons under `standalone/assets/`.
+- The icons are the PLAINTORCH marks: `branding/plaintorch.ico` and the NSIS art are generated from
+  `standalone/assets` by `npm run make-icons` (in `standalone/`); re-run it after changing a mark.
 - Point `publish.url` at the real update host.

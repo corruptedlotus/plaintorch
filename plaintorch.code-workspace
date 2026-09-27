@@ -5,28 +5,32 @@
 			"name": "Daemon Core"
 		},
 		{
-			"path": "cli",
-			"name": "CLI"
+			"path": "core.tests",
+			"name": "Daemon Core: xUnit"
+		},
+		{
+			"name": "Commandline Interface",
+			"path": "./cli"
+		},
+		{
+			"path": "sipa",
+			"name": "SIPA Component Library"
 		},
 		{
 			"path": "obsidian",
 			"name": "Obsidian Plugin"
 		},
 		{
-			"name": "SDK: TypeScript (Node)",
-			"path": "sdk.ts"
-		},
-		{
 			"path": "standalone",
-			"name": "Desktop Shell (Electron)"
+			"name": "Standalone (Electron)"
 		},
 		{
 			"path": "installer",
-			"name": "Installer"
+			"name": "Installer (Electron)"
 		},
 		{
-			"path": "core.tests",
-			"name": "Unit Tests: Core"
+			"name": "SDK: TypeScript",
+			"path": "sdk.ts"
 		},
 		{
 			"path": "_documents",

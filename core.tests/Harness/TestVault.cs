@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch;
@@ -153,7 +154,12 @@ public sealed class TestVault : IAsyncLifetime
 	public Task<VaultSyncCandidate?> InspectAsync(string absolutePath)
 		=> WithScopeAsync(services => services.GetRequiredService<VaultMarkdownDiscoveryService>().InspectPathAsync(absolutePath, "test"));
 
-	/// <summary>Inspects a path and executes its suggested reconciliation action, in one scope (as a watcher event would).</summary>
+	/// <summary>
+	/// Inspects a path and executes its suggested reconciliation action, in one scope (as a watcher event would). A change
+	/// that may have withdrawn an identity (<see cref="VaultWatcherReconciler.MayWithdrawIdentity"/>) also executes the
+	/// deletion of every note found gone by identity, as the watcher's drain does; the candidate returned is the one
+	/// standing at the path.
+	/// </summary>
 	public Task<VaultSyncCandidate?> ReconcileAsync(string absolutePath)
 	{
 		return WithScopeAsync(async services =>
@@ -164,6 +170,18 @@ public sealed class TestVault : IAsyncLifetime
 			if (candidate is not null)
 			{
 				await sync.ExecuteAsync(candidate, "test");
+			}
+
+			if (VaultWatcherReconciler.MayWithdrawIdentity(absolutePath))
+			{
+				foreach (var vanished in await discovery.FindVanishedNoteCandidatesAsync())
+				{
+					await sync.ExecuteAsync(vanished, "test");
+					if (string.Equals(vanished.AbsolutePath, Path.GetFullPath(absolutePath), StringComparison.OrdinalIgnoreCase))
+					{
+						candidate = vanished;
+					}
+				}
 			}
 
 			return candidate;
@@ -196,7 +214,27 @@ public sealed class TestVault : IAsyncLifetime
 	/// exactly as a live filesystem event does. Use this (not <see cref="ReconcileAsync"/>) to assert issue emission.
 	/// </summary>
 	public Task ReconcileWithIssuesAsync(string absolutePath)
-		=> WithScopeAsync(services => services.GetRequiredService<VaultWatcherReconciler>().ReconcilePathAsync(absolutePath, "test-runtime"));
+		=> ReconcileEventsWithIssuesAsync([absolutePath]);
+
+	/// <summary>
+	/// Reconciles a batch of changed paths the way the watcher's drain does (<c>VaultWatcherService.DrainPendingAsync</c>):
+	/// each path in its own scope through the real <see cref="VaultWatcherReconciler"/>, then — when any of them may have
+	/// withdrawn an identity — one vanished-note check for the batch. This is the runtime leg of the parity tests.
+	/// </summary>
+	public async Task ReconcileEventsWithIssuesAsync(IEnumerable<string> absolutePaths)
+	{
+		var vanishedNoteCheckDue = false;
+		foreach (var path in absolutePaths)
+		{
+			vanishedNoteCheckDue |= VaultWatcherReconciler.MayWithdrawIdentity(path);
+			await WithScopeAsync(services => services.GetRequiredService<VaultWatcherReconciler>().ReconcilePathAsync(path, "test-runtime"));
+		}
+
+		if (vanishedNoteCheckDue)
+		{
+			await WithScopeAsync(services => services.GetRequiredService<VaultWatcherReconciler>().ReconcileVanishedNotesAsync("test-runtime"));
+		}
+	}
 
 	/// <summary>
 	/// Runs the startup sweep: a full discovery scan, then executes every candidate's action in the same priority
@@ -237,14 +275,27 @@ public sealed class TestVault : IAsyncLifetime
 	/// <inheritdoc />
 	public async ValueTask DisposeAsync()
 	{
+		string? connectionString = null;
 		if (_app is not null)
 		{
 			_app.Services.GetRequiredService<PlaintorchUserLayout>().Cleanup();
+			using (var scope = _app.Services.CreateScope())
+			{
+				connectionString = scope.ServiceProvider.GetRequiredService<PlainfraContext>().Database.GetConnectionString();
+			}
+
 			await _app.DisposeAsync();
 		}
 
-		// Release SQLite file handles before deleting the temp directory (SQLite/Windows).
-		SqliteConnection.ClearAllPools();
+		// Release only THIS vault's SQLite handles before deleting its temp directory (SQLite/Windows). Clearing the whole
+		// process-wide pool (ClearAllPools) races other test collections that are opening their own connections in parallel
+		// — surfacing as a spurious SqliteConnection.Open() failure elsewhere — so clear just this connection's pool.
+		if (connectionString is not null)
+		{
+			using var connection = new SqliteConnection(connectionString);
+			SqliteConnection.ClearPool(connection);
+		}
+
 		TryDeleteDirectory(VaultRoot);
 	}
 

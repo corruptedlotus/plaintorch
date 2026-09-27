@@ -38,6 +38,7 @@ public sealed class VaultBootstrapper(
 	/// <summary>
 	/// Ensures required directories and database schema are present.
 	/// </summary>
+	/// <exception cref="VaultDatabaseAheadOfCoreException">The vault's database was migrated by a newer core.</exception>
 	public async Task InitializeAsync(CancellationToken cancellationToken = default)
 	{
 		foreach (var directory in layout.GetRequiredDirectories())

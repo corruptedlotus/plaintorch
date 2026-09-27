@@ -67,16 +67,26 @@ statuses; resolving one leaves the other. Re-failures of the same key bump an oc
 newest detail without creating duplicates.
 
 ### Severity and health
-One graded scale, suspension included:
+One graded scale (regraded 2026-09-26, see below; the original scale was `Info < Warning < Suspended < Error <
+Critical`):
 
 ```
-OperationSeverity: Info < Warning < Suspended < Error < Critical
+OperationSeverity: Info < Warning < Error < Critical < Fatal
 ```
 
-Subsystem health rolls up from active statuses: any `Error`/`Critical` → **Issues**; else any `Suspended` →
-**Suspended**; else **Ok**. A subsystem may also set a lifecycle **override** (e.g. the watcher forcing `Offline`
-when it stops, or `Suspended` when cancelled) that wins over the derived rollup — preserving today's
-`Ok/Issues/Standby/Offline` behaviour.
+- **Info** — no consequence, no action needed; used very rarely. Never changes health.
+- **Warning** — no breaking consequence, but best resolved to prevent further conflict (a locked file, content the
+  subsystem already enforced).
+- **Error** — truly invalid or illegal content the user must resolve; unresolved, an entity may not sync or may corrupt.
+- **Critical** — no longer about validity: a technical failure physically preventing the subsystem from doing part of
+  its job (a file it may not read, a sync that failed to apply, a root it cannot watch).
+- **Fatal** — the subsystem cannot run or do its job at all; the watcher sleeps (the "degraded" modes are sleeps too)
+  and retries. A fatal status can never be dismissed.
+
+Subsystem health rolls up from the worst live status: **Fatal → Standby**, **Critical → Critical**, **Error/Warning →
+Issues**, **Info/none → Ok** (wire: `ok/issues/critical/standby`, with `offline` left to clients that cannot reach the
+core). A subsystem may also set a lifecycle **override** that wins over the derived rollup: the watcher forces
+`Standby` while asleep and while it has no vault to serve.
 
 ### Durability
 Two stores, per the decision below:
@@ -94,6 +104,42 @@ Two stores, per the decision below:
 | 3 | **Both live and durable.** In-memory registry for current state + rollup; durable `OperationStatusEvent` log of transitions for cross-restart history. |
 | 4 | **Dedup key = operation × scope × reason.** Distinct reasons on one scope are distinct statuses; this is why a report must carry the full evaluated check-set for auto-resolution to be exact. |
 | 5 | Name: **operation status** (not "checkpoint" — `Checkpoint` is the PEP102 dependency entity). |
+| 6 | **Regraded 2026-09-26, superseding #2.** `Suspended` is gone — its only real producer was a locked file (now a warning) — and the scale is `Info/Warning/Error/Critical/Fatal`, one severity per reason wherever it is raised. Health gains `Critical`; `Standby` is fatal-only (and the watcher's sleep/idle override). |
+
+## Regrading (2026-09-26)
+The first scale graded by *where* an issue was noticed (a locked file was a warning when read and "suspended" when
+written; a forbidden file a warning when read and an error when written), used `Critical` and `Info` nowhere, and
+showed a sleeping watcher as `issues`. It is regraded by *what the issue means* for the watcher:
+
+| Reason (operation) | Severity | Why | What the watcher does |
+|---|---|---|---|
+| `scan-failed` (startup-scan) | **fatal** | without its sweep it cannot trust what it observes (a broken database fails every reconcile alike) | sleeps on standby, retries the span on a 5 s → 60 s backoff |
+| `vault-inaccessible` (vault-access) | **fatal** | the vault or an entity root cannot be reached | sleeps on standby, re-probes every 5 s |
+| `roots-unresolved` (root, `*`) | **fatal** | no roots, no live observation at all | sleeps on standby, retries the span on the backoff |
+| `fatal` (process) | **fatal** | a session fell through every guard | stays down until the next activation |
+| `tick-failed` (drain-tick) | critical | a drain tick threw | carries on; clears on the next good tick |
+| `discovery-failed` / `sync-failed` (reconcile) | critical | a file could not be inspected / a change could not be applied | retried per path, 2 s → 60 s |
+| `permission-denied` (reconcile) | critical | the file may not be read or written | retried per path |
+| `root-init-failed` (root) | critical | one root is not observed | the other roots carry on |
+| `root-error` (root) | critical | an observer errored (events may be lost) | an overflow re-sweeps the vault, then resolves; any other error killed the observer, so the span restarts with a sweep and fresh observers (backing off if it keeps dying) |
+| `markdown-invalid` / `puck-violation` / `policy-violation` (reconcile) | error, or **warning** when the watcher enforced it (rewrote or purged the file) | invalid content left in the user's file | stands until the user's edit re-inspects the file (never retried on a timer) |
+| `foreign-file` (reconcile) | error | an identity the vault does not recognise, left in place | stands until the file is gone or managed, or is dismissed |
+| `duplicate-identity` (identity) | error | two files assert one identity | stands until one file asserts it |
+| `file-in-use` (reconcile) | warning | locked by another process | retried per path until it frees up |
+| `relocation-failed` (relocation) | warning | the move fast path threw | logged only: both paths are re-inspected the plain way, which reports what stands |
+| unknown reason | critical | unclassified means technical | — |
+
+Alongside it:
+- **Content errors persist.** A conflict's "sync" only records the conflict, and used to clear the content reason the
+  moment it was raised; a successful sync now clears content reasons only when it enforced them (a rewrite or a
+  purge). Content reasons are not retried on a timer — the user's edit re-inspects the file.
+- **Sleep is standby.** The watcher forces `Standby` while asleep; "degraded startup mode" (live observation without
+  a sweep) is gone — a failed sweep, like unresolvable roots, is fatal and the watcher sleeps and retries the span.
+- **Sessions start clean.** The live status set is reset when a vault session starts and ends, so a fatal status of
+  one vault can never hold another on standby.
+- **Durable rows.** `OperationStatusEvent` severities are stored by name; a legacy `Suspended` row reads back as a
+  warning (no migration).
+- `IsCritical` / `CriticalIssueCount` on the wire now mean *critical or fatal*.
 
 ## Relationship to REFACTOR Alpha
 The status system's *quality* depends on operations returning structured outcomes — which is what REFACTOR Alpha
@@ -189,5 +235,6 @@ is building. None of REFACTOR Alpha *blocks* the core (it is new, additive code)
 ## Open questions / future
 - **Retention** of the durable log (age/count/milestone-based) — deferred, like the graveyard/audit retention.
 - **Batched vs per-transition** persistence — Phase A buffers and drains; batching thresholds can tune later.
-- **Suspension source** — whether "suspended" statuses should carry an expected-retry hint for the client.
+- **Retry hints** — whether a retried status (a locked file, a sleeping watcher) should carry its next retry for the client.
+- **Database health** — the watcher has no probe of its own database; a broken one surfaces as a fatal `scan-failed`.
 - **Cross-subsystem rollup** — a global health surface once a second subsystem (migrations) adopts the core.

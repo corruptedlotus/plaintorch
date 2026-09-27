@@ -1,4 +1,5 @@
 import { model } from "@a11d/api-dotnet"
+import type { Due } from "../objectives/models"
 
 /** Which source lifecycle event satisfies a dependency (PEP101). */
 export enum DependencyTrigger {
@@ -28,10 +29,8 @@ export enum DependencyEndpointKind {
 export interface EndpointRef {
 	kind: DependencyEndpointKind
 	id: string
-	/** Original occurrence slot date (RECURRENCE-ID), for an eventive endpoint. */
-	recurrenceDate?: string | undefined
-	/** Original occurrence slot time, for a timed eventive endpoint. */
-	recurrenceTime?: string | undefined
+	/** The occurrence's original slot moment (RECURRENCE-ID, a civil ISO datetime), for an eventive endpoint. */
+	recurrenceId?: string | undefined
 }
 
 /** A directed blocking edge: the source (prerequisite) blocks the target (dependant) (PEP101). */
@@ -40,24 +39,30 @@ export class Dependency {
 	id!: number
 	sourceKind!: DependencyEndpointKind
 	sourceId!: string
-	sourceRecurrenceDate: string | undefined
-	sourceRecurrenceTime: string | undefined
+	/** The source occurrence's slot (RECURRENCE-ID) for an eventive source; undefined otherwise. */
+	sourceRecurrenceId: string | undefined
 	targetKind!: DependencyEndpointKind
 	targetId!: string
-	targetRecurrenceDate: string | undefined
-	targetRecurrenceTime: string | undefined
+	/** The target occurrence's slot (RECURRENCE-ID) for an eventive target; undefined otherwise. */
+	targetRecurrenceId: string | undefined
 	/** Source-side trigger; undefined resolves to OnFinish (empty for checkpoint sources). */
 	trigger: DependencyTrigger | undefined
 	/** Target-side constraint; undefined resolves to ToBegin (empty for checkpoint targets). */
 	constraint: DependencyConstraint | undefined
 	satisfied: boolean = false
+	/**
+	 * Server-computed: whether this dependency, while unsatisfied, gates the next lifecycle transition its target has to
+	 * make — its begin while it has not begun, its finish once begun, a checkpoint's unlock. False once satisfied, and
+	 * for a gate on a transition the target has already made or is not yet up to. Read-only.
+	 */
+	gatesNextTransition: boolean = false
 
 	get source(): EndpointRef {
-		return { kind: this.sourceKind, id: this.sourceId, recurrenceDate: this.sourceRecurrenceDate, recurrenceTime: this.sourceRecurrenceTime }
+		return { kind: this.sourceKind, id: this.sourceId, recurrenceId: this.sourceRecurrenceId }
 	}
 
 	get target(): EndpointRef {
-		return { kind: this.targetKind, id: this.targetId, recurrenceDate: this.targetRecurrenceDate, recurrenceTime: this.targetRecurrenceTime }
+		return { kind: this.targetKind, id: this.targetId, recurrenceId: this.targetRecurrenceId }
 	}
 }
 
@@ -69,6 +74,8 @@ export class Dependency {
 export class Checkpoint {
 	id!: string
 	title!: string
+	/** Optional deadline moment (PEP111). When set, the Celestron toll is suppressed until the due passes. */
+	due: Due | undefined
 	/** Optional Celestron toll that must be paid before unlock; undefined means no toll. */
 	celestronToll: number | undefined
 	tollPaid: boolean = false
@@ -103,8 +110,8 @@ export interface EndpointHit {
 export interface DependencyEndpointRequest {
 	kind: DependencyEndpointKind
 	id: string
-	recurrenceDate?: string | undefined
-	recurrenceTime?: string | undefined
+	/** The occurrence's original slot moment (RECURRENCE-ID), for an eventive endpoint. */
+	recurrenceId?: string | undefined
 }
 
 /** Payload to create a dependency edge (source blocks target) (PEP101). */
@@ -127,6 +134,8 @@ export interface CheckpointUpdate {
 	celestronToll?: number | null | undefined
 	/** Optional external condition. Omit to keep, true/false to set, `null` to clear (no condition). */
 	externalCondition?: boolean | null | undefined
+	/** Optional due moment (PEP111); its presence suppresses the toll until it passes. Omit to keep, a value to set, `null` to clear. */
+	due?: Due | null | undefined
 }
 
 /** Payload to create a checkpoint (PEP101). */

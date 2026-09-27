@@ -54,7 +54,7 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		Assert.Equal(0, persisted);
 
 		var agenda = await AgendaAsync();
-		Assert.Contains(agenda.Attentives, item => item.DecreeId == decree.Id && item.Date == today);
+		Assert.Contains(agenda.Attentives, item => item.DecreeId == decree.Id && item.Epoch.Date == today);
 	}
 
 	[Fact]
@@ -71,7 +71,7 @@ public sealed class RollingMaterializationTests : VaultTestBase
 			.UpdateDecreeAsync(decree.Id, new DecreeUpdate(Orbit: "d"), Ct));
 
 		var after = await AgendaAsync();
-		Assert.Contains(after.Attentives, item => item.DecreeId == decree.Id && item.Date == today);
+		Assert.Contains(after.Attentives, item => item.DecreeId == decree.Id && item.Epoch.Date == today);
 	}
 
 	[Fact]
@@ -86,7 +86,7 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		await HardenNowAsync();
 
 		var count = await Vault.QueryAsync(context => context.Attentives
-			.CountAsync(item => item.DecreeId == decree.Id && item.RecurrenceDate == today, Ct));
+			.CountAsync(item => item.DecreeId == decree.Id && item.RecurrenceId == today.ToDateTime(TimeOnly.MinValue), Ct));
 		Assert.Equal(1, count);
 	}
 
@@ -119,7 +119,7 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		// No pass: the horizon is a projection, not pre-filled rows.
 		var agenda = await AgendaAsync();
 		Assert.NotEmpty(agenda.Eventives);
-		Assert.All(agenda.Eventives, eventive => Assert.True(eventive.Date >= today && eventive.Date <= today.AddDays(7)));
+		Assert.All(agenda.Eventives, eventive => Assert.True(eventive.Epoch.Date >= today && eventive.Epoch.Date <= today.AddDays(7)));
 
 		var persisted = await Vault.QueryAsync(context => context.Eventives.CountAsync(Ct));
 		Assert.Equal(0, persisted);
@@ -139,8 +139,8 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		await HardenNowAsync();
 
 		var eventive = await Vault.QueryAsync(context => context.Eventives
-			.SingleAsync(item => item.FateId == fate.Id && item.RecurrenceDate == pastDay, Ct));
-		Assert.Equal(30, eventive.Estimation);
+			.SingleAsync(item => item.FateId == fate.Id, Ct));
+		Assert.Equal(pastDay.ToDateTime(new TimeOnly(9, 0)), eventive.RecurrenceId);
 	}
 
 	[Fact]
@@ -151,13 +151,13 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		var objective = await Vault.WithScopeAsync(s => s.GetRequiredService<IObjectiveApi>()
 			.CreateStandaloneAsync("Overdue deliverable", cancellationToken: Ct));
 		await Vault.WithScopeAsync(s => s.GetRequiredService<IObjectiveApi>()
-			.UpdateAsync(objective.Id, new ObjectiveUpdate(Due: pastDue), Ct));
+			.UpdateAsync(objective.Id, new ObjectiveUpdate(Due: Due.On(pastDue)), Ct));
 
 		await HardenNowAsync();
 
 		var eventive = await Vault.QueryAsync(context => context.Eventives
-			.SingleAsync(item => item.ObjectiveId == objective.Id && item.RecurrenceDate == pastDue, Ct));
-		Assert.Equal(pastDue, eventive.Date);
+			.SingleAsync(item => item.ObjectiveId == objective.Id && item.RecurrenceId == pastDue.ToDateTime(TimeOnly.MinValue), Ct));
+		Assert.Equal(pastDue, eventive.Epoch.Date);
 	}
 
 	[Fact]
@@ -181,9 +181,8 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		Assert.Equal(1, createdLate);
 
 		var attentive = await Vault.QueryAsync(context => context.Attentives
-			.SingleAsync(item => item.DecreeId == decree.Id && item.RecurrenceDate == today, Ct));
-		Assert.Equal(new TimeOnly(9, 0), attentive.RecurrenceTime);
-		Assert.Null(attentive.PolarisCycleId);
+			.SingleAsync(item => item.DecreeId == decree.Id, Ct));
+		Assert.Equal(today.ToDateTime(new TimeOnly(9, 0)), attentive.RecurrenceId);
 	}
 
 	[Fact]
@@ -200,7 +199,7 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		Assert.Equal(0, persisted);
 
 		var agenda = await AgendaAsync();
-		Assert.Contains(agenda.Attentives, item => item.DecreeId == decree.Id && item.RecurrenceTime == new TimeOnly(21, 0));
+		Assert.Contains(agenda.Attentives, item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId) == new TimeOnly(21, 0));
 	}
 
 	[Fact]
@@ -219,6 +218,6 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		Assert.Equal(0, persisted);
 
 		var agenda = await AgendaAsync();
-		Assert.Contains(agenda.Attentives, item => item.DecreeId == decree.Id && item.Date == today);
+		Assert.Contains(agenda.Attentives, item => item.DecreeId == decree.Id && item.Epoch.Date == today);
 	}
 }

@@ -17,6 +17,7 @@ export type {
 	MediaReference,
 	MediaReferenceType,
 	DirectiveIconRequest,
-	DirectiveBannerRequest
+	DirectiveBannerRequest,
+	DirectiveAvailabilityRequest
 } from "./models"
 export type DirectiveSummary = import("./models").Directive

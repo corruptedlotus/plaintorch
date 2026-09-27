@@ -1,11 +1,10 @@
 {
 	"name": "@pleiades/plaintorch-obsidian",
-	"version": "0.2c",
+	"version": "0.2.4",
 	"private": true,
 	"description": "Obsidian plugin scaffold for PLAINTORCH entity rendering and briefing surfaces.",
 	"type": "module",
 	"scripts": {
-		"index-assets": "node ./assets/indexer.mjs",
 		"build": "node esbuild.config.mjs production",
 		"dev": "node esbuild.config.mjs"
 	},
@@ -19,12 +18,8 @@
 		"typescript": "^5.9.3"
 	},
 	"dependencies": {
-		"@3mo/popover": "^0.11.1",
-		"@3mo/tooltip": "^0.11.1",
-		"@a11d/lit": "^0.11.1",
-		"@dagrejs/dagre": "^1.1.4",
 		"@js-temporal/polyfill": "^0.5.1",
-		"@open-draft/deferred-promise": "^3.0.0",
-		"@pleiades/sdk": "file:../sdk.ts"
+		"@pleiades/sdk": "file:../sdk.ts",
+		"@pleiades/sipa": "file:../sipa"
 	}
 }

@@ -53,6 +53,17 @@ export class Directive {
 	iconMedia?: MediaReference | undefined
 	/** Resolved companion of {@link banner} (PEP105). */
 	bannerMedia?: MediaReference | undefined
+	/**
+	 * The {@link TimeframeInclusion.Availability Availability}-mode timeframe this directive is available in (PEP100
+	 * patch 2). Executives created under this directive or any descendant are auto-assigned to it; the nearest
+	 * directive with an availability wins, and it takes precedence over college auto-inclusion. Database-only.
+	 */
+	availabilityTimeframeId: number | undefined
+	/**
+	 * Resolved companion of {@link availabilityTimeframeId} (PEP100 patch 2). The core does not serialize it today,
+	 * so surfaces resolve the timeframe by id; the nav/nav-Id pairing keeps absorption's FK-coherence rule in force.
+	 */
+	availabilityTimeframe?: Timeframe | undefined
 
 	/** The runtime kind, keyed off the `@type` the core stamps (the same discriminator api-dotnet reconstructs by). */
 	get isLunar() {
@@ -67,12 +78,20 @@ export class Directive {
 model('LunarDirective')(Directive)
 
 /**
- * How a timeframe auto-includes Polaris workitems (PEP100 patch). Numeric to match the wire form. College is the
- * only criterion for now; the enum is the extension point for further ones.
+ * How a timeframe auto-includes Polaris workitems (PEP100 patch, patch 2). Numeric to match the wire form and the
+ * C# ordinals, so members are only ever appended.
  */
 export enum TimeframeInclusion {
+	/** Never auto-included; the timeframe is only ever picked by hand. */
 	None = 0,
-	College = 1
+	/** Auto-includes workitems whose incentive belongs to one of {@link Timeframe.autoInclusionColleges}. */
+	College = 1,
+	/**
+	 * Auto-includes workitems through directive availability (PEP100 patch 2): a directive names this timeframe as
+	 * its availability, and executives under it or its descendants are assigned to it ahead of any college match.
+	 * The parameter lives on the directive, not on the timeframe.
+	 */
+	Availability = 2
 }
 
 /** Directive-level definition of a portion of the day (PEP100). Belongs to a lunar directive; purely semantic. */
@@ -91,6 +110,11 @@ export interface Timeframe {
 	autoInclusion: TimeframeInclusion
 	/** The colleges driving college-based auto-inclusion (PEP100 patch). */
 	autoInclusionColleges: ObjectiveCollege[]
+	/**
+	 * Whether this timeframe, while active, suppresses every non-exclusive active timeframe (PEP100 patch 2). Several
+	 * exclusive timeframes active at once are all kept. Defaults to false.
+	 */
+	exclusive: boolean
 }
 
 /** A timeframe paired with a summary of the lunar directive that owns it (global timeframe listing, PEP100). */
@@ -112,6 +136,8 @@ export interface DirectiveTimeframeRecord {
 	autoInclusion: TimeframeInclusion
 	/** The colleges driving college-based auto-inclusion (PEP100 patch). */
 	autoInclusionColleges: ObjectiveCollege[]
+	/** Whether this timeframe, while active, suppresses every non-exclusive active timeframe (PEP100 patch 2). */
+	exclusive: boolean
 }
 
 export interface CreateDirectiveRequest {
@@ -129,7 +155,8 @@ export interface InitDirectiveRequest {
 export interface StellarDirectiveUpdate {
 	title?: string | undefined
 	codename?: string | null | undefined
-	parentDirectiveId?: string | undefined
+	/** The owning directive. Omit to keep, a value to move under it, `null` to lift to the top level. */
+	parentDirectiveId?: string | null | undefined
 	tags?: string[] | undefined
 	due?: string | null | undefined
 	startDate?: string | null | undefined
@@ -140,7 +167,8 @@ export interface StellarDirectiveUpdate {
 export interface LunarDirectiveUpdate {
 	title?: string | undefined
 	codename?: string | null | undefined
-	parentDirectiveId?: string | undefined
+	/** The owning directive. Omit to keep, a value to move under it, `null` to lift to the top level. */
+	parentDirectiveId?: string | null | undefined
 	tags?: string[] | undefined
 }
 
@@ -169,6 +197,8 @@ export interface TimeframePlan {
 	autoInclusion?: TimeframeInclusion
 	/** The colleges driving college-based auto-inclusion (PEP100 patch). */
 	autoInclusionColleges?: ObjectiveCollege[] | undefined
+	/** Whether the timeframe is exclusive (PEP100 patch 2); omitted means false. */
+	exclusive?: boolean | undefined
 }
 
 export interface TimeframeUpdate {
@@ -183,6 +213,8 @@ export interface TimeframeUpdate {
 	autoInclusion?: TimeframeInclusion
 	/** The colleges driving college-based auto-inclusion (PEP100 patch). Omit to keep; any list (empty to clear) replaces. */
 	autoInclusionColleges?: ObjectiveCollege[] | undefined
+	/** Whether the timeframe is exclusive (PEP100 patch 2). Omit to keep, a value to set. */
+	exclusive?: boolean | undefined
 }
 
 /** How a media key resolves (PEP105): a built-in glyph, self/level media, or vault-level shared media. */
@@ -213,4 +245,13 @@ export interface DirectiveIconRequest {
 export interface DirectiveBannerRequest {
 	reference?: string | undefined
 	clear?: boolean
+}
+
+/**
+ * Sets or clears a directive's availability (PEP100 patch 2). The core refuses an unknown timeframe and one that is
+ * not in {@link TimeframeInclusion.Availability Availability} mode.
+ */
+export interface DirectiveAvailabilityRequest {
+	/** The Availability-mode timeframe to make the directive available in, or `null` to clear it. */
+	timeframeId: number | null
 }

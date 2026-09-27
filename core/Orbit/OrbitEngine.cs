@@ -1,6 +1,6 @@
 namespace Pleiades.Orbits;
 
-// C# port of @pleiades/orbits engine.ts. The resolution logic, counter machinery, and
+// C# port of @pleiades/orbits engine.ts. The resolution logic, structural limits, and
 // seeded randomness are ported statement-for-statement so both engines emit identical
 // streams for the same (notation, epoch, seed).
 
@@ -17,8 +17,11 @@ public sealed record OrbitResolutionEntry(long TimestampMs, OrbitUnit Granularit
 /// <summary>
 /// Span resolution: an explicit [start, end) interval. Produced only by span-format
 /// schedules (those using a <c>=&lt;dur&gt;</c> duration); never mixed with granular entries.
+/// <see cref="Granularity"/> is the schedule's finest unit — the window the start sits in —
+/// so a consumer can distinguish an anchored span (granularity at or finer than the duration)
+/// from a floating one (granularity window larger than the duration, e.g. <c>d=2h</c>).
 /// </summary>
-public sealed record OrbitSpanEntry(long StartMs, long EndMs) : OrbitEntry
+public sealed record OrbitSpanEntry(long StartMs, long EndMs, OrbitUnit Granularity) : OrbitEntry
 {
 	public long DurationMs => EndMs - StartMs;
 }
@@ -26,14 +29,46 @@ public sealed record OrbitSpanEntry(long StartMs, long EndMs) : OrbitEntry
 /// <summary>
 /// The stateful orbit resolution engine.
 /// </summary>
+/// <remarks>
+/// How the limits read (the notation's contract, resolved structurally by the solver):
+/// <list type="bullet">
+/// <item>A node's <b>life</b> is one period of its written parent — each parent period gives it a fresh life. A
+/// top-level node (the root, or an operand of a top-level set operation) has a single life, from its first complete
+/// period at or after the stream start (the anchor, snapped to the schedule's granularity and advanced past any
+/// <c>&gt;t</c>). The period the stream starts in is complete unless one of the node's instances in it falls before
+/// the start; an incomplete one is skipped whole, so a schedule never begins partway through one of its own
+/// periods.</item>
+/// <item><c>*x</c> limits a node's <b>repetition</b>. A bare unit is a single run from the start of its life, one
+/// value after another (or every N-th under a continuous <c>%N</c>); an index is a run of one value, unless <c>%N</c>
+/// steps it (b, b+N, … to the end of the parent period). Each run keeps its first x values — so <c>d*5</c> is five
+/// days, <c>w[d*3]</c> the first three days of every week, <c>d{5}%3*4</c> the 5th, 8th, 11th and 14th, and <c>*x</c>
+/// on an index <c>%</c> does not step (a list or a range) does nothing. A repetition counts whether or not the node's
+/// children fire in it.</item>
+/// <item><c>@x</c> limits a node's <b>emission</b>: its own instances (what its subtree produces, before any enclosing
+/// set operation acts on them) are counted per life in time order, and only the first x fire — so
+/// <c>M[w[d{1}%2]@7]</c> fires up to seven times a month, and a top-level <c>d{2,4,6,8}@2</c> fires twice in all.</item>
+/// <item>A week inside a month (written, or implied by a top-level week index) or inside a written year (a calendar
+/// week) is numbered from that cycle's first complete week: the week the cycle starts in belongs to it only when every
+/// instance the week node asks for falls inside the cycle, so <c>M[w{1}[d{1}]]</c> is the first Monday of every month
+/// and <c>y[w{1}[d{1}]]</c> the first of every year. The weeks run to the one the cycle ends in, whose days past its end
+/// are cut off. A bare top-level week (<c>w[d{1,5}]</c>) belongs to no cycle: it runs week after week across months. A
+/// day inside a written year is its day of the year (<c>y[d{100}]</c>).</item>
+/// <item>A set operation may sit inside a chain (<c>M[d{15}+d{4}%4]</c>); its operands share the node above as their
+/// parent. A span schedule lifts it to the top — <c>P[A op B]</c> reads as <c>P[A] op P[B]</c> — so its interval
+/// algebra runs exactly as it would on top-level operands.</item>
+/// </list>
+/// Every limit is a pure function of the notation, epoch and seed: the engine keeps no running counters, a snapshot
+/// is its cursor, and a preview seeks straight to its window.
+/// </remarks>
 public sealed class OrbitEngine
 {
 	// Stream-global boundary limits, hoisted out of the AST once at construction time.
-	// (@x/*x are NOT here — they are per-node running counters handled via provenance.)
+	// (@x/*x are NOT here — they belong to their node and are resolved inside the solver.)
 	private readonly record struct ResolvedLimit(OrbitLimitKind Kind, long At, OrbitUnit Unit);
 
-	// A limited node encountered on an emission's provenance path.
-	private readonly record struct PathEntry(int Id, int? Instances, int? Iterations, OrbitUnit? ResetUnit, long Period);
+	// What the engine knows about one written time-unit node (never a synthetic wrapper): the unit of its written
+	// parent, or null for a top-level node, and its tightest limits (Repeat is *x, Emit is @x).
+	private sealed record NodeInfo(OrbitUnit? Parent, int? Repeat, int? Emit);
 
 	private sealed class Cursor(long ms)
 	{
@@ -42,7 +77,7 @@ public sealed class OrbitEngine
 
 	private readonly OrbitAstNode _ast;
 	private readonly IOrbitCalendar _calendar;
-	private long _anchor;
+	private readonly long _anchor;
 	private long _cursor;
 	private readonly OrbitUnit _globalGranularity;
 
@@ -57,19 +92,30 @@ public sealed class OrbitEngine
 	private string? _notation;
 	// The most recently emitted match, used as the on-phase epoch when promoting.
 	private long? _lastEmitted;
+	// True for an engine resumed from a promoted snapshot: its stream has already started, so no top-level life is
+	// skipped at the (re-anchored) epoch.
+	private bool _continuing;
 
 	// Caches: index bases for list/range nodes (context-independent) and memoized
 	// granularity per node. Random bases are context-dependent and computed live.
 	private readonly Dictionary<OrbitTimeUnitNode, int[]> _baseCache = [];
 	private readonly Dictionary<OrbitAstNode, OrbitUnit> _granMemo = [];
 
-	// --- Per-node @x/*x counter machinery ---
-	private readonly Dictionary<OrbitTimeUnitNode, int> _nodeId = [];
-	private readonly Dictionary<OrbitTimeUnitNode, (int? Instances, int? Iterations, OrbitUnit? ResetUnit)> _limited = [];
-	private Dictionary<int, OrbitCounterState> _counters = [];
-	private HashSet<int> _deadNodes = [];
-	private readonly Dictionary<int, (int? Instances, int? Iterations, OrbitUnit? ResetUnit)> _limitedById = [];
-	private bool _autoReset;
+	// --- Structural limits ---
+	// Every written node, with its written parent and limits.
+	private readonly Dictionary<OrbitTimeUnitNode, NodeInfo> _nodes = [];
+	// A top-level node's outermost synthetic wrapper (the node itself for a year), so its instances can be enumerated
+	// on their own.
+	private readonly Dictionary<OrbitTimeUnitNode, OrbitTimeUnitNode> _wrapperRoots = [];
+	// Pure caches, each a function of (notation, epoch, seed): where a top-level node's life starts, a node's @x
+	// cutoff per life, and a week-in-month node's offset per month.
+	private readonly Dictionary<OrbitTimeUnitNode, long> _lifeStarts = [];
+	private readonly Dictionary<OrbitTimeUnitNode, Dictionary<long, long>> _cutoffs = [];
+	private readonly Dictionary<OrbitTimeUnitNode, Dictionary<long, int>> _weekOffsets = [];
+	// Nodes whose own limits are set aside while the solver works out where a life starts (all of them) or where an
+	// @x cuts off (the emission only), since both are defined by the node's instances without those limits.
+	private readonly HashSet<OrbitTimeUnitNode> _lifeSetAside = [];
+	private readonly HashSet<OrbitTimeUnitNode> _emitSetAside = [];
 
 	// --- Span format ---
 	private readonly bool _spanFormat;
@@ -81,29 +127,27 @@ public sealed class OrbitEngine
 	/// resolution even when durations are present; the span resolver uses it for the
 	/// per-operand sub-engines that enumerate starts.
 	/// </summary>
-	public OrbitEngine(OrbitAstNode ast, long anchorMs, IOrbitCalendar calendar, uint? seed = null, bool autoReset = false, bool granularOnly = false)
+	public OrbitEngine(OrbitAstNode ast, long anchorMs, IOrbitCalendar calendar, uint? seed = null, bool granularOnly = false)
 	{
 		ArgumentNullException.ThrowIfNull(ast);
 		_calendar = calendar ?? throw new ArgumentNullException(nameof(calendar));
-		_rawAst = ast;
-		// Record each node's explicit (user-written) parent BEFORE normalization
-		// adds synthetic y>M>... wrappers, then normalize and index the nodes.
-		IndexLimits(ast, null);
-		_ast = NormalizeAst(ast);
-		AssignIds(_ast);
-		foreach (var (node, info) in _limited)
-		{
-			_limitedById[_nodeId[node]] = info;
-		}
+		// Desugar z/Z datetime literals into their equivalent nested time-unit chain up
+		// front, so every downstream pass (limits, normalize, span-building) only ever sees
+		// OrbitTimeUnitNode / OrbitSetOperationNode and needs no literal awareness.
+		var source = ExpandLiterals(ast);
+		// Record each node's written parent BEFORE normalization adds synthetic y>M>...
+		// wrappers, then normalize.
+		IndexNodes(source, null);
+		_ast = NormalizeAst(source);
 
 		_anchor = anchorMs;
 		_seed = seed ?? (uint)Random.Shared.NextInt64(0x1_0000_0000L);
-		_autoReset = autoReset;
 		_globalGranularity = CalcGranularity(_ast);
 		_limits = CollectLimits(_ast);
 		_cursor = SeededStart();
 
-		_spanFormat = !granularOnly && HasDuration(ast);
+		_spanFormat = !granularOnly && HasDuration(source);
+		_rawAst = _spanFormat ? LiftSets(source) : source;
 		if (_spanFormat)
 		{
 			ValidateSpanFormat();
@@ -136,10 +180,10 @@ public sealed class OrbitEngine
 	/// Builds an engine directly from orbit notation. The engine remembers the notation
 	/// so <see cref="Serialize"/>/<see cref="Promote"/> can produce a self-contained snapshot.
 	/// </summary>
-	public static OrbitEngine FromNotation(string notation, long epochMs, IOrbitCalendar calendar, uint? seed = null, bool autoReset = false)
+	public static OrbitEngine FromNotation(string notation, long epochMs, IOrbitCalendar calendar, uint? seed = null)
 	{
 		var ast = new OrbitParser(notation).Parse();
-		var engine = new OrbitEngine(ast, epochMs, calendar, seed, autoReset)
+		var engine = new OrbitEngine(ast, epochMs, calendar, seed)
 		{
 			_notation = notation,
 		};
@@ -162,13 +206,12 @@ public sealed class OrbitEngine
 			throw new FormatException($"Orbit snapshot epoch '{snapshot.Epoch}' is not a valid instant.");
 		}
 
-		var engine = FromNotation(snapshot.Notation, epochMs, calendar, (uint)snapshot.Seed, snapshot.AutoReset ?? false);
+		var engine = FromNotation(snapshot.Notation, epochMs, calendar, (uint)snapshot.Seed);
 
 		if (snapshot.Cursor is not null)
 		{
-			// Full snapshot: restore the exact search origin and counters. This
-			// overrides the constructor's '>t' seeding, which the stored cursor
-			// already reflects.
+			// Full snapshot: restore the exact search origin. This overrides the
+			// constructor's '>t' seeding, which the stored cursor already reflects.
 			if (!JsDate.TryParseIso(snapshot.Cursor, out var cursorMs))
 			{
 				throw new FormatException($"Orbit snapshot cursor '{snapshot.Cursor}' is not a valid instant.");
@@ -176,21 +219,15 @@ public sealed class OrbitEngine
 
 			engine._cursor = cursorMs;
 			engine._emittedCount = snapshot.EmittedCount ?? 0;
-			engine._exhausted = snapshot.Exhausted ?? false;
-			if (snapshot.Counters is not null)
-			{
-				foreach (var (id, state) in snapshot.Counters)
-				{
-					engine._counters[int.Parse(id, System.Globalization.CultureInfo.InvariantCulture)] = state.Clone();
-				}
-			}
-
-			engine.RecomputeDeadNodes();
+			// A snapshot carrying running counters came from an engine that still counted @x/*x as it went, and may
+			// have ended a stream those limits no longer end: its exhaustion is re-derived instead.
+			engine._exhausted = snapshot.Counters is null && (snapshot.Exhausted ?? false);
 		}
 		else
 		{
 			// Promoted snapshot: epoch IS the last emitted (on-phase) entry, so we
 			// resume strictly after it to avoid re-emitting the consumed entry.
+			engine._continuing = true;
 			engine._cursor = engine._calendar.Add(epochMs, engine._globalGranularity, 1);
 		}
 
@@ -199,7 +236,9 @@ public sealed class OrbitEngine
 
 	/// <summary>
 	/// True iff the schedule can be re-anchored onto any emitted entry without changing
-	/// the stream — i.e. it carries no running-counter limit.
+	/// the stream. A top-level <c>@x</c> or <c>*x</c> counts from the start of the node's
+	/// life, which a re-anchored epoch would move, so either blocks it; a nested one counts
+	/// within its parent's periods and does not.
 	/// </summary>
 	public bool IsAnchorStable()
 	{
@@ -208,23 +247,15 @@ public sealed class OrbitEngine
 			return false; // span schedules are not epoch-promotable
 		}
 
-		static bool HasCountLimit(OrbitAstNode node)
+		foreach (var info in _nodes.Values)
 		{
-			if (node is OrbitSetOperationNode set)
+			if (info.Parent is null && (info.Repeat is not null || info.Emit is not null))
 			{
-				return HasCountLimit(set.Left) || HasCountLimit(set.Right);
+				return false;
 			}
-
-			var unitNode = (OrbitTimeUnitNode)node;
-			if (unitNode.Limits.Any(l => l.Kind is OrbitLimitKind.Instances or OrbitLimitKind.Iterations))
-			{
-				return true;
-			}
-
-			return unitNode.Child is not null && HasCountLimit(unitNode.Child);
 		}
 
-		return !HasCountLimit(_ast);
+		return true;
 	}
 
 	/// <summary>
@@ -240,7 +271,7 @@ public sealed class OrbitEngine
 
 		var n = notation ?? _notation
 			?? throw new InvalidOperationException("Serialize() needs the notation: build via OrbitEngine.FromNotation() or pass it explicitly.");
-		var snapshot = new OrbitSnapshot
+		return new OrbitSnapshot
 		{
 			Version = 1,
 			Notation = n,
@@ -250,31 +281,18 @@ public sealed class OrbitEngine
 			EmittedCount = _emittedCount,
 			Exhausted = _exhausted,
 		};
-		if (_counters.Count > 0)
-		{
-			snapshot.Counters = _counters.ToDictionary(
-				pair => pair.Key.ToString(System.Globalization.CultureInfo.InvariantCulture),
-				pair => pair.Value.Clone());
-		}
-
-		if (_autoReset)
-		{
-			snapshot.AutoReset = true;
-		}
-
-		return snapshot;
 	}
 
 	/// <summary>
 	/// Compact snapshot that rebases the epoch onto the last emitted entry and drops
-	/// cursor/count. Only valid for anchor-stable schedules (no @ / *), and only after
-	/// at least one entry has been emitted.
+	/// cursor/count. Only valid for anchor-stable schedules (no top-level @ / *), and only
+	/// after at least one entry has been emitted.
 	/// </summary>
 	public OrbitSnapshot Promote(string? notation = null)
 	{
 		if (!IsAnchorStable())
 		{
-			throw new InvalidOperationException("Promote() is invalid for schedules with @ or * limits; use Serialize().");
+			throw new InvalidOperationException("Promote() is invalid for schedules with a top-level @ or * limit; use Serialize().");
 		}
 
 		if (_lastEmitted is null)
@@ -296,18 +314,17 @@ public sealed class OrbitEngine
 	// --- Windowed resolution utilities ---
 	//
 	// The `Next*` variants MUTATE: they hop the live engine forward from its current
-	// position, charging @x/*x for everything they pass, and leave it advanced. Use
-	// them to actually move through a schedule cheaply (no epoch replay).
+	// position and leave it advanced. Use them to actually move through a schedule.
 	//
 	// The `Resolve*` variants are NON-mutating: they run the same logic inside a
-	// temporary traversal (positioned from the epoch for counter schedules, or seeked
-	// straight to `start` for counter-free ones) and restore the live state, so a
-	// query leaves no trace and reflects the schedule as defined from the epoch.
+	// temporary traversal seeked straight to `start` (every limit is structural, so no
+	// replay from the epoch is needed) and restore the live state, so a query leaves no
+	// trace and reflects the schedule as defined from the epoch.
 
 	/// <summary>
 	/// MUTATING. Advances to <paramref name="startMs"/> (consuming earlier entries) then
-	/// returns every entry whose start is in the half-open window [start, end); leaves
-	/// the engine positioned at the window end.
+	/// returns every entry whose start is in the half-open window [start, end); leaves the
+	/// engine positioned at the window end.
 	/// </summary>
 	public List<OrbitEntry> NextWithin(long startMs, long endMs)
 	{
@@ -319,7 +336,7 @@ public sealed class OrbitEngine
 				var interval = _spanRoot.Next()!.Value;
 				if (interval.Start >= startMs)
 				{
-					output.Add(new OrbitSpanEntry(interval.Start, interval.End));
+					output.Add(new OrbitSpanEntry(interval.Start, interval.End, _globalGranularity));
 				}
 			}
 
@@ -356,7 +373,7 @@ public sealed class OrbitEngine
 			{
 				if (interval.Start >= startMs)
 				{
-					output.Add(new OrbitSpanEntry(interval.Start, interval.End));
+					output.Add(new OrbitSpanEntry(interval.Start, interval.End, _globalGranularity));
 				}
 			}
 
@@ -388,7 +405,7 @@ public sealed class OrbitEngine
 				var interval = stream.Next()!.Value;
 				if (interval.Start >= startMs)
 				{
-					output.Add(new OrbitSpanEntry(interval.Start, interval.End));
+					output.Add(new OrbitSpanEntry(interval.Start, interval.End, _globalGranularity));
 				}
 			}
 
@@ -417,7 +434,7 @@ public sealed class OrbitEngine
 			{
 				if (interval.Start >= startMs)
 				{
-					output.Add(new OrbitSpanEntry(interval.Start, interval.End));
+					output.Add(new OrbitSpanEntry(interval.Start, interval.End, _globalGranularity));
 				}
 			}
 
@@ -435,23 +452,12 @@ public sealed class OrbitEngine
 		var savedEmittedCount = _emittedCount;
 		var savedExhausted = _exhausted;
 		var savedLastEmitted = _lastEmitted;
-		var savedCounters = _counters;
-		var savedDeadNodes = _deadNodes;
-		var savedAnchor = _anchor;
-		var savedAutoReset = _autoReset;
 
 		_emittedCount = 0;
 		_exhausted = false;
 		_lastEmitted = null;
-		_counters = [];
-		_deadNodes = [];
-		_autoReset = false; // a transient query never rebases the live epoch
-		// A counter-free schedule is history-independent, so jump straight to `start`
-		// (never before the epoch). Otherwise replay from the epoch so the running
-		// counters are accurate by the time we reach the window.
-		_cursor = IsAnchorStable()
-			? _calendar.SnapToStart(Math.Max(startMs, _anchor), _globalGranularity)
-			: SeededStart();
+		// The stream is history-independent, so jump straight to `start` (never before the epoch).
+		_cursor = _calendar.SnapToStart(Math.Max(startMs, _anchor), _globalGranularity);
 
 		try
 		{
@@ -463,11 +469,100 @@ public sealed class OrbitEngine
 			_emittedCount = savedEmittedCount;
 			_exhausted = savedExhausted;
 			_lastEmitted = savedLastEmitted;
-			_counters = savedCounters;
-			_deadNodes = savedDeadNodes;
-			_anchor = savedAnchor;
-			_autoReset = savedAutoReset;
 		}
+	}
+
+	// Desugars every z/Z datetime literal in a tree into the equivalent nested time-unit
+	// chain, leaving OrbitTimeUnitNode / OrbitSetOperationNode subtrees untouched.
+	private OrbitAstNode ExpandLiterals(OrbitAstNode node)
+	{
+		if (node is OrbitSetOperationNode set)
+		{
+			return new OrbitSetOperationNode
+			{
+				Operator = set.Operator,
+				Left = ExpandLiterals(set.Left),
+				Right = ExpandLiterals(set.Right),
+			};
+		}
+
+		if (node is OrbitDateTimeLiteralNode literal)
+		{
+			return ExpandDateTimeLiteral(literal);
+		}
+
+		var unit = (OrbitTimeUnitNode)node;
+		if (unit.Child is not null)
+		{
+			unit.Child = ExpandLiterals(unit.Child);
+		}
+
+		return unit;
+	}
+
+	// A datetime literal becomes a fully-pinned singleton chain from its coarsest present
+	// component down to its finest — Z{2027/6/5T18:00} -> y{2027}[M{6}[d{5}[h{18}[m{0}]]]],
+	// z{12:00} -> h{12}[m{0}]. The deepest component is the leaf, so CalcGranularity reads
+	// the intended granularity for free. Modifiers ride on the chain root.
+	private static OrbitTimeUnitNode ExpandDateTimeLiteral(OrbitDateTimeLiteralNode literal)
+	{
+		var parts = new List<(OrbitUnit Unit, int Value)>();
+		if (literal.Year is { } year)
+		{
+			parts.Add((OrbitUnit.Year, year));
+		}
+
+		if (literal.Month is { } month)
+		{
+			parts.Add((OrbitUnit.Month, month));
+		}
+
+		if (literal.Day is { } day)
+		{
+			parts.Add((OrbitUnit.Day, day));
+		}
+
+		if (literal.Hour is { } hour)
+		{
+			parts.Add((OrbitUnit.Hour, hour));
+		}
+
+		if (literal.Minute is { } minute)
+		{
+			parts.Add((OrbitUnit.Minute, minute));
+		}
+
+		if (literal.Second is { } second)
+		{
+			parts.Add((OrbitUnit.Second, second));
+		}
+
+		if (parts.Count == 0)
+		{
+			throw new FormatException("A datetime literal must carry at least one component.");
+		}
+
+		OrbitTimeUnitNode? chain = null;
+		for (var i = parts.Count - 1; i >= 0; i--)
+		{
+			var (unit, value) = parts[i];
+			chain = new OrbitTimeUnitNode
+			{
+				Unit = unit,
+				Indices = new OrbitIndexSpec { Kind = OrbitIndexKind.List, Values = [value] },
+				Child = chain,
+			};
+		}
+
+		var root = chain!;
+		root.Interval = literal.Interval;
+		if (literal.Limits.Count > 0)
+		{
+			root.Limits.AddRange(literal.Limits);
+		}
+
+		root.Duration = literal.Duration;
+		return root;
 	}
 
 	private OrbitAstNode NormalizeAst(OrbitAstNode node)
@@ -494,7 +589,8 @@ public sealed class OrbitEngine
 			_ => null,
 		};
 
-		var current = (OrbitTimeUnitNode)node;
+		var written = (OrbitTimeUnitNode)node;
+		var current = written;
 		while (Parent(current.Unit) is { } parentUnit)
 		{
 			current = new OrbitTimeUnitNode
@@ -504,6 +600,7 @@ public sealed class OrbitEngine
 			};
 		}
 
+		_wrapperRoots[written] = current;
 		return current;
 	}
 
@@ -534,7 +631,7 @@ public sealed class OrbitEngine
 			return null;
 		}
 
-		return new OrbitSpanEntry(interval.Value.Start, interval.Value.End);
+		return new OrbitSpanEntry(interval.Value.Start, interval.Value.End, _globalGranularity);
 	}
 
 	// --- Span construction (interval algebra) ---
@@ -561,7 +658,7 @@ public sealed class OrbitEngine
 		var parts = SpineDuration((OrbitTimeUnitNode)node);
 		// A granular sub-engine resolves this operand's occurrence starts (reusing
 		// indices, intervals, randoms, and @x/*x/<>t limits); the duration is layered on.
-		var inner = new OrbitEngine(node, _anchor, _calendar, _seed, autoReset: false, granularOnly: true);
+		var inner = new OrbitEngine(node, _anchor, _calendar, _seed, granularOnly: true);
 		OrbitInterval? Raw()
 		{
 			if (inner.Next() is not OrbitResolutionEntry resolution)
@@ -574,6 +671,61 @@ public sealed class OrbitEngine
 		}
 
 		return OrbitSpanStreams.Coalesce(Raw);
+	}
+
+	// A span schedule's interval algebra runs over whole operands, so a set operation nested in a chain is lifted to the
+	// top: P[A op B] becomes P[A] op P[B], the chain above repeated in each operand, exactly as it would be written at the
+	// top level. A *x or @x above such a set would count the set's combined instances, which no top-level operand can
+	// say, so it is refused.
+	private static OrbitAstNode LiftSets(OrbitAstNode node)
+	{
+		if (node is OrbitSetOperationNode set)
+		{
+			return new OrbitSetOperationNode
+			{
+				Operator = set.Operator,
+				Left = LiftSets(set.Left),
+				Right = LiftSets(set.Right),
+			};
+		}
+
+		if (node is not OrbitTimeUnitNode { Child: not null } unitNode)
+		{
+			return node;
+		}
+
+		var child = LiftSets(unitNode.Child);
+		if (child is not OrbitSetOperationNode lifted)
+		{
+			return ReferenceEquals(child, unitNode.Child) ? unitNode : WithChild(unitNode, child);
+		}
+
+		if (unitNode.Limits.Any(limit => limit.Kind is OrbitLimitKind.Iterations or OrbitLimitKind.Instances))
+		{
+			throw new FormatException("A span set operation cannot sit under a node with a * or @ limit; write it at the top level.");
+		}
+
+		return new OrbitSetOperationNode
+		{
+			Operator = lifted.Operator,
+			Left = LiftSets(WithChild(unitNode, lifted.Left)),
+			Right = LiftSets(WithChild(unitNode, lifted.Right)),
+		};
+	}
+
+	// A copy of a time-unit node with another child, its own index and modifiers kept.
+	private static OrbitTimeUnitNode WithChild(OrbitTimeUnitNode node, OrbitAstNode child)
+	{
+		var copy = new OrbitTimeUnitNode
+		{
+			Unit = node.Unit,
+			Indices = node.Indices,
+			Child = child,
+			Interval = node.Interval,
+			Duration = node.Duration,
+		};
+		copy.Limits.AddRange(node.Limits);
+		return copy;
 	}
 
 	private long ApplyDuration(long startMs, List<OrbitDurationPart> parts)
@@ -683,9 +835,9 @@ public sealed class OrbitEngine
 	}
 
 	// Resolves and consumes the next entry, mutating the engine. If the next candidate
-	// falls at/after `boundMs` it is NOT consumed (cursor and counters are left
-	// untouched, so it remains resolvable) and null is returned — this lets windowed
-	// helpers stop at a boundary without over-consuming a later entry.
+	// falls at/after `boundMs` it is NOT consumed (the cursor is left untouched, so it
+	// remains resolvable) and null is returned — this lets windowed helpers stop at a
+	// boundary without over-consuming a later entry.
 	private OrbitResolutionEntry? Advance(long boundMs)
 	{
 		if (_exhausted)
@@ -699,8 +851,8 @@ public sealed class OrbitEngine
 		while (guard++ < 100_000)
 		{
 			var testCursor = new Cursor(_cursor);
-			// Structural solve (dead-node aware): find the next candidate ignoring
-			// the @x/*x running budgets, which are enforced afterwards.
+			// Structural solve: every node limit (*x, @x, a top-level life) is resolved
+			// inside the solver, so the candidate it finds is final.
 			if (!SolveNext(_ast, testCursor, null))
 			{
 				_exhausted = true;
@@ -715,7 +867,7 @@ public sealed class OrbitEngine
 				return null;
 			}
 
-			// 1. Stream-global boundary limits (<t / >t).
+			// Stream-global boundary limits (<t / >t).
 			var verdict = ApplyLimits(matchTime);
 			if (verdict == LimitVerdict.Stop)
 			{
@@ -728,25 +880,6 @@ public sealed class OrbitEngine
 				continue; // cursor advanced by ApplyLimits
 			}
 
-			// 2. Per-node @x/*x budgets, checked against the candidate's provenance.
-			var path = CollectPath(_ast, matchTime, null);
-			if (RejectByCounters(path, matchTime))
-			{
-				continue; // over budget; cursor advanced / node killed
-			}
-
-			// 3. Entropic reset (opt-in): if this candidate opens a fresh era — every
-			// reset scope has rolled over and nothing un-resettable has fired — rebase
-			// the epoch onto the last (on-phase) entry and drop the now-zero counters.
-			if (_autoReset && _counters.Count > 0 && _lastEmitted is not null && AtResetPoint(matchTime))
-			{
-				_anchor = _lastEmitted.Value;
-				_counters.Clear();
-				_deadNodes.Clear();
-			}
-
-			// Accepted: charge the counters, then emit.
-			ChargeCounters(path, matchTime);
 			_cursor = _calendar.Add(matchTime, _globalGranularity, 1);
 			_lastEmitted = matchTime;
 			_emittedCount++;
@@ -791,185 +924,6 @@ public sealed class OrbitEngine
 		return LimitVerdict.Ok;
 	}
 
-	// Returns true if a limited node on the path is over budget for this candidate,
-	// having taken the appropriate corrective action (skip the cursor forward for a
-	// per-cycle *x, or permanently kill the node for @x / global *x).
-	private bool RejectByCounters(List<PathEntry> path, long matchTime)
-	{
-		foreach (var entry in path)
-		{
-			_counters.TryGetValue(entry.Id, out var state);
-
-			// @x: a hard cap on total instances through this node.
-			if (entry.Instances is not null && (state?.Fired ?? 0) >= entry.Instances)
-			{
-				_deadNodes.Add(entry.Id);
-				return true;
-			}
-
-			// *x: a cap on distinct node-periods per reset scope.
-			if (entry.Iterations is not null)
-			{
-				var cycleKey = entry.ResetUnit is { } resetUnit ? _calendar.SnapToStart(matchTime, resetUnit) : 0;
-				var sameScope = state?.CycleKey == cycleKey;
-				var iters = sameScope ? state?.Iters ?? 0 : 0;
-				var lastPeriod = sameScope ? state?.LastPeriod : null;
-				var isNewPeriod = entry.Period != lastPeriod;
-				if (isNewPeriod && iters >= entry.Iterations)
-				{
-					if (entry.ResetUnit is { } unit)
-					{
-						// Per-cycle: jump to the start of the next parent cycle.
-						_cursor = _calendar.Add(_calendar.SnapToStart(matchTime, unit), unit, 1);
-					}
-					else
-					{
-						// Global: this node can never open a new period again.
-						_deadNodes.Add(entry.Id);
-					}
-
-					return true;
-				}
-			}
-		}
-
-		return false;
-	}
-
-	// Charges the @x/*x counters for every limited node the emission passed through.
-	private void ChargeCounters(List<PathEntry> path, long matchTime)
-	{
-		foreach (var entry in path)
-		{
-			if (!_counters.TryGetValue(entry.Id, out var state))
-			{
-				state = new OrbitCounterState();
-			}
-
-			if (entry.Instances is not null)
-			{
-				state.Fired = (state.Fired ?? 0) + 1;
-				if (state.Fired >= entry.Instances)
-				{
-					_deadNodes.Add(entry.Id);
-				}
-			}
-
-			if (entry.Iterations is not null)
-			{
-				var cycleKey = entry.ResetUnit is { } resetUnit ? _calendar.SnapToStart(matchTime, resetUnit) : 0;
-				if (state.CycleKey != cycleKey)
-				{
-					state.CycleKey = cycleKey;
-					state.Iters = 1;
-					state.LastPeriod = entry.Period;
-				}
-				else if (entry.Period != state.LastPeriod)
-				{
-					state.Iters = (state.Iters ?? 0) + 1;
-					state.LastPeriod = entry.Period;
-				}
-			}
-
-			_counters[entry.Id] = state;
-		}
-	}
-
-	// Entropy is 0 at `matchTime` iff none of the currently-active counters carry
-	// state that survival past this instant depends on.
-	private bool AtResetPoint(long matchTime)
-	{
-		foreach (var (id, state) in _counters)
-		{
-			if (!_limitedById.TryGetValue(id, out var info))
-			{
-				continue;
-			}
-
-			if (info.Instances is not null && (state.Fired ?? 0) > 0)
-			{
-				return false;
-			}
-
-			if (info.Iterations is not null)
-			{
-				if (info.ResetUnit is null)
-				{
-					if ((state.Iters ?? 0) > 0)
-					{
-						return false; // global *x: never resettable once fired
-					}
-				}
-				else if (state.CycleKey is not null)
-				{
-					var scope = _calendar.SnapToStart(matchTime, info.ResetUnit.Value);
-					if (scope <= state.CycleKey)
-					{
-						return false; // still inside the counted cycle
-					}
-				}
-			}
-		}
-
-		return true;
-	}
-
-	/// <summary>
-	/// Whether the engine is currently at an entropic reset boundary — i.e. its state
-	/// reduces to (epoch=last entry, seed) with no counters to carry.
-	/// </summary>
-	public bool IsAtResetPoint()
-	{
-		if (_spanFormat)
-		{
-			return false;
-		}
-
-		if (_counters.Count == 0)
-		{
-			return true;
-		}
-
-		var t = PeekNext();
-		return t is null || AtResetPoint(t.Value); // null => nothing left to resolve
-	}
-
-	// The time of the next actually-emitted entry (respecting @x/*x budgets), without
-	// disturbing live state.
-	private long? PeekNext()
-	{
-		var savedCursor = _cursor;
-		var savedEmittedCount = _emittedCount;
-		var savedExhausted = _exhausted;
-		var savedLastEmitted = _lastEmitted;
-		var savedCounters = _counters;
-		var savedDeadNodes = _deadNodes;
-		var savedAnchor = _anchor;
-		var savedAutoReset = _autoReset;
-
-		// Deep-clone the counter states — charging mutates them in place, and we must
-		// not touch the live ones.
-		_counters = savedCounters.ToDictionary(pair => pair.Key, pair => pair.Value.Clone());
-		_deadNodes = [.. savedDeadNodes];
-		_autoReset = false;
-		try
-		{
-			var resolution = Advance(long.MaxValue);
-			return resolution?.TimestampMs;
-		}
-		finally
-		{
-			_cursor = savedCursor;
-			_emittedCount = savedEmittedCount;
-			_exhausted = savedExhausted;
-			_lastEmitted = savedLastEmitted;
-			_counters = savedCounters;
-			_deadNodes = savedDeadNodes;
-			_anchor = savedAnchor;
-			_autoReset = savedAutoReset;
-		}
-	}
-
 	private bool SolveNext(OrbitAstNode node, Cursor cursor, OrbitUnit? parentUnit)
 	{
 		if (node is OrbitSetOperationNode set)
@@ -978,11 +932,20 @@ public sealed class OrbitEngine
 		}
 
 		var unitNode = (OrbitTimeUnitNode)node;
-		// A node whose budget is spent produces nothing; inside a set operation this
-		// naturally lets sibling branches carry on, and on the spine it exhausts.
-		if (_deadNodes.Contains(_nodeId[unitNode]))
+		if (_nodes.TryGetValue(unitNode, out var info) && info.Parent is null && !_lifeSetAside.Contains(unitNode))
 		{
-			return false;
+			// A top-level node produces nothing before its life starts, or from its end on; inside a set
+			// operation this lets sibling branches carry on, and on the spine it exhausts.
+			if (cursor.Ms >= EndOf(unitNode))
+			{
+				return false;
+			}
+
+			var lifeStart = LifeStartOf(unitNode);
+			if (cursor.Ms < lifeStart)
+			{
+				cursor.Ms = lifeStart;
+			}
 		}
 
 		return SolveTimeUnit(unitNode, cursor, parentUnit);
@@ -1010,33 +973,34 @@ public sealed class OrbitEngine
 			// 2. Leaf level matched cleanly with no remaining children.
 			if (node.Child is null)
 			{
-				return true;
+				return WithinEmission(node, cursor.Ms, parentUnit);
 			}
 
 			// 3. Drill down into deeper nested structural nodes.
 			var childCursor = new Cursor(cursor.Ms);
 			var childSuccess = SolveNext(node.Child, childCursor, node.Unit);
 
-			// Verify the child match didn't bleed outside this parent's window.
-			if (childSuccess && IsSameContext(node.Unit, cursor.Ms, childCursor.Ms, parentUnit))
+			// Verify the child match didn't bleed outside this parent's window — unless the node is a week that runs
+			// across months.
+			if (childSuccess && (RunsAcrossMonths(node, parentUnit) || IsSameContext(node.Unit, cursor.Ms, childCursor.Ms, parentUnit)))
 			{
 				cursor.Ms = childCursor.Ms;
-				return true;
+				return WithinEmission(node, cursor.Ms, parentUnit);
 			}
 
 			// --- Try-and-Fail Backtracking ---
 			// The child couldn't be satisfied in this period; step THIS layer
 			// forward by 1 (or its interval) and retry.
 			var step = node.Interval is > 1 ? node.Interval.Value : 1;
-			var currentVal = _calendar.Get(cursor.Ms, node.Unit, parentUnit);
+			var currentVal = NodeGet(node, cursor.Ms, parentUnit);
 			var nextVal = currentVal + step;
 
-			if (nextVal > UnitMax(node.Unit, parentUnit, cursor.Ms))
+			if (nextVal > NodeMax(node, parentUnit, cursor.Ms))
 			{
 				return false;
 			}
 
-			cursor.Ms = UnitSet(cursor.Ms, node.Unit, nextVal, parentUnit);
+			cursor.Ms = NodeSet(node, cursor.Ms, nextVal, parentUnit);
 			cursor.Ms = _calendar.SnapToStart(cursor.Ms, node.Unit);
 			attempts++;
 		}
@@ -1044,16 +1008,164 @@ public sealed class OrbitEngine
 		return false;
 	}
 
+	// @x: a node's instances fire only up to its x-th in the life the match falls in. Past that the node has nothing
+	// more in this life: a nested node waits for its parent's next period, and a top-level node is done (EndOf stops
+	// the solver asking it again).
+	private bool WithinEmission(OrbitTimeUnitNode node, long cursorMs, OrbitUnit? parentUnit)
+	{
+		if (!_nodes.TryGetValue(node, out var info) || info.Emit is null || _emitSetAside.Contains(node) || _lifeSetAside.Contains(node))
+		{
+			return true;
+		}
+
+		var life = info.Parent is null ? LifeStartOf(node) : _calendar.SnapToStart(cursorMs, parentUnit!.Value);
+		return cursorMs <= CutoffOf(node, life, parentUnit);
+	}
+
+	// The time of a node's x-th instance in the life starting at `life` — its @x cutoff — or long.MaxValue when the
+	// life holds fewer (long.MinValue for @0, which lets nothing through). A nested node's instances are counted from
+	// the start of its parent's period, whatever the anchor; a top-level node's from the start of its life.
+	private long CutoffOf(OrbitTimeUnitNode node, long life, OrbitUnit? parentUnit)
+	{
+		if (!_cutoffs.TryGetValue(node, out var lives))
+		{
+			lives = [];
+			_cutoffs[node] = lives;
+		}
+
+		if (lives.TryGetValue(life, out var cached))
+		{
+			return cached;
+		}
+
+		var info = _nodes[node];
+		var cutoff = long.MaxValue;
+		if (info.Emit <= 0)
+		{
+			cutoff = long.MinValue;
+		}
+		// A promoted (continuing) engine has no life start to count from; Promote() refuses such schedules.
+		else if (life != long.MinValue)
+		{
+			var topLevel = info.Parent is null;
+			var unit = CalcGranularity(node);
+			var cursor = new Cursor(life);
+			_emitSetAside.Add(node);
+			try
+			{
+				for (var count = 0; ;)
+				{
+					var found = topLevel
+						? SolveNext(_wrapperRoots[node], cursor, null)
+						: SolveTimeUnit(node, cursor, parentUnit) && _calendar.SnapToStart(cursor.Ms, parentUnit!.Value) == life;
+					if (!found)
+					{
+						break;
+					}
+
+					if (++count >= info.Emit)
+					{
+						cutoff = cursor.Ms;
+						break;
+					}
+
+					cursor.Ms = _calendar.Add(cursor.Ms, unit, 1);
+				}
+			}
+			finally
+			{
+				_emitSetAside.Remove(node);
+			}
+		}
+
+		lives[life] = cutoff;
+		return cutoff;
+	}
+
+	// Where a top-level node's single life starts: the period of its unit the stream starts in, unless one of the
+	// node's instances in that period falls before the start — then that period is skipped whole and the life starts
+	// with the next one (the next on-phase one under a continuous %N).
+	private long LifeStartOf(OrbitTimeUnitNode node)
+	{
+		if (_lifeStarts.TryGetValue(node, out var cached))
+		{
+			return cached;
+		}
+
+		var lifeStart = long.MinValue;
+		if (!_continuing)
+		{
+			var start = SeededStart();
+			var period = _calendar.SnapToStart(start, node.Unit);
+			var periodEnd = _calendar.Add(period, node.Unit, 1);
+			lifeStart = period;
+			_lifeSetAside.Add(node);
+			try
+			{
+				var first = new Cursor(period);
+				if (SolveNext(_wrapperRoots[node], first, null) && first.Ms < start && first.Ms < periodEnd)
+				{
+					var step = node.Indices is null && node.Interval is > 1 ? node.Interval.Value : 1;
+					lifeStart = _calendar.Add(period, node.Unit, step);
+				}
+			}
+			finally
+			{
+				_lifeSetAside.Remove(node);
+			}
+		}
+
+		_lifeStarts[node] = lifeStart;
+		return lifeStart;
+	}
+
+	// Where a top-level node's instances end: its *x window's end (for a bare unit, whose single run is the node's own
+	// repetition), or just after its @x cutoff, whichever comes first; long.MaxValue when neither applies.
+	private long EndOf(OrbitTimeUnitNode node)
+	{
+		var info = _nodes[node];
+		var end = long.MaxValue;
+		if (info.Repeat is { } repeat && node.Indices is null)
+		{
+			end = Math.Min(end, RepeatEnd(node, repeat));
+		}
+
+		if (info.Emit is not null && !_emitSetAside.Contains(node))
+		{
+			var cutoff = CutoffOf(node, LifeStartOf(node), null);
+			end = Math.Min(end, cutoff == long.MaxValue ? long.MaxValue : cutoff + 1);
+		}
+
+		return end;
+	}
+
+	// The end of a top-level bare node's *x window: x steps of its unit (every N-th under %N) from its life start.
+	private long RepeatEnd(OrbitTimeUnitNode node, int repeat)
+	{
+		var lifeStart = LifeStartOf(node);
+		if (lifeStart == long.MinValue)
+		{
+			return long.MaxValue;
+		}
+
+		var step = node.Interval is > 1 ? node.Interval.Value : 1;
+		return _calendar.Add(lifeStart, node.Unit, repeat * step);
+	}
+
 	private bool AlignUnit(OrbitTimeUnitNode node, Cursor cursor, OrbitUnit? parentUnit)
 	{
 		var unit = node.Unit;
-		var currentVal = _calendar.Get(cursor.Ms, unit, parentUnit);
-		var maxVal = UnitMax(unit, parentUnit, cursor.Ms);
+		var minVal = NodeMin(node, parentUnit, cursor.Ms);
+		var currentVal = NodeGet(node, cursor.Ms, parentUnit);
+		var maxVal = NodeMax(node, parentUnit, cursor.Ms);
 		var interval = node.Interval is > 1 ? node.Interval.Value : 1;
 		var bases = ResolveBases(node, cursor.Ms, parentUnit);
+		_nodes.TryGetValue(node, out var info);
+		var repeat = _lifeSetAside.Contains(node) ? null : info?.Repeat;
 
 		// Fast path: pure whitelist. Jump straight to the next allowed value
-		// >= currentVal instead of scanning every value.
+		// >= currentVal instead of scanning every value. (A *x changes nothing
+		// here: an index % does not step is a run of one value.)
 		if (interval == 1 && bases is not null)
 		{
 			foreach (var b in bases)
@@ -1065,7 +1177,7 @@ public sealed class OrbitEngine
 
 				if (b != currentVal)
 				{
-					cursor.Ms = UnitSet(cursor.Ms, unit, b, parentUnit);
+					cursor.Ms = NodeSet(node, cursor.Ms, b, parentUnit);
 				}
 
 				return true;
@@ -1074,15 +1186,31 @@ public sealed class OrbitEngine
 			return false;
 		}
 
-		for (var val = currentVal; val <= maxVal; val++)
+		// *x on a bare unit bounds its single run: a nested node's run starts at its parent period's first value (the
+		// first on-phase one under %N); a top-level node's runs from its life start, as a window of time.
+		var windowEnd = long.MaxValue;
+		if (repeat is { } limit && bases is null)
 		{
-			// Local offset loop (e.g. h{4}%3 -> every 3h starting from hour 4).
+			if (info!.Parent is null)
+			{
+				windowEnd = RepeatEnd(node, limit);
+			}
+			else
+			{
+				maxVal = Math.Min(maxVal, RunLast(node, cursor.Ms, parentUnit, minVal, maxVal, interval, limit));
+			}
+		}
+
+		for (var val = Math.Max(currentVal, minVal); val <= maxVal; val++)
+		{
+			// Local offset loop (e.g. h{4}%3 -> every 3h starting from hour 4); a *x
+			// keeps each run's first x values.
 			if (interval > 1 && bases is not null)
 			{
 				var matched = false;
 				foreach (var b in bases)
 				{
-					if (val >= b && (val - b) % interval == 0)
+					if (val >= b && (val - b) % interval == 0 && (repeat is null || (val - b) / interval < repeat))
 					{
 						matched = true;
 						break;
@@ -1098,22 +1226,44 @@ public sealed class OrbitEngine
 			// Continuous global interval (e.g. M[d%2] -> every 2 days from anchor).
 			if (interval > 1 && bases is null)
 			{
-				var projected = UnitSet(cursor.Ms, unit, val, parentUnit);
+				var projected = NodeSet(node, cursor.Ms, val, parentUnit);
 				if (Math.Abs(_calendar.Delta(projected, _anchor, unit)) % interval != 0)
 				{
 					continue;
 				}
 			}
 
+			// Past a top-level window's end every later value is too.
+			if (windowEnd != long.MaxValue && _calendar.SnapToStart(NodeSet(node, cursor.Ms, val, parentUnit), unit) >= windowEnd)
+			{
+				return false;
+			}
+
 			if (val != currentVal)
 			{
-				cursor.Ms = UnitSet(cursor.Ms, unit, val, parentUnit);
+				cursor.Ms = NodeSet(node, cursor.Ms, val, parentUnit);
 			}
 
 			return true;
 		}
 
 		return false; // Exhausted this unit; forces the parent loop to roll over.
+	}
+
+	// The last value a nested bare node's *x lets its run reach in the current parent period: the run starts at the
+	// period's first value (its first on-phase one under a continuous %N) and keeps x of its steps.
+	private int RunLast(OrbitTimeUnitNode node, long cursorMs, OrbitUnit? parentUnit, int minVal, int maxVal, int interval, int repeat)
+	{
+		var first = minVal;
+		if (interval > 1)
+		{
+			while (first <= maxVal && Math.Abs(_calendar.Delta(NodeSet(node, cursorMs, first, parentUnit), _anchor, node.Unit)) % interval != 0)
+			{
+				first++;
+			}
+		}
+
+		return first + (repeat - 1) * interval;
 	}
 
 	// Resolves a node's index spec into a sorted list of concrete unit values,
@@ -1164,8 +1314,8 @@ public sealed class OrbitEngine
 	private int[] PickRandom(OrbitTimeUnitNode node, long cursorMs, OrbitUnit? parentUnit, int count)
 	{
 		var unit = node.Unit;
-		var lo = UnitMin(unit, parentUnit, cursorMs);
-		var hi = UnitMax(unit, parentUnit, cursorMs);
+		var lo = NodeMin(node, parentUnit, cursorMs);
+		var hi = NodeMax(node, parentUnit, cursorMs);
 
 		var pool = new List<int>();
 		for (var v = lo; v <= hi; v++)
@@ -1338,6 +1488,12 @@ public sealed class OrbitEngine
 			return _calendar.Get(originalMs, OrbitUnit.Year) == _calendar.Get(updatedMs, OrbitUnit.Year);
 		}
 
+		// A week or a day counted within a year is cut at the year's end, as one within a month is at the month's.
+		if ((unit is OrbitUnit.Week or OrbitUnit.Day) && parentUnit == OrbitUnit.Year)
+		{
+			return _calendar.Get(originalMs, OrbitUnit.Year) == _calendar.Get(updatedMs, OrbitUnit.Year);
+		}
+
 		if (unit == OrbitUnit.Week)
 		{
 			return _calendar.Get(originalMs, OrbitUnit.Month) == _calendar.Get(updatedMs, OrbitUnit.Month)
@@ -1353,6 +1509,141 @@ public sealed class OrbitEngine
 
 		return _calendar.Get(originalMs, OrbitUnit.Day) == _calendar.Get(updatedMs, OrbitUnit.Day)
 			&& _calendar.Get(originalMs, OrbitUnit.Year) == _calendar.Get(updatedMs, OrbitUnit.Year);
+	}
+
+	// --- Node-aware unit helpers ---
+	// A week inside a month or a year is numbered from that cycle's first complete week (see WeekOffset), and a day inside
+	// a year is its day of the year; every other node reads its unit as the parent-aware unit helpers below do.
+
+	// The cycle a week node is counted within: a month — written, or the one a top-level week index addresses — or a
+	// written year (a calendar week). A bare top-level week has none: it runs week after week.
+	private OrbitUnit? WeekCycle(OrbitTimeUnitNode node, OrbitUnit? parentUnit)
+	{
+		if (node.Unit != OrbitUnit.Week || !_nodes.TryGetValue(node, out var info))
+		{
+			return null;
+		}
+
+		if (parentUnit == OrbitUnit.Year && info.Parent == OrbitUnit.Year)
+		{
+			return OrbitUnit.Year;
+		}
+
+		if (parentUnit == OrbitUnit.Month && (info.Parent is not null || node.Indices is not null))
+		{
+			return OrbitUnit.Month;
+		}
+
+		return null;
+	}
+
+	// Whether a node is a bare top-level week: it runs week after week, so the month it is implicitly wrapped in does not
+	// cut it, and a week that straddles two months keeps its days in both. (Cut there, the days past the seam were lost:
+	// stepping on to the next week lands in the new month's second week.)
+	private bool RunsAcrossMonths(OrbitTimeUnitNode node, OrbitUnit? parentUnit)
+		=> node.Unit == OrbitUnit.Week && parentUnit == OrbitUnit.Month && _nodes.TryGetValue(node, out var info) && info.Parent is null && node.Indices is null;
+
+	// Whether a node is a day counted within a written year: its day of the year.
+	private static bool IsDayOfYear(OrbitTimeUnitNode node, OrbitUnit? parentUnit)
+		=> node.Unit == OrbitUnit.Day && parentUnit == OrbitUnit.Year;
+
+	// A week's place in a cycle, counting the week the cycle starts in as the first (before any offset).
+	private int WeekOfCycle(long cursorMs, long cycleStartMs)
+		=> (int)_calendar.Delta(_calendar.SnapToStart(cursorMs, OrbitUnit.Week), _calendar.SnapToStart(cycleStartMs, OrbitUnit.Week), OrbitUnit.Week) + 1;
+
+	// 1 when the week a cycle starts in is not the cycle's, else 0. That week belongs to the cycle only when the first
+	// instance its node asks for (a leaf week asks for the whole week) falls inside the cycle — so a month that starts
+	// midweek has M[w{1}[d{1}]] land on its first Monday, not on the Monday of the week before.
+	private int WeekOffset(OrbitTimeUnitNode node, long cursorMs, OrbitUnit cycle)
+	{
+		var start = _calendar.SnapToStart(cursorMs, cycle);
+		if (!_weekOffsets.TryGetValue(node, out var byCycle))
+		{
+			byCycle = [];
+			_weekOffsets[node] = byCycle;
+		}
+
+		if (byCycle.TryGetValue(start, out var cached))
+		{
+			return cached;
+		}
+
+		var offset = 0;
+		var week = _calendar.SnapToStart(start, OrbitUnit.Week);
+		if (week < start)
+		{
+			var first = week;
+			if (node.Child is not null)
+			{
+				var probe = new Cursor(week);
+				var weekEnd = _calendar.Add(week, OrbitUnit.Week, 1);
+				first = SolveNext(node.Child, probe, OrbitUnit.Week) && probe.Ms < weekEnd ? probe.Ms : long.MaxValue;
+			}
+
+			if (first < start)
+			{
+				offset = 1;
+			}
+		}
+
+		byCycle[start] = offset;
+		return offset;
+	}
+
+	private int NodeGet(OrbitTimeUnitNode node, long cursorMs, OrbitUnit? parentUnit)
+	{
+		if (WeekCycle(node, parentUnit) is { } cycle)
+		{
+			return WeekOfCycle(cursorMs, _calendar.SnapToStart(cursorMs, cycle)) - WeekOffset(node, cursorMs, cycle);
+		}
+
+		if (IsDayOfYear(node, parentUnit))
+		{
+			return (int)_calendar.Delta(_calendar.SnapToStart(cursorMs, OrbitUnit.Day), _calendar.SnapToStart(cursorMs, OrbitUnit.Year), OrbitUnit.Day) + 1;
+		}
+
+		return _calendar.Get(cursorMs, node.Unit, parentUnit);
+	}
+
+	private int NodeMin(OrbitTimeUnitNode node, OrbitUnit? parentUnit, long contextMs)
+	{
+		return WeekCycle(node, parentUnit) is not null || IsDayOfYear(node, parentUnit) ? 1 : UnitMin(node.Unit, parentUnit, contextMs);
+	}
+
+	// A week's last in its cycle is the one the cycle ends in, so a week index never overflows into the next cycle; a
+	// day's last in its year is the year's last day.
+	private int NodeMax(OrbitTimeUnitNode node, OrbitUnit? parentUnit, long contextMs)
+	{
+		if (WeekCycle(node, parentUnit) is { } cycle)
+		{
+			var start = _calendar.SnapToStart(contextMs, cycle);
+			var lastDay = _calendar.Add(_calendar.Add(start, cycle, 1), OrbitUnit.Day, -1);
+			return WeekOfCycle(lastDay, start) - WeekOffset(node, contextMs, cycle);
+		}
+
+		if (IsDayOfYear(node, parentUnit))
+		{
+			var start = _calendar.SnapToStart(contextMs, OrbitUnit.Year);
+			return (int)_calendar.Delta(_calendar.Add(start, OrbitUnit.Year, 1), start, OrbitUnit.Day);
+		}
+
+		return UnitMax(node.Unit, parentUnit, contextMs);
+	}
+
+	private long NodeSet(OrbitTimeUnitNode node, long cursorMs, int value, OrbitUnit? parentUnit)
+	{
+		if (WeekCycle(node, parentUnit) is { } cycle)
+		{
+			var current = WeekOfCycle(cursorMs, _calendar.SnapToStart(cursorMs, cycle));
+			return _calendar.Add(cursorMs, OrbitUnit.Week, value + WeekOffset(node, cursorMs, cycle) - current);
+		}
+
+		if (IsDayOfYear(node, parentUnit))
+		{
+			return _calendar.Add(cursorMs, OrbitUnit.Day, value - NodeGet(node, cursorMs, parentUnit));
+		}
+
+		return UnitSet(cursorMs, node.Unit, value, parentUnit);
 	}
 
 	// --- Parent-aware unit helpers ---
@@ -1386,6 +1677,13 @@ public sealed class OrbitEngine
 		{
 			var weekStart = _calendar.SnapToStart(cursorMs, OrbitUnit.Week);
 			return _calendar.Add(weekStart, OrbitUnit.Day, value - 1);
+		}
+
+		// Moving a month or a year from a day the target lacks (the 31st into a 30-day month, the 29th of February
+		// into a common year) would roll over into the period after it, so the move starts from the period's first day.
+		if (unit is OrbitUnit.Month or OrbitUnit.Year)
+		{
+			return _calendar.Set(_calendar.SnapToStart(cursorMs, unit), unit, value);
 		}
 
 		return _calendar.Set(cursorMs, unit, value);
@@ -1463,7 +1761,7 @@ public sealed class OrbitEngine
 					}
 				}
 
-				// @x / *x are per-node running counters, tracked via provenance.
+				// @x / *x belong to their node and are resolved inside the solver.
 			}
 
 			if (unitNode.Child is not null)
@@ -1476,155 +1774,39 @@ public sealed class OrbitEngine
 		return output;
 	}
 
-	// --- Node identity, limit indexing, provenance ---
-
-	// Walks the RAW (un-normalized) AST recording, for every node bearing an @x/*x
-	// limit, its tightest counts and the unit of its nearest explicit ancestor
-	// (the scope a *x resets per; null => the node is a root, so *x is global).
-	private void IndexLimits(OrbitAstNode node, OrbitUnit? explicitParent)
+	// Walks the RAW (un-normalized) AST recording every written node's parent unit (null for a top-level node) and
+	// its tightest *x and @x.
+	private void IndexNodes(OrbitAstNode node, OrbitUnit? parent)
 	{
 		if (node is OrbitSetOperationNode set)
 		{
 			// A set operation doesn't introduce a nesting level of its own; its
-			// operands share the enclosing explicit parent.
-			IndexLimits(set.Left, explicitParent);
-			IndexLimits(set.Right, explicitParent);
+			// operands share the enclosing written parent.
+			IndexNodes(set.Left, parent);
+			IndexNodes(set.Right, parent);
 			return;
 		}
 
 		var unitNode = (OrbitTimeUnitNode)node;
-		int? instances = null;
-		int? iterations = null;
+		int? repeat = null;
+		int? emit = null;
 		foreach (var limit in unitNode.Limits)
 		{
-			if (limit.Kind == OrbitLimitKind.Instances)
-			{
-				instances = instances is null ? limit.Count : Math.Min(instances.Value, limit.Count);
-			}
-
 			if (limit.Kind == OrbitLimitKind.Iterations)
 			{
-				iterations = iterations is null ? limit.Count : Math.Min(iterations.Value, limit.Count);
+				repeat = repeat is null ? limit.Count : Math.Min(repeat.Value, limit.Count);
+			}
+
+			if (limit.Kind == OrbitLimitKind.Instances)
+			{
+				emit = emit is null ? limit.Count : Math.Min(emit.Value, limit.Count);
 			}
 		}
 
-		if (instances is not null || iterations is not null)
-		{
-			_limited[unitNode] = (instances, iterations, explicitParent);
-		}
-
+		_nodes[unitNode] = new NodeInfo(parent, repeat, emit);
 		if (unitNode.Child is not null)
 		{
-			IndexLimits(unitNode.Child, unitNode.Unit);
+			IndexNodes(unitNode.Child, unitNode.Unit);
 		}
-	}
-
-	// Assigns a stable positional id to every time-unit node via a pre-order walk of
-	// the normalized AST. Deterministic parsing makes these ids match across resume.
-	private void AssignIds(OrbitAstNode node)
-	{
-		if (node is OrbitSetOperationNode set)
-		{
-			AssignIds(set.Left);
-			AssignIds(set.Right);
-			return;
-		}
-
-		var unitNode = (OrbitTimeUnitNode)node;
-		_nodeId[unitNode] = _nodeId.Count;
-		if (unitNode.Child is not null)
-		{
-			AssignIds(unitNode.Child);
-		}
-	}
-
-	// Rebuilds the dead-node set from restored counters: an @x node whose instances
-	// budget is spent is permanently dead. (Global *x exhaustion is re-detected
-	// lazily during resolution, so it needs no seeding here.)
-	private void RecomputeDeadNodes()
-	{
-		_deadNodes.Clear();
-		foreach (var (node, info) in _limited)
-		{
-			if (info.Instances is null)
-			{
-				continue;
-			}
-
-			if (_counters.TryGetValue(_nodeId[node], out var state) && (state.Fired ?? 0) >= info.Instances)
-			{
-				_deadNodes.Add(_nodeId[node]);
-			}
-		}
-	}
-
-	// The limited nodes an emission at `matchTime` passed through, in root->leaf
-	// order, each with the id/counts and (for *x) the period + reset scope needed
-	// to charge its counter. Only branches that actually produced the match descend.
-	private List<PathEntry> CollectPath(OrbitAstNode node, long matchTime, OrbitUnit? parentUnit)
-	{
-		var output = new List<PathEntry>();
-		void Walk(OrbitAstNode n, OrbitUnit? pUnit)
-		{
-			if (n is OrbitSetOperationNode set)
-			{
-				var left = Produces(set.Left, matchTime, pUnit);
-				var right = Produces(set.Right, matchTime, pUnit);
-				// Exclusion (A-B) / symmetric-difference credit only the producing
-				// side; union/intersection credit whichever side(s) yielded the match.
-				if (set.Operator == OrbitSetOperator.Exclusion)
-				{
-					if (left)
-					{
-						Walk(set.Left, pUnit);
-					}
-
-					return;
-				}
-
-				if (left)
-				{
-					Walk(set.Left, pUnit);
-				}
-
-				if (right && set.Operator != OrbitSetOperator.SymmetricDifference)
-				{
-					Walk(set.Right, pUnit);
-				}
-				else if (right && !left)
-				{
-					Walk(set.Right, pUnit);
-				}
-
-				return;
-			}
-
-			var unitNode = (OrbitTimeUnitNode)n;
-			if (_limited.TryGetValue(unitNode, out var info))
-			{
-				output.Add(new PathEntry(
-					_nodeId[unitNode],
-					info.Instances,
-					info.Iterations,
-					info.ResetUnit,
-					_calendar.SnapToStart(matchTime, unitNode.Unit)));
-			}
-
-			if (unitNode.Child is not null)
-			{
-				Walk(unitNode.Child, unitNode.Unit);
-			}
-		}
-
-		Walk(node, parentUnit);
-		return output;
-	}
-
-	// Does this subtree structurally produce exactly `matchTime`? Used to attribute
-	// a match to the branch(es) responsible inside a set operation.
-	private bool Produces(OrbitAstNode node, long matchTime, OrbitUnit? parentUnit)
-	{
-		var cursor = new Cursor(matchTime);
-		return SolveNext(node, cursor, parentUnit) && cursor.Ms == matchTime;
 	}
 }

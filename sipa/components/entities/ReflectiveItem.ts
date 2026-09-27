@@ -1,0 +1,64 @@
+import { component, html, property } from "@a11d/lit"
+import { Reflective } from "@pleiades/sdk"
+import { OccurrenceItem } from "./OccurrenceItem"
+import { ActiveTimeframesRef, core } from ".."
+import { toast } from "../../host"
+
+/**
+ * A single daily reflective. Its notch quick-switches the executed flag; its toplane surfaces the lunar
+ * directive of the decree that generated it (absent for manual/drawn reflectives). While its affinity timeframe is
+ * active the row wears the item flare, like an executive row (PEP100 patch 3).
+ *
+ * The record is owned by the aggregate that rendered it, so a committed toggle is announced upward with a
+ * bubbling `reflectivechange` event carrying the merged record, and the aggregate reconciles.
+ */
+@component('p7t-reflective-item')
+export class ReflectiveItem extends OccurrenceItem {
+	@property({ type: Object }) reflective?: Reflective
+
+	/** The timeframes active right now — the one listing the executive rows and the chips read too. */
+	private readonly activeTimeframes = new ActiveTimeframesRef(this)
+
+	/**
+	 * An open reflective flares while its affinity timeframe is active (PEP100 patch 3), exactly as an executive does;
+	 * a done one never does. Only the reflective rows flare, not the group that holds them.
+	 */
+	protected override get flaring() {
+		const reflective = this.reflective
+		return !!reflective && !reflective.executed && this.activeTimeframes.isActive(reflective.affinityTimeframeId)
+	}
+
+	protected override get heading() {
+		return this.reflective?.description ?? ''
+	}
+
+	protected override get directive() {
+		return this.reflective?.decree?.directive
+	}
+
+	protected override get notchTemplate() {
+		return html`<p7t-icon icon=${this.reflective?.executed ? 'state-done' : 'state-zero'}></p7t-icon>`
+	}
+
+	protected override async notchAction() {
+		const reflective = this.reflective
+		if (!reflective) return
+
+		const updated = await core.polaris.updateReflective(reflective.id, { executed: !reflective.executed })
+		if (!updated) {
+			toast('Failed to update reflective.', 'error')
+			return
+		}
+
+		// The update response carries no decree navigation, so the known decree is kept for the directive line.
+		const merged: Reflective = { ...reflective, ...updated, decree: updated.decree ?? reflective.decree }
+		this.reflective = merged
+		this.dispatchEvent(new CustomEvent<Reflective>('reflectivechange', { detail: merged, bubbles: true, composed: true }))
+	}
+}
+
+declare global {
+	interface HTMLElementTagNameMap {
+		'p7t-reflective-item': ReflectiveItem
+	}
+}

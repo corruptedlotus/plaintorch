@@ -80,11 +80,11 @@ public sealed class PolarisCycleModule : Module
 		cycles.MapGet("/{polarisCycleId}/inclusions", async (string polarisCycleId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.GetInclusionsAsync(polarisCycleId, cancellationToken)));
 
-		cycles.MapPost("/current/attentives", async (PolarisAttentiveAdd request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.AddDecreeAttentiveAsync(request, null, cancellationToken)));
+		cycles.MapPost("/current/decrees", async (PolarisDecreeAdd request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.AddDecreeExecutiveAsync(request, null, cancellationToken)));
 
-		cycles.MapPost("/{polarisCycleId}/attentives", async (string polarisCycleId, PolarisAttentiveAdd request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.AddDecreeAttentiveAsync(request, polarisCycleId, cancellationToken)));
+		cycles.MapPost("/{polarisCycleId}/decrees", async (string polarisCycleId, PolarisDecreeAdd request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.AddDecreeExecutiveAsync(request, polarisCycleId, cancellationToken)));
 
 		cycles.MapPost("/{polarisCycleId}/reflectives/draw", async (string polarisCycleId, ReflectiveDrawRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.DrawReflectivesAsync(request with { PolarisCycleId = polarisCycleId }, cancellationToken)));
@@ -95,6 +95,15 @@ public sealed class PolarisCycleModule : Module
 		var executives = endpoints.MapEnrichedGroup("/api/executives");
 		executives.MapPut("/{executiveId:long}", async (long executiveId, ExecutiveUpdate request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateExecutiveAsync(executiveId, request, cancellationToken)));
+
+		executives.MapPost("/{executiveId:long}/next-polaris", async (long executiveId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.MoveExecutiveToNextPolarisAsync(executiveId, cancellationToken)));
+
+		executives.MapDelete("/{executiveId:long}", async (long executiveId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+		{
+			await api.RemoveExecutiveAsync(executiveId, cancellationToken);
+			return Results.NoContent();
+		});
 
 		var reflectives = endpoints.MapEnrichedGroup("/api/reflectives");
 		reflectives.MapPut("/{reflectiveId:long}", async (long reflectiveId, ReflectiveUpdate request, IPolarisCycleApi api, CancellationToken cancellationToken) =>

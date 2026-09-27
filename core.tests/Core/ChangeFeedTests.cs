@@ -3,6 +3,7 @@ using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Changes;
 using Pleiades.Plaintorch.Api.Contracts;
+using Pleiades.Plaintorch.Preferences;
 using Pleiades.Tests.Harness;
 using Xunit;
 
@@ -102,6 +103,31 @@ public sealed class ChangeFeedTests : VaultTestBase
 			&& change.Id == cycle.Id
 			&& change.Operation == EntityChangeOperation.Modified);
 		Assert.DoesNotContain(changes, change => change.Type == nameof(Executive));
+	}
+
+	[Fact]
+	public async Task A_preference_write_is_announced_under_its_key()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+		using var gregorian = System.Text.Json.JsonDocument.Parse("\"Gregorian\"");
+
+		var set = await RecordAsync(async () => await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IPreferenceApi>()
+			.SetAsync(PreferenceKeys.DefaultCalendar, gregorian.RootElement, cancellationToken)));
+		var reset = await RecordAsync(async () => await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IPreferenceApi>()
+			.ResetAsync(PreferenceKeys.DefaultCalendar, cancellationToken)));
+
+		// A preference has no identity a client tracks, so it is announced under its own type: the client matches it
+		// to nothing and only revalidates what it observes, which is how a calendar switch reaches an open window.
+		Assert.Contains(set, change =>
+			change.Type == PlaintorchChangeFeedInterceptor.UserPreferenceChangeType
+			&& change.Id == PreferenceKeys.DefaultCalendar
+			&& change.Operation == EntityChangeOperation.Added);
+		Assert.Contains(reset, change =>
+			change.Type == PlaintorchChangeFeedInterceptor.UserPreferenceChangeType
+			&& change.Id == PreferenceKeys.DefaultCalendar
+			&& change.Operation == EntityChangeOperation.Deleted);
 	}
 
 	[Fact]

@@ -1,12 +1,5 @@
-@property --flare-intensity {
-	syntax: '<percentage>';
-	initial-value: 0%;
-}
-
-.plaintorch-root {
-	--p7t-accent-polaris: #038899;
-	--p7t-accent-onrush: #d4227b;
-}
+/* The components' own document rules (the flare property, the accent tokens) ship with @pleiades/sipa and are
+   adopted at load (adoptComponentStyles); what stays here styles the plugin's views and Obsidian's own chrome. */
 
 .view-content:has(p7t-note-banner:not([invalid])) .metadata-container,
 .view-content:has(p7t-note-banner:not([invalid])) .inline-title {
@@ -96,7 +89,8 @@
 	color: var(--text-muted);
 }
 
-.plaintorch-media-selector {
+/* A picker laid out as a grid of tiles (the SIPA suggest modal's layout: 'grid' — the media picker today). */
+.plaintorch-suggest-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(7.2em, 1fr));
 

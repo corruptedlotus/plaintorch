@@ -32,6 +32,11 @@ public sealed class VaultWatcherSyncService(
 	/// <param name="candidate">The discovered candidate to reconcile.</param>
 	/// <param name="origin">The source initiating the reconciliation.</param>
 	/// <param name="cancellationToken">A token used to cancel reconciliation.</param>
+	/// <remarks>
+	/// A candidate that throws leaves nothing staged on the scope's context, so a failure is contained to its own
+	/// candidate even when many are reconciled in one scope. A file-driven delete that other rows still block throws
+	/// <see cref="VaultEntityDeleteBlockedException"/> having written nothing.
+	/// </remarks>
 	public async Task ExecuteAsync(VaultSyncCandidate candidate, string origin, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(candidate);
@@ -41,6 +46,22 @@ public sealed class VaultWatcherSyncService(
 		// apply what comes out of this even over an edit it has in flight.
 		using var critical = PlaintorchChangeOrigin.Critical();
 
+		try
+		{
+			await ExecuteCoreAsync(candidate, origin, cancellationToken);
+		}
+		catch
+		{
+			// A candidate that fails leaves nothing staged behind. The startup sweep reconciles every candidate in one
+			// scope, so a change the database refused would otherwise stay tracked and be re-flushed — and fail again —
+			// by the next candidate's save, failing the rest of the sweep with it.
+			context.ChangeTracker.Clear();
+			throw;
+		}
+	}
+
+	private async Task ExecuteCoreAsync(VaultSyncCandidate candidate, string origin, CancellationToken cancellationToken)
+	{
 		switch (candidate.SuggestedAction)
 		{
 			case VaultSyncAction.CreateFromFile:
@@ -252,6 +273,9 @@ public sealed class VaultWatcherSyncService(
 
 		if (existing is Objective objective)
 		{
+			// Due is an owned type (PEP111); SetValues copies only scalar properties and never descends into an
+			// owned reference, so the parsed frontmatter due would be dropped. Copy it across explicitly.
+			objective.Due = (candidate.ParsedModel as Objective)?.Due;
 			await NormalizeObjectiveForeignKeysAsync(objective, candidate.VaultRelativePath, cancellationToken);
 		}
 
@@ -271,6 +295,14 @@ public sealed class VaultWatcherSyncService(
 			existingSprint.GraphLayout = existingEntry.OriginalValues.GetValue<string?>(nameof(OnrushSprint.GraphLayout));
 		}
 
+		if (existing is Directive existingDirective)
+		{
+			// A directive's availability timeframe is database-only (PEP100 patch 2) — a timeframe id is a row id, not
+			// a PUCK, so it never reaches frontmatter — and a frontmatter sync must not clear it, for the same reason
+			// as parenting and the sprint fields above.
+			existingDirective.AvailabilityTimeframeId = existingEntry.OriginalValues.GetValue<long?>(nameof(Directive.AvailabilityTimeframeId));
+		}
+
 		if (existing is Fate or Decree)
 		{
 			await NormalizeIncentiveDirectiveAsync((Incentive)existing, candidate.VaultRelativePath, cancellationToken);
@@ -283,7 +315,7 @@ public sealed class VaultWatcherSyncService(
 		}
 
 		var requiresScaffold = RequiresCanonicalScaffold(candidate);
-		if (!existingEntry.Properties.Any(property => property.IsModified))
+		if (!HasSyncChanges(existingEntry))
 		{
 			if (requiresScaffold)
 			{
@@ -432,6 +464,17 @@ public sealed class VaultWatcherSyncService(
 	}
 
 	/// <summary>
+	/// Whether a frontmatter sync actually changed the entity: a modified scalar property, or a changed owned
+	/// reference it maps (Objective.Due, PEP111) — SetValues never touches an owned reference, so it is applied
+	/// separately and the scalar-only modified check would otherwise miss it.
+	/// </summary>
+	private static bool HasSyncChanges(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry)
+		=> entry.Properties.Any(property => property.IsModified)
+			|| entry.References.Any(reference => reference.TargetEntry is { } owned
+				&& owned.Metadata.IsOwned()
+				&& owned.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
+
+	/// <summary>
 	/// Resets the persisted orbit schedule state when a file sync changed a declarative's orbit notation.
 	/// A fresh state (anchored at reset time) is lazily rebuilt on the next seeking resolution.
 	/// </summary>
@@ -444,7 +487,7 @@ public sealed class VaultWatcherSyncService(
 			return;
 		}
 
-		var states = await context.Set<OrbitScheduleState>()
+		var states = await context.Set<IncentiveOrbitScheduleState>()
 			.Where(state => state.IncentiveId == incentiveId)
 			.ToListAsync(cancellationToken);
 		if (states.Count > 0)
@@ -471,7 +514,6 @@ public sealed class VaultWatcherSyncService(
 			candidate.Model.EntityName,
 			namedEntity.Id,
 			namedEntity.Title,
-			candidate.VaultRelativePath,
 			cancellationToken);
 	}
 
@@ -615,7 +657,39 @@ public sealed class VaultWatcherSyncService(
 			return;
 		}
 
-		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(existing, "watcher-file-delete", Environment.UserName, cancellationToken);
+		// Rows that still reference the entity through a restricting relationship (a directive's children, an incentive's
+		// child incentives) make the database refuse the removal — and the API refuses the same deletes. Attempting it
+		// anyway failed on every retry, so the blocked delete is reported as such and nothing is written. An incentive's
+		// executives do not block: the save-time state rule releases them in the removing save.
+		var blockers = await entityGateway.FindDeleteBlockersAsync(existing, cancellationToken);
+		if (blockers.Count > 0)
+		{
+			logger.LogWarning(
+				"Watcher did not delete {EntityType} '{EntityId}' after file '{Path}' was removed: it is still referenced by {Blockers}.",
+				candidate.Model.EntityName,
+				candidate.PathId,
+				candidate.VaultRelativePath,
+				string.Join(", ", blockers.Select(blocker => $"{blocker.Count} {blocker.DependentEntity}.{blocker.ForeignKeyProperty}")));
+
+			await auditLogService.WriteAsync(
+				"sync",
+				"delete-blocked",
+				subjectType: candidate.Model.EntityName,
+				subjectId: candidate.PathId,
+				subjectTitle: candidate.PathTitle,
+				details: new { origin, candidate.VaultRelativePath, blockers },
+				cancellationToken: cancellationToken);
+
+			throw new VaultEntityDeleteBlockedException(
+				candidate.Model.EntityName,
+				candidate.PathId,
+				(existing as IPuckNamedEntity)?.Title ?? candidate.PathTitle,
+				blockers);
+		}
+
+		// Staged, not saved: the graveyard entry commits in the same save that removes the entity, so a removal the
+		// database still refuses leaves no entry behind.
+		var graveyardEntry = temporalDataService.StageEntityArchive(existing, "watcher-file-delete", Environment.UserName);
 		context.Remove(existing);
 		await context.SaveChangesAsync(cancellationToken);
 

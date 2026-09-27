@@ -27,14 +27,16 @@ public sealed class ActivityApiService(PlainfraContext context) : IActivityApi
 		ArgumentNullException.ThrowIfNull(search);
 		ArgumentException.ThrowIfNullOrWhiteSpace(search.Query);
 
+		// Case-insensitive: SQLite's instr (what Contains translates to) is not, so both sides are lowered.
+		var query = search.Query.ToLowerInvariant();
 		var objectives = await context.Objectives
 			.AsNoTracking()
-			.Where(objective => objective.Id.Contains(search.Query) || objective.Title.Contains(search.Query))
+			.Where(objective => objective.Id.ToLower().Contains(query) || objective.Title.ToLower().Contains(query))
 			.ToListAsync(cancellationToken);
 
 		var decrees = await context.Decrees
 			.AsNoTracking()
-			.Where(decree => decree.Id.Contains(search.Query) || decree.Title.Contains(search.Query))
+			.Where(decree => decree.Id.ToLower().Contains(query) || decree.Title.ToLower().Contains(query))
 			.ToListAsync(cancellationToken);
 
 		return Merge(objectives, decrees, search.Take);

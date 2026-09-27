@@ -116,7 +116,14 @@ public sealed class OrbitParser(string input)
 		if (character == 'z')
 		{
 			Consume();
-			return ParseZShorthandModifiers();
+			return ParseTimeLiteral();
+		}
+
+		// Fixed-datetime shorthand: Z{y/M/d[Th:m[:s]]}
+		if (character == 'Z')
+		{
+			Consume();
+			return ParseDateTimeLiteral();
 		}
 
 		// Standard time unit
@@ -152,25 +159,26 @@ public sealed class OrbitParser(string input)
 		return node;
 	}
 
-	private OrbitTimeUnitNode ParseZShorthandModifiers()
+	// z{h:m[:s]} -> a time-of-day literal (no date part; recurs every day at that time).
+	private OrbitDateTimeLiteralNode ParseTimeLiteral()
 	{
 		if (!Match('{'))
 		{
 			throw new FormatException("Expected '{' after 'z' shorthand");
 		}
 
-		var hIndex = ParseNumber();
+		var hour = ParseNumber();
 		if (!Match(':'))
 		{
 			throw new FormatException("Expected ':' inside 'z' shorthand");
 		}
 
-		var mIndex = ParseNumber();
+		var minute = ParseNumber();
 
-		int? sIndex = null;
+		int? second = null;
 		if (Match(':'))
 		{
-			sIndex = ParseNumber();
+			second = ParseNumber();
 		}
 
 		if (!Match('}'))
@@ -178,33 +186,60 @@ public sealed class OrbitParser(string input)
 			throw new FormatException("Expected '}' closing 'z' shorthand");
 		}
 
-		// Build nested z structure: h{A}[m{B}[s{C}]]
-		var rootNode = new OrbitTimeUnitNode
-		{
-			Unit = OrbitUnit.Hour,
-			Indices = new OrbitIndexSpec { Kind = OrbitIndexKind.List, Values = [hIndex] },
-		};
+		var node = new OrbitDateTimeLiteralNode { Hour = hour, Minute = minute, Second = second };
+		// The literal carries the modifiers the shorthand used to hang on its root 'h'
+		// (e.g. z{12:00}%2 -> interval 2, z{12:00}=2h -> a 2h span from 12:00).
+		ParseModifiers(node);
+		return node;
+	}
 
-		var minuteNode = new OrbitTimeUnitNode
+	// Z{y/M/d[Th:m[:s]]} -> a fixed calendar datetime literal (one exact moment). The
+	// time part is optional; the deepest present component fixes the granularity.
+	private OrbitDateTimeLiteralNode ParseDateTimeLiteral()
+	{
+		if (!Match('{'))
 		{
-			Unit = OrbitUnit.Minute,
-			Indices = new OrbitIndexSpec { Kind = OrbitIndexKind.List, Values = [mIndex] },
-		};
-		rootNode.Child = minuteNode;
-
-		if (sIndex is not null)
-		{
-			minuteNode.Child = new OrbitTimeUnitNode
-			{
-				Unit = OrbitUnit.Second,
-				Indices = new OrbitIndexSpec { Kind = OrbitIndexKind.List, Values = [sIndex.Value] },
-			};
+			throw new FormatException("Expected '{' after 'Z' shorthand");
 		}
 
-		// Shorthand gets modifiers applied to the root 'h' node (e.g. z{12:00}%2 -> interval 2 on 'h')
-		ParseModifiers(rootNode);
+		var year = ParseNumber();
+		if (!Match('/'))
+		{
+			throw new FormatException("Expected '/' after year in 'Z' shorthand");
+		}
 
-		return rootNode;
+		var month = ParseNumber();
+		if (!Match('/'))
+		{
+			throw new FormatException("Expected '/' after month in 'Z' shorthand");
+		}
+
+		var day = ParseNumber();
+
+		int? hour = null, minute = null, second = null;
+		if (Match('T'))
+		{
+			hour = ParseNumber();
+			if (!Match(':'))
+			{
+				throw new FormatException("Expected ':' in 'Z' time part");
+			}
+
+			minute = ParseNumber();
+			if (Match(':'))
+			{
+				second = ParseNumber();
+			}
+		}
+
+		if (!Match('}'))
+		{
+			throw new FormatException("Expected '}' closing 'Z' shorthand");
+		}
+
+		var node = new OrbitDateTimeLiteralNode { Year = year, Month = month, Day = day, Hour = hour, Minute = minute, Second = second };
+		ParseModifiers(node);
+		return node;
 	}
 
 	private OrbitIndexSpec ParseIndexSpec()
@@ -252,7 +287,7 @@ public sealed class OrbitParser(string input)
 		return new OrbitIndexSpec { Kind = OrbitIndexKind.List, Values = values };
 	}
 
-	private void ParseModifiers(OrbitTimeUnitNode node)
+	private void ParseModifiers(IOrbitModifiable node)
 	{
 		while (_pos < _input.Length)
 		{

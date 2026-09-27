@@ -1,5 +1,5 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian"
-import type { CanvasContextMode, DependencyCanvas } from "components"
+import type { CanvasContextMode, DependencyCanvas } from "@pleiades/sipa"
 
 export const PLAINTORCH_CANVAS_VIEW_TYPE = "plaintorch-dependency-canvas"
 

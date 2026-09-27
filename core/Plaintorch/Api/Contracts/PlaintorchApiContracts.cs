@@ -45,6 +45,13 @@ public sealed record EntityExistence(
 /// <summary>
 /// Represents a watcher issue record exposed through system diagnostics APIs.
 /// </summary>
+/// <param name="IsCritical">Whether the issue blocks the watcher's work: its severity is <c>critical</c> or <c>fatal</c>.</param>
+/// <param name="Severity">
+/// The graded severity (PEP108): <c>info</c> (no consequence; never affects health), <c>warning</c> (no breaking
+/// consequence, best resolved), <c>error</c> (invalid content the user must resolve), <c>critical</c> (a technical failure
+/// blocking part of the watcher's job) or <c>fatal</c> (the watcher cannot run; it is on standby, and the issue cannot be
+/// dismissed).
+/// </param>
 /// <param name="Message">The reason's generic descriptor message (what this kind of issue means), resolved per request.</param>
 /// <param name="Detail">
 /// The specific detail of this occurrence — the policy's reason, an exception message, the offending files — or
@@ -176,7 +183,7 @@ public enum DirectiveKind
 public sealed record StellarDirectiveUpdate(
 	string? Title = null,
 	Optional<string?> Codename = default,
-	string? ParentDirectiveId = null,
+	Optional<string?> ParentDirectiveId = default,
 	IReadOnlyList<string>? Tags = null,
 	Optional<DateOnly?> Due = default,
 	Optional<DateOnly?> StartDate = default,
@@ -189,7 +196,7 @@ public sealed record StellarDirectiveUpdate(
 public sealed record LunarDirectiveUpdate(
 	string? Title = null,
 	Optional<string?> Codename = default,
-	string? ParentDirectiveId = null,
+	Optional<string?> ParentDirectiveId = default,
 	IReadOnlyList<string>? Tags = null);
 
 /// <summary>
@@ -237,6 +244,13 @@ public sealed record DirectiveBannerRequest(
 	bool Clear = false);
 
 /// <summary>
+/// Selects a directive's availability timeframe (PEP100 patch 2). Works for both stellar and lunar directives; the
+/// timeframe must exist and be in <see cref="TimeframeInclusion.Availability"/> mode.
+/// </summary>
+/// <param name="TimeframeId">The availability timeframe to set; <see langword="null"/> clears the availability.</param>
+public sealed record DirectiveAvailabilityRequest(long? TimeframeId);
+
+/// <summary>
 /// Represents the mutable fields of an objective for generic update actions.
 /// </summary>
 /// <remarks>
@@ -246,16 +260,16 @@ public sealed record DirectiveBannerRequest(
 /// </remarks>
 public sealed record ObjectiveUpdate(
 	string? Title = null,
-	string? DirectiveId = null,
+	Optional<string?> DirectiveId = default,
 	string? OnrushSprintId = null,
 	ObjectiveCollege? College = null,
 	int? CelestronValue = null,
-	Optional<DateOnly?> Due = default,
+	Optional<Due?> Due = default,
 	Optional<string?> ParentIncentiveId = default);
 
 /// <summary>
-/// Represents the editable fields of a checkpoint (PEP102): its name, its Celestron toll, and its external
-/// condition.
+/// Represents the editable fields of a checkpoint (PEP102): its name, its Celestron toll, its external
+/// condition, and its optional due (which suppresses the toll until it arrives).
 /// </summary>
 /// <remarks>
 /// The toll and the condition are each optional on the checkpoint (a null means it has none), so a nullable
@@ -266,7 +280,8 @@ public sealed record ObjectiveUpdate(
 public sealed record CheckpointUpdate(
 	string? Title = null,
 	Optional<int?> CelestronToll = default,
-	Optional<bool?> ExternalCondition = default);
+	Optional<bool?> ExternalCondition = default,
+	Optional<Due?> Due = default);
 
 /// <summary>
 /// Represents a workflow shift for an objective.
@@ -348,6 +363,12 @@ public enum PolarisExecutivePlanningMode
 /// allocations are whole-minute working time units that are reconciled through <see cref="Executive.NormalizeTimeAllocations"/>.
 /// There is no elapsed-time input here: a freshly planned executive has not been worked yet, so its tracked
 /// minutes always start at <c>0</c> and are only accrued later through <see cref="ExecutiveUpdate"/>.
+/// <para>
+/// <paramref name="AffinityTimeframeId"/> (PEP100 patch 2) is tri-state on the wire: an omitted key is Auto — the
+/// objective's nearest directive availability, else its college auto-inclusion (a one-shot executive has no objective
+/// and so gets none); an explicit <see langword="null"/> is no affinity even when auto-inclusion would match; an id
+/// sets that timeframe (it must exist).
+/// </para>
 /// </remarks>
 public sealed record PolarisExecutivePlan(
 	PolarisExecutivePlanningMode Mode,
@@ -360,7 +381,8 @@ public sealed record PolarisExecutivePlan(
 	int? CelestronValue = null,
 	int? Estimation = null,
 	int? Minimum = null,
-	int? Maximum = null);
+	int? Maximum = null,
+	Optional<long?> AffinityTimeframeId = default);
 
 /// <summary>
 /// Represents the outcome of planning a Polaris executive.
@@ -386,7 +408,8 @@ public sealed record ExecutiveUpdate(
 	Optional<int?> Minimum = default,
 	Optional<int?> Maximum = default,
 	int? Elapsed = null,
-	Optional<long?> AffinityTimeframeId = default);
+	Optional<long?> AffinityTimeframeId = default,
+	string? MoveToPolarisCycleId = null);
 
 /// <summary>
 /// Represents the inputs used to draw reflectives for a Polaris cycle.
@@ -412,7 +435,11 @@ public sealed record ReflectiveUpdate(
 public sealed record LunarDirectiveWorkflowShift(LunarDirectiveStatus Status);
 
 /// <summary>
-/// Represents the data required to create a fate declarative (PEP100).
+/// Represents the data required to create a fate declarative (PEP100). A fate is stored orbit-only (PEP111): the
+/// <paramref name="Date"/>/<paramref name="StartTime"/>/<paramref name="EndTime"/>/<paramref name="EventDuration"/>
+/// fields are one-off creation sugar — when no explicit <paramref name="Orbit"/> is given they fold into a
+/// fixed-datetime <c>Z{y/M/d[Th:m]}</c> literal (with a <c>=&lt;dur&gt;</c> span for a timed window). An explicit
+/// <paramref name="Orbit"/> takes precedence and the one-off fields are ignored.
 /// </summary>
 public sealed record FatePlan(
 	string Title,
@@ -426,18 +453,16 @@ public sealed record FatePlan(
 	int? EventDuration = null);
 
 /// <summary>
-/// Represents the mutable fields of a fate declarative for generic update actions.
+/// Represents the mutable fields of a fate declarative for generic update actions. A fate is orbit-only (PEP111),
+/// so rescheduling — whether a one-off or a recurrence — is done by setting a new <paramref name="Orbit"/>
+/// (a <c>Z{…}</c> literal for a one-off).
 /// </summary>
 public sealed record FateUpdate(
 	string? Title = null,
 	FateStatus? Status = null,
-	string? DirectiveId = null,
+	Optional<string?> DirectiveId = default,
 	Optional<string?> ParentIncentiveId = default,
-	Optional<DateOnly?> Date = default,
-	TimeOnly? StartTime = null,
-	TimeOnly? EndTime = null,
-	string? Orbit = null,
-	int? EventDuration = null);
+	string? Orbit = null);
 
 /// <summary>
 /// Represents the data required to create a decree declarative (PEP100).
@@ -457,20 +482,11 @@ public sealed record DecreePlan(
 public sealed record DecreeUpdate(
 	string? Title = null,
 	DecreeStatus? Status = null,
-	string? DirectiveId = null,
+	Optional<string?> DirectiveId = default,
 	string? Orbit = null,
 	int? DefaultLength = null,
 	int? ActiveCelestron = null,
 	bool? Reflect = null);
-
-/// <summary>
-/// Represents the caller-supplied occurrence details when interacting with a fate or an objective due date
-/// to materialize an eventive (PEP100).
-/// </summary>
-public sealed record EventiveMaterialization(
-	DateOnly? Date = null,
-	TimeOnly? StartTime = null,
-	TimeOnly? EndTime = null);
 
 /// <summary>
 /// Represents a mutable update to an eventive occurrence. Eventives are never Polaris-bound, so their time
@@ -480,69 +496,40 @@ public sealed record EventiveUpdate(
 	DateOnly? Date = null,
 	Optional<TimeOnly?> StartTime = default,
 	Optional<TimeOnly?> EndTime = default,
-	EventiveResolution? Resolution = null,
-	Optional<int?> Estimation = default,
-	Optional<int?> Minimum = default,
-	Optional<int?> Maximum = default);
+	EventiveResolution? Resolution = null);
 
 /// <summary>
-/// Represents the caller-supplied occurrence details when interacting with a decree to materialize an
-/// unbound attentive (PEP100). The time allocation defaults to the decree's default length.
+/// Represents a mutable update to an attentive occurrence. An attentive is always unbound (PEP111), so
+/// <paramref name="Date"/> reschedules it freely.
 /// </summary>
-public sealed record AttentiveMaterialization(
-	DateOnly? Date = null,
-	TimeOnly? Time = null,
-	int? Estimation = null,
-	int? Minimum = null,
-	int? Maximum = null);
-
-/// <summary>
-/// Represents a mutable update to an attentive occurrence.
-/// </summary>
-/// <remarks>
-/// Mobility rules (PEP100): <paramref name="Date"/> reschedules and is only valid while unbound;
-/// <paramref name="MoveToPolarisCycleId"/> is only valid while Polaris-bound.
-/// </remarks>
 public sealed record AttentiveUpdate(
 	DateOnly? Date = null,
 	Optional<TimeOnly?> Time = default,
 	AttentiveResolution? Resolution = null,
-	string? MoveToPolarisCycleId = null,
-	Optional<int?> Estimation = default,
-	Optional<int?> Minimum = default,
-	Optional<int?> Maximum = default);
+	Optional<long?> AffinityTimeframeId = default);
 
 /// <summary>
 /// Addresses a single eventive occurrence by its owner UID (a fate or objective id) and RECURRENCE-ID
 /// (Strategy 1): the recurrence-id resolves a projected occurrence and its hardened twin identically, so an
 /// interaction hardens the occurrence and applies to it without ever needing a database row id.
 /// </summary>
+/// <param name="OwnerId">The owning fate or objective id (the iCalendar <c>UID</c>).</param>
+/// <param name="RecurrenceId">The occurrence's original slot moment (<see cref="Occurrence.RecurrenceId"/>).</param>
 public sealed record EventiveOccurrenceRef(
 	string OwnerId,
-	DateOnly RecurrenceDate,
-	TimeOnly? RecurrenceTime = null);
+	DateTime RecurrenceId);
 
 /// <summary>
-/// Addresses a single attentive occurrence one of two ways (Strategy 1). An unbound occurrence is addressed by
-/// its decree + RECURRENCE-ID (<paramref name="DecreeId"/> + <paramref name="RecurrenceDate"/> +
-/// <paramref name="RecurrenceTime"/>): the recurrence-id resolves a projected occurrence and its hardened twin
-/// identically, so an interaction hardens it without needing a row id. A Polaris-bound occurrence has no
-/// meaningful recurrence-id — it was placed into a cycle by hand and always exists as a row — so it is addressed
-/// by its database <paramref name="Id"/> instead. Supplying <paramref name="Id"/> selects the by-id mode;
-/// otherwise the recurrence-id mode applies.
+/// Addresses a single attentive occurrence by its decree + RECURRENCE-ID: the recurrence-id resolves a projected
+/// occurrence and its hardened twin identically, so an interaction hardens it without needing a row id. Attentives
+/// are always unbound occurrences (PEP111); a decree placed into a cycle is an <see cref="Executive"/>, addressed
+/// by its own row id.
 /// </summary>
+/// <param name="DecreeId">The owning decree id (the iCalendar <c>UID</c>).</param>
+/// <param name="RecurrenceId">The occurrence's original slot moment (<see cref="Occurrence.RecurrenceId"/>).</param>
 public sealed record AttentiveOccurrenceRef(
 	string? DecreeId = null,
-	DateOnly? RecurrenceDate = null,
-	TimeOnly? RecurrenceTime = null,
-	long? Id = null)
-{
-	/// <summary>
-	/// Gets a value indicating whether this reference addresses the attentive by its database row id (the mode
-	/// used for a Polaris-bound occurrence) rather than by decree + recurrence-id.
-	/// </summary>
-	public bool AddressesById => Id is not null;
-}
+	DateTime? RecurrenceId = null);
 
 /// <summary>
 /// The request body for updating an eventive occurrence over the wire: the occurrence to address plus the
@@ -557,16 +544,20 @@ public sealed record EventiveUpdateRequest(EventiveOccurrenceRef Occurrence, Eve
 public sealed record AttentiveUpdateRequest(AttentiveOccurrenceRef Occurrence, AttentiveUpdate Update);
 
 /// <summary>
-/// Represents the data required to manually add a decree to a Polaris cycle, creating a Polaris-bound
-/// attentive (PEP100).
+/// Represents the data required to add a decree to a Polaris cycle, creating a decree-backed
+/// <see cref="Executive"/> (PEP111). The cycle is the temporal context, so no occurrence date/time is carried.
 /// </summary>
-public sealed record PolarisAttentiveAdd(
+/// <remarks>
+/// <paramref name="AffinityTimeframeId"/> is tri-state on the wire (PEP100 patch 2): an omitted key is Auto — the
+/// decree's nearest directive availability, else its college auto-inclusion; an explicit <see langword="null"/> is no
+/// affinity even when auto-inclusion would match; an id sets that timeframe (it must exist).
+/// </remarks>
+public sealed record PolarisDecreeAdd(
 	string DecreeId,
-	DateOnly? Date = null,
-	TimeOnly? Time = null,
 	int? Estimation = null,
 	int? Minimum = null,
-	int? Maximum = null);
+	int? Maximum = null,
+	Optional<long?> AffinityTimeframeId = default);
 
 /// <summary>
 /// Represents the unbound items a Polaris cycle includes non-structurally because they fall within 24h of
@@ -587,7 +578,8 @@ public sealed record PolarisAgenda(
 
 /// <summary>
 /// Represents the data required to define a directive-level timeframe (PEP100). <paramref name="Icon"/> and the
-/// auto-inclusion fields are the PEP100 patch additions.
+/// auto-inclusion fields are the PEP100 patch additions; <paramref name="Exclusive"/> is the PEP100 patch 2 addition
+/// (defaults to a non-exclusive timeframe).
 /// </summary>
 public sealed record TimeframePlan(
 	string Title,
@@ -596,13 +588,14 @@ public sealed record TimeframePlan(
 	string? Orbit = null,
 	string? Icon = null,
 	TimeframeInclusion AutoInclusion = TimeframeInclusion.None,
-	IReadOnlyList<ObjectiveCollege>? AutoInclusionColleges = null);
+	IReadOnlyList<ObjectiveCollege>? AutoInclusionColleges = null,
+	bool Exclusive = false);
 
 /// <summary>
 /// Represents the mutable fields of a timeframe definition. The auto-inclusion and icon fields are PEP100 patch
 /// additions: <paramref name="AutoInclusion"/> and <paramref name="AutoInclusionColleges"/> are applied only when
 /// supplied (a null college list leaves it unchanged; an empty one clears it), while the Orbit/Icon Optionals
-/// distinguish keep/set/clear.
+/// distinguish keep/set/clear. <paramref name="Exclusive"/> (PEP100 patch 2) is keep/set only: null keeps it.
 /// </summary>
 public sealed record TimeframeUpdate(
 	string? Title = null,
@@ -611,7 +604,8 @@ public sealed record TimeframeUpdate(
 	Optional<string?> Orbit = default,
 	Optional<string?> Icon = default,
 	TimeframeInclusion? AutoInclusion = null,
-	IReadOnlyList<ObjectiveCollege>? AutoInclusionColleges = null);
+	IReadOnlyList<ObjectiveCollege>? AutoInclusionColleges = null,
+	bool? Exclusive = null);
 
 /// <summary>
 /// Represents the emitted dependency lock for an entity (PEP101), computed from its unsatisfied incoming
@@ -657,6 +651,10 @@ public sealed record EndpointHit(
 /// <param name="Icon">The optional icon key (PEP100 patch).</param>
 /// <param name="AutoInclusion">How the timeframe auto-includes Polaris workitems (PEP100 patch).</param>
 /// <param name="AutoInclusionColleges">The colleges driving college-based auto-inclusion (PEP100 patch).</param>
+/// <param name="Exclusive">
+/// Whether the timeframe is exclusive: while it is active, active non-exclusive timeframes are dropped from the
+/// active set (PEP100 patch 2). Appended last with a default so positional constructions keep compiling.
+/// </param>
 public sealed record DirectiveTimeframeRecord(
 	long Id,
 	string DirectiveId,
@@ -669,7 +667,8 @@ public sealed record DirectiveTimeframeRecord(
 	string? Orbit,
 	[property: Media] string? Icon,
 	TimeframeInclusion AutoInclusion,
-	IReadOnlyList<ObjectiveCollege> AutoInclusionColleges)
+	IReadOnlyList<ObjectiveCollege> AutoInclusionColleges,
+	bool Exclusive = false)
 {
 	/// <summary>
 	/// Gets or sets the resolved companion of <see cref="Icon"/>, filled after the record is projected (its LINQ

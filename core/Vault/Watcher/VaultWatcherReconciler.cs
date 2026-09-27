@@ -43,6 +43,7 @@ public sealed class VaultWatcherReconciler(
 			result.IgnoredPaths);
 
 		var orderedCandidates = result.Candidates
+			.Where(static candidate => !candidate.Vanished)
 			.OrderBy(candidate => StartupActionPriority(candidate.SuggestedAction))
 			.ThenBy(candidate => candidate.VaultRelativePath, StringComparer.OrdinalIgnoreCase)
 			.ToList();
@@ -56,11 +57,23 @@ public sealed class VaultWatcherReconciler(
 			cancellationToken.ThrowIfCancellationRequested();
 			await ReconcileCandidateCoreAsync(candidate, duplicateIdentities, origin, cancellationToken);
 		}
+
+		// The notes that are gone go last, in the dependency order discovery gave them — the same step, in the same order,
+		// the running watcher takes after a change (ReconcileVanishedNotesAsync).
+		var vanished = result.Candidates.Where(static candidate => candidate.Vanished).ToList();
+		foreach (var candidate in vanished)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			await ReconcileVanishedCandidateAsync(candidate, origin, cancellationToken);
+		}
+
+		statusReporter.SettleVanishedNotes(vanished.Select(static candidate => candidate.PathId!).ToHashSet(StringComparer.OrdinalIgnoreCase));
 	}
 
 	/// <summary>
 	/// Reconciles a single path as a live event would: inspect it, then either report it ignored (not a candidate),
-	/// report a passive-read failure (tier 1), or reconcile the resolved candidate.
+	/// report a passive-read failure (tier 1), or reconcile the resolved candidate. A change that may have withdrawn an
+	/// identity from the vault is followed by <see cref="ReconcileVanishedNotesAsync"/> (see <see cref="MayWithdrawIdentity"/>).
 	/// </summary>
 	public async Task ReconcilePathAsync(string absolutePath, string origin, CancellationToken cancellationToken = default)
 	{
@@ -96,6 +109,83 @@ public sealed class VaultWatcherReconciler(
 	}
 
 	/// <summary>
+	/// Whether a change at a path may have withdrawn an identity from the vault: a note (created, edited, moved or
+	/// deleted — an edit can strip or change its PUCK), a folder, or anything that is gone (a deleted or moved-away folder
+	/// raises one event for itself alone, whatever its name looks like). Nothing records which identity a path held, so
+	/// such a change is followed by <see cref="ReconcileVanishedNotesAsync"/>, which finds by identity what the sweep
+	/// finds. This is what keeps the running watcher in parity with a sleep-and-startup.
+	/// </summary>
+	public static bool MayWithdrawIdentity(string absolutePath)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(absolutePath);
+		return string.Equals(Path.GetExtension(absolutePath), ".md", StringComparison.OrdinalIgnoreCase)
+			|| Directory.Exists(absolutePath)
+			|| !File.Exists(absolutePath);
+	}
+
+	/// <summary>
+	/// Reconciles every identity-driven entity whose note is gone — found by identity, exactly as the sweep's vanished-note
+	/// pass finds it (<see cref="VaultMarkdownDiscoveryService.FindVanishedNoteCandidatesAsync"/>) — and settles the
+	/// identity-keyed issues of those no longer gone. The running watcher runs it once after a batch of changes that may
+	/// have withdrawn an identity, and when a failed one is due for retry.
+	/// </summary>
+	public async Task ReconcileVanishedNotesAsync(string origin, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(origin);
+		IReadOnlyList<VaultSyncCandidate> vanished;
+		try
+		{
+			vanished = await discovery.FindVanishedNoteCandidatesAsync(cancellationToken);
+		}
+		catch (OperationCanceledException)
+		{
+			throw;
+		}
+		catch (Exception exception)
+		{
+			logger.LogWarning(exception, "Watcher could not check which notes are gone. Processing will continue.");
+			return;
+		}
+
+		foreach (var candidate in vanished)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			await ReconcileVanishedCandidateAsync(candidate, origin, cancellationToken);
+		}
+
+		statusReporter.SettleVanishedNotes(vanished.Select(static candidate => candidate.PathId!).ToHashSet(StringComparer.OrdinalIgnoreCase));
+	}
+
+	/// <summary>
+	/// Reconciles an entity whose note is gone. Found by identity, not at a path, so its outcome (a blocked or failed
+	/// delete) is keyed on the identity rather than on the canonical path the candidate merely names.
+	/// </summary>
+	private async Task ReconcileVanishedCandidateAsync(VaultSyncCandidate candidate, string origin, CancellationToken cancellationToken)
+	{
+		try
+		{
+			await syncService.ExecuteAsync(candidate, origin, cancellationToken);
+			statusReporter.ReportVanishedNoteReconciled(candidate.PathId!);
+		}
+		catch (OperationCanceledException)
+		{
+			throw;
+		}
+		catch (Exception exception)
+		{
+			statusReporter.ReportVanishedNoteFailure(candidate.PathId!, candidate.AbsolutePath, exception);
+			if (exception is not VaultEntityDeleteBlockedException)
+			{
+				logger.LogError(
+					exception,
+					"Watcher failed to reconcile {EntityType} '{EntityId}', whose note is gone; flagged for retry. Processing will continue.",
+					candidate.Model.EntityName,
+					candidate.PathId);
+			}
+		}
+	}
+
+	/// <summary>
 	/// The single reconcile-and-report path shared by sweep and runtime: report the inspected candidate's concerns,
 	/// execute its sync action, then report success (which resolves the actionable concerns it fixed) or, on failure,
 	/// the classified failure. Because both callers use this, they emit identical issues for an identical candidate.
@@ -117,6 +207,12 @@ public sealed class VaultWatcherReconciler(
 		string origin,
 		CancellationToken cancellationToken)
 	{
+		if (candidate.Vanished)
+		{
+			await ReconcileVanishedCandidateAsync(candidate, origin, cancellationToken);
+			return;
+		}
+
 		if (!candidate.IsValid)
 		{
 			logger.LogWarning(
@@ -129,6 +225,10 @@ public sealed class VaultWatcherReconciler(
 
 		statusReporter.ReportInspectCandidate(candidate);
 		ReportIdentityStatus(candidate, duplicateIdentities);
+		if (candidate.FileExists && !string.IsNullOrWhiteSpace(candidate.PathId))
+		{
+			statusReporter.ReportIdentityAsserted(candidate.PathId!);
+		}
 
 		try
 		{
@@ -145,6 +245,12 @@ public sealed class VaultWatcherReconciler(
 			// so if the file is later gone, no longer in violation, or the entity has changed, the recomputed decision
 			// resolves or supersedes the flag.
 			statusReporter.ReportSyncFailure(candidate, exception);
+			if (exception is VaultEntityDeleteBlockedException)
+			{
+				// A refused delete is a standing status, not a failure to retry, and the sync service has already said why.
+				return;
+			}
+
 			logger.LogError(
 				exception,
 				"Watcher failed to process candidate '{Path}' for {EntityType}; flagged for retry. Processing will continue.",

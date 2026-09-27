@@ -27,7 +27,10 @@ public sealed class LorePageModule : Module
 	/// <inheritdoc />
 	public override void ConfigureEndpoints(IEndpointRouteBuilder endpoints)
 	{
-		var group = endpoints.MapEnrichedGroup("/api/lorepages");
+		// Stamp the active lore spine on every response from one cached projection (LoreActiveEndpointFilter),
+		// rather than each endpoint hand-computing it — the spine is global and a single-page endpoint can't.
+		var group = endpoints.MapEnrichedGroup("/api/lorepages")
+			.AddEndpointFilter<LoreActiveEndpointFilter>();
 
 		group.MapGet("/", async (ILorePageApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListAsync(cancellationToken)));

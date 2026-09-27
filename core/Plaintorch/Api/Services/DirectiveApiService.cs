@@ -4,6 +4,7 @@ using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
+using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.Media;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
@@ -20,14 +21,15 @@ namespace Pleiades.Plaintorch.Api.Services;
 public sealed class DirectiveApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
-	PlaintorchMarkdownStorageService markdownFileService,
+	VaultWriteQueue writeQueue,
 	VaultEntityLifecycleService lifecycleService,
 	VaultTemporalDataService temporalDataService,
 	VaultAuditLogService auditLogService,
 	DependencyGateService dependencyGate,
 	VaultMediaService mediaService,
 	MediaAssetFolderResolver folderResolver,
-	VaultEntityGateway entityGateway) : IDirectiveApi
+	VaultEntityGateway entityGateway,
+	TimeframeCandidateService candidateService) : IDirectiveApi
 {
 	/// <inheritdoc />
 	public async Task<Directive?> GetAsync(string directiveId, CancellationToken cancellationToken = default)
@@ -144,9 +146,16 @@ public sealed class DirectiveApiService(
 			stellar.Codename = string.IsNullOrWhiteSpace(update.Codename.Value) ? null : update.Codename.Value;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.ParentDirectiveId))
+		if (update.ParentDirectiveId.IsSet)
 		{
-			stellar.ParentDirectiveId = update.ParentDirectiveId;
+			// A present parent is applied: a value reparents, an explicit null lifts the directive to the top level.
+			var parentId = string.IsNullOrWhiteSpace(update.ParentDirectiveId.Value) ? null : update.ParentDirectiveId.Value;
+			if (parentId is not null)
+			{
+				await EnsureCanReparentAsync(stellar, parentId, cancellationToken);
+			}
+
+			stellar.ParentDirectiveId = parentId;
 		}
 
 		if (update.Tags is not null)
@@ -169,8 +178,7 @@ public sealed class DirectiveApiService(
 			stellar.EndDate = update.EndDate.Value;
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(stellar, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(stellar, previous, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.update-stellar",
@@ -178,6 +186,51 @@ public sealed class DirectiveApiService(
 			details: new { previousTitle = previous.Title, previousStatus = previous.Status.ToString() },
 			cancellationToken: cancellationToken);
 		return stellar;
+	}
+
+	/// <summary>
+	/// Refuses a new parent that would break the directive tree: one that does not exist, one of the other family
+	/// (a lunar hierarchy stays lunar, a stellar one stellar — PEP100), the directive itself, or one of its own
+	/// descendants, which would close the parent chain into a loop no root ever reaches.
+	/// </summary>
+	private async Task EnsureCanReparentAsync(Directive directive, string parentDirectiveId, CancellationToken cancellationToken)
+	{
+		if (string.Equals(directive.ParentDirectiveId, parentDirectiveId, StringComparison.Ordinal))
+		{
+			return;
+		}
+
+		if (string.Equals(directive.Id, parentDirectiveId, StringComparison.Ordinal))
+		{
+			throw new InvalidOperationException($"Directive '{directive.Id}' cannot be its own parent.");
+		}
+
+		var parents = await context.Directives
+			.AsNoTracking()
+			.Select(item => new { item.Id, item.ParentDirectiveId, IsLunar = item is LunarDirective })
+			.ToDictionaryAsync(item => item.Id, cancellationToken);
+		if (!parents.TryGetValue(parentDirectiveId, out var parent))
+		{
+			throw new InvalidOperationException($"Directive '{parentDirectiveId}' was not found.");
+		}
+
+		if (parent.IsLunar != (directive is LunarDirective))
+		{
+			throw new InvalidOperationException("A lunar directive can only sit under a lunar directive, and a stellar one under a stellar one.");
+		}
+
+		// Walk up from the new parent; meeting the directive on the way means the parent is one of its descendants.
+		// The vault is hand-editable, so the chain may already loop — the visited set keeps the walk finite.
+		var visited = new HashSet<string>(StringComparer.Ordinal);
+		for (var current = parent; current is not null && visited.Add(current.Id);)
+		{
+			if (string.Equals(current.ParentDirectiveId, directive.Id, StringComparison.Ordinal))
+			{
+				throw new InvalidOperationException($"Directive '{parentDirectiveId}' descends from '{directive.Id}' and cannot become its parent.");
+			}
+
+			current = current.ParentDirectiveId is not null && parents.TryGetValue(current.ParentDirectiveId, out var next) ? next : null;
+		}
 	}
 
 	/// <inheritdoc />
@@ -204,9 +257,16 @@ public sealed class DirectiveApiService(
 			lunar.Codename = string.IsNullOrWhiteSpace(update.Codename.Value) ? null : update.Codename.Value;
 		}
 
-		if (!string.IsNullOrWhiteSpace(update.ParentDirectiveId))
+		if (update.ParentDirectiveId.IsSet)
 		{
-			lunar.ParentDirectiveId = update.ParentDirectiveId;
+			// A present parent is applied: a value reparents, an explicit null lifts the directive to the top level.
+			var parentId = string.IsNullOrWhiteSpace(update.ParentDirectiveId.Value) ? null : update.ParentDirectiveId.Value;
+			if (parentId is not null)
+			{
+				await EnsureCanReparentAsync(lunar, parentId, cancellationToken);
+			}
+
+			lunar.ParentDirectiveId = parentId;
 		}
 
 		if (update.Tags is not null)
@@ -214,8 +274,7 @@ public sealed class DirectiveApiService(
 			lunar.Tags = update.Tags.ToList();
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(lunar, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(lunar, previous, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.update-lunar",
@@ -242,8 +301,7 @@ public sealed class DirectiveApiService(
 
 		var previousStatus = stellar.Status;
 		stellar.Status = shift.Status;
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(stellar, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(stellar, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.workflow-shift",
@@ -269,10 +327,13 @@ public sealed class DirectiveApiService(
 		}
 
 		var snapshot = Clone(directive);
-		var databaseGraveyard = await temporalDataService.ArchiveEntityAsync(snapshot, "api-delete", Environment.UserName, cancellationToken);
+		var databaseGraveyard = temporalDataService.StageEntityArchive(snapshot, "api-delete", Environment.UserName);
+		// A lunar directive's timeframes go by the database cascade; the state-policy save hook clears the availabilities
+		// pointing at them, tracked, in this same save (PEP100 patch 2, D9).
 		context.Directives.Remove(directive);
+		await writeQueue.RecordRemoveAsync(snapshot, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
-		var fileGraveyard = await markdownFileService.DeleteDirectiveAsync(snapshot, cancellationToken);
+		var fileGraveyard = await writeQueue.DrainRemoveAsync(snapshot, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.delete",
@@ -301,8 +362,7 @@ public sealed class DirectiveApiService(
 		var previous = directive.Icon;
 		await ApplyMediaChangeAsync(directiveId, directive, previous, request.Reference, request.Clear, key => directive.Icon = key, "directive.icon", cancellationToken);
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(directive, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(directive, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.set-icon",
@@ -324,13 +384,48 @@ public sealed class DirectiveApiService(
 		var previous = directive.Banner;
 		await ApplyMediaChangeAsync(directiveId, directive, previous, request.Reference, request.Clear, key => directive.Banner = key, "directive.banner", cancellationToken);
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(directive, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(directive, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.set-banner",
 			subject: directive,
 			details: new { previous, banner = directive.Banner },
+			cancellationToken: cancellationToken);
+		return directive;
+	}
+
+	/// <inheritdoc />
+	public async Task<Directive> SetAvailabilityAsync(string directiveId, long? timeframeId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
+
+		var directive = await context.Directives.FirstOrDefaultAsync(item => item.Id == directiveId, cancellationToken)
+			?? throw new InvalidOperationException($"Directive '{directiveId}' was not found.");
+
+		if (timeframeId is { } requestedId)
+		{
+			var inclusion = await context.Timeframes
+				.AsNoTracking()
+				.Where(item => item.Id == requestedId)
+				.Select(item => (TimeframeInclusion?)item.AutoInclusion)
+				.FirstOrDefaultAsync(cancellationToken)
+				?? throw new InvalidOperationException($"Timeframe '{requestedId}' was not found.");
+			if (inclusion != TimeframeInclusion.Availability)
+			{
+				throw new InvalidOperationException($"Timeframe '{requestedId}' is not an availability timeframe; switch its auto-inclusion to Availability first.");
+			}
+		}
+
+		var previous = directive.AvailabilityTimeframeId;
+		directive.AvailabilityTimeframeId = timeframeId;
+
+		// Availability is database-only (never in frontmatter), so a plain save is enough — there is no note to rewrite.
+		await context.SaveChangesAsync(cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"directive.set-availability",
+			subject: directive,
+			details: new { previous, availabilityTimeframeId = directive.AvailabilityTimeframeId },
 			cancellationToken: cancellationToken);
 		return directive;
 	}
@@ -364,8 +459,7 @@ public sealed class DirectiveApiService(
 		};
 
 		context.Directives.Add(directive);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(directive, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(directive, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "directive.create-lunar", subject: directive, cancellationToken: cancellationToken);
 		return directive;
 	}
@@ -385,8 +479,7 @@ public sealed class DirectiveApiService(
 
 		var previousStatus = lunar.Status;
 		lunar.Status = shift.Status;
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(lunar, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(lunar, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"directive.lunar-workflow-shift",
@@ -422,6 +515,7 @@ public sealed class DirectiveApiService(
 			Icon = string.IsNullOrWhiteSpace(plan.Icon) ? null : plan.Icon.Trim(),
 			AutoInclusion = plan.AutoInclusion,
 			AutoInclusionColleges = plan.AutoInclusion == TimeframeInclusion.College ? (plan.AutoInclusionColleges?.ToList() ?? []) : [],
+			Exclusive = plan.Exclusive,
 		};
 
 		context.Timeframes.Add(timeframe);
@@ -450,12 +544,73 @@ public sealed class DirectiveApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<IReadOnlyList<DirectiveTimeframeRecord>> ListAllTimeframesAsync(CancellationToken cancellationToken = default)
+	public Task<IReadOnlyList<DirectiveTimeframeRecord>> ListAllTimeframesAsync(CancellationToken cancellationToken = default)
+		=> ProjectTimeframeRecordsAsync(null, cancellationToken);
+
+	/// <inheritdoc />
+	public async Task<IReadOnlyList<DirectiveTimeframeRecord>> ListActiveTimeframesAsync(DateTimeOffset? at = null, CancellationToken cancellationToken = default)
 	{
+		// Strictly active only: a cycle that has not begun, or has ended, shows no active timeframes (never the
+		// any-state "today's cycle" fallback other readers use).
+		var activeCycle = await context.PolarisCycles
+			.AsNoTracking()
+			.Where(cycle => cycle.StartTime != null && cycle.EndTime == null)
+			.OrderByDescending(cycle => cycle.Id)
+			.FirstOrDefaultAsync(cancellationToken);
+		if (activeCycle is null)
+		{
+			return [];
+		}
+
+		var candidateIds = await candidateService.GetCandidateIdsAsync(activeCycle, cancellationToken);
+		if (candidateIds.Count == 0)
+		{
+			return [];
+		}
+
+		var clock = TimeOnly.FromDateTime((at ?? DateTimeOffset.Now).LocalDateTime);
+		var minute = MinuteOfDay(clock);
+		var active = (await ProjectTimeframeRecordsAsync(candidateIds, cancellationToken))
+			.Where(record => IsActiveAt(record, minute))
+			.ToList();
+
+		// Exclusivity is judged among the timeframes active right now: any active exclusive one suppresses every active
+		// non-exclusive one, and all the active exclusive ones are kept.
+		return active.Any(record => record.Exclusive)
+			? active.Where(record => record.Exclusive).ToList()
+			: active;
+	}
+
+	/// <summary>
+	/// Whether a timeframe's window covers the given minute of the day (PEP100 patch 2): <c>[start, end)</c> at minute
+	/// precision; a start after the end wraps midnight; a start equal to the end is never active.
+	/// </summary>
+	private static bool IsActiveAt(DirectiveTimeframeRecord record, int minute)
+	{
+		var start = MinuteOfDay(record.StartTime);
+		var end = MinuteOfDay(record.EndTime);
+		return start < end
+			? minute >= start && minute < end
+			: start > end && (minute >= start || minute < end);
+	}
+
+	private static int MinuteOfDay(TimeOnly time) => (time.Hour * 60) + time.Minute;
+
+	/// <summary>
+	/// Projects timeframes joined to their lunar directive into records, ordered by directive title then start time —
+	/// every timeframe, or only those in <paramref name="ids"/>.
+	/// </summary>
+	private async Task<IReadOnlyList<DirectiveTimeframeRecord>> ProjectTimeframeRecordsAsync(IReadOnlyCollection<long>? ids, CancellationToken cancellationToken)
+	{
+		var timeframes = context.Timeframes.AsNoTracking();
+		if (ids is not null)
+		{
+			timeframes = timeframes.Where(timeframe => ids.Contains(timeframe.Id));
+		}
+
 		// The colleges are a JSON list column that cannot be projected in SQL, so the joined rows are materialized
 		// (ordered on entity columns first) and mapped to records in memory.
-		var pairs = await context.Timeframes
-			.AsNoTracking()
+		var pairs = await timeframes
 			.Join(
 				context.LunarDirectives.AsNoTracking(),
 				timeframe => timeframe.DirectiveId,
@@ -478,7 +633,8 @@ public sealed class DirectiveApiService(
 				pair.Timeframe.Orbit,
 				pair.Timeframe.Icon,
 				pair.Timeframe.AutoInclusion,
-				pair.Timeframe.AutoInclusionColleges))
+				pair.Timeframe.AutoInclusionColleges,
+				pair.Timeframe.Exclusive))
 			.ToList();
 
 		return records;
@@ -518,6 +674,8 @@ public sealed class DirectiveApiService(
 			timeframe.Icon = string.IsNullOrWhiteSpace(update.Icon.Value) ? null : update.Icon.Value.Trim();
 		}
 
+		// Leaving Availability mode clears the directives pointing at this timeframe in the state-policy save hook
+		// (PEP100 patch 2, D9), on every write pathway.
 		if (update.AutoInclusion is not null)
 		{
 			timeframe.AutoInclusion = update.AutoInclusion.Value;
@@ -532,6 +690,11 @@ public sealed class DirectiveApiService(
 		if (update.AutoInclusionColleges is not null)
 		{
 			timeframe.AutoInclusionColleges = update.AutoInclusionColleges.ToList();
+		}
+
+		if (update.Exclusive is not null)
+		{
+			timeframe.Exclusive = update.Exclusive.Value;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
@@ -551,6 +714,7 @@ public sealed class DirectiveApiService(
 		var timeframe = await context.Timeframes.FirstOrDefaultAsync(item => item.Id == timeframeId, cancellationToken)
 			?? throw new InvalidOperationException($"Timeframe '{timeframeId}' was not found.");
 
+		// The state-policy save hook clears the directive availabilities pointing at it, tracked (PEP100 patch 2, D9).
 		context.Timeframes.Remove(timeframe);
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(
@@ -575,8 +739,7 @@ public sealed class DirectiveApiService(
 		};
 
 		context.Directives.Add(directive);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveDirectiveAsync(directive, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(directive, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "directive.create", subject: directive, cancellationToken: cancellationToken);
 		return directive;
 	}

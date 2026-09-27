@@ -32,14 +32,10 @@ public sealed class Dependency
 	public required string SourceId { get; set; }
 
 	/// <summary>
-	/// Gets or sets the source occurrence slot date (iCalendar <c>RECURRENCE-ID</c>) for an eventive source.
+	/// Gets or sets the source occurrence slot (iCalendar <c>RECURRENCE-ID</c>, the occurrence's original moment)
+	/// for an eventive source; <see langword="null"/> for a whole-entity or non-eventive source.
 	/// </summary>
-	public DateOnly? SourceRecurrenceDate { get; set; }
-
-	/// <summary>
-	/// Gets or sets the source occurrence slot time for a timed eventive source.
-	/// </summary>
-	public TimeOnly? SourceRecurrenceTime { get; set; }
+	public DateTime? SourceRecurrenceId { get; set; }
 
 	/// <summary>
 	/// Gets or sets the target (blocked/dependant) endpoint kind.
@@ -52,14 +48,10 @@ public sealed class Dependency
 	public required string TargetId { get; set; }
 
 	/// <summary>
-	/// Gets or sets the target occurrence slot date (iCalendar <c>RECURRENCE-ID</c>) for an eventive target.
+	/// Gets or sets the target occurrence slot (iCalendar <c>RECURRENCE-ID</c>, the occurrence's original moment)
+	/// for an eventive target; <see langword="null"/> for a whole-entity or non-eventive target.
 	/// </summary>
-	public DateOnly? TargetRecurrenceDate { get; set; }
-
-	/// <summary>
-	/// Gets or sets the target occurrence slot time for a timed eventive target.
-	/// </summary>
-	public TimeOnly? TargetRecurrenceTime { get; set; }
+	public DateTime? TargetRecurrenceId { get; set; }
 
 	/// <summary>
 	/// Gets or sets the trigger on the source side. <see langword="null"/> resolves to the default
@@ -79,15 +71,25 @@ public sealed class Dependency
 	/// </summary>
 	public bool Satisfied { get; set; }
 
+	/// <summary>
+	/// Gets or sets whether this dependency, while unsatisfied, gates the next lifecycle transition its target has to
+	/// make: its begin while it has not begun, its finish once it has begun and not yet finished, or a checkpoint's
+	/// unlock. <see langword="false"/> once satisfied, and for a dependency whose constraint concerns a transition the
+	/// target has already made or is not yet up to. Computed when the edge is served
+	/// (<c>DependencyGateService.StampNextTransitionAsync</c>), never stored.
+	/// </summary>
+	[NotMapped]
+	public bool GatesNextTransition { get; set; }
+
 	[NotMapped]
 	/// <summary>
 	/// Gets the source endpoint as a reference value.
 	/// </summary>
-	public EndpointRef Source => new(SourceKind, SourceId, SourceRecurrenceDate, SourceRecurrenceTime);
+	public EndpointRef Source => new(SourceKind, SourceId, SourceRecurrenceId);
 
 	[NotMapped]
 	/// <summary>
 	/// Gets the target endpoint as a reference value.
 	/// </summary>
-	public EndpointRef Target => new(TargetKind, TargetId, TargetRecurrenceDate, TargetRecurrenceTime);
+	public EndpointRef Target => new(TargetKind, TargetId, TargetRecurrenceId);
 }

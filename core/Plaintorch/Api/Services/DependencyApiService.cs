@@ -13,12 +13,14 @@ namespace Pleiades.Plaintorch.Api.Services;
 /// <summary>
 /// Implements the dependency-facing PLAINTORCH application API (PEP101). Structural rules are enforced by
 /// <see cref="DependencyRules"/>; endpoint existence and kind are validated here (they require resolving loose
-/// references). Satisfaction and checkpoint unlock are computed by <see cref="DependencyReconciler"/> on save.
+/// references). Satisfaction and checkpoint unlock are computed by <see cref="DependencyReconciler"/> on save; whether
+/// an unsatisfied edge gates its target's next transition is stamped by <see cref="DependencyGateService"/> as it is served.
 /// </summary>
 public sealed class DependencyApiService(
 	PlainfraContext context,
 	PuckCreationService puckCreationService,
 	PlaintorchStateService stateService,
+	DependencyGateService gateService,
 	VaultAuditLogService auditLogService) : IDependencyApi
 {
 	private const string CheckpointTollDescriptionPrefix = "PLAINTORCH checkpoint toll";
@@ -37,12 +39,10 @@ public sealed class DependencyApiService(
 		{
 			SourceKind = source.Kind,
 			SourceId = source.Id,
-			SourceRecurrenceDate = source.RecurrenceDate,
-			SourceRecurrenceTime = source.RecurrenceTime,
+			SourceRecurrenceId = source.RecurrenceId,
 			TargetKind = target.Kind,
 			TargetId = target.Id,
-			TargetRecurrenceDate = target.RecurrenceDate,
-			TargetRecurrenceTime = target.RecurrenceTime,
+			TargetRecurrenceId = target.RecurrenceId,
 			Trigger = trigger,
 			Constraint = constraint,
 		};
@@ -56,6 +56,7 @@ public sealed class DependencyApiService(
 			subjectId: dependency.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
 			details: new { source = Describe(source), target = Describe(target), trigger, constraint, dependency.Satisfied },
 			cancellationToken: cancellationToken);
+		await gateService.StampNextTransitionAsync([dependency], cancellationToken);
 		return dependency;
 	}
 
@@ -68,7 +69,9 @@ public sealed class DependencyApiService(
 			query = query.Where(dependency => dependency.SourceId == entityId || dependency.TargetId == entityId);
 		}
 
-		return await query.OrderBy(dependency => dependency.Id).ToListAsync(cancellationToken);
+		var dependencies = await query.OrderBy(dependency => dependency.Id).ToListAsync(cancellationToken);
+		await gateService.StampNextTransitionAsync(dependencies, cancellationToken);
+		return dependencies;
 	}
 
 	/// <inheritdoc />
@@ -146,6 +149,7 @@ public sealed class DependencyApiService(
 			.Where(dependency => dependency.TargetId == entityId && !dependency.Satisfied)
 			.OrderBy(dependency => dependency.Id)
 			.ToListAsync(cancellationToken);
+		await gateService.StampNextTransitionAsync(unsatisfied, cancellationToken);
 
 		var blockedBegin = unsatisfied.Any(dependency => dependency.Constraint is null or DependencyConstraint.ToBegin);
 		var blockedFinish = unsatisfied.Any(dependency => dependency.Constraint is DependencyConstraint.ToFinish);
@@ -224,6 +228,12 @@ public sealed class DependencyApiService(
 		if (update.ExternalCondition.IsSet)
 		{
 			checkpoint.ExternalCondition = update.ExternalCondition.Value;
+		}
+
+		if (update.Due.IsSet)
+		{
+			// A due suppresses the toll until it arrives; clearing it (null) makes any toll owed immediately.
+			checkpoint.Due = update.Due.Value;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
@@ -376,17 +386,17 @@ public sealed class DependencyApiService(
 WITH RECURSIVE
 edges(src, dst, sside, dside) AS (
     SELECT
-        SourceKind || '|' || SourceId || '|' || COALESCE(SourceRecurrenceDate, '') || '|' || COALESCE(SourceRecurrenceTime, ''),
-        TargetKind || '|' || TargetId || '|' || COALESCE(TargetRecurrenceDate, '') || '|' || COALESCE(TargetRecurrenceTime, ''),
+        SourceKind || '|' || SourceId || '|' || COALESCE(SourceRecurrenceId, ''),
+        TargetKind || '|' || TargetId || '|' || COALESCE(TargetRecurrenceId, ''),
         CASE WHEN SourceKind = 'Checkpoint' THEN NULL WHEN ""Trigger"" = 'OnBegin' THEN 0 ELSE 1 END,
         CASE WHEN TargetKind = 'Checkpoint' THEN NULL WHEN ""Constraint"" = 'ToFinish' THEN 1 ELSE 0 END
     FROM Dependencies
 ),
 origin(node, side) AS (
-    SELECT $sourceKind || '|' || $sourceId || '|' || COALESCE($sourceDate, '') || '|' || COALESCE($sourceTime, ''), $sourceSide
+    SELECT $sourceKind || '|' || $sourceId || '|' || COALESCE($sourceSlot, ''), $sourceSide
 ),
 seed(node, side) AS (
-    SELECT $targetKind || '|' || $targetId || '|' || COALESCE($targetDate, '') || '|' || COALESCE($targetTime, ''), $targetSide
+    SELECT $targetKind || '|' || $targetId || '|' || COALESCE($targetSlot, ''), $targetSide
 ),
 path(node, side) AS (
     SELECT node, side FROM seed
@@ -405,14 +415,14 @@ SELECT NOT EXISTS (
 		await using var command = connection.CreateCommand();
 		command.CommandText = sql;
 		command.Transaction = context.Database.CurrentTransaction?.GetDbTransaction();
+		// A slot binds as a DateTime, which the SQLite provider renders in the same text form EF stores the
+		// RecurrenceId columns in, so the concatenated node keys compare equal.
 		AddParameter(command, "$sourceKind", source.Kind.ToString());
 		AddParameter(command, "$sourceId", source.Id);
-		AddParameter(command, "$sourceDate", (object?)source.RecurrenceDate ?? DBNull.Value);
-		AddParameter(command, "$sourceTime", (object?)source.RecurrenceTime ?? DBNull.Value);
+		AddParameter(command, "$sourceSlot", (object?)source.RecurrenceId ?? DBNull.Value);
 		AddParameter(command, "$targetKind", target.Kind.ToString());
 		AddParameter(command, "$targetId", target.Id);
-		AddParameter(command, "$targetDate", (object?)target.RecurrenceDate ?? DBNull.Value);
-		AddParameter(command, "$targetTime", (object?)target.RecurrenceTime ?? DBNull.Value);
+		AddParameter(command, "$targetSlot", (object?)target.RecurrenceId ?? DBNull.Value);
 		AddParameter(command, "$sourceSide", SideOf(source.Kind, trigger));
 		AddParameter(command, "$targetSide", SideOf(target.Kind, constraint));
 
@@ -471,7 +481,7 @@ SELECT NOT EXISTS (
 				await EnsureExistsAsync(side, "checkpoint", await context.Checkpoints.AnyAsync(item => item.Id == endpoint.Id, cancellationToken), endpoint.Id);
 				break;
 			case DependencyEndpointKind.Eventive:
-				if (endpoint.RecurrenceDate is null)
+				if (endpoint.RecurrenceId is null)
 				{
 					throw new InvalidOperationException($"The {side} eventive endpoint requires an occurrence date (RECURRENCE-ID).");
 				}
@@ -501,8 +511,8 @@ SELECT NOT EXISTS (
 
 	private static string Describe(EndpointRef endpoint)
 	{
-		return endpoint.RecurrenceDate is DateOnly date
-			? $"{endpoint.Kind}:{endpoint.Id}@{date:yyyy-MM-dd}"
+		return endpoint.RecurrenceId is { } slot
+			? $"{endpoint.Kind}:{endpoint.Id}@{slot:yyyy-MM-dd}"
 			: $"{endpoint.Kind}:{endpoint.Id}";
 	}
 }

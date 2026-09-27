@@ -200,7 +200,9 @@ public class LorePage : PuckNamedEntity
 		while (!string.IsNullOrWhiteSpace(currentDirectory)
 			&& !string.Equals(currentDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), sagaRoot, StringComparison.OrdinalIgnoreCase))
 		{
-			var directoryName = Path.GetFileName(currentDirectory);
+			// Self-named lore folders carry the PEP097 filename encoding; decode a directory name (no extension) back to
+			// the raw segment identity before parsing.
+			var directoryName = PuckFileNameCodec.Decode(Path.GetFileName(currentDirectory));
 			result.Add(PuckNamedIdentity.ParseLoose(directoryName));
 			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
 		}

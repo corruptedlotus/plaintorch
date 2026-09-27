@@ -65,7 +65,8 @@ public interface IObjectiveApi
 	Task<Objective> InitializeFromPathAsync(string vaultRelativePath, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Deletes an objective.
+	/// Deletes an objective. Its executives in ended Polaris cycles stay as work records with the reference cleared; its
+	/// executives in the active cycle and in planned or forecast cycles are removed with it.
 	/// </summary>
 	Task DeleteAsync(string objectiveId, CancellationToken cancellationToken = default);
 }

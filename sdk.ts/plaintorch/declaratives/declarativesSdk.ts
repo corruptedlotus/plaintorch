@@ -57,6 +57,10 @@ export class PlaintorchDeclarativesSdk {
 		return await this.client.putForJson<Decree>(`/api/decrees/${encodeURIComponent(decreeId)}`, update)
 	}
 
+	/**
+	 * Deletes a decree. Its executives and reflectives in ended Polaris cycles stay as work records with no decree; those
+	 * in the active cycle and in planned or forecast cycles are removed with it.
+	 */
 	public async deleteDecree(decreeId: string): Promise<boolean> {
 		return await this.client.delete(`/api/decrees/${encodeURIComponent(decreeId)}`)
 	}

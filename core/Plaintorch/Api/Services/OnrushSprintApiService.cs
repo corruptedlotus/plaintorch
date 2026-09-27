@@ -19,6 +19,7 @@ public sealed class OnrushSprintApiService(
 	PuckTokenizer puckTokenizer,
 	PlaintorchStateService stateService,
 	PlaintorchMarkdownStorageService markdownFileService,
+	VaultWriteQueue writeQueue,
 	VaultTemporalDataService temporalDataService,
 	VaultAuditLogService auditLogService) : IOnrushSprintApi
 {
@@ -38,8 +39,7 @@ public sealed class OnrushSprintApiService(
 
 		context.OnrushSprints.Add(sprint);
 		AttachMilestone(sprint);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveOnrushSprintAsync(sprint, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(sprint, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.plan", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
@@ -126,16 +126,14 @@ public sealed class OnrushSprintApiService(
 			}
 
 			context.OnrushSprints.Remove(sprint);
-			await context.SaveChangesAsync(cancellationToken);
-			await markdownFileService.SaveOnrushSprintAsync(activatedSprint, previous, cancellationToken: cancellationToken);
+			await writeQueue.WriteAsync(activatedSprint, previous, cancellationToken);
 			await auditLogService.WriteAsync("api", "onrush.begin", subject: activatedSprint, cancellationToken: cancellationToken);
 			return activatedSprint;
 		}
 
 		sprint.StartDate = resolvedStartDate;
 		AttachMilestone(sprint);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(sprint, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.begin", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
@@ -153,8 +151,7 @@ public sealed class OnrushSprintApiService(
 
 		context.OnrushSprints.Add(sprint);
 		AttachMilestone(sprint);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveOnrushSprintAsync(sprint, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(sprint, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.start-new", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
@@ -168,8 +165,7 @@ public sealed class OnrushSprintApiService(
 
 		var previous = Clone(sprint);
 		sprint.EndDate = endDate ?? DateOnly.FromDateTime(DateTime.Today);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(sprint, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.end", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
@@ -188,7 +184,7 @@ public sealed class OnrushSprintApiService(
 		// Executive orders belong to the sprint outright, so they go with it — markdown and all.
 		foreach (var order in sprint.ExecutiveOrders.ToList())
 		{
-			await temporalDataService.ArchiveEntityAsync(order, "api-delete", Environment.UserName, cancellationToken);
+			temporalDataService.StageEntityArchive(order, "api-delete", Environment.UserName);
 			context.ExecutiveOrders.Remove(order);
 			await markdownFileService.DeleteExecutiveOrderAsync(order, cancellationToken);
 		}
@@ -212,13 +208,13 @@ public sealed class OnrushSprintApiService(
 		// any other checkpoints it merely tracked — they live on, detached — and EF drops the reference on each
 		// tracked one, which is what the markdown re-save below then records.
 		var detached = sprint.Objectives.ToList();
-		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(sprint, "api-delete", Environment.UserName, cancellationToken);
+		var graveyardEntry = temporalDataService.StageEntityArchive(sprint, "api-delete", Environment.UserName);
 		context.OnrushSprints.Remove(sprint);
 		await context.SaveChangesAsync(cancellationToken);
 
 		foreach (var objective in detached)
 		{
-			await markdownFileService.SaveObjectiveAsync(objective, cancellationToken: cancellationToken);
+			await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		}
 
 		await markdownFileService.DeleteOnrushSprintAsync(sprint, cancellationToken);
@@ -338,8 +334,7 @@ public sealed class OnrushSprintApiService(
 			sprint.EndDate = update.EndDate.Value;
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveOnrushSprintAsync(sprint, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(sprint, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.update", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
@@ -413,8 +408,7 @@ public sealed class OnrushSprintApiService(
 		};
 
 		context.ExecutiveOrders.Add(order);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveExecutiveOrderAsync(order, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(order, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.issue-order", subject: order, details: new { onrushSprintId = sprint.Id }, cancellationToken: cancellationToken);
 		return order;
 	}
@@ -470,8 +464,7 @@ public sealed class OnrushSprintApiService(
 		}
 
 		ValidateEffectiveWindow(order.EffectiveFrom, order.EffectiveUntil);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.SaveExecutiveOrderAsync(order, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(order, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.update-order", subject: order, cancellationToken: cancellationToken);
 		return order;
 	}
@@ -483,10 +476,11 @@ public sealed class OnrushSprintApiService(
 		var order = await context.ExecutiveOrders.FirstOrDefaultAsync(item => item.Id == executiveOrderId, cancellationToken)
 			?? throw new InvalidOperationException($"Executive order '{executiveOrderId}' was not found.");
 
-		var graveyardEntry = await temporalDataService.ArchiveEntityAsync(order, "api-delete", Environment.UserName, cancellationToken);
+		var graveyardEntry = temporalDataService.StageEntityArchive(order, "api-delete", Environment.UserName);
 		context.ExecutiveOrders.Remove(order);
+		await writeQueue.RecordRemoveAsync(order, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
-		await markdownFileService.DeleteExecutiveOrderAsync(order, cancellationToken);
+		await writeQueue.DrainRemoveAsync(order, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"onrush.delete-order",

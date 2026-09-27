@@ -68,9 +68,20 @@ public class PlainfraContext : DbContext
 	public DbSet<Timeframe> Timeframes => Set<Timeframe>();
 
 	/// <summary>
-	/// Gets the persisted orbit engine states for orbit-bearing declaratives (PEP100).
+	/// Gets every persisted orbit engine state — the incentive and timeframe kinds alike (PEP100, hierarchy per
+	/// PEP100 patch 2).
 	/// </summary>
 	public DbSet<OrbitScheduleState> OrbitScheduleStates => Set<OrbitScheduleState>();
+
+	/// <summary>
+	/// Gets the persisted orbit engine states of orbit-bearing declaratives (PEP100).
+	/// </summary>
+	public DbSet<IncentiveOrbitScheduleState> IncentiveOrbitScheduleStates => Set<IncentiveOrbitScheduleState>();
+
+	/// <summary>
+	/// Gets the persisted orbit engine states of orbit-scoped timeframes (PEP100 patch 2).
+	/// </summary>
+	public DbSet<TimeframeOrbitScheduleState> TimeframeOrbitScheduleStates => Set<TimeframeOrbitScheduleState>();
 
 	/// <summary>
 	/// Gets the onrush sprints tracked in the database.
@@ -152,25 +163,55 @@ public class PlainfraContext : DbContext
 	/// </summary>
 	public DbSet<OperationStatusDismissalRecord> OperationStatusDismissals => Set<OperationStatusDismissalRecord>();
 
+	/// <summary>
+	/// Gets the durable vault write-intent outbox — pending entity→file syncs the drainer reconciles (PEP110 Refactor BETA).
+	/// </summary>
+	public DbSet<VaultWriteIntent> VaultWriteIntents => Set<VaultWriteIntent>();
+
+	/// <summary>
+	/// Gets the vault-bound user preference overrides (PEP116). Sparse key/value rows; unset preferences
+	/// resolve to their code-owned defaults.
+	/// </summary>
+	public DbSet<UserPreferenceRecord> UserPreferences => Set<UserPreferenceRecord>();
+
 	/// <inheritdoc />
+	/// <summary>
+	/// Reads a stored severity name. <c>Suspended</c> predates the PEP108 regrading and only ever came from a file locked
+	/// by another process, which is now a <see cref="Pleiades.Diagnostics.OperationSeverity.Warning"/>; every other name
+	/// is current.
+	/// </summary>
+	private static Pleiades.Diagnostics.OperationSeverity ReadStoredSeverity(string stored)
+		=> string.Equals(stored, "Suspended", StringComparison.OrdinalIgnoreCase)
+			? Pleiades.Diagnostics.OperationSeverity.Warning
+			: Enum.Parse<Pleiades.Diagnostics.OperationSeverity>(stored, ignoreCase: true);
+
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
 		base.OnModelCreating(modelBuilder);
 
-		// PEP108: operation-status transition log. Enum columns are stored as readable strings.
+		// PEP108: operation-status transition log. Enum columns are stored as readable strings; severities read back
+		// through a converter that also understands names retired by the regrading (see ReadStoredSeverity).
 		modelBuilder.Entity<OperationStatusEvent>()
 			.Property(x => x.Transition)
 			.HasConversion<string>();
+		var severityConverter = new ValueConverter<Pleiades.Diagnostics.OperationSeverity, string>(
+			severity => severity.ToString(),
+			stored => ReadStoredSeverity(stored));
 		modelBuilder.Entity<OperationStatusEvent>()
 			.Property(x => x.Severity)
-			.HasConversion<string>();
+			.HasConversion(severityConverter);
 		modelBuilder.Entity<OperationStatusEvent>()
 			.Property(x => x.PreviousSeverity)
-			.HasConversion<string>();
+			.HasConversion(severityConverter);
 
 		// PEP108 dismiss feature: durable dismissals, with the scope enum stored as a readable string.
 		modelBuilder.Entity<OperationStatusDismissalRecord>()
 			.Property(x => x.Scope)
+			.HasConversion<string>();
+
+		// PEP110 Refactor BETA: the vault write-intent outbox, with the kind enum stored as a readable string.
+		modelBuilder.Entity<VaultWriteIntent>()
+			.Property(x => x.Kind)
 			.HasConversion<string>();
 
 		var tagsConverter = new ValueConverter<List<string>, string>(
@@ -245,6 +286,11 @@ public class PlainfraContext : DbContext
 			.Property(x => x.Orbit)
 			.HasColumnName("Orbit");
 
+		// A declarative's resolution calendar stores as a readable string; null = kind default.
+		modelBuilder.Entity<Declarative>()
+			.Property(x => x.Calendar)
+			.HasConversion<string>();
+
 		modelBuilder.Entity<LunarDirective>()
 			.Property(x => x.Status)
 			.HasConversion<string>()
@@ -283,12 +329,10 @@ public class PlainfraContext : DbContext
 			{
 				x.SourceKind,
 				x.SourceId,
-				x.SourceRecurrenceDate,
-				x.SourceRecurrenceTime,
+				x.SourceRecurrenceId,
 				x.TargetKind,
 				x.TargetId,
-				x.TargetRecurrenceDate,
-				x.TargetRecurrenceTime,
+				x.TargetRecurrenceId,
 				x.Trigger,
 				x.Constraint,
 			})
@@ -317,6 +361,21 @@ public class PlainfraContext : DbContext
 			.Property(x => x.Resolution)
 			.HasConversion<string>();
 
+		// An occurrence's position in time is an owned value: its fields live as Epoch_* columns on the
+		// occurrence's own table, with Granularity stored as a readable string like the other enums.
+		modelBuilder.Entity<Attentive>()
+			.OwnsOne(x => x.Epoch, epoch => epoch.Property(e => e.Granularity).HasConversion<string>());
+
+		modelBuilder.Entity<Eventive>()
+			.OwnsOne(x => x.Epoch, epoch => epoch.Property(e => e.Granularity).HasConversion<string>());
+
+		// A deadline is an optional owned value: its Due_Moment/Due_TimeZone columns live on the owner's table and
+		// are all-null when there is no due.
+		modelBuilder.Entity<Objective>().OwnsOne(x => x.Due);
+		modelBuilder.Entity<Objective>().Navigation(x => x.Due).IsRequired(false);
+		modelBuilder.Entity<Checkpoint>().OwnsOne(x => x.Due);
+		modelBuilder.Entity<Checkpoint>().Navigation(x => x.Due).IsRequired(false);
+
 		// Eventive owners cascade: deleting a fate or an objective removes its materialized occurrences.
 		modelBuilder.Entity<Eventive>()
 			.HasOne(x => x.Fate)
@@ -339,6 +398,50 @@ public class PlainfraContext : DbContext
 			.WithMany()
 			.OnDelete(DeleteBehavior.SetNull);
 
+		modelBuilder.Entity<Attentive>()
+			.HasOne(x => x.AffinityTimeframe)
+			.WithMany()
+			.OnDelete(DeleteBehavior.SetNull);
+
+		// PEP100 patch 2: a directive's availability is likewise only cleared when its timeframe goes away — also when
+		// a lunar directive delete cascades its timeframes. Configured explicitly (and never auto-included) so EF does
+		// not pair it with Timeframe.Directive, which runs the other way.
+		modelBuilder.Entity<Directive>()
+			.HasOne(x => x.AvailabilityTimeframe)
+			.WithMany()
+			.HasForeignKey(x => x.AvailabilityTimeframeId)
+			.OnDelete(DeleteBehavior.SetNull);
+
+		modelBuilder.Entity<Attentive>()
+			.Navigation(x => x.AffinityTimeframe)
+			.AutoInclude();
+
+		// PEP100 patch 2: orbit schedule states are one TPH family in the OrbitScheduleStates table. Each kind is keyed
+		// uniquely by its owner and dies with it — a timeframe's state also goes when a lunar directive delete
+		// cascades the timeframe away.
+		modelBuilder.Entity<OrbitScheduleState>()
+			.ToTable("OrbitScheduleStates");
+
+		modelBuilder.Entity<IncentiveOrbitScheduleState>()
+			.HasIndex(x => x.IncentiveId)
+			.IsUnique();
+
+		modelBuilder.Entity<IncentiveOrbitScheduleState>()
+			.HasOne(x => x.Incentive)
+			.WithMany()
+			.HasForeignKey(x => x.IncentiveId)
+			.OnDelete(DeleteBehavior.Cascade);
+
+		modelBuilder.Entity<TimeframeOrbitScheduleState>()
+			.HasIndex(x => x.TimeframeId)
+			.IsUnique();
+
+		modelBuilder.Entity<TimeframeOrbitScheduleState>()
+			.HasOne(x => x.Timeframe)
+			.WithMany()
+			.HasForeignKey(x => x.TimeframeId)
+			.OnDelete(DeleteBehavior.Cascade);
+
 		modelBuilder.Entity<TagDefinition>()
 			.Property(x => x.Color)
 			.HasConversion<string>();
@@ -348,18 +451,18 @@ public class PlainfraContext : DbContext
 			.HasColumnName("Puck");
 
 		modelBuilder.Entity<Executive>()
-			.Navigation(x => x.Objective)
+			.Navigation(x => x.Incentive)
 			.AutoInclude();
 
 		modelBuilder.Entity<Executive>()
 			.Navigation(x => x.AffinityTimeframe)
 			.AutoInclude();
 
-		// A Polaris cycle holds at most one executive per objective. One-shot executives carry no objective and
-		// are exempt, hence the filter.
+		// A Polaris cycle holds at most one executive per incentive (objective or decree). One-shot executives carry
+		// no incentive and are exempt, hence the filter.
 		modelBuilder.Entity<Executive>()
-			.HasIndex(x => new { x.PolarisCycleId, x.ObjectiveId })
+			.HasIndex(x => new { x.PolarisCycleId, x.IncentiveId })
 			.IsUnique()
-			.HasFilter("\"ObjectiveId\" IS NOT NULL");
+			.HasFilter("\"IncentiveId\" IS NOT NULL");
 	}
 }

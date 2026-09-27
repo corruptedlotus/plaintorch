@@ -53,11 +53,9 @@ public static class DependencyEndpoints
 		}
 
 		var query = context.Eventives.Where(item => item.FateId == endpoint.Id || item.ObjectiveId == endpoint.Id);
-		if (endpoint.RecurrenceDate is DateOnly date)
+		if (endpoint.RecurrenceId is { } slot)
 		{
-			query = endpoint.RecurrenceTime is TimeOnly time
-				? query.Where(item => item.RecurrenceDate == date && item.RecurrenceTime == time)
-				: query.Where(item => item.RecurrenceDate == date && item.RecurrenceTime == null);
+			query = query.Where(item => item.RecurrenceId == slot);
 		}
 
 		return await query.FirstOrDefaultAsync(cancellationToken);
@@ -71,7 +69,6 @@ public static class DependencyEndpoints
 			return false;
 		}
 
-		return endpoint.RecurrenceDate is null
-			|| (eventive.RecurrenceDate == endpoint.RecurrenceDate && eventive.RecurrenceTime == endpoint.RecurrenceTime);
+		return endpoint.RecurrenceId is not { } slot || eventive.RecurrenceId == slot;
 	}
 }

@@ -1,9 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { EventEmitter } from "node:events"
-import { existsSync } from "node:fs"
 import path from "node:path"
 import { app } from "electron"
 import type { CoreEvent } from "../shared/contracts"
+import { type CoreLocation, describeCoreLocation, locateCore } from "./core-location"
 import type { UserProfile } from "./profile"
 
 const gracefulExitTimeoutMs = 8_000
@@ -19,6 +19,8 @@ export interface CoreProcessEvents {
 	exit: [{ code: number | null, expected: boolean, willRestart: boolean }]
 	/** A line on stdout that was not JSON; surfaced so nothing is silently lost. */
 	noise: [string]
+	/** A line about the supervision itself: which core was chosen and its version, and any warning about that choice. */
+	log: [string]
 }
 
 /**
@@ -51,24 +53,17 @@ export class CoreProcess extends EventEmitter<CoreProcessEvents> {
 	}
 
 	/**
-	 * Where the core executable lives: beside the packaged app under `resources/core`, or, for a development run,
-	 * the core project's debug output. `PLAINTORCH_CORE_PATH` overrides both.
+	 * Where the core executable lives, resolved afresh on every start (see {@link locateCore}): `PLAINTORCH_CORE_PATH`,
+	 * else the packaged `resources/core`, else, for a development run, the core project's Debug then Release build, and
+	 * the installer's `core-dist` publish only when there is no build.
 	 */
-	public static resolveExecutable(): string | undefined {
-		const override = process.env.PLAINTORCH_CORE_PATH
-		if (override) {
-			return override
-		}
-
-		const fileName = process.platform === "win32" ? "plaintorch.exe" : "plaintorch"
-		const candidates = app.isPackaged
-			? [path.join(process.resourcesPath, "core", fileName)]
-			: [
-				path.join(app.getAppPath(), "core-dist", fileName),
-				path.join(app.getAppPath(), "..", "core", "bin", "Release", "net10.0", fileName),
-				path.join(app.getAppPath(), "..", "core", "bin", "Debug", "net10.0", fileName),
-			]
-		return candidates.find(candidate => existsSync(candidate))
+	public static locate(): CoreLocation | undefined {
+		return locateCore({
+			override: process.env.PLAINTORCH_CORE_PATH,
+			packaged: app.isPackaged,
+			resourcesPath: process.resourcesPath,
+			appPath: app.getAppPath()
+		})
 	}
 
 	/** Starts the core unless it is already running. */
@@ -78,13 +73,23 @@ export class CoreProcess extends EventEmitter<CoreProcessEvents> {
 		}
 
 		clearTimeout(this.restartTimer)
-		const executable = CoreProcess.resolveExecutable()
-		if (!executable) {
+		const location = CoreProcess.locate()
+		if (!location) {
+			const message = app.isPackaged
+				? "The PLAINTORCH core executable was not found beside the app."
+				: "No PLAINTORCH core build was found: build the core (`dotnet build core`) or set PLAINTORCH_CORE_PATH."
+			this.emit("log", message)
 			this.emit("exit", { code: null, expected: false, willRestart: false })
-			this.emit("event", { event: "status", phase: "Failed", message: "The PLAINTORCH core executable was not found beside the app.", at: new Date().toISOString() })
+			this.emit("event", { event: "status", phase: "Failed", message, at: new Date().toISOString() })
 			return
 		}
 
+		this.emit("log", describeCoreLocation(location))
+		for (const warning of location.warnings) {
+			this.emit("log", `WARNING: ${warning}`)
+		}
+
+		const executable = location.executable
 		this.stopping = false
 		this.startedAt = Date.now()
 		this.stdoutBuffer = ""

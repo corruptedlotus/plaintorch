@@ -16,6 +16,7 @@ namespace Pleiades.Plaintorch.Api.Services;
 public sealed class LorePageApiService(
 	PlainfraContext context,
 	PlaintorchMarkdownStorageService markdownStorageService,
+	VaultWriteQueue writeQueue,
 	MarkdownFileLocator fileLocator,
 	VaultLayout layout,
 	VaultTemporalDataService temporalDataService,
@@ -31,38 +32,20 @@ public sealed class LorePageApiService(
 			.AsNoTracking()
 			.FirstOrDefaultAsync(item => item.Id == puck, cancellationToken);
 
-		if (lorePage is not null)
-		{
-			lorePage.IsActive = (await ActiveIdsAsync(cancellationToken)).Contains(lorePage.Id);
-		}
-
+		// IsActive is stamped on the way out by LoreActiveEndpointFilter — the active spine is a global
+		// projection a single-page endpoint cannot compute.
 		return lorePage;
 	}
 
 	/// <inheritdoc />
 	public async Task<IReadOnlyList<LorePage>> ListAsync(CancellationToken cancellationToken = default)
 	{
-		var pages = await context.LorePages
+		// IsActive is stamped on the way out by LoreActiveEndpointFilter, from one cached spine — not recomputed
+		// per page here.
+		return await context.LorePages
 			.AsNoTracking()
 			.OrderBy(item => item.Id)
 			.ToListAsync(cancellationToken);
-
-		// Stamp the active spine from the single source of truth (LoreIndex) so the client reads "active" from the API
-		// rather than re-deriving a divergent definition. Built from the loaded pages — no extra query.
-		var activeIds = new LoreIndex(pages).ActivePages.Select(page => page.Id).ToHashSet(StringComparer.Ordinal);
-		foreach (var page in pages)
-		{
-			page.IsActive = activeIds.Contains(page.Id);
-		}
-
-		return pages;
-	}
-
-	/// <summary>The ids of the pages on the current active lore spine (<see cref="LoreIndex"/>), the one active definition.</summary>
-	private async Task<HashSet<string>> ActiveIdsAsync(CancellationToken cancellationToken)
-	{
-		var index = await context.LorePages.AsNoTracking().ToLoreIndexAsync(cancellationToken);
-		return index.ActivePages.Select(page => page.Id).ToHashSet(StringComparer.Ordinal);
 	}
 
 	public async Task<IReadOnlyList<LorePage>> ListActiveAsync(CancellationToken cancellationToken = default)
@@ -115,10 +98,8 @@ public sealed class LorePageApiService(
 		lorePage.RelativePath = ComposeRelativePath(lorePage, parent);
 
 		context.LorePages.Add(lorePage);
-		await context.SaveChangesAsync(cancellationToken);
-		await markdownStorageService.SaveLorePageAsync(lorePage, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(lorePage, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "lore.create", subject: lorePage, details: new { parent = parent?.Id, level }, cancellationToken: cancellationToken);
-		lorePage.IsActive = (await ActiveIdsAsync(cancellationToken)).Contains(lorePage.Id);
 		return lorePage;
 	}
 
@@ -161,12 +142,10 @@ public sealed class LorePageApiService(
 			lorePage.RelativePath = ComposeRelativePath(lorePage, parent);
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
 		// Lore is synced, so the change is written back through the entity's own markdown file. Passing the previous
 		// snapshot lets the storage layer relocate the self-named directory when the title (and therefore folder) changed.
-		await markdownStorageService.SaveLorePageAsync(lorePage, previous, cancellationToken: cancellationToken);
+		await writeQueue.WriteAsync(lorePage, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "lore.update", subject: lorePage, details: new { previousTitle = previous.Title }, cancellationToken: cancellationToken);
-		lorePage.IsActive = (await ActiveIdsAsync(cancellationToken)).Contains(lorePage.Id);
 		return lorePage;
 	}
 
@@ -188,10 +167,11 @@ public sealed class LorePageApiService(
 		}
 
 		var snapshot = (LorePage)entityGateway.CloneScalars(lorePage);
-		var databaseGraveyard = await temporalDataService.ArchiveEntityAsync(snapshot, "api-delete", Environment.UserName, cancellationToken);
+		var databaseGraveyard = temporalDataService.StageEntityArchive(snapshot, "api-delete", Environment.UserName);
 		context.LorePages.Remove(lorePage);
+		await writeQueue.RecordRemoveAsync(snapshot, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
-		var fileGraveyard = await markdownStorageService.DeleteLorePageAsync(snapshot, cancellationToken);
+		var fileGraveyard = await writeQueue.DrainRemoveAsync(snapshot, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"lore.delete",
@@ -311,7 +291,6 @@ public sealed class LorePageApiService(
 		}
 
 		await auditLogService.WriteAsync("api", "lore.set-index", subject: page, details: new { previousId = oldId, index }, cancellationToken: cancellationToken);
-		page.IsActive = (await ActiveIdsAsync(cancellationToken)).Contains(page.Id);
 		return page;
 	}
 

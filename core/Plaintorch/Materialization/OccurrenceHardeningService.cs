@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
-using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 
@@ -21,9 +20,9 @@ namespace Pleiades.Plaintorch.Materialization;
 /// occurrence, enforced centrally on the save.
 /// <para>
 /// Orbit occurrences resolve in PREVIEW (non-seeking) mode: interacting with a future occurrence must never
-/// advance the schedule cursor. The occurrence's RECURRENCE-ID (owner id + date + time) is its identity, so an
-/// already-hardened occurrence — including one that was rescheduled — is recognized rather than duplicated, and
-/// a re-resolve is idempotent.
+/// advance the schedule cursor. The occurrence's RECURRENCE-ID (owner id + original slot moment) is its identity,
+/// so an already-hardened occurrence — including one that was rescheduled — is recognized rather than duplicated,
+/// and a re-resolve is idempotent.
 /// </para>
 /// </remarks>
 public sealed class OccurrenceHardeningService(
@@ -37,22 +36,21 @@ public sealed class OccurrenceHardeningService(
 	/// a locked occurrence refuses to harden (PEP101). No save — the caller's <see cref="PlainfraContext.SaveChanges()"/>
 	/// persists it. The entry point for interacting with a projected eventive by its recurrence-id.
 	/// </summary>
-	public async Task<Eventive> EnsureEventiveIntoContextAsync(string ownerId, EventiveMaterialization request, CancellationToken cancellationToken = default)
+	public async Task<Eventive> EnsureEventiveIntoContextAsync(string ownerId, DateTime recurrenceId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
-		ArgumentNullException.ThrowIfNull(request);
 
 		var fate = await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == ownerId, cancellationToken);
 		if (fate is not null)
 		{
-			var (eventive, _) = await EnsureFateEventiveIntoContextAsync(fate, request, respectDependencyGate: true, cancellationToken);
+			var (eventive, _) = await EnsureFateEventiveIntoContextAsync(fate, recurrenceId, respectDependencyGate: true, cancellationToken);
 			return eventive;
 		}
 
 		var objective = await context.Objectives.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == ownerId, cancellationToken);
 		if (objective is not null)
 		{
-			var (eventive, _) = await EnsureObjectiveEventiveIntoContextAsync(objective, request, cancellationToken);
+			var (eventive, _) = await EnsureObjectiveEventiveIntoContextAsync(objective, recurrenceId, cancellationToken);
 			return eventive;
 		}
 
@@ -64,10 +62,9 @@ public sealed class OccurrenceHardeningService(
 	/// existing row when already hardened. No save — the caller's <see cref="PlainfraContext.SaveChanges()"/>
 	/// persists it. The entry point for interacting with a projected unbound attentive by its recurrence-id.
 	/// </summary>
-	public async Task<Attentive> EnsureDecreeAttentiveIntoContextAsync(string decreeId, AttentiveMaterialization request, CancellationToken cancellationToken = default)
+	public async Task<Attentive> EnsureDecreeAttentiveIntoContextAsync(string decreeId, DateTime recurrenceId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(decreeId);
-		ArgumentNullException.ThrowIfNull(request);
 
 		var decree = await context.Decrees.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == decreeId, cancellationToken)
 			?? throw new InvalidOperationException($"Decree '{decreeId}' was not found.");
@@ -76,28 +73,12 @@ public sealed class OccurrenceHardeningService(
 			throw new InvalidOperationException($"Decree '{decreeId}' is {decree.Status} and does not materialize attentives.");
 		}
 
-		var date = request.Date ?? DateOnly.FromDateTime(DateTime.Today);
-
-		// Interaction with an orbit occurrence resolves in preview (non-seeking) mode. Decrees resolve on the
-		// Pleiadean calendar. Without an orbit, an unbound attentive may sit at any time and date the caller chooses.
-		OrbitOccurrenceInstance? occurrence = null;
-		if (!string.IsNullOrWhiteSpace(decree.Orbit))
-		{
-			var dayOccurrences = await orbitService.PreviewDayOccurrencesAsync(decree, decree.Orbit, date, cancellationToken);
-			if (dayOccurrences.Count == 0)
-			{
-				throw new InvalidOperationException($"Decree '{decreeId}' has no orbit occurrence on {date:yyyy-MM-dd}.");
-			}
-
-			occurrence = request.Time is not null
-				? dayOccurrences.FirstOrDefault(item => item.StartTime == request.Time) ?? dayOccurrences[0]
-				: dayOccurrences[0];
-		}
-
-		var occurrenceDate = occurrence?.Date ?? date;
-		var occurrenceTime = occurrence?.StartTime ?? request.Time;
+		// Decrees resolve on the Pleiadean calendar. Without an orbit, an unbound attentive may sit at any slot the
+		// caller chooses.
+		var occurrence = await ResolveSlotAsync(decree, nameof(Decree), decree.Orbit, recurrenceId, cancellationToken);
+		var slot = occurrence?.Moment ?? recurrenceId;
 		var existing = await context.Attentives.FirstOrDefaultAsync(
-			item => item.DecreeId == decree.Id && item.RecurrenceDate == occurrenceDate && item.RecurrenceTime == occurrenceTime && item.PolarisCycleId == null,
+			item => item.DecreeId == decree.Id && item.RecurrenceId == slot,
 			cancellationToken);
 		if (existing is not null)
 		{
@@ -107,18 +88,9 @@ public sealed class OccurrenceHardeningService(
 		var attentive = new Attentive
 		{
 			DecreeId = decree.Id,
-			Date = occurrenceDate,
-			Time = occurrenceTime,
-			RecurrenceDate = occurrenceDate,
-			RecurrenceTime = occurrenceTime,
-			PeriodEndDate = occurrence is not null && occurrence.PeriodEndExclusive > occurrence.Date.AddDays(1)
-				? occurrence.PeriodEndExclusive
-				: null,
-			Estimation = request.Estimation ?? decree.DefaultLength,
-			Minimum = request.Minimum,
-			Maximum = request.Maximum,
+			Epoch = occurrence is not null ? Epoch.For(occurrence) : Epoch.FromSlot(slot),
+			RecurrenceId = slot,
 		};
-		attentive.Normalize();
 		context.Attentives.Add(attentive);
 		return attentive;
 	}
@@ -132,17 +104,15 @@ public sealed class OccurrenceHardeningService(
 	/// </summary>
 	public async Task EnsureReferencedEventiveAsync(EndpointRef endpoint, CancellationToken cancellationToken = default)
 	{
-		if (endpoint.Kind != DependencyEndpointKind.Eventive || endpoint.RecurrenceDate is not DateOnly date)
+		if (endpoint.Kind != DependencyEndpointKind.Eventive || endpoint.RecurrenceId is not { } recurrenceId)
 		{
 			return;
 		}
 
-		if (await FindEventiveAsync(endpoint.Id, date, endpoint.RecurrenceTime, cancellationToken) is not null)
+		if (await FindEventiveAsync(endpoint.Id, recurrenceId, cancellationToken) is not null)
 		{
 			return;
 		}
-
-		var request = new EventiveMaterialization(Date: date, StartTime: endpoint.RecurrenceTime);
 
 		var fate = await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == endpoint.Id, cancellationToken);
 		if (fate is not null)
@@ -151,7 +121,7 @@ public sealed class OccurrenceHardeningService(
 			{
 				// A reference hardens the occurrence even when it is dependency-gated: the row must exist for the
 				// reference to resolve; the lock still applies to whether it can begin.
-				await EnsureFateEventiveIntoContextAsync(fate, request, respectDependencyGate: false, cancellationToken);
+				await EnsureFateEventiveIntoContextAsync(fate, recurrenceId, respectDependencyGate: false, cancellationToken);
 			}
 			catch (InvalidOperationException)
 			{
@@ -165,7 +135,7 @@ public sealed class OccurrenceHardeningService(
 		{
 			try
 			{
-				await EnsureObjectiveEventiveIntoContextAsync(objective, request, cancellationToken);
+				await EnsureObjectiveEventiveIntoContextAsync(objective, recurrenceId, cancellationToken);
 			}
 			catch (InvalidOperationException)
 			{
@@ -173,40 +143,26 @@ public sealed class OccurrenceHardeningService(
 		}
 	}
 
-	private async Task<(Eventive Eventive, bool Created)> EnsureFateEventiveIntoContextAsync(Fate fate, EventiveMaterialization request, bool respectDependencyGate, CancellationToken cancellationToken)
+	private async Task<(Eventive Eventive, bool Created)> EnsureFateEventiveIntoContextAsync(Fate fate, DateTime recurrenceId, bool respectDependencyGate, CancellationToken cancellationToken)
 	{
-		if (fate.Status != FateStatus.Active)
+		// A cancelled fate generates nothing and cannot be interacted with. An opted-out fate still honours the
+		// user-interaction rule (PEP100/PEP111): interacting with one of its occurrences hardens it, stamped OptOut
+		// so it stays hidden until the row is explicitly opted back in by setting it Pending.
+		if (fate.Status == FateStatus.Cancelled)
 		{
 			throw new InvalidOperationException($"Fate '{fate.Id}' is {fate.Status} and does not materialize eventives.");
 		}
 
-		var date = request.Date
-			?? fate.Date
-			?? throw new InvalidOperationException($"Fate '{fate.Id}' has no occurrence date; supply one to materialize its eventive.");
-
-		OrbitOccurrenceInstance? occurrence = null;
-		if (!string.IsNullOrWhiteSpace(fate.Orbit))
-		{
-			var dayOccurrences = await orbitService.PreviewDayOccurrencesAsync(fate, fate.Orbit, date, cancellationToken);
-			if (dayOccurrences.Count == 0)
-			{
-				throw new InvalidOperationException($"Fate '{fate.Id}' has no orbit occurrence on {date:yyyy-MM-dd}.");
-			}
-
-			occurrence = request.StartTime is not null
-				? dayOccurrences.FirstOrDefault(item => item.StartTime == request.StartTime) ?? dayOccurrences[0]
-				: dayOccurrences[0];
-		}
-
-		var startTime = occurrence?.StartTime ?? request.StartTime ?? fate.StartTime;
+		var occurrence = await ResolveSlotAsync(fate, nameof(Fate), fate.Orbit, recurrenceId, cancellationToken);
+		var slot = occurrence?.Moment ?? recurrenceId;
 
 		// PEP101: a locked whole-fate freezes all materialization; a locked single occurrence blocks just itself.
-		if (respectDependencyGate && await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, date, startTime, cancellationToken))
+		if (respectDependencyGate && await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, slot, cancellationToken))
 		{
-			throw new InvalidOperationException($"Fate '{fate.Id}' occurrence on {date:yyyy-MM-dd} is blocked by unmet dependencies and cannot be materialized.");
+			throw new InvalidOperationException($"Fate '{fate.Id}' occurrence on {slot:yyyy-MM-dd} is blocked by unmet dependencies and cannot be materialized.");
 		}
 
-		var existing = await FindEventiveAsync(fate.Id, date, startTime, cancellationToken);
+		var existing = await FindEventiveAsync(fate.Id, slot, cancellationToken);
 		if (existing is not null)
 		{
 			return (existing, false);
@@ -215,25 +171,17 @@ public sealed class OccurrenceHardeningService(
 		var eventive = new Eventive
 		{
 			FateId = fate.Id,
-			Date = date,
-			StartTime = startTime,
-			EndTime = occurrence?.EndTime ?? request.EndTime ?? fate.EndTime,
-			RecurrenceDate = date,
-			RecurrenceTime = startTime,
-			Estimation = occurrence?.DurationMinutes ?? fate.ResolveEventiveDuration(),
+			Epoch = occurrence is not null ? Epoch.For(occurrence) : Epoch.FromSlot(slot),
+			RecurrenceId = slot,
+			Resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending,
 		};
-		eventive.Normalize();
 		context.Eventives.Add(eventive);
 		return (eventive, true);
 	}
 
-	private async Task<(Eventive Eventive, bool Created)> EnsureObjectiveEventiveIntoContextAsync(Objective objective, EventiveMaterialization request, CancellationToken cancellationToken)
+	private async Task<(Eventive Eventive, bool Created)> EnsureObjectiveEventiveIntoContextAsync(Objective objective, DateTime recurrenceId, CancellationToken cancellationToken)
 	{
-		var date = request.Date
-			?? objective.Due
-			?? throw new InvalidOperationException($"Objective '{objective.Id}' has no due date; supply a date to materialize its eventive.");
-
-		var existing = await FindEventiveAsync(objective.Id, date, null, cancellationToken);
+		var existing = await FindEventiveAsync(objective.Id, recurrenceId, cancellationToken);
 		if (existing is not null)
 		{
 			return (existing, false);
@@ -242,28 +190,45 @@ public sealed class OccurrenceHardeningService(
 		var eventive = new Eventive
 		{
 			ObjectiveId = objective.Id,
-			Date = date,
-			StartTime = request.StartTime,
-			EndTime = request.EndTime,
-			RecurrenceDate = date,
-			RecurrenceTime = request.StartTime,
+			Epoch = Epoch.FromSlot(recurrenceId),
+			RecurrenceId = recurrenceId,
 		};
-		eventive.Normalize();
 		context.Eventives.Add(eventive);
 		return (eventive, true);
+	}
+
+	/// <summary>
+	/// Resolves, in preview mode, the orbit occurrence a RECURRENCE-ID addresses: the occurrence starting at exactly
+	/// that moment, or the day's first occurrence when none does. <see langword="null"/> when the declarative has
+	/// no orbit; throws when its orbit has no occurrence on that day.
+	/// </summary>
+	private async Task<OrbitOccurrenceInstance?> ResolveSlotAsync(Incentive owner, string ownerKind, string? orbit, DateTime recurrenceId, CancellationToken cancellationToken)
+	{
+		if (string.IsNullOrWhiteSpace(orbit))
+		{
+			return null;
+		}
+
+		var day = DateOnly.FromDateTime(recurrenceId);
+		var dayOccurrences = await orbitService.PreviewDayOccurrencesAsync(owner, orbit, day, cancellationToken);
+		if (dayOccurrences.Count == 0)
+		{
+			throw new InvalidOperationException($"{ownerKind} '{owner.Id}' has no orbit occurrence on {day:yyyy-MM-dd}.");
+		}
+
+		return dayOccurrences.FirstOrDefault(item => item.Moment == recurrenceId) ?? dayOccurrences[0];
 	}
 
 	/// <summary>
 	/// Finds an eventive for an owner UID and RECURRENCE-ID, seeing both a row already added in the current unit
 	/// of work (so two references in one save do not duplicate it) and the database.
 	/// </summary>
-	private async Task<Eventive?> FindEventiveAsync(string ownerUid, DateOnly date, TimeOnly? time, CancellationToken cancellationToken)
+	private async Task<Eventive?> FindEventiveAsync(string ownerUid, DateTime recurrenceId, CancellationToken cancellationToken)
 	{
 		var tracked = context.ChangeTracker.Entries<Eventive>()
 			.FirstOrDefault(entry => entry.State == EntityState.Added
 				&& (entry.Entity.FateId == ownerUid || entry.Entity.ObjectiveId == ownerUid)
-				&& entry.Entity.RecurrenceDate == date
-				&& entry.Entity.RecurrenceTime == time)?.Entity;
+				&& entry.Entity.RecurrenceId == recurrenceId)?.Entity;
 		if (tracked is not null)
 		{
 			return tracked;
@@ -271,8 +236,7 @@ public sealed class OccurrenceHardeningService(
 
 		return await context.Eventives.FirstOrDefaultAsync(item =>
 			(item.FateId == ownerUid || item.ObjectiveId == ownerUid)
-			&& item.RecurrenceDate == date
-			&& item.RecurrenceTime == time,
+			&& item.RecurrenceId == recurrenceId,
 			cancellationToken);
 	}
 }

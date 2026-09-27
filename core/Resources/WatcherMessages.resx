@@ -22,7 +22,7 @@
 
   <!-- Reasons: the descriptor message for each WatcherOperations reason code. -->
   <data name="Reasons.ScanFailed" xml:space="preserve">
-    <value>Startup discovery scan failed and watcher is operating in degraded startup mode.</value>
+    <value>The startup discovery scan failed. The watcher is on standby and retries the scan until it succeeds.</value>
   </data>
   <data name="Reasons.TickFailed" xml:space="preserve">
     <value>Watcher pending-drain tick failed.</value>
@@ -52,22 +52,28 @@
     <value>Failed to process a discovered candidate sync action.</value>
   </data>
   <data name="Reasons.RelocationFailed" xml:space="preserve">
-    <value>Failed to process a relocation candidate.</value>
+    <value>Could not follow a moved or renamed file directly; it was inspected in its new place instead.</value>
   </data>
   <data name="Reasons.RootInitFailed" xml:space="preserve">
     <value>Failed to initialize a filesystem root observer.</value>
   </data>
   <data name="Reasons.RootError" xml:space="preserve">
-    <value>Watcher reported a root-level runtime error.</value>
+    <value>A filesystem observer reported an error, so changes may have been missed; the watcher re-sweeps the vault.</value>
+  </data>
+  <data name="Reasons.RootsUnresolved" xml:space="preserve">
+    <value>The watcher could not resolve the folders it observes. It is on standby and retries until it can.</value>
   </data>
   <data name="Reasons.Fatal" xml:space="preserve">
-    <value>Watcher encountered a fatal unhandled exception and stopped.</value>
+    <value>The watcher stopped after an unexpected failure. It resumes when a vault is next activated.</value>
   </data>
   <data name="Reasons.VaultInaccessible" xml:space="preserve">
-    <value>Watcher cannot reach the vault or one of its entity roots and has gone to sleep until access is restored.</value>
+    <value>The watcher cannot reach the vault or one of its entity roots. It is on standby until access is restored.</value>
   </data>
   <data name="Reasons.DuplicateIdentity" xml:space="preserve">
     <value>Watcher found more than one file asserting the same entity identity.</value>
+  </data>
+  <data name="Reasons.DeleteBlocked" xml:space="preserve">
+    <value>A note was deleted, but its entity cannot be removed while other records still reference it. Restore the note, or remove those records.</value>
   </data>
 
   <!-- Details: parameterised detail lines appended to a reason message. -->
@@ -85,6 +91,12 @@
   </data>
   <data name="Details.VaultPathBecameInaccessible" xml:space="preserve">
     <value>Vault path '{0}' became inaccessible.</value>
+  </data>
+  <data name="Details.DeleteBlocked" xml:space="preserve">
+    <value>{0} '{1}' ({2}) was not removed: it is still referenced by {3}. Nothing was deleted; the next vault sweep removes it once nothing references it.</value>
+  </data>
+  <data name="Details.DeleteBlocker" xml:space="preserve">
+    <value>{0} {1} record(s)</value>
   </data>
 
   <!-- Decisions: the reason a storage-mode policy gives for its reconciliation action. -->

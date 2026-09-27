@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<!-- No 'self' for images: on a file: page it admits file://host/… too, which Windows fetches over SMB and so hands
+	     the named host the user's credentials. Bundled images are data: URLs, vault images come through the media
+	     scheme. -->
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src data: blob: plaintorch-media:; font-src 'self' data:">
+	<title>PLAINTORCH Briefing</title>
+	<style>
+		:root {
+			/* The title bar's height: toasts appear below it, clear of the window buttons. */
+			--p7t-safe-top: 48px;
+		}
+
+		#briefing {
+			box-sizing: border-box;
+			height: 100%;
+			padding: 0.2em 1em 1.4em;
+			overflow: auto;
+		}
+
+		.waiting {
+			display: grid;
+			place-content: center;
+			justify-items: center;
+			gap: 14px;
+			height: 100%;
+			text-align: center;
+		}
+
+		.waiting .glyph {
+			width: 72px;
+			height: 72px;
+			color: var(--p7t-accent-soft);
+		}
+
+		.waiting .message {
+			max-width: 440px;
+			color: var(--text-muted);
+			white-space: pre-wrap;
+		}
+
+		.waiting .actions {
+			display: flex;
+			gap: 8px;
+		}
+	</style>
+</head>
+<body>
+	<p7t-window-frame>
+		<div id="briefing" class="plaintorch-briefing-view plaintorch-root"></div>
+	</p7t-window-frame>
+	<script src="./briefing.js"></script>
+</body>
+</html>

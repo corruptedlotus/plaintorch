@@ -4,6 +4,7 @@ import type { ShellStatus } from "../shared/contracts"
 import { hostsCore } from "./flavor"
 
 export interface TrayActions {
+	openBriefing(): void
 	openStatus(): void
 	activateVault(): void
 	deactivateVault(): void
@@ -17,19 +18,28 @@ export interface TrayActions {
 
 /**
  * The tray icon and its menu, rebuilt from every status so the phase line, the vault entries, and the update entry
- * always reflect the shell's state.
+ * always reflect the shell's state. Clicking the icon opens the briefing, the shell's main window.
  */
 export class ShellTray {
 	private tray?: Tray
+	private destroyed = false
+	private latest?: ShellStatus
 
 	public constructor(private readonly actions: TrayActions) { }
 
+	/**
+	 * The mono PLAINTORCH mark for the taskbar's theme — white on a dark taskbar, black on a light one. On Windows the
+	 * taskbar follows the system mode, which can differ from the apps' mode ("custom" colours), so that is what is read
+	 * there. Falls back to the full-colour mark should a mono icon be missing.
+	 */
 	public getPath() {
-		const iconName = nativeTheme.shouldUseDarkColors
-			? 'plaintorch-mono-dark.png'
-			: 'plaintorch-mono-light.png'
-		const icon = nativeImage.createFromPath(path.join(__dirname, "assets", iconName))
-		return icon
+		const dark = process.platform === "win32"
+			? nativeTheme.shouldUseDarkColorsForSystemIntegratedUI
+			: nativeTheme.shouldUseDarkColors
+		const icon = nativeImage.createFromPath(path.join(__dirname, "assets", dark ? "plaintorch-mono-dark.png" : "plaintorch-mono-light.png"))
+		return icon.isEmpty()
+			? nativeImage.createFromPath(path.join(__dirname, "assets", "plaintorch-full.png")).resize({ width: 32, height: 32 })
+			: icon
 	}
 
 	/** Creates the tray icon. */
@@ -37,11 +47,19 @@ export class ShellTray {
 		const icon = this.getPath()
 		this.tray = new Tray(icon)
 		this.tray.setToolTip("PLAINTORCH")
-		this.tray.on("click", () => this.actions.openStatus())
-		this.tray.on("double-click", () => this.actions.openStatus())
+		this.tray.on("click", () => this.actions.openBriefing())
+		this.tray.on("double-click", () => this.actions.openBriefing())
+		if (this.latest) {
+			this.update(this.latest)
+		}
 	}
 
+	/** Follows a light/dark theme change; brings the tray back if the platform dropped it, but never after {@link destroy}. */
 	public updateIcon() {
+		if (this.destroyed) {
+			return
+		}
+
 		if (this.tray && !this.tray.isDestroyed()) {
 			const icon = this.getPath()
 			this.tray.setImage(icon)
@@ -52,6 +70,7 @@ export class ShellTray {
 
 	/** Rebuilds the menu and tooltip for a status. */
 	public update(status: ShellStatus): void {
+		this.latest = status
 		if (!this.tray || this.tray.isDestroyed()) {
 			return
 		}
@@ -62,6 +81,7 @@ export class ShellTray {
 
 	/** Removes the tray icon. */
 	public destroy(): void {
+		this.destroyed = true
 		this.tray?.destroy()
 		this.tray = undefined
 	}
@@ -70,13 +90,9 @@ export class ShellTray {
 		const items: MenuItemConstructorOptions[] = [
 			{ label: describe(status), enabled: false },
 			{ label: status.vault ? `Vault: ${status.vault}` : "No vault active", enabled: false },
+			{ label: "Check Status", click: () => this.actions.openStatus() },
 			{ type: "separator" },
-			{ label: "Open status", click: () => this.actions.openStatus() },
-			{ label: "Activate vault...", click: () => this.actions.activateVault() },
-			{ label: "Deactivate vault", enabled: !!status.activeVaultSetting, click: () => this.actions.deactivateVault() },
-			{ type: "separator" },
-			{ label: "Start at login", type: "checkbox", checked: status.autostart, click: item => this.actions.setAutostart(item.checked) },
-			{ label: "Open logs folder", click: () => this.actions.openLogs() }
+			{ label: "Open Briefing", click: () => this.actions.openBriefing() },
 		]
 		if (hostsCore) {
 			items.push({ label: "Restart core", click: () => this.actions.restartCore() })
@@ -108,18 +124,18 @@ export class ShellTray {
 /** One line for the tooltip and the first menu entry. */
 export function describe(status: ShellStatus): string {
 	if (status.sweeping) {
-		return status.attachment === "attached" ? "attached, startup sweep" : "startup sweep"
+		return status.attachment === "attached" ? "Attached, Startup sweep" : "Startup sweep"
 	}
 
 	switch (status.attachment) {
 		case "absent":
-			return "no core running"
+			return "No Core"
 		case "exited":
-			return "core exited"
+			return "Offline"
 		case "starting":
-			return "core starting"
+			return "Starting"
 		case "attached":
-			return `attached, ${status.phase.toLowerCase()}`
+			return `Attached, ${status.phase.toLowerCase()}`
 		default:
 			return status.phase.toLowerCase()
 	}

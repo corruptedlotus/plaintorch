@@ -6,7 +6,7 @@ core's one-authority-many-observers boundary. Specified in `PEP106` and its `Pat
 
 The core (this directory, `sdk.ts/plaintorch/repository/`) is framework-agnostic — plain TypeScript over the
 domain SDKs, no DOM, no lit. The **binding layer** — the `EntityRef` / `EntityWatch` / `QueryRef` lit
-controllers in `obsidian/components/data/EntityRef.ts` — is what a component actually holds. If the system is
+controllers in `sipa/components/data/EntityRef.ts` — is what a component actually holds. If the system is
 ever extracted as a standalone library, the split is exactly that: this directory is the package, the
 controllers are a thin per-framework binding on top.
 
@@ -45,7 +45,7 @@ reference is looking at current state by construction; synchronizing them is jus
   the eviction sweep.
 - `identity.ts` / `absorption.ts` / `equivalence.ts` / `mutation.ts` — the primitives.
 
-**Binding layer (`obsidian/components/data/EntityRef.ts`)**
+**Binding layer (`sipa/components/data/EntityRef.ts`)**
 - `EntityRef<T>` — resolves an entity by id, subscribes, re-renders on change, releases on disconnect. Owns
   the edit cycle (`binder`, `commit`, `fork`, `beginEdit`).
 - `EntityWatch` — observes an instance *handed* to a component (a list item) rather than one it resolves.

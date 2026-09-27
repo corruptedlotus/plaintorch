@@ -26,7 +26,7 @@ public sealed class EventiveLifecyclePhaseSource : ILifecyclePhaseSource
 	public bool HasFinished(object entity)
 	{
 		var eventive = (Eventive)entity;
-		if (eventive.Resolution is EventiveResolution.Missed or EventiveResolution.Cancelled)
+		if (eventive.Resolution is EventiveResolution.Missed or EventiveResolution.Cancelled or EventiveResolution.OptOut)
 		{
 			return true;
 		}
@@ -36,18 +36,13 @@ public sealed class EventiveLifecyclePhaseSource : ILifecyclePhaseSource
 
 	private static DateTimeOffset OccurrenceStart(Eventive eventive)
 	{
-		var start = eventive.StartTime ?? TimeOnly.MinValue;
-		return new DateTimeOffset(eventive.Date.ToDateTime(start), TimeSpan.Zero);
+		return new DateTimeOffset(eventive.Epoch.Moment, TimeSpan.Zero);
 	}
 
 	private static DateTimeOffset OccurrenceEnd(Eventive eventive)
 	{
-		if (eventive.EndTime is { } endTime)
-		{
-			return new DateTimeOffset(eventive.Date.ToDateTime(endTime), TimeSpan.Zero);
-		}
-
-		// All-day or open-ended occurrences finish at the end of their day.
-		return new DateTimeOffset(eventive.Date.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+		// The occurrence's end is its moment advanced by the duration, or by one granularity unit when it has
+		// no explicit span — so an all-day (day-granular) occurrence still finishes at the end of its day.
+		return new DateTimeOffset(eventive.Epoch.EndMoment, TimeSpan.Zero);
 	}
 }

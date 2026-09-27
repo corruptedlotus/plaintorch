@@ -14,6 +14,14 @@ public sealed class OptionalVaultStorageModePolicyService : PathBoundVaultStorag
 	/// <inheritdoc />
 	public override VaultSyncDecision Decide(VaultStorageModeDecisionContext context)
 	{
+		// A missing file has no content to judge and, without an identity, no entity to reconcile — a note deleted before
+		// it was ever synced, or the primary a folder event synthesizes — so there is nothing to create, purge or hold in
+		// conflict.
+		if (!context.FileExists && string.IsNullOrWhiteSpace(context.PathId))
+		{
+			return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.OptionalMissingFileUnknownEntity);
+		}
+
 		if (string.IsNullOrWhiteSpace(context.PathId) && IsUntitledPlaceholder(context.PathTitle))
 		{
 			return new(VaultSyncAction.Ignore, WatcherMessages.Decisions.UntitledPlaceholderIgnored);

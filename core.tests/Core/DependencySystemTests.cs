@@ -119,6 +119,28 @@ public sealed class DependencySystemTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task A_checkpoint_toll_is_suppressed_until_its_due()
+	{
+		var source = await Directive(api => api.CreateStandaloneAsync("Gate prereq", cancellationToken: Ct));
+		await Directive(api => api.ShiftStellarWorkflowAsync(source.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
+		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Deadline Gate", celestronToll: 5, cancellationToken: Ct));
+		await Deps(api => api.CreateAsync(DirectiveRef(source.Id), CheckpointRef(checkpoint.Id), cancellationToken: Ct));
+
+		// Dependency met, but the toll is unpaid and there is no due, so it is owed now: the checkpoint stays locked.
+		Assert.False((await Deps(api => api.GetCheckpointAsync(checkpoint.Id, Ct)))!.Unlocked);
+
+		// A future due suppresses the toll — there is still time — so the checkpoint unlocks without paying.
+		var future = Due.On(DateOnly.FromDateTime(DateTime.Today).AddDays(3));
+		await Deps(api => api.UpdateCheckpointAsync(checkpoint.Id, new CheckpointUpdate(Due: future), Ct));
+		Assert.True((await Deps(api => api.GetCheckpointAsync(checkpoint.Id, Ct)))!.Unlocked);
+
+		// Once the due has passed, the toll is owed again and the checkpoint re-locks until it is paid.
+		var past = Due.At(DateTime.Now.AddDays(-1));
+		await Deps(api => api.UpdateCheckpointAsync(checkpoint.Id, new CheckpointUpdate(Due: past), Ct));
+		Assert.False((await Deps(api => api.GetCheckpointAsync(checkpoint.Id, Ct)))!.Unlocked);
+	}
+
+	[Fact]
 	public async Task Paying_a_toll_without_enough_celestron_is_rejected()
 	{
 		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Expensive", celestronToll: 100, cancellationToken: Ct));
@@ -344,9 +366,10 @@ public sealed class DependencySystemTests : VaultTestBase
 	[Fact]
 	public async Task Locked_whole_fate_pauses_materialization_until_the_source_finishes()
 	{
+		var slot = DateOnly.FromDateTime(DateTime.Today).AddDays(30);
 		var source = await Directive(api => api.CreateStandaloneAsync("Fate prereq", cancellationToken: Ct));
-		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Solstice", Date: DateOnly.FromDateTime(DateTime.Today).AddDays(30)), Ct));
-		var occurrenceRef = new EventiveOccurrenceRef(fate.Id, fate.Date!.Value, fate.StartTime);
+		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Solstice", Date: slot), Ct));
+		var occurrenceRef = new EventiveOccurrenceRef(fate.Id, slot.ToDateTime(TimeOnly.MinValue));
 
 		await Deps(api => api.CreateAsync(DirectiveRef(source.Id), new EndpointRef(DependencyEndpointKind.Fate, fate.Id), cancellationToken: Ct));
 
@@ -364,11 +387,11 @@ public sealed class DependencySystemTests : VaultTestBase
 		var target = await Directive(api => api.CreateStandaloneAsync("Downstream", cancellationToken: Ct));
 		var slot = DateOnly.FromDateTime(DateTime.Today).AddDays(30);
 		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Occurrence", Date: slot), Ct));
-		var eventive = await Declarative(api => api.UpdateEventiveAsync(new EventiveOccurrenceRef(fate.Id, slot), new EventiveUpdate(), Ct));
-		Assert.Equal(slot, eventive.RecurrenceDate);
+		var eventive = await Declarative(api => api.UpdateEventiveAsync(new EventiveOccurrenceRef(fate.Id, slot.ToDateTime(TimeOnly.MinValue)), new EventiveUpdate(), Ct));
+		Assert.Equal(slot.ToDateTime(TimeOnly.MinValue), eventive.RecurrenceId);
 
 		await Deps(api => api.CreateAsync(
-			new EndpointRef(DependencyEndpointKind.Eventive, fate.Id, slot),
+			new EndpointRef(DependencyEndpointKind.Eventive, fate.Id, slot.ToDateTime(TimeOnly.MinValue)),
 			DirectiveRef(target.Id),
 			cancellationToken: Ct));
 
@@ -377,7 +400,7 @@ public sealed class DependencySystemTests : VaultTestBase
 			api.ShiftStellarWorkflowAsync(target.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Active), Ct)));
 
 		// Move the occurrence (its current date changes) then resolve it: the reference still matches by slot.
-		var eventiveRef = new EventiveOccurrenceRef(eventive.RecurrenceOwnerUid, eventive.RecurrenceDate, eventive.RecurrenceTime);
+		var eventiveRef = new EventiveOccurrenceRef(eventive.RecurrenceOwnerUid, eventive.RecurrenceId);
 		await Declarative(api => api.UpdateEventiveAsync(eventiveRef, new EventiveUpdate(Date: slot.AddDays(10)), Ct));
 		await Declarative(api => api.UpdateEventiveAsync(eventiveRef, new EventiveUpdate(Resolution: EventiveResolution.Missed), Ct));
 
@@ -386,6 +409,71 @@ public sealed class DependencySystemTests : VaultTestBase
 		var begun = await Directive(api => api.ShiftStellarWorkflowAsync(target.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Active), Ct));
 		Assert.Equal(DirectiveStatus.Active, begun.Status);
 	}
+
+	[Fact]
+	public async Task A_served_dependency_says_whether_it_gates_the_targets_next_transition()
+	{
+		var target = await Objective(api => api.CreateStandaloneAsync("Arch", cancellationToken: Ct));
+		var keystone = await Directive(api => api.CreateStandaloneAsync("Keystone", cancellationToken: Ct));
+		var capstone = await Directive(api => api.CreateStandaloneAsync("Capstone", cancellationToken: Ct));
+		var beginGate = await Deps(api => api.CreateAsync(DirectiveRef(keystone.Id), ObjectiveRef(target.Id), cancellationToken: Ct));
+		var finishGate = await Deps(api => api.CreateAsync(DirectiveRef(capstone.Id), ObjectiveRef(target.Id), constraint: DependencyConstraint.ToFinish, cancellationToken: Ct));
+
+		// The objective has not begun: its begin gate holds it back now, its finish gate only later. The create
+		// response carries the stamp too.
+		Assert.True(beginGate.GatesNextTransition);
+		Assert.False(finishGate.GatesNextTransition);
+		var served = await Deps(api => api.ListAsync(target.Id, Ct));
+		Assert.True(served.Single(dependency => dependency.Id == beginGate.Id).GatesNextTransition);
+		Assert.False(served.Single(dependency => dependency.Id == finishGate.Id).GatesNextTransition);
+
+		// Once the keystone is finished and the objective has begun, its finish gate is the one that holds it back.
+		await Directive(api => api.ShiftStellarWorkflowAsync(keystone.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
+		await Objective(api => api.ShiftWorkflowAsync(target.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Onrush), Ct));
+		served = await Deps(api => api.ListAsync(target.Id, Ct));
+		Assert.False(served.Single(dependency => dependency.Id == beginGate.Id).GatesNextTransition);
+		Assert.True(served.Single(dependency => dependency.Id == finishGate.Id).GatesNextTransition);
+		var lockView = await Deps(api => api.GetLockAsync(target.Id, Ct));
+		Assert.True(Assert.Single(lockView.Unsatisfied).GatesNextTransition);
+
+		// A satisfied gate gates nothing.
+		await Directive(api => api.ShiftStellarWorkflowAsync(capstone.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
+		served = await Deps(api => api.ListAsync(target.Id, Ct));
+		Assert.All(served, dependency => Assert.False(dependency.GatesNextTransition));
+	}
+
+	[Fact]
+	public async Task A_gate_on_a_transition_the_target_already_made_does_not_gate_its_next_one()
+	{
+		var prerequisite = await Directive(api => api.CreateStandaloneAsync("Late prereq", cancellationToken: Ct));
+		var begun = await Objective(api => api.CreateStandaloneAsync("Already running", cancellationToken: Ct));
+		await Objective(api => api.ShiftWorkflowAsync(begun.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Onrush), Ct));
+		var finished = await Objective(api => api.CreateStandaloneAsync("Already done", cancellationToken: Ct));
+		await Objective(api => api.ShiftWorkflowAsync(finished.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Done), Ct));
+
+		// Gates added after the fact stay unsatisfied, but they concern transitions their targets have already made.
+		var lateBegin = await Deps(api => api.CreateAsync(DirectiveRef(prerequisite.Id), ObjectiveRef(begun.Id), cancellationToken: Ct));
+		var lateFinish = await Deps(api => api.CreateAsync(DirectiveRef(prerequisite.Id), ObjectiveRef(finished.Id), constraint: DependencyConstraint.ToFinish, cancellationToken: Ct));
+
+		var served = await Deps(api => api.ListAsync(prerequisite.Id, Ct));
+		Assert.All(served, dependency => Assert.False(dependency.Satisfied));
+		Assert.False(served.Single(dependency => dependency.Id == lateBegin.Id).GatesNextTransition);
+		Assert.False(served.Single(dependency => dependency.Id == lateFinish.Id).GatesNextTransition);
+	}
+
+	[Fact]
+	public async Task Every_unsatisfied_gate_into_a_checkpoint_gates_its_unlock()
+	{
+		var prerequisite = await Directive(api => api.CreateStandaloneAsync("Gate prereq", cancellationToken: Ct));
+		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Waypoint", cancellationToken: Ct));
+		var gate = await Deps(api => api.CreateAsync(DirectiveRef(prerequisite.Id), CheckpointRef(checkpoint.Id), cancellationToken: Ct));
+
+		// A checkpoint has no begin or finish of its own: its next transition is its unlock, which the gate holds back.
+		Assert.True(gate.GatesNextTransition);
+		Assert.True((await Deps(api => api.ListAsync(checkpoint.Id, Ct))).Single().GatesNextTransition);
+	}
+
+	private static EndpointRef ObjectiveRef(string id) => new(DependencyEndpointKind.Objective, id);
 
 	private Task<int> BankedAsync() => Vault.WithScopeAsync(services => services.GetRequiredService<PlaintorchStateService>().GetCelestronBankedAsync(Ct));
 }

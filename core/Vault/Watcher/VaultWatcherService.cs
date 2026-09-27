@@ -13,11 +13,14 @@ namespace Pleiades.Vault.Watcher;
 /// Watches vault-backed roots, performs a startup discovery scan, and debounces subsequent file events into a serialized reconciliation queue.
 /// </summary>
 /// <remarks>
-/// The watcher is built so that <em>nothing it encounters can take the core down</em>. Failures are graded into three
-/// tiers (PEP108): a passive-read failure is advisory and retried; a whole-of-vault access failure puts the watcher to
-/// sleep until access is restored; and a failure applying a change to a specific entity file is retried indefinitely.
-/// Retry is not tracked separately — the live operation-status set <em>is</em> the retry queue (see
-/// <see cref="WatcherRetryScheduler"/>), so what is being retried is exactly what the user sees flagged.
+/// The watcher is built so that <em>nothing it encounters can take the core down</em>. What it meets is graded on the
+/// PEP108 severity scale (see <see cref="WatcherOperations"/>): a problem with one file — a locked or forbidden file,
+/// invalid content, a sync that failed — is flagged and, when it is about reading or applying the file, retried
+/// indefinitely; a problem that stops the watcher's whole job is <see cref="OperationSeverity.Fatal"/> and puts it to
+/// sleep, on standby, until the condition clears. It sleeps when the vault is structurally unreachable (re-probing
+/// access) and when a live span cannot start — the startup sweep failed or the watch roots could not be resolved —
+/// (retrying the span on a backoff). Retry is not tracked separately — the live operation-status set <em>is</em> the
+/// retry queue (see <see cref="WatcherRetryScheduler"/>), so what is being retried is exactly what the user sees flagged.
 /// </remarks>
 public sealed class VaultWatcherService(
 	IServiceScopeFactory scopeFactory,
@@ -43,9 +46,26 @@ public sealed class VaultWatcherService(
 	// recovers — no re-activation required.
 	private static readonly TimeSpan StructuralReprobeInterval = TimeSpan.FromSeconds(5);
 
+	// While asleep because a live span could not start (the sweep failed, the roots would not resolve), the watcher
+	// retries the span after a backoff that widens from the first to the last of these and stays there.
+	private static readonly TimeSpan DegradedRetryInitial = TimeSpan.FromSeconds(5);
+	private static readonly TimeSpan DegradedRetryMax = TimeSpan.FromSeconds(60);
+
+	// A span that ran at least this long before an observer died counts as healthy: the next restart is immediate.
+	private static readonly TimeSpan StableSpan = TimeSpan.FromMinutes(5);
+
 	private readonly ConcurrentDictionary<string, DateTimeOffset> _pendingPaths = new(StringComparer.OrdinalIgnoreCase);
 	private readonly ConcurrentDictionary<string, (string NewPath, DateTimeOffset DueAt)> _pendingRelocations = new(StringComparer.OrdinalIgnoreCase);
 	private readonly List<FileSystemWatcher> _watchers = [];
+
+	// Roots whose filesystem observer overflowed (events were lost, the observer runs on), awaiting a re-sweep of the vault.
+	private readonly ConcurrentDictionary<string, byte> _resweepRoots = new(StringComparer.OrdinalIgnoreCase);
+
+	// Set when an observer failed for any other reason: it delivers nothing more, so the span restarts with fresh ones.
+	private volatile bool _observerLost;
+
+	// The vanished-file content statuses already re-queued for their one re-inspection (see VanishedContentPaths).
+	private readonly HashSet<string> _vanishedRequeued = new(StringComparer.OrdinalIgnoreCase);
 
 	/// <summary>How a live-observation session ended, so the supervisor knows whether to sleep or exit.</summary>
 	private enum LiveSessionExit
@@ -55,6 +75,15 @@ public sealed class VaultWatcherService(
 
 		/// <summary>Structural vault access was lost; the supervisor should sleep and re-probe.</summary>
 		LostAccess,
+
+		/// <summary>
+		/// The span could not go on (a sweep failed, or the watch roots could not be resolved); the supervisor should
+		/// sleep on a backoff and retry the span.
+		/// </summary>
+		Degraded,
+
+		/// <summary>An observer died; the supervisor should start a new span at once, which re-sweeps and re-attaches them.</summary>
+		ObserverLost,
 	}
 
 	/// <inheritdoc />
@@ -77,7 +106,7 @@ public sealed class VaultWatcherService(
 			// Record the generation before running so a session is never re-entered, even if RunSessionAsync
 			// returns early. The next iteration then blocks until a newer activation, preventing a hot loop.
 			servedGeneration = generation;
-			statusRegistry.SetHealthOverride(OperationHealth.Suspended);
+			statusRegistry.SetHealthOverride(OperationHealth.Standby);
 
 			using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, sessionToken);
 			try
@@ -95,12 +124,14 @@ public sealed class VaultWatcherService(
 			catch (Exception exception)
 			{
 				// Final backstop: the watcher must never fault its way out of ExecuteAsync, because a faulted
-				// BackgroundService stops the host. A session that fell through every inner guard is logged and the
-				// watcher waits for the next activation rather than taking the core down with it.
-				logger.LogError(exception, "Vault watcher session terminated unexpectedly. The watcher will resume when a vault is next activated.");
+				// BackgroundService stops the host. A session that fell through every inner guard is flagged as fatal and
+				// logged, and the watcher waits for the next activation rather than taking the core down with it.
+				statusReporter.ReportFatal(exception.Message);
+				logger.LogCritical(exception, "Vault watcher session terminated unexpectedly. The watcher will resume when a vault is next activated.");
 			}
 
-			statusRegistry.SetHealthOverride(OperationHealth.Suspended);
+			// No session is being served: the watcher is on standby until the next activation.
+			statusRegistry.SetHealthOverride(OperationHealth.Standby);
 		}
 	}
 
@@ -112,7 +143,10 @@ public sealed class VaultWatcherService(
 	/// <param name="stoppingToken">A token scoped to the active vault session.</param>
 	private async Task RunSessionAsync(CancellationToken stoppingToken)
 	{
-		// An active session clears the standby override so health reflects the derived rollup again (PEP108).
+		// A session starts from a clean status set: nothing flagged for a previous vault (or a previous run of this one)
+		// may linger — a fatal status left over would hold the new session on standby. Then the standby override is
+		// cleared so health reflects the derived rollup again (PEP108).
+		statusRegistry.Reset();
 		statusRegistry.SetHealthOverride(null);
 
 		// Load this vault's durable status dismissals (PEP108 dismiss feature) before the scan re-raises its statuses,
@@ -121,6 +155,8 @@ public sealed class VaultWatcherService(
 
 		try
 		{
+			var degradedAttempts = 0;
+			var observerLosses = 0;
 			while (!stoppingToken.IsCancellationRequested)
 			{
 				if (!await WaitForStructuralAccessAsync(stoppingToken))
@@ -128,17 +164,45 @@ public sealed class VaultWatcherService(
 					return; // cancelled while asleep
 				}
 
-				if (await RunLiveSessionAsync(stoppingToken) == LiveSessionExit.Cancelled)
+				var spanStarted = DateTimeOffset.UtcNow;
+				switch (await RunLiveSessionAsync(stoppingToken))
 				{
-					return;
-				}
+					case LiveSessionExit.Cancelled:
+						return;
 
-				// LiveSessionExit.LostAccess: loop back to sleep and re-probe until the vault is reachable again.
+					case LiveSessionExit.Degraded:
+						// The span could not go on; sleep on a widening backoff and try it again from the sweep.
+						if (!await SleepDegradedAsync(++degradedAttempts, stoppingToken))
+						{
+							return;
+						}
+
+						break;
+
+					case LiveSessionExit.ObserverLost:
+						// A fresh span re-sweeps and re-attaches the observers — at once after a span that had been stable,
+						// otherwise on the widening backoff, so an observer that keeps dying cannot turn into a sweep loop.
+						degradedAttempts = 0;
+						observerLosses = DateTimeOffset.UtcNow - spanStarted >= StableSpan ? 1 : observerLosses + 1;
+						if (observerLosses > 1 && !await DelayAsync(RetryBackoff(observerLosses - 1), stoppingToken))
+						{
+							return;
+						}
+
+						break;
+
+					default:
+						// LostAccess: loop back to sleep and re-probe until the vault is reachable again.
+						degradedAttempts = 0;
+						break;
+				}
 			}
 		}
 		finally
 		{
-			// The dismissal set is vault-scoped; drop it when the session ends so a different vault does not inherit it.
+			// The status and dismissal sets are vault-scoped; drop them when the session ends so a different vault does
+			// not inherit them.
+			statusRegistry.Reset();
 			statusRegistry.ClearDismissals();
 		}
 	}
@@ -152,15 +216,19 @@ public sealed class VaultWatcherService(
 	{
 		if (pathPolicy.IsVaultStructurallyAccessible(out var inaccessiblePath))
 		{
+			// Reachable at once — a live span may just have raised the status on a probe that failed a moment ago, so it
+			// is resolved here too (passing a status that is not raised changes nothing).
+			statusReporter.ReportVaultAccessible();
 			return true;
 		}
 
 		var scope = inaccessiblePath ?? WatcherOperations.GlobalScope;
-		// Inaccessible before the first sweep even runs: the core is serving, so stop holding a splash on the sweep.
-		hostState.EndSweep("Serving vault (watcher waiting for vault files).");
-		statusReporter.ReportVaultInaccessible(scope, $"Vault path '{scope}' is not accessible.");
-		logger.LogWarning("Vault watcher is asleep: '{Path}' is not accessible. It will re-probe until access is restored.", scope);
+		hostState.SetServingMessage("Serving vault (watcher on standby, waiting for vault files).");
+		statusReporter.ReportVaultInaccessible(scope, WatcherMessages.Details.VaultPathNotAccessible(scope));
+		logger.LogError("Vault watcher is asleep: '{Path}' is not accessible. It will re-probe until access is restored.", scope);
 
+		// Asleep is standby, whatever the status set says (PEP108).
+		statusRegistry.SetHealthOverride(OperationHealth.Standby);
 		using var timer = new PeriodicTimer(StructuralReprobeInterval);
 		try
 		{
@@ -169,6 +237,7 @@ public sealed class VaultWatcherService(
 				if (pathPolicy.IsVaultStructurallyAccessible(out _))
 				{
 					statusReporter.ReportVaultAccessible();
+					statusRegistry.SetHealthOverride(null);
 					logger.LogInformation("Vault watcher woke: access to '{Path}' restored. Resuming with a full sweep.", scope);
 					return true;
 				}
@@ -180,6 +249,44 @@ public sealed class VaultWatcherService(
 		}
 
 		return false;
+	}
+
+	/// <summary>
+	/// Sleeps on standby after a live span could not start (a fatal status says why), for a backoff that widens with
+	/// each consecutive attempt, then returns so the caller retries the span — whose sweep resolves the status once it
+	/// succeeds. Returns <see langword="false"/> only when cancelled.
+	/// </summary>
+	private async Task<bool> SleepDegradedAsync(int attempt, CancellationToken stoppingToken)
+	{
+		var delay = RetryBackoff(attempt);
+		logger.LogError("Vault watcher is asleep: its live span could not go on. It will retry in {Delay}.", delay);
+		statusRegistry.SetHealthOverride(OperationHealth.Standby);
+		try
+		{
+			return await DelayAsync(delay, stoppingToken);
+		}
+		finally
+		{
+			statusRegistry.SetHealthOverride(null);
+		}
+	}
+
+	/// <summary>The backoff before the <paramref name="attempt"/>-th retry of a span: from 5 s, doubling, capped at 60 s.</summary>
+	private static TimeSpan RetryBackoff(int attempt)
+		=> TimeSpan.FromTicks(Math.Min(DegradedRetryMax.Ticks, DegradedRetryInitial.Ticks * (1L << Math.Clamp(attempt - 1, 0, 16))));
+
+	/// <summary>Waits for a delay; <see langword="false"/> when cancelled first.</summary>
+	private static async Task<bool> DelayAsync(TimeSpan delay, CancellationToken stoppingToken)
+	{
+		try
+		{
+			await Task.Delay(delay, stoppingToken);
+			return true;
+		}
+		catch (OperationCanceledException)
+		{
+			return false;
+		}
 	}
 
 	/// <summary>
@@ -202,19 +309,33 @@ public sealed class VaultWatcherService(
 			if (IsStructuralFailure(out var scope))
 			{
 				// The sweep will not complete this span; the core still serves, so release any splash held on the sweep.
-				hostState.EndSweep("Serving vault (watcher sleeping until vault files are reachable).");
+				hostState.SetServingMessage("Serving vault (watcher on standby, waiting for vault files).");
 				statusReporter.ReportVaultInaccessible(scope, exception.Message);
 				logger.LogWarning(exception, "Vault startup scan failed because '{Path}' is inaccessible; watcher will sleep and re-probe.", scope);
 				return LiveSessionExit.LostAccess;
 			}
 
+			// Without its sweep the watcher cannot trust anything it would observe (a broken database fails every
+			// reconcile alike): the failure is fatal, and the span ends so the supervisor sleeps and retries it.
+			hostState.SetServingMessage("Serving vault (watcher on standby: the startup sweep failed).");
 			statusReporter.ReportStartupScan(succeeded: false, exception.Message);
-			logger.LogError(exception, "Vault startup discovery scan failed. Watcher will continue with live filesystem observation.");
+			logger.LogCritical(exception, "Vault startup discovery scan failed. The watcher is on standby and will retry it.");
+			return LiveSessionExit.Degraded;
 		}
 
-		// The startup sweep is done (or was skipped past); clear the sweep flag so a status surface stops waiting on it.
-		hostState.EndSweep("Serving vault.");
-		InitializeWatchers();
+		// Fresh observers for this span: nothing flagged against the previous span's ones carries over.
+		_resweepRoots.Clear();
+		_observerLost = false;
+		_vanishedRequeued.Clear();
+		if (!InitializeWatchers())
+		{
+			DisposeWatchers();
+			hostState.SetServingMessage("Serving vault (watcher on standby: its roots could not be resolved).");
+			return LiveSessionExit.Degraded;
+		}
+
+		// The sweep is done and the observers are attached; a status surface stops waiting and reads the watcher as live.
+		hostState.SetServingMessage("Serving vault.");
 
 		using var timer = new PeriodicTimer(DrainInterval);
 		var lastMaintenance = DateTimeOffset.MinValue;
@@ -243,6 +364,21 @@ public sealed class VaultWatcherService(
 						}
 
 						RequeueDueIssueScopes(now);
+						if (retryScheduler.VanishedNoteCheckDue(statusRegistry.GetActiveStatuses(), now))
+						{
+							await CheckVanishedNotesAsync(stoppingToken);
+						}
+
+						if (_observerLost)
+						{
+							logger.LogWarning("Vault watcher lost a filesystem observer; restarting live observation with a fresh sweep.");
+							return LiveSessionExit.ObserverLost;
+						}
+
+						if (await ResweepAfterObserverErrorsAsync(stoppingToken) is { } resweepExit)
+						{
+							return resweepExit;
+						}
 					}
 
 					statusReporter.ReportDrainTick(succeeded: true);
@@ -275,6 +411,59 @@ public sealed class VaultWatcherService(
 	}
 
 	/// <summary>
+	/// Re-sweeps the vault when a filesystem observer overflowed since the last maintenance step — its events were lost,
+	/// so the watcher's view is stale — and resolves those roots' flags once the sweep has run. A sweep that fails ends
+	/// the span the way a failed startup sweep does — a structural failure puts the watcher to sleep, anything else is a
+	/// fatal scan failure retried on the backoff — rather than being retried here on every maintenance step; the next
+	/// span starts with a sweep and fresh observers, which resolve the flags. Returns how the span must end, or
+	/// <see langword="null"/> to carry on.
+	/// </summary>
+	private async Task<LiveSessionExit?> ResweepAfterObserverErrorsAsync(CancellationToken stoppingToken)
+	{
+		if (_resweepRoots.IsEmpty)
+		{
+			return null;
+		}
+
+		var roots = _resweepRoots.Keys.ToList();
+		foreach (var root in roots)
+		{
+			_resweepRoots.TryRemove(root, out _);
+		}
+
+		try
+		{
+			await RunSweepAsync("watcher-resweep", stoppingToken);
+		}
+		catch (OperationCanceledException)
+		{
+			throw;
+		}
+		catch (Exception exception)
+		{
+			if (IsStructuralFailure(out var scope))
+			{
+				statusReporter.ReportVaultInaccessible(scope, exception.Message);
+				logger.LogError(exception, "Vault watcher re-sweep failed because '{Path}' is inaccessible; going to sleep.", scope);
+				return LiveSessionExit.LostAccess;
+			}
+
+			hostState.SetServingMessage("Serving vault (watcher on standby: a sweep failed).");
+			statusReporter.ReportStartupScan(succeeded: false, exception.Message);
+			logger.LogCritical(exception, "Vault watcher re-sweep failed. The watcher is on standby and will retry.");
+			return LiveSessionExit.Degraded;
+		}
+
+		foreach (var root in roots)
+		{
+			statusReporter.ReportRootRecovered(root);
+		}
+
+		logger.LogInformation("Vault watcher re-swept the vault after an observer overflow on {RootCount} root(s).", roots.Count);
+		return null;
+	}
+
+	/// <summary>
 	/// Classifies whether a failure that just occurred is a structural (whole-of-vault, tier 2) condition, by probing
 	/// current access rather than by parsing the exception. When it returns <see langword="true"/>, <paramref name="scope"/>
 	/// names the inaccessible root.
@@ -293,7 +482,8 @@ public sealed class VaultWatcherService(
 	/// </summary>
 	private void RequeueDueIssueScopes(DateTimeOffset now)
 	{
-		foreach (var path in retryScheduler.DuePaths(statusRegistry.GetActiveStatuses(), now))
+		var active = statusRegistry.GetActiveStatuses();
+		foreach (var path in retryScheduler.DuePaths(active, now).Concat(VanishedContentPaths(active)))
 		{
 			if (string.IsNullOrWhiteSpace(path) || writeBarrier.IsSuppressed(path))
 			{
@@ -303,6 +493,25 @@ public sealed class VaultWatcherService(
 			// Due immediately (no debounce): this is a deliberate retry, not a noisy filesystem event.
 			_pendingPaths[Path.GetFullPath(path)] = now;
 		}
+	}
+
+	/// <summary>
+	/// The paths of standing content statuses (invalid markdown, a PUCK or policy violation, a foreign file) whose file no
+	/// longer exists, each returned once while it stands. Content statuses wait for the user's edit rather than a retry
+	/// timer, but a file deleted while its events were lost — an observer overflow, a sleep with the observers down —
+	/// sends no edit; one inspection of the missing path resolves them. Only content reasons qualify: a delete-blocked
+	/// status is keyed on a path that is missing by definition, and re-running its refused delete every pass would churn.
+	/// </summary>
+	private List<string> VanishedContentPaths(IReadOnlyList<OperationStatus> active)
+	{
+		var vanished = active
+			.Where(static status => WatcherRetryScheduler.IsContentStatus(status) && !File.Exists(status.ScopeKey))
+			.Select(static status => status.ScopeKey)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+		// Forget the paths whose status resolved (or whose file came back), so a later vanishing is re-inspected again.
+		_vanishedRequeued.IntersectWith(vanished);
+		return vanished.Where(_vanishedRequeued.Add).ToList();
 	}
 
 	/// <summary>Loads the active vault's durable status dismissals into the registry (PEP108 dismiss feature).</summary>
@@ -326,17 +535,23 @@ public sealed class VaultWatcherService(
 	/// propagates (for the caller to classify as tier 2); per-candidate failures are reported and skipped.
 	/// </summary>
 	/// <param name="cancellationToken">A token used to cancel startup processing.</param>
-	private async Task RunStartupScanAsync(CancellationToken cancellationToken)
+	private Task RunStartupScanAsync(CancellationToken cancellationToken)
+		=> RunSweepAsync("startup", cancellationToken);
+
+	/// <summary>Reconciles every candidate in the vault through the reconciler the live path uses, for an origin.</summary>
+	private async Task RunSweepAsync(string origin, CancellationToken cancellationToken)
 	{
 		using var scope = scopeFactory.CreateScope();
 		var reconciler = scope.ServiceProvider.GetRequiredService<VaultWatcherReconciler>();
-		await reconciler.ReconcileSweepAsync("startup", cancellationToken);
+		await reconciler.ReconcileSweepAsync(origin, cancellationToken);
 	}
 
 	/// <summary>
-	/// Initializes filesystem watchers for all active scan roots.
+	/// Initializes filesystem watchers for all active scan roots. Returns <see langword="false"/> when the roots could
+	/// not be resolved at all — a fatal condition (no live observation), which the caller answers by sleeping and
+	/// retrying; a single root that fails to initialize is only critical, and the others are still observed.
 	/// </summary>
-	private void InitializeWatchers()
+	private bool InitializeWatchers()
 	{
 		IReadOnlyList<string> roots;
 		try
@@ -345,16 +560,19 @@ public sealed class VaultWatcherService(
 		}
 		catch (Exception exception)
 		{
-			// Failing to resolve watch roots must not escape: the drain loop's retry sweep and structural probe keep
-			// the watcher functioning (and self-healing) even with no live observers attached.
-			logger.LogError(exception, "Vault watcher failed to resolve watch roots. Live observation is degraded; retry and re-probe continue.");
-			return;
+			// Failing to resolve watch roots must not escape: it is reported as fatal and the supervisor retries the span.
+			statusReporter.ReportRootsResolved(succeeded: false, exception.Message);
+			logger.LogCritical(exception, "Vault watcher failed to resolve watch roots. The watcher is on standby and will retry.");
+			return false;
 		}
+
+		statusReporter.ReportRootsResolved(succeeded: true);
 
 		foreach (var root in roots)
 		{
 			if (!Directory.Exists(root))
 			{
+				statusReporter.ReportRootAbsent(root);
 				continue;
 			}
 
@@ -391,6 +609,7 @@ public sealed class VaultWatcherService(
 		}
 
 		logger.LogInformation("Vault watcher initialized for {RootCount} root(s).", _watchers.Count);
+		return true;
 	}
 
 	private void HandleWatcherError(string root, Exception? exception)
@@ -399,7 +618,18 @@ public sealed class VaultWatcherService(
 		try
 		{
 			statusReporter.ReportRootError(root, exception?.Message);
-			logger.LogWarning(exception, "Vault watcher encountered a filesystem watcher error for '{Root}'.", root);
+			if (exception is InternalBufferOverflowException)
+			{
+				// Events were dropped but the observer runs on: a re-sweep catches up.
+				_resweepRoots.TryAdd(root, 0);
+				logger.LogError(exception, "Vault watcher's filesystem observer for '{Root}' overflowed; it will re-sweep the vault.", root);
+			}
+			else
+			{
+				// Any other error stops the observer for good: the span restarts with a sweep and fresh observers.
+				_observerLost = true;
+				logger.LogError(exception, "Vault watcher's filesystem observer for '{Root}' failed; it will restart live observation.", root);
+			}
 		}
 		catch (Exception handlerException)
 		{
@@ -430,7 +660,11 @@ public sealed class VaultWatcherService(
 			var fullPath = Path.GetFullPath(path);
 			var isDirectoryEvent = Directory.Exists(fullPath);
 			var isMarkdownPath = string.Equals(Path.GetExtension(fullPath), ".md", StringComparison.OrdinalIgnoreCase);
-			if (!isDirectoryEvent && !isMarkdownPath)
+			// A folder that is gone — deleted, or moved away or into an ignored folder (the system trash, .trash) — raises
+			// one event for itself alone, not for the notes it held, and a name cannot say whether it was a folder. It is
+			// queued so the drain's vanished-note check sees its notes go.
+			var isGone = !isDirectoryEvent && !File.Exists(fullPath);
+			if (!isDirectoryEvent && !isMarkdownPath && !isGone)
 			{
 				return;
 			}
@@ -470,6 +704,10 @@ public sealed class VaultWatcherService(
 			.Select(pair => (OldPath: pair.Key, pair.Value.NewPath))
 			.ToList();
 
+		// Any change that may have withdrawn an identity (a note or folder edited, moved or gone) is followed by one
+		// vanished-note check for the whole batch — the same check the sweep makes, so running and startup agree.
+		var vanishedNoteCheckDue = dueRelocations.Count > 0;
+
 		foreach (var relocation in dueRelocations)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
@@ -496,7 +734,8 @@ public sealed class VaultWatcherService(
 				// The relocation fast-path is best-effort; if it throws, fall back to a plain inspection of the new
 				// location on a later tick so the move is still reconciled rather than lost.
 				_pendingPaths[Path.GetFullPath(relocation.NewPath)] = DateTimeOffset.UtcNow;
-				logger.LogError(exception, "Watcher failed to process relocation to '{NewPath}'; re-queued it for plain inspection.", relocation.NewPath);
+				_pendingPaths[Path.GetFullPath(relocation.OldPath)] = DateTimeOffset.UtcNow;
+				logger.LogWarning(exception, "Watcher failed to process relocation to '{NewPath}'; re-queued it for plain inspection.", relocation.NewPath);
 			}
 		}
 
@@ -513,6 +752,7 @@ public sealed class VaultWatcherService(
 				continue;
 			}
 
+			vanishedNoteCheckDue |= !pathPolicy.ShouldIgnorePath(path) && VaultWatcherReconciler.MayWithdrawIdentity(path);
 			try
 			{
 				await InspectPathAsync(path, cancellationToken);
@@ -527,6 +767,32 @@ public sealed class VaultWatcherService(
 				// can never abort the drain of the rest.
 				logger.LogError(exception, "Watcher failed to inspect path '{Path}'. Processing will continue.", path);
 			}
+		}
+
+		if (vanishedNoteCheckDue)
+		{
+			await CheckVanishedNotesAsync(cancellationToken);
+		}
+	}
+
+	/// <summary>
+	/// Runs the vanished-note check (<see cref="VaultWatcherReconciler.ReconcileVanishedNotesAsync"/>) in its own scope:
+	/// every identity-driven entity whose note no note in the vault asserts any more is reconciled, as the sweep would.
+	/// </summary>
+	private async Task CheckVanishedNotesAsync(CancellationToken cancellationToken)
+	{
+		try
+		{
+			using var scope = scopeFactory.CreateScope();
+			await scope.ServiceProvider.GetRequiredService<VaultWatcherReconciler>().ReconcileVanishedNotesAsync("watcher", cancellationToken);
+		}
+		catch (OperationCanceledException)
+		{
+			throw;
+		}
+		catch (Exception exception)
+		{
+			logger.LogError(exception, "Watcher failed to check which notes are gone. Processing will continue.");
 		}
 	}
 
@@ -621,7 +887,7 @@ public sealed class VaultWatcherService(
 			candidate.PathId);
 
 		await syncService.ExecuteAsync(candidate, "watcher-relocation", cancellationToken);
-		statusReporter.ReportRelocationSucceeded(newPath);
+		statusReporter.ReportRelocated(oldPath, candidate);
 		return true;
 	}
 

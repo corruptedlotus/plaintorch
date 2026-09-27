@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
+using Pleiades.Plaintorch.Preferences;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 
@@ -26,6 +28,7 @@ public sealed class ProximityMaterializationService(
 	DependencyGateService dependencyGate,
 	TimeframeAffinityResolver affinityResolver,
 	MaterializationPolicyOptions policy,
+	IOptionsSnapshot<AgendaPreferences> agendaPreferences,
 	VaultAuditLogService auditLogService)
 {
 	/// <summary>
@@ -73,14 +76,15 @@ public sealed class ProximityMaterializationService(
 				continue;
 			}
 
-			// Auto-inclusion: a cycle-bound reflective inherits its affinity from the originating decree's college.
+			// Auto-inclusion: a cycle-bound reflective takes the same combined affinity an executive gets — the decree's
+			// nearest directive availability, else its college (PEP100 patch 2).
 			context.Add(new Reflective
 			{
 				Description = decree.Title,
 				PolarisCycleId = cycle.Id,
 				DecreeId = decree.Id,
 				Executed = false,
-				AffinityTimeframeId = await affinityResolver.ResolveForCollegeAsync(decree.College, cancellationToken),
+				AffinityTimeframeId = await affinityResolver.ResolveAsync(decree.DirectiveId, decree.College, cancellationToken),
 			});
 			created++;
 		}
@@ -119,16 +123,30 @@ public sealed class ProximityMaterializationService(
 		var created = 0;
 
 		// Orbit fates: seek through now (instant), hardening occurrences whose time has already arrived; the
-		// still-future occurrences of today are left for a later tick.
+		// still-future occurrences of today are left for a later tick. Active fates harden as Pending; an opted-out
+		// fate keeps generating but its occurrences only harden — stamped OptOut so they stay hidden — when the
+		// user's auto-materialise-optout preference is enabled, so by default they remain projections (PEP111/PEP116).
+		var autoMaterialiseOptOut = agendaPreferences.Value.AutoMaterialiseOptOut;
 		var orbitFates = await context.Fates
 			.IgnoreAutoIncludes()
-			.Where(fate => fate.Status == FateStatus.Active && fate.Orbit != null)
+			.Where(fate => fate.Orbit != null
+				&& (fate.Status == FateStatus.Active
+					|| (fate.Status == FateStatus.OptOut && autoMaterialiseOptOut)))
 			.ToListAsync(cancellationToken);
 		foreach (var fate in orbitFates)
 		{
+			var resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
 			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(fate, fate.Orbit!, localNow, cancellationToken))
 			{
-				created += await EnsureFateEventiveAsync(fate, occurrence, cancellationToken) ? 1 : 0;
+				created += await EnsureFateEventiveAsync(fate, occurrence, resolution, cancellationToken) ? 1 : 0;
+			}
+
+			// Advance the denormalized next occurrence as time passes; only touch the row when it actually rolls
+			// forward, so an idle tick writes nothing.
+			var next = await orbitService.ComputeNextOccurrenceAsync(fate, localNow, cancellationToken);
+			if (fate.NextOccurrence != next)
+			{
+				fate.NextOccurrence = next;
 			}
 		}
 
@@ -149,41 +167,33 @@ public sealed class ProximityMaterializationService(
 			{
 				created += await EnsureDecreeAttentiveAsync(decree, occurrence, cancellationToken) ? 1 : 0;
 			}
-		}
 
-		// Dated fates whose occurrence instant has arrived (only those still missing their eventive are loaded).
-		var datedFates = await context.Fates
-			.AsNoTracking()
-			.IgnoreAutoIncludes()
-			.Where(fate => fate.Status == FateStatus.Active && fate.Date != null && fate.Date <= today
-				&& !context.Eventives.Any(eventive =>
-					eventive.FateId == fate.Id && eventive.RecurrenceDate == fate.Date && eventive.RecurrenceTime == fate.StartTime))
-			.ToListAsync(cancellationToken);
-		foreach (var fate in datedFates)
-		{
-			if (fate.Date!.Value.ToDateTime(fate.StartTime ?? TimeOnly.MinValue) <= localNow)
+			var next = await orbitService.ComputeNextOccurrenceAsync(decree, localNow, cancellationToken);
+			if (decree.NextOccurrence != next)
 			{
-				created += await EnsureFateEventiveAsync(fate, fate.Date.Value, cancellationToken) ? 1 : 0;
+				decree.NextOccurrence = next;
 			}
 		}
 
-		// Due objectives whose due date has arrived.
+		// Due objectives whose due moment has arrived. An objective has a single due occurrence, so the presence of
+		// any eventive for it means it is already hardened.
+		var tomorrowStart = today.AddDays(1).ToDateTime(TimeOnly.MinValue);
 		var dueObjectives = await context.Objectives
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
-			.Where(objective => objective.Due != null && objective.Due <= today
+			.Where(objective => objective.Due != null && objective.Due.Moment < tomorrowStart
 				&& objective.Status != ObjectiveStatus.Done
 				&& objective.Status != ObjectiveStatus.Archived
 				&& objective.Status != ObjectiveStatus.Failed
-				&& !context.Eventives.Any(eventive => eventive.ObjectiveId == objective.Id && eventive.RecurrenceDate == objective.Due))
+				&& !context.Eventives.Any(eventive => eventive.ObjectiveId == objective.Id))
 			.ToListAsync(cancellationToken);
 		foreach (var objective in dueObjectives)
 		{
 			context.Eventives.Add(new Eventive
 			{
 				ObjectiveId = objective.Id,
-				Date = objective.Due!.Value,
-				RecurrenceDate = objective.Due!.Value,
+				Epoch = Epoch.From(objective.Due!.Date, timeOfDay: null, OrbitUnit.Day),
+				RecurrenceId = objective.Due!.Date.ToDateTime(TimeOnly.MinValue),
 			});
 			created++;
 		}
@@ -210,11 +220,9 @@ public sealed class ProximityMaterializationService(
 	/// </summary>
 	private async Task<bool> EnsureDecreeAttentiveAsync(Decree decree, OrbitOccurrenceInstance occurrence, CancellationToken cancellationToken)
 	{
+		var slot = occurrence.Moment;
 		var exists = await context.Attentives.AnyAsync(
-			item => item.DecreeId == decree.Id
-				&& item.RecurrenceDate == occurrence.Date
-				&& item.RecurrenceTime == occurrence.StartTime
-				&& item.PolarisCycleId == null,
+			item => item.DecreeId == decree.Id && item.RecurrenceId == slot,
 			cancellationToken);
 		if (exists)
 		{
@@ -224,53 +232,30 @@ public sealed class ProximityMaterializationService(
 		var attentive = new Attentive
 		{
 			DecreeId = decree.Id,
-			Date = occurrence.Date,
-			Time = occurrence.StartTime,
-			RecurrenceDate = occurrence.Date,
-			RecurrenceTime = occurrence.StartTime,
-			PeriodEndDate = occurrence.PeriodEndExclusive > occurrence.Date.AddDays(1)
-				? occurrence.PeriodEndExclusive
-				: null,
-			Estimation = decree.DefaultLength,
+			Epoch = Epoch.For(occurrence),
+			RecurrenceId = slot,
 		};
-		attentive.Normalize();
 		context.Attentives.Add(attentive);
 		return true;
 	}
 
 	/// <summary>
-	/// Ensures a dated fate's eventive exists for an occurrence day, returning whether one was created.
+	/// Ensures a fate's eventive exists for an orbit occurrence, returning whether one was created. A span
+	/// occurrence carries its span and a super-day one its period as the epoch duration; any other fills its
+	/// granularity window (null duration).
 	/// </summary>
-	private Task<bool> EnsureFateEventiveAsync(Fate fate, DateOnly day, CancellationToken cancellationToken)
+	private async Task<bool> EnsureFateEventiveAsync(Fate fate, OrbitOccurrenceInstance occurrence, EventiveResolution resolution, CancellationToken cancellationToken)
 	{
-		return EnsureFateEventiveCoreAsync(fate, day, fate.StartTime, fate.EndTime, fate.ResolveEventiveDuration(), cancellationToken);
-	}
+		var slot = occurrence.Moment;
 
-	/// <summary>
-	/// Ensures a fate's eventive exists for an orbit occurrence, returning whether one was created. Span
-	/// occurrences carry their own start/end/length; granular occurrences fall back to the fate's time spec.
-	/// </summary>
-	private Task<bool> EnsureFateEventiveAsync(Fate fate, OrbitOccurrenceInstance occurrence, CancellationToken cancellationToken)
-	{
-		return EnsureFateEventiveCoreAsync(
-			fate,
-			occurrence.Date,
-			occurrence.StartTime ?? fate.StartTime,
-			occurrence.EndTime ?? (occurrence.StartTime is null ? fate.EndTime : null),
-			occurrence.DurationMinutes ?? fate.ResolveEventiveDuration(),
-			cancellationToken);
-	}
-
-	private async Task<bool> EnsureFateEventiveCoreAsync(Fate fate, DateOnly day, TimeOnly? startTime, TimeOnly? endTime, int? estimation, CancellationToken cancellationToken)
-	{
 		// PEP101: a locked whole-fate pauses orbit generation; a locked single occurrence blocks just itself.
-		if (await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, day, startTime, cancellationToken))
+		if (await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, slot, cancellationToken))
 		{
 			return false;
 		}
 
 		var exists = await context.Eventives.AnyAsync(
-			item => item.FateId == fate.Id && item.RecurrenceDate == day && item.RecurrenceTime == startTime,
+			item => item.FateId == fate.Id && item.RecurrenceId == slot,
 			cancellationToken);
 		if (exists)
 		{
@@ -280,14 +265,10 @@ public sealed class ProximityMaterializationService(
 		var eventive = new Eventive
 		{
 			FateId = fate.Id,
-			Date = day,
-			StartTime = startTime,
-			EndTime = endTime,
-			RecurrenceDate = day,
-			RecurrenceTime = startTime,
-			Estimation = estimation,
+			Epoch = Epoch.For(occurrence),
+			RecurrenceId = slot,
+			Resolution = resolution,
 		};
-		eventive.Normalize();
 		context.Eventives.Add(eventive);
 		return true;
 	}

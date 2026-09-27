@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Reflection;
@@ -270,9 +271,32 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 			DateTime dateTime => dateTime.ToString("O", CultureInfo.InvariantCulture),
 			Enum enumValue => enumValue.ToString(),
 			IEnumerable<string> strings => JsonSerializer.Serialize(strings),
+			_ when TryGetScalarConverter(value.GetType(), out var converter) => converter.ConvertToInvariantString(value) ?? string.Empty,
 			_ when value.GetType().IsClass && value.GetType() != typeof(string) => JsonSerializer.Serialize(value),
 			_ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
 		};
+	}
+
+	/// <summary>
+	/// Resolves the string round-trip converter for a type that opts in with a custom <see cref="TypeConverterAttribute"/>
+	/// (e.g. an owned value type rendered as one compact frontmatter field), or <see langword="false"/> otherwise.
+	/// </summary>
+	private static bool TryGetScalarConverter(Type type, out TypeConverter converter)
+	{
+		converter = null!;
+		if (type.GetCustomAttribute<TypeConverterAttribute>() is null)
+		{
+			return false;
+		}
+
+		var candidate = TypeDescriptor.GetConverter(type);
+		if (candidate.CanConvertTo(typeof(string)) && candidate.CanConvertFrom(typeof(string)))
+		{
+			converter = candidate;
+			return true;
+		}
+
+		return false;
 	}
 
 	private static string Escape(string value)
@@ -420,6 +444,13 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 
 			if (TryConvertStringCollection(property, rawValue, out convertedValue))
 			{
+				issue = null;
+				return true;
+			}
+
+			if (TryGetScalarConverter(propertyType, out var scalarConverter))
+			{
+				convertedValue = scalarConverter.ConvertFromInvariantString(normalizedValue);
 				issue = null;
 				return true;
 			}

@@ -1,10 +1,9 @@
 import type { PlaintorchCoreClient } from "../coreClient"
-import type { Attentive } from "../declaratives/models"
 import type {
 	Executive,
 	ExecutiveUpdate,
 	PolarisAgenda,
-	PolarisAttentiveAdd,
+	PolarisDecreeAdd,
 	PolarisCycle,
 	PolarisCycleInclusions,
 	PolarisCyclePlanRequest,
@@ -123,19 +122,34 @@ export class PlaintorchPolarisSdk {
 		)
 	}
 
-	public async addAttentive(request: PolarisAttentiveAdd): Promise<Attentive | undefined> {
-		return await this.client.postForJson<Attentive>("/api/polaris/current/attentives", request)
+	/** Adds a decree to the current cycle as a decree-backed executive (PEP111). */
+	public async addDecreeExecutive(request: PolarisDecreeAdd): Promise<Executive | undefined> {
+		return await this.client.postForJson<Executive>("/api/polaris/current/decrees", request)
 	}
 
-	public async addAttentiveForCycle(polarisCycleId: string, request: PolarisAttentiveAdd): Promise<Attentive | undefined> {
-		return await this.client.postForJson<Attentive>(
-			`/api/polaris/${encodeURIComponent(polarisCycleId)}/attentives`,
+	/** Adds a decree to a specific cycle as a decree-backed executive (PEP111). */
+	public async addDecreeExecutiveForCycle(polarisCycleId: string, request: PolarisDecreeAdd): Promise<Executive | undefined> {
+		return await this.client.postForJson<Executive>(
+			`/api/polaris/${encodeURIComponent(polarisCycleId)}/decrees`,
 			request
 		)
 	}
 
 	public async updateExecutive(executiveId: number, update: ExecutiveUpdate): Promise<Executive | undefined> {
 		return await this.client.putForJson<Executive>(`/api/executives/${executiveId}`, update)
+	}
+
+	/**
+	 * Defers an executive to the next day's Polaris cycle (PEP111), creating that day's forecast cycle if none
+	 * exists. The tracked (elapsed) minutes become the new estimation/minimum/maximum and the tally resets to 0.
+	 */
+	public async moveExecutiveToNextPolaris(executiveId: number): Promise<Executive | undefined> {
+		return await this.client.postForJson<Executive>(`/api/executives/${executiveId}/next-polaris`, {})
+	}
+
+	/** Removes an executive from its cycle, deleting it. The incentive (objective or decree) stays, as it is. */
+	public async removeExecutive(executiveId: number): Promise<boolean> {
+		return await this.client.delete(`/api/executives/${executiveId}`)
 	}
 
 	public async updateReflective(reflectiveId: number, update: ReflectiveUpdate): Promise<Reflective | undefined> {

@@ -4,5 +4,7 @@ export type {
 	EntityExistence,
 	WatcherIssueReport,
 	WatcherIssueRecord,
-	WatcherCriterionRecord
+	WatcherCriterionRecord,
+	WatcherSeverity,
+	WatcherHealth
 } from "./models"

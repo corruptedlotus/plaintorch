@@ -1,6 +1,6 @@
 {
   "name": "@pleiades/sdk",
-  "version": "0.2c",
+  "version": "0.2.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
     ".": "./index.ts",
     "./plaintorch": "./plaintorch/index.ts",
     "./plaintorch/node": "./plaintorch/node.ts",
+    "./plaintorch/node-transport": "./plaintorch/nodeTransport.ts",
     "./helpers": "./helpers/index.ts"
   },
   "devDependencies": {

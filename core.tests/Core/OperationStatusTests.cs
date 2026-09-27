@@ -11,7 +11,8 @@ namespace Pleiades.Tests.Core;
 /// <summary>
 /// The operation-status registry (PEP108) derives raise/escalate/de-escalate/resolve transitions by diffing a
 /// report against current state, deduplicated by (operation, scope, reason), and rolls up health across a single
-/// graded severity scale that distinguishes suspension.
+/// graded severity scale: informational statuses never count, warnings and errors read as issues, critical as critical,
+/// and a fatal status holds the subsystem on standby — undismissable.
 /// </summary>
 public sealed class OperationStatusRegistryTests
 {
@@ -67,7 +68,7 @@ public sealed class OperationStatusRegistryTests
 		var registry = new OperationStatusRegistry();
 		registry.Ingest(Report(OperationCheck.Fail("file-in-use", OperationSeverity.Error)));
 
-		var transitions = registry.Ingest(Report(OperationCheck.Fail("file-in-use", OperationSeverity.Suspended)));
+		var transitions = registry.Ingest(Report(OperationCheck.Fail("file-in-use", OperationSeverity.Warning)));
 
 		Assert.Equal(OperationStatusTransitionKind.Deescalated, Assert.Single(transitions).Kind);
 	}
@@ -90,15 +91,15 @@ public sealed class OperationStatusRegistryTests
 	{
 		var registry = new OperationStatusRegistry();
 		registry.Ingest(Report(
-			OperationCheck.Fail("permission-denied", OperationSeverity.Error),
-			OperationCheck.Fail("file-in-use", OperationSeverity.Suspended)));
+			OperationCheck.Fail("permission-denied", OperationSeverity.Critical),
+			OperationCheck.Fail("file-in-use", OperationSeverity.Warning)));
 
 		Assert.Equal(2, registry.GetActiveStatuses().Count);
 
 		// Resolve only one reason; the other remains flagged.
 		var transitions = registry.Ingest(Report(
 			OperationCheck.Pass("permission-denied"),
-			OperationCheck.Fail("file-in-use", OperationSeverity.Suspended)));
+			OperationCheck.Fail("file-in-use", OperationSeverity.Warning)));
 
 		var resolved = Assert.Single(transitions);
 		Assert.Equal(OperationStatusTransitionKind.Resolved, resolved.Kind);
@@ -112,23 +113,62 @@ public sealed class OperationStatusRegistryTests
 		var registry = new OperationStatusRegistry();
 		Assert.Equal(OperationHealth.Ok, registry.GetHealth());
 
-		// A warning alone does not degrade health.
-		registry.Ingest(new OperationReport(Operation, "a.md", [OperationCheck.Fail("advisory", OperationSeverity.Warning)]));
+		// Information never changes health.
+		registry.Ingest(new OperationReport(Operation, "a.md", [OperationCheck.Fail("note", OperationSeverity.Info)]));
 		Assert.Equal(OperationHealth.Ok, registry.GetHealth());
 
-		// A suspension does.
-		registry.Ingest(new OperationReport(Operation, "b.md", [OperationCheck.Fail("file-in-use", OperationSeverity.Suspended)]));
-		Assert.Equal(OperationHealth.Suspended, registry.GetHealth());
-
-		// An error outranks suspension.
-		registry.Ingest(new OperationReport(Operation, "c.md", [OperationCheck.Fail("permission-denied", OperationSeverity.Error)]));
+		// A warning does: something is best resolved.
+		registry.Ingest(new OperationReport(Operation, "b.md", [OperationCheck.Fail("file-in-use", OperationSeverity.Warning)]));
 		Assert.Equal(OperationHealth.Issues, registry.GetHealth());
+
+		// So does an error, in the same band.
+		registry.Ingest(new OperationReport(Operation, "c.md", [OperationCheck.Fail("markdown-invalid", OperationSeverity.Error)]));
+		Assert.Equal(OperationHealth.Issues, registry.GetHealth());
+
+		// A critical failure outranks them with its own health.
+		registry.Ingest(new OperationReport(Operation, "d.md", [OperationCheck.Fail("permission-denied", OperationSeverity.Critical)]));
+		Assert.Equal(OperationHealth.Critical, registry.GetHealth());
+
+		// A fatal one puts the subsystem on standby.
+		registry.Ingest(new OperationReport(Operation, "*", [OperationCheck.Fail("vault-inaccessible", OperationSeverity.Fatal)]));
+		Assert.Equal(OperationHealth.Standby, registry.GetHealth());
 
 		// A lifecycle override wins, and clearing it restores the derived rollup.
 		registry.SetHealthOverride(OperationHealth.Offline);
 		Assert.Equal(OperationHealth.Offline, registry.GetHealth());
 		registry.SetHealthOverride(null);
-		Assert.Equal(OperationHealth.Issues, registry.GetHealth());
+		Assert.Equal(OperationHealth.Standby, registry.GetHealth());
+	}
+
+	[Fact]
+	public void A_fatal_status_cannot_be_dismissed_and_holds_standby()
+	{
+		var registry = new OperationStatusRegistry();
+		registry.Ingest(new OperationReport(Operation, "*", [OperationCheck.Fail("vault-inaccessible", OperationSeverity.Fatal)]));
+
+		// An instance dismissal is refused outright; a broader one records but never suppresses the fatal status.
+		Assert.Null(registry.Dismiss(OperationStatusDismissalScope.Instance, Operation, "*", "vault-inaccessible"));
+		Assert.NotNull(registry.Dismiss(OperationStatusDismissalScope.Reason, Operation, "*", "vault-inaccessible"));
+
+		var status = Assert.Single(registry.GetActiveStatuses());
+		Assert.False(registry.IsDismissed(status));
+		Assert.False(Assert.Single(registry.GetActiveStatusesWithDismissal()).Dismissed);
+		Assert.Equal(OperationHealth.Standby, registry.GetHealth());
+	}
+
+	[Fact]
+	public void Reset_forgets_every_status_silently()
+	{
+		var registry = new OperationStatusRegistry();
+		registry.Ingest(new OperationReport(Operation, "a.md", [OperationCheck.Fail("markdown-invalid", OperationSeverity.Error)]));
+		registry.Ingest(new OperationReport(Operation, "*", [OperationCheck.Fail("scan-failed", OperationSeverity.Fatal)]));
+		registry.Ingest(new OperationReport(Operation, "a.md", [OperationCheck.Pass("markdown-invalid")]));
+
+		registry.Reset();
+
+		Assert.Empty(registry.GetActiveStatuses());
+		Assert.Empty(registry.GetRecentResolved());
+		Assert.Equal(OperationHealth.Ok, registry.GetHealth());
 	}
 
 	[Fact]
@@ -180,5 +220,24 @@ public sealed class OperationStatusDurabilityTests : VaultTestBase
 		Assert.Equal(OperationSeverity.Error, events[0].Severity);
 		Assert.Equal("watcher.sync", events[0].OperationId);
 		Assert.Equal(OperationStatusTransitionKind.Resolved, events[1].Transition);
+	}
+
+	[Fact]
+	public async Task A_severity_stored_before_the_regrading_reads_back_as_its_new_grade()
+	{
+		// "Suspended" was retired by the regrading; it only ever came from a locked file, which is now a warning. Rows
+		// written by an older core must still read rather than fail.
+		await Vault.WithScopeAsync(async services =>
+		{
+			var context = services.GetRequiredService<PlainfraContext>();
+			await context.Database.ExecuteSqlRawAsync(
+				"INSERT INTO \"OperationStatusEvents\" (\"Transition\", \"OperationId\", \"ScopeKey\", \"ReasonCode\", \"Severity\", \"PreviousSeverity\", \"FilesJson\", \"OccurrenceCount\", \"OccurredUtc\") " +
+				"VALUES ('Raised', 'watcher.reconcile', 'Objectives/Locked.md', 'file-in-use', 'Suspended', 'Error', '[]', 1, '2026-09-01 00:00:00+00:00')",
+				TestContext.Current.CancellationToken);
+		});
+
+		var stored = await Vault.QueryAsync(context => context.OperationStatusEvents.SingleAsync(TestContext.Current.CancellationToken));
+		Assert.Equal(OperationSeverity.Warning, stored.Severity);
+		Assert.Equal(OperationSeverity.Error, stored.PreviousSeverity);
 	}
 }

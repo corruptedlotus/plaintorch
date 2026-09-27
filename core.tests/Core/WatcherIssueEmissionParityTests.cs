@@ -1,6 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Pleiades.Diagnostics;
 using Pleiades.Plaintorch.Api.Abstractions;
+using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Tests.Harness;
 using Pleiades.Vault.Watcher;
 using Xunit;
@@ -52,7 +54,9 @@ public sealed class WatcherIssueEmissionParityTests
 	{
 		return vault.GetSingleton<OperationStatusRegistry>()
 			.GetActiveStatuses()
-			.Select(status => $"{status.OperationId}|{NormalizeScope(vault, status.ScopeKey)}|{status.ReasonCode}|{status.Severity}")
+			// An identity-keyed issue (a duplicate identity, a note found gone) names the files it concerns; ids are random per
+			// vault, so it is compared by the first of them.
+			.Select(status => $"{status.OperationId}|{NormalizeScope(vault, status.OperationId == WatcherOperations.Identity && status.Files.Count > 0 ? status.Files[0] : status.ScopeKey)}|{status.ReasonCode}|{status.Severity}")
 			.OrderBy(row => row, StringComparer.Ordinal)
 			.ToList();
 	}
@@ -130,5 +134,27 @@ public sealed class WatcherIssueEmissionParityTests
 		});
 
 		Assert.Equal(sweep, runtime);
+	}
+
+	[Fact]
+	public async Task A_blocked_delete_emits_the_same_standing_error_in_sweep_and_runtime()
+	{
+		// A begun objective's note is deleted while another incentive still names it as its parent: the sweep finds it gone
+		// in its vanished-note pass, runtime in the check that follows the delete event, and both must raise the one
+		// delete-blocked error — keyed on the identity, naming the objective's canonical location — and no sync-failed.
+		var (sweep, runtime) = await RunBothWaysAsync(async vault =>
+		{
+			var objective = await vault.SeedStandaloneObjectiveAsync("Held");
+			await vault.BeginObjectiveBoundaryAsync(objective.Id);
+			var child = await vault.SeedStandaloneObjectiveAsync("Held Child");
+			await vault.QueryAsync(context => context.Incentives
+				.Where(item => item.Id == child.Id)
+				.ExecuteUpdateAsync(setters => setters.SetProperty(item => item.ParentIncentiveId, objective.Id), TestContext.Current.CancellationToken));
+			File.Delete(vault.AbsolutePath("Objectives/Held.md"));
+			return "Objectives/Held.md";
+		});
+
+		Assert.Equal(sweep, runtime);
+		Assert.Equal([$"{WatcherOperations.Identity}|Objectives/Held.md|{WatcherOperations.DeleteBlocked}|{OperationSeverity.Error}"], sweep);
 	}
 }

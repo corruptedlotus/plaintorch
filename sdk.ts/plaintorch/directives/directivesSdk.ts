@@ -15,7 +15,8 @@ import type {
 	TimeframePlan,
 	TimeframeUpdate,
 	DirectiveIconRequest,
-	DirectiveBannerRequest
+	DirectiveBannerRequest,
+	DirectiveAvailabilityRequest
 } from "./contracts"
 
 export class PlaintorchDirectivesSdk {
@@ -116,6 +117,16 @@ export class PlaintorchDirectivesSdk {
 		return await this.setBanner(directiveId, { clear: true })
 	}
 
+	/**
+	 * Sets a directive's availability to an Availability-mode timeframe, or clears it with `null` (PEP100 patch 2).
+	 * Kind-agnostic: stellar and lunar directives alike. Executives created under the directive or its descendants are
+	 * auto-assigned to the nearest availability, ahead of college auto-inclusion.
+	 */
+	public async setAvailability(directiveId: string, timeframeId: number | null): Promise<Directive | undefined> {
+		const request: DirectiveAvailabilityRequest = { timeframeId }
+		return await this.client.putForJson<Directive>(`/api/directives/${encodeURIComponent(directiveId)}/availability`, request)
+	}
+
 	public async createLunar(request: CreateLunarDirectiveRequest): Promise<Directive | undefined> {
 		return await this.client.postForJson<Directive>("/api/directives/lunar", request)
 	}
@@ -138,6 +149,15 @@ export class PlaintorchDirectivesSdk {
 	/** Lists every timeframe across all lunar directives, each paired with its owning directive summary. */
 	public async listAllTimeframes(): Promise<DirectiveTimeframeRecord[]> {
 		return (await this.client.getJson<DirectiveTimeframeRecord[]>("/api/timeframes")) ?? []
+	}
+
+	/**
+	 * Lists the timeframes active right now (PEP100 patch 2). The core owns the rule: it narrows the strictly active
+	 * Polaris cycle's cached candidates (orbit matched on the cycle day) to those whose window holds the current
+	 * minute, and when any of those is exclusive only the exclusive ones remain. Empty when no cycle is active.
+	 */
+	public async listActiveTimeframes(): Promise<DirectiveTimeframeRecord[]> {
+		return (await this.client.getJson<DirectiveTimeframeRecord[]>("/api/timeframes/active")) ?? []
 	}
 
 	public async updateTimeframe(timeframeId: number, update: TimeframeUpdate): Promise<Timeframe | undefined> {

@@ -30,7 +30,7 @@ public sealed class PolarisExecutiveUniquenessTests : VaultTestBase
 
 	private Task<int> ExecutiveCountAsync(string objectiveId)
 		=> Vault.QueryAsync(context => context.Set<Executive>()
-			.CountAsync(item => item.ObjectiveId == objectiveId, TestContext.Current.CancellationToken));
+			.CountAsync(item => item.IncentiveId == objectiveId, TestContext.Current.CancellationToken));
 
 	[Fact]
 	public async Task Planning_an_objective_already_in_the_cycle_is_refused()
@@ -87,7 +87,7 @@ public sealed class PolarisExecutiveUniquenessTests : VaultTestBase
 			TestContext.Current.CancellationToken));
 
 		Assert.True(updated.Executed);
-		Assert.Equal(objective.Id, updated.ObjectiveId);
+		Assert.Equal(objective.Id, updated.IncentiveId);
 	}
 
 	[Fact]
@@ -101,7 +101,7 @@ public sealed class PolarisExecutiveUniquenessTests : VaultTestBase
 			cancellationToken: TestContext.Current.CancellationToken));
 
 		var count = await Vault.QueryAsync(context => context.Set<Executive>()
-			.CountAsync(item => item.ObjectiveId == null, TestContext.Current.CancellationToken));
+			.CountAsync(item => item.IncentiveId == null, TestContext.Current.CancellationToken));
 		Assert.Equal(2, count);
 	}
 }

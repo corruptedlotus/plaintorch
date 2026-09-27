@@ -10,12 +10,22 @@ namespace Pleiades.Orbits;
 /// <param name="DurationMinutes">The span length in whole minutes, when the schedule is span-format.</param>
 /// <param name="PeriodEndExclusive">The exclusive end date of the occurrence's period. Super-day granularities
 /// (week/month/year) span multiple days, so multiple Polaris cycles can collide with one instance.</param>
+/// <param name="Granularity">The schedule's finest unit — the accuracy the occurrence stands for (its
+/// don't-care window): a day-granular occurrence occupies a whole day, an hour-granular one an hour, and so on.</param>
 public sealed record OrbitOccurrenceInstance(
 	DateOnly Date,
 	TimeOnly? StartTime,
 	TimeOnly? EndTime,
 	int? DurationMinutes,
-	DateOnly PeriodEndExclusive);
+	DateOnly PeriodEndExclusive,
+	OrbitUnit Granularity)
+{
+	/// <summary>
+	/// Gets the occurrence's start as a civil moment — its date at its start time, or midnight for a
+	/// day-or-coarser instant. This is the slot a materialized occurrence pins as its RECURRENCE-ID.
+	/// </summary>
+	public DateTime Moment => Date.ToDateTime(StartTime ?? TimeOnly.MinValue);
+}
 
 /// <summary>
 /// The calendar-date view of orbit schedules used by the PLAINTORCH declarative ecosystem (PEP100).
@@ -84,6 +94,23 @@ public static class OrbitDays
 				return;
 			}
 
+			if (node is OrbitDateTimeLiteralNode literal)
+			{
+				// A date-only Z{y/M/d} is day granularity (allowed); a z/Z carrying a time of day
+				// resolves finer than a day, and a span duration is likewise disallowed here.
+				if (literal.Hour is not null || literal.Minute is not null || literal.Second is not null)
+				{
+					throw new FormatException("This orbit resolves at day granularity; a z/Z time of day is not allowed.");
+				}
+
+				if (literal.Duration is { Count: > 0 })
+				{
+					throw new FormatException("This orbit resolves at day granularity; span durations (=<dur>) are not allowed.");
+				}
+
+				return;
+			}
+
 			var unitNode = (OrbitTimeUnitNode)node;
 			if (unitNode.Unit is OrbitUnit.Hour or OrbitUnit.Minute or OrbitUnit.Second)
 			{
@@ -100,6 +127,99 @@ public static class OrbitDays
 				Walk(unitNode.Child);
 			}
 		}
+	}
+
+	/// <summary>
+	/// The Gregorian calendar date a notation resolves to when it is a lone fixed-datetime literal (a one-off
+	/// <c>Z{y/M/d[Th:m]}</c>, with or without a span), else <see langword="null"/>. A one-off's schedule cursor is
+	/// anchored at this date rather than today, so its single occurrence is caught by a seek whether it lies in the
+	/// past or the future. A recurring notation — or a bare time-of-day <c>z{h:m}</c>, which recurs daily and has no
+	/// fixed date — returns <see langword="null"/> and anchors at today as usual.
+	/// </summary>
+	/// <remarks>
+	/// The literal's numbers are read as a Gregorian year, month and day (one-off fates are pinned to Gregorian,
+	/// PEP111). The method is total: a literal naming an impossible Gregorian date, such as <c>Z{2026/2/30}</c>, which
+	/// the parser accepts because it does no range check, returns <see langword="null"/> rather than throwing. Use
+	/// <see cref="FixedLiteralDate(string, IOrbitCalendar)"/> for an orbit read on another calendar.
+	/// </remarks>
+	public static DateOnly? FixedLiteralDate(string notation)
+		=> FixedLiteralDate(notation, Gregorian);
+
+	/// <summary>
+	/// The civil (Gregorian) date of the day a lone fixed-datetime literal <c>Z{y/M/d[Th:m]}</c> names when its year,
+	/// month and day are read on <paramref name="calendar"/>, else <see langword="null"/>. This is the day the engine
+	/// resolves the literal to on that calendar, so a schedule state anchored here starts exactly at the literal's
+	/// single occurrence.
+	/// </summary>
+	/// <remarks>
+	/// The engine desugars <c>Z{y/M/d}</c> into the pinned chain <c>y{y}[M{M}[d{d}]]</c> and positions it layer by layer
+	/// in its calendar: it sets the year, snaps to the year's start, sets the month, snaps to the month's start, then
+	/// sets the day. This mirrors that walk with the same <see cref="IOrbitCalendar"/> calls, so the Pleiadean
+	/// <c>Z{3/3/40}</c> is the 40th day of the third 61-day month rather than an invalid Gregorian date. A component the
+	/// calendar cannot hold (a month or day outside its <see cref="IOrbitCalendar.Min"/>..<see cref="IOrbitCalendar.Max"/>
+	/// range, a year above its maximum) or a day outside the <see cref="DateOnly"/> range returns
+	/// <see langword="null"/>; the engine would never select such a literal either. Returns <see langword="null"/> for a
+	/// notation that does not parse, is not a lone literal, or lacks a year, month or day.
+	/// </remarks>
+	public static DateOnly? FixedLiteralDate(string notation, IOrbitCalendar calendar)
+	{
+		ArgumentNullException.ThrowIfNull(calendar);
+		if (string.IsNullOrWhiteSpace(notation))
+		{
+			return null;
+		}
+
+		OrbitAstNode ast;
+		try
+		{
+			ast = new OrbitParser(notation).Parse();
+		}
+		catch (Exception exception) when (exception is FormatException or OverflowException)
+		{
+			// The parser reads numbers with int.Parse, so an overlong component overflows rather than failing to parse.
+			return null;
+		}
+
+		if (ast is not OrbitDateTimeLiteralNode { Year: { } year, Month: { } month, Day: { } day })
+		{
+			return null;
+		}
+
+		long ms;
+		try
+		{
+			// The year is checked against the maximum only: the calendars report a generic minimum of 1, yet the
+			// Pleiadean calendar has a real year 0 (and earlier), and the engine never consults the minimum for a
+			// pinned year either. An unrepresentable result is caught by the DateOnly range check below.
+			ms = calendar.SnapToStart(0, OrbitUnit.Year);
+			if (year > calendar.Max(OrbitUnit.Year, ms))
+			{
+				return null;
+			}
+
+			ms = calendar.SnapToStart(calendar.Set(ms, OrbitUnit.Year, year), OrbitUnit.Year);
+			if (month < calendar.Min(OrbitUnit.Month, ms) || month > calendar.Max(OrbitUnit.Month, ms))
+			{
+				return null;
+			}
+
+			ms = calendar.SnapToStart(calendar.Set(ms, OrbitUnit.Month, month), OrbitUnit.Month);
+			if (day < calendar.Min(OrbitUnit.Day, ms) || day > calendar.Max(OrbitUnit.Day, ms))
+			{
+				return null;
+			}
+
+			ms = calendar.SnapToStart(calendar.Set(ms, OrbitUnit.Day, day), OrbitUnit.Day);
+		}
+		catch (ArgumentOutOfRangeException)
+		{
+			// A calendar backed by a bounded one (the Pleiadean leap rule reads the Persian calendar) throws beyond
+			// that range; such a year has no day to anchor at.
+			return null;
+		}
+
+		var (civilYear, civilMonth, civilDay) = JsDate.CivilFromDays(JsDate.EpochDays(ms));
+		return civilYear is >= 1 and <= 9999 ? new DateOnly(civilYear, civilMonth, civilDay) : null;
 	}
 
 	/// <summary>
@@ -170,6 +290,33 @@ public static class OrbitDays
 	}
 
 	/// <summary>
+	/// PREVIEW: the moment of the earliest occurrence whose start is at or after <paramref name="from"/>, resolved
+	/// from the schedule state without advancing it, or <see langword="null"/> when none falls within the lookahead
+	/// horizon. This is the denormalized "next occurrence" the declarative caches.
+	/// </summary>
+	public static DateTime? NextOccurrence(string state, DateTime from, IOrbitCalendar calendar)
+	{
+		var fromDay = DateOnly.FromDateTime(from);
+		// A year-plus horizon catches every occurrence up to a yearly cadence; a rarer super-annual schedule simply
+		// has no cached next occurrence until it comes closer.
+		var occurrences = PreviewOccurrencesWithin(state, fromDay, fromDay.AddDays(NextOccurrenceHorizonDays), calendar);
+		DateTime? earliest = null;
+		foreach (var occurrence in occurrences)
+		{
+			var moment = occurrence.Date.ToDateTime(occurrence.StartTime ?? TimeOnly.MinValue);
+			if (moment >= from && (earliest is null || moment < earliest))
+			{
+				earliest = moment;
+			}
+		}
+
+		return earliest;
+	}
+
+	/// <summary>The lookahead used when caching a declarative's next occurrence: a little over a year.</summary>
+	private const int NextOccurrenceHorizonDays = 400;
+
+	/// <summary>
 	/// PREVIEW: whether the schedule has an occurrence whose period covers the given day. This is the
 	/// day-granularity match rule (used, for example, to test a reflective decree's orbit against the day a
 	/// Polaris cycle started). Super-day periods cover every day they span.
@@ -230,6 +377,11 @@ public static class OrbitDays
 			return HasDuration(set.Left) || HasDuration(set.Right);
 		}
 
+		if (node is OrbitDateTimeLiteralNode literal)
+		{
+			return literal.Duration is { Count: > 0 };
+		}
+
 		var unitNode = (OrbitTimeUnitNode)node;
 		if (unitNode.Duration is { Count: > 0 })
 		{
@@ -274,7 +426,7 @@ public static class OrbitDays
 					var periodEnd = resolution.Granularity is OrbitUnit.Year or OrbitUnit.Month or OrbitUnit.Week
 						? ToDate(calendar.Add(calendar.SnapToStart(resolution.TimestampMs, resolution.Granularity), resolution.Granularity, 1))
 						: date.AddDays(1);
-					occurrences.Add(new OrbitOccurrenceInstance(date, startTime, null, null, periodEnd));
+					occurrences.Add(new OrbitOccurrenceInstance(date, startTime, null, null, periodEnd, resolution.Granularity));
 					break;
 				}
 				case OrbitSpanEntry span:
@@ -296,7 +448,8 @@ public static class OrbitDays
 						startTime,
 						endTime,
 						(int)(span.DurationMs / 60000),
-						periodEnd));
+						periodEnd,
+						span.Granularity));
 					break;
 				}
 			}

@@ -139,4 +139,90 @@ public sealed class OrbitEngineTests
 			[new DateOnly(2026, 8, 1), new DateOnly(2026, 9, 1), new DateOnly(2026, 10, 1)],
 			gregorianOccurrences.Select(item => item.Date));
 	}
+
+	[Fact]
+	public void Pleiadean_weeks_are_saturday_anchored()
+	{
+		// The Pleiadean resolver anchors the week on Saturday, so "the first day of every week" (w[d{1}])
+		// resolves onto Saturdays — where the Gregorian resolver's Monday-anchored week lands on Mondays.
+		var state = OrbitDays.CreateState("w[d{1}]", new DateOnly(2026, 7, 12), OrbitDays.Pleiadean, seed: 1);
+		var (occurrences, _) = OrbitDays.SeekOccurrencesThrough(state, new DateOnly(2026, 9, 1), OrbitDays.Pleiadean);
+
+		Assert.NotEmpty(occurrences);
+		Assert.All(occurrences, item => Assert.Equal(DayOfWeek.Saturday, item.Date.DayOfWeek));
+
+		// The same notation on the Gregorian calendar keeps its Monday-anchored week, proving the anchor is
+		// the Pleiadean calendar's own and not a change to the shared engine.
+		var gregorianState = OrbitDays.CreateState("w[d{1}]", new DateOnly(2026, 7, 12), OrbitDays.Gregorian, seed: 1);
+		var (gregorianOccurrences, _) = OrbitDays.SeekOccurrencesThrough(gregorianState, new DateOnly(2026, 9, 1), OrbitDays.Gregorian);
+		Assert.NotEmpty(gregorianOccurrences);
+		Assert.All(gregorianOccurrences, item => Assert.Equal(DayOfWeek.Monday, item.Date.DayOfWeek));
+	}
+
+	[Fact]
+	public void DateTime_literals_resolve_to_their_pinned_moment()
+	{
+		// Z with a time -> one minute-granular instant at the exact moment; a one-shot has no successor.
+		var zTimed = OrbitEngine.FromNotation("Z{2027/6/5T18:00}", Epoch(2000, 1, 1), Calendar, seed: 1);
+		var timed = Assert.IsType<OrbitResolutionEntry>(zTimed.Next());
+		Assert.Equal("2027-06-05T18:00:00.000Z", JsDate.ToIsoString(timed.TimestampMs));
+		Assert.Equal(OrbitUnit.Minute, timed.Granularity);
+		Assert.Null(zTimed.Next());
+
+		// Z date-only -> a day-granular instant at midnight.
+		var zDate = OrbitEngine.FromNotation("Z{2027/6/5}", Epoch(2000, 1, 1), Calendar, seed: 1);
+		var dateOnly = Assert.IsType<OrbitResolutionEntry>(zDate.Next());
+		Assert.Equal("2027-06-05T00:00:00.000Z", JsDate.ToIsoString(dateOnly.TimestampMs));
+		Assert.Equal(OrbitUnit.Day, dateOnly.Granularity);
+
+		// Set operators compose with literals: two one-shots, in order.
+		var pair = OrbitEngine.FromNotation("Z{2027/6/5} + Z{2027/6/7}", Epoch(2000, 1, 1), Calendar, seed: 1);
+		Assert.Equal("2027-06-05T00:00:00.000Z", JsDate.ToIsoString(Assert.IsType<OrbitResolutionEntry>(pair.Next()!).TimestampMs));
+		Assert.Equal("2027-06-07T00:00:00.000Z", JsDate.ToIsoString(Assert.IsType<OrbitResolutionEntry>(pair.Next()!).TimestampMs));
+	}
+
+	[Fact]
+	public void Time_literal_matches_the_explicit_chain()
+	{
+		// z{12:00} is sugar for h{12}[m{0}]: it must recur daily at noon, resolving identically.
+		var zClock = OrbitEngine.FromNotation("z{12:00}", Epoch(2027, 6, 5), Calendar, seed: 1);
+		var chain = OrbitEngine.FromNotation("h{12}[m{0}]", Epoch(2027, 6, 5), Calendar, seed: 1);
+		for (var i = 0; i < 5; i++)
+		{
+			var fromZ = Assert.IsType<OrbitResolutionEntry>(zClock.Next());
+			var fromChain = Assert.IsType<OrbitResolutionEntry>(chain.Next());
+			Assert.Equal(fromChain.TimestampMs, fromZ.TimestampMs);
+			Assert.Equal(fromChain.Granularity, fromZ.Granularity);
+		}
+	}
+
+	[Fact]
+	public void Literal_spans_carry_granularity_so_floating_is_derivable()
+	{
+		// Anchored: minute granularity, an explicit 5h window from 18:00.
+		var anchored = OrbitEngine.FromNotation("Z{2027/6/5T18:00}=5h", Epoch(2000, 1, 1), Calendar, seed: 1);
+		var span = Assert.IsType<OrbitSpanEntry>(anchored.Next());
+		Assert.Equal("2027-06-05T18:00:00.000Z", JsDate.ToIsoString(span.StartMs));
+		Assert.Equal("2027-06-05T23:00:00.000Z", JsDate.ToIsoString(span.EndMs));
+		Assert.Equal(5 * 60 * 60 * 1000, span.DurationMs);
+		Assert.Equal(OrbitUnit.Minute, span.Granularity);
+
+		// Floating: a day-granular window (24h) larger than the 2h duration — the consumer reads
+		// granularity 'Day' against a 2h duration to know the block floats within the day.
+		var floating = OrbitEngine.FromNotation("Z{2027/6/5}=2h", Epoch(2000, 1, 1), Calendar, seed: 1);
+		var floatSpan = Assert.IsType<OrbitSpanEntry>(floating.Next());
+		Assert.Equal(2 * 60 * 60 * 1000, floatSpan.DurationMs);
+		Assert.Equal(OrbitUnit.Day, floatSpan.Granularity);
+	}
+
+	[Fact]
+	public void Occurrence_projection_carries_the_entry_granularity()
+	{
+		var state = OrbitDays.CreateState("Z{2027/6/5T18:00}", new DateOnly(2000, 1, 1), OrbitDays.Gregorian, seed: 1);
+		var (occurrences, _) = OrbitDays.SeekOccurrencesThrough(state, new DateOnly(2027, 6, 6), OrbitDays.Gregorian);
+		var moment = Assert.Single(occurrences);
+		Assert.Equal(new DateOnly(2027, 6, 5), moment.Date);
+		Assert.Equal(new TimeOnly(18, 0), moment.StartTime);
+		Assert.Equal(OrbitUnit.Minute, moment.Granularity);
+	}
 }

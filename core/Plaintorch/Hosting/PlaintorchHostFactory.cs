@@ -1,7 +1,9 @@
 using System.Net.Sockets;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Pleiades.Plaintorch.Api.Contracts;
 
 namespace Pleiades.Plaintorch.Hosting;
@@ -25,6 +27,11 @@ public static class PlaintorchHostFactory
 	/// <summary>
 	/// Composes and builds a host for the given options. The returned application is configured but not started.
 	/// </summary>
+	/// <remarks>
+	/// The content root is the directory of the core's binaries, not the working directory, so <c>appsettings.json</c>
+	/// (and with it the log filters) is found however the core was launched: a desktop shell, a service manager, or a
+	/// console in another directory.
+	/// </remarks>
 	/// <param name="options">The launch options.</param>
 	/// <returns>The built application.</returns>
 	public static WebApplication Create(PlaintorchHostOptions options)
@@ -33,7 +40,11 @@ public static class PlaintorchHostFactory
 		var userLayout = options.UserLayout;
 		userLayout.EnsureExists();
 
-		var builder = WebApplication.CreateBuilder(options.Arguments);
+		var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+		{
+			Args = options.Arguments,
+			ContentRootPath = AppContext.BaseDirectory,
+		});
 		builder.Host.UseSystemd();
 		ConfigureLogging(builder, options);
 		ConfigureJson(builder.Services);
@@ -72,31 +83,53 @@ public static class PlaintorchHostFactory
 		switch (options.LaunchMode)
 		{
 			case PlaintorchLaunchMode.Daemon:
-				builder.Logging.AddProvider(new PlaintorchFileLoggerProvider(options.UserLayout.LogsRootPath));
+				AddFileLogging(builder.Services, options.UserLayout);
 				break;
 
 			case PlaintorchLaunchMode.Spawn:
 				builder.Logging.ClearProviders();
-				builder.Logging.AddProvider(new PlaintorchFileLoggerProvider(options.UserLayout.LogsRootPath));
+				AddFileLogging(builder.Services, options.UserLayout);
 				break;
 		}
 	}
 
+	/// <summary>
+	/// Registers the daily file sink through a factory, so the container owns it and disposes it when the host is
+	/// disposed, which drains and flushes the queued tail. An instance registration (<c>AddProvider</c>) is never
+	/// disposed by the container. The <c>Logging:PlaintorchFile</c> filters still apply: the logging framework matches
+	/// them against the provider's type and its <see cref="ProviderAliasAttribute"/>, not against how it was registered.
+	/// </summary>
+	private static void AddFileLogging(IServiceCollection services, PlaintorchUserLayout userLayout)
+	{
+		var directory = userLayout.LogsRootPath;
+		services.TryAddEnumerable(ServiceDescriptor.Singleton<ILoggerProvider, PlaintorchFileLoggerProvider>(_ => new PlaintorchFileLoggerProvider(directory)));
+	}
+
 	private static void ConfigureJson(IServiceCollection services)
 	{
-		services.ConfigureHttpJsonOptions(json =>
+		services.ConfigureHttpJsonOptions(json => ConfigureSerializer(json.SerializerOptions));
+	}
+
+	/// <summary>
+	/// Applies the PLAINTORCH wire conventions to serializer options: cycle-tolerant references, the tri-state
+	/// <see cref="Optional{T}"/> converter, and the <c>@type</c> runtime-name property on every object. The host applies
+	/// it to its HTTP options (which start from the web defaults: camelCase names, numeric enums); wire-contract tests
+	/// apply it to <c>new JsonSerializerOptions(JsonSerializerDefaults.Web)</c> to serialize exactly as the host does.
+	/// </summary>
+	/// <param name="options">The options to configure; must not be frozen yet.</param>
+	public static void ConfigureSerializer(JsonSerializerOptions options)
+	{
+		ArgumentNullException.ThrowIfNull(options);
+		options.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+		// Tri-state update fields: a present key (value or explicit null) applies; an omitted key leaves unchanged.
+		options.Converters.Add(new OptionalJsonConverterFactory());
+		options.TypeInfoResolver = new DefaultJsonTypeInfoResolver
 		{
-			json.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-			// Tri-state update fields: a present key (value or explicit null) applies; an omitted key leaves unchanged.
-			json.SerializerOptions.Converters.Add(new OptionalJsonConverterFactory());
-			json.SerializerOptions.TypeInfoResolver = new DefaultJsonTypeInfoResolver
+			Modifiers =
 			{
-				Modifiers =
-				{
-					AddRuntimeTypeNameProperty,
-				},
-			};
-		});
+				AddRuntimeTypeNameProperty,
+			},
+		};
 	}
 
 	/// <summary>

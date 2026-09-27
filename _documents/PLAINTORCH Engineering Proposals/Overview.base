@@ -17,6 +17,9 @@ properties:
 views:
   - type: table
     name: Table
+    groupBy:
+      property: phase
+      direction: ASC
     order:
       - file.name
       - status
@@ -27,7 +30,6 @@ views:
       - property: patches
         direction: ASC
     summaries:
-      status: Open
       assignee: Unique
     imageAspectRatio: 0.95
     cardSize: 400
@@ -35,7 +37,7 @@ views:
     indentProperties: true
     markers: none
     columnSize:
-      file.name: 511
+      file.name: 505
       note.status: 109
       note.phase: 77
   - type: list
@@ -86,10 +88,18 @@ views:
       note.status: 117
   - type: list
     name: Phases
+    filters:
+      and:
+        - status != "discarded"
+    groupBy:
+      property: phase
+      direction: ASC
     order:
       - file.name
-    markers: none
-    indentProperties: true
+      - status
+    markers: number
+    indentProperties: false
+    separator: ""
   - type: list
     name: p3a
     filters:

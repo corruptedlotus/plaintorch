@@ -24,25 +24,27 @@ public static class PuckNamedIdentity
 	}
 
 	/// <summary>
-	/// Formats a PUCK token and title into a filesystem-safe filename segment.
+	/// Formats a PUCK token and title into a filesystem-safe filename segment, encoding characters that break the
+	/// filesystem or Obsidian indexing into reversible look-alikes (PEP097, see <see cref="PuckFileNameCodec"/>).
 	/// </summary>
 	/// <param name="id">The PUCK token.</param>
 	/// <param name="title">The human-readable title.</param>
-	/// <returns>The sanitized filename segment.</returns>
+	/// <returns>The filename segment, safe to write to disk and reversible on read.</returns>
 	public static string FormatFileName(string id, string title)
 	{
-		return SanitizeFileName(Format(id, title));
+		return PuckFileNameCodec.Encode(Format(id, title));
 	}
 
 	/// <summary>
-	/// Formats a title-only filename segment for user-authored files that do not yet have a PUCK token.
+	/// Formats a title-only filename segment for user-authored files that do not yet have a PUCK token, encoding
+	/// filesystem/Obsidian-forbidden characters into reversible look-alikes (PEP097).
 	/// </summary>
 	/// <param name="title">The human-readable title.</param>
-	/// <returns>The sanitized filename segment.</returns>
+	/// <returns>The filename segment, safe to write to disk and reversible on read.</returns>
 	public static string FormatTitleOnlyFileName(string title)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(title);
-		return SanitizeFileName(title);
+		return PuckFileNameCodec.Encode(title);
 	}
 
 	/// <summary>
@@ -111,7 +113,7 @@ public static class PuckNamedIdentity
 	public static (string Id, string Title) ParsePath(string path)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(path);
-		return Parse(Path.GetFileNameWithoutExtension(path));
+		return Parse(DecodeFileName(path));
 	}
 
 	/// <summary>
@@ -123,7 +125,7 @@ public static class PuckNamedIdentity
 	public static (string? Id, string Title) ParseLoosePath(string path)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(path);
-		return ParseLoose(Path.GetFileNameWithoutExtension(path));
+		return ParseLoose(DecodeFileName(path));
 	}
 
 	/// <summary>
@@ -141,15 +143,14 @@ public static class PuckNamedIdentity
 		entity.Title = title;
 	}
 
-	private static string SanitizeFileName(string value)
+	/// <summary>
+	/// Extracts a path's filename without extension and reverses the PEP097 filename encoding, recovering the raw
+	/// <c>{PUCK token} - {Title}</c> value the filename carries. The symmetric read counterpart of
+	/// <see cref="FormatFileName"/>/<see cref="FormatTitleOnlyFileName"/>.
+	/// </summary>
+	public static string DecodeFileName(string path)
 	{
-		var invalidChars = Path.GetInvalidFileNameChars();
-		var builder = new System.Text.StringBuilder(value.Length);
-		foreach (var character in value)
-		{
-			builder.Append(invalidChars.Contains(character) ? '_' : character);
-		}
-
-		return builder.ToString();
+		ArgumentException.ThrowIfNullOrWhiteSpace(path);
+		return PuckFileNameCodec.Decode(Path.GetFileNameWithoutExtension(path));
 	}
 }

@@ -118,4 +118,35 @@ public sealed class PolarisActivationTests : VaultTestBase
 		Assert.Equal(active.Id, result.Executive.PolarisCycleId);
 		Assert.Equal(1, await CycleCountAsync());
 	}
+
+	[Fact]
+	public async Task Moving_an_executive_to_the_next_polaris_creates_tomorrows_forecast_and_carries_the_tracked_time_forward()
+	{
+		var ct = TestContext.Current.CancellationToken;
+		var active = await PolarisAsync(api => api.StartNewAsync(cancellationToken: ct));
+
+		var planned = await PolarisAsync(api => api.PlanExecutiveAsync(
+			new PolarisExecutivePlan(PolarisExecutivePlanningMode.OneShot, ExecutiveTitle: "Carry me over", Estimation: 60),
+			cancellationToken: ct));
+		var executiveId = planned.Executive.Id;
+
+		// Track 90 minutes of work without finishing it.
+		await PolarisAsync(api => api.UpdateExecutiveAsync(executiveId, new ExecutiveUpdate(Elapsed: 90), ct));
+
+		var moved = await PolarisAsync(api => api.MoveExecutiveToNextPolarisAsync(executiveId, ct));
+
+		// A second cycle — tomorrow's forecast — now exists, and the executive lives on it rather than the active one.
+		Assert.Equal(2, await CycleCountAsync());
+		Assert.NotEqual(active.Id, moved.PolarisCycleId);
+
+		var next = await Vault.QueryAsync(context => context.PolarisCycles.AsNoTracking()
+			.SingleAsync(cycle => cycle.Id == moved.PolarisCycleId, ct));
+		Assert.True(next.IsForecast); // planned, not started
+
+		// The tracked work became the fresh allocation envelope; tracking restarted from zero.
+		Assert.Equal(90, moved.Estimation);
+		Assert.Equal(90, moved.Minimum);
+		Assert.Equal(90, moved.Maximum);
+		Assert.Equal(0, moved.Elapsed);
+	}
 }

@@ -4,13 +4,13 @@ namespace Pleiades.Plaintorch.Api.Transport;
 
 /// <summary>
 /// Represents one endpoint of a dependency in a transport payload (PEP101): a kind plus an id, optionally
-/// qualified by an occurrence slot (iCalendar <c>RECURRENCE-ID</c>) for an eventive endpoint.
+/// qualified by an occurrence slot (iCalendar <c>RECURRENCE-ID</c>, the occurrence's original moment) for an
+/// eventive endpoint.
 /// </summary>
 public sealed record DependencyEndpointRequest(
 	DependencyEndpointKind Kind,
 	string Id,
-	DateOnly? RecurrenceDate = null,
-	TimeOnly? RecurrenceTime = null);
+	DateTime? RecurrenceId = null);
 
 /// <summary>
 /// Represents the transport payload used to create a dependency edge (source blocks target) (PEP101).
