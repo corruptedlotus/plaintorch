@@ -1,5 +1,4 @@
 using System.Reflection;
-using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Saga;
 using Pleiades.Vault.Policy;
@@ -52,7 +51,7 @@ public sealed class VaultStoragePathComposer
 	/// </summary>
 	/// <param name="layout">The active vault layout used to resolve location roots.</param>
 	/// <param name="catalog">The entity model catalog supplying each type's effective storage policy.</param>
-	/// <param name="pathPolicy">The single directive-containment resolver, enforcing directive ownership boundaries.</param>
+	/// <param name="pathPolicy">The single containment resolver, enforcing each parent kind's declared territory.</param>
 	public VaultStoragePathComposer(VaultLayout layout, VaultEntityModelCatalog catalog, VaultWatcherPathPolicy pathPolicy)
 	{
 		Layout = layout ?? throw new ArgumentNullException(nameof(layout));
@@ -106,13 +105,12 @@ public sealed class VaultStoragePathComposer
 	/// <summary>
 	/// Applies path-derived identity and parent relation to a freshly-constructed entity — the reverse of
 	/// <see cref="GetFilePath(object, object?)"/>. Identity is parsed loosely from the path (its filename token, or
-	/// lore-segment composition); the parent relation is set from the entity's declared parent policy, delegating
-	/// the containing-owner resolution to the existing path helpers.
+	/// lore-segment composition); the parent relation is the one the note's location implies under the entity's declared
+	/// containment (<see cref="VaultWatcherPathPolicy.TryResolveContainingParentId"/>).
 	/// </summary>
 	/// <remarks>
-	/// The containing-owner resolvers are genuinely per-parent-type filesystem scans (currently triplicated across
-	/// <see cref="MarkdownFileLocator"/>, the path-sync catalog, and the watcher path policy). The composer selects
-	/// one by the declared parent type and stays behaviour-preserving; consolidating them is REFACTOR Alpha phase 4.
+	/// The parent read here is naive: the nearest containing folder of the parent kind, whether or not the vault holds
+	/// that identity. Discovery corrects it to the nearest one it does hold (compose-then-correct).
 	/// </remarks>
 	public void ApplyCompositionFromPath(object entity, string path)
 	{
@@ -186,12 +184,7 @@ public sealed class VaultStoragePathComposer
 			return;
 		}
 
-		var parentId = storage.ParentEntityType == typeof(OnrushSprint)
-			? MarkdownFileLocator.TryGetContainingOnrushSprintId(path)
-			: storage.ParentEntityType == typeof(Directive)
-				? _pathPolicy.TryResolveContainingDirectiveId(path, skipCurrentIfSelfNamed: storage.Shape == VaultStorageShape.SelfNamedDirectory)
-				: null;
-
+		var parentId = _pathPolicy.TryResolveContainingParentId(entity.GetType(), path);
 		if (!string.IsNullOrWhiteSpace(parentId))
 		{
 			entity.GetType()

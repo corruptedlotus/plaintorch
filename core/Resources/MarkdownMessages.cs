@@ -21,7 +21,6 @@ public static class MarkdownMessages
 	public static string FieldEmpty => Get();
 	public static string MissingRequiredPuckInput => Get();
 	public static string ExecutiveOrderSprintUnresolved => Get();
-	public static string DirectiveRelationMismatch => Get();
 
 	/// <summary>"Value '{value}' is not a defined {type} state."</summary>
 	public static string EnumValueUndefined(object? value, string typeName) => Format([value, typeName]);

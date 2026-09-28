@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Reflection;
+using Pleiades.Puck;
 using Pleiades.Resources;
 using Pleiades.Vault.Markdown;
 
@@ -8,9 +9,16 @@ using Pleiades.Vault.Watcher;
 namespace Pleiades.Vault.Policy;
 
 /// <summary>
-/// Centralizes watcher path filtering and scan-root selection rules defined by the watcher blueprint.
+/// Centralizes watcher path filtering and scan-root selection rules defined by the watcher blueprint, and is the single
+/// resolver of <em>containment</em>: which parent entity a note's location implies.
 /// </summary>
-public sealed class VaultWatcherPathPolicy(VaultLayout layout)
+/// <remarks>
+/// Containment is storage policy, read from declarations alone (<see cref="VaultEntityModelCatalog"/>): an entity's
+/// <see cref="VaultStorageAttribute.ParentEntityType"/> says what kind of entity may contain its note, the parent's own
+/// declaration says what a folder of that kind is, and the entity's declaration says how far from that folder its note
+/// may sit. No caller asks about a particular entity type; see <see cref="EnumerateContainingParentIds"/>.
+/// </remarks>
+public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelCatalog entityModelCatalog, PuckTokenizer puckTokenizer)
 {
 	private const string ObsidianConfigRelativePath = ".obsidian/app.json";
 	private static readonly StringComparer PathComparer = StringComparer.OrdinalIgnoreCase;
@@ -84,16 +92,17 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout)
 		}
 	}
 
+	/// <summary>
+	/// The declared location root of every vault-stored entity, and the metadata root: the folders the vault layout
+	/// grants to PLAINTORCH, derived from the catalog rather than listed per entity.
+	/// </summary>
 	private IEnumerable<string> EntityRoots()
 	{
-		yield return layout.DirectivesRoot;
-		yield return layout.ObjectivesRoot;
-		yield return layout.FatesRoot;
-		yield return layout.DecreesRoot;
-		yield return layout.OnrushRoot;
-		yield return layout.JournalRoot;
-		yield return layout.SagaRoot;
-		yield return layout.MetadataRoot;
+		return entityModelCatalog.GetModels()
+			.Where(static model => model.Storage is not null)
+			.Select(model => layout.GetLocationRoot(model.Storage!.LocationKey))
+			.Append(layout.MetadataRoot)
+			.Distinct(PathComparer);
 	}
 
 	/// <summary>
@@ -194,41 +203,256 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout)
 	}
 
 	/// <summary>
-	/// Resolves the nearest containing directive identifier while enforcing directive ownership boundaries.
+	/// Resolves the parent a note's location implies for an entity type: the nearest candidate of
+	/// <see cref="EnumerateContainingParentIds"/>, or <see langword="null"/> when no folder of the declared parent type
+	/// contains the note (or the type declares no parent).
 	/// </summary>
-	public string? TryResolveContainingDirectiveId(string? path, bool skipCurrentIfSelfNamed = false)
+	/// <param name="entityType">The entity type whose declared containment applies to the note.</param>
+	/// <param name="path">The note's path (a folder path is read as the container itself).</param>
+	public string? TryResolveContainingParentId(Type entityType, string? path)
+		=> EnumerateContainingParentIds(entityType, path).FirstOrDefault();
+
+	/// <summary>
+	/// Enumerates, nearest first, the identities of the folders of the entity's declared parent type that contain a note —
+	/// the parents its location may imply. A caller that knows which identities exist takes the first known one, so a
+	/// folder asserting an identity the vault does not hold never parents anything; a caller that does not takes the first.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Everything is read from storage declarations:
+	/// </para>
+	/// <list type="bullet">
+	/// <item>The entity's <see cref="VaultStorageAttribute.ParentEntityType"/> names the parent kind; without one there is
+	/// no containment.</item>
+	/// <item>Only a <see cref="VaultStorageShape.SelfNamedDirectory"/> parent owns a folder. A folder is a parent's when a
+	/// note in it asserts an identity the parent kind's declared PUCK notation (or a family member's) could mint: its
+	/// self-named primary note, read per the parent's <see cref="VaultStorageAttribute.PuckStorage"/>, or — when the
+	/// parent's policy is identity-driven, so its note may bear any name — any note directly in it. An identity of any
+	/// other kind (a sibling child's note, the note itself) says nothing about the folder.</item>
+	/// <item>A folder is only considered inside the parent's territory: never the vault root, a declared entity root or
+	/// a declared partition folder; for an identity-driven parent, anywhere outside the roots other kinds are declared in;
+	/// for a path-bound parent, only under the roots its own kind is declared in.</item>
+	/// <item>An entity whose policy is identity-driven may sit anywhere inside its parent's folder, so every enclosing
+	/// parent folder is a candidate; a path-bound entity sits exactly where its composed path puts it — in the parent's
+	/// folder, or in the partition it declares there. A self-named entity's own folder is the entity itself, never its
+	/// container.</item>
+	/// </list>
+	/// <para>
+	/// Resolution reads only the folders around the note, never the note itself, so path classification can ask it about a
+	/// note another process holds open. A caller that knows the entity's own identity skips it among the candidates (a
+	/// second note asserting it elsewhere is a duplicate identity, never a container).
+	/// </para>
+	/// </remarks>
+	/// <param name="entityType">The entity type whose declared containment applies to the note.</param>
+	/// <param name="path">The note's path (a folder path is read as the container itself).</param>
+	public IEnumerable<string> EnumerateContainingParentIds(Type entityType, string? path)
 	{
-		if (string.IsNullOrWhiteSpace(path))
+		ArgumentNullException.ThrowIfNull(entityType);
+		if (string.IsNullOrWhiteSpace(path)
+			|| !TryGetContainment(entityType, out var storage, out var parent))
+		{
+			yield break;
+		}
+
+		var fullPath = Path.GetFullPath(path);
+		var isFolder = Directory.Exists(fullPath);
+		var directory = isFolder ? fullPath : Path.GetDirectoryName(fullPath);
+		if (!isFolder
+			&& storage.Shape == VaultStorageShape.SelfNamedDirectory
+			&& MarkdownFileLocator.IsPrimarySelfNamedFile(fullPath))
+		{
+			directory = Directory.GetParent(directory!)?.FullName;
+		}
+
+		if (string.IsNullOrWhiteSpace(directory))
+		{
+			yield break;
+		}
+
+		if (!storage.Mode.IsIdentityDriven())
+		{
+			var composedHost = ResolveComposedHost(directory, storage);
+			if (composedHost is not null && TryReadParentIdentity(composedHost, fullPath, parent) is { } composedId)
+			{
+				yield return composedId;
+			}
+
+			yield break;
+		}
+
+		for (var current = directory; !string.IsNullOrWhiteSpace(current) && IsUnderVaultRoot(current); current = Directory.GetParent(current)?.FullName)
+		{
+			if (TryReadParentIdentity(current, fullPath, parent) is { } id)
+			{
+				yield return id;
+			}
+		}
+	}
+
+	/// <summary>
+	/// The declared parent kind of a containment, with everything needed to recognise its folders: its storage, the
+	/// notations its family mints, and the roots its family is declared in.
+	/// </summary>
+	private sealed record ParentKind(
+		VaultStorageAttribute Storage,
+		IReadOnlyList<string> Declarations,
+		IReadOnlySet<Type> Family);
+
+	private bool TryGetContainment(Type entityType, out VaultStorageAttribute storage, out ParentKind parent)
+	{
+		storage = null!;
+		parent = null!;
+		if (!entityModelCatalog.TryGet(entityType, out var model)
+			|| model?.Storage is not { ParentEntityType: { } parentType } declared
+			|| !entityModelCatalog.TryGet(parentType, out var parentModel)
+			|| parentModel?.Storage is not { Shape: VaultStorageShape.SelfNamedDirectory } parentStorage)
+		{
+			return false;
+		}
+
+		var anchor = entityModelCatalog.GetFamilyAnchor(parentType) ?? parentType;
+		var members = entityModelCatalog.TryGetFamily(anchor, out var family) && family is not null
+			? family.Members.Select(static member => member.EntityType)
+			: [];
+		var familyTypes = members.Prepend(anchor).Append(parentType).ToHashSet();
+		var declarations = familyTypes
+			.Select(type => entityModelCatalog.TryGet(type, out var member) ? member?.PuckDeclaration : null)
+			.Where(static declaration => !string.IsNullOrWhiteSpace(declaration))
+			.Select(static declaration => declaration!)
+			.Distinct(StringComparer.Ordinal)
+			.ToArray();
+
+		storage = declared;
+		parent = new ParentKind(parentStorage, declarations, familyTypes);
+		return true;
+	}
+
+	/// <summary>
+	/// The one folder a path-bound entity's composed path puts its parent at: the folder holding the note, or — when the
+	/// entity declares a partition — the folder holding that partition, provided the note sits directly in it.
+	/// </summary>
+	private static string? ResolveComposedHost(string directory, VaultStorageAttribute storage)
+	{
+		var partition = storage.PartitionUnder?.Trim();
+		if (string.IsNullOrWhiteSpace(partition))
+		{
+			return directory;
+		}
+
+		var directoryName = Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+		return string.Equals(directoryName, partition, StringComparison.OrdinalIgnoreCase)
+			? Directory.GetParent(directory)?.FullName
+			: null;
+	}
+
+	/// <summary>
+	/// Reads the identity of the parent a folder is, or <see langword="null"/> when it is none: outside the parent kind's
+	/// territory, or holding no note (other than <paramref name="resolvedNote"/> itself) that asserts an identity of that
+	/// kind.
+	/// </summary>
+	private string? TryReadParentIdentity(string directory, string resolvedNote, ParentKind parent)
+	{
+		if (!IsParentTerritory(directory, parent) || !Directory.Exists(directory))
 		{
 			return null;
 		}
 
-		var currentDirectory = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
-		if (skipCurrentIfSelfNamed
-			&& !string.IsNullOrWhiteSpace(currentDirectory)
-			&& MarkdownFileLocator.IsSelfNamedDirectory(currentDirectory))
+		var primary = Path.Combine(directory, $"{Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}.md");
+		if (!PathComparer.Equals(primary, resolvedNote)
+			&& File.Exists(primary)
+			&& ReadAssertedIdentity(primary, parent.Storage) is { } primaryId
+			&& IsParentIdentity(primaryId, parent))
 		{
-			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
+			return primaryId;
 		}
 
-		while (!string.IsNullOrWhiteSpace(currentDirectory))
+		if (!parent.Storage.Mode.IsIdentityDriven())
 		{
-			if (IsDirectiveOwnershipBoundaryDirectory(currentDirectory))
+			return null;
+		}
+
+		foreach (var note in Directory.EnumerateFiles(directory, "*.md", SearchOption.TopDirectoryOnly).Order(PathComparer))
+		{
+			if (PathComparer.Equals(note, resolvedNote) || PathComparer.Equals(note, primary))
 			{
-				currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
 				continue;
 			}
 
-			var resolved = MarkdownFileLocator.TryResolveDirectivePuckFromDirectory(currentDirectory);
-			if (!string.IsNullOrWhiteSpace(resolved))
+			if (MarkdownFileLocator.TryReadFrontMatterPuck(note) is { } id && IsParentIdentity(id, parent))
 			{
-				return resolved;
+				return id;
 			}
-
-			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
 		}
 
 		return null;
+	}
+
+	/// <summary>
+	/// Reads the identity a note asserts under a storage form: a quiet note's frontmatter PUCK, or an indexed note's
+	/// filename token (the name a self-named folder shares with its primary note).
+	/// </summary>
+	private static string? ReadAssertedIdentity(string notePath, VaultStorageAttribute storage)
+	{
+		return storage.PuckStorage == VaultPuckStorage.Index
+			? PuckNamedIdentity.ParseLoose(PuckNamedIdentity.DecodeFileName(notePath)).Id
+			: MarkdownFileLocator.TryReadFrontMatterPuck(notePath);
+	}
+
+	/// <summary>
+	/// Whether an identity is one the parent kind could mint — it tokenizes against the declared notation of the kind or
+	/// a member of its family — so an identity of another kind is never read as the parent's.
+	/// </summary>
+	private bool IsParentIdentity(string identity, ParentKind parent)
+	{
+		foreach (var declaration in parent.Declarations)
+		{
+			try
+			{
+				puckTokenizer.Tokenize(declaration, identity);
+				return true;
+			}
+			catch (Exception exception) when (exception is FormatException or InvalidOperationException or NotSupportedException)
+			{
+			}
+		}
+
+		return false;
+	}
+
+	/// <summary>
+	/// Whether a folder lies in the territory a parent kind's folders may occupy: inside the vault, never the vault root,
+	/// a declared entity root or a declared partition folder; for an identity-driven kind, outside every root another kind
+	/// is declared in; for a path-bound kind, under a root its own family is declared in.
+	/// </summary>
+	private bool IsParentTerritory(string directory, ParentKind parent)
+	{
+		var fullPath = Path.GetFullPath(directory);
+		if (!IsUnderVaultRoot(fullPath)
+			|| IsVaultRootDirectory(fullPath)
+			|| IsEntityRootDirectory(fullPath)
+			|| IsPartitionDirectory(fullPath)
+			|| IsUnderRoot(fullPath, layout.MetadataRoot))
+		{
+			return false;
+		}
+
+		var ownRoots = DeclaredRoots(model => parent.Family.Contains(model.EntityType)).ToArray();
+		if (!parent.Storage.Mode.IsIdentityDriven())
+		{
+			return ownRoots.Any(root => IsUnderRoot(fullPath, root));
+		}
+
+		return !DeclaredRoots(model => !parent.Family.Contains(model.EntityType))
+			.Where(root => !ownRoots.Contains(root, PathComparer))
+			.Any(root => IsUnderRoot(fullPath, root));
+	}
+
+	private IEnumerable<string> DeclaredRoots(Func<VaultEntityModel, bool> predicate)
+	{
+		return entityModelCatalog.GetModels()
+			.Where(model => model.Storage is not null && predicate(model))
+			.Select(model => Path.GetFullPath(layout.GetLocationRoot(model.Storage!.LocationKey)))
+			.Distinct(PathComparer);
 	}
 
 	private bool IsUnderVaultRoot(string fullPath)
@@ -260,19 +484,6 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout)
 			|| IsUnderRoot(fullPath, layout.OnrushRoot)
 			|| IsUnderRoot(fullPath, layout.JournalRoot)
 			|| IsUnderRoot(fullPath, layout.SagaRoot);
-	}
-
-	private bool IsDirectiveOwnershipBoundaryDirectory(string fullPath)
-	{
-		if (!IsUnderVaultRoot(fullPath))
-		{
-			return true;
-		}
-
-		return IsVaultRootDirectory(fullPath)
-			|| IsEntityRootDirectory(fullPath)
-			|| IsPartitionDirectory(fullPath)
-			|| IsUnderNonDirectiveManagedRoot(fullPath);
 	}
 
 	private bool IsVaultRootDirectory(string fullPath)

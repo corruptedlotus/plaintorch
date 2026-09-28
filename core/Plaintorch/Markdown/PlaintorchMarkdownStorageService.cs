@@ -275,11 +275,11 @@ public sealed class PlaintorchMarkdownStorageService(
 			return;
 		}
 
-		newPath = ResolveInactionPreferredPath(entity, newPath, sourcePath);
+		newPath = await ResolveInactionPreferredPathAsync(entity, newPath, sourcePath, cancellationToken);
 		// Placement policy: the mode decides whether the file keeps a user-authored location (Freeform) or uses the
 		// canonical path (everyone else). The storage pipeline no longer branches on the mode.
 		newPath = policyEngine.PolicyFor(storage.Mode).ResolveWriteTargetPath(entity, newPath, sourcePath, previousPath);
-		if (IsReparentedFromFile(storage, entity, previousPath))
+		if (await IsReparentedFromFileAsync(storage, entity, previousPath, cancellationToken))
 		{
 			// A composed storage path puts the parent *in the path*, and on disk the path is the authority for that
 			// relationship. A mode that keeps a note where it was authored is right to for any ordinary edit and wrong
@@ -353,7 +353,7 @@ public sealed class PlaintorchMarkdownStorageService(
 			&& await implicitBoundaryService.HasBoundaryBegunAsync(entity.GetType().Name, namedEntity.Id, cancellationToken);
 	}
 
-	private string ResolveInactionPreferredPath(object entity, string canonicalPath, string? sourcePath)
+	private async Task<string> ResolveInactionPreferredPathAsync(object entity, string canonicalPath, string? sourcePath, CancellationToken cancellationToken)
 	{
 		if (string.IsNullOrWhiteSpace(sourcePath))
 		{
@@ -372,7 +372,7 @@ public sealed class PlaintorchMarkdownStorageService(
 			return canonicalPath;
 		}
 
-		if (!IsIncentiveSourcePlacementValid(incentive, fullSourcePath))
+		if (!await IsIncentiveSourcePlacementValidAsync(incentive, fullSourcePath, cancellationToken))
 		{
 			return canonicalPath;
 		}
@@ -386,20 +386,20 @@ public sealed class PlaintorchMarkdownStorageService(
 		return Path.Combine(sourceDirectory, Path.GetFileName(canonicalPath));
 	}
 
-	private bool IsIncentiveSourcePlacementValid(Incentive incentive, string fullSourcePath)
+	private async Task<bool> IsIncentiveSourcePlacementValidAsync(Incentive incentive, string fullSourcePath, CancellationToken cancellationToken)
 	{
 		if (string.IsNullOrWhiteSpace(incentive.DirectiveId))
 		{
 			return IsUnderRoot(fullSourcePath, ResolveStorageRoot(incentive.GetType()));
 		}
 
-		var containingDirectiveId = pathPolicy.TryResolveContainingDirectiveId(fullSourcePath);
-		if (!string.Equals(containingDirectiveId, incentive.DirectiveId, StringComparison.OrdinalIgnoreCase))
+		var storage = GetStorageAttribute(incentive.GetType());
+		var containingParentId = await ResolveContainingParentIdAsync(incentive.GetType(), incentive.Id, storage, fullSourcePath, cancellationToken);
+		if (!string.Equals(containingParentId, incentive.DirectiveId, StringComparison.OrdinalIgnoreCase))
 		{
 			return false;
 		}
 
-		var storage = GetStorageAttribute(incentive.GetType());
 		if (string.IsNullOrWhiteSpace(storage.PartitionUnder))
 		{
 			return true;
@@ -426,7 +426,7 @@ public sealed class PlaintorchMarkdownStorageService(
 	/// from the caller: a write that omits one still reparents correctly. A top-level entity, or one with no existing
 	/// file, is never reparented.
 	/// </summary>
-	private bool IsReparentedFromFile(VaultStorageAttribute storage, object entity, string? existingPath)
+	private async Task<bool> IsReparentedFromFileAsync(VaultStorageAttribute storage, object entity, string? existingPath, CancellationToken cancellationToken)
 	{
 		if (string.IsNullOrWhiteSpace(existingPath)
 			|| string.IsNullOrWhiteSpace(storage.ParentIdProperty)
@@ -442,21 +442,30 @@ public sealed class PlaintorchMarkdownStorageService(
 		}
 
 		var currentParentId = NormalizeId(property.GetValue(entity) as string);
-		var fileParentId = NormalizeId(ResolveContainingParentId(storage, existingPath!));
+		var fileParentId = NormalizeId(await ResolveContainingParentIdAsync(entity.GetType(), (entity as IPuckNamedEntity)?.Id, storage, existingPath!, cancellationToken));
 		return !string.Equals(currentParentId, fileParentId, StringComparison.OrdinalIgnoreCase);
 	}
 
-	/// <summary>The parent id an existing file's location implies, resolved the same way discovery resolves a note's owner.</summary>
-	private string? ResolveContainingParentId(VaultStorageAttribute storage, string path)
+	/// <summary>
+	/// The parent an existing file's location implies, resolved exactly as discovery resolves a note's owner: the nearest
+	/// containing folder of the declared parent kind whose identity the vault holds, other than the entity itself. Reading
+	/// it any other way lets an ordinary edit mistake the note's folder for another parent and move the note out of it.
+	/// </summary>
+	private async Task<string?> ResolveContainingParentIdAsync(Type entityType, string? ownId, VaultStorageAttribute storage, string path, CancellationToken cancellationToken)
 	{
-		if (storage.ParentEntityType == typeof(OnrushSprint))
+		if (storage.ParentEntityType is null)
 		{
-			return MarkdownFileLocator.TryGetContainingOnrushSprintId(path);
+			return null;
 		}
 
-		if (storage.ParentEntityType == typeof(Directive))
+		HashSet<string>? knownParentIds = null;
+		foreach (var candidate in pathPolicy.EnumerateContainingParentIds(entityType, path))
 		{
-			return pathPolicy.TryResolveContainingDirectiveId(path, skipCurrentIfSelfNamed: storage.Shape == VaultStorageShape.SelfNamedDirectory);
+			knownParentIds ??= await VaultEntityGateway.LoadKnownIdsAsync(context, storage.ParentEntityType, cancellationToken);
+			if (knownParentIds.Contains(candidate) && !string.Equals(candidate, ownId, StringComparison.OrdinalIgnoreCase))
+			{
+				return candidate;
+			}
 		}
 
 		return null;

@@ -1,3 +1,4 @@
+using Pleiades.Puck;
 using Pleiades.Vault;
 using Pleiades.Vault.Policy;
 using Xunit;
@@ -11,7 +12,13 @@ namespace Pleiades.Tests.Core;
 public sealed class WatcherStructuralAccessTests
 {
 	private static VaultWatcherPathPolicy PolicyForRoot(string vaultRoot)
-		=> new(new VaultLayout(new VaultOptions { VaultPath = vaultRoot }));
+	{
+		var notationParser = new PuckNotationParser();
+		return new(
+			new VaultLayout(new VaultOptions { VaultPath = vaultRoot }),
+			new VaultEntityModelCatalog(),
+			new PuckTokenizer(notationParser, new PuckRuntimeCompilationCatalog(notationParser)));
+	}
 
 	private static string TempRoot()
 		=> Path.Combine(Path.GetTempPath(), "plaintorch-tests", Guid.NewGuid().ToString("N"));

@@ -25,6 +25,13 @@ namespace Pleiades.Tests.Core;
 /// </summary>
 /// <remarks>
 /// <para>
+/// What it guards is storage policy, not these two models: containment — which parent a note's location implies —
+/// under identity-driven placement combined with hierarchy and partitioning, which stellar directives (freeform,
+/// self-nesting) and objectives (implicit, partitioned) happen to combine. Containment is answered by one
+/// declaration-driven resolver, <see cref="Pleiades.Vault.Policy.VaultWatcherPathPolicy.EnumerateContainingParentIds"/>,
+/// shared by the watcher and the write path; a divergence between the two is what moved notes out of their folders.
+/// </para>
+/// <para>
 /// The matrix is the full product of the variations, split into one class per directive-creation variation so the
 /// classes run as parallel collections. With a single objective the "which ones" variation collapses to <c>All</c>.
 /// </para>

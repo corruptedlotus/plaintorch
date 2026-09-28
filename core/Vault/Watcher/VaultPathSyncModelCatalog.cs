@@ -65,19 +65,19 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout, VaultWatcherPa
 			concreteType: typeof(StellarDirective)),
 
 		CreateModel<Objective>(layout, [layout.ObjectivesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
-			IsIncentiveMarkdownFile(path, pathPolicy, layout.ObjectivesRoot, ObjectivePartitionName, ObjectiveIdentityDriven)),
+			IsIncentiveMarkdownFile(typeof(Objective), path, pathPolicy, layout.ObjectivesRoot, ObjectivePartitionName, ObjectiveIdentityDriven)),
 
 		CreateModel<Fate>(layout, [layout.FatesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
-			IsIncentiveMarkdownFile(path, pathPolicy, layout.FatesRoot, FatePartitionName, FateIdentityDriven)),
+			IsIncentiveMarkdownFile(typeof(Fate), path, pathPolicy, layout.FatesRoot, FatePartitionName, FateIdentityDriven)),
 
 		CreateModel<Decree>(layout, [layout.DecreesRoot, layout.VaultRoot], VaultStorageShape.SingleFile, path =>
-			IsIncentiveMarkdownFile(path, pathPolicy, layout.DecreesRoot, DecreePartitionName, DecreeIdentityDriven)),
+			IsIncentiveMarkdownFile(typeof(Decree), path, pathPolicy, layout.DecreesRoot, DecreePartitionName, DecreeIdentityDriven)),
 
 		CreateModel<OnrushSprint>(layout, [layout.OnrushRoot], VaultStorageShape.SelfNamedDirectory, path =>
 			IsPrimarySelfNamedEntityFile(path, layout.OnrushRoot)),
 
-		CreateModel<ExecutiveOrder>(layout, [layout.OnrushRoot], VaultStorageShape.SingleFile, static path =>
-			IsExecutiveOrderMarkdownFile(path)),
+		CreateModel<ExecutiveOrder>(layout, [layout.OnrushRoot], VaultStorageShape.SingleFile, path =>
+			IsContainedChildMarkdownFile(typeof(ExecutiveOrder), path, pathPolicy)),
 
 		CreateModel<PolarisCycle>(layout, [layout.JournalRoot], VaultStorageShape.SingleFile, static path =>
 			string.Equals(Path.GetExtension(path), ".md", StringComparison.OrdinalIgnoreCase)),
@@ -302,12 +302,13 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout, VaultWatcherPa
 	/// (objective, fate, or decree). Each kind lives in its standalone root, directly inside a directive
 	/// directory, or inside its own partition folder within a directive.
 	/// </summary>
+	/// <param name="entityType">The incentive kind being classified, whose declared containment applies.</param>
 	/// <param name="path">The markdown file path to classify.</param>
-	/// <param name="pathPolicy">The single directive-containment resolver (ownership-boundary aware).</param>
+	/// <param name="pathPolicy">The single containment resolver.</param>
 	/// <param name="standaloneRoot">The kind's standalone root directory.</param>
 	/// <param name="partitionName">The kind's directive partition folder name.</param>
 	/// <returns><see langword="true"/> when the file is a candidate of this incentive kind.</returns>
-	private static bool IsIncentiveMarkdownFile(string path, VaultWatcherPathPolicy pathPolicy, string standaloneRoot, string? partitionName, bool isIdentityDriven)
+	private static bool IsIncentiveMarkdownFile(Type entityType, string path, VaultWatcherPathPolicy pathPolicy, string standaloneRoot, string? partitionName, bool isIdentityDriven)
 	{
 		if (!string.Equals(Path.GetExtension(path), ".md", StringComparison.OrdinalIgnoreCase))
 		{
@@ -331,9 +332,9 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout, VaultWatcherPa
 			return true;
 		}
 
-		// Otherwise the note must be hosted by a directive — its nearest containing directive owns it. Resolution goes
-		// through the one shared, ownership-boundary-aware resolver so detection cannot drift from the watcher/composer.
-		if (string.IsNullOrWhiteSpace(pathPolicy.TryResolveContainingDirectiveId(path, skipCurrentIfSelfNamed: false)))
+		// Otherwise the note must be contained by a parent of the kind's declared type. Resolution goes through the one
+		// shared containment resolver so detection cannot drift from the watcher/composer.
+		if (string.IsNullOrWhiteSpace(pathPolicy.TryResolveContainingParentId(entityType, path)))
 		{
 			return false;
 		}
@@ -387,12 +388,15 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout, VaultWatcherPa
 	}
 
 	/// <summary>
-	/// Determines whether a markdown file path should be classified as an executive order file.
-	/// Order files live inside the order partition folder of a self-named onrush sprint directory.
+	/// Determines whether a markdown file path is a candidate of an entity kind that only exists inside its parent: a note
+	/// (not a self-named primary) whose location a parent of the kind's declared type contains, per its declared
+	/// containment — for a path-bound kind, exactly its composed place (the parent's folder, or its declared partition).
 	/// </summary>
+	/// <param name="entityType">The contained kind being classified.</param>
 	/// <param name="path">The markdown file path to classify.</param>
-	/// <returns><see langword="true"/> when the file is an executive order markdown candidate.</returns>
-	private static bool IsExecutiveOrderMarkdownFile(string path)
+	/// <param name="pathPolicy">The single containment resolver.</param>
+	/// <returns><see langword="true"/> when the file is a candidate of the kind.</returns>
+	private static bool IsContainedChildMarkdownFile(Type entityType, string path, VaultWatcherPathPolicy pathPolicy)
 	{
 		if (!string.Equals(Path.GetExtension(path), ".md", StringComparison.OrdinalIgnoreCase))
 		{
@@ -404,7 +408,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout, VaultWatcherPa
 			return false;
 		}
 
-		return !string.IsNullOrWhiteSpace(MarkdownFileLocator.TryGetContainingOnrushSprintId(path));
+		return !string.IsNullOrWhiteSpace(pathPolicy.TryResolveContainingParentId(entityType, path));
 	}
 
 	private static bool IsPartitionContainerPrimaryFile(string path)

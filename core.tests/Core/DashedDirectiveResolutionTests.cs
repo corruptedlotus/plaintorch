@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Tests.Harness;
-using Pleiades.Vault.Markdown;
+using Pleiades.Vault.Policy;
 using Xunit;
 
 namespace Pleiades.Tests.Core;
@@ -29,8 +29,9 @@ public sealed class DashedDirectiveResolutionTests : VaultTestBase
 	{
 		var directive = await CreateDirectiveAsync("2024 - Roadmap");
 
-		var resolved = MarkdownFileLocator.TryResolveDirectivePuckFromDirectory(
-			Vault.AbsolutePath("Directives/2024 - Roadmap"));
+		var resolved = Vault.GetSingleton<VaultWatcherPathPolicy>().TryResolveContainingParentId(
+			typeof(Objective),
+			Vault.AbsolutePath("Directives/2024 - Roadmap/Note.md"));
 
 		Assert.Equal(directive.Id, resolved);
 	}

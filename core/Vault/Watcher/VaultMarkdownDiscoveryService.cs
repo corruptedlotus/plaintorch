@@ -639,7 +639,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		var issues = DeserializeInto(parsedModel, instantiationType, markdown, preserveDefaultsForMissingFields: preserveDefaultsForMissingFields)
 			.Select(issue => issue)
 			.ToList();
-		ApplyPathAuthorities(parsedModel, fullPath, issues);
+		ApplyPathAuthorities(parsedModel, fullPath, knownIdsByType);
 		if (parsedModel is IPuckNamedEntity resolvedNamedEntity)
 		{
 			if (!modePolicy.IsIdentityDriven
@@ -660,7 +660,7 @@ public sealed class VaultMarkdownDiscoveryService(
 			}
 		}
 
-		if (parsedModel is Directive freeformDirective
+		if (parsedModel is Directive
 			&& modePolicy.IsIdentityDriven)
 		{
 			var assertionViolation = pathPolicy.TryGetFreeformDirectiveAssertionViolation(fullPath);
@@ -680,8 +680,6 @@ public sealed class VaultMarkdownDiscoveryService(
 					return null;
 				}
 			}
-
-			freeformDirective.ParentDirectiveId = await ResolveFreeformDirectiveParentIdAsync(fullPath, pathId, knownIds, cancellationToken);
 		}
 
 		await ApplyDomainValidationsAsync(parsedModel, issues, cancellationToken);
@@ -836,102 +834,41 @@ public sealed class VaultMarkdownDiscoveryService(
 	/// <summary>
 	/// Applies authoritative path-derived relationships and identity fields over frontmatter values when conflicts occur.
 	/// </summary>
+	/// <remarks>
+	/// Where an entity's storage declares containment, the path is the authority for its parent: the nearest containing
+	/// folder of the declared parent kind whose identity the vault holds (<see cref="VaultWatcherPathPolicy.EnumerateContainingParentIds"/>),
+	/// or none — which, for a note outside every such folder, makes the entity top-level or standalone. This corrects the
+	/// composer's naive reading, which takes the nearest folder whether or not its identity exists. The storage service's
+	/// reparent check reads a note's parent the same way, so the watcher and the write path always agree on it.
+	/// </remarks>
 	/// <param name="model">The hydrated model to normalize.</param>
 	/// <param name="path">The candidate source path.</param>
-	/// <param name="issues">The mutable issue collection to append relation mismatches to.</param>
-	private void ApplyPathAuthorities(object model, string path, ICollection<MarkdownValidationIssue> issues)
+	/// <param name="knownIdsByType">The identities the vault holds, per path-sync model type.</param>
+	private void ApplyPathAuthorities(object model, string path, IReadOnlyDictionary<Type, HashSet<string>> knownIdsByType)
 	{
-		switch (model)
+		if (model is LorePage lorePage)
 		{
-			case Directive directive:
-			{
-				var pathParentId = pathPolicy.TryResolveContainingDirectiveId(path, skipCurrentIfSelfNamed: true);
-				if (!string.Equals(directive.ParentDirectiveId, pathParentId, StringComparison.OrdinalIgnoreCase))
-				{
-					/*if (!string.IsNullOrWhiteSpace(directive.ParentDirectiveId))
-					{
-						issues.Add(new MarkdownValidationIssue("parent", "Frontmatter parent relation does not match the path-derived directive parent.", directive.ParentDirectiveId));
-					}*/
-
-					directive.ParentDirectiveId = pathParentId;
-				}
-
-				break;
-			}
-			case Incentive incentive:
-			{
-				// Each incentive kind's standalone root carries no directive ancestry authority.
-				var storage = incentive.GetType().GetCustomAttribute<VaultStorageAttribute>();
-				var standaloneRoot = storage is null ? layout.ObjectivesRoot : layout.GetLocationRoot(storage.LocationKey);
-				var normalizedStandaloneRoot = Path.GetFullPath(standaloneRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-				var normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-				if (string.Equals(normalizedPath, normalizedStandaloneRoot, StringComparison.OrdinalIgnoreCase)
-					|| normalizedPath.StartsWith(normalizedStandaloneRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-				{
-					break;
-				}
-
-				var pathDirectiveId = pathPolicy.TryResolveContainingDirectiveId(path);
-				if (string.IsNullOrWhiteSpace(pathDirectiveId))
-				{
-					break;
-				}
-
-				if (!string.Equals(incentive.DirectiveId, pathDirectiveId, StringComparison.OrdinalIgnoreCase))
-				{
-					if (!string.IsNullOrWhiteSpace(incentive.DirectiveId))
-					{
-						issues.Add(new MarkdownValidationIssue("directive", MarkdownMessages.DirectiveRelationMismatch, incentive.DirectiveId));
-					}
-
-					incentive.DirectiveId = pathDirectiveId;
-				}
-
-				break;
-			}
-			case LorePage lorePage:
-				lorePage.RelativePath = Path.GetRelativePath(layout.VaultRoot, path);
-				break;
-		}
-	}
-
-	private async Task<string?> ResolveFreeformDirectiveParentIdAsync(
-		string path,
-		string? currentDirectiveId,
-		ISet<string> knownDirectiveIds,
-		CancellationToken cancellationToken)
-	{
-		var currentDirectory = Path.GetDirectoryName(path);
-		while (!string.IsNullOrWhiteSpace(currentDirectory)
-			&& !string.Equals(currentDirectory, layout.VaultRoot, StringComparison.OrdinalIgnoreCase))
-		{
-			if (MarkdownFileLocator.IsSelfNamedDirectory(currentDirectory))
-			{
-				var primaryFile = Path.Combine(currentDirectory, $"{Path.GetFileName(currentDirectory)}.md");
-				// A directive's identity is Quiet — read it from frontmatter, never by loose-parsing the (possibly
-				// dashed) folder name, which would read the title's "prefix - " as a phantom ancestor PUCK.
-				string? ancestorId = null;
-				if (File.Exists(primaryFile))
-				{
-					var frontMatter = markdownSerializer.ParseFrontMatter(await VaultFileAccess.ReadAllTextAsync(primaryFile, cancellationToken));
-					if (frontMatter.TryGetValue("puck", out var rawPuck) && !string.IsNullOrWhiteSpace(rawPuck))
-					{
-						ancestorId = rawPuck.Trim().Trim('"');
-					}
-				}
-
-				if (!string.IsNullOrWhiteSpace(ancestorId)
-					&& !string.Equals(ancestorId, currentDirectiveId, StringComparison.OrdinalIgnoreCase)
-					&& knownDirectiveIds.Contains(ancestorId))
-				{
-					return ancestorId;
-				}
-			}
-
-			currentDirectory = Directory.GetParent(currentDirectory)?.FullName;
+			lorePage.RelativePath = Path.GetRelativePath(layout.VaultRoot, path);
+			return;
 		}
 
-		return null;
+		if (!entityModelCatalog.TryGet(model.GetType(), out var declared)
+			|| declared?.Storage is not { ParentIdProperty: { } parentIdProperty, ParentEntityType: { } parentType })
+		{
+			return;
+		}
+
+		var property = model.GetType().GetProperty(parentIdProperty, BindingFlags.Public | BindingFlags.Instance);
+		if (property is null || !property.CanWrite)
+		{
+			return;
+		}
+
+		var knownParentIds = knownIdsByType.TryGetValue(parentType, out var ids) ? ids : null;
+		var ownId = (model as IPuckNamedEntity)?.Id;
+		property.SetValue(model, pathPolicy.EnumerateContainingParentIds(model.GetType(), path)
+			.FirstOrDefault(id => (knownParentIds is null || knownParentIds.Contains(id))
+				&& !string.Equals(id, ownId, StringComparison.OrdinalIgnoreCase)));
 	}
 
 	/// <summary>

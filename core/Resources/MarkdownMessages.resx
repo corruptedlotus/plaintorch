@@ -40,7 +40,4 @@
   <data name="ExecutiveOrderSprintUnresolved" xml:space="preserve">
     <value>Executive order path does not resolve to a known owning onrush sprint.</value>
   </data>
-  <data name="DirectiveRelationMismatch" xml:space="preserve">
-    <value>Frontmatter directive relation does not match the path-derived directive container.</value>
-  </data>
 </root>

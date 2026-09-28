@@ -9,8 +9,8 @@ using Xunit;
 namespace Pleiades.Tests.Core;
 
 /// <summary>
-/// "Which directive contains this path?" is now answered by exactly one ownership-boundary-aware resolver
-/// (<see cref="VaultWatcherPathPolicy.TryResolveContainingDirectiveId"/>); the path composer and the path-sync catalog
+/// "Which directive contains this path?" is now answered by exactly one territory-aware containment resolver
+/// (<see cref="VaultWatcherPathPolicy.TryResolveContainingParentId"/>); the path composer and the path-sync catalog
 /// route through it rather than each carrying their own walk-up (which could — and did — drift). These pin the single
 /// resolver so a future divergent copy would break: the composer's path-derived parent must equal the policy's answer,
 /// which must equal the real directive, at any depth and for a dash-named directive.
@@ -37,7 +37,7 @@ public sealed class DirectiveContainmentConsistencyTests : VaultTestBase
 		var path = Vault.AbsolutePath("Directives/Campaign/Objectives/Backlog/Task.md");
 
 		var composerId = ComposerResolvedDirectiveId(Vault, path);
-		var policyId = Vault.GetSingleton<VaultWatcherPathPolicy>().TryResolveContainingDirectiveId(path);
+		var policyId = Vault.GetSingleton<VaultWatcherPathPolicy>().TryResolveContainingParentId(typeof(Objective), path);
 
 		Assert.Equal(directive.Id, policyId);
 		Assert.Equal(directive.Id, composerId);
@@ -51,7 +51,7 @@ public sealed class DirectiveContainmentConsistencyTests : VaultTestBase
 		var path = Vault.AbsolutePath("Directives/2024 - Roadmap/Note.md");
 
 		var composerId = ComposerResolvedDirectiveId(Vault, path);
-		var policyId = Vault.GetSingleton<VaultWatcherPathPolicy>().TryResolveContainingDirectiveId(path);
+		var policyId = Vault.GetSingleton<VaultWatcherPathPolicy>().TryResolveContainingParentId(typeof(Objective), path);
 
 		Assert.Equal(directive.Id, policyId);
 		Assert.Equal(directive.Id, composerId);

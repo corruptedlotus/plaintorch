@@ -64,30 +64,30 @@ must be removed after use, while the dev sub-profile must persist between runs.
 | Rename/relocate on title/parent change moves the file (and children) | edge | ⏳ | — |
 | Content-idempotent write: identical content is a no-op | edge | ⏳ | — |
 
-## Stellar directive / objective placement matrix
-`StellarDirectiveObjectiveMatrixTests` walks one repro for the full product of its variations (3,000 cases, one nested
-class per directive-creation variation). Step 1 creates a stellar directive — core-first (kept, or its folder moved
-outside the entity root) or initialised from a self-named note inside or outside the entity root — as the world, a
-child, or a child-of-child. Step 2 places 1–3 objectives in the directive root, the default partition, an arbitrary
-folder, a nested subfolder, or a folder inside the partition — core-first then moved, initialised in the partition then
-moved, initialised at the target, or initialised in the world (optionally reparented through the API) then moved. Step 3
-modifies all or one of them, by title or by a non-title field. Each case takes about half a second; the whole matrix is
-several minutes, so filter it in or out with `FullyQualifiedName~StellarDirectiveObjectiveMatrixTests`.
+## Containment (placement matrix)
+Containment — which parent a note's location implies — is storage policy, answered by one declaration-driven resolver
+(`VaultWatcherPathPolicy.EnumerateContainingParentIds`). `StellarDirectiveObjectiveMatrixTests` walks one repro over
+the kinds that combine identity-driven placement with hierarchy and partitioning, for the full product of its
+variations (3,000 cases, one nested class per directive-creation variation so they run in parallel). Step 1 creates a
+stellar directive — core-first (kept, or its folder moved outside the entity root) or initialised from a self-named
+note inside or outside the entity root — as the world, a child, or a child-of-child. Step 2 places 1–3 objectives in
+the directive root, the default partition, an arbitrary folder, a nested subfolder, or a folder inside the partition —
+core-first then moved, initialised in the partition then moved, initialised at the target, or initialised in the world
+(optionally reparented through the API) then moved. Step 3 modifies all or one of them, by title or by a non-title
+field. The matrix takes about 16 minutes on four cores; filter it in or out with
+`FullyQualifiedName~StellarDirectiveObjectiveMatrixTests`.
 
 | Behaviour / Invariant | Kind | Status | Test ref |
 |---|---|---|---|
-| U1 — after placement and after modification, the objective exists | edge | ✅ | `StellarDirectiveObjectiveMatrixTests` |
-| U2 — its one note is (and stays) in the target folder | edge | ✅ ⚠ | `StellarDirectiveObjectiveMatrixTests` |
-| U3 — it is parented by the directive | edge | ✅ ⚠ | `StellarDirectiveObjectiveMatrixTests` |
-| U4 — resolving its note yields the objective | edge | ✅ | `StellarDirectiveObjectiveMatrixTests` |
-| U5 — a title change renames the note in place; an untouched objective keeps its file name | edge | ✅ | `StellarDirectiveObjectiveMatrixTests` |
-| I1 — nothing U1–U4 asserted after placement changes when the objective is modified | edge | ✅ ⚠ | `StellarDirectiveObjectiveMatrixTests` |
-| I2 — siblings placed the same way behave the same in U1–U4 | edge | ✅ ⚠ | `StellarDirectiveObjectiveMatrixTests` |
-
-⚠ Failing where the target is an arbitrary folder (in the directive, nested, or inside the partition): a folder that is
-neither the directive's own nor the partition resolves its "containing directive" from any note in it, the objective's own
-included. The failing cases stand as acceptance criteria; see `.DISCUSSION.md`, *Stellar directive / objective placement
-matrix*.
+| U1 — after placement and after modification, the entity exists | edge | ✅ | `StellarDirectiveObjectiveMatrixTests` |
+| U2 — its one note is (and stays) in the target folder | edge | ✅ | `StellarDirectiveObjectiveMatrixTests` |
+| U3 — it is parented by the folder's parent | edge | ✅ | `StellarDirectiveObjectiveMatrixTests` |
+| U4 — resolving its note yields the entity | edge | ✅ | `StellarDirectiveObjectiveMatrixTests` |
+| U5 — a title change renames the note in place; an untouched entity keeps its file name | edge | ✅ | `StellarDirectiveObjectiveMatrixTests` |
+| I1 — nothing U1–U4 asserted after placement changes when the entity is modified | edge | ✅ | `StellarDirectiveObjectiveMatrixTests` |
+| I2 — siblings placed the same way behave the same in U1–U4 | edge | ✅ | `StellarDirectiveObjectiveMatrixTests` |
+| One resolver: the composer's path-derived parent equals the policy's, at any depth | happy | ✅ | `DirectiveContainmentConsistencyTests` |
+| A dashed parent title is never read as an identity | edge | ✅ | `DashedDirectiveResolutionTests` |
 
 ## Markdown serialize / parse
 | Behaviour / Invariant | Kind | Status | Test ref |
@@ -141,5 +141,6 @@ matrix*.
 - **Partial-migration conflicts** — a migration that finishes with per-entity conflicts still advances the version; conflicts are audited and need manual attention (documented limitation).
 - **Relaunch / permission failures** — dev-user relaunch must reject cleanly rather than silently using the real environment.
 - **Self-write races** — service-originated writes must be suppressed so the watcher does not reconcile its own output.
-- **Parent read from a sibling note** — the containing directive of a note must come from a directive's note, never
-  from an objective note sharing its folder (guarded by `StellarDirectiveObjectiveMatrixTests`; currently failing).
+- **Parent read from a sibling note** — a folder is a parent's only when a note in it asserts an identity the parent
+  kind could mint (notation-gated), never because some other kind's note shares it; and the watcher and the write path
+  must read a note's parent through the same resolver, or an edit moves the note (`StellarDirectiveObjectiveMatrixTests`).

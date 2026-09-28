@@ -148,7 +148,9 @@ pure HTTP. The dependencies that require the drain to have *completed* are:
   - **Read side — assessed; a facade is deliberately not built.** The "stray direct readers" were already consolidated
     by REFACTOR Alpha: containment is one walk-up (`VaultWatcherPathPolicy.TryResolveContainingDirectiveId`, which
     `IsReparentedFromFile` now reuses) and `MarkdownFileLocator.TryGetContainingOnrushSprintId` is the single onrush
-    reader. The remaining direct reads (note resolution, media) are localized, legitimate domain reads over different
+    reader. *(Superseded 2026-09-28: both, and discovery's own freeform-directive walk, became one declaration-driven
+    resolver, `VaultWatcherPathPolicy.EnumerateContainingParentIds`, which discovery and `IsReparentedFromFile` share —
+    they had disagreed, which moved notes out of their folders on edit. See REFACTOR Alpha D18.)* The remaining direct reads (note resolution, media) are localized, legitimate domain reads over different
     concerns; a unifying "watcher read facade" over them would be an abstraction without payoff. The read-side goal is
     already met by the existing single-owner resolvers.
 

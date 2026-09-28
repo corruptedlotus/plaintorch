@@ -136,8 +136,7 @@ public sealed class VaultLoader(
 			return false;
 		}
 
-		var hostingId = pathPolicy.TryResolveContainingDirectiveId(fullPath);
-		return hostingId is not null && knownHostIds.Contains(hostingId);
+		return pathPolicy.EnumerateContainingParentIds(model.EntityType, fullPath).Any(knownHostIds.Contains);
 	}
 
 	private async Task<LoadedVaultEntity?> LoadOneAsync(

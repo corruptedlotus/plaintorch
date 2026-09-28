@@ -217,36 +217,6 @@ public sealed class MarkdownFileLocator(VaultStoragePathComposer composer)
 	}
 
 	/// <summary>
-	/// Tries to resolve the owning onrush sprint identifier for an executive order markdown path.
-	/// The path must sit inside the order partition folder of a self-named onrush sprint directory.
-	/// </summary>
-	public static string? TryGetContainingOnrushSprintId(string? path)
-	{
-		if (string.IsNullOrWhiteSpace(path))
-		{
-			return null;
-		}
-
-		var partition = typeof(ExecutiveOrder).GetCustomAttribute<VaultStorageAttribute>()?.PartitionUnder?.Trim();
-		var partitionDirectory = Path.GetDirectoryName(path);
-		if (string.IsNullOrWhiteSpace(partition)
-			|| string.IsNullOrWhiteSpace(partitionDirectory)
-			|| !string.Equals(Path.GetFileName(partitionDirectory), partition, StringComparison.OrdinalIgnoreCase))
-		{
-			return null;
-		}
-
-		var sprintDirectory = Directory.GetParent(partitionDirectory)?.FullName;
-		if (string.IsNullOrWhiteSpace(sprintDirectory) || !IsSelfNamedDirectory(sprintDirectory))
-		{
-			return null;
-		}
-
-		// A directory name (no extension to strip); decode the PEP097 look-alikes back before parsing its identity.
-		return PuckNamedIdentity.ParseLoose(PuckFileNameCodec.Decode(Path.GetFileName(sprintDirectory))).Id;
-	}
-
-	/// <summary>
 	/// Derives lore page composition from a canonical saga markdown path.
 	/// </summary>
 	public static bool ApplyLorePageCompositionFromPath(LorePage lorePage, string path, string vaultRoot, string sagaRoot, ILogger? logger = null)
@@ -255,54 +225,11 @@ public sealed class MarkdownFileLocator(VaultStoragePathComposer composer)
 	}
 
 	/// <summary>
-	/// Resolves a directive's frontmatter identity from a directory (its self-named primary file, or any markdown file
-	/// in it). The nearest-containing-directive <em>walk-up</em> lives in one place — <see cref="VaultWatcherPathPolicy"/>
-	/// — so ownership-boundary enforcement is defined once; this is only the per-directory leaf it calls.
+	/// Reads the PUCK a note asserts in its frontmatter — the <c>puck</c> line, read leniently (no YAML parse, only as far
+	/// as the frontmatter goes) — or <see langword="null"/> when it asserts none. The filename is never read: a quiet
+	/// note's name is a title, and a dashed title ("2024 - Roadmap") is no identity.
 	/// </summary>
-	public static string? TryResolveDirectivePuckFromDirectory(string? directoryPath)
-	{
-		if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
-		{
-			return null;
-		}
-
-		if (IsSelfNamedDirectory(directoryPath))
-		{
-			var selfNamedPrimary = Path.Combine(directoryPath, $"{Path.GetFileName(directoryPath)}.md");
-			var fromSelfNamed = TryResolveDirectivePuckFromMarkdownFile(selfNamedPrimary);
-			if (!string.IsNullOrWhiteSpace(fromSelfNamed))
-			{
-				return fromSelfNamed;
-			}
-		}
-
-		foreach (var markdownFile in Directory.EnumerateFiles(directoryPath, "*.md", SearchOption.TopDirectoryOnly)
-			.OrderBy(file => file, StringComparer.OrdinalIgnoreCase))
-		{
-			var resolved = TryResolveDirectivePuckFromMarkdownFile(markdownFile);
-			if (!string.IsNullOrWhiteSpace(resolved))
-			{
-				return resolved;
-			}
-		}
-
-		return null;
-	}
-
-	private static string? TryResolveDirectivePuckFromMarkdownFile(string markdownPath)
-	{
-		if (!File.Exists(markdownPath))
-		{
-			return null;
-		}
-
-		// A directive's identity is Quiet — it lives in frontmatter, never in the filename. Loose-parsing the filename
-		// would read a dashed *title* ("2024 - Roadmap") as a phantom prefix ("2024") and orphan any child that resolves
-		// its parent here; the frontmatter PUCK is the only trustworthy directive identity (.GENESIS principle 1).
-		return TryReadFrontMatterPuck(markdownPath);
-	}
-
-	private static string? TryReadFrontMatterPuck(string markdownPath)
+	public static string? TryReadFrontMatterPuck(string markdownPath)
 	{
 		if (!File.Exists(markdownPath))
 		{
