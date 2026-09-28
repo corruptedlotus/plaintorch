@@ -247,18 +247,15 @@
     <value>Path does not resolve to a directory.</value>
   </data>
   <data name="PathViolations.CannotOwnVaultRoot" xml:space="preserve">
-    <value>Freeform directive cannot assert ownership of the vault root directory.</value>
+    <value>A self-named entity's note cannot own the vault root folder.</value>
   </data>
   <data name="PathViolations.CannotOwnEntityRoot" xml:space="preserve">
-    <value>Freeform directive cannot assert ownership of an entity root directory.</value>
+    <value>A self-named entity's note cannot own an entity root folder.</value>
   </data>
   <data name="PathViolations.CannotOwnPartition" xml:space="preserve">
-    <value>Freeform directive cannot assert ownership of a partition directory.</value>
+    <value>A self-named entity's note cannot own a partition folder.</value>
   </data>
-  <data name="PathViolations.UnderNonDirectiveRoot" xml:space="preserve">
-    <value>Freeform directive path is under a managed root reserved for non-directive entities.</value>
-  </data>
-  <data name="PathViolations.ParentUnderNonDirectiveRoot" xml:space="preserve">
-    <value>Freeform directive parent directory is under a managed root reserved for non-directive entities.</value>
+  <data name="PathViolations.UnderForeignRoot" xml:space="preserve">
+    <value>The note is under a root another kind of entity is declared in.</value>
   </data>
 </root>

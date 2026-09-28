@@ -1,4 +1,3 @@
-using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Resources;
 using Pleiades.Vault.Markdown;
@@ -13,7 +12,8 @@ public sealed class FreeformVaultStorageModePolicyService(
 	VaultLayout layout,
 	MarkdownFrontMatterSerializer markdownSerializer,
 	PuckEntityResolutionService puckEntityResolutionService,
-	VaultEntityModelCatalog entityModelCatalog) : IVaultStorageModePolicyService
+	VaultEntityModelCatalog entityModelCatalog,
+	VaultWatcherPathPolicy pathPolicy) : IVaultStorageModePolicyService
 {
 	/// <inheritdoc />
 	public VaultStorageMode Mode => VaultStorageMode.Freeform;
@@ -135,17 +135,9 @@ public sealed class FreeformVaultStorageModePolicyService(
 	}
 
 	/// <inheritdoc />
+	// A freeform note carries its identity inside the file, so a moved note is still the entity its new path asserts.
 	public string? ResolveRelocationOldIdFallback(VaultPathSyncModel model, string? oldPathId, string? newPathId)
-	{
-		if (!string.IsNullOrWhiteSpace(oldPathId))
-		{
-			return oldPathId;
-		}
-
-		return model.EntityType == typeof(Directive)
-			? newPathId
-			: oldPathId;
-	}
+		=> !string.IsNullOrWhiteSpace(oldPathId) ? oldPathId : newPathId;
 
 	/// <inheritdoc />
 	public string ResolveWriteTargetPath(object entity, string defaultPath, string? sourcePath, string? existingPath)
@@ -163,12 +155,13 @@ public sealed class FreeformVaultStorageModePolicyService(
 			return defaultPath;
 		}
 
-		// A freeform file the user authored anywhere is kept at its authored location, unless that location is another
-		// entity's managed root — then it falls back to a free canonical slot rather than intruding on managed space.
+		// A freeform file the user authored anywhere is kept at its authored location, unless its kind may not be asserted
+		// there (another kind's root, or a folder a self-named note cannot own) — then it falls back to a free canonical
+		// slot rather than intruding on managed space.
 		// The base name is refreshed from the entity's current identity (via defaultPath): a Quiet entity's title lives
 		// in its filename, so a rename must reach the real file even when the user keeps it outside the canonical root,
 		// or the stale name reverts the title on the next read.
-		return IsAllowedFreeformAssertion(entity.GetType(), fullAnchor)
+		return pathPolicy.TryGetAssertionViolation(entity.GetType(), fullAnchor) is null
 			? RebaseOntoAuthoredLocation(fullAnchor, defaultPath)
 			: ResolveFreeformFallbackPath(defaultPath);
 	}
@@ -203,52 +196,6 @@ public sealed class FreeformVaultStorageModePolicyService(
 		}
 
 		return Path.Combine(anchorDirectory, newFileName);
-	}
-
-	private bool IsAllowedFreeformAssertion(Type entityType, string fullSourcePath)
-	{
-		var sourceDirectory = Path.GetDirectoryName(fullSourcePath);
-		if (string.IsNullOrWhiteSpace(sourceDirectory))
-		{
-			return false;
-		}
-
-		if (IsUnderNonDirectiveManagedRoot(sourceDirectory))
-		{
-			return false;
-		}
-
-		if (entityType == typeof(Directive))
-		{
-			var folder = Path.GetDirectoryName(fullSourcePath)!;
-			var parentDirectory = Directory.GetParent(folder)?.FullName;
-			if (!string.IsNullOrWhiteSpace(parentDirectory) && IsUnderNonDirectiveManagedRoot(parentDirectory))
-			{
-				return false;
-			}
-		}
-
-		return true;
-	}
-
-	private bool IsUnderNonDirectiveManagedRoot(string path)
-	{
-		var fullPath = Path.GetFullPath(path);
-		return IsUnderRoot(fullPath, layout.MetadataRoot)
-			|| IsUnderRoot(fullPath, layout.ObjectivesRoot)
-			|| IsUnderRoot(fullPath, layout.FatesRoot)
-			|| IsUnderRoot(fullPath, layout.DecreesRoot)
-			|| IsUnderRoot(fullPath, layout.OnrushRoot)
-			|| IsUnderRoot(fullPath, layout.JournalRoot)
-			|| IsUnderRoot(fullPath, layout.SagaRoot);
-	}
-
-	private static bool IsUnderRoot(string fullPath, string root)
-	{
-		var normalizedPath = fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-		var normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-		return string.Equals(normalizedPath, normalizedRoot, StringComparison.OrdinalIgnoreCase)
-			|| normalizedPath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static string ResolveFreeformFallbackPath(string defaultPath)

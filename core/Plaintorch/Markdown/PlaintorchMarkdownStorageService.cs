@@ -275,9 +275,9 @@ public sealed class PlaintorchMarkdownStorageService(
 			return;
 		}
 
-		newPath = await ResolveInactionPreferredPathAsync(entity, newPath, sourcePath, cancellationToken);
-		// Placement policy: the mode decides whether the file keeps a user-authored location (Freeform) or uses the
-		// canonical path (everyone else). The storage pipeline no longer branches on the mode.
+		// Placement policy: the mode decides whether the file keeps a user-authored location (identity-driven modes keep
+		// an initialised note, or an existing one, where it is) or uses the canonical path (everyone else). The storage
+		// pipeline branches on neither the mode nor the entity type.
 		newPath = policyEngine.PolicyFor(storage.Mode).ResolveWriteTargetPath(entity, newPath, sourcePath, previousPath);
 		if (await IsReparentedFromFileAsync(storage, entity, previousPath, cancellationToken))
 		{
@@ -351,72 +351,6 @@ public sealed class PlaintorchMarkdownStorageService(
 		return entity is IPuckNamedEntity namedEntity
 			&& !string.IsNullOrWhiteSpace(namedEntity.Id)
 			&& await implicitBoundaryService.HasBoundaryBegunAsync(entity.GetType().Name, namedEntity.Id, cancellationToken);
-	}
-
-	private async Task<string> ResolveInactionPreferredPathAsync(object entity, string canonicalPath, string? sourcePath, CancellationToken cancellationToken)
-	{
-		if (string.IsNullOrWhiteSpace(sourcePath))
-		{
-			return canonicalPath;
-		}
-
-		var fullSourcePath = Path.GetFullPath(sourcePath);
-		if (!File.Exists(fullSourcePath)
-			|| !string.Equals(Path.GetExtension(fullSourcePath), ".md", StringComparison.OrdinalIgnoreCase))
-		{
-			return canonicalPath;
-		}
-
-		if (entity is not Incentive incentive)
-		{
-			return canonicalPath;
-		}
-
-		if (!await IsIncentiveSourcePlacementValidAsync(incentive, fullSourcePath, cancellationToken))
-		{
-			return canonicalPath;
-		}
-
-		var sourceDirectory = Path.GetDirectoryName(fullSourcePath);
-		if (string.IsNullOrWhiteSpace(sourceDirectory))
-		{
-			return canonicalPath;
-		}
-
-		return Path.Combine(sourceDirectory, Path.GetFileName(canonicalPath));
-	}
-
-	private async Task<bool> IsIncentiveSourcePlacementValidAsync(Incentive incentive, string fullSourcePath, CancellationToken cancellationToken)
-	{
-		if (string.IsNullOrWhiteSpace(incentive.DirectiveId))
-		{
-			return IsUnderRoot(fullSourcePath, ResolveStorageRoot(incentive.GetType()));
-		}
-
-		var storage = GetStorageAttribute(incentive.GetType());
-		var containingParentId = await ResolveContainingParentIdAsync(incentive.GetType(), incentive.Id, storage, fullSourcePath, cancellationToken);
-		if (!string.Equals(containingParentId, incentive.DirectiveId, StringComparison.OrdinalIgnoreCase))
-		{
-			return false;
-		}
-
-		if (string.IsNullOrWhiteSpace(storage.PartitionUnder))
-		{
-			return true;
-		}
-
-		var expectedPartition = storage.PartitionUnder.Trim();
-		var containingDirectory = Path.GetDirectoryName(fullSourcePath);
-		var containingDirectoryName = Path.GetFileName(containingDirectory?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-		return string.Equals(containingDirectoryName, expectedPartition, StringComparison.OrdinalIgnoreCase);
-	}
-
-	private static bool IsUnderRoot(string fullPath, string root)
-	{
-		var normalizedPath = fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-		var normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-		return string.Equals(normalizedPath, normalizedRoot, StringComparison.OrdinalIgnoreCase)
-			|| normalizedPath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 	}
 
 	/// <summary>

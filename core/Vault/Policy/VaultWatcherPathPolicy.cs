@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Reflection;
 using Pleiades.Puck;
 using Pleiades.Resources;
 using Pleiades.Vault.Markdown;
@@ -22,7 +21,6 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 {
 	private const string ObsidianConfigRelativePath = ".obsidian/app.json";
 	private static readonly StringComparer PathComparer = StringComparer.OrdinalIgnoreCase;
-	private static readonly HashSet<string> PartitionFolderNames = ResolvePartitionFolderNames();
 
 	/// <summary>
 	/// Returns distinct watcher roots, optionally including full-vault observation when any model is freeform.
@@ -139,18 +137,22 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 	}
 
 	/// <summary>
-	/// Determines whether a freeform directive may assert its path as authoritative.
+	/// Gets why a note may not assert the identity of an entity of the given kind where it sits, or <see langword="null"/>
+	/// when it may. Identity-driven kinds (Freeform, Implicit) may be asserted anywhere in the vault; these are the limits
+	/// of "anywhere", read from the kind's declarations rather than from any particular kind:
+	/// <list type="bullet">
+	/// <item>A self-named kind's note owns the folder it sits in, so that folder may not be the vault root, a declared
+	/// entity root, or a partition.</item>
+	/// <item>A note may not sit under a root that another kind is declared in — any kind outside its own family and the
+	/// families of the kinds that may contain it (<see cref="VaultStorageAttribute.ParentEntityType"/>, transitively) — nor
+	/// under the metadata root.</item>
+	/// </list>
 	/// </summary>
-	public bool IsAllowedFreeformDirectiveAssertionPath(string path)
+	/// <param name="entityType">The kind whose identity the note asserts.</param>
+	/// <param name="path">The note's path.</param>
+	public string? TryGetAssertionViolation(Type entityType, string path)
 	{
-		return TryGetFreeformDirectiveAssertionViolation(path) is null;
-	}
-
-	/// <summary>
-	/// Gets a human-readable violation reason when a freeform directive assertion path is not allowed.
-	/// </summary>
-	public string? TryGetFreeformDirectiveAssertionViolation(string path)
-	{
+		ArgumentNullException.ThrowIfNull(entityType);
 		if (string.IsNullOrWhiteSpace(path))
 		{
 			return WatcherMessages.PathViolations.PathEmpty;
@@ -173,33 +175,78 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 			return WatcherMessages.PathViolations.PathHasNoDirectory;
 		}
 
-		if (IsVaultRootDirectory(directory))
+		if (!entityModelCatalog.TryGet(entityType, out var model) || model?.Storage is not { } storage)
 		{
-			return WatcherMessages.PathViolations.CannotOwnVaultRoot;
+			return null;
 		}
 
-		if (IsEntityRootDirectory(directory))
+		if (storage.Shape == VaultStorageShape.SelfNamedDirectory)
 		{
-			return WatcherMessages.PathViolations.CannotOwnEntityRoot;
+			if (IsVaultRootDirectory(directory))
+			{
+				return WatcherMessages.PathViolations.CannotOwnVaultRoot;
+			}
+
+			if (IsEntityRootDirectory(directory))
+			{
+				return WatcherMessages.PathViolations.CannotOwnEntityRoot;
+			}
+
+			if (IsPartitionDirectory(directory))
+			{
+				return WatcherMessages.PathViolations.CannotOwnPartition;
+			}
 		}
 
-		if (IsPartitionDirectory(directory))
+		return IsUnderForeignRoot(directory, entityType)
+			? WatcherMessages.PathViolations.UnderForeignRoot
+			: null;
+	}
+
+	/// <summary>
+	/// Whether a path lies under the metadata root or a root declared by a kind foreign to <paramref name="entityType"/>:
+	/// outside its own family and the families of the kinds that may contain it, transitively. A root a related kind also
+	/// declares (several kinds sharing a location) is never foreign.
+	/// </summary>
+	private bool IsUnderForeignRoot(string path, Type entityType)
+	{
+		var fullPath = Path.GetFullPath(path);
+		if (IsUnderRoot(fullPath, layout.MetadataRoot))
 		{
-			return WatcherMessages.PathViolations.CannotOwnPartition;
+			return true;
 		}
 
-		if (IsUnderNonDirectiveManagedRoot(directory))
+		var related = RelatedKinds(entityType);
+		var relatedRoots = DeclaredRoots(model => related.Contains(model.EntityType)).ToArray();
+		return DeclaredRoots(model => !related.Contains(model.EntityType))
+			.Where(root => !relatedRoots.Contains(root, PathComparer))
+			.Any(root => IsUnderRoot(fullPath, root));
+	}
+
+	/// <summary>
+	/// A kind's own family, and the families of every kind that may contain it through its declared
+	/// <see cref="VaultStorageAttribute.ParentEntityType"/>, transitively: the kinds whose territory it may share.
+	/// </summary>
+	private IReadOnlySet<Type> RelatedKinds(Type entityType)
+	{
+		var related = new HashSet<Type>();
+		for (Type? kind = entityType; kind is not null && !related.Contains(kind);)
 		{
-			return WatcherMessages.PathViolations.UnderNonDirectiveRoot;
+			related.UnionWith(Family(kind));
+			kind = entityModelCatalog.TryGet(kind, out var model) ? model?.Storage?.ParentEntityType : null;
 		}
 
-		var parent = Directory.GetParent(directory)?.FullName;
-		if (!string.IsNullOrWhiteSpace(parent) && IsUnderNonDirectiveManagedRoot(parent))
-		{
-			return WatcherMessages.PathViolations.ParentUnderNonDirectiveRoot;
-		}
+		return related;
+	}
 
-		return null;
+	/// <summary>A kind, its family anchor, and the anchor's concrete members.</summary>
+	private IEnumerable<Type> Family(Type entityType)
+	{
+		var anchor = entityModelCatalog.GetFamilyAnchor(entityType) ?? entityType;
+		var members = entityModelCatalog.TryGetFamily(anchor, out var family) && family is not null
+			? family.Members.Select(static member => member.EntityType)
+			: [];
+		return members.Prepend(anchor).Append(entityType).Distinct();
 	}
 
 	/// <summary>
@@ -294,6 +341,7 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 	/// notations its family mints, and the roots its family is declared in.
 	/// </summary>
 	private sealed record ParentKind(
+		Type Type,
 		VaultStorageAttribute Storage,
 		IReadOnlyList<string> Declarations,
 		IReadOnlySet<Type> Family);
@@ -310,11 +358,7 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 			return false;
 		}
 
-		var anchor = entityModelCatalog.GetFamilyAnchor(parentType) ?? parentType;
-		var members = entityModelCatalog.TryGetFamily(anchor, out var family) && family is not null
-			? family.Members.Select(static member => member.EntityType)
-			: [];
-		var familyTypes = members.Prepend(anchor).Append(parentType).ToHashSet();
+		var familyTypes = Family(parentType).ToHashSet();
 		var declarations = familyTypes
 			.Select(type => entityModelCatalog.TryGet(type, out var member) ? member?.PuckDeclaration : null)
 			.Where(static declaration => !string.IsNullOrWhiteSpace(declaration))
@@ -323,15 +367,17 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 			.ToArray();
 
 		storage = declared;
-		parent = new ParentKind(parentStorage, declarations, familyTypes);
+		parent = new ParentKind(parentType, parentStorage, declarations, familyTypes);
 		return true;
 	}
 
 	/// <summary>
 	/// The one folder a path-bound entity's composed path puts its parent at: the folder holding the note, or — when the
-	/// entity declares a partition — the folder holding that partition, provided the note sits directly in it.
+	/// entity declares a partition — the folder holding that partition, provided the note sits directly in it. Where the
+	/// partition cannot be used (<see cref="IsPartitionUsable"/>), the composed place is the parent's folder itself, so a
+	/// note sitting directly in it is in place.
 	/// </summary>
-	private static string? ResolveComposedHost(string directory, VaultStorageAttribute storage)
+	private string? ResolveComposedHost(string directory, VaultStorageAttribute storage)
 	{
 		var partition = storage.PartitionUnder?.Trim();
 		if (string.IsNullOrWhiteSpace(partition))
@@ -339,11 +385,70 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 			return directory;
 		}
 
-		var directoryName = Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-		return string.Equals(directoryName, partition, StringComparison.OrdinalIgnoreCase)
-			? Directory.GetParent(directory)?.FullName
-			: null;
+		if (string.Equals(FolderName(directory), partition, StringComparison.OrdinalIgnoreCase) && IsPartitionDirectory(directory))
+		{
+			return Directory.GetParent(directory)?.FullName;
+		}
+
+		return IsPartitionUsable(directory, partition) ? null : directory;
 	}
+
+	/// <summary>
+	/// Whether a folder is a partition: named as some kind declares its partition (<see cref="VaultStorageAttribute.PartitionUnder"/>),
+	/// and not a self-named folder — an entity's own folder (a directive titled like a partition) is never a partition,
+	/// whatever its name. A partition belongs to the folder holding it, so it never hosts a parent itself.
+	/// </summary>
+	/// <param name="directory">The folder to classify.</param>
+	public bool IsPartitionDirectory(string directory)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+		var name = FolderName(directory);
+		return !string.IsNullOrWhiteSpace(name)
+			&& PartitionNames().Contains(name)
+			&& !MarkdownFileLocator.IsSelfNamedDirectory(directory);
+	}
+
+	/// <summary>
+	/// Whether a declared partition can be used beneath a parent's folder. It cannot when the parent's folder is itself named
+	/// like the partition (a partition inside it would repeat its name), when a folder of that name exists but is an
+	/// entity's own folder (self-named), or — while no such folder exists yet — when a file of that name (with or without
+	/// an extension) sits in the parent's folder. An existing plain folder of that name is the partition. Where a partition
+	/// cannot be used, children are placed directly in the parent's folder instead.
+	/// </summary>
+	/// <param name="parentDirectory">The folder of the parent the child belongs to.</param>
+	/// <param name="partition">The partition name the child's kind declares.</param>
+	public bool IsPartitionUsable(string parentDirectory, string partition)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(parentDirectory);
+		ArgumentException.ThrowIfNullOrWhiteSpace(partition);
+		if (string.Equals(FolderName(parentDirectory), partition, StringComparison.OrdinalIgnoreCase))
+		{
+			return false;
+		}
+
+		var partitionDirectory = Path.Combine(parentDirectory, partition);
+		if (Directory.Exists(partitionDirectory))
+		{
+			return !MarkdownFileLocator.IsSelfNamedDirectory(partitionDirectory);
+		}
+
+		return !Directory.Exists(parentDirectory)
+			|| !Directory.EnumerateFiles(parentDirectory, "*", SearchOption.TopDirectoryOnly).Any(file =>
+				PathComparer.Equals(Path.GetFileName(file), partition)
+				|| PathComparer.Equals(Path.GetFileNameWithoutExtension(file), partition));
+	}
+
+	private IReadOnlySet<string> PartitionNames()
+	{
+		return entityModelCatalog.GetModels()
+			.Select(static model => model.Storage?.PartitionUnder?.Trim())
+			.Where(static partition => !string.IsNullOrWhiteSpace(partition))
+			.Select(static partition => partition!)
+			.ToHashSet(PathComparer);
+	}
+
+	private static string FolderName(string directory)
+		=> Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
 	/// <summary>
 	/// Reads the identity of the parent a folder is, or <see langword="null"/> when it is none: outside the parent kind's
@@ -421,8 +526,9 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 
 	/// <summary>
 	/// Whether a folder lies in the territory a parent kind's folders may occupy: inside the vault, never the vault root,
-	/// a declared entity root or a declared partition folder; for an identity-driven kind, outside every root another kind
-	/// is declared in; for a path-bound kind, under a root its own family is declared in.
+	/// a declared entity root or a partition; for an identity-driven kind, outside every root foreign to it (the same
+	/// territory its notes may be asserted in, <see cref="TryGetAssertionViolation"/>); for a path-bound kind, under a root
+	/// its own family is declared in.
 	/// </summary>
 	private bool IsParentTerritory(string directory, ParentKind parent)
 	{
@@ -430,21 +536,17 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 		if (!IsUnderVaultRoot(fullPath)
 			|| IsVaultRootDirectory(fullPath)
 			|| IsEntityRootDirectory(fullPath)
-			|| IsPartitionDirectory(fullPath)
-			|| IsUnderRoot(fullPath, layout.MetadataRoot))
+			|| IsPartitionDirectory(fullPath))
 		{
 			return false;
 		}
 
-		var ownRoots = DeclaredRoots(model => parent.Family.Contains(model.EntityType)).ToArray();
 		if (!parent.Storage.Mode.IsIdentityDriven())
 		{
-			return ownRoots.Any(root => IsUnderRoot(fullPath, root));
+			return DeclaredRoots(model => parent.Family.Contains(model.EntityType)).Any(root => IsUnderRoot(fullPath, root));
 		}
 
-		return !DeclaredRoots(model => !parent.Family.Contains(model.EntityType))
-			.Where(root => !ownRoots.Contains(root, PathComparer))
-			.Any(root => IsUnderRoot(fullPath, root));
+		return !IsUnderForeignRoot(fullPath, parent.Type);
 	}
 
 	private IEnumerable<string> DeclaredRoots(Func<VaultEntityModel, bool> predicate)
@@ -475,17 +577,6 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 			|| string.Equals(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), normalizedFolder.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
 	}
 
-	private bool IsUnderNonDirectiveManagedRoot(string fullPath)
-	{
-		return IsUnderRoot(fullPath, layout.MetadataRoot)
-			|| IsUnderRoot(fullPath, layout.ObjectivesRoot)
-			|| IsUnderRoot(fullPath, layout.FatesRoot)
-			|| IsUnderRoot(fullPath, layout.DecreesRoot)
-			|| IsUnderRoot(fullPath, layout.OnrushRoot)
-			|| IsUnderRoot(fullPath, layout.JournalRoot)
-			|| IsUnderRoot(fullPath, layout.SagaRoot);
-	}
-
 	private bool IsVaultRootDirectory(string fullPath)
 	{
 		var normalizedPath = Path.GetFullPath(fullPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -503,12 +594,6 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 		var normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 		var normalizedOther = Path.GetFullPath(other).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 		return string.Equals(normalizedPath, normalizedOther, StringComparison.OrdinalIgnoreCase);
-	}
-
-	private static bool IsPartitionDirectory(string fullPath)
-	{
-		var name = Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-		return !string.IsNullOrWhiteSpace(name) && PartitionFolderNames.Contains(name);
 	}
 
 	private static bool IsUnderRoot(string fullPath, string rootPath)
@@ -560,15 +645,5 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 		{
 			return null;
 		}
-	}
-
-	private static HashSet<string> ResolvePartitionFolderNames()
-	{
-		return typeof(VaultWatcherPathPolicy).Assembly
-			.GetTypes()
-			.Select(type => type.GetCustomAttribute<VaultStorageAttribute>())
-			.Where(attribute => attribute is not null && !string.IsNullOrWhiteSpace(attribute.PartitionUnder))
-			.Select(attribute => attribute!.PartitionUnder!.Trim())
-			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 	}
 }

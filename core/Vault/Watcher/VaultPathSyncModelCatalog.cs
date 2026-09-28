@@ -22,7 +22,6 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout, VaultWatcherPa
 	private static readonly bool ObjectiveIdentityDriven = ResolveModeIdentityDriven(typeof(Objective));
 	private static readonly bool FateIdentityDriven = ResolveModeIdentityDriven(typeof(Fate));
 	private static readonly bool DecreeIdentityDriven = ResolveModeIdentityDriven(typeof(Decree));
-	private static readonly HashSet<string> PartitionFolderNames = ResolvePartitionFolderNames();
 
 	private readonly object _modelsGate = new();
 	private string? _modelsVaultRoot;
@@ -341,7 +340,7 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout, VaultWatcherPa
 
 		// Kind is disambiguated by the partition folder that encloses the note (at any depth): a note inside a sibling
 		// kind's partition — Fates/… for the objective model — belongs to that sibling, not here.
-		var enclosingPartition = TryFindEnclosingEntityPartition(path);
+		var enclosingPartition = TryFindEnclosingEntityPartition(path, pathPolicy);
 		if (enclosingPartition is not null)
 		{
 			return string.Equals(enclosingPartition, partitionName, StringComparison.OrdinalIgnoreCase);
@@ -354,23 +353,23 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout, VaultWatcherPa
 	}
 
 	/// <summary>
-	/// Finds the entity partition folder enclosing a markdown path — a declared
-	/// <see cref="VaultStorageAttribute.PartitionUnder"/> name that is a direct child of a self-named entity directory —
-	/// walking up until the hosting entity's own directory. Returns <see langword="null"/> when the note is not inside
-	/// any partition (it sits directly in the hosting entity's folder or a plain subfolder of it).
+	/// Finds the entity partition folder enclosing a markdown path — a folder the path policy recognises as a partition
+	/// (<see cref="VaultWatcherPathPolicy.IsPartitionDirectory"/>) directly inside a self-named entity directory — walking
+	/// up until the hosting entity's own directory. Returns <see langword="null"/> when the note is not inside any
+	/// partition (it sits directly in the hosting entity's folder or a plain subfolder of it, including an entity folder
+	/// that merely bears a partition's name).
 	/// </summary>
-	private static string? TryFindEnclosingEntityPartition(string path)
+	private static string? TryFindEnclosingEntityPartition(string path, VaultWatcherPathPolicy pathPolicy)
 	{
 		var currentDirectory = Path.GetDirectoryName(path);
 		while (!string.IsNullOrWhiteSpace(currentDirectory))
 		{
-			var directoryName = Path.GetFileName(currentDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-			if (!string.IsNullOrWhiteSpace(directoryName) && PartitionFolderNames.Contains(directoryName))
+			if (pathPolicy.IsPartitionDirectory(currentDirectory))
 			{
 				var container = Directory.GetParent(currentDirectory)?.FullName;
 				if (!string.IsNullOrWhiteSpace(container) && MarkdownFileLocator.IsSelfNamedDirectory(container))
 				{
-					return directoryName;
+					return Path.GetFileName(currentDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 				}
 			}
 
@@ -409,31 +408,6 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout, VaultWatcherPa
 		}
 
 		return !string.IsNullOrWhiteSpace(pathPolicy.TryResolveContainingParentId(entityType, path));
-	}
-
-	private static bool IsPartitionContainerPrimaryFile(string path)
-	{
-		if (!MarkdownFileLocator.IsPrimarySelfNamedFile(path))
-		{
-			return false;
-		}
-
-		var containerDirectory = Path.GetDirectoryName(path);
-		if (string.IsNullOrWhiteSpace(containerDirectory))
-		{
-			return false;
-		}
-
-		var directoryName = Path.GetFileName(containerDirectory);
-		if (string.IsNullOrWhiteSpace(directoryName)
-			|| !PartitionFolderNames.Contains(directoryName))
-		{
-			return false;
-		}
-
-		var parentDirectory = Directory.GetParent(containerDirectory)?.FullName;
-		return !string.IsNullOrWhiteSpace(parentDirectory)
-			&& MarkdownFileLocator.IsSelfNamedDirectory(parentDirectory);
 	}
 
 	private static bool IsPrimarySelfNamedEntityFile(string path, string scanRoot)
@@ -475,15 +449,5 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout, VaultWatcherPa
 		var mode = entityType.GetCustomAttribute<VaultStorageAttribute>()?.Mode
 			?? throw new InvalidOperationException($"Type '{entityType.Name}' must declare {nameof(VaultStorageAttribute)} to classify its detection scope.");
 		return mode.IsIdentityDriven();
-	}
-
-	private static HashSet<string> ResolvePartitionFolderNames()
-	{
-		return typeof(VaultPathSyncModelCatalog).Assembly
-			.GetTypes()
-			.Select(type => type.GetCustomAttribute<VaultStorageAttribute>())
-			.Where(attribute => attribute is not null && !string.IsNullOrWhiteSpace(attribute.PartitionUnder))
-			.Select(attribute => attribute!.PartitionUnder!.Trim())
-			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 	}
 }

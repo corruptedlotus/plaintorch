@@ -189,7 +189,7 @@ public sealed class StorageModeDecisionMatrixTests
 		// the user's own file, so the mode leaves it in place (Ignore) with a dismissible foreign-file Warning rather
 		// than purging it — aggression stays confined to Enforced (granted) territory. Their Decide reads only the
 		// candidate facts (never the injected services), so a bare instance suffices to pin the decision.
-		var freeform = new FreeformVaultStorageModePolicyService(null!, null!, null!, null!);
+		var freeform = new FreeformVaultStorageModePolicyService(null!, null!, null!, null!, null!);
 		Assert.Equal(VaultSyncAction.Ignore, freeform.Decide(Ctx(pathId: "d00000001")).Action);
 		Assert.Equal(VaultSyncConcern.ForeignFile, freeform.Decide(Ctx(pathId: "d00000001")).Concern);
 		Assert.Equal(VaultSyncConcern.ForeignFile, freeform.Decide(Ctx(pathId: "d00000001", hasIssues: true)).Concern);

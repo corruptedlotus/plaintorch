@@ -147,7 +147,6 @@ public static class WatcherMessages
 		public static string CannotOwnVaultRoot => Get();
 		public static string CannotOwnEntityRoot => Get();
 		public static string CannotOwnPartition => Get();
-		public static string UnderNonDirectiveRoot => Get();
-		public static string ParentUnderNonDirectiveRoot => Get();
+		public static string UnderForeignRoot => Get();
 	}
 }

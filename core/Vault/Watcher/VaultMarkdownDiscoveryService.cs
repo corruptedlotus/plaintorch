@@ -660,10 +660,11 @@ public sealed class VaultMarkdownDiscoveryService(
 			}
 		}
 
-		if (parsedModel is Directive
-			&& modePolicy.IsIdentityDriven)
+		if (modePolicy.IsIdentityDriven)
 		{
-			var assertionViolation = pathPolicy.TryGetFreeformDirectiveAssertionViolation(fullPath);
+			// An identity-driven note may assert its identity anywhere within the territory its kind's declarations allow;
+			// outside it, the assertion is flagged rather than adopted.
+			var assertionViolation = pathPolicy.TryGetAssertionViolation(model.EntityType, fullPath);
 			if (assertionViolation is not null)
 			{
 				issues.Add(new MarkdownValidationIssue(
@@ -672,10 +673,11 @@ public sealed class VaultMarkdownDiscoveryService(
 					Path.GetRelativePath(layout.VaultRoot, fullPath)));
 			}
 
+			// A note asserting another kind's identity is that kind's note, never this model's.
 			if (!string.IsNullOrWhiteSpace(pathId) && !knownIds.Contains(pathId))
 			{
 				var resolved = await puckEntityResolutionService.ResolveAsync(pathId, cancellationToken);
-				if (resolved.Exists && !entityModelCatalog.IsFamilyMember(typeof(Directive), resolved.EntityType))
+				if (resolved.Exists && !entityModelCatalog.IsFamilyMember(model.EntityType, resolved.EntityType))
 				{
 					return null;
 				}

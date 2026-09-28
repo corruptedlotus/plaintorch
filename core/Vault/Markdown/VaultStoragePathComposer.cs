@@ -273,7 +273,13 @@ public sealed class VaultStoragePathComposer
 			: throw new InvalidOperationException($"No storage strategy is registered for shape '{shape}'.");
 	}
 
-	private static string ApplyPartition(string parentDirectory, VaultStorageAttribute storage, Type entityType)
+	/// <summary>
+	/// Places a child's container beneath its parent's folder: in the partition the child's kind declares, when that
+	/// partition can be used there (<see cref="VaultWatcherPathPolicy.IsPartitionUsable"/>), otherwise directly in the
+	/// parent's folder — a parent folder named like the partition, or holding something else by that name, keeps its
+	/// children without one.
+	/// </summary>
+	private string ApplyPartition(string parentDirectory, VaultStorageAttribute storage, Type entityType)
 	{
 		if (string.IsNullOrWhiteSpace(storage.PartitionUnder))
 		{
@@ -289,7 +295,9 @@ public sealed class VaultStoragePathComposer
 			throw new InvalidOperationException($"{nameof(VaultStorageAttribute.PartitionUnder)} for '{entityType.Name}' must be a single safe subdirectory name.");
 		}
 
-		return Path.Combine(parentDirectory, partition);
+		return _pathPolicy.IsPartitionUsable(parentDirectory, partition)
+			? Path.Combine(parentDirectory, partition)
+			: parentDirectory;
 	}
 }
 

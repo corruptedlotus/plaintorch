@@ -12,7 +12,6 @@ using Pleiades.Vault;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Watcher;
-using System.Reflection;
 
 namespace Pleiades.Plaintorch.Api.Services;
 
@@ -28,6 +27,9 @@ public sealed class SystemApiService(
 	OperationStatusDismissalService dismissalService,
 	PuckEntityResolutionService puckEntityResolutionService,
 	MarkdownFrontMatterSerializer markdownSerializer,
+	VaultStoragePathComposer pathComposer,
+	VaultEntityModelCatalog entityModelCatalog,
+	PuckIdentityGate identityGate,
 	ILogger<SystemApiService> logger) : ISystemApi
 {
 	/// <inheritdoc />
@@ -88,22 +90,18 @@ public sealed class SystemApiService(
 			throw new InvalidOperationException("Resolved note path escaped the active vault root.");
 		}
 
-		// Fast path: when the path shape classifies to a PUCK-backed kind, resolve that kind's identity from the path
-		// (Index kinds carry the PUCK in the filename; title-driven kinds resolve by title/parent) and return it only
+		// A note is an entity's only through the identity it carries, never through its title. Where the path shape
+		// classifies to a kind whose storage puts the identity in the path itself — an Index filename token, a lore
+		// hierarchy composed from the folder tree — that identity is read exactly as the watcher reads it; it counts only
 		// when a stored entity stands behind it.
 		if (pathSyncModelCatalog.TryResolve(absolutePath, out var model)
 			&& model is not null
-			&& PuckEntityAttribute.ResolveKind(model.EntityType) is not null)
+			&& TryReadPathIdentity(model, absolutePath) is { } pathPuck)
 		{
-			var (pathPuck, pathTitle) = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(absolutePath);
-			var (resolvedPuck, _) = await ResolveEntityIdentityAsync(model.EntityType, absolutePath, pathPuck, pathTitle, cancellationToken, logger);
-			if (!string.IsNullOrWhiteSpace(resolvedPuck))
+			var byPath = await ResolveEntityByPuckAsync(pathPuck, cancellationToken);
+			if (byPath.Exists)
 			{
-				var byPath = await ResolveEntityByPuckAsync(resolvedPuck, cancellationToken);
-				if (byPath.Exists)
-				{
-					return byPath;
-				}
+				return byPath;
 			}
 		}
 
@@ -401,184 +399,34 @@ public sealed class SystemApiService(
 			: absolutePath;
 	}
 
-	private async Task<(string? Puck, string Title)> ResolveEntityIdentityAsync(
-		Type entityType,
-		string absolutePath,
-		string? pathPuck,
-		string pathTitle,
-		CancellationToken cancellationToken,
-		ILogger? logger = null)
+	/// <summary>
+	/// Reads the identity a path carries for a kind, per its declared storage — composed exactly as the watcher composes
+	/// it (<see cref="VaultStoragePathComposer.ApplyCompositionFromPath"/>) — or <see langword="null"/> when the kind keeps
+	/// its identity out of its path (Quiet storage: the frontmatter holds it, and the file name is a title). A flat
+	/// filename token counts only when it tokenizes against the kind's declared notation, so an ordinary note whose name
+	/// merely contains " - " is never read as an identity.
+	/// </summary>
+	private string? TryReadPathIdentity(VaultPathSyncModel model, string absolutePath)
 	{
-		var storage = entityType.GetCustomAttribute<VaultStorageAttribute>(inherit: true);
-
-		// Lore identity is composed from the full Era/Cha/Act/p directory hierarchy, not the terminal filename segment,
-		// so it must compose before the flat Index shortcut below — which would otherwise return just "Act9" for the
-		// note whose real identity is "Era3/Cha8/Act9", leaving every nested lore page unresolvable.
-		if (entityType == typeof(LorePage))
-		{
-			var lorePage = new LorePage
-			{
-				Id = string.Empty,
-				Title = string.Empty,
-			};
-
-			return MarkdownFileLocator.ApplyLorePageCompositionFromPath(lorePage, absolutePath, layout.VaultRoot, layout.SagaRoot, logger)
-				? (lorePage.Id, lorePage.Title)
-				: (null, pathTitle);
-		}
-
-		if (storage?.PuckStorage == VaultPuckStorage.Index && !string.IsNullOrWhiteSpace(pathPuck))
-		{
-			return (pathPuck, pathTitle);
-		}
-
-		if (entityType == typeof(Objective))
-		{
-			return await ResolveObjectiveIdentityAsync(absolutePath, pathTitle, cancellationToken);
-		}
-
-		if (entityType == typeof(Directive))
-		{
-			var directive = await ResolveDirectiveByDirectoryPathAsync(Path.GetDirectoryName(absolutePath), cancellationToken);
-			return directive is null ? (null, pathTitle) : (directive.Id, directive.Title);
-		}
-
-		if (entityType == typeof(OnrushSprint))
-		{
-			var sprint = await ResolveSingleOnrushSprintByTitleAsync(pathTitle, cancellationToken);
-			return sprint is null ? (null, pathTitle) : (sprint.Id, sprint.Title);
-		}
-
-		if (entityType == typeof(PolarisCycle))
-		{
-			var cycle = await ResolveSinglePolarisCycleByTitleAsync(pathTitle, cancellationToken);
-			return cycle is null ? (null, pathTitle) : (cycle.Id, cycle.Title);
-		}
-
-		return (null, pathTitle);
-	}
-
-	private async Task<(string? Puck, string Title)> ResolveObjectiveIdentityAsync(string absolutePath, string title, CancellationToken cancellationToken)
-	{
-		IQueryable<Objective> query = context.Objectives
-			.AsNoTracking()
-			.Where(item => item.Title == title);
-
-		if (IsPathUnderRoot(absolutePath, layout.ObjectivesRoot))
-		{
-			query = query.Where(item => item.DirectiveId == null);
-		}
-		else if (IsPathUnderRoot(absolutePath, layout.DirectivesRoot))
-		{
-			var parentDirective = await ResolveDirectiveByDirectoryPathAsync(Path.GetDirectoryName(absolutePath), cancellationToken);
-			if (parentDirective is not null)
-			{
-				query = query.Where(item => item.DirectiveId == parentDirective.Id);
-			}
-		}
-
-		var candidates = await query
-			.OrderBy(item => item.Id)
-			.Take(2)
-			.ToListAsync(cancellationToken);
-
-		if (candidates.Count == 1)
-		{
-			return (candidates[0].Id, candidates[0].Title);
-		}
-
-		var fallbackCandidates = await context.Objectives
-			.AsNoTracking()
-			.Where(item => item.Title == title)
-			.OrderBy(item => item.Id)
-			.Take(2)
-			.ToListAsync(cancellationToken);
-
-		return fallbackCandidates.Count == 1
-			? (fallbackCandidates[0].Id, fallbackCandidates[0].Title)
-			: (null, title);
-	}
-
-	private async Task<Directive?> ResolveDirectiveByDirectoryPathAsync(string? directoryPath, CancellationToken cancellationToken)
-	{
-		if (string.IsNullOrWhiteSpace(directoryPath))
+		if (PuckEntityAttribute.ResolveKind(model.InstantiationType) is null
+			|| Activator.CreateInstance(model.InstantiationType) is not IPuckNamedEntity composed)
 		{
 			return null;
 		}
 
-		var fullDirectoryPath = Path.GetFullPath(directoryPath);
-		var directivesRoot = Path.GetFullPath(layout.DirectivesRoot);
-		if (!IsPathUnderRoot(fullDirectoryPath, directivesRoot) || string.Equals(fullDirectoryPath, directivesRoot, StringComparison.OrdinalIgnoreCase))
+		pathComposer.ApplyCompositionFromPath(composed, absolutePath);
+		var id = composed.Id;
+		if (string.IsNullOrWhiteSpace(id))
 		{
 			return null;
 		}
 
-		var titles = new Stack<string>();
-		var currentDirectory = fullDirectoryPath;
-
-		while (!string.Equals(currentDirectory, directivesRoot, StringComparison.OrdinalIgnoreCase))
-		{
-			if (MarkdownFileLocator.IsSelfNamedDirectory(currentDirectory))
-			{
-				var primaryFile = Path.Combine(currentDirectory, $"{Path.GetFileName(currentDirectory)}.md");
-				titles.Push(MarkdownFileLocator.ParseLoosePuckIdentityFromPath(primaryFile).Title);
-			}
-
-			currentDirectory = Directory.GetParent(currentDirectory)?.FullName
-				?? throw new InvalidOperationException("Directive path resolution lost its parent chain before reaching the directives root.");
-		}
-
-		if (titles.Count == 0)
-		{
-			return null;
-		}
-
-		Directive? resolved = null;
-		string? parentDirectiveId = null;
-		while (titles.Count > 0)
-		{
-			var title = titles.Pop();
-			var matches = await context.Directives
-				.AsNoTracking()
-				.Where(item => item.Title == title && item.ParentDirectiveId == parentDirectiveId)
-				.OrderBy(item => item.Id)
-				.Take(2)
-				.ToListAsync(cancellationToken);
-
-			if (matches.Count != 1)
-			{
-				return null;
-			}
-
-			resolved = matches[0];
-			parentDirectiveId = resolved.Id;
-		}
-
-		return resolved;
-	}
-
-	private async Task<OnrushSprint?> ResolveSingleOnrushSprintByTitleAsync(string title, CancellationToken cancellationToken)
-	{
-		var matches = await context.OnrushSprints
-			.AsNoTracking()
-			.Where(item => item.Title == title)
-			.OrderBy(item => item.Id)
-			.Take(2)
-			.ToListAsync(cancellationToken);
-
-		return matches.Count == 1 ? matches[0] : null;
-	}
-
-	private async Task<PolarisCycle?> ResolveSinglePolarisCycleByTitleAsync(string title, CancellationToken cancellationToken)
-	{
-		var matches = await context.PolarisCycles
-			.AsNoTracking()
-			.Where(item => item.Title == title)
-			.OrderBy(item => item.Id)
-			.Take(2)
-			.ToListAsync(cancellationToken);
-
-		return matches.Count == 1 ? matches[0] : null;
+		var isFlatIndexToken = !id.Contains('/')
+			&& entityModelCatalog.TryGet(model.EntityType, out var declared)
+			&& declared?.Storage?.PuckStorage == VaultPuckStorage.Index;
+		return isFlatIndexToken && !identityGate.IsMintable(model.InstantiationType, id)
+			? null
+			: id;
 	}
 
 	private static bool IsPathUnderRoot(string path, string root)
