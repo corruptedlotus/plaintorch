@@ -10,9 +10,10 @@ namespace Pleiades.Tests.Core;
 /// <summary>
 /// A declared partition (<c>PartitionUnder</c>) is where a child is placed beneath its parent's folder — when it can be.
 /// It cannot when the parent's folder is itself named like the partition, when a folder of that name is an entity's own
-/// (a child directive titled "Objectives"), or, before the partition exists, when a file of that name sits in the parent's
-/// folder. Children are then placed directly in the parent's folder. And a folder that is an entity's own is never read
-/// as a partition, whatever its name, so it contains what sits in it. Before this, a directive titled like a partition
+/// (its main note asserts an entity's identity, whatever that note or the folder is called), or, before the partition
+/// exists, when a file of that name sits in the parent's folder. Children are then placed directly in the parent's folder.
+/// And a folder that is an entity's own is never read as a partition, whatever its name, so it contains what sits in it;
+/// a note that merely bears the folder's name, asserting nothing, makes it no entity's. Before this, a directive titled like a partition
 /// could not be initialised at all, its objectives were invisible to the watcher or handed to the directive above it.
 /// </summary>
 public sealed class PartitionAvailabilityTests : VaultTestBase
@@ -108,6 +109,38 @@ public sealed class PartitionAvailabilityTests : VaultTestBase
 		Assert.Equal(["Directives/Campaign/Take the bridge.md"], NotesOf(objective.Id));
 		Assert.Equal(campaign.Id, (await StoredObjectiveAsync(objective.Id))?.DirectiveId);
 		Assert.Contains("The user's own list.", Vault.ReadVaultFile("Directives/Campaign/Objectives.md"), StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task A_folder_note_that_asserts_no_identity_leaves_the_partition_in_use()
+	{
+		var campaign = await Directives(api => api.CreateStandaloneAsync("Campaign", cancellationToken: Token));
+		var first = await CreateBegunObjectiveAsync(campaign.Id, "Take the bridge");
+		// The user's own index note, named like the partition folder it sits in: a name, not an identity.
+		Vault.WriteVaultFile("Directives/Campaign/Objectives/Objectives.md", "# Objectives" + Environment.NewLine + "Index." + Environment.NewLine);
+
+		var second = await CreateBegunObjectiveAsync(campaign.Id, "Hold the line");
+		await Vault.SweepAsync();
+
+		Assert.Equal(["Directives/Campaign/Objectives/Take the bridge.md"], NotesOf(first.Id));
+		Assert.Equal(["Directives/Campaign/Objectives/Hold the line.md"], NotesOf(second.Id));
+		Assert.Equal(campaign.Id, (await StoredObjectiveAsync(second.Id))?.DirectiveId);
+	}
+
+	[Fact]
+	public async Task A_folder_named_like_a_partition_belongs_to_the_directive_whose_main_note_it_holds_whatever_that_note_is_called()
+	{
+		Vault.WriteVaultFile("Projects/Objectives/Roadmap.md", "# Roadmap" + Environment.NewLine);
+		var roadmap = await Directives(api => api.InitializeFromPathAsync("Projects/Objectives/Roadmap.md", Token));
+		Vault.WriteVaultFile("Projects/Objectives/Task.md", "# Task" + Environment.NewLine);
+
+		var initialised = await Objectives(api => api.InitializeFromPathAsync("Projects/Objectives/Task.md", Token));
+		var created = await CreateBegunObjectiveAsync(roadmap.Id, "Core made");
+		await Vault.SweepAsync();
+
+		Assert.Equal(roadmap.Id, initialised.DirectiveId);
+		Assert.Equal(["Projects/Objectives/Core made.md"], NotesOf(created.Id));
+		Assert.Equal(roadmap.Id, (await StoredObjectiveAsync(created.Id))?.DirectiveId);
 	}
 
 	[Fact]

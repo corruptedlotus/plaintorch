@@ -354,28 +354,23 @@ public sealed class VaultPathSyncModelCatalog(VaultLayout layout, VaultWatcherPa
 
 	/// <summary>
 	/// Finds the entity partition folder enclosing a markdown path — a folder the path policy recognises as a partition
-	/// (<see cref="VaultWatcherPathPolicy.IsPartitionDirectory"/>) directly inside a self-named entity directory — walking
-	/// up until the hosting entity's own directory. Returns <see langword="null"/> when the note is not inside any
-	/// partition (it sits directly in the hosting entity's folder or a plain subfolder of it, including an entity folder
-	/// that merely bears a partition's name).
+	/// (<see cref="VaultWatcherPathPolicy.IsPartitionDirectory"/>) — walking up until the hosting entity's own folder
+	/// (<see cref="VaultWatcherPathPolicy.IsEntityFolder"/>, recognised by what its main note asserts, whatever the names).
+	/// Returns <see langword="null"/> when the note is not inside any partition: it sits directly in the hosting entity's
+	/// folder or a plain subfolder of it, including an entity's folder that merely bears a partition's name.
 	/// </summary>
 	private static string? TryFindEnclosingEntityPartition(string path, VaultWatcherPathPolicy pathPolicy)
 	{
 		var currentDirectory = Path.GetDirectoryName(path);
-		while (!string.IsNullOrWhiteSpace(currentDirectory))
+		while (!string.IsNullOrWhiteSpace(currentDirectory) && !pathPolicy.ShouldIgnorePath(currentDirectory))
 		{
 			if (pathPolicy.IsPartitionDirectory(currentDirectory))
 			{
-				var container = Directory.GetParent(currentDirectory)?.FullName;
-				if (!string.IsNullOrWhiteSpace(container) && MarkdownFileLocator.IsSelfNamedDirectory(container))
-				{
-					return Path.GetFileName(currentDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-				}
+				return Path.GetFileName(currentDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 			}
 
-			// The partition, if any, is a direct child of the hosting self-named entity directory; reaching that
-			// directory without having crossed one means the note is un-partitioned.
-			if (MarkdownFileLocator.IsSelfNamedDirectory(currentDirectory))
+			// Reaching the hosting entity's own folder without having crossed a partition means the note is un-partitioned.
+			if (pathPolicy.IsEntityFolder(currentDirectory))
 			{
 				return null;
 			}

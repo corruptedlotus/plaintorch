@@ -305,10 +305,13 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 		var isFolder = Directory.Exists(fullPath);
 		var directory = isFolder ? fullPath : Path.GetDirectoryName(fullPath);
 		if (!isFolder
-			&& storage.Shape == VaultStorageShape.SelfNamedDirectory
-			&& MarkdownFileLocator.IsPrimarySelfNamedFile(fullPath))
+			&& !string.IsNullOrWhiteSpace(directory)
+			&& TryGetFolderKind(entityType, out var ownKind)
+			&& TryReadFolderOwner(directory, excludedNote: null, ownKind) is { } owner
+			&& PathComparer.Equals(owner.Note, fullPath))
 		{
-			directory = Directory.GetParent(directory!)?.FullName;
+			// The note is the main note of the folder it sits in, so that folder is the entity itself, not its container.
+			directory = Directory.GetParent(directory)?.FullName;
 		}
 
 		if (string.IsNullOrWhiteSpace(directory))
@@ -337,28 +340,41 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 	}
 
 	/// <summary>
-	/// The declared parent kind of a containment, with everything needed to recognise its folders: its storage, the
-	/// notations its family mints, and the roots its family is declared in.
+	/// A kind that owns folders (<see cref="VaultStorageShape.SelfNamedDirectory"/>), with everything needed to recognise
+	/// its folders: its storage, the notations its family mints, and its family's types.
 	/// </summary>
-	private sealed record ParentKind(
+	private sealed record FolderKind(
 		Type Type,
 		VaultStorageAttribute Storage,
 		IReadOnlyList<string> Declarations,
 		IReadOnlySet<Type> Family);
 
-	private bool TryGetContainment(Type entityType, out VaultStorageAttribute storage, out ParentKind parent)
+	private bool TryGetContainment(Type entityType, out VaultStorageAttribute storage, out FolderKind parent)
 	{
 		storage = null!;
 		parent = null!;
 		if (!entityModelCatalog.TryGet(entityType, out var model)
 			|| model?.Storage is not { ParentEntityType: { } parentType } declared
-			|| !entityModelCatalog.TryGet(parentType, out var parentModel)
-			|| parentModel?.Storage is not { Shape: VaultStorageShape.SelfNamedDirectory } parentStorage)
+			|| !TryGetFolderKind(parentType, out parent))
 		{
 			return false;
 		}
 
-		var familyTypes = Family(parentType).ToHashSet();
+		storage = declared;
+		return true;
+	}
+
+	/// <summary>Describes a kind that owns folders, or returns <see langword="false"/> when the kind does not own any.</summary>
+	private bool TryGetFolderKind(Type entityType, out FolderKind kind)
+	{
+		kind = null!;
+		if (!entityModelCatalog.TryGet(entityType, out var model)
+			|| model?.Storage is not { Shape: VaultStorageShape.SelfNamedDirectory } storage)
+		{
+			return false;
+		}
+
+		var familyTypes = Family(entityType).ToHashSet();
 		var declarations = familyTypes
 			.Select(type => entityModelCatalog.TryGet(type, out var member) ? member?.PuckDeclaration : null)
 			.Where(static declaration => !string.IsNullOrWhiteSpace(declaration))
@@ -366,9 +382,22 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 			.Distinct(StringComparer.Ordinal)
 			.ToArray();
 
-		storage = declared;
-		parent = new ParentKind(parentType, parentStorage, declarations, familyTypes);
+		kind = new FolderKind(entityType, storage, declarations, familyTypes);
 		return true;
+	}
+
+	/// <summary>Every kind that owns folders, one per family.</summary>
+	private IEnumerable<FolderKind> FolderKinds()
+	{
+		var seen = new HashSet<Type>();
+		foreach (var model in entityModelCatalog.GetModels())
+		{
+			var anchor = entityModelCatalog.GetFamilyAnchor(model.EntityType) ?? model.EntityType;
+			if (seen.Add(anchor) && TryGetFolderKind(anchor, out var kind))
+			{
+				yield return kind;
+			}
+		}
 	}
 
 	/// <summary>
@@ -394,26 +423,51 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 	}
 
 	/// <summary>
-	/// Whether a folder is a partition: named as some kind declares its partition (<see cref="VaultStorageAttribute.PartitionUnder"/>),
-	/// and not a self-named folder — an entity's own folder (a directive titled like a partition) is never a partition,
-	/// whatever its name. A partition belongs to the folder holding it, so it never hosts a parent itself.
+	/// Whether a folder is a partition: named as a kind declares its partition (<see cref="VaultStorageAttribute.PartitionUnder"/>),
+	/// sitting directly in a folder owned by that kind's parent kind — a partition is a subfolder of its parent's folder —
+	/// and not itself an entity's folder (<see cref="IsEntityFolder"/>): a directive titled like a partition owns its folder,
+	/// whatever the folder is called. A partition belongs to the folder holding it, so it never hosts a parent itself.
 	/// </summary>
 	/// <param name="directory">The folder to classify.</param>
 	public bool IsPartitionDirectory(string directory)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(directory);
 		var name = FolderName(directory);
-		return !string.IsNullOrWhiteSpace(name)
-			&& PartitionNames().Contains(name)
-			&& !MarkdownFileLocator.IsSelfNamedDirectory(directory);
+		var container = Directory.GetParent(directory)?.FullName;
+		if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(container))
+		{
+			return false;
+		}
+
+		var hostKinds = entityModelCatalog.GetModels()
+			.Where(model => model.Storage is { PartitionUnder: { } partition, ParentEntityType: not null }
+				&& PathComparer.Equals(partition.Trim(), name))
+			.Select(static model => model.Storage!.ParentEntityType!)
+			.Distinct()
+			.ToArray();
+		return hostKinds.Any(hostKind => TryGetFolderKind(hostKind, out var kind) && TryReadFolderOwner(container, excludedNote: null, kind) is not null)
+			&& !IsEntityFolder(directory);
+	}
+
+	/// <summary>
+	/// Whether a folder is an entity's own: a note directly in it asserts the identity of a kind that owns folders
+	/// (<see cref="VaultStorageShape.SelfNamedDirectory"/>), read as that kind keeps its identity. The folder's name plays
+	/// no part — a note named like its folder is only the default main note — so an entity is recognised by what its main
+	/// note asserts, not by what anything is called.
+	/// </summary>
+	/// <param name="directory">The folder to classify.</param>
+	public bool IsEntityFolder(string directory)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+		return FolderKinds().Any(kind => TryReadFolderOwner(directory, excludedNote: null, kind) is not null);
 	}
 
 	/// <summary>
 	/// Whether a declared partition can be used beneath a parent's folder. It cannot when the parent's folder is itself named
 	/// like the partition (a partition inside it would repeat its name), when a folder of that name exists but is an
-	/// entity's own folder (self-named), or — while no such folder exists yet — when a file of that name (with or without
-	/// an extension) sits in the parent's folder. An existing plain folder of that name is the partition. Where a partition
-	/// cannot be used, children are placed directly in the parent's folder instead.
+	/// entity's own folder (<see cref="IsEntityFolder"/>), or — while no such folder exists yet — when a file of that name
+	/// (with or without an extension) sits in the parent's folder. An existing folder of that name that no entity owns is
+	/// the partition. Where a partition cannot be used, children are placed directly in the parent's folder instead.
 	/// </summary>
 	/// <param name="parentDirectory">The folder of the parent the child belongs to.</param>
 	/// <param name="partition">The partition name the child's kind declares.</param>
@@ -429,7 +483,7 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 		var partitionDirectory = Path.Combine(parentDirectory, partition);
 		if (Directory.Exists(partitionDirectory))
 		{
-			return !MarkdownFileLocator.IsSelfNamedDirectory(partitionDirectory);
+			return !IsEntityFolder(partitionDirectory);
 		}
 
 		return !Directory.Exists(parentDirectory)
@@ -438,54 +492,54 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 				|| PathComparer.Equals(Path.GetFileNameWithoutExtension(file), partition));
 	}
 
-	private IReadOnlySet<string> PartitionNames()
-	{
-		return entityModelCatalog.GetModels()
-			.Select(static model => model.Storage?.PartitionUnder?.Trim())
-			.Where(static partition => !string.IsNullOrWhiteSpace(partition))
-			.Select(static partition => partition!)
-			.ToHashSet(PathComparer);
-	}
-
 	private static string FolderName(string directory)
 		=> Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
 	/// <summary>
 	/// Reads the identity of the parent a folder is, or <see langword="null"/> when it is none: outside the parent kind's
-	/// territory, or holding no note (other than <paramref name="resolvedNote"/> itself) that asserts an identity of that
-	/// kind.
+	/// territory, or owned by no note of that kind other than <paramref name="resolvedNote"/> itself.
 	/// </summary>
-	private string? TryReadParentIdentity(string directory, string resolvedNote, ParentKind parent)
+	private string? TryReadParentIdentity(string directory, string resolvedNote, FolderKind parent)
+		=> IsParentTerritory(directory, parent) ? TryReadFolderOwner(directory, resolvedNote, parent)?.Id : null;
+
+	/// <summary>
+	/// Finds the note that makes a folder an entity's of a kind, and the identity it asserts, or <see langword="null"/>
+	/// when none does. The note named like the folder is the default main note and is read first; a kind whose policy is
+	/// identity-driven may keep its main note under any name, so any other note directly in the folder is read next, in
+	/// name order. A note counts only when it asserts an identity the kind could mint, read as the kind keeps its identity
+	/// — so a child's note, or any note of another kind, never makes the folder the kind's.
+	/// </summary>
+	private (string Id, string Note)? TryReadFolderOwner(string directory, string? excludedNote, FolderKind kind)
 	{
-		if (!IsParentTerritory(directory, parent) || !Directory.Exists(directory))
+		if (!Directory.Exists(directory))
 		{
 			return null;
 		}
 
-		var primary = Path.Combine(directory, $"{Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}.md");
-		if (!PathComparer.Equals(primary, resolvedNote)
-			&& File.Exists(primary)
-			&& ReadAssertedIdentity(primary, parent.Storage) is { } primaryId
-			&& IsParentIdentity(primaryId, parent))
+		var defaultMainNote = Path.Combine(directory, $"{FolderName(directory)}.md");
+		if (!PathComparer.Equals(defaultMainNote, excludedNote)
+			&& File.Exists(defaultMainNote)
+			&& ReadAssertedIdentity(defaultMainNote, kind.Storage) is { } defaultId
+			&& IsKindIdentity(defaultId, kind))
 		{
-			return primaryId;
+			return (defaultId, defaultMainNote);
 		}
 
-		if (!parent.Storage.Mode.IsIdentityDriven())
+		if (!kind.Storage.Mode.IsIdentityDriven())
 		{
 			return null;
 		}
 
 		foreach (var note in Directory.EnumerateFiles(directory, "*.md", SearchOption.TopDirectoryOnly).Order(PathComparer))
 		{
-			if (PathComparer.Equals(note, resolvedNote) || PathComparer.Equals(note, primary))
+			if (PathComparer.Equals(note, excludedNote) || PathComparer.Equals(note, defaultMainNote))
 			{
 				continue;
 			}
 
-			if (MarkdownFileLocator.TryReadFrontMatterPuck(note) is { } id && IsParentIdentity(id, parent))
+			if (MarkdownFileLocator.TryReadFrontMatterPuck(note) is { } id && IsKindIdentity(id, kind))
 			{
-				return id;
+				return (id, note);
 			}
 		}
 
@@ -504,12 +558,12 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 	}
 
 	/// <summary>
-	/// Whether an identity is one the parent kind could mint — it tokenizes against the declared notation of the kind or
-	/// a member of its family — so an identity of another kind is never read as the parent's.
+	/// Whether an identity is one the kind could mint — it tokenizes against the declared notation of the kind or a member
+	/// of its family — so an identity of another kind is never read as the kind's.
 	/// </summary>
-	private bool IsParentIdentity(string identity, ParentKind parent)
+	private bool IsKindIdentity(string identity, FolderKind kind)
 	{
-		foreach (var declaration in parent.Declarations)
+		foreach (var declaration in kind.Declarations)
 		{
 			try
 			{
@@ -530,7 +584,7 @@ public sealed class VaultWatcherPathPolicy(VaultLayout layout, VaultEntityModelC
 	/// territory its notes may be asserted in, <see cref="TryGetAssertionViolation"/>); for a path-bound kind, under a root
 	/// its own family is declared in.
 	/// </summary>
-	private bool IsParentTerritory(string directory, ParentKind parent)
+	private bool IsParentTerritory(string directory, FolderKind parent)
 	{
 		var fullPath = Path.GetFullPath(directory);
 		if (!IsUnderVaultRoot(fullPath)

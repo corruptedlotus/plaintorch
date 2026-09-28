@@ -88,7 +88,8 @@ field. The matrix takes about 16 minutes on four cores; filter it in or out with
 | I2 — siblings placed the same way behave the same in U1–U4 | edge | ✅ | `StellarDirectiveObjectiveMatrixTests` |
 | One resolver: the composer's path-derived parent equals the policy's, at any depth | happy | ✅ | `DirectiveContainmentConsistencyTests` |
 | A dashed parent title is never read as an identity | edge | ✅ | `DashedDirectiveResolutionTests` |
-| A self-named folder is never a partition; an unusable partition places children in the parent's folder | edge | ✅ | `PartitionAvailabilityTests` |
+| An entity's folder (recognised by its main note's identity) is never a partition; an unusable partition places children in the parent's folder | edge | ✅ | `PartitionAvailabilityTests` |
+| A folder is owned by the entity whose main note it holds, whatever the folder or the note is called | edge | ✅ | `FolderOwnershipTests` |
 | A directive titled like a partition initialises, and it and its parent keep their own objectives | edge | ✅ | `PartitionAvailabilityTests` |
 | An identity-driven note is refused outside its kind's territory; a self-named note cannot own a root or partition | fault | ✅ | `AssertionTerritoryTests` |
 | Initialising a note inside the territory moves nothing and reads its hierarchy from where it sits | happy | ✅ | `AssertionTerritoryTests` |
