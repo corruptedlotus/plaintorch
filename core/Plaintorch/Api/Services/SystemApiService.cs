@@ -105,7 +105,8 @@ public sealed class SystemApiService(
 			note = null;
 		}
 
-		if (note is not { PathId: { Length: > 0 } identity })
+		// A path that holds no note is no entity's note, even where a path-bound kind's path alone would name an identity.
+		if (note is not { FileExists: true, PathId: { Length: > 0 } identity })
 		{
 			return new EntityExistence(normalizedRelativePath, false);
 		}

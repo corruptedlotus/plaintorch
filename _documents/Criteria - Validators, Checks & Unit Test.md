@@ -96,6 +96,8 @@ field. The matrix takes about 16 minutes on four cores; filter it in or out with
 | A note resolves by the identity it carries, never by its title | fault | ✅ | `NoteResolutionTests` |
 | A note's path proposes its kind; for identity-driven kinds the identity it asserts decides (a directive note inside another directive, an objective note outside every directive, a fate note in the objectives partition all sync) | edge | ✅ | `KindSelectionTests` |
 | Note resolution reads a note as the watcher does: one identity source per kind, never another kind's frontmatter identity | fault | ✅ | `KindSelectionTests` |
+| A note outside its kind's territory is not adopted through its identity (neither synced nor moved back) | fault | ✅ | `KindSelectionTests` |
+| The write path and duplicate detection read identities per storage: a note merely named with an identity is never rewritten, deleted or counted as a duplicate | fault | ✅ | `IdentitySourceTests` |
 
 ## Markdown serialize / parse
 | Behaviour / Invariant | Kind | Status | Test ref |
@@ -149,6 +151,9 @@ field. The matrix takes about 16 minutes on four cores; filter it in or out with
 - **Partial-migration conflicts** — a migration that finishes with per-entity conflicts still advances the version; conflicts are audited and need manual attention (documented limitation).
 - **Relaunch / permission failures** — dev-user relaunch must reject cleanly rather than silently using the real environment.
 - **Self-write races** — service-originated writes must be suppressed so the watcher does not reconcile its own output.
+- **Aftershocks across kinds** — a purge or folder archive decided for one kind must never remove another kind's note or
+  another entity's folder (open: an objective's note moved into `Journal/` is purged and the objective deleted; deleting
+  an entity whose note is named like its folder archives the whole folder — see the 2026-09-29 review in `core/.DISCUSSION.md`).
 - **Parent read from a sibling note** — a folder is a parent's only when a note in it asserts an identity the parent
   kind could mint (notation-gated), never because some other kind's note shares it; and the watcher and the write path
   must read a note's parent through the same resolver, or an edit moves the note (`StellarDirectiveObjectiveMatrixTests`).

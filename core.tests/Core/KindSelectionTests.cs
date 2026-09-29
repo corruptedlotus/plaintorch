@@ -133,6 +133,34 @@ public sealed class KindSelectionTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task A_note_outside_its_kinds_territory_is_not_adopted_through_its_identity()
+	{
+		var campaign = await Vault.WithScopeAsync(services => services.GetRequiredService<IDirectiveApi>()
+			.CreateStandaloneAsync("Campaign", cancellationToken: Token));
+		var objective = await Vault.WithScopeAsync(services => services.GetRequiredService<IObjectiveApi>()
+			.CreateFromDirectiveAsync(campaign.Id, "Take the bridge", cancellationToken: Token));
+		await Vault.BeginObjectiveBoundaryAsync(objective.Id);
+		var from = "Directives/Campaign/Objectives/Take the bridge.md";
+		var saga = Path.GetRelativePath(Vault.VaultRoot, Vault.Layout.SagaRoot).Replace('\\', '/');
+		var to = $"{saga}/Notes/Take the bridge.md";
+
+		// Saga is a root another kind is declared in: an objective may not be asserted there, so the note is left alone —
+		// neither read as the objective nor moved back.
+		Directory.CreateDirectory(Path.GetDirectoryName(Vault.AbsolutePath(to))!);
+		File.Move(Vault.AbsolutePath(from), Vault.AbsolutePath(to));
+		SetFrontMatterField(to, "college", "Creation");
+		var moved = Vault.ReadVaultFile(to);
+		await Vault.ReconcileEventsWithIssuesAsync([Vault.AbsolutePath(from), Vault.AbsolutePath(to)]);
+		var stored = await Vault.QueryAsync(context => context.Incentives.AsNoTracking().OfType<Objective>()
+			.SingleAsync(item => item.Id == objective.Id, Token));
+
+		Assert.Equal([to], NotesOf(objective.Id));
+		Assert.Equal(moved, Vault.ReadVaultFile(to));
+		Assert.NotEqual(ObjectiveCollege.Creation, stored.College);
+		Assert.Equal(campaign.Id, stored.DirectiveId);
+	}
+
+	[Fact]
 	public async Task A_frontmatter_identity_of_a_kind_that_keeps_its_identity_in_the_file_name_resolves_to_nothing()
 	{
 		var sprint = await Vault.WithScopeAsync(services => services.GetRequiredService<IOnrushSprintApi>()
@@ -142,6 +170,22 @@ public sealed class KindSelectionTests : VaultTestBase
 		var resolution = await ResolveAsync("Projects/Sprint notes.md");
 
 		Assert.False(resolution.Exists);
+	}
+
+	[Fact]
+	public async Task A_path_that_holds_no_note_resolves_to_nothing_even_where_its_name_is_an_identity()
+	{
+		var sprint = await Vault.WithScopeAsync(services => services.GetRequiredService<IOnrushSprintApi>()
+			.StartNewAsync(cancellationToken: Token));
+		var note = Assert.Single(Vault.MarkdownFilesUnder(Vault.Layout.OnrushRoot), path => path.Contains(sprint.Id, StringComparison.OrdinalIgnoreCase));
+		var relative = Path.GetRelativePath(Vault.VaultRoot, note).Replace('\\', '/');
+
+		var present = await ResolveAsync(relative);
+		File.Delete(note);
+		var absent = await ResolveAsync(relative);
+
+		Assert.True(present.Exists);
+		Assert.False(absent.Exists);
 	}
 
 	[Fact]

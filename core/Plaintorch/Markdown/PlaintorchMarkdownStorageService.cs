@@ -26,6 +26,7 @@ public sealed class PlaintorchMarkdownStorageService(
 	VaultImplicitBoundaryService implicitBoundaryService,
 	VaultWatcherWriteBarrier writeBarrier,
 	VaultStoragePolicyEngine policyEngine,
+	VaultStoragePathComposer pathComposer,
 	IEnumerable<IEntitySaveHook> saveHooks)
 {
 	private static readonly MethodInfo FindAsyncMethod = typeof(DbContext)
@@ -471,7 +472,7 @@ public sealed class PlaintorchMarkdownStorageService(
 				continue;
 			}
 
-			if (!await IsIdentityMatchAsync(candidatePath, namedEntity.Id, cancellationToken))
+			if (!IsIdentityMatch(entity.GetType(), candidatePath, namedEntity.Id))
 			{
 				continue;
 			}
@@ -526,26 +527,14 @@ public sealed class PlaintorchMarkdownStorageService(
 		return Directory.EnumerateFiles(root, "*.md", SearchOption.AllDirectories);
 	}
 
-	private async Task<bool> IsIdentityMatchAsync(string markdownPath, string id, CancellationToken cancellationToken)
-	{
-		var parsedId = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(markdownPath).Id;
-		if (!string.IsNullOrWhiteSpace(parsedId)
-			&& string.Equals(parsedId, id, StringComparison.OrdinalIgnoreCase))
-		{
-			return true;
-		}
-
-		var markdown = await File.ReadAllTextAsync(markdownPath, cancellationToken);
-		var frontMatter = markdownSerializer.ParseFrontMatter(markdown);
-		if (!frontMatter.TryGetValue("puck", out var rawPuck)
-			|| string.IsNullOrWhiteSpace(rawPuck))
-		{
-			return false;
-		}
-
-		var normalizedPuck = rawPuck.Trim().Trim('"');
-		return string.Equals(normalizedPuck, id, StringComparison.OrdinalIgnoreCase);
-	}
+	/// <summary>
+	/// Whether a note asserts an entity's identity, read from the one source the entity's storage declares — exactly as
+	/// discovery reads it (<see cref="VaultStoragePathComposer.ReadAssertedIdentity"/>). A note merely named with the
+	/// identity in front of a title, or a frontmatter identity where the kind keeps it in the file name, is not the
+	/// entity's note, so a save never takes it for the entity's note and rewrites or deletes it.
+	/// </summary>
+	private bool IsIdentityMatch(Type entityType, string markdownPath, string id)
+		=> string.Equals(pathComposer.ReadAssertedIdentity(entityType, markdownPath), id, StringComparison.OrdinalIgnoreCase);
 
 	private async Task<string> ResolveCanonicalPathAsync(object entity, CancellationToken cancellationToken)
 	{

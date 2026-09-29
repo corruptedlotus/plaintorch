@@ -378,7 +378,7 @@ public sealed class VaultMarkdownDiscoveryService(
 		foreach (var path in policyEngine.EnumerateCandidateMarkdownPaths(model))
 		{
 			cancellationToken.ThrowIfCancellationRequested();
-			if (await AssertsIdentityAsync(path, id, cancellationToken))
+			if (AssertsIdentity(model, path, id))
 			{
 				matches.Add(Path.GetFullPath(path));
 			}
@@ -393,24 +393,14 @@ public sealed class VaultMarkdownDiscoveryService(
 			&& !string.IsNullOrWhiteSpace(candidate.PathId)
 			&& policyEngine.PolicyFor(candidate.Model.Mode).IsIdentityDriven;
 
-	private async Task<bool> AssertsIdentityAsync(string markdownPath, string id, CancellationToken cancellationToken)
-	{
-		if (!File.Exists(markdownPath))
-		{
-			return false;
-		}
-
-		var looseId = MarkdownFileLocator.ParseLoosePuckIdentityFromPath(markdownPath).Id;
-		if (!string.IsNullOrWhiteSpace(looseId) && string.Equals(looseId, id, StringComparison.OrdinalIgnoreCase))
-		{
-			return true;
-		}
-
-		var markdown = await VaultFileAccess.ReadAllTextAsync(markdownPath, cancellationToken);
-		var frontMatter = markdownSerializer.ParseFrontMatter(markdown);
-		return frontMatter.TryGetValue("puck", out var rawPuck)
-			&& string.Equals(rawPuck?.Trim().Trim('"'), id, StringComparison.OrdinalIgnoreCase);
-	}
+	/// <summary>
+	/// Whether a note asserts an identity for a model's kind, read from the one source the kind's storage declares, as the
+	/// scan reads it (<see cref="VaultStoragePathComposer.ReadAssertedIdentity"/>): a note merely named with the identity in
+	/// front of a title is no duplicate of the entity's note.
+	/// </summary>
+	private bool AssertsIdentity(VaultPathSyncModel model, string markdownPath, string id)
+		=> File.Exists(markdownPath)
+			&& string.Equals(pathComposer.ReadAssertedIdentity(model.EntityType, markdownPath), id, StringComparison.OrdinalIgnoreCase);
 
 	private static IReadOnlyList<string> DistinctPaths(IEnumerable<string> paths)
 		=> paths
@@ -599,7 +589,7 @@ public sealed class VaultMarkdownDiscoveryService(
 			: string.Empty;
 		if (forcedModel is null && fileExists)
 		{
-			model = await SelectModelAsync(model, markdown, cancellationToken);
+			model = await SelectModelAsync(model, fullPath, markdown, cancellationToken);
 		}
 
 		var modePolicy = policyEngine.PolicyFor(model.Mode);
@@ -862,10 +852,12 @@ public sealed class VaultMarkdownDiscoveryService(
 	/// <summary>
 	/// Settles which kind an existing note is. Its path proposes a kind (<see cref="VaultStoragePolicyEngine.TryResolveWatchPath"/>);
 	/// where the proposed kind is identity-driven, what the path shape suggests is only a proposal and the identity the
-	/// note asserts decides between the identity-driven kinds: the one whose declared notation could mint it
+	/// note asserts decides between the identity-driven kinds that may be asserted where the note sits
+	/// (<see cref="VaultWatcherPathPolicy.TryGetAssertionViolation"/>): the one whose declared notation could mint it
 	/// (<see cref="VaultFamilyInstantiationResolver.Mints(VaultPathSyncModel, string?)"/>), or — when more than one could —
 	/// the one the vault stores it as. A path-bound proposal stands, since there the path is the identity; so does the
-	/// proposal for a note asserting nothing, or an identity no identity-driven kind could mint.
+	/// proposal for a note asserting nothing, or an identity no identity-driven kind could mint there. A note outside its
+	/// kind's territory is therefore never adopted as that kind through its identity.
 	/// </summary>
 	/// <remarks>
 	/// Without this, a note was handed to whichever kind's path shape claimed it first and dropped when its identity said
@@ -874,10 +866,11 @@ public sealed class VaultMarkdownDiscoveryService(
 	/// objective model predicts was offered only to the directive model, and ignored.
 	/// </remarks>
 	/// <param name="proposed">The kind the note's path proposes.</param>
+	/// <param name="fullPath">The note's path.</param>
 	/// <param name="markdown">The note's raw markdown.</param>
 	/// <param name="cancellationToken">A token used to cancel the lookup.</param>
 	/// <returns>The kind the note is.</returns>
-	private async Task<VaultPathSyncModel> SelectModelAsync(VaultPathSyncModel proposed, string markdown, CancellationToken cancellationToken)
+	private async Task<VaultPathSyncModel> SelectModelAsync(VaultPathSyncModel proposed, string fullPath, string markdown, CancellationToken cancellationToken)
 	{
 		if (!policyEngine.PolicyFor(proposed.Mode).IsIdentityDriven
 			|| ReadFrontMatterIdentity(markdown) is not { } asserted)
@@ -886,7 +879,9 @@ public sealed class VaultMarkdownDiscoveryService(
 		}
 
 		var claimants = pathSyncModelCatalog.GetModels()
-			.Where(model => policyEngine.PolicyFor(model.Mode).IsIdentityDriven && familyInstantiationResolver.Mints(model, asserted))
+			.Where(model => policyEngine.PolicyFor(model.Mode).IsIdentityDriven
+				&& familyInstantiationResolver.Mints(model, asserted)
+				&& pathPolicy.TryGetAssertionViolation(model.EntityType, fullPath) is null)
 			.ToList();
 		if (claimants.Count <= 1)
 		{

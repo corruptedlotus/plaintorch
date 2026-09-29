@@ -43,6 +43,7 @@ public sealed class VaultStoragePathComposer
 {
 	private readonly VaultEntityModelCatalog _catalog;
 	private readonly VaultWatcherPathPolicy _pathPolicy;
+	private readonly PuckIdentityGate _identityGate;
 	private readonly IReadOnlyDictionary<VaultStorageShape, IVaultStorageStrategy> _shapeStrategies;
 	private readonly IReadOnlyDictionary<Type, IVaultStorageStrategy> _typeOverrides;
 
@@ -52,11 +53,13 @@ public sealed class VaultStoragePathComposer
 	/// <param name="layout">The active vault layout used to resolve location roots.</param>
 	/// <param name="catalog">The entity model catalog supplying each type's effective storage policy.</param>
 	/// <param name="pathPolicy">The single containment resolver, enforcing each parent kind's declared territory.</param>
-	public VaultStoragePathComposer(VaultLayout layout, VaultEntityModelCatalog catalog, VaultWatcherPathPolicy pathPolicy)
+	/// <param name="identityGate">The notation gate a filename-embedded identity must pass.</param>
+	public VaultStoragePathComposer(VaultLayout layout, VaultEntityModelCatalog catalog, VaultWatcherPathPolicy pathPolicy, PuckIdentityGate identityGate)
 	{
 		Layout = layout ?? throw new ArgumentNullException(nameof(layout));
 		_catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
 		_pathPolicy = pathPolicy ?? throw new ArgumentNullException(nameof(pathPolicy));
+		_identityGate = identityGate ?? throw new ArgumentNullException(nameof(identityGate));
 		_shapeStrategies = new Dictionary<VaultStorageShape, IVaultStorageStrategy>
 		{
 			[VaultStorageShape.SelfNamedDirectory] = new SelfNamedDirectoryStorageStrategy(),
@@ -163,6 +166,38 @@ public sealed class VaultStoragePathComposer
 		}
 
 		return (null, fileName.Trim());
+	}
+
+	/// <summary>
+	/// Reads the identity a note asserts for an entity type, from the one source the type's storage declares, as discovery
+	/// reads it: for <see cref="VaultPuckStorage.Index"/> storage, the path — the filename token, or the identity a
+	/// hierarchical kind composes from its folders — where a flat token counts only when the type's declared notation could
+	/// mint it; for <see cref="VaultPuckStorage.Quiet"/> storage (and a family anchor), the note's frontmatter PUCK. So a
+	/// title is never an identity, a quiet note's name never names one, and an indexed note's frontmatter never does.
+	/// </summary>
+	/// <param name="entityType">The kind whose identity the note is read for.</param>
+	/// <param name="notePath">The note's path.</param>
+	/// <returns>The identity the note asserts, or <see langword="null"/> when it asserts none.</returns>
+	public string? ReadAssertedIdentity(Type entityType, string notePath)
+	{
+		ArgumentNullException.ThrowIfNull(entityType);
+		ArgumentException.ThrowIfNullOrWhiteSpace(notePath);
+		if (!_catalog.TryGet(entityType, out var declared) || declared?.Storage?.PuckStorage != VaultPuckStorage.Index)
+		{
+			return MarkdownFileLocator.TryReadFrontMatterPuck(notePath);
+		}
+
+		if (entityType.IsAbstract || Activator.CreateInstance(entityType) is not IPuckNamedEntity composed)
+		{
+			return null;
+		}
+
+		ApplyCompositionFromPath(composed, notePath);
+		var id = composed.Id;
+		// A hierarchical identity is composed from the folder tree, not split from one name, so only a flat token is gated.
+		return string.IsNullOrWhiteSpace(id) || (!id.Contains('/') && !_identityGate.IsMintable(entityType, id))
+			? null
+			: id;
 	}
 
 	private void ApplyFilenameIdentity(IPuckNamedEntity named, string path)
