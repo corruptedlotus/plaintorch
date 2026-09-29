@@ -64,6 +64,28 @@ public sealed class VaultFamilyInstantiationResolver(
 		return resolved ?? fallback;
 	}
 
+	/// <summary>
+	/// Determines whether an identity is one the model's kind could mint: the declared PUCK notation of the model's entity
+	/// type — or, when the model anchors a family, of one of its members — tokenizes it. This is how the identity a note
+	/// asserts names its kind, from declarations alone and without asking the vault.
+	/// </summary>
+	/// <param name="model">The path-sync model whose kind is asked about.</param>
+	/// <param name="identity">The identity a note asserts.</param>
+	/// <returns><see langword="true"/> when the model's kind could have minted <paramref name="identity"/>.</returns>
+	public bool Mints(VaultPathSyncModel model, string? identity)
+	{
+		ArgumentNullException.ThrowIfNull(model);
+		if (string.IsNullOrWhiteSpace(identity))
+		{
+			return false;
+		}
+
+		var declarations = entityModelCatalog.TryGetFamily(model.EntityType, out var family) && family is not null
+			? family.Members.Select(static member => member.PuckDeclaration)
+			: [entityModelCatalog.TryGet(model.EntityType, out var declared) ? declared?.PuckDeclaration : null];
+		return declarations.Any(declaration => Mints(declaration, identity));
+	}
+
 	private bool Mints(string? declaration, string identity)
 	{
 		if (string.IsNullOrWhiteSpace(declaration))

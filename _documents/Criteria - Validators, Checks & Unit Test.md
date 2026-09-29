@@ -94,6 +94,8 @@ field. The matrix takes about 16 minutes on four cores; filter it in or out with
 | An identity-driven note is refused outside its kind's territory; a self-named note cannot own a root or partition | fault | ✅ | `AssertionTerritoryTests` |
 | Initialising a note inside the territory moves nothing and reads its hierarchy from where it sits | happy | ✅ | `AssertionTerritoryTests` |
 | A note resolves by the identity it carries, never by its title | fault | ✅ | `NoteResolutionTests` |
+| A note's path proposes its kind; for identity-driven kinds the identity it asserts decides (a directive note inside another directive, an objective note outside every directive, a fate note in the objectives partition all sync) | edge | ✅ | `KindSelectionTests` |
+| Note resolution reads a note as the watcher does: one identity source per kind, never another kind's frontmatter identity | fault | ✅ | `KindSelectionTests` |
 
 ## Markdown serialize / parse
 | Behaviour / Invariant | Kind | Status | Test ref |

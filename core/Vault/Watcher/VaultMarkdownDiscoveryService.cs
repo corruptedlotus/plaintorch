@@ -463,6 +463,21 @@ public sealed class VaultMarkdownDiscoveryService(
 	}
 
 	/// <summary>
+	/// Reads a note exactly as the watcher reads it — the same kind selection, the same identity source for that kind, the
+	/// same belonging and path authorities — without recording anything. Whoever needs to know what a note is (note
+	/// resolution) asks here, so it can never read a note differently than the watcher syncs it.
+	/// </summary>
+	/// <param name="path">The note's path.</param>
+	/// <param name="cancellationToken">A token used to cancel the read.</param>
+	/// <returns>The note as the watcher sees it, or <see langword="null"/> when the watcher does not manage it.</returns>
+	/// <exception cref="VaultFileAccessException">The note is held open by another process.</exception>
+	public async Task<VaultSyncCandidate?> ReadNoteAsync(string path, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(path);
+		return await InspectPathCoreAsync(path, await LoadKnownIdsAsync(cancellationToken), cancellationToken);
+	}
+
+	/// <summary>
 	/// Inspects an arbitrary markdown path as an init candidate for a specific entity type, even when generic
 	/// path-catalog classification does not apply (an explicit API <c>init</c> points at a specific file, so the
 	/// entity's model is forced and the watcher-ignore / model-belonging policies are relaxed).
@@ -579,10 +594,15 @@ public sealed class VaultMarkdownDiscoveryService(
 
 		var fullPath = Path.GetFullPath(resolvedPath);
 		var fileExists = File.Exists(fullPath);
-		var modePolicy = policyEngine.PolicyFor(model.Mode);
 		var markdown = fileExists
 			? await VaultFileAccess.ReadAllTextAsync(fullPath, cancellationToken)
 			: string.Empty;
+		if (forcedModel is null && fileExists)
+		{
+			model = await SelectModelAsync(model, markdown, cancellationToken);
+		}
+
+		var modePolicy = policyEngine.PolicyFor(model.Mode);
 		if (enforceModelBelongingPolicy
 			&& !await policyEngine.BelongsToModelAsync(model, fullPath, markdown, cancellationToken))
 		{
@@ -818,19 +838,65 @@ public sealed class VaultMarkdownDiscoveryService(
 	/// <param name="pathId">The loose identity already parsed from the path.</param>
 	/// <returns>The frontmatter PUCK when present; otherwise the path-derived identity.</returns>
 	private string? ResolveComposedIdentity(string markdown, string? pathId)
-	{
 		// A Quiet or freeform file keeps its PUCK in frontmatter, not in a title-named path, so prefer it; fall back
 		// to the loose path identity for index-stored files that carry the PUCK in the filename.
-		if (!string.IsNullOrWhiteSpace(markdown))
+		=> ReadFrontMatterIdentity(markdown) ?? pathId;
+
+	/// <summary>
+	/// Reads the identity a note's frontmatter asserts (its <c>puck</c>), or <see langword="null"/> when it asserts none.
+	/// </summary>
+	/// <param name="markdown">The note's raw markdown.</param>
+	private string? ReadFrontMatterIdentity(string markdown)
+	{
+		if (string.IsNullOrWhiteSpace(markdown)
+			|| !markdownSerializer.ParseFrontMatter(markdown).TryGetValue("puck", out var rawPuck)
+			|| string.IsNullOrWhiteSpace(rawPuck))
 		{
-			var frontMatter = markdownSerializer.ParseFrontMatter(markdown);
-			if (frontMatter.TryGetValue("puck", out var rawPuck) && !string.IsNullOrWhiteSpace(rawPuck))
-			{
-				return rawPuck.Trim().Trim('"');
-			}
+			return null;
 		}
 
-		return pathId;
+		var puck = rawPuck.Trim().Trim('"');
+		return string.IsNullOrWhiteSpace(puck) ? null : puck;
+	}
+
+	/// <summary>
+	/// Settles which kind an existing note is. Its path proposes a kind (<see cref="VaultStoragePolicyEngine.TryResolveWatchPath"/>);
+	/// where the proposed kind is identity-driven, what the path shape suggests is only a proposal and the identity the
+	/// note asserts decides between the identity-driven kinds: the one whose declared notation could mint it
+	/// (<see cref="VaultFamilyInstantiationResolver.Mints(VaultPathSyncModel, string?)"/>), or — when more than one could —
+	/// the one the vault stores it as. A path-bound proposal stands, since there the path is the identity; so does the
+	/// proposal for a note asserting nothing, or an identity no identity-driven kind could mint.
+	/// </summary>
+	/// <remarks>
+	/// Without this, a note was handed to whichever kind's path shape claimed it first and dropped when its identity said
+	/// otherwise: a directive's main note that does not bear its folder's name, inside another directive, reads as an
+	/// objective by shape, so its edits never reached the directive; and an objective's note outside the shape the
+	/// objective model predicts was offered only to the directive model, and ignored.
+	/// </remarks>
+	/// <param name="proposed">The kind the note's path proposes.</param>
+	/// <param name="markdown">The note's raw markdown.</param>
+	/// <param name="cancellationToken">A token used to cancel the lookup.</param>
+	/// <returns>The kind the note is.</returns>
+	private async Task<VaultPathSyncModel> SelectModelAsync(VaultPathSyncModel proposed, string markdown, CancellationToken cancellationToken)
+	{
+		if (!policyEngine.PolicyFor(proposed.Mode).IsIdentityDriven
+			|| ReadFrontMatterIdentity(markdown) is not { } asserted)
+		{
+			return proposed;
+		}
+
+		var claimants = pathSyncModelCatalog.GetModels()
+			.Where(model => policyEngine.PolicyFor(model.Mode).IsIdentityDriven && familyInstantiationResolver.Mints(model, asserted))
+			.ToList();
+		if (claimants.Count <= 1)
+		{
+			return claimants.SingleOrDefault() ?? proposed;
+		}
+
+		var stored = await puckEntityResolutionService.ResolveAsync(asserted, cancellationToken);
+		return stored.Exists
+			? claimants.FirstOrDefault(model => entityModelCatalog.IsFamilyMember(model.EntityType, stored.EntityType)) ?? proposed
+			: proposed;
 	}
 
 	/// <summary>

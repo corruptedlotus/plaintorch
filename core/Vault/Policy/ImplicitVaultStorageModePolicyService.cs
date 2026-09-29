@@ -10,9 +10,11 @@ namespace Pleiades.Vault.Policy;
 /// implicit entity only becomes deletion-authoritative once its synchronization boundary has begun.
 /// </summary>
 /// <remarks>
-/// Path resolution stays path-bound (inherited from <see cref="PathBoundVaultStorageModePolicyService"/>) so implicit
-/// entities are still classified by their configured scan roots and candidate shape rather than claiming every markdown
-/// file in the vault. Identity is layered on top of the path-bound belonging check.
+/// Watch-path resolution stays path-bound (inherited from <see cref="PathBoundVaultStorageModePolicyService"/>): the
+/// configured scan roots and candidate shape only <em>propose</em> the kind for a path, so an implicit model does not claim
+/// every markdown file in the vault. Belonging is decided by identity — an existing note is this kind's when the PUCK it
+/// asserts is — and discovery settles a note's kind by what it asserts before asking, so a note is never lost to a
+/// path shape that proposed the wrong kind.
 /// </remarks>
 public sealed class ImplicitVaultStorageModePolicyService(
 	MarkdownFrontMatterSerializer markdownSerializer,
@@ -75,17 +77,20 @@ public sealed class ImplicitVaultStorageModePolicyService(
 	}
 
 	/// <inheritdoc />
+	// A missing file (a deletion, or a boundary not yet materialized) has no identity left to read, so only its path can
+	// place it, and it still flows through so deletion authority can apply. An existing note belongs by the identity it
+	// asserts, wherever it sits: whether it may assert it there is the assertion territory's question, flagged by
+	// discovery rather than answered here by silently dropping the note.
 	public override async Task<bool> BelongsToModelAsync(VaultPathSyncModel model, string fullPath, string markdown, CancellationToken cancellationToken)
 	{
-		if (!await base.BelongsToModelAsync(model, fullPath, markdown, cancellationToken))
-		{
-			return false;
-		}
-
-		// A missing file (deletion or not-yet-materialized boundary) still flows through so deletion authority can apply.
 		if (!File.Exists(fullPath))
 		{
-			return true;
+			return await base.BelongsToModelAsync(model, fullPath, markdown, cancellationToken);
+		}
+
+		if (!string.Equals(Path.GetExtension(fullPath), ".md", StringComparison.OrdinalIgnoreCase))
+		{
+			return false;
 		}
 
 		var frontMatter = markdownSerializer.ParseFrontMatter(markdown);

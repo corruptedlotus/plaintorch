@@ -7,7 +7,8 @@ namespace Pleiades.Vault.Policy;
 /// </summary>
 public sealed class VaultStoragePolicyEngine(
 	VaultPathSyncModelCatalog modelCatalog,
-	VaultStorageModePolicyRouter policyRouter)
+	VaultStorageModePolicyRouter policyRouter,
+	VaultWatcherPathPolicy pathPolicy)
 {
 	/// <summary>
 	/// Resolves the storage-mode policy for a mode, so pipeline code can ask the protocol its semantic questions
@@ -62,10 +63,12 @@ public sealed class VaultStoragePolicyEngine(
 	}
 
 	/// <summary>
-	/// Enumerates the existing markdown candidates for a single model, across its full territory, using the mode
-	/// policy's watch check — the same resolution the discovery scan uses. This is how an identity-driven entity's
-	/// file is located wherever the user placed it, so a read (discovery) and a write (canonical save location) agree
-	/// on where the entity lives rather than the write path assuming the canonical root.
+	/// Enumerates the existing markdown candidates for a single model, across its full territory. This is how an entity's
+	/// note is located wherever it may be, so a read (discovery) and a write (canonical save location) agree on where the
+	/// entity lives rather than the write path assuming the canonical root. For a path-bound model the territory is what
+	/// its mode policy's watch check accepts — the path is the identity. For an identity-driven model it is every note
+	/// under the model's scan roots outside ignored folders: such a note is its kind's by the identity it asserts, not by
+	/// the path shape that merely proposes a kind for it (discovery settles its kind the same way).
 	/// </summary>
 	public IReadOnlyList<string> EnumerateCandidateMarkdownPaths(VaultPathSyncModel model)
 	{
@@ -76,6 +79,16 @@ public sealed class VaultStoragePolicyEngine(
 		{
 			foreach (var markdown in Directory.EnumerateFiles(root, "*.md", SearchOption.AllDirectories))
 			{
+				if (policy.IsIdentityDriven)
+				{
+					if (!pathPolicy.ShouldIgnorePath(markdown))
+					{
+						results.Add(Path.GetFullPath(markdown));
+					}
+
+					continue;
+				}
+
 				if (policy.TryResolveWatchPath(model, markdown, isDirectoryEvent: false, out var resolved)
 					&& !string.IsNullOrWhiteSpace(resolved))
 				{

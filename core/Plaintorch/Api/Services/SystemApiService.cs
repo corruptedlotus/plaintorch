@@ -22,14 +22,11 @@ public sealed class SystemApiService(
 	PlaintorchStateService stateService,
 	PlainfraContext context,
 	VaultLayout layout,
-	VaultPathSyncModelCatalog pathSyncModelCatalog,
 	OperationStatusRegistry statusRegistry,
 	OperationStatusDismissalService dismissalService,
 	PuckEntityResolutionService puckEntityResolutionService,
-	MarkdownFrontMatterSerializer markdownSerializer,
-	VaultStoragePathComposer pathComposer,
+	VaultMarkdownDiscoveryService discoveryService,
 	VaultEntityModelCatalog entityModelCatalog,
-	PuckIdentityGate identityGate,
 	ILogger<SystemApiService> logger) : ISystemApi
 {
 	/// <inheritdoc />
@@ -90,81 +87,36 @@ public sealed class SystemApiService(
 			throw new InvalidOperationException("Resolved note path escaped the active vault root.");
 		}
 
-		// A note is an entity's only through the identity it carries, never through its title. Where the path shape
-		// classifies to a kind whose storage puts the identity in the path itself — an Index filename token, a lore
-		// hierarchy composed from the folder tree — that identity is read exactly as the watcher reads it; it counts only
-		// when a stored entity stands behind it.
-		if (pathSyncModelCatalog.TryResolve(absolutePath, out var model)
-			&& model is not null
-			&& TryReadPathIdentity(model, absolutePath) is { } pathPuck)
-		{
-			var byPath = await ResolveEntityByPuckAsync(pathPuck, cancellationToken);
-			if (byPath.Exists)
-			{
-				return byPath;
-			}
-		}
-
-		// Authoritative fallback: the note's OWN asserted frontmatter identity. This resolves identity-driven notes the
-		// path shape does not — or mis- — claim: a freeform directive note whose folder is read as a containing
-		// directive, or any freeform/implicit note outside the canonical layout. It stays stored-only — existence is
-		// reported only when the asserted identity maps to a stored entity — so a note carrying no stored identity is
-		// still not an entity (the removed path-shape "template entity" phantom is not re-introduced).
-		var frontMatterResolution = await ResolveByFrontMatterPuckAsync(absolutePath, cancellationToken);
-		return frontMatterResolution ?? new EntityExistence(normalizedRelativePath, false);
-	}
-
-	private async Task<EntityExistence?> ResolveByFrontMatterPuckAsync(
-		string absolutePath,
-		CancellationToken cancellationToken)
-	{
-		if (!File.Exists(absolutePath)
-			|| !string.Equals(Path.GetExtension(absolutePath), ".md", StringComparison.OrdinalIgnoreCase))
-		{
-			return null;
-		}
-
-		string markdown;
+		// A note is an entity's only through the identity it carries, never through its title, and it carries it exactly
+		// where the watcher reads it: the kind the note is (settled by what it asserts where the kind is identity-driven),
+		// and the one identity source that kind's storage declares — an Index filename token, a lore hierarchy composed
+		// from the folder tree, or a quiet note's frontmatter. The identity counts only when a stored entity of that kind
+		// stands behind it, and then this note, the one asserting it, is the entity's associated note.
+		VaultSyncCandidate? note;
 		try
 		{
-			markdown = await VaultFileAccess.ReadAllTextAsync(absolutePath, cancellationToken);
+			note = await discoveryService.ReadNoteAsync(absolutePath, cancellationToken);
 		}
 		catch (VaultFileAccessException exception)
 		{
 			// The note is momentarily held open by another process; report it as not-yet-resolvable rather than
 			// failing the request, so a note-resolution call never turns into a 500 over a transient lock.
 			logger.LogDebug(exception, "Note '{Path}' is in use; treating it as unresolved for now.", absolutePath);
-			return null;
+			note = null;
 		}
 
-		var frontMatter = markdownSerializer.ParseFrontMatter(markdown);
-		if (!frontMatter.TryGetValue("puck", out var rawPuck)
-			|| string.IsNullOrWhiteSpace(rawPuck))
+		if (note is not { PathId: { Length: > 0 } identity })
 		{
-			return null;
+			return new EntityExistence(normalizedRelativePath, false);
 		}
 
-		var puck = NormalizeFrontMatterPuck(rawPuck);
-		if (string.IsNullOrWhiteSpace(puck))
+		var resolved = await puckEntityResolutionService.ResolveAsync(identity, cancellationToken);
+		if (!resolved.Exists || !entityModelCatalog.IsFamilyMember(note.Model.EntityType, resolved.EntityType))
 		{
-			return null;
+			return new EntityExistence(normalizedRelativePath, false);
 		}
 
-		var resolved = await puckEntityResolutionService.ResolveAsync(puck, cancellationToken);
-		if (!resolved.Exists || string.IsNullOrWhiteSpace(resolved.EntityKind))
-		{
-			return null;
-		}
-
-		// This note asserts this identity, so it IS the entity's associated note — authoritative over the self-named
-		// enumeration inside ResolveAsync, which does not locate a freeform note whose file name differs from its folder.
-		var relativeNote = Path.GetRelativePath(layout.VaultRoot, absolutePath).Replace(Path.DirectorySeparatorChar, '/');
-		return ToEntityExistence(resolved) with { AssociatedNote = relativeNote };
-	}
-
-	private static string NormalizeFrontMatterPuck(string rawPuck)
-	{
-		return rawPuck.Trim().Trim('"');
+		return ToEntityExistence(resolved) with { AssociatedNote = note.VaultRelativePath.Replace(Path.DirectorySeparatorChar, '/') };
 	}
 
 	/// <inheritdoc />
@@ -397,36 +349,6 @@ public sealed class SystemApiService(
 		return IsPathUnderRoot(absolutePath, layout.VaultRoot)
 			? Path.GetRelativePath(layout.VaultRoot, absolutePath)
 			: absolutePath;
-	}
-
-	/// <summary>
-	/// Reads the identity a path carries for a kind, per its declared storage — composed exactly as the watcher composes
-	/// it (<see cref="VaultStoragePathComposer.ApplyCompositionFromPath"/>) — or <see langword="null"/> when the kind keeps
-	/// its identity out of its path (Quiet storage: the frontmatter holds it, and the file name is a title). A flat
-	/// filename token counts only when it tokenizes against the kind's declared notation, so an ordinary note whose name
-	/// merely contains " - " is never read as an identity.
-	/// </summary>
-	private string? TryReadPathIdentity(VaultPathSyncModel model, string absolutePath)
-	{
-		if (PuckEntityAttribute.ResolveKind(model.InstantiationType) is null
-			|| Activator.CreateInstance(model.InstantiationType) is not IPuckNamedEntity composed)
-		{
-			return null;
-		}
-
-		pathComposer.ApplyCompositionFromPath(composed, absolutePath);
-		var id = composed.Id;
-		if (string.IsNullOrWhiteSpace(id))
-		{
-			return null;
-		}
-
-		var isFlatIndexToken = !id.Contains('/')
-			&& entityModelCatalog.TryGet(model.EntityType, out var declared)
-			&& declared?.Storage?.PuckStorage == VaultPuckStorage.Index;
-		return isFlatIndexToken && !identityGate.IsMintable(model.InstantiationType, id)
-			? null
-			: id;
 	}
 
 	private static bool IsPathUnderRoot(string path, string root)
