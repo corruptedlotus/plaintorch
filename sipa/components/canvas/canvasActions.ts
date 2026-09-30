@@ -137,6 +137,33 @@ export async function addObjectiveToOnrush(objectiveId: string, sprint: OnrushSp
 	return added
 }
 
+/** Makes a stellar directive a member of a sprint (PEP102 patch 10), moving it from whichever sprint held it. */
+export async function addDirectiveToOnrush(directiveId: string, sprint: OnrushSprint): Promise<boolean> {
+	const added = await core.repos.directives.mutate(directiveId, async () =>
+		await core.directives.addToOnrush(directiveId, sprint.id))
+
+	toast(added ? `Added to ${sprint.title}.` : 'Could not add to that Onrush.', added ? 'success' : 'error')
+	if (added) {
+		await refreshOnrush()
+	}
+
+	return added
+}
+
+/** Takes a stellar directive out of whichever sprint holds it. The directive itself survives. */
+export async function removeDirectiveFromOnrush(directiveId: string): Promise<boolean> {
+	const removed = await core.repos.directives.mutate(directiveId, async () =>
+		await core.directives.removeFromOnrush(directiveId))
+
+	if (!removed) {
+		toast('Could not remove that directive from the Onrush.', 'error')
+		return false
+	}
+
+	await refreshOnrush()
+	return true
+}
+
 /** Takes an objective out of whichever sprint holds it. The objective itself survives. */
 export async function removeObjectiveFromOnrush(objectiveId: string): Promise<boolean> {
 	const removed = await core.repos.objectives.mutate(objectiveId, async () =>

@@ -1,6 +1,7 @@
 import { model } from "@a11d/api-dotnet"
 import type { Objective } from "../objectives/models"
 import type { Checkpoint } from "../dependencies/models"
+import type { Directive } from "../directives/models"
 @model('OnrushSprint')
 export class OnrushSprint {
 	id: string = ''
@@ -8,6 +9,8 @@ export class OnrushSprint {
 	startDate: string | undefined
 	endDate: string | undefined
 	objectives: Objective[] = []
+	/** The stellar directives this sprint tracks (PEP102 patch 10), members beside its objectives. */
+	directives: Directive[] = []
 	executiveOrders: ExecutiveOrder[] = []
 	/** The checkpoints this sprint tracks, its milestone among them (PEP102). */
 	checkpoints: Checkpoint[] = []

@@ -16,7 +16,8 @@ import type {
 	TimeframeUpdate,
 	DirectiveIconRequest,
 	DirectiveBannerRequest,
-	DirectiveAvailabilityRequest
+	DirectiveAvailabilityRequest,
+	AddDirectiveToOnrushRequest
 } from "./contracts"
 
 export class PlaintorchDirectivesSdk {
@@ -125,6 +126,17 @@ export class PlaintorchDirectivesSdk {
 	public async setAvailability(directiveId: string, timeframeId: number | null): Promise<Directive | undefined> {
 		const request: DirectiveAvailabilityRequest = { timeframeId }
 		return await this.client.putForJson<Directive>(`/api/directives/${encodeURIComponent(directiveId)}/availability`, request)
+	}
+
+	/** Makes a stellar directive a member of an onrush sprint (PEP102 patch 10), shaped like the objective's. */
+	public async addToOnrush(directiveId: string, onrushSprintId: string): Promise<boolean> {
+		const request: AddDirectiveToOnrushRequest = { onrushSprintId }
+		return (await this.client.postForJson<Directive>(`/api/directives/stellar/${encodeURIComponent(directiveId)}/onrush`, request)) !== null
+	}
+
+	/** Takes a stellar directive out of whichever onrush sprint holds it. */
+	public async removeFromOnrush(directiveId: string): Promise<boolean> {
+		return await this.client.delete(`/api/directives/stellar/${encodeURIComponent(directiveId)}/onrush`)
 	}
 
 	public async createLunar(request: CreateLunarDirectiveRequest): Promise<Directive | undefined> {

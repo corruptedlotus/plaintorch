@@ -158,6 +158,11 @@ public sealed class VaultWatcherSyncService(
 			await NormalizeObjectiveForeignKeysAsync(objective, candidate.VaultRelativePath, cancellationToken);
 		}
 
+		if (model is StellarDirective stellar)
+		{
+			await NormalizeStellarDirectiveForeignKeysAsync(stellar, candidate.VaultRelativePath, cancellationToken);
+		}
+
 		if (model is Fate or Decree)
 		{
 			await NormalizeIncentiveDirectiveAsync((Incentive)model, candidate.VaultRelativePath, cancellationToken);
@@ -293,8 +298,13 @@ public sealed class VaultWatcherSyncService(
 		{
 			// A directive's availability timeframe is database-only (PEP100 patch 2) — a timeframe id is a row id, not
 			// a PUCK, so it never reaches frontmatter — and a frontmatter sync must not clear it, for the same reason
-			// as parenting and the sprint fields above.
+			// as the sprint fields above.
 			existingDirective.AvailabilityTimeframeId = existingEntry.OriginalValues.GetValue<long?>(nameof(Directive.AvailabilityTimeframeId));
+		}
+
+		if (existing is StellarDirective existingStellar)
+		{
+			await NormalizeStellarDirectiveForeignKeysAsync(existingStellar, candidate.VaultRelativePath, cancellationToken);
 		}
 
 		if (existing is Fate or Decree)
@@ -430,6 +440,32 @@ public sealed class VaultWatcherSyncService(
 					vaultRelativePath);
 				objective.OnrushSprintId = null;
 			}
+		}
+	}
+
+	/// <summary>
+	/// Normalizes a stellar directive's onrush relation (PEP102 patch 10) when the sprint its frontmatter names does
+	/// not exist, as the objective's is normalized: the note keeps saying what it says, the row does not reference
+	/// a sprint that is not there.
+	/// </summary>
+	private async Task NormalizeStellarDirectiveForeignKeysAsync(StellarDirective directive, string vaultRelativePath, CancellationToken cancellationToken)
+	{
+		if (string.IsNullOrWhiteSpace(directive.OnrushSprintId))
+		{
+			return;
+		}
+
+		var onrushExists = await context.OnrushSprints
+			.AsNoTracking()
+			.AnyAsync(item => item.Id == directive.OnrushSprintId, cancellationToken);
+		if (!onrushExists)
+		{
+			logger.LogWarning(
+				"Watcher normalized missing onrush sprint relation '{OnrushSprintId}' on directive '{DirectiveId}' from '{Path}'.",
+				directive.OnrushSprintId,
+				directive.Id,
+				vaultRelativePath);
+			directive.OnrushSprintId = null;
 		}
 	}
 

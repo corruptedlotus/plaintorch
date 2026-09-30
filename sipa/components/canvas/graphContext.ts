@@ -1,4 +1,4 @@
-import { DependencyEndpointKind, type Checkpoint, type Dependency, type EndpointHit, type Objective, type OnrushSprint } from '@pleiades/sdk'
+import { DependencyEndpointKind, type Checkpoint, type Dependency, type Directive, type EndpointHit, type Objective, type OnrushSprint } from '@pleiades/sdk'
 import { endpointKey, resolveEdges, sourceRef, targetRef, unresolvedPrerequisites, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
 
 /**
@@ -25,9 +25,10 @@ export type EndpointResolver = (kind: DependencyEndpointKind, id: string) => Can
 /**
  * Resolves the graph of an onrush sprint.
  *
- * Every objective and checkpoint the sprint holds becomes a node, including the ones no edge touches: in this
- * context the canvas shows the sprint, and a member with no dependencies is still part of it. The milestone is
- * one of the checkpoints, flagged.
+ * Every objective, stellar directive and checkpoint the sprint holds becomes a node, including the ones no edge
+ * touches: in this context the canvas shows the sprint, and a member with no dependencies is still part of it. The
+ * milestone is one of the checkpoints, flagged. A directive member brings its intrinsic edges with it (PEP102 patch
+ * 9): each of its children that is also a member is drawn feeding its finish, dashed.
  *
  * Beyond the members, the graph pulls in the prerequisites *outside* the sprint that hold a member back — and
  * not only the immediate ones: the whole unmet chain, each blocker's own blocker on down, so a member held
@@ -45,10 +46,11 @@ export function onrushContext(
 	// same defensiveness the entity tree applies to a hand-edited vault applies to a collection that
 	// travelled here as part of some other entity's payload.
 	const objectives = (sprint?.objectives ?? []).filter(isEntity).map(objectiveNode)
+	const directives = (sprint?.directives ?? []).filter(isEntity).map(directiveNode)
 	const milestoneId = sprint?.milestoneCheckpointId
 	const checkpoints = (sprint?.checkpoints ?? []).filter(isEntity).map(checkpoint => checkpointNode(checkpoint, checkpoint.id === milestoneId))
 
-	const members = [...objectives, ...checkpoints]
+	const members = [...objectives, ...directives, ...checkpoints]
 	const memberKeys = new Set(members.map(node => node.key))
 	const ghosts = ghostlyBlockers(dependencies, memberKeys, resolve)
 
@@ -95,6 +97,12 @@ function isEntity<T extends { id?: string }>(value: T | undefined | null): value
 export function objectiveNode(objective: Objective): CanvasNode {
 	const ref = { kind: DependencyEndpointKind.Objective, id: objective.id }
 	return { key: endpointKey(ref), ref, entity: objective }
+}
+
+/** Addresses a stellar directive as a dependency endpoint (PEP102 patch 10). */
+export function directiveNode(directive: Directive): CanvasNode {
+	const ref = { kind: DependencyEndpointKind.Directive, id: directive.id }
+	return { key: endpointKey(ref), ref, entity: directive }
 }
 
 /** Addresses a checkpoint as a dependency endpoint, flagging the sprint's milestone. */

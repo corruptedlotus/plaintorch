@@ -74,6 +74,7 @@ public sealed class OnrushSprintApiService(
 		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
 		var sprint = await context.OnrushSprints
 			.Include(item => item.Objectives)
+			.Include(item => item.Directives)
 			.Include(item => item.MilestoneCheckpoint)
 			.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
 			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
@@ -100,6 +101,11 @@ public sealed class OnrushSprintApiService(
 			foreach (var objective in sprint.Objectives)
 			{
 				objective.OnrushSprintId = activatedSprint.Id;
+			}
+
+			foreach (var directive in sprint.Directives)
+			{
+				directive.OnrushSprintId = activatedSprint.Id;
 			}
 
 			// Carry the milestone (and any other tracked checkpoints) onto the real sprint before the
@@ -176,6 +182,7 @@ public sealed class OnrushSprintApiService(
 		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
 		var sprint = await context.OnrushSprints
 			.Include(item => item.Objectives)
+			.Include(item => item.Directives)
 			.Include(item => item.ExecutiveOrders)
 			.Include(item => item.MilestoneCheckpoint)
 			.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
@@ -204,17 +211,17 @@ public sealed class OnrushSprintApiService(
 
 		await context.SaveChangesAsync(cancellationToken);
 
-		// The sprint no longer names a milestone, so it can go. Its SetNull foreign keys free the objectives and
-		// any other checkpoints it merely tracked — they live on, detached — and EF drops the reference on each
-		// tracked one, which is what the markdown re-save below then records.
-		var detached = sprint.Objectives.ToList();
+		// The sprint no longer names a milestone, so it can go. Its SetNull foreign keys free the objectives, the
+		// directives and any other checkpoints it merely tracked — they live on, detached — and EF drops the reference
+		// on each tracked one, which is what the markdown re-save below then records.
+		var detached = sprint.Objectives.Cast<object>().Concat(sprint.Directives).ToList();
 		var graveyardEntry = temporalDataService.StageEntityArchive(sprint, "api-delete", Environment.UserName);
 		context.OnrushSprints.Remove(sprint);
 		await context.SaveChangesAsync(cancellationToken);
 
-		foreach (var objective in detached)
+		foreach (var member in detached)
 		{
-			await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
+			await writeQueue.WriteAsync(member, cancellationToken: cancellationToken);
 		}
 
 		await markdownFileService.DeleteOnrushSprintAsync(sprint, cancellationToken);
@@ -240,6 +247,7 @@ public sealed class OnrushSprintApiService(
 			return await context.OnrushSprints
 				.AsNoTracking()
 				.Include(sprint => sprint.Objectives)
+			.Include(sprint => sprint.Directives)
 				.Include(sprint => sprint.ExecutiveOrders)
 				.Include(sprint => sprint.Checkpoints)
 				.Include(sprint => sprint.MilestoneCheckpoint)
@@ -255,6 +263,7 @@ public sealed class OnrushSprintApiService(
 		return await context.OnrushSprints
 			.AsNoTracking()
 			.Include(sprint => sprint.Objectives)
+			.Include(sprint => sprint.Directives)
 			.Include(sprint => sprint.ExecutiveOrders)
 			.Include(sprint => sprint.Checkpoints)
 			.Include(sprint => sprint.MilestoneCheckpoint)
@@ -273,6 +282,7 @@ public sealed class OnrushSprintApiService(
 		return await context.OnrushSprints
 			.AsNoTracking()
 			.Include(sprint => sprint.Objectives)
+			.Include(sprint => sprint.Directives)
 			.Include(sprint => sprint.ExecutiveOrders)
 			.Include(sprint => sprint.Checkpoints)
 			.Include(sprint => sprint.MilestoneCheckpoint)

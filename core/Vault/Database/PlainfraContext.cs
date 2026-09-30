@@ -364,6 +364,13 @@ public class PlainfraContext : DbContext
 			.HasForeignKey(x => x.MilestoneCheckpointId)
 			.OnDelete(DeleteBehavior.SetNull);
 
+		// PEP102 patch 10: an onrush tracks stellar directives like objectives; a deleted sprint only frees them.
+		modelBuilder.Entity<StellarDirective>()
+			.HasOne(x => x.OnrushSprint)
+			.WithMany(x => x.Directives)
+			.HasForeignKey(x => x.OnrushSprintId)
+			.OnDelete(DeleteBehavior.SetNull);
+
 		modelBuilder.Entity<Attentive>()
 			.Property(x => x.Resolution)
 			.HasConversion<string>();

@@ -6,7 +6,7 @@ using Pleiades.Vault.Markdown;
 namespace Pleiades.Orchestration;
 
 /// <summary>
-/// Represents a short-term sprint that groups focused objectives.
+/// Represents a short-term sprint that groups focused objectives and stellar directives.
 /// </summary>
 [PuckEntity("onrush-sprint")]
 [PuckFormat("x{I:4:100}")]
@@ -42,6 +42,12 @@ public sealed class OnrushSprint : PuckNamedEntity
 	/// Gets the objectives tracked by this sprint.
 	/// </summary>
 	public List<Objective> Objectives { get; set; } = [];
+
+	[InverseProperty(nameof(StellarDirective.OnrushSprint))]
+	/// <summary>
+	/// Gets the stellar directives tracked by this sprint (PEP102 patch 10), members beside its objectives.
+	/// </summary>
+	public List<StellarDirective> Directives { get; set; } = [];
 
 	[InverseProperty(nameof(ExecutiveOrder.OnrushSprint))]
 	/// <summary>

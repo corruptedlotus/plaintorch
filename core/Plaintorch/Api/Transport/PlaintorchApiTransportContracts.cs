@@ -74,6 +74,11 @@ public sealed record CreateObjectiveRequest(
 public sealed record AddObjectiveToOnrushRequest(string OnrushSprintId);
 
 /// <summary>
+/// Represents the transport payload used to add a stellar directive to an onrush sprint (PEP102 patch 10).
+/// </summary>
+public sealed record AddDirectiveToOnrushRequest(string OnrushSprintId);
+
+/// <summary>
 /// Represents the transport payload used to shift onrush sprint dates.
 /// </summary>
 public sealed record OnrushSprintDateRequest(DateOnly? Date = null);

@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations.Schema;
 using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Vault;
@@ -41,4 +42,18 @@ public sealed class StellarDirective : Directive
 	/// </summary>
 	[MarkdownField("endDate")]
 	public DateOnly? EndDate { get; set; }
+
+	/// <summary>
+	/// Gets or sets the onrush sprint this directive is a member of, if any (PEP102 patch 10): an onrush tracks stellar
+	/// directives the way it tracks objectives. A frontmatter field like the objective's, so a note can name its sprint.
+	/// </summary>
+	[MarkdownField("onrush")]
+	public string? OnrushSprintId { get; set; }
+
+	[ForeignKey(nameof(OnrushSprintId))]
+	[InverseProperty(nameof(Orchestration.OnrushSprint.Directives))]
+	/// <summary>
+	/// Gets or sets the onrush sprint this directive is a member of.
+	/// </summary>
+	public OnrushSprint? OnrushSprint { get; set; }
 }

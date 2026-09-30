@@ -10,6 +10,7 @@ patches:
   - Patch102.7 - Canvas input
   - Patch102.8 - Dependency Routes on Banners
   - Patch102.9 - Intrinsic Dependencies
+  - Patch102.10 - Directives in Onrush
 assignee: Soraya 🧙‍♀️
 phase: 2a
 ---
@@ -223,3 +224,15 @@ Stamping and reconciling no longer resolve endpoints one query at a time: `Depen
 - Purges are on the audit log only. Their visibility to the user is a job for a **core status system** the operation-status framework (a watcher concern today) does not yet cover.
 - Enforcement is unchanged: the gate holds only the API's status shifts; a frontmatter `status:` edit bypasses it as before. PEP103 owns that.
 - Counts on a banner are edges, so a directive with many open children shows many blockers; the route tooltip collapses them into "N open children". A canvas badge rides every unmet intrinsic edge, as on any finish gate.
+
+## Patch102.10 - Directives in Onrush
+An onrush now tracks **stellar directives** the way it tracks objectives. With intrinsic dependencies in place (Patch102.9), a directive on the canvas is a node its member children feed — dashed — so a sprint can hold the thing being finished as well as the pieces that finish it.
+
+### Membership
+`StellarDirective.OnrushSprintId` (`onrush:` in frontmatter, like the objective's) and `OnrushSprint.Directives`. A directive joins and leaves through `POST`/`DELETE /api/directives/stellar/{id}/onrush`; joining changes nothing about its workflow status. A lunar directive cannot join. Membership rides the placeholder's begin onto the dated sprint, and a deleted sprint frees its directives as it frees its objectives — they survive, detached, their notes re-saved. The watcher normalizes a note naming a sprint that does not exist, as it does for objectives. The `AddStellarDirectiveOnrush` database migration adds the column.
+
+### On the canvas
+An onrush context draws its directive members as nodes beside the objectives and checkpoints; the add-FAB offers **Add directive** (the cross-kind endpoint picker narrowed to directives) beside **Add objective**, and a directive's node menu removes it from the sprint through its own endpoint. The tray's tallies gain a directive count between the objectives and the checkpoints.
+
+### The briefing
+The onrush briefing card keeps listing objectives only: a directive member is not a row. Its dependency groups now **omit prerequisites that are themselves members** of the sprint — they are rows already, so they neither list under the member they hold back nor count toward its total.

@@ -92,6 +92,7 @@ public sealed class PlaintorchRepository(PlainfraContext context)
 				existingStellar.Due = incomingStellar.Due;
 				existingStellar.StartDate = incomingStellar.StartDate;
 				existingStellar.EndDate = incomingStellar.EndDate;
+				existingStellar.OnrushSprintId = incomingStellar.OnrushSprintId;
 			}
 			else if (existing is LunarDirective existingLunar && directive is LunarDirective incomingLunar)
 			{

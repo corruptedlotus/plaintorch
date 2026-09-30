@@ -33,13 +33,16 @@ public sealed class TimeframeExclusiveAndDirectiveAvailabilityMigrationTests : I
 
 		await using var context = CreateContext();
 
-		var directives = await context.Directives.AsNoTracking().OrderBy(directive => directive.Id).ToListAsync(Ct);
-		Assert.Equal(["A1", "A2", "M1"], directives.Select(directive => directive.Id));
-		Assert.Equal("A1", directives.Single(directive => directive.Id == "A2").ParentDirectiveId);
-		Assert.Equal("RAPTOR", directives.Single(directive => directive.Id == "A1").Codename);
-		Assert.Equal(["focus"], directives.Single(directive => directive.Id == "A1").Tags);
-		Assert.IsType<LunarDirective>(directives.Single(directive => directive.Id == "M1"));
-		Assert.All(directives, directive => Assert.Null(directive.AvailabilityTimeframeId));
+		// Read through SQL rather than the entity: the database sits at this migration, and later migrations have
+		// since added directive columns the current model would select.
+		var connection = context.Database.GetDbConnection();
+		await connection.OpenAsync(Ct);
+		Assert.Equal("A1;A2;M1", await ScalarAsync(connection, "SELECT group_concat(Id, ';') FROM (SELECT Id FROM Directives ORDER BY Id)"));
+		Assert.Equal("A1", await ScalarAsync(connection, "SELECT ParentDirectiveId FROM Directives WHERE Id = 'A2'"));
+		Assert.Equal("RAPTOR", await ScalarAsync(connection, "SELECT Codename FROM Directives WHERE Id = 'A1'"));
+		Assert.Contains("focus", await ScalarAsync(connection, "SELECT Tags FROM Directives WHERE Id = 'A1'"));
+		Assert.Equal("LunarDirective", await ScalarAsync(connection, "SELECT Discriminator FROM Directives WHERE Id = 'M1'"));
+		Assert.Equal("0", await ScalarAsync(connection, "SELECT COUNT(*) FROM Directives WHERE AvailabilityTimeframeId IS NOT NULL"));
 
 		var timeframes = await context.Timeframes.AsNoTracking().OrderBy(timeframe => timeframe.Id).ToListAsync(Ct);
 		Assert.Equal([7L, 8L], timeframes.Select(timeframe => timeframe.Id));
@@ -48,8 +51,6 @@ public sealed class TimeframeExclusiveAndDirectiveAvailabilityMigrationTests : I
 		Assert.Equal(TimeframeInclusion.College, timeframes[1].AutoInclusion);
 		Assert.Equal([ObjectiveCollege.Lore], timeframes[1].AutoInclusionColleges);
 
-		var connection = context.Database.GetDbConnection();
-		await connection.OpenAsync(Ct);
 		Assert.Equal("j-objective|A2;k-decree|M1", await ScalarAsync(connection, "SELECT group_concat(Id || '|' || DirectiveId, ';') FROM (SELECT * FROM Incentives ORDER BY Id)"));
 		Assert.Equal("j-objective|7;k-decree|8", await ScalarAsync(connection, "SELECT group_concat(IncentiveId || '|' || AffinityTimeframeId, ';') FROM (SELECT * FROM Executive ORDER BY IncentiveId)"));
 		Assert.Equal("", await ScalarAsync(connection, "SELECT group_concat(\"table\") FROM pragma_foreign_key_check"));

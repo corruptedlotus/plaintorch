@@ -1,7 +1,7 @@
 import { Component, component, css, event, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
 import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
 import { concludeConfirmation, ContextMenu, core, deleteConfirmation, DerivedRef, navigateToEntity, removeConfirmation, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
-import { activatePlanningOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
+import { activatePlanningOnrush, addDirectiveToOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeDirectiveFromOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
 import { OnrushDetailModal } from './OnrushDetailModal'
 import { contextModeLabels, edgeEndpoints, globalContext, onrushContext, type CanvasContextMode, type EndpointResolver } from './graphContext'
@@ -724,8 +724,8 @@ export class DependencyCanvas extends Component {
 	/**
 	 * The management tray, shown whenever a sprint is on screen (PEP102.5).
 	 *
-	 * Three tallies — objectives, checkpoints (the milestone among them), executive orders — sit above a row
-	 * that opens the sprint's own detail window and offers the lifecycle actions its mode admits.
+	 * Four tallies — objectives, stellar directives, checkpoints (the milestone among them), executive orders — sit
+	 * above a row that opens the sprint's own detail window and offers the lifecycle actions its mode admits.
 	 */
 	private get trayTemplate() {
 		const sprint = this.sprint
@@ -734,6 +734,7 @@ export class DependencyCanvas extends Component {
 				${!sprint ? nothing : html`
 					<div class='counts'>
 						<span class='count'><p7t-icon icon='objective'></p7t-icon>${sprint.objectives?.length ?? 0}</span>
+						<span class='count'><p7t-icon icon='directive'></p7t-icon>${sprint.directives?.length ?? 0}</span>
 						<span class='count'><p7t-icon icon='checkpoint'></p7t-icon>${sprint.checkpoints?.length ?? 0}</span>
 						<span class='count'><p7t-icon icon='exec-order'></p7t-icon>${sprint.executiveOrders?.length ?? 0}</span>
 					</div>
@@ -1109,6 +1110,8 @@ export class DependencyCanvas extends Component {
 	}
 
 	private entityMenuEntries(node: CanvasNode): ContextMenuEntry[] {
+		// A directive and an objective leave the sprint through their own endpoints (PEP102 patch 10).
+		const remove = node.ref.kind === DependencyEndpointKind.Directive ? removeDirectiveFromOnrush : removeObjectiveFromOnrush
 		return [
 			{ label: 'Open note', icon: 'lucide:file-text', run: () => navigateToEntity(node.entity.id) },
 			node.ghostly
@@ -1117,7 +1120,7 @@ export class DependencyCanvas extends Component {
 					label: 'Remove from Onrush',
 					icon: 'onrush',
 					confirm: removeConfirmation(`Remove "${node.entity.title}" from this Onrush?`, 'default'),
-					run: () => removeObjectiveFromOnrush(node.entity.id)
+					run: () => remove(node.entity.id)
 				},
 			{ separator: true },
 			this.deleteEntry(node)
@@ -1182,6 +1185,12 @@ export class DependencyCanvas extends Component {
 				icon: 'objective',
 				label: 'Add objective',
 				run: async () => await this.addObjective()
+			},
+			{
+				key: 'directive',
+				icon: 'directive',
+				label: 'Add directive',
+				run: async () => await this.addDirective()
 			}
 		]
 	}
@@ -1269,6 +1278,21 @@ export class DependencyCanvas extends Component {
 		const objective = await SelectObjectiveModal.prompt(present)
 		if (objective) {
 			await addObjectiveToOnrush(objective.id, sprint)
+		}
+	}
+
+	/** Brings a stellar directive into the sprint (PEP102 patch 10), picked through the cross-kind endpoint search. */
+	private async addDirective() {
+		const sprint = this.sprint
+		if (!sprint) {
+			toast(`There is no ${contextModeLabels[this.mode].toLowerCase()} to add to.`, 'warning')
+			return
+		}
+
+		const present = new Set(this.graph.nodes.map(node => node.key))
+		const hit = await SelectEndpointModal.prompt(present, [DependencyEndpointKind.Directive])
+		if (hit) {
+			await addDirectiveToOnrush(hit.id, sprint)
 		}
 	}
 

@@ -307,6 +307,49 @@ public sealed class DirectiveApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task<StellarDirective> AddToOnrushAsync(string directiveId, string onrushSprintId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
+		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
+
+		var stellar = await FindStellarAsync(directiveId, "join an onrush", cancellationToken);
+		if (!await context.OnrushSprints.AnyAsync(sprint => sprint.Id == onrushSprintId, cancellationToken))
+		{
+			throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
+		}
+
+		stellar.OnrushSprintId = onrushSprintId;
+		await writeQueue.WriteAsync(stellar, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync("api", "directive.add-to-onrush", subject: stellar, details: new { onrushSprintId }, cancellationToken: cancellationToken);
+		return stellar;
+	}
+
+	/// <inheritdoc />
+	public async Task<StellarDirective> RemoveFromOnrushAsync(string directiveId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
+
+		var stellar = await FindStellarAsync(directiveId, "leave an onrush", cancellationToken);
+		var previous = stellar.OnrushSprintId;
+		stellar.OnrushSprintId = null;
+		await writeQueue.WriteAsync(stellar, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync("api", "directive.remove-from-onrush", subject: stellar, details: new { previous }, cancellationToken: cancellationToken);
+		return stellar;
+	}
+
+	/// <summary>
+	/// Loads a stellar directive for an action only a stellar directive can take, naming the action in the refusal
+	/// when the id turns out to be lunar.
+	/// </summary>
+	private async Task<StellarDirective> FindStellarAsync(string directiveId, string action, CancellationToken cancellationToken)
+	{
+		var directive = await context.Directives.FirstOrDefaultAsync(item => item.Id == directiveId, cancellationToken)
+			?? throw new InvalidOperationException($"Directive '{directiveId}' was not found.");
+		return directive as StellarDirective
+			?? throw new InvalidOperationException($"Directive '{directiveId}' is a lunar directive and cannot {action}.");
+	}
+
+	/// <inheritdoc />
 	public async Task DeleteAsync(string directiveId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);

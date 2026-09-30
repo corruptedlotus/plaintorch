@@ -38,7 +38,8 @@ const dependents: Partial<Record<EntityTypeName, DependentResolver>> = {
 	],
 	StellarDirective: (directive) => [
 		key("StellarDirective", directive.parentDirectiveId),
-		key("LunarDirective", directive.parentDirectiveId)
+		key("LunarDirective", directive.parentDirectiveId),
+		key("OnrushSprint", directive.onrushSprintId)
 	],
 	LunarDirective: (directive) => [
 		key("StellarDirective", directive.parentDirectiveId),

@@ -77,6 +77,17 @@ public interface IDirectiveApi
 	Task<LunarDirective> ShiftLunarWorkflowAsync(string directiveId, LunarDirectiveWorkflowShift shift, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Makes a stellar directive a member of an onrush sprint (PEP102 patch 10), moving it from whichever sprint held
+	/// it. Its workflow status is left as it is.
+	/// </summary>
+	Task<StellarDirective> AddToOnrushAsync(string directiveId, string onrushSprintId, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Takes a stellar directive out of whichever onrush sprint holds it (PEP102 patch 10). The directive itself survives.
+	/// </summary>
+	Task<StellarDirective> RemoveFromOnrushAsync(string directiveId, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Deletes a directive of either kind.
 	/// </summary>
 	Task DeleteAsync(string directiveId, CancellationToken cancellationToken = default);

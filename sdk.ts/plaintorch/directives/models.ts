@@ -1,5 +1,6 @@
 import { model, ModelValueConstructor } from "@a11d/api-dotnet"
 import type { Objective, ObjectiveCollege } from "../objectives/models"
+import type { OnrushSprint } from "../onrush/models"
 export enum DirectiveStatus {
 	Planned = 0,
 	Committed = 1,
@@ -43,6 +44,9 @@ export class Directive {
 	due?: string | undefined
 	startDate?: string | undefined
 	endDate?: string | undefined
+	/** The onrush sprint this directive is a member of (PEP102 patch 10); only present on stellar directives. */
+	onrushSprintId?: string | undefined
+	onrushSprint?: OnrushSprint | undefined
 	/** Timeframes; only present on lunar directives (PEP100). */
 	timeframes?: Timeframe[]
 	/** Icon key (PEP105): a glyph/lucide name, a `media:` self image, or a `vault:` shared image. */
@@ -251,6 +255,11 @@ export interface DirectiveBannerRequest {
  * Sets or clears a directive's availability (PEP100 patch 2). The core refuses an unknown timeframe and one that is
  * not in {@link TimeframeInclusion.Availability Availability} mode.
  */
+/** Payload to make a stellar directive a member of an onrush sprint (PEP102 patch 10). */
+export interface AddDirectiveToOnrushRequest {
+	onrushSprintId: string
+}
+
 export interface DirectiveAvailabilityRequest {
 	/** The Availability-mode timeframe to make the directive available in, or `null` to clear it. */
 	timeframeId: number | null

@@ -43,6 +43,10 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		foreach (var property in GetAnnotatedProperties(model.GetType()))
 		{
 			var attribute = property.GetCustomAttribute<MarkdownFieldAttribute>()!;
+			// A declared key is the model's whether or not it has a value: a cleared field (an objective or directive
+			// that left its onrush, a due that was removed) is dropped from the note rather than resurrected from the
+			// preserved frontmatter below, which is for the keys the model does not know about.
+			emittedKeys.Add(attribute.Name);
 			var value = property.GetValue(model);
 			if (value is null)
 			{
@@ -50,7 +54,6 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 			}
 
 			lines.Add($"{attribute.Name}: {FormatScalar(value)}");
-			emittedKeys.Add(attribute.Name);
 		}
 
 		if (preservedFrontMatter is not null)

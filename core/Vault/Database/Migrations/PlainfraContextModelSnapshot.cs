@@ -937,6 +937,9 @@ namespace plaintorch.Vault.Database.Migrations
                     b.Property<DateOnly?>("EndDate")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("OnrushSprintId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateOnly?>("StartDate")
                         .HasColumnType("TEXT");
 
@@ -944,6 +947,8 @@ namespace plaintorch.Vault.Database.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT")
                         .HasColumnName("Status");
+
+                    b.HasIndex("OnrushSprintId");
 
                     b.HasDiscriminator().HasValue("StellarDirective");
                 });
@@ -1329,6 +1334,16 @@ namespace plaintorch.Vault.Database.Migrations
                     b.Navigation("Parent");
                 });
 
+            modelBuilder.Entity("Pleiades.Orchestration.StellarDirective", b =>
+                {
+                    b.HasOne("Pleiades.Orchestration.OnrushSprint", "OnrushSprint")
+                        .WithMany("Directives")
+                        .HasForeignKey("OnrushSprintId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("OnrushSprint");
+                });
+
             modelBuilder.Entity("Pleiades.Orchestration.Objective", b =>
                 {
                     b.HasOne("Pleiades.Orchestration.OnrushSprint", "OnrushSprint")
@@ -1396,6 +1411,8 @@ namespace plaintorch.Vault.Database.Migrations
             modelBuilder.Entity("Pleiades.Orchestration.OnrushSprint", b =>
                 {
                     b.Navigation("Checkpoints");
+
+                    b.Navigation("Directives");
 
                     b.Navigation("ExecutiveOrders");
 

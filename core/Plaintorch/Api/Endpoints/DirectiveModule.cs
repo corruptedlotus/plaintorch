@@ -88,6 +88,13 @@ public sealed class DirectiveModule : Module
 		stellar.MapPost("/{directiveId}/workflow", async (string directiveId, StellarDirectiveWorkflowShift request, IDirectiveApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ShiftStellarWorkflowAsync(directiveId, request, cancellationToken)));
 
+		// Onrush membership (PEP102 patch 10), shaped like the objective's.
+		stellar.MapPost("/{directiveId}/onrush", async (string directiveId, AddDirectiveToOnrushRequest request, IDirectiveApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.AddToOnrushAsync(directiveId, request.OnrushSprintId, cancellationToken)));
+
+		stellar.MapDelete("/{directiveId}/onrush", async (string directiveId, IDirectiveApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.RemoveFromOnrushAsync(directiveId, cancellationToken)));
+
 		// Lunar-only surface (PEP100).
 		var lunar = group.MapGroup("/lunar");
 
