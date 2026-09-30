@@ -33,7 +33,10 @@ executives is dragged):
 
 The Forecast tab (`p7t-forecast-view`) is a Mitra `week-all-day` strip, three days wide from today and scrolling
 sideways, with a `p7t-polaris-column` slotted into every day through the embed's `dayFill` hook; its cycles come
-from the SDK's `polarisDays` record.
+from the SDK's `polarisDays` record. The columns collapse as one row (any column's chevron; the view owns the state)
+down to their headers — state and total — docked at the foot of each day, so the day boxes above are free for the
+calendar's own planning and events. Wherever a column leaves its day uncovered it takes no pointer (and the embed's
+day cells pass it through), so Mitra's day box beneath stays reachable, whole.
 
 ## Transitional coupling
 Until the `PlatformHost` inversion completes, parts of `components/` still import `obsidian` (dialogs, `Notice`,

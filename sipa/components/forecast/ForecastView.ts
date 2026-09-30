@@ -15,6 +15,9 @@ import { loadMitraEmbed, type MitraRange } from './mitraEmbed'
  *
  * The cycles come from the `polarisDays` record, read from the first day the view covers; as the strip scrolls, the
  * view names the new span (`range-change`) and the record follows it.
+ *
+ * The row of columns collapses as one (any column's chevron), down to their headers at the foot of the days, which
+ * leaves the days themselves — Mitra's day boxes, where the calendar's own planning and events go — free to use.
  */
 @component('p7t-forecast-view')
 export class ForecastView extends Component {
@@ -31,6 +34,12 @@ export class ForecastView extends Component {
 	private readonly start = dateOfIsoDay(this.today)
 
 	@state() private ready = false
+
+	/**
+	 * Whether the row of Polaris columns is collapsed: every day's column at once, down to its header at the foot of
+	 * the day, so the days above are free for the calendar. Any column's chevron toggles the whole row.
+	 */
+	@state() private collapsed = false
 
 	/** The first day the strip covers (ISO), from its `range-change`; nothing is read before it names one. */
 	@state() private from?: string
@@ -115,6 +124,13 @@ export class ForecastView extends Component {
 		const day = column.day!
 		column.data = plan.byDay.get(day)
 		column.plannable = day >= this.today && day <= plan.horizon
+		column.collapsed = this.collapsed
+	}
+
+	/** A column's chevron asks for the row to collapse or open: the state is the row's, so every column follows. */
+	private onCollapseToggle(e: Event) {
+		e.stopPropagation()
+		this.collapsed = !this.collapsed
 	}
 
 	protected override updated() {
@@ -136,7 +152,8 @@ export class ForecastView extends Component {
 				.dayCount=${ForecastView.visibleDays}
 				.date=${this.start}
 				.dayFill=${this.dayFill}
-				@range-change=${(e: CustomEvent<MitraRange>) => this.onRangeChange(e)}>
+				@range-change=${(e: CustomEvent<MitraRange>) => this.onRangeChange(e)}
+				@collapsetoggle=${(e: Event) => this.onCollapseToggle(e)}>
 			</mitra-embed>
 		`
 	}

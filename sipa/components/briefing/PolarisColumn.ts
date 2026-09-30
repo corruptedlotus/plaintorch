@@ -20,11 +20,18 @@ import { toast } from "../../host"
  *
  * With no cycle the column is the day's empty slot: a button planning the day when it is {@link plannable}, nothing
  * otherwise.
+ *
+ * The column collapses to its header — its state and total — docked at the foot of its day, leaving the day above it
+ * to the calendar. Its host (the forecast) owns the collapsed state, so every day collapses as one row. Wherever the
+ * column leaves its day uncovered — collapsed, or with no cycle — it takes no pointer, so the day box beneath stays
+ * reachable, whole.
  */
 @component('p7t-polaris-column')
 export class PolarisColumn extends PolarisBriefingBase {
 	/** The day the column stands for, as an ISO date (`2026-09-30`). */
 	@property() day?: string
+
+	override collapsible = true
 
 	/** Whether the day, while it has no cycle, is offered for planning: the column then shows the button planning it. */
 	@property({ type: Boolean }) plannable = false
@@ -95,6 +102,8 @@ export class PolarisColumn extends PolarisBriefingBase {
 				/* The card's bleed into its padding assumes the card's wider padding. */
 				inset-inline: -.5em;
 				width: calc(100% + .5em);
+				/* A narrow day scrolls its list down, never sideways — the strip around it is what scrolls sideways. */
+				overflow-x: hidden;
 			}
 
 			:host::part(footer) {
@@ -105,17 +114,42 @@ export class PolarisColumn extends PolarisBriefingBase {
 				opacity: .75;
 			}
 
-			/* The day without a cycle: no card at all, only what it offers. */
+			/* Collapsed with the rest of the row: the header alone, docked at the foot of the day. */
+			:host([collapsed]) {
+				align-self: end;
+				gap: 0;
+				padding-block: .35rem;
+			}
+
+			/* The day without a cycle: no card at all, only what it offers — and nothing in the way of the day. */
 			:host([vacant]) {
 				background: none;
 				padding: 0;
 				outline: none;
 				justify-content: center;
 				align-items: center;
+				pointer-events: none;
 			}
 
 			.plan {
 				font-size: 1.05em;
+				pointer-events: auto;
+
+				:host([collapsed]) & {
+					font-size: .95em;
+				}
+			}
+
+			/* The header line: the state, and — collapsed, the rest being out of sight — the day's total. */
+			.pre-heading-line {
+				display: inline-flex;
+				align-items: center;
+				gap: .8ch;
+
+				& p7t-time-unit {
+					font-weight: 300;
+					color: color-mix(in srgb, currentColor 80%, transparent);
+				}
 			}
 
 			.total {
@@ -153,6 +187,19 @@ export class PolarisColumn extends PolarisBriefingBase {
 	protected override willUpdate(changed: PropertyValues<this>) {
 		super.willUpdate(changed)
 		this.preHeading = this.active ? 'Active' : this.ended ? 'Concluded' : 'Forecast'
+		// A collapsing column takes its open creation row with it: the row floats over the list it would stand in.
+		if (changed.has('collapsed') && this.collapsed) {
+			this.creating = false
+		}
+	}
+
+	protected override get preHeadingTemplate() {
+		return html`
+			<span class='pre-heading-line'>
+				${super.preHeadingTemplate}
+				${!this.collapsed ? nothing : html`<p7t-time-unit .value=${this.totalEstimation}></p7t-time-unit>`}
+			</span>
+		`
 	}
 
 	protected override updated(changed: PropertyValues<this>) {
