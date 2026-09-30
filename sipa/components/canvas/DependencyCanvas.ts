@@ -888,7 +888,7 @@ export class DependencyCanvas extends Component {
 	/**
 	 * The right node element for what the node stands for.
 	 *
-	 * A checkpoint gets its own component — no lifecycle, its milestone flagged — while everything else is an
+	 * A checkpoint gets its own component — one-shot, no status, its milestone flagged — while everything else is an
 	 * entity node. Both share the pointer contract the container drives them by.
 	 */
 	private nodeTemplate(node: CanvasNode, lock: NodeLock) {
@@ -1037,8 +1037,8 @@ export class DependencyCanvas extends Component {
 
 		const trigger = effectiveTrigger(edge.dependency)
 		const constraint = effectiveConstraint(edge.dependency)
-		// A checkpoint has no begin or finish, so it offers no trigger on its source side and no constraint on
-		// its target side — those are empty by rule, not a choice, so the menu withholds them entirely.
+		// A checkpoint is one-shot — its only event is its unlock — so it offers no trigger on its source side and no
+		// constraint on its target side: those are empty by rule, not a choice, so the menu withholds them entirely.
 		const sourceIsCheckpoint = edge.dependency.sourceKind === DependencyEndpointKind.Checkpoint
 		const targetIsCheckpoint = edge.dependency.targetKind === DependencyEndpointKind.Checkpoint
 		const entries: ContextMenuEntry[] = []

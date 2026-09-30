@@ -41,6 +41,7 @@ public sealed class PlaintorchModule : Module
 				? new VaultLayout(vaultOptions)
 				: new VaultLayout());
 		services.AddScoped<DependencyReconciler>();
+		services.AddScoped<BacklogScheduleRecorder>();
 		services.AddScoped<DependencyGateService>();
 		// The one reading of the dependency graph — stored edges plus the intrinsic edges each rule derives (PEP102
 		// patch 9) — shared by the gate, the reconciler, the API and the purge.
@@ -88,6 +89,7 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<PuckRuntimeCompilationCatalog>();
 		services.AddSingleton<VaultEntityModelCatalog>();
 		services.AddSingleton<ILifecyclePhaseSource, EventiveLifecyclePhaseSource>();
+		services.AddSingleton<ILifecyclePhaseSource, CheckpointLifecyclePhaseSource>();
 		services.AddSingleton<EntityLifecycleResolver>();
 		services.AddScoped<VaultEntityGateway>();
 		services.AddScoped<Pleiades.Plaintorch.Api.Services.VaultEntityLifecycleService>();
@@ -161,6 +163,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<IVaultMigration, ObjectiveQuietCanonicalizationMigration>();
 		services.AddScoped<IVaultMigration, OnrushPlanningPlaceholderRenameMigration>();
 		services.AddScoped<IVaultMigration, FateOrbitOnlyMigration>();
+		services.AddScoped<IVaultMigration, DirectiveStartEndRetirementMigration>();
 		services.AddScoped<IVaultMigration, IntrinsicDependencyPurgeMigration>();
 		services.AddScoped<PlaintorchEngine>();
 		services.AddScoped<TimeframeAffinityResolver>();

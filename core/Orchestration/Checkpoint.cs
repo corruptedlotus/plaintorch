@@ -3,14 +3,15 @@ using Pleiades.Puck;
 namespace Pleiades.Orchestration;
 
 /// <summary>
-/// Represents a checkpoint: a simple point in the journey that only aggregates dependencies (PEP101). A
-/// checkpoint has no lifecycle of its own; once all of its incoming dependencies are met it <em>unlocks</em>
-/// (unblocking its dependants), unless it still owes a Celestron toll or an external condition.
+/// Represents a checkpoint: a simple point in the journey that only aggregates dependencies (PEP101). Once all of its
+/// incoming dependencies are met it <em>unlocks</em> (unblocking its dependants), unless it still owes a Celestron toll
+/// or an external condition.
 /// </summary>
 /// <remarks>
 /// Checkpoints are PUCK-addressable but database-only (no <c>VaultStorage</c>): they carry no markdown file.
-/// Because they have no begin/finish, a checkpoint endpoint always leaves the dependency's trigger (as source)
-/// or constraint (as target) empty.
+/// A checkpoint is one-shot: it cannot be started, only finished, and its unlock is its finish
+/// (<c>CheckpointLifecyclePhaseSource</c>); re-locking un-finishes it. With that single phase implied, a checkpoint
+/// endpoint always leaves the dependency's trigger (as source) or constraint (as target) empty.
 /// </remarks>
 [PuckEntity("checkpoint")]
 [PuckFormat("c{S:4}")]

@@ -7,10 +7,11 @@ import { toast } from '../../host'
 /**
  * Banner for a checkpoint (PEP101/102).
  *
- * A checkpoint has no lifecycle, so this is mostly its name — the one part the milestone in particular needs —
- * which is now editable. Beyond that it carries only its own state: whether it has unlocked, and the Celestron
- * toll or external condition still standing between it and that. Both of those are editable too: a toll is set
- * by typing a value and removed by clearing it to nothing; a condition is required, met, or removed outright.
+ * A checkpoint has no status (it is one-shot, finished by unlocking), so this is mostly its name — the one part the
+ * milestone in particular needs — which is now editable. Beyond that it carries only its own state: whether it has
+ * unlocked, and the Celestron toll or external condition still standing between it and that. Both of those are
+ * editable too: a toll is set by typing a value and removed by clearing it to nothing; a condition is required, met,
+ * or removed outright.
  */
 @component('p7t-checkpoint-banner')
 export class CheckpointBanner extends EntityBanner<Checkpoint> {

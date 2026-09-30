@@ -163,16 +163,6 @@ public sealed class DirectiveApiService(
 			stellar.Due = update.Due.Value;
 		}
 
-		if (update.StartDate.IsSet)
-		{
-			stellar.StartDate = update.StartDate.Value;
-		}
-
-		if (update.EndDate.IsSet)
-		{
-			stellar.EndDate = update.EndDate.Value;
-		}
-
 		await writeQueue.WriteAsync(stellar, previous, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",

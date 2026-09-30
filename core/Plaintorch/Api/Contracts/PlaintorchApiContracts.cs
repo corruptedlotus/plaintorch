@@ -178,20 +178,19 @@ public enum DirectiveKind
 }
 
 /// <summary>
-/// Represents the mutable fields of a stellar directive for update actions, including its scheduling dates.
+/// Represents the mutable fields of a stellar directive for update actions, including its due date. When it is planned
+/// to begin or finish is a backlog schedule (PEP101), set through <see cref="Abstractions.IBacklogScheduleApi"/>.
 /// </summary>
 public sealed record StellarDirectiveUpdate(
 	string? Title = null,
 	Optional<string?> Codename = default,
 	Optional<string?> ParentDirectiveId = default,
 	IReadOnlyList<string>? Tags = null,
-	Optional<DateOnly?> Due = default,
-	Optional<DateOnly?> StartDate = default,
-	Optional<DateOnly?> EndDate = default);
+	Optional<DateOnly?> Due = default);
 
 /// <summary>
 /// Represents the mutable fields of a lunar directive for update actions. Lunar directives are everglow and
-/// therefore carry no scheduling dates (PEP100).
+/// therefore carry no due date (PEP100).
 /// </summary>
 public sealed record LunarDirectiveUpdate(
 	string? Title = null,

@@ -11,7 +11,7 @@ using Xunit;
 namespace Pleiades.Tests.Core;
 
 /// <summary>
-/// v4→v5 vault migration (PEP102 patch 9): a vault written before a directive's finish depended on its children may hold
+/// v5→v6 vault migration (PEP102 patch 9): a vault written before a directive's finish depended on its children may hold
 /// stored dependencies the intrinsic edges now contradict, or that merely restate them. The migration purges both —
 /// contradicted edges newest first until the graph orders, redundant ones outright — on the record, and touches nothing
 /// on disk.
@@ -27,7 +27,7 @@ public sealed class IntrinsicDependencyPurgeMigrationTests : VaultTestBase
 		var a = await Vault.WithScopeAsync(s => s.GetRequiredService<IObjectiveApi>().CreateFromDirectiveAsync(alpha.Id, "A quest", cancellationToken: ct));
 		var b = await Vault.WithScopeAsync(s => s.GetRequiredService<IObjectiveApi>().CreateFromDirectiveAsync(beta.Id, "B quest", cancellationToken: ct));
 
-		// Written straight to the table, as a pre-v5 vault holds them — the API would refuse the first three today.
+		// Written straight to the table, as a pre-v6 vault holds them — the API would refuse the first three today.
 		// The cross-tree pair loops through the two intrinsic edges (older first, so the newer is the one to go); the
 		// restatement is redundant; the last is an ordinary edge that must survive.
 		var ids = await Vault.QueryAsync(async context =>
@@ -42,9 +42,9 @@ public sealed class IntrinsicDependencyPurgeMigrationTests : VaultTestBase
 		});
 		Assert.Equal(4, await Vault.QueryAsync(context => context.Dependencies.CountAsync(ct)));
 
-		// Downgrade the stored version so the runner applies the v4→v5 purge (and only that one).
+		// Downgrade the stored version so the runner applies the v5→v6 purge (and only that one).
 		var settings = VaultSettings.Load(Vault.Layout.SettingsPath);
-		settings.SchemaVersion = 4;
+		settings.SchemaVersion = 5;
 		settings.Save(Vault.Layout.SettingsPath);
 
 		await Vault.WithScopeAsync(s => s.GetRequiredService<VaultMigrationRunner>().RunAsync());

@@ -35,8 +35,8 @@ function toRequest(ref: EndpointRef): DependencyEndpointRequest {
 /**
  * Sends a create with the trigger and constraint each end actually admits.
  *
- * A checkpoint has no begin or finish, so its side is left empty however the caller asked; the core rejects a
- * checkpoint endpoint that carries one. The single place both drawing and reshaping route through, so neither
+ * A checkpoint is one-shot — its only event is its unlock — so its side is left empty however the caller asked; the
+ * core rejects a checkpoint endpoint that carries one. The single place both drawing and reshaping route through, so neither
  * can send an edge the validator will refuse for that reason.
  */
 function sendCreate(source: EndpointRef, target: EndpointRef, trigger: DependencyTrigger, constraint: DependencyConstraint) {
@@ -53,8 +53,8 @@ function sendCreate(source: EndpointRef, target: EndpointRef, trigger: Dependenc
  *
  * Defaults to the pairing the core itself defaults to — satisfied when the prerequisite finishes, gating the
  * dependant's begin — which is the ordinary reading of "this comes before that". A checkpoint endpoint is the
- * exception on its own side: it has no begin or finish, so a checkpoint source carries no trigger and a
- * checkpoint target no constraint, which the core requires to be empty rather than defaulted.
+ * exception on its own side: it is one-shot, its unlock its only event, so a checkpoint source carries no trigger
+ * and a checkpoint target no constraint, which the core requires to be empty rather than defaulted.
  */
 export async function createDependency(
 	source: EndpointRef,

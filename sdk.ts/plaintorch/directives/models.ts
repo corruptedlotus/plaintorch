@@ -40,10 +40,11 @@ export class Directive {
 	status: DirectiveStatus | LunarDirectiveStatus = DirectiveStatus.Planned
 	tags: string[] = []
 	objectives: Objective[] = []
-	/** Scheduling dates; only present on stellar directives. */
+	/**
+	 * The due date; only present on stellar directives. When a directive is planned to begin or finish, and when it
+	 * actually did, are backlog schedules (PEP101, {@link BacklogSchedule}), listed through `client.schedules`.
+	 */
 	due?: string | undefined
-	startDate?: string | undefined
-	endDate?: string | undefined
 	/** The onrush sprint this directive is a member of (PEP102 patch 10); only present on stellar directives. */
 	onrushSprintId?: string | undefined
 	onrushSprint?: OnrushSprint | undefined
@@ -155,7 +156,10 @@ export interface InitDirectiveRequest {
 	path: string
 }
 
-/** Stellar directive update, including scheduling dates. Nullable fields: omit to keep, a value to set, `null` to clear. */
+/**
+ * Stellar directive update, including its due date. Nullable fields: omit to keep, a value to set, `null` to clear.
+ * A planned begin or finish is a backlog schedule (PEP101), added through `client.schedules`.
+ */
 export interface StellarDirectiveUpdate {
 	title?: string | undefined
 	codename?: string | null | undefined
@@ -163,11 +167,9 @@ export interface StellarDirectiveUpdate {
 	parentDirectiveId?: string | null | undefined
 	tags?: string[] | undefined
 	due?: string | null | undefined
-	startDate?: string | null | undefined
-	endDate?: string | null | undefined
 }
 
-/** Lunar directive update. Lunar directives are everglow and carry no scheduling dates (PEP100). */
+/** Lunar directive update. Lunar directives are everglow and carry no due date (PEP100). */
 export interface LunarDirectiveUpdate {
 	title?: string | undefined
 	codename?: string | null | undefined

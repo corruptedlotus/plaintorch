@@ -5,6 +5,10 @@ namespace Pleiades.Orchestration;
 /// <summary>
 /// Defines the workflow states available to objectives.
 /// </summary>
+/// <remarks>
+/// An objective begins when it is set to <see cref="Polaris"/> (PEP101): that is its only begin phase. Taking it into
+/// an onrush sprint commits it to the sprint without beginning it.
+/// </remarks>
 public enum ObjectiveStatus
 {
 	/// <summary>
@@ -16,12 +20,11 @@ public enum ObjectiveStatus
 	/// </summary>
 	Blocked = 1,
 	/// <summary>
-	/// The objective is being pursued during onrush.
+	/// The objective is tracked by an onrush sprint, to be pursued during it. Not yet begun.
 	/// </summary>
-	[LifecyclePhase(LifecyclePhase.Begin)]
 	Onrush = 2,
 	/// <summary>
-	/// The objective is currently part of Polaris execution.
+	/// The objective is currently part of Polaris execution. Entering this state is what begins it.
 	/// </summary>
 	[LifecyclePhase(LifecyclePhase.Begin)]
 	Polaris = 3,

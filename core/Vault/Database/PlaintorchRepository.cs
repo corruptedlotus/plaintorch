@@ -85,13 +85,11 @@ public sealed class PlaintorchRepository(PlainfraContext context)
 			existing.ParentDirectiveId = directive.ParentDirectiveId;
 			existing.Tags = directive.Tags.ToList();
 
-			// Stellar and lunar directives carry their own workflow state and (for stellar) scheduling dates.
+			// Stellar and lunar directives carry their own workflow state and (for stellar) a due date.
 			if (existing is StellarDirective existingStellar && directive is StellarDirective incomingStellar)
 			{
 				existingStellar.Status = incomingStellar.Status;
 				existingStellar.Due = incomingStellar.Due;
-				existingStellar.StartDate = incomingStellar.StartDate;
-				existingStellar.EndDate = incomingStellar.EndDate;
 				existingStellar.OnrushSprintId = incomingStellar.OnrushSprintId;
 			}
 			else if (existing is LunarDirective existingLunar && directive is LunarDirective incomingLunar)

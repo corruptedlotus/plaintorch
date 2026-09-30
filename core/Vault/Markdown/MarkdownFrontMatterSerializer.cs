@@ -64,9 +64,10 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 
 		if (preservedFrontMatter is not null)
 		{
+			var retiredKeys = GetRetiredFieldNames(model.GetType());
 			foreach (var (key, value) in preservedFrontMatter)
 			{
-				if (string.IsNullOrWhiteSpace(key) || emittedKeys.Contains(key))
+				if (string.IsNullOrWhiteSpace(key) || emittedKeys.Contains(key) || retiredKeys.Contains(key))
 				{
 					continue;
 				}
@@ -84,6 +85,20 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		}
 
 		return string.Join(Environment.NewLine, lines) + Environment.NewLine;
+	}
+
+	/// <summary>
+	/// Gets the frontmatter keys a model type has retired (<see cref="RetiredMarkdownFieldAttribute"/>, inherited
+	/// declarations included). A rewrite drops them from the note instead of preserving them as unknown keys.
+	/// </summary>
+	/// <param name="modelType">The markdown-backed model type.</param>
+	/// <returns>The retired keys, compared ignoring case; empty when the type retires none.</returns>
+	public static IReadOnlySet<string> GetRetiredFieldNames(Type modelType)
+	{
+		ArgumentNullException.ThrowIfNull(modelType);
+		return modelType.GetCustomAttributes<RetiredMarkdownFieldAttribute>(inherit: true)
+			.Select(attribute => attribute.Name)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 	}
 
 	/// <summary>

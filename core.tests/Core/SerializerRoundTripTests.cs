@@ -78,6 +78,31 @@ public sealed class SerializerRoundTripTests : VaultTestBase
 	}
 
 	[Fact]
+	public void Retired_frontmatter_keys_are_dropped_while_unknown_ones_are_kept(/* PEP101 */)
+	{
+		// A stellar directive no longer maps startDate/endDate (its dates became backlog schedules). Left as unknown keys,
+		// they would linger in every note that ever carried them; retired, they go on the next rewrite. Matching ignores
+		// case, as frontmatter parsing does.
+		var serializer = Vault.GetSingleton<MarkdownFrontMatterSerializer>();
+		var directive = new StellarDirective { Id = "A12345678", Title = "Campaign", Status = DirectiveStatus.Active };
+		var preserved = new Dictionary<string, string>
+		{
+			["startDate"] = "2026-07-01",
+			["ENDDATE"] = "2026-09-01",
+			["mood"] = "bright",
+		};
+
+		var markdown = serializer.Serialize(directive, string.Empty, preserved);
+
+		Assert.DoesNotContain("startDate", markdown, StringComparison.OrdinalIgnoreCase);
+		Assert.DoesNotContain("endDate", markdown, StringComparison.OrdinalIgnoreCase);
+		Assert.Contains("mood: bright", markdown);
+		Assert.Contains("status: Active", markdown);
+		Assert.Equal(["endDate", "startDate"], MarkdownFrontMatterSerializer.GetRetiredFieldNames(typeof(StellarDirective)).Order(StringComparer.Ordinal));
+		Assert.Empty(MarkdownFrontMatterSerializer.GetRetiredFieldNames(typeof(LunarDirective)));
+	}
+
+	[Fact]
 	public void Missing_required_fields_produce_validation_issues()
 	{
 		var serializer = Vault.GetSingleton<MarkdownFrontMatterSerializer>();

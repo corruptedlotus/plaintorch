@@ -57,7 +57,8 @@ public interface IDirectiveApi
 	Task<LunarDirective> CreateLunarAsync(string title, string? codename = null, string? parentDirectiveId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Applies an update to a stellar directive, including its scheduling dates.
+	/// Applies an update to a stellar directive, including its due date. Its planned begin and finish are backlog
+	/// schedules (PEP101), set through <see cref="IBacklogScheduleApi"/>.
 	/// </summary>
 	Task<StellarDirective> UpdateStellarAsync(string directiveId, StellarDirectiveUpdate update, CancellationToken cancellationToken = default);
 

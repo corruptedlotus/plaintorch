@@ -9,7 +9,7 @@ namespace Pleiades.Vault.Migration.Migrations;
 /// Purges the stored dependencies the intrinsic directive-children edges contradict or make redundant (PEP102 patch 9).
 /// </summary>
 /// <remarks>
-/// Advances the vault from v4 to v5. Before this version a directive's finish did not depend on its children, so a vault
+/// Advances the vault from v5 to v6. Before this version a directive's finish did not depend on its children, so a vault
 /// may hold edges the new intrinsic ones now forbid — a directive's finish gating the begin of one of its own
 /// objectives, say — or edges that merely restate what the structure implies (a child's finish gating its parent's
 /// finish). Dependencies are the slave of structure, so it is the stored edges that give way: of the contradicted
@@ -24,13 +24,13 @@ public sealed class IntrinsicDependencyPurgeMigration(
 	ILogger<IntrinsicDependencyPurgeMigration> logger) : IVaultMigration
 {
 	/// <inheritdoc />
-	public int FromVersion => 4;
+	public int FromVersion => 5;
 
 	/// <inheritdoc />
-	public int ToVersion => 5;
+	public int ToVersion => 6;
 
 	/// <inheritdoc />
-	public string Id => "20260930_0001_IntrinsicDependencyPurge";
+	public string Id => "20260930_0002_IntrinsicDependencyPurge";
 
 	/// <inheritdoc />
 	public string Description => "Purge the stored dependencies the intrinsic directive-children edges contradict or make redundant.";

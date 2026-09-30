@@ -82,12 +82,37 @@ public sealed class DependencySystemTests : VaultTestBase
 
 		await Deps(api => api.CreateAsync(DirectiveRef(source.Id), new EndpointRef(DependencyEndpointKind.Objective, objective.Id), cancellationToken: Ct));
 
+		// An objective begins when it is set to Polaris (PEP101), so that is the shift the begin gate refuses.
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Objective(api =>
-			api.ShiftWorkflowAsync(objective.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Onrush), Ct)));
+			api.ShiftWorkflowAsync(objective.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Polaris), Ct)));
 
 		await Directive(api => api.ShiftStellarWorkflowAsync(source.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct));
-		var promoted = await Objective(api => api.ShiftWorkflowAsync(objective.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Onrush), Ct));
-		Assert.Equal(ObjectiveStatus.Onrush, promoted.Status);
+		var promoted = await Objective(api => api.ShiftWorkflowAsync(objective.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Polaris), Ct));
+		Assert.Equal(ObjectiveStatus.Polaris, promoted.Status);
+	}
+
+	[Fact]
+	public async Task An_objective_joining_an_onrush_has_not_begun(/* PEP101 */)
+	{
+		var source = await Directive(api => api.CreateStandaloneAsync("Prereq", cancellationToken: Ct));
+		var objective = await Objective(api => api.CreateStandaloneAsync("Sprint work", cancellationToken: Ct));
+		var gate = await Deps(api => api.CreateAsync(DirectiveRef(source.Id), ObjectiveRef(objective.Id), cancellationToken: Ct));
+
+		// Onrush is not a begin phase, so its begin gate does not stand in the way, and the gate still concerns the next
+		// transition the objective has to make.
+		var onrush = await Objective(api => api.ShiftWorkflowAsync(objective.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Onrush), Ct));
+		Assert.Equal(ObjectiveStatus.Onrush, onrush.Status);
+		Assert.True((await Deps(api => api.ListAsync(objective.Id, Ct))).Single(dependency => dependency.Id == gate.Id).GatesNextTransition);
+		Assert.True((await Deps(api => api.GetLockAsync(objective.Id, Ct))).BlockedBegin);
+
+		// On the source side, a begin-triggered edge from an objective waits for Polaris.
+		var downstream = await Directive(api => api.CreateStandaloneAsync("Downstream", cancellationToken: Ct));
+		var fromObjective = await Deps(api => api.CreateAsync(ObjectiveRef(objective.Id), DirectiveRef(downstream.Id), DependencyTrigger.OnBegin, cancellationToken: Ct));
+		Assert.False(fromObjective.Satisfied);
+
+		await Directive(api => api.ShiftStellarWorkflowAsync(source.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
+		await Objective(api => api.ShiftWorkflowAsync(objective.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Polaris), Ct));
+		Assert.True((await Deps(api => api.ListAsync(downstream.Id, Ct))).Single(dependency => dependency.Id == fromObjective.Id).Satisfied);
 	}
 
 	[Fact]
@@ -116,6 +141,21 @@ public sealed class DependencySystemTests : VaultTestBase
 
 		await Deps(api => api.SetExternalConditionAsync(checkpoint.Id, true, Ct));
 		Assert.True((await Deps(api => api.GetCheckpointAsync(checkpoint.Id, Ct)))!.Unlocked);
+	}
+
+	[Fact]
+	public async Task A_checkpoint_is_reconciled_even_when_the_vault_has_no_edge(/* PEP101 */)
+	{
+		// With no dependency anywhere, nothing gates the checkpoints, so each one's unlock rests on its own toll and
+		// condition. The reconciler used to skip checkpoints entirely until some unrelated edge existed.
+		var free = await Deps(api => api.CreateCheckpointAsync("Free", cancellationToken: Ct));
+		var permit = await Deps(api => api.CreateCheckpointAsync("Permit", externalCondition: false, cancellationToken: Ct));
+		Assert.True(free.Unlocked);
+		Assert.False(permit.Unlocked);
+		Assert.Empty(await Deps(api => api.ListAsync(cancellationToken: Ct)));
+
+		await Deps(api => api.SetExternalConditionAsync(permit.Id, true, Ct));
+		Assert.True((await Deps(api => api.GetCheckpointAsync(permit.Id, Ct)))!.Unlocked);
 	}
 
 	[Fact]
@@ -177,7 +217,7 @@ public sealed class DependencySystemTests : VaultTestBase
 		await Deps(api => api.CreateAsync(DirectiveRef(a.Id), DirectiveRef(b.Id), cancellationToken: Ct));
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Deps(api => api.CreateAsync(DirectiveRef(b.Id), DirectiveRef(a.Id), cancellationToken: Ct)));
 
-		// A checkpoint source has no begin/finish, so it may not carry a trigger.
+		// A checkpoint is one-shot: its only event is its unlock, so a checkpoint source may not carry a trigger.
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Deps(api => api.CreateAsync(CheckpointRef(checkpoint.Id), DirectiveRef(b.Id), trigger: DependencyTrigger.OnFinish, cancellationToken: Ct)));
 
 		// Lunar directives are excluded.
@@ -238,9 +278,9 @@ public sealed class DependencySystemTests : VaultTestBase
 		var b = await Directive(api => api.CreateStandaloneAsync("B", cancellationToken: Ct));
 		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Gate", cancellationToken: Ct));
 
-		// A checkpoint has no begin/finish, so it is a dead end in the ordering walk: a chain A → gate → B
-		// carries no orderable constraint across the gate, and every edge is accepted rather than the null
-		// side aborting the query.
+		// A checkpoint carries no side (its one phase, the unlock, is implied), so it is a dead end in the ordering walk: a
+		// chain A → gate → B carries no orderable constraint across the gate, and every edge is accepted rather than the
+		// null side aborting the query.
 		var into = await Deps(api => api.CreateAsync(DirectiveRef(a.Id), CheckpointRef(checkpoint.Id), cancellationToken: Ct));
 		var outOf = await Deps(api => api.CreateAsync(CheckpointRef(checkpoint.Id), DirectiveRef(b.Id), cancellationToken: Ct));
 		Assert.True(into.Id > 0 && outOf.Id > 0);
@@ -429,7 +469,7 @@ public sealed class DependencySystemTests : VaultTestBase
 
 		// Once the keystone is finished and the objective has begun, its finish gate is the one that holds it back.
 		await Directive(api => api.ShiftStellarWorkflowAsync(keystone.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
-		await Objective(api => api.ShiftWorkflowAsync(target.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Onrush), Ct));
+		await Objective(api => api.ShiftWorkflowAsync(target.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Polaris), Ct));
 		served = await Deps(api => api.ListAsync(target.Id, Ct));
 		Assert.False(served.Single(dependency => dependency.Id == beginGate.Id).GatesNextTransition);
 		Assert.True(served.Single(dependency => dependency.Id == finishGate.Id).GatesNextTransition);
@@ -447,7 +487,7 @@ public sealed class DependencySystemTests : VaultTestBase
 	{
 		var prerequisite = await Directive(api => api.CreateStandaloneAsync("Late prereq", cancellationToken: Ct));
 		var begun = await Objective(api => api.CreateStandaloneAsync("Already running", cancellationToken: Ct));
-		await Objective(api => api.ShiftWorkflowAsync(begun.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Onrush), Ct));
+		await Objective(api => api.ShiftWorkflowAsync(begun.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Polaris), Ct));
 		var finished = await Objective(api => api.CreateStandaloneAsync("Already done", cancellationToken: Ct));
 		await Objective(api => api.ShiftWorkflowAsync(finished.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Done), Ct));
 
@@ -468,7 +508,7 @@ public sealed class DependencySystemTests : VaultTestBase
 		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Waypoint", cancellationToken: Ct));
 		var gate = await Deps(api => api.CreateAsync(DirectiveRef(prerequisite.Id), CheckpointRef(checkpoint.Id), cancellationToken: Ct));
 
-		// A checkpoint has no begin or finish of its own: its next transition is its unlock, which the gate holds back.
+		// A checkpoint is one-shot, never begun: its next transition is its unlock (its finish), which the gate holds back.
 		Assert.True(gate.GatesNextTransition);
 		Assert.True((await Deps(api => api.ListAsync(checkpoint.Id, Ct))).Single().GatesNextTransition);
 	}

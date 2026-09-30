@@ -119,6 +119,12 @@ public class PlainfraContext : DbContext
 	public DbSet<Dependency> Dependencies => Set<Dependency>();
 
 	/// <summary>
+	/// Gets the backlog schedules — planned and recorded begins and finishes of incentives, directives and
+	/// checkpoints — tracked in the database (PEP101).
+	/// </summary>
+	public DbSet<BacklogSchedule> BacklogSchedules => Set<BacklogSchedule>();
+
+	/// <summary>
 	/// Gets the issued PUCK registry entries tracked in the database.
 	/// </summary>
 	public DbSet<PuckRegistryEntry> PuckRegistryEntries => Set<PuckRegistryEntry>();
@@ -348,6 +354,40 @@ public class PlainfraContext : DbContext
 				x.Constraint,
 			})
 			.IsUnique();
+
+		// PEP101 backlog schedules: the type and the lifecycle phase store as readable strings. Each owner kind is a real
+		// foreign key that cascades, so schedules die with their owner and never block its delete. A row names exactly
+		// one owner, and an owner holds one schedule per type and phase: the state policy replaces the old row when a new
+		// one lands in the same slot, and these unique indexes are its backstop (SQLite counts each null as distinct, so
+		// a row owned through another column never collides).
+		modelBuilder.Entity<BacklogSchedule>(schedule =>
+		{
+			schedule.Property(x => x.Type).HasConversion<string>();
+			schedule.Property(x => x.State).HasConversion<string>();
+
+			schedule.HasOne(x => x.Incentive)
+				.WithMany()
+				.HasForeignKey(x => x.IncentiveId)
+				.OnDelete(DeleteBehavior.Cascade);
+
+			schedule.HasOne(x => x.Directive)
+				.WithMany()
+				.HasForeignKey(x => x.DirectiveId)
+				.OnDelete(DeleteBehavior.Cascade);
+
+			schedule.HasOne(x => x.Checkpoint)
+				.WithMany()
+				.HasForeignKey(x => x.CheckpointId)
+				.OnDelete(DeleteBehavior.Cascade);
+
+			schedule.HasIndex(x => new { x.IncentiveId, x.Type, x.State }).IsUnique();
+			schedule.HasIndex(x => new { x.DirectiveId, x.Type, x.State }).IsUnique();
+			schedule.HasIndex(x => new { x.CheckpointId, x.Type, x.State }).IsUnique();
+
+			schedule.ToTable(table => table.HasCheckConstraint(
+				"CK_BacklogSchedules_SingleOwner",
+				"(\"IncentiveId\" IS NOT NULL) + (\"DirectiveId\" IS NOT NULL) + (\"CheckpointId\" IS NOT NULL) = 1"));
+		});
 
 		// PEP102 milestone binding: an onrush tracks checkpoints like objectives (its milestone one of them),
 		// and names one of them as its milestone. Both sides detach rather than cascade — deleting a sprint

@@ -39,6 +39,7 @@ must be removed after use, while the dev sub-profile must persist between runs.
 | Legacy v1 objective file re-canonicalised to quiet form, **body preserved** | happy | ✅ | `MigrationRoundTripTests` |
 | Stored version advances to current; a history row is recorded | happy | ✅ | `MigrationRoundTripTests` |
 | Runner short-circuits when the vault is already current | happy | ✅ | `MigrationRoundTripTests` |
+| v4→v5 drops the retired `startDate`/`endDate` keys from directive notes, keeps body and custom keys, leaves notes without them untouched (PEP101) | happy | ✅ | `DirectiveStartEndRetirementMigrationTests` |
 | Legacy file archived to the graveyard before rewrite (rollback) | happy | ⏳ | — |
 | Re-run after a completed migration is a no-op | edge | ⏳ | — |
 | Title-only pre-PUCK files are left untouched | edge | ⏳ | — |
@@ -69,6 +70,7 @@ must be removed after use, while the dev sub-profile must persist between runs.
 |---|---|---|---|
 | Quiet objective round-trips PUCK, fields, and body | happy | ✅ | `SerializerRoundTripTests` |
 | Unknown frontmatter keys are preserved on serialize | edge | ✅ | `SerializerRoundTripTests` |
+| Keys a type retires (`RetiredMarkdownField`) are dropped on serialize, ignoring case (PEP101) | edge | ✅ | `SerializerRoundTripTests` |
 | Missing required fields produce validation issues | fault | ✅ | `SerializerRoundTripTests` |
 | Enum / relation / nested validation | fault | ⏳ | — |
 | Scalar formatting (dates ISO, enums by name, list JSON) | edge | ⏳ | — |

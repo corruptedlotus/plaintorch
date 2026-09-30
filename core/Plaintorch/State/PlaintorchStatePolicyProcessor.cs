@@ -26,6 +26,7 @@ namespace Pleiades.Plaintorch.State;
 public sealed class PlaintorchStatePolicyProcessor(
 	DependencyReconciler dependencyReconciler,
 	IOptionsSnapshot<ReflectionPreferences> reflectionPreferences,
+	BacklogScheduleRecorder backlogScheduleRecorder,
 	IServiceProvider serviceProvider)
 {
 	private const string ObjectiveSettlementDescriptionPrefix = "PLAINTORCH objective settlement";
@@ -58,6 +59,8 @@ public sealed class PlaintorchStatePolicyProcessor(
 		await PurgeContradictedDependenciesAsync(context, cancellationToken);
 		var reopenedDirectives = await ReopenOverDirectivesAsync(context, cancellationToken);
 		await dependencyReconciler.ReconcileAsync(context, cancellationToken);
+		// Last, so it records the statuses every rule above has left behind (PEP101).
+		await backlogScheduleRecorder.ApplyAsync(context, cancellationToken);
 
 		return supersededForecasts.Count == 0 && reopenedDirectives.Count == 0
 			? PlaintorchStatePolicyResult.Empty

@@ -42,12 +42,12 @@ public static class DependencyRules
 
 		if (source.Kind == DependencyEndpointKind.Checkpoint && trigger is not null)
 		{
-			throw new InvalidOperationException("A checkpoint source has no begin/finish, so its trigger must be empty.");
+			throw new InvalidOperationException("A checkpoint is one-shot: its only event is its unlock, so a checkpoint source's trigger must be empty.");
 		}
 
 		if (target.Kind == DependencyEndpointKind.Checkpoint && constraint is not null)
 		{
-			throw new InvalidOperationException("A checkpoint target has no begin/finish, so its constraint must be empty.");
+			throw new InvalidOperationException("A checkpoint is one-shot: its only transition is its unlock, so a checkpoint target's constraint must be empty.");
 		}
 
 		EnsureRecurrenceShape("source", source);

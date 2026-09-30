@@ -13,6 +13,7 @@ import { PlaintorchPolarisSdk } from "./polaris/polarisSdk"
 import { PlaintorchActivitiesSdk } from "./activities/activitiesSdk"
 import { PlaintorchLoreSdk } from "./lore/loreSdk"
 import { PlaintorchDependenciesSdk } from "./dependencies/dependenciesSdk"
+import { PlaintorchSchedulesSdk } from "./schedules/schedulesSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
 import { PlaintorchPreferencesSdk } from "./preferences/preferencesSdk"
 import { PlaintorchMediaSdk } from "./media/mediaSdk"
@@ -58,6 +59,8 @@ export class PlaintorchCoreClient {
 	public readonly activities: PlaintorchActivitiesSdk
 	public readonly lore: PlaintorchLoreSdk
 	public readonly dependencies: PlaintorchDependenciesSdk
+	/** Planned and recorded begins and finishes of backlog items (PEP101). */
+	public readonly schedules: PlaintorchSchedulesSdk
 	/** Vault-bound user preferences (PEP116). */
 	public readonly preferences: PlaintorchPreferencesSdk
 	public constructor(options: PlaintorchCoreClientOptions = {}) {
@@ -82,6 +85,7 @@ export class PlaintorchCoreClient {
 		this.activities = new PlaintorchActivitiesSdk(this)
 		this.lore = new PlaintorchLoreSdk(this)
 		this.dependencies = new PlaintorchDependenciesSdk(this)
+		this.schedules = new PlaintorchSchedulesSdk(this)
 		this.preferences = new PlaintorchPreferencesSdk(this)
 		// Constructed last: the repositories delegate to the SDKs above.
 		this.repos = new PlaintorchRepositories(this, { resolutionFreshnessMs: options.cacheTtlMs })

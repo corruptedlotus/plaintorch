@@ -31,11 +31,6 @@ public sealed class DependencyReconciler(EntityLifecycleResolver lifecycleResolv
 				.Select(entry => entry.Entity))
 			.ToList();
 
-		if (dependencies.Count == 0)
-		{
-			return;
-		}
-
 		var storedCheckpoints = await context.Checkpoints.ToListAsync(cancellationToken);
 		var checkpoints = storedCheckpoints
 			.Where(checkpoint => context.Entry(checkpoint).State != EntityState.Deleted)
@@ -44,6 +39,13 @@ public sealed class DependencyReconciler(EntityLifecycleResolver lifecycleResolv
 				.Select(entry => entry.Entity))
 			.DistinctBy(checkpoint => checkpoint.Id, StringComparer.OrdinalIgnoreCase)
 			.ToDictionary(checkpoint => checkpoint.Id, StringComparer.OrdinalIgnoreCase);
+
+		// A checkpoint is reconciled even with no edge in the vault: with nothing incoming, whether it unlocks — its
+		// finish — rests on its toll and external condition alone, not on whether some unrelated edge exists.
+		if (dependencies.Count == 0 && checkpoints.Count == 0)
+		{
+			return;
+		}
 
 		// Non-checkpoint sources have a fixed satisfaction for this save (their state does not change within the pass),
 		// resolved together — one query per endpoint kind — rather than one at a time. A source with no entity behind

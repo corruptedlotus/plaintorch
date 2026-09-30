@@ -6,14 +6,17 @@ namespace Pleiades.Orchestration.Lifecycle;
 /// <summary>
 /// Resolves whether an entity has begun or finished (PEP101) without hardcoding per-entity status knowledge.
 /// A registered <see cref="ILifecyclePhaseSource"/> is consulted first (for kinds whose phases are not a plain
-/// status value, such as eventives); otherwise the entity's <see cref="LifecycleStatusAttribute"/> property is
-/// read and its current value's <see cref="LifecyclePhaseAttribute"/> phases are applied.
+/// status value, such as eventives and checkpoints); otherwise the entity's <see cref="LifecycleStatusAttribute"/>
+/// property is read and its current value's <see cref="LifecyclePhaseAttribute"/> phases are applied.
 /// </summary>
 public sealed class EntityLifecycleResolver
 {
+	private static readonly IReadOnlySet<LifecyclePhase> NoPhases = new HashSet<LifecyclePhase>();
+
 	private readonly IReadOnlyList<ILifecyclePhaseSource> _sources;
 	private readonly ConcurrentDictionary<Type, PropertyInfo?> _statusProperties = new();
 	private readonly ConcurrentDictionary<Type, IReadOnlyDictionary<string, PhaseMembership>> _enumPhases = new();
+	private readonly ConcurrentDictionary<Type, IReadOnlySet<LifecyclePhase>> _kindPhases = new();
 
 	/// <summary>
 	/// Initializes the resolver with the registered non-status phase sources.
@@ -51,12 +54,50 @@ public sealed class EntityLifecycleResolver
 
 	/// <summary>
 	/// Determines whether the entity kind participates in lifecycle evaluation at all (has a status property or
-	/// a phase source). Checkpoints and other non-lifecycle kinds return <see langword="false"/>.
+	/// a phase source). Lunar directives, decrees and other kinds with no lifecycle return <see langword="false"/>.
 	/// </summary>
 	public bool IsLifecycleKind(Type entityType)
 	{
 		ArgumentNullException.ThrowIfNull(entityType);
 		return FindSource(entityType) is not null || _statusProperties.GetOrAdd(entityType, FindStatusProperty) is not null;
+	}
+
+	/// <summary>
+	/// Gets the lifecycle phases an entity kind passes through: begin and finish for a kind that spans time,
+	/// <see cref="LifecyclePhase.Finish"/> alone for a one-shot kind that cannot be started (a checkpoint), and none for
+	/// a kind with no lifecycle. A status-driven kind passes through the phases its status members declare; a kind with
+	/// a phase source, through those its source declares. <see cref="LifecyclePhase.Failed"/> is never among them: a
+	/// failed entity has not begun, so failing is leaving the begin phase, not entering one of its own.
+	/// </summary>
+	public IReadOnlySet<LifecyclePhase> GetPhases(Type entityType)
+	{
+		ArgumentNullException.ThrowIfNull(entityType);
+		return _kindPhases.GetOrAdd(entityType, type =>
+		{
+			if (FindSource(type) is { } source)
+			{
+				return source.Phases;
+			}
+
+			if (_statusProperties.GetOrAdd(type, FindStatusProperty) is not { } property)
+			{
+				return NoPhases;
+			}
+
+			var memberships = GetEnumPhases(property.PropertyType).Values.ToList();
+			var phases = new HashSet<LifecyclePhase>();
+			if (memberships.Any(membership => membership.Begin))
+			{
+				phases.Add(LifecyclePhase.Begin);
+			}
+
+			if (memberships.Any(membership => membership.Finish))
+			{
+				phases.Add(LifecyclePhase.Finish);
+			}
+
+			return phases;
+		});
 	}
 
 	private (bool Begun, bool Finished, bool Failed) Resolve(object entity)

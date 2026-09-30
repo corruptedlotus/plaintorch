@@ -127,9 +127,9 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 	}
 
 	/// <summary>
-	/// The transition a target has to make next. A checkpoint is not a lifecycle kind: its next transition is its
-	/// unlock, which every incoming dependency gates. An endpoint with no entity behind it — an occurrence still
-	/// projected from its schedule — has not begun, and neither has a failed one.
+	/// The transition a target has to make next. A checkpoint is one-shot — it never begins — so its next transition is
+	/// its unlock (its finish), which every incoming dependency gates. An endpoint with no entity behind it — an
+	/// occurrence still projected from its schedule — has not begun, and neither has a failed one.
 	/// </summary>
 	private static NextTransition ResolveNextTransition(EndpointRef target, IReadOnlyDictionary<EndpointRef, EndpointLifecycle> lifecycles)
 	{

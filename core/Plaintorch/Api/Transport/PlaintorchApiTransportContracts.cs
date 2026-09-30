@@ -1,6 +1,17 @@
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 
 namespace Pleiades.Plaintorch.Api.Transport;
+
+/// <summary>
+/// Represents the transport payload used to add a backlog schedule to an incentive, a directive or a checkpoint
+/// (PEP101). The owner's schedule of the same type and state is replaced. <see cref="Time"/> is a civil ISO datetime.
+/// </summary>
+public sealed record AddBacklogScheduleRequest(
+	string EntityId,
+	BacklogScheduleType Type,
+	LifecyclePhase State,
+	DateTime Time);
 
 /// <summary>
 /// Represents one endpoint of a dependency in a transport payload (PEP101): a kind plus an id, optionally

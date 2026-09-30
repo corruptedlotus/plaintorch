@@ -12,10 +12,15 @@ namespace Pleiades.Orchestration;
 /// <remarks>
 /// Stellar directives live as table siblings to <see cref="LunarDirective"/> records through a discriminator and
 /// share the <see cref="VaultLocationKeys.Directives"/> vault storage inherited from <see cref="Directive"/>.
-/// They follow the stellar lifecycle <see cref="Status"/> and carry optional scheduling dates.
+/// They follow the stellar lifecycle <see cref="Status"/> and carry an optional due date. When a directive is planned
+/// to begin or finish, and when it actually did, lives in its <see cref="BacklogSchedule"/> rows (PEP101), which
+/// replaced the former <c>startDate</c>/<c>endDate</c> frontmatter fields; a note still carrying those keys drops them
+/// on its next rewrite.
 /// </remarks>
 [PuckEntity("stellar-directive")]
 [PuckFormat("A{S:8}")]
+[RetiredMarkdownField("startDate")]
+[RetiredMarkdownField("endDate")]
 public sealed class StellarDirective : Directive
 {
 	/// <summary>
@@ -30,18 +35,6 @@ public sealed class StellarDirective : Directive
 	/// </summary>
 	[MarkdownField("due")]
 	public DateOnly? Due { get; set; }
-
-	/// <summary>
-	/// Gets or sets the optional directive start date.
-	/// </summary>
-	[MarkdownField("startDate")]
-	public DateOnly? StartDate { get; set; }
-
-	/// <summary>
-	/// Gets or sets the optional directive end date.
-	/// </summary>
-	[MarkdownField("endDate")]
-	public DateOnly? EndDate { get; set; }
 
 	/// <summary>
 	/// Gets or sets the onrush sprint this directive is a member of, if any (PEP102 patch 10): an onrush tracks stellar

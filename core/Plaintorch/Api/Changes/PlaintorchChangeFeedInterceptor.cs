@@ -2,6 +2,9 @@ using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Vault.Database;
@@ -25,7 +28,7 @@ public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broke
 	private readonly ConcurrentDictionary<Guid, List<EntityChange>> _pendingByContextId = new();
 
 	/// <inheritdoc />
-	public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+	public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
 		DbContextEventData eventData,
 		InterceptionResult<int> result,
 		CancellationToken cancellationToken = default)
@@ -34,10 +37,10 @@ public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broke
 		{
 			// Collected before the save, because afterwards every entry has reverted to Unchanged and the
 			// record of what happened is gone.
-			_pendingByContextId[context.ContextId.InstanceId] = Collect(context);
+			_pendingByContextId[context.ContextId.InstanceId] = await CollectAsync(context, cancellationToken);
 		}
 
-		return base.SavingChangesAsync(eventData, result, cancellationToken);
+		return await base.SavingChangesAsync(eventData, result, cancellationToken);
 	}
 
 	/// <inheritdoc />
@@ -66,14 +69,17 @@ public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broke
 		return base.SaveChangesFailedAsync(eventData, cancellationToken);
 	}
 
-	private static List<EntityChange> Collect(PlainfraContext context)
+	private static async Task<List<EntityChange>> CollectAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
 		var changes = new List<EntityChange>();
 		var seen = new HashSet<(string Type, string Id)>();
 		// Read once per save: whatever decided this work was authoritative did so several layers above.
 		var criticalScope = PlaintorchChangeOrigin.IsCritical;
+		// A snapshot, so resolving an owner among the tracked entities never enumerates the tracker while it is walked.
+		var entries = context.ChangeTracker.Entries().ToList();
+		var ownerTypes = new Dictionary<(IEntityType Principal, string Id), string>();
 
-		foreach (var entry in context.ChangeTracker.Entries())
+		foreach (var entry in entries)
 		{
 			var operation = ToOperation(entry.State);
 			if (operation is null)
@@ -118,7 +124,13 @@ public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broke
 			// whichever entity owns it.
 			foreach (var owner in OwnersOf(entry))
 			{
-				Add(changes, seen, owner.Type, owner.Id, EntityChangeOperation.Modified, critical);
+				if (!ownerTypes.TryGetValue(owner, out var type))
+				{
+					type = await ResolveOwnerTypeAsync(context, entries, owner.Principal, owner.Id, cancellationToken);
+					ownerTypes[owner] = type;
+				}
+
+				Add(changes, seen, type, owner.Id, EntityChangeOperation.Modified, critical);
 			}
 		}
 
@@ -132,12 +144,12 @@ public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broke
 	/// Derived from the model rather than from hardcoded property names, so a record added later is
 	/// covered without this having to learn about it.
 	/// </remarks>
-	private static IEnumerable<(string Type, string Id)> OwnersOf(EntityEntry entry)
+	private static IEnumerable<(IEntityType Principal, string Id)> OwnersOf(EntityEntry entry)
 	{
 		foreach (var foreignKey in entry.Metadata.GetForeignKeys())
 		{
-			var principal = foreignKey.PrincipalEntityType.ClrType;
-			if (!typeof(IPuckNamedEntity).IsAssignableFrom(principal) || foreignKey.Properties.Count != 1)
+			var principal = foreignKey.PrincipalEntityType;
+			if (!typeof(IPuckNamedEntity).IsAssignableFrom(principal.ClrType) || foreignKey.Properties.Count != 1)
 			{
 				continue;
 			}
@@ -148,9 +160,51 @@ public sealed class PlaintorchChangeFeedInterceptor(PlaintorchChangeBroker broke
 			var value = (property.CurrentValue ?? property.OriginalValue) as string;
 			if (!string.IsNullOrWhiteSpace(value))
 			{
-				yield return (principal.Name, value);
+				yield return (principal, value);
 			}
 		}
+	}
+
+	/// <summary>
+	/// Names an owner by the type the API serializes it as. A foreign key into a discriminated family (an incentive or a
+	/// directive) only knows the family's abstract anchor, which no client tracks anything under, so the owner's concrete
+	/// type is taken from the owner itself when this save tracks it, and otherwise from its stored discriminator.
+	/// </summary>
+	private static async Task<string> ResolveOwnerTypeAsync(
+		PlainfraContext context,
+		IReadOnlyList<EntityEntry> entries,
+		IEntityType principal,
+		string id,
+		CancellationToken cancellationToken)
+	{
+		if (!principal.ClrType.IsAbstract)
+		{
+			return principal.ClrType.Name;
+		}
+
+		var tracked = entries
+			.Select(entry => entry.Entity)
+			.FirstOrDefault(entity => principal.ClrType.IsInstanceOfType(entity)
+				&& string.Equals(((IPuckNamedEntity)entity).Id, id, StringComparison.OrdinalIgnoreCase));
+		if (tracked is not null)
+		{
+			return tracked.GetType().Name;
+		}
+
+		if (principal.FindDiscriminatorProperty() is not { } discriminator
+			|| principal.GetTableName() is not { } table
+			|| principal.FindPrimaryKey() is not { Properties: [var key] })
+		{
+			return principal.ClrType.Name;
+		}
+
+		var sql = context.GetService<ISqlGenerationHelper>();
+		var query = $"SELECT {sql.DelimitIdentifier(discriminator.GetColumnName())} AS \"Value\" FROM {sql.DelimitIdentifier(table, principal.GetSchema())} WHERE {sql.DelimitIdentifier(key.GetColumnName())} = {{0}}";
+		var stored = (await context.Database.SqlQueryRaw<string>(query, id).ToListAsync(cancellationToken)).FirstOrDefault();
+		return principal.GetDerivedTypesInclusive()
+			.FirstOrDefault(candidate => !candidate.IsAbstract() && Equals(candidate.GetDiscriminatorValue(), stored))
+			?.ClrType.Name
+			?? principal.ClrType.Name;
 	}
 
 	private static void Add(

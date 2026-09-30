@@ -14,6 +14,9 @@ namespace Pleiades.Orchestration.Lifecycle;
 public sealed class EventiveLifecyclePhaseSource : ILifecyclePhaseSource
 {
 	/// <inheritdoc />
+	public IReadOnlySet<LifecyclePhase> Phases { get; } = new HashSet<LifecyclePhase> { LifecyclePhase.Begin, LifecyclePhase.Finish };
+
+	/// <inheritdoc />
 	public bool Handles(Type entityType) => entityType == typeof(Eventive);
 
 	/// <inheritdoc />
