@@ -1,15 +1,18 @@
 import { component, html, HTMLTemplateResult } from '@a11d/lit'
+import type { DataRecord } from '@3mo/data-grid/controller'
 import type { EntityTypeName } from '@pleiades/sdk'
 import { core, DerivedRef, ExpandingAction } from '..'
 import { creationActions } from './entityActions'
-import { buildGridRows, type GridRow } from './entityTree'
+import { buildEntityTree, type GridNode, type GridRow } from './entityTree'
 import { GridBase } from './GridBase'
+import { EntityGridColumn } from './GridItem'
 
 /**
- * The backlog grid: every directive and incentive as one flat run of rows.
+ * The backlog grid: every directive and incentive as one tree of rows.
  *
- * The shell — column tracks, expansion, the sticky FAB — is the shared {@link GridBase}. This variant sources the
- * directive and incentive listings, flattens them into rows, and draws each with the backlog row element.
+ * The shell — the columns and their heading row, expansion, the sticky FAB — is the shared {@link GridBase}. This
+ * variant sources the directive and incentive listings, shapes them into a tree, names its columns, and draws each row
+ * with the backlog row element.
  */
 @component('p7t-entity-grid')
 export class EntityGrid extends GridBase {
@@ -18,23 +21,33 @@ export class EntityGrid extends GridBase {
 	private readonly fates = new DerivedRef(this, core.repos.fateList)
 	private readonly decrees = new DerivedRef(this, core.repos.decreeList)
 
+	protected override readonly columns = [
+		GridBase.titleColumnDefinition(),
+		GridBase.column(EntityGridColumn.Measure, 'Measure'),
+		GridBase.column(EntityGridColumn.Status, 'Status')
+	]
+
 	protected override get observedKinds(): readonly EntityTypeName[] {
 		// The tree is built from directives and the three incentives; reparenting a directive changes the tree's
 		// shape without any listing changing, so the grid observes exactly those kinds — and nothing else.
 		return ['StellarDirective', 'LunarDirective', 'Objective', 'Fate', 'Decree']
 	}
 
-	protected override get rows(): GridRow[] {
-		return buildGridRows({
+	protected override buildTree(): GridNode[] {
+		return buildEntityTree({
 			directives: this.directives.value,
 			objectives: this.objectives.value,
 			fates: this.fates.value,
 			decrees: this.decrees.value
-		}, this.expandedKeys)
+		})
 	}
 
 	protected override get loading() {
 		return !this.directives.value && !this.objectives.value && !this.fates.value && !this.decrees.value
+	}
+
+	protected override get layoutKey() {
+		return 'backlog'
 	}
 
 	protected override get emptyLabel(): string {
@@ -49,8 +62,8 @@ export class EntityGrid extends GridBase {
 		return creationActions()
 	}
 
-	protected override renderRow(row: GridRow): HTMLTemplateResult {
-		return html`<p7t-grid-item .row=${row}></p7t-grid-item>`
+	protected override renderRow(row: GridRow, record: DataRecord<GridNode>): HTMLTemplateResult {
+		return html`<p7t-grid-item .row=${row} ${this.grid.row(record)}></p7t-grid-item>`
 	}
 }
 
