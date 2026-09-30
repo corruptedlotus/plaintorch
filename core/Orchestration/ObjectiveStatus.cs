@@ -36,8 +36,9 @@ public enum ObjectiveStatus
 	[LifecyclePhase(LifecyclePhase.Finish)]
 	Archived = 5,
 	/// <summary>
-	/// The objective can no longer be completed successfully.
+	/// The objective has failed. Not a finish: it reads as open and not begun, and its intrinsic dependency on its
+	/// directive is switched off while it stands (PEP102 patch 9).
 	/// </summary>
-	[LifecyclePhase(LifecyclePhase.Finish)]
+	[LifecyclePhase(LifecyclePhase.Failed)]
 	Failed = 6,
 }

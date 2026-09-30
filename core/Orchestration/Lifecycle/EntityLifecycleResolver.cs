@@ -35,6 +35,21 @@ public sealed class EntityLifecycleResolver
 	public bool HasFinished(object entity) => Resolve(entity).Finished;
 
 	/// <summary>
+	/// Determines whether the entity has failed (its status is a <see cref="LifecyclePhase.Failed"/> member). A phase
+	/// source never reports failure: an eventive's passing is temporal and has no failed state.
+	/// </summary>
+	public bool HasFailed(object entity) => Resolve(entity).Failed;
+
+	/// <summary>
+	/// Determines whether a status value is a <see cref="LifecyclePhase.Failed"/> member.
+	/// </summary>
+	public bool IsFailedStatus(Enum statusValue)
+	{
+		ArgumentNullException.ThrowIfNull(statusValue);
+		return GetEnumPhases(statusValue.GetType()).GetValueOrDefault(statusValue.ToString(), PhaseMembership.None).Failed;
+	}
+
+	/// <summary>
 	/// Determines whether the entity kind participates in lifecycle evaluation at all (has a status property or
 	/// a phase source). Checkpoints and other non-lifecycle kinds return <see langword="false"/>.
 	/// </summary>
@@ -44,7 +59,7 @@ public sealed class EntityLifecycleResolver
 		return FindSource(entityType) is not null || _statusProperties.GetOrAdd(entityType, FindStatusProperty) is not null;
 	}
 
-	private (bool Begun, bool Finished) Resolve(object entity)
+	private (bool Begun, bool Finished, bool Failed) Resolve(object entity)
 	{
 		ArgumentNullException.ThrowIfNull(entity);
 		var type = entity.GetType();
@@ -52,7 +67,7 @@ public sealed class EntityLifecycleResolver
 		var source = FindSource(type);
 		if (source is not null)
 		{
-			return (source.HasBegun(entity), source.HasFinished(entity));
+			return (source.HasBegun(entity), source.HasFinished(entity), false);
 		}
 
 		var property = _statusProperties.GetOrAdd(type, FindStatusProperty)
@@ -60,7 +75,7 @@ public sealed class EntityLifecycleResolver
 		var value = property.GetValue(entity)
 			?? throw new InvalidOperationException($"Lifecycle status of '{type.Name}' is null.");
 		var membership = GetEnumPhases(property.PropertyType).GetValueOrDefault(value.ToString()!, PhaseMembership.None);
-		return (membership.Begin || membership.Finish, membership.Finish);
+		return (membership.Begin || membership.Finish, membership.Finish, membership.Failed);
 	}
 
 	/// <summary>
@@ -95,7 +110,12 @@ public sealed class EntityLifecycleResolver
 		foreach (var field in enumType.GetFields(BindingFlags.Public | BindingFlags.Static))
 		{
 			var phases = field.GetCustomAttributes<LifecyclePhaseAttribute>().Select(attribute => attribute.Phase).ToArray();
-			map[field.Name] = new PhaseMembership(phases.Contains(LifecyclePhase.Begin), phases.Contains(LifecyclePhase.Finish));
+			if (phases.Contains(LifecyclePhase.Failed) && (phases.Contains(LifecyclePhase.Begin) || phases.Contains(LifecyclePhase.Finish)))
+			{
+				throw new InvalidOperationException($"Lifecycle status member '{enumType.Name}.{field.Name}' cannot be both failed and begun or finished.");
+			}
+
+			map[field.Name] = new PhaseMembership(phases.Contains(LifecyclePhase.Begin), phases.Contains(LifecyclePhase.Finish), phases.Contains(LifecyclePhase.Failed));
 		}
 
 		return map;
@@ -129,8 +149,8 @@ public sealed class EntityLifecycleResolver
 		}
 	}
 
-	private readonly record struct PhaseMembership(bool Begin, bool Finish)
+	private readonly record struct PhaseMembership(bool Begin, bool Finish, bool Failed)
 	{
-		public static readonly PhaseMembership None = new(false, false);
+		public static readonly PhaseMembership None = new(false, false, false);
 	}
 }

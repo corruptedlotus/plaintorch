@@ -5,6 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
+using Pleiades.Plaintorch.Markdown;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.Preferences;
 using Pleiades.Puck;
@@ -52,11 +54,232 @@ public sealed class PlaintorchStatePolicyProcessor(
 		await ApplyReflectiveDecreeRewardRulesAsync(context, cancellationToken);
 		await ApplyReflectiveCollectionRewardRulesAsync(context, reflectionPreferences.Value.DailyReward, cancellationToken);
 		await HardenReferencedOccurrencesAsync(context, cancellationToken);
+		await ReleaseDeletedEndpointDependenciesAsync(context, cancellationToken);
+		await PurgeContradictedDependenciesAsync(context, cancellationToken);
+		var reopenedDirectives = await ReopenOverDirectivesAsync(context, cancellationToken);
 		await dependencyReconciler.ReconcileAsync(context, cancellationToken);
 
-		return supersededForecasts.Count == 0
+		return supersededForecasts.Count == 0 && reopenedDirectives.Count == 0
 			? PlaintorchStatePolicyResult.Empty
-			: new PlaintorchStatePolicyResult(supersededForecasts);
+			: new PlaintorchStatePolicyResult(supersededForecasts, reopenedDirectives);
+	}
+
+	/// <summary>
+	/// Dependencies are the slave of the entities they join (PEP102 patch 9): in the same unit of work that deletes a
+	/// directive, an objective or a fate, every stored edge touching it — as an endpoint, or as the owner of an
+	/// occurrence endpoint — goes with it, so no edge is left naming an id that no longer exists. Riding the save hook
+	/// covers every pathway: the API deletes and the markdown watcher's delete-from-database action.
+	/// </summary>
+	private async Task ReleaseDeletedEndpointDependenciesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var deletedIds = context.ChangeTracker.Entries()
+			.Where(entry => entry.State == EntityState.Deleted && entry.Entity is StellarDirective or Objective or Fate)
+			.Select(entry => ((IPuckNamedEntity)entry.Entity).Id)
+			.ToList();
+		if (deletedIds.Count == 0)
+		{
+			return;
+		}
+
+		var edges = await context.Dependencies
+			.Where(dependency => deletedIds.Contains(dependency.SourceId) || deletedIds.Contains(dependency.TargetId))
+			.ToListAsync(cancellationToken);
+		if (edges.Count == 0)
+		{
+			return;
+		}
+
+		var auditLog = serviceProvider.GetRequiredService<VaultAuditLogService>();
+		foreach (var edge in edges)
+		{
+			context.Dependencies.Remove(edge);
+			auditLog.Stage(
+				"state",
+				"dependency.release",
+				subjectType: nameof(Dependency),
+				subjectId: edge.Id.ToString(CultureInfo.InvariantCulture),
+				details: new { reason = "endpoint-deleted", source = edge.Source, target = edge.Target, edge.Trigger, edge.Constraint });
+		}
+	}
+
+	/// <summary>
+	/// Purges the stored dependencies the structure now forbids (PEP102 patch 9). A directive's finish depends
+	/// intrinsically on the finish of each of its direct children, so moving a directive or an objective under a new
+	/// parent — or an end leaving or entering the failed state, which switches its intrinsic edges on and off — can
+	/// close a loop the begins and finishes cannot order. Dependencies are the slave of structure, so the stored edges
+	/// give way: of the contradicted ones, those touching the moved subtree are preferred, else any, and the most
+	/// resolving of them goes each round (the newest on a tie) until the graph orders cleanly; the ones the intrinsic
+	/// edges make redundant go too. Riding the save hook covers every pathway, the watcher's folder moves included,
+	/// which can refuse nothing after the fact.
+	/// </summary>
+	private async Task PurgeContradictedDependenciesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var movedDirectiveIds = context.ChangeTracker.Entries<StellarDirective>()
+			.Where(entry => StructureChanged(entry, nameof(StellarDirective.ParentDirectiveId), nameof(StellarDirective.Status)))
+			.Select(entry => entry.Entity.Id)
+			.ToList();
+		var movedObjectiveIds = context.ChangeTracker.Entries<Objective>()
+			.Where(entry => StructureChanged(entry, nameof(Objective.DirectiveId), nameof(Objective.Status)))
+			.Select(entry => entry.Entity.Id)
+			.ToList();
+		if (movedDirectiveIds.Count == 0 && movedObjectiveIds.Count == 0)
+		{
+			return;
+		}
+
+		var graph = await serviceProvider.GetRequiredService<DependencyGraphService>().LoadGraphAsync(cancellationToken);
+		if (graph.Explicit.Count == 0)
+		{
+			return;
+		}
+
+		// The moved subtree: the moved entities and, under a moved directive, everything it carries with it.
+		var subtree = new HashSet<string>(movedDirectiveIds.Concat(movedObjectiveIds), StringComparer.Ordinal);
+		var directiveParents = await context.Directives
+			.OfType<StellarDirective>()
+			.AsNoTracking()
+			.IgnoreAutoIncludes()
+			.Select(directive => new { directive.Id, directive.ParentDirectiveId })
+			.ToListAsync(cancellationToken);
+		var objectiveParents = await context.Objectives
+			.AsNoTracking()
+			.IgnoreAutoIncludes()
+			.Select(objective => new { objective.Id, objective.DirectiveId })
+			.ToListAsync(cancellationToken);
+		for (var grew = true; grew;)
+		{
+			grew = directiveParents.Any(directive => directive.ParentDirectiveId is not null && subtree.Contains(directive.ParentDirectiveId) && subtree.Add(directive.Id));
+		}
+
+		subtree.UnionWith(objectiveParents.Where(objective => objective.DirectiveId is not null && subtree.Contains(objective.DirectiveId)).Select(objective => objective.Id));
+
+		var contradicted = DependencyOrdering.PlanPurge(graph.All, candidates =>
+		{
+			var touching = candidates.Where(candidate => subtree.Contains(candidate.Edge.SourceId) || subtree.Contains(candidate.Edge.TargetId)).ToList();
+			return (touching.Count > 0 ? touching : candidates).Select(candidate => candidate.Edge);
+		});
+		var redundant = DependencyOrdering.Redundant(graph.All).Except(contradicted).ToList();
+		if (contradicted.Count == 0 && redundant.Count == 0)
+		{
+			return;
+		}
+
+		var auditLog = serviceProvider.GetRequiredService<VaultAuditLogService>();
+		foreach (var (edge, reason) in contradicted.Select(edge => (edge, "contradicted")).Concat(redundant.Select(edge => (edge, "redundant"))))
+		{
+			context.Dependencies.Remove(edge);
+			auditLog.Stage(
+				"state",
+				"dependency.purge",
+				subjectType: nameof(Dependency),
+				subjectId: edge.Id.ToString(CultureInfo.InvariantCulture),
+				details: new { reason, source = edge.Source, target = edge.Target, edge.Trigger, edge.Constraint, moved = subtree.Where(id => movedDirectiveIds.Contains(id) || movedObjectiveIds.Contains(id)).ToList() });
+		}
+	}
+
+	/// <summary>
+	/// Whether an entry's place in the structure, or the state that switches its intrinsic edges, changed in this
+	/// unit of work: it was added under a parent, or its parent or status was modified.
+	/// </summary>
+	private static bool StructureChanged(EntityEntry entry, string parentProperty, string statusProperty)
+	{
+		return entry.State switch
+		{
+			EntityState.Added => entry.Property(parentProperty).CurrentValue is not null,
+			EntityState.Modified => entry.Property(parentProperty).IsModified || entry.Property(statusProperty).IsModified,
+			_ => false,
+		};
+	}
+
+	/// <summary>
+	/// Over means over — unless work arrives (PEP102 patch 9). A stellar directive that is <see cref="DirectiveStatus.Over"/>
+	/// and receives an open child in this unit of work — one created under it, moved in, or reopened from a finish — is
+	/// bumped back to <see cref="DirectiveStatus.Fulfilled"/>, the finish that tolerates open children; going Over again
+	/// is gated by them like any finish. A failed child is not open work and bumps nothing. The status is a frontmatter
+	/// field, so a reconcile intent is recorded for the note and drained once the save commits.
+	/// </summary>
+	private async Task<List<StellarDirective>> ReopenOverDirectivesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var lifecycle = serviceProvider.GetRequiredService<EntityLifecycleResolver>();
+		var parentIds = new HashSet<string>(StringComparer.Ordinal);
+		foreach (var entry in context.ChangeTracker.Entries<Objective>())
+		{
+			if (entry.Entity.DirectiveId is { } parentId && ArrivedOpen(entry, lifecycle, nameof(Objective.DirectiveId), nameof(Objective.Status)))
+			{
+				parentIds.Add(parentId);
+			}
+		}
+
+		foreach (var entry in context.ChangeTracker.Entries<StellarDirective>())
+		{
+			if (entry.Entity.ParentDirectiveId is { } parentId && ArrivedOpen(entry, lifecycle, nameof(StellarDirective.ParentDirectiveId), nameof(StellarDirective.Status)))
+			{
+				parentIds.Add(parentId);
+			}
+		}
+
+		if (parentIds.Count == 0)
+		{
+			return [];
+		}
+
+		// Loaded tracked, so the bump is part of this save and the change feed announces the directive.
+		var ids = parentIds.ToList();
+		var reopened = (await context.Directives
+				.OfType<StellarDirective>()
+				.IgnoreAutoIncludes()
+				.Where(directive => ids.Contains(directive.Id))
+				.ToListAsync(cancellationToken))
+			.Where(directive => directive.Status == DirectiveStatus.Over)
+			.ToList();
+		if (reopened.Count == 0)
+		{
+			return [];
+		}
+
+		var auditLog = serviceProvider.GetRequiredService<VaultAuditLogService>();
+		var writeQueue = serviceProvider.GetRequiredService<VaultWriteQueue>();
+		foreach (var directive in reopened)
+		{
+			directive.Status = DirectiveStatus.Fulfilled;
+			auditLog.Stage(
+				"state",
+				"directive.reopen",
+				subject: directive,
+				details: new { from = DirectiveStatus.Over.ToString(), to = DirectiveStatus.Fulfilled.ToString(), reason = "open-child" });
+			await writeQueue.RecordReconcileAsync(directive, cancellationToken);
+		}
+
+		return reopened;
+	}
+
+	/// <summary>
+	/// Whether an entry is open work that newly arrived under its parent in this unit of work: created there, moved
+	/// there, or reopened there from a finish. Failed is not open — it neither counts as done nor as work.
+	/// </summary>
+	private static bool ArrivedOpen(EntityEntry entry, EntityLifecycleResolver lifecycle, string parentProperty, string statusProperty)
+	{
+		if (entry.State is not (EntityState.Added or EntityState.Modified))
+		{
+			return false;
+		}
+
+		var status = (Enum)entry.Property(statusProperty).CurrentValue!;
+		var (_, finished) = lifecycle.ClassifyStatus(status);
+		if (finished || lifecycle.IsFailedStatus(status))
+		{
+			return false;
+		}
+
+		if (entry.State == EntityState.Added || entry.Property(parentProperty).IsModified)
+		{
+			return true;
+		}
+
+		var statusProperty2 = entry.Property(statusProperty);
+		return statusProperty2.IsModified
+			&& statusProperty2.OriginalValue is Enum previous
+			&& lifecycle.ClassifyStatus(previous).Finish;
 	}
 
 	/// <summary>

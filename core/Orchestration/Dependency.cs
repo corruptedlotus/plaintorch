@@ -12,14 +12,24 @@ namespace Pleiades.Orchestration;
 /// The <see cref="Trigger"/> (source side) selects which source lifecycle event satisfies the dependency; the
 /// <see cref="Constraint"/> (target side) selects which target transition is gated. Both default when omitted
 /// (finish-triggered, begin-constraining) and are empty when the respective endpoint is a checkpoint.
+/// An <see cref="DependencyOrigin.Intrinsic"/> edge is the same shape derived from the backlog's structure rather
+/// than stored (PEP102 patch 9): it carries no <see cref="Id"/> and its <see cref="Satisfied"/> is computed as it is
+/// derived.
 /// </remarks>
 public sealed class Dependency
 {
 	[Key]
 	/// <summary>
-	/// Gets or sets the database identity for the dependency edge.
+	/// Gets or sets the database identity for the dependency edge; <c>0</c> for an intrinsic edge, which has none.
 	/// </summary>
 	public long Id { get; set; }
+
+	/// <summary>
+	/// Gets or sets where the edge comes from: stored and drawn by a person, or derived from the backlog's structure.
+	/// Not a column — a stored row is explicit by definition, and an intrinsic edge is never stored.
+	/// </summary>
+	[NotMapped]
+	public DependencyOrigin Origin { get; set; }
 
 	/// <summary>
 	/// Gets or sets the source (blocking/prerequisite) endpoint kind.
@@ -92,4 +102,28 @@ public sealed class Dependency
 	/// Gets the target endpoint as a reference value.
 	/// </summary>
 	public EndpointRef Target => new(TargetKind, TargetId, TargetRecurrenceId);
+
+	/// <summary>
+	/// Derives an intrinsic edge (PEP102 patch 9): the source's finish blocks the target's finish. The trigger and
+	/// constraint are written out rather than left to default, so the edge reads the same wherever it is served.
+	/// </summary>
+	/// <param name="source">The prerequisite endpoint (a child of the target).</param>
+	/// <param name="target">The dependant endpoint (the parent).</param>
+	/// <param name="satisfied">Whether the source has finished, computed with the edge.</param>
+	public static Dependency Intrinsic(EndpointRef source, EndpointRef target, bool satisfied)
+	{
+		return new Dependency
+		{
+			Origin = DependencyOrigin.Intrinsic,
+			SourceKind = source.Kind,
+			SourceId = source.Id,
+			SourceRecurrenceId = source.RecurrenceId,
+			TargetKind = target.Kind,
+			TargetId = target.Id,
+			TargetRecurrenceId = target.RecurrenceId,
+			Trigger = DependencyTrigger.OnFinish,
+			Constraint = DependencyConstraint.ToFinish,
+			Satisfied = satisfied,
+		};
+	}
 }

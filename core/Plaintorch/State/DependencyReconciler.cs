@@ -45,10 +45,16 @@ public sealed class DependencyReconciler(EntityLifecycleResolver lifecycleResolv
 			.DistinctBy(checkpoint => checkpoint.Id, StringComparer.OrdinalIgnoreCase)
 			.ToDictionary(checkpoint => checkpoint.Id, StringComparer.OrdinalIgnoreCase);
 
-		// Non-checkpoint sources have a fixed satisfaction for this save (their state does not change within the pass).
-		foreach (var dependency in dependencies.Where(dependency => dependency.SourceKind != DependencyEndpointKind.Checkpoint))
+		// Non-checkpoint sources have a fixed satisfaction for this save (their state does not change within the pass),
+		// resolved together — one query per endpoint kind — rather than one at a time. A source with no entity behind
+		// it (an occurrence still projected, an id naming nothing) satisfies nothing; a failed one neither.
+		var sourced = dependencies.Where(dependency => dependency.SourceKind != DependencyEndpointKind.Checkpoint).ToList();
+		var lifecycles = await DependencyEndpoints.ResolveLifecyclesAsync(context, lifecycleResolver, sourced.Select(dependency => dependency.Source), cancellationToken);
+		foreach (var dependency in sourced)
 		{
-			SetSatisfied(context, dependency, await ResolveNonCheckpointSatisfiedAsync(context, dependency, cancellationToken));
+			var satisfied = lifecycles.TryGetValue(dependency.Source, out var lifecycle)
+				&& ((dependency.Trigger ?? DependencyTrigger.OnFinish) == DependencyTrigger.OnFinish ? lifecycle.Finished : lifecycle.Begun);
+			SetSatisfied(context, dependency, satisfied);
 		}
 
 		var incomingByCheckpoint = dependencies
@@ -87,19 +93,6 @@ public sealed class DependencyReconciler(EntityLifecycleResolver lifecycleResolv
 				break;
 			}
 		}
-	}
-
-	private async Task<bool> ResolveNonCheckpointSatisfiedAsync(PlainfraContext context, Dependency dependency, CancellationToken cancellationToken)
-	{
-		var entity = await DependencyEndpoints.ResolveEntityAsync(context, dependency.Source, cancellationToken);
-		if (entity is null)
-		{
-			return false;
-		}
-
-		return (dependency.Trigger ?? DependencyTrigger.OnFinish) == DependencyTrigger.OnFinish
-			? lifecycleResolver.HasFinished(entity)
-			: lifecycleResolver.HasBegun(entity);
 	}
 
 	private static bool SetSatisfied(PlainfraContext context, Dependency dependency, bool satisfied)

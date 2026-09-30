@@ -31,8 +31,9 @@ public enum DirectiveStatus
 	[LifecyclePhase(LifecyclePhase.Finish)]
 	Over,
 	/// <summary>
-	/// The directive has concluded unsuccessfully.
+	/// The directive has failed. Not a finish: it reads as open and not begun, and its intrinsic dependencies —
+	/// to its parent and from its children — are switched off while it stands (PEP102 patch 9).
 	/// </summary>
-	[LifecyclePhase(LifecyclePhase.Finish)]
+	[LifecyclePhase(LifecyclePhase.Failed)]
 	Failed,
 }

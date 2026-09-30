@@ -473,6 +473,189 @@ public sealed class DependencySystemTests : VaultTestBase
 		Assert.True((await Deps(api => api.ListAsync(checkpoint.Id, Ct))).Single().GatesNextTransition);
 	}
 
+	[Fact]
+	public async Task A_directives_finish_depends_intrinsically_on_each_direct_child(/* PEP102.9 */)
+	{
+		var parent = await Directive(api => api.CreateStandaloneAsync("Campaign", cancellationToken: Ct));
+		var child = await Directive(api => api.CreateFromParentAsync(parent.Id, "Strike", cancellationToken: Ct));
+		var quest = await Objective(api => api.CreateFromDirectiveAsync(parent.Id, "Quest", cancellationToken: Ct));
+		// A grandchild hangs off the subdirective, not the parent: it is the subdirective's edge, never the parent's.
+		var sortie = await Objective(api => api.CreateFromDirectiveAsync(child.Id, "Sortie", cancellationToken: Ct));
+
+		// Served, not stored: no identity, an intrinsic origin, finish-to-finish, and a stamp like any other edge.
+		var served = await Deps(api => api.ListAsync(parent.Id, Ct));
+		var intrinsic = served.Where(dependency => dependency.Origin == DependencyOrigin.Intrinsic).ToList();
+		Assert.Equal(2, intrinsic.Count);
+		Assert.All(intrinsic, dependency =>
+		{
+			Assert.Equal(0, dependency.Id);
+			Assert.Equal(DirectiveRef(parent.Id), dependency.Target);
+			Assert.Equal(DependencyTrigger.OnFinish, dependency.Trigger);
+			Assert.Equal(DependencyConstraint.ToFinish, dependency.Constraint);
+			Assert.False(dependency.Satisfied);
+		});
+		Assert.Contains(intrinsic, dependency => dependency.Source == DirectiveRef(child.Id));
+		Assert.Contains(intrinsic, dependency => dependency.Source == ObjectiveRef(quest.Id));
+		Assert.Empty(await Vault.QueryAsync(context => context.Dependencies.ToListAsync(Ct)));
+
+		// Not begun, so the finish gates do not hold it back now; the lock view still lists them.
+		Assert.All(intrinsic, dependency => Assert.False(dependency.GatesNextTransition));
+		var lockView = await Deps(api => api.GetLockAsync(parent.Id, Ct));
+		Assert.True(lockView.BlockedFinish);
+		Assert.Equal(2, lockView.Unsatisfied.Count);
+
+		// The parent cannot finish while a child is open — whichever pathway asks.
+		await Directive(api => api.ShiftStellarWorkflowAsync(parent.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Active), Ct));
+		var refused = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+			Directive(api => api.ShiftStellarWorkflowAsync(parent.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct)));
+		Assert.Contains("open children", refused.Message);
+		Assert.All(await Deps(api => api.ListAsync(parent.Id, Ct)), dependency => Assert.True(dependency.GatesNextTransition));
+
+		// Archived is the finalised Done: it finishes the objective. The subdirective is held by its own child in turn —
+		// the grandchild is the subdirective's edge, not the parent's — and finishes once that one is done.
+		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Archived), Ct));
+		Assert.DoesNotContain(await Deps(api => api.ListAsync(parent.Id, Ct)), dependency => dependency.SourceId == sortie.Id);
+		await Assert.ThrowsAsync<InvalidOperationException>(() =>
+			Directive(api => api.ShiftStellarWorkflowAsync(child.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct)));
+		await Objective(api => api.ShiftWorkflowAsync(sortie.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Done), Ct));
+		await Directive(api => api.ShiftStellarWorkflowAsync(child.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
+		Assert.All(await Deps(api => api.ListAsync(parent.Id, Ct)), dependency => Assert.True(dependency.Satisfied));
+		await Directive(api => api.ShiftStellarWorkflowAsync(parent.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
+	}
+
+	[Fact]
+	public async Task A_failed_end_switches_its_intrinsic_edge_off_but_still_blocks_what_it_explicitly_blocks(/* PEP102.9 */)
+	{
+		var parent = await Directive(api => api.CreateStandaloneAsync("Campaign", cancellationToken: Ct));
+		var quest = await Objective(api => api.CreateFromDirectiveAsync(parent.Id, "Quest", cancellationToken: Ct));
+		var dependant = await Objective(api => api.CreateStandaloneAsync("Afterwards", cancellationToken: Ct));
+		var explicitEdge = await Deps(api => api.CreateAsync(ObjectiveRef(quest.Id), ObjectiveRef(dependant.Id), cancellationToken: Ct));
+
+		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Failed), Ct));
+
+		// Failed is not a finish: the explicit edge stays unmet and holds its dependant's begin.
+		var served = await Deps(api => api.ListAsync(quest.Id, Ct));
+		var stored = Assert.Single(served, dependency => dependency.Id == explicitEdge.Id);
+		Assert.False(stored.Satisfied);
+		await Assert.ThrowsAsync<InvalidOperationException>(() =>
+			Objective(api => api.ShiftWorkflowAsync(dependant.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Onrush), Ct)));
+
+		// But the intrinsic edge is gone: a failed child neither holds its parent back nor counts as done.
+		Assert.DoesNotContain(served, dependency => dependency.Origin == DependencyOrigin.Intrinsic);
+		await Directive(api => api.ShiftStellarWorkflowAsync(parent.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
+
+		// A failed parent is held back by nothing either.
+		var failing = await Directive(api => api.CreateStandaloneAsync("Doomed", cancellationToken: Ct));
+		await Objective(api => api.CreateFromDirectiveAsync(failing.Id, "Open", cancellationToken: Ct));
+		await Directive(api => api.ShiftStellarWorkflowAsync(failing.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Failed), Ct));
+		Assert.Empty(await Deps(api => api.ListAsync(failing.Id, Ct)));
+	}
+
+	[Fact]
+	public async Task An_explicit_edge_against_the_structure_is_refused_and_one_restating_it_is_a_duplicate(/* PEP102.9 */)
+	{
+		var parent = await Directive(api => api.CreateStandaloneAsync("Campaign", cancellationToken: Ct));
+		var quest = await Objective(api => api.CreateFromDirectiveAsync(parent.Id, "Quest", cancellationToken: Ct));
+
+		// The parent's finish before its own child's begin loops through the intrinsic edge, and the message says so.
+		var impossible = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+			Deps(api => api.CreateAsync(DirectiveRef(parent.Id), ObjectiveRef(quest.Id), cancellationToken: Ct)));
+		Assert.Contains("logically impossible", impossible.Message);
+		Assert.Contains("(intrinsic)", impossible.Message);
+
+		// The parent's begin before the child's begin is the natural order and is allowed.
+		var natural = await Deps(api => api.CreateAsync(DirectiveRef(parent.Id), ObjectiveRef(quest.Id), DependencyTrigger.OnBegin, DependencyConstraint.ToBegin, Ct));
+		Assert.True(natural.Id > 0);
+
+		// Restating the intrinsic edge is a duplicate of something the structure already says.
+		var duplicate = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+			Deps(api => api.CreateAsync(ObjectiveRef(quest.Id), DirectiveRef(parent.Id), constraint: DependencyConstraint.ToFinish, cancellationToken: Ct)));
+		Assert.Contains("already implied", duplicate.Message);
+	}
+
+	[Fact]
+	public async Task Moving_an_entity_purges_the_explicit_edges_the_structure_now_contradicts(/* PEP102.9 */)
+	{
+		var alpha = await Directive(api => api.CreateStandaloneAsync("Alpha", cancellationToken: Ct));
+		var beta = await Directive(api => api.CreateStandaloneAsync("Beta", cancellationToken: Ct));
+		var quest = await Objective(api => api.CreateFromDirectiveAsync(alpha.Id, "Quest", cancellationToken: Ct));
+		var bystander = await Objective(api => api.CreateStandaloneAsync("Bystander", cancellationToken: Ct));
+
+		// Beta's finish before the quest's begin is fine while the quest belongs to Alpha; the bystander's edge has
+		// nothing to do with either directive.
+		var doomed = await Deps(api => api.CreateAsync(DirectiveRef(beta.Id), ObjectiveRef(quest.Id), cancellationToken: Ct));
+		var kept = await Deps(api => api.CreateAsync(ObjectiveRef(bystander.Id), ObjectiveRef(quest.Id), cancellationToken: Ct));
+
+		// Moving the quest under Beta closes the loop: the edge touching the moved objective gives way, silently but
+		// on the record; the unrelated edge stays.
+		await Objective(api => api.UpdateAsync(quest.Id, new ObjectiveUpdate(DirectiveId: beta.Id), Ct));
+
+		var remaining = await Vault.QueryAsync(context => context.Dependencies.AsNoTracking().ToListAsync(Ct));
+		Assert.Equal(kept.Id, Assert.Single(remaining).Id);
+		var audit = await Vault.QueryAsync(context => context.AuditLogEntries.AsNoTracking()
+			.Where(entry => entry.Action == "dependency.purge")
+			.ToListAsync(Ct));
+		var entry = Assert.Single(audit);
+		Assert.Equal(doomed.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), entry.SubjectId);
+		Assert.Contains("contradicted", entry.DetailsJson);
+	}
+
+	[Fact]
+	public async Task Over_means_over_until_open_work_arrives(/* PEP102.9 */)
+	{
+		var directive = await Directive(api => api.CreateStandaloneAsync("Campaign", cancellationToken: Ct));
+		await Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
+		await Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct));
+		Assert.Contains("status: Over", Vault.ReadVaultFile("Directives/Campaign/Campaign.md"));
+
+		// A new child bumps it back to Fulfilled — row and note alike.
+		var quest = await Objective(api => api.CreateFromDirectiveAsync(directive.Id, "Quest", cancellationToken: Ct));
+		Assert.Equal(DirectiveStatus.Fulfilled, await StatusOfAsync(directive.Id));
+		Assert.Contains("status: Fulfilled", Vault.ReadVaultFile("Directives/Campaign/Campaign.md"));
+
+		// Fulfilled tolerates the open child, but going Over again is a finish the child gates.
+		await Assert.ThrowsAsync<InvalidOperationException>(() =>
+			Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct)));
+		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Done), Ct));
+		await Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct));
+
+		// Reopening a finished child bumps it too; a child failing does not (failed is not open work).
+		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Standby), Ct));
+		Assert.Equal(DirectiveStatus.Fulfilled, await StatusOfAsync(directive.Id));
+		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Done), Ct));
+		await Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct));
+		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Failed), Ct));
+		Assert.Equal(DirectiveStatus.Over, await StatusOfAsync(directive.Id));
+
+		// And an open child moved in from elsewhere.
+		var stray = await Objective(api => api.CreateStandaloneAsync("Stray", cancellationToken: Ct));
+		await Objective(api => api.UpdateAsync(stray.Id, new ObjectiveUpdate(DirectiveId: directive.Id), Ct));
+		Assert.Equal(DirectiveStatus.Fulfilled, await StatusOfAsync(directive.Id));
+	}
+
+	[Fact]
+	public async Task Deleting_an_endpoint_releases_the_explicit_edges_that_named_it(/* PEP102.9 */)
+	{
+		var gone = await Objective(api => api.CreateStandaloneAsync("Gone", cancellationToken: Ct));
+		var stays = await Objective(api => api.CreateStandaloneAsync("Stays", cancellationToken: Ct));
+		var other = await Objective(api => api.CreateStandaloneAsync("Other", cancellationToken: Ct));
+		// One edge out of the doomed objective, one into it, and one that never names it.
+		await Deps(api => api.CreateAsync(ObjectiveRef(gone.Id), ObjectiveRef(stays.Id), cancellationToken: Ct));
+		await Deps(api => api.CreateAsync(ObjectiveRef(other.Id), ObjectiveRef(gone.Id), cancellationToken: Ct));
+		var unrelated = await Deps(api => api.CreateAsync(ObjectiveRef(other.Id), ObjectiveRef(stays.Id), cancellationToken: Ct));
+
+		await Vault.WithScopeAsync(services => services.GetRequiredService<IObjectiveApi>().DeleteAsync(gone.Id, Ct));
+
+		var remaining = await Vault.QueryAsync(context => context.Dependencies.AsNoTracking().ToListAsync(Ct));
+		Assert.Equal(unrelated.Id, Assert.Single(remaining).Id);
+	}
+
+	private Task<DirectiveStatus> StatusOfAsync(string directiveId)
+		=> Vault.QueryAsync(context => context.Directives.OfType<StellarDirective>().AsNoTracking().IgnoreAutoIncludes()
+			.Where(directive => directive.Id == directiveId)
+			.Select(directive => directive.Status)
+			.SingleAsync(Ct));
+
 	private static EndpointRef ObjectiveRef(string id) => new(DependencyEndpointKind.Objective, id);
 
 	private Task<int> BankedAsync() => Vault.WithScopeAsync(services => services.GetRequiredService<PlaintorchStateService>().GetCelestronBankedAsync(Ct));

@@ -42,6 +42,10 @@ public sealed class PlaintorchModule : Module
 				: new VaultLayout());
 		services.AddScoped<DependencyReconciler>();
 		services.AddScoped<DependencyGateService>();
+		// The one reading of the dependency graph — stored edges plus the intrinsic edges each rule derives (PEP102
+		// patch 9) — shared by the gate, the reconciler, the API and the purge.
+		services.AddScoped<DependencyGraphService>();
+		services.AddScoped<IIntrinsicDependencyRule, DirectiveChildrenIntrinsicRule>();
 		services.AddScoped<PlaintorchStatePolicyProcessor>();
 		services.AddScoped<PlaintorchStatePolicyFileSyncService>();
 		services.AddScoped<PlaintorchStatePolicyInterceptor>();
@@ -157,6 +161,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<IVaultMigration, ObjectiveQuietCanonicalizationMigration>();
 		services.AddScoped<IVaultMigration, OnrushPlanningPlaceholderRenameMigration>();
 		services.AddScoped<IVaultMigration, FateOrbitOnlyMigration>();
+		services.AddScoped<IVaultMigration, IntrinsicDependencyPurgeMigration>();
 		services.AddScoped<PlaintorchEngine>();
 		services.AddScoped<TimeframeAffinityResolver>();
 		services.AddScoped<TimeframeCandidateService>();

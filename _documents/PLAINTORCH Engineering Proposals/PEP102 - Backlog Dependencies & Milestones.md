@@ -7,6 +7,9 @@ patches:
   - Patch102.4 - Graph Deep Editability
   - Patch102.5 - Onrush Management UI
   - Patch102.6 - Global Planning Mode
+  - Patch102.7 - Canvas input
+  - Patch102.8 - Dependency Routes on Banners
+  - Patch102.9 - Intrinsic Dependencies
 assignee: Soraya 🧙‍♀️
 phase: 2a
 ---
@@ -191,3 +194,32 @@ The endpoint list takes a `nonImmediate` set and draws those endpoints faint, af
 ### Open edges
 - A fate's or objective's occurrence-level edges are not rolled up into its banner's route.
 - An eventive's phase is temporal, so its begin and finish arrive with the clock. The listing only revalidates on a write, so a stamp on an eventive endpoint can trail the moment it passes, the same as `satisfied` already does.
+
+## Patch102.9 - Intrinsic Dependencies
+Some dependencies are not drawn; they follow from where things sit. The first: **finishing a stellar directive depends on finishing each of its direct children** — its stellar subdirectives and its objectives. Nobody writes that edge, and nobody can delete it. This patch adds the mechanism (an *intrinsic* dependency, derived from structure and never stored) with that rule as its first case, and makes the cycle rule see it.
+
+### Derived, not stored
+An intrinsic edge is computed as it is read, from the parent columns (`ParentDirectiveId`, `DirectiveId`) and the statuses at both ends, so it cannot drift from the structure and needs no backfill. It is the same `Dependency` shape as a stored edge — finish-triggered, finish-constraining, with its `satisfied` computed on the spot — under a new `origin` (`Explicit` | `Intrinsic`) and with `id` 0. A rule is an `IIntrinsicDependencyRule` (`DirectiveChildrenIntrinsicRule` is the one so far); `DependencyGraphService` reads the stored edges and every rule's derived ones as **one graph**, and the gate, the reconciler, the API and the purge all read that graph. The listing, the lock view and a banner's route serve intrinsic edges beside the stored ones, and the canvas draws them **dashed**, with a note where a stored edge has its menu.
+
+Only stellar directives take part: a lunar directive has no finish, so an objective filed under one implies nothing. Fates and decrees are never a directive's work. Objectives no longer nest (removed ahead of this patch), so "direct child" has one meaning.
+
+### Failed, Fulfilled, Over
+- **Failed is not a finish.** `[LifecyclePhase(Failed)]` marks it on both status enums: a failed entity reads as open and *not begun*. A failed prerequisite therefore keeps blocking what it explicitly blocks (before, it satisfied the edge), and a failed end **switches its intrinsic edges off**: a failed child neither holds its parent back nor counts as done, and a failed parent is held back by nothing. Disabled edges are omitted from what is served.
+- **Archived and Over** are the finalised Done and Fulfilled; both finish.
+- **Over means over — unless work arrives.** An Over directive that receives an open child (created under it, moved in, or reopened from a finish) is bumped back to **Fulfilled**, the finish that tolerates open children; going Over again is a finish the children gate. The bump is a state-policy rule of the save hook, so every pathway gets it, and the note follows the row: a reconcile intent is recorded in the same save and drained once it commits. A child *failing* bumps nothing.
+
+### The cycle rule walks in memory
+The temporal probe — the two-sided begin/finish state space the recursive CTE walked on the connection — is now `DependencyOrdering.FindContradiction`, a C# walk with the same semantics (an orderable begin/finish loop is allowed; a checkpoint is a dead end). It moved so the derived edges take part, so the contradicting path can be **named** in the refusal ("Directive:A.finish → Objective:x.begin (intrinsic)"), and so the purge can ask it repeatedly. Two shapes become impossible that were not before: a directive's finish gating anything in its own subtree, and a cross-tree pair (`A.finish → b.begin`, `B.finish → a.begin` with `a` under `A` and `b` under `B`). A directive's *begin* before its child's begin stays the natural order and is allowed. A stored edge restating an intrinsic one is refused as a duplicate.
+
+### Dependencies are the slave of structure
+A reparent cannot be refused for the sake of an edge — least of all a folder move the watcher sees after the fact. So when a directive or objective moves, or an end leaves or enters Failed, the stored edges the structure now contradicts are **purged** in the same save, on the audit record (`dependency.purge`), and so are the ones the intrinsic edges make redundant. Which of several goes: those touching the moved subtree are preferred; among them, the one whose removal leaves the fewest edges contradicted, the newest on a tie; one per round until the graph orders. Purging every contradicted edge at once would take innocent ones with the loop's true cause. A loop of intrinsic edges alone (a hand-edited parent chain that loops) has nothing to give up. The same slave rule releases every stored edge naming an entity that is deleted.
+
+The **v4→v5 vault migration** runs the same purge over the whole graph once, with no subtree preference, so an existing vault sets itself right on activation.
+
+### Batching
+Stamping and reconciling no longer resolve endpoints one query at a time: `DependencyEndpoints.ResolveLifecyclesAsync` loads each kind in one query (`Contains` over the ids, the tracker overlaid), and the directive-children rule reads the whole structure in two projections that carry both ends' state, so deriving costs no further lookups.
+
+### Open edges
+- Purges are on the audit log only. Their visibility to the user is a job for a **core status system** the operation-status framework (a watcher concern today) does not yet cover.
+- Enforcement is unchanged: the gate holds only the API's status shifts; a frontmatter `status:` edit bypasses it as before. PEP103 owns that.
+- Counts on a banner are edges, so a directive with many open children shows many blockers; the route tooltip collapses them into "N open children". A canvas badge rides every unmet intrinsic edge, as on any finish gate.

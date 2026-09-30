@@ -1,6 +1,4 @@
-using System.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
@@ -12,7 +10,9 @@ namespace Pleiades.Plaintorch.Api.Services;
 
 /// <summary>
 /// Implements the dependency-facing PLAINTORCH application API (PEP101). Structural rules are enforced by
-/// <see cref="DependencyRules"/>; endpoint existence and kind are validated here (they require resolving loose
+/// <see cref="DependencyRules"/> and the temporal cycle rule by <see cref="DependencyOrdering"/>, both over the whole
+/// graph — the stored edges and the intrinsic ones the structure implies (PEP102 patch 9), read through
+/// <see cref="DependencyGraphService"/>; endpoint existence and kind are validated here (they require resolving loose
 /// references). Satisfaction and checkpoint unlock are computed by <see cref="DependencyReconciler"/> on save; whether
 /// an unsatisfied edge gates its target's next transition is stamped by <see cref="DependencyGateService"/> as it is served.
 /// </summary>
@@ -21,6 +21,7 @@ public sealed class DependencyApiService(
 	PuckCreationService puckCreationService,
 	PlaintorchStateService stateService,
 	DependencyGateService gateService,
+	DependencyGraphService graphService,
 	VaultAuditLogService auditLogService) : IDependencyApi
 {
 	private const string CheckpointTollDescriptionPrefix = "PLAINTORCH checkpoint toll";
@@ -34,9 +35,16 @@ public sealed class DependencyApiService(
 		await ValidateEndpointAsync("source", source, cancellationToken);
 		await ValidateEndpointAsync("target", target, cancellationToken);
 
-		var existing = await context.Dependencies.AsNoTracking().ToListAsync(cancellationToken);
-		DependencyRules.EnsureValid(source, target, trigger, constraint, existing);
-		await EnsureLogicallyPossibleAsync(source, target, trigger, constraint, cancellationToken);
+		// The intrinsic edges take part in both rules: one that restates a child's finish gating its parent's finish
+		// is a duplicate, and one that orders against the structure is impossible.
+		var graph = await graphService.LoadGraphAsync(cancellationToken);
+		DependencyRules.EnsureValid(source, target, trigger, constraint, graph.All);
+		if (DependencyOrdering.FindContradiction(graph.All, source, trigger, target, constraint) is { } contradiction)
+		{
+			throw new InvalidOperationException(
+				"This dependency is logically impossible: it would contradict the begin/finish ordering the existing dependencies already impose ("
+				+ DependencyOrdering.Describe(contradiction) + ").");
+		}
 
 		var dependency = new Dependency
 		{
@@ -67,12 +75,17 @@ public sealed class DependencyApiService(
 	public async Task<IReadOnlyList<Dependency>> ListAsync(string? entityId = null, CancellationToken cancellationToken = default)
 	{
 		var query = context.Dependencies.AsNoTracking();
+		var intrinsic = await graphService.DeriveIntrinsicAsync(cancellationToken);
 		if (!string.IsNullOrWhiteSpace(entityId))
 		{
 			query = query.Where(dependency => dependency.SourceId == entityId || dependency.TargetId == entityId);
+			intrinsic = intrinsic
+				.Where(dependency => string.Equals(dependency.SourceId, entityId, StringComparison.Ordinal) || string.Equals(dependency.TargetId, entityId, StringComparison.Ordinal))
+				.ToList();
 		}
 
-		var dependencies = await query.OrderBy(dependency => dependency.Id).ToListAsync(cancellationToken);
+		// Stored edges first, in their own order; the intrinsic ones after, as they carry no identity to order by.
+		var dependencies = (await query.OrderBy(dependency => dependency.Id).ToListAsync(cancellationToken)).Concat(intrinsic).ToList();
 		await gateService.StampNextTransitionAsync(dependencies, cancellationToken);
 		return dependencies;
 	}
@@ -155,6 +168,8 @@ public sealed class DependencyApiService(
 			.Where(dependency => dependency.TargetId == entityId && !dependency.Satisfied)
 			.OrderBy(dependency => dependency.Id)
 			.ToListAsync(cancellationToken);
+		unsatisfied.AddRange((await graphService.DeriveIntrinsicAsync(cancellationToken))
+			.Where(dependency => string.Equals(dependency.TargetId, entityId, StringComparison.Ordinal) && !dependency.Satisfied));
 		await gateService.StampNextTransitionAsync(unsatisfied, cancellationToken);
 
 		var blockedBegin = unsatisfied.Any(dependency => dependency.Constraint is null or DependencyConstraint.ToBegin);
@@ -346,123 +361,6 @@ public sealed class DependencyApiService(
 			details: new { met, unlocked = checkpoint.Unlocked },
 			cancellationToken: cancellationToken);
 		return checkpoint;
-	}
-
-	/// <summary>
-	/// Whether the target's side (constraint, or a checkpoint's empty side) is on the shared begin/finish axis.
-	/// </summary>
-	private static object SideOf(DependencyEndpointKind kind, DependencyConstraint? constraint)
-	{
-		return kind == DependencyEndpointKind.Checkpoint
-			? DBNull.Value
-			: constraint == DependencyConstraint.ToFinish ? 1 : 0;
-	}
-
-	/// <inheritdoc cref="SideOf(DependencyEndpointKind, DependencyConstraint?)"/>
-	private static object SideOf(DependencyEndpointKind kind, DependencyTrigger? trigger)
-	{
-		return kind == DependencyEndpointKind.Checkpoint
-			? DBNull.Value
-			: trigger == DependencyTrigger.OnBegin ? 0 : 1;
-	}
-
-	/// <summary>
-	/// Rejects a dependency the existing graph makes logically impossible (PEP102).
-	/// </summary>
-	/// <remarks>
-	/// The new edge asserts <c>source.trigger</c> comes before <c>target.constraint</c>. Impossible if the
-	/// graph already orders them the other way — if, walking forward in time from the target's constrained
-	/// side, the source's triggering side is already reachable. The walk lives in a two-sided state space
-	/// (each node a begin=0 and a finish=1) over three steps: a dependency carries its source's triggering
-	/// side to its dependant's constrained side; a node's begin precedes its own finish; and the start is the
-	/// target's constrained side. A checkpoint has no side — its trigger and constraint are null — so it is a
-	/// dead end here and drops out of the begin→finish step on its own, which is the intended handling.
-	///
-	/// This is temporal-cycle detection, and it is the whole of the cycle rule: it is strictly finer than the
-	/// node-level acyclicity it replaced, since it permits the begin/finish cycles that are actually orderable.
-	/// The trigger and constraint are stored as text and on different vocabularies, so both the stored edges
-	/// and the prospective one are normalised to the shared begin/finish axis, resolving an omitted trigger to
-	/// finish and an omitted constraint to begin, exactly as the engine reads them.
-	/// </remarks>
-	private async Task EnsureLogicallyPossibleAsync(EndpointRef source, EndpointRef target, DependencyTrigger? trigger, DependencyConstraint? constraint, CancellationToken cancellationToken)
-	{
-		// A recursive CTE run directly on the connection rather than through the query pipeline: the pipeline
-		// wraps a raw statement as a subquery, and a top-level WITH cannot be wrapped that way.
-		const string sql = @"
-WITH RECURSIVE
-edges(src, dst, sside, dside) AS (
-    SELECT
-        SourceKind || '|' || SourceId || '|' || COALESCE(SourceRecurrenceId, ''),
-        TargetKind || '|' || TargetId || '|' || COALESCE(TargetRecurrenceId, ''),
-        CASE WHEN SourceKind = 'Checkpoint' THEN NULL WHEN ""Trigger"" = 'OnBegin' THEN 0 ELSE 1 END,
-        CASE WHEN TargetKind = 'Checkpoint' THEN NULL WHEN ""Constraint"" = 'ToFinish' THEN 1 ELSE 0 END
-    FROM Dependencies
-),
-origin(node, side) AS (
-    SELECT $sourceKind || '|' || $sourceId || '|' || COALESCE($sourceSlot, ''), $sourceSide
-),
-seed(node, side) AS (
-    SELECT $targetKind || '|' || $targetId || '|' || COALESCE($targetSlot, ''), $targetSide
-),
-path(node, side) AS (
-    SELECT node, side FROM seed
-    UNION
-    SELECT e.dst, e.dside
-        FROM path p JOIN edges e ON e.src = p.node AND e.sside = p.side
-        WHERE p.node != (SELECT node FROM origin) OR p.side != (SELECT side FROM origin)
-    UNION
-    SELECT x.node, 1 FROM path x WHERE x.side = 0
-)
-SELECT NOT EXISTS (
-    SELECT 1 FROM path JOIN origin ON path.node = origin.node AND path.side = origin.side
-)";
-
-		var connection = context.Database.GetDbConnection();
-		await using var command = connection.CreateCommand();
-		command.CommandText = sql;
-		command.Transaction = context.Database.CurrentTransaction?.GetDbTransaction();
-		// A slot binds as a DateTime, which the SQLite provider renders in the same text form EF stores the
-		// RecurrenceId columns in, so the concatenated node keys compare equal.
-		AddParameter(command, "$sourceKind", source.Kind.ToString());
-		AddParameter(command, "$sourceId", source.Id);
-		AddParameter(command, "$sourceSlot", (object?)source.RecurrenceId ?? DBNull.Value);
-		AddParameter(command, "$targetKind", target.Kind.ToString());
-		AddParameter(command, "$targetId", target.Id);
-		AddParameter(command, "$targetSlot", (object?)target.RecurrenceId ?? DBNull.Value);
-		AddParameter(command, "$sourceSide", SideOf(source.Kind, trigger));
-		AddParameter(command, "$targetSide", SideOf(target.Kind, constraint));
-
-		var opened = false;
-		if (connection.State != ConnectionState.Open)
-		{
-			await connection.OpenAsync(cancellationToken);
-			opened = true;
-		}
-
-		try
-		{
-			var possible = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
-			if (possible == 0)
-			{
-				throw new InvalidOperationException(
-					"This dependency is logically impossible: it would contradict the begin/finish ordering the existing dependencies already impose.");
-			}
-		}
-		finally
-		{
-			if (opened)
-			{
-				await connection.CloseAsync();
-			}
-		}
-	}
-
-	private static void AddParameter(System.Data.Common.DbCommand command, string name, object value)
-	{
-		var parameter = command.CreateParameter();
-		parameter.ParameterName = name;
-		parameter.Value = value;
-		command.Parameters.Add(parameter);
 	}
 
 	private async Task ValidateEndpointAsync(string side, EndpointRef endpoint, CancellationToken cancellationToken)

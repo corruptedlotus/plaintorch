@@ -6,11 +6,12 @@ using Pleiades.Vault.Database;
 namespace Pleiades.Plaintorch.State;
 
 /// <summary>
-/// Answers whether a target (blocked/dependant) is currently gated by unmet dependencies (PEP101). Reads the
-/// persisted <see cref="Dependency.Satisfied"/> flag maintained by <see cref="DependencyReconciler"/>, so it
-/// reflects the last reconciled state. The emitted lock is separate from any status field.
+/// Answers whether a target (blocked/dependant) is currently gated by unmet dependencies (PEP101). Stored edges are
+/// read through their persisted <see cref="Dependency.Satisfied"/> flag, maintained by <see cref="DependencyReconciler"/>,
+/// so they reflect the last reconciled state; intrinsic edges are derived on the spot (PEP102 patch 9). The emitted
+/// lock is separate from any status field.
 /// </summary>
-public sealed class DependencyGateService(PlainfraContext context, EntityLifecycleResolver lifecycleResolver)
+public sealed class DependencyGateService(PlainfraContext context, EntityLifecycleResolver lifecycleResolver, DependencyGraphService graphService)
 {
 	/// <summary>
 	/// Throws when a workflow shift to <paramref name="newStatus"/> would move <paramref name="target"/> through
@@ -27,17 +28,32 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 			return;
 		}
 
-		if (await IsLockedAsync(target, gatedPhase.Value, cancellationToken))
+		if (await IsExplicitlyLockedAsync(target, gatedPhase.Value, cancellationToken))
 		{
 			throw new InvalidOperationException(
 				$"{Describe(target)} is blocked by unmet dependencies and cannot {(finish ? "finish" : "begin")} until they are satisfied.");
 		}
+
+		if (await IsIntrinsicallyLockedAsync(target, gatedPhase.Value, cancellationToken))
+		{
+			throw new InvalidOperationException(
+				$"{Describe(target)} still has open children and cannot finish until each of them has finished.");
+		}
 	}
 
 	/// <summary>
-	/// Determines whether the target has any unsatisfied dependency gating the given constraint phase.
+	/// Determines whether the target has any unsatisfied dependency, stored or intrinsic, gating the given constraint phase.
 	/// </summary>
 	public async Task<bool> IsLockedAsync(EndpointRef target, DependencyConstraint phase, CancellationToken cancellationToken)
+	{
+		return await IsExplicitlyLockedAsync(target, phase, cancellationToken)
+			|| await IsIntrinsicallyLockedAsync(target, phase, cancellationToken);
+	}
+
+	/// <summary>
+	/// Determines whether the target has any unsatisfied stored dependency gating the given constraint phase.
+	/// </summary>
+	private async Task<bool> IsExplicitlyLockedAsync(EndpointRef target, DependencyConstraint phase, CancellationToken cancellationToken)
 	{
 		var query = context.Dependencies
 			.AsNoTracking()
@@ -59,16 +75,39 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 	}
 
 	/// <summary>
+	/// Determines whether an intrinsic edge gates the target's given phase (PEP102 patch 9). Intrinsic edges only ever
+	/// gate a finish, so a begin is never held. The target's own state is not consulted: the transition being judged
+	/// is the one that leaves it, so its incoming edges are read as live even while it stands failed.
+	/// </summary>
+	private async Task<bool> IsIntrinsicallyLockedAsync(EndpointRef target, DependencyConstraint phase, CancellationToken cancellationToken)
+	{
+		if (phase != DependencyConstraint.ToFinish || target.Kind != DependencyEndpointKind.Directive)
+		{
+			return false;
+		}
+
+		var intrinsic = await graphService.DeriveIntrinsicAsync(cancellationToken);
+		return intrinsic.Any(dependency => dependency.Target == target && !dependency.Satisfied);
+	}
+
+	/// <summary>
 	/// Stamps each dependency's <see cref="Dependency.GatesNextTransition"/>: whether, still unsatisfied, it gates the
 	/// next lifecycle transition its target has to make. This is what separates what holds an entity back right now
 	/// from what will only matter later (a finish gate on an entity that has not begun) or no longer matters (a begin
-	/// gate on one that already has). Each distinct target is resolved once.
+	/// gate on one that already has). The distinct targets are resolved together, one query per kind.
 	/// </summary>
 	public async Task StampNextTransitionAsync(IEnumerable<Dependency> dependencies, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(dependencies);
-		var nextByTarget = new Dictionary<EndpointRef, NextTransition>();
-		foreach (var dependency in dependencies)
+		var pending = dependencies.ToList();
+		var targets = pending
+			.Where(dependency => !dependency.Satisfied && dependency.TargetKind != DependencyEndpointKind.Checkpoint)
+			.Select(dependency => dependency.Target)
+			.Distinct()
+			.ToList();
+		var lifecycles = await DependencyEndpoints.ResolveLifecyclesAsync(context, lifecycleResolver, targets, cancellationToken);
+
+		foreach (var dependency in pending)
 		{
 			if (dependency.Satisfied)
 			{
@@ -76,17 +115,10 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 				continue;
 			}
 
-			var target = dependency.Target;
-			if (!nextByTarget.TryGetValue(target, out var next))
-			{
-				next = await ResolveNextTransitionAsync(target, cancellationToken);
-				nextByTarget[target] = next;
-			}
-
-			dependency.GatesNextTransition = next switch
+			dependency.GatesNextTransition = ResolveNextTransition(dependency.Target, lifecycles) switch
 			{
 				NextTransition.Unlock => true,
-				// The default constraint (null) is ToBegin, as in IsLockedAsync.
+				// The default constraint (null) is ToBegin, as in the explicit lock.
 				NextTransition.Begin => dependency.Constraint is null or DependencyConstraint.ToBegin,
 				NextTransition.Finish => dependency.Constraint is DependencyConstraint.ToFinish,
 				_ => false,
@@ -97,27 +129,26 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 	/// <summary>
 	/// The transition a target has to make next. A checkpoint is not a lifecycle kind: its next transition is its
 	/// unlock, which every incoming dependency gates. An endpoint with no entity behind it — an occurrence still
-	/// projected from its schedule — has not begun.
+	/// projected from its schedule — has not begun, and neither has a failed one.
 	/// </summary>
-	private async Task<NextTransition> ResolveNextTransitionAsync(EndpointRef target, CancellationToken cancellationToken)
+	private static NextTransition ResolveNextTransition(EndpointRef target, IReadOnlyDictionary<EndpointRef, EndpointLifecycle> lifecycles)
 	{
 		if (target.Kind == DependencyEndpointKind.Checkpoint)
 		{
 			return NextTransition.Unlock;
 		}
 
-		var entity = await DependencyEndpoints.ResolveEntityAsync(context, target, cancellationToken);
-		if (entity is null)
+		if (!lifecycles.TryGetValue(target, out var lifecycle))
 		{
 			return NextTransition.Begin;
 		}
 
-		if (lifecycleResolver.HasFinished(entity))
+		if (lifecycle.Finished)
 		{
 			return NextTransition.None;
 		}
 
-		return lifecycleResolver.HasBegun(entity) ? NextTransition.Finish : NextTransition.Begin;
+		return lifecycle.Begun ? NextTransition.Finish : NextTransition.Begin;
 	}
 
 	/// <summary>The lifecycle transition a dependency target has to make next.</summary>

@@ -37,9 +37,17 @@ public sealed class PlaintorchStatePolicyInterceptor(
 	{
 		if (eventData.Context is PlainfraContext context
 			&& _resultsByContextId.TryRemove(context.ContextId.InstanceId, out var policyResult)
-			&& policyResult.SupersededForecasts.Count > 0)
+			&& !policyResult.IsEmpty)
 		{
-			await fileSyncService.DeleteSupersededForecastsAsync(policyResult.SupersededForecasts, cancellationToken);
+			if (policyResult.SupersededForecasts.Count > 0)
+			{
+				await fileSyncService.DeleteSupersededForecastsAsync(policyResult.SupersededForecasts, cancellationToken);
+			}
+
+			if (policyResult.ReopenedDirectives.Count > 0)
+			{
+				await fileSyncService.ReconcileReopenedDirectivesAsync(policyResult.ReopenedDirectives, cancellationToken);
+			}
 		}
 
 		return await base.SavedChangesAsync(eventData, result, cancellationToken);
