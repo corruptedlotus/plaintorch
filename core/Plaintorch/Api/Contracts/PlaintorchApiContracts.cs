@@ -253,19 +253,13 @@ public sealed record DirectiveAvailabilityRequest(long? TimeframeId);
 /// <summary>
 /// Represents the mutable fields of an objective for generic update actions.
 /// </summary>
-/// <remarks>
-/// <paramref name="ParentIncentiveId"/> participates in the PEP100 parent system: an objective may name
-/// another objective (subtask) or a fate declarative as its parent. <paramref name="ClearParentIncentive"/>
-/// distinguishes "leave unchanged" (null) from "unset".
-/// </remarks>
 public sealed record ObjectiveUpdate(
 	string? Title = null,
 	Optional<string?> DirectiveId = default,
 	string? OnrushSprintId = null,
 	ObjectiveCollege? College = null,
 	int? CelestronValue = null,
-	Optional<Due?> Due = default,
-	Optional<string?> ParentIncentiveId = default);
+	Optional<Due?> Due = default);
 
 /// <summary>
 /// Represents the editable fields of a checkpoint (PEP102): its name, its Celestron toll, its external
@@ -436,7 +430,6 @@ public sealed record FatePlan(
 	string Title,
 	string? Id = null,
 	string? DirectiveId = null,
-	string? ParentIncentiveId = null,
 	DateOnly? Date = null,
 	TimeOnly? StartTime = null,
 	TimeOnly? EndTime = null,
@@ -458,7 +451,6 @@ public sealed record FateUpdate(
 	string? Title = null,
 	FateStatus? Status = null,
 	Optional<string?> DirectiveId = default,
-	Optional<string?> ParentIncentiveId = default,
 	string? Orbit = null,
 	Optional<DeclarativeCalendar?> Calendar = default,
 	Optional<string?> TimeZone = default);

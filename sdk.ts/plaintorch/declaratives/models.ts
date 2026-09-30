@@ -130,7 +130,6 @@ export class Fate {
 	title: string = ''
 	directiveId: string | undefined
 	directive?: Directive | undefined
-	parentIncentiveId: string | undefined
 	status: FateStatus = FateStatus.Active
 	orbit: string | undefined
 	/**
@@ -258,7 +257,6 @@ export interface FatePlan {
 	title: string
 	id?: string | undefined
 	directiveId?: string | undefined
-	parentIncentiveId?: string | undefined
 	date?: string | undefined
 	startTime?: string | undefined
 	endTime?: string | undefined
@@ -271,8 +269,6 @@ export interface FateUpdate {
 	status?: FateStatus | undefined
 	/** The owning directive. Omit to keep, a value to move under it, `null` to lift to the top level. */
 	directiveId?: string | null | undefined
-	/** Parent incentive. Omit to keep, an id to set, `null` to clear. */
-	parentIncentiveId?: string | null | undefined
 	/** A fate is orbit-only (PEP111): reschedule — a one-off (`Z{…}` literal) or a recurrence — by setting a new orbit. */
 	orbit?: string | undefined
 	/**

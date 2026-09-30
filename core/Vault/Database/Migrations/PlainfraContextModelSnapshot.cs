@@ -315,9 +315,6 @@ namespace plaintorch.Vault.Database.Migrations
                         .HasMaxLength(13)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("ParentIncentiveId")
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -325,8 +322,6 @@ namespace plaintorch.Vault.Database.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("DirectiveId");
-
-                    b.HasIndex("ParentIncentiveId");
 
                     b.ToTable("Incentives", (string)null);
 
@@ -1252,13 +1247,7 @@ namespace plaintorch.Vault.Database.Migrations
                         .WithMany("Incentives")
                         .HasForeignKey("DirectiveId");
 
-                    b.HasOne("Pleiades.Orchestration.Incentive", "ParentIncentive")
-                        .WithMany("ChildIncentives")
-                        .HasForeignKey("ParentIncentiveId");
-
                     b.Navigation("Directive");
-
-                    b.Navigation("ParentIncentive");
                 });
 
             modelBuilder.Entity("Pleiades.Orchestration.OnrushSprint", b =>
@@ -1401,8 +1390,6 @@ namespace plaintorch.Vault.Database.Migrations
 
             modelBuilder.Entity("Pleiades.Orchestration.Incentive", b =>
                 {
-                    b.Navigation("ChildIncentives");
-
                     b.Navigation("Executives");
                 });
 

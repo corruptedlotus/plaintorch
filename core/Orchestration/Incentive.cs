@@ -6,7 +6,8 @@ namespace Pleiades.Orchestration;
 
 /// <summary>
 /// Represents the shared base of the declarative ecosystem (PEP100): objectives and declaratives
-/// (fates and decrees) live as table siblings on this base, each with a discriminator.
+/// (fates and decrees) live as table siblings on this base, each with a discriminator. Incentives do not nest:
+/// their only structural parent is the owning <see cref="Directive"/>.
 /// </summary>
 [JsonPolymorphic]
 [JsonDerivedType(typeof(Objective), "objective")]
@@ -25,29 +26,6 @@ public abstract class Incentive : PuckNamedEntity
 	/// Gets or sets the related directive.
 	/// </summary>
 	public Directive? Directive { get; set; }
-
-	/// <summary>
-	/// Gets or sets the optional parent incentive identifier.
-	/// </summary>
-	/// <remarks>
-	/// PEP100 parenting rules: objectives may parent objectives (subtasks) or specify a fate as their parent;
-	/// fates may parent fates; decrees are exempt from the parent system entirely. The kind rules are enforced
-	/// by the application layer.
-	/// </remarks>
-	public string? ParentIncentiveId { get; set; }
-
-	[ForeignKey(nameof(ParentIncentiveId))]
-	[InverseProperty(nameof(ChildIncentives))]
-	/// <summary>
-	/// Gets or sets the parent incentive.
-	/// </summary>
-	public Incentive? ParentIncentive { get; set; }
-
-	[InverseProperty(nameof(ParentIncentive))]
-	/// <summary>
-	/// Gets the child incentives parented under this incentive.
-	/// </summary>
-	public List<Incentive> ChildIncentives { get; set; } = [];
 
 	/// <summary>
 	/// Gets the Polaris execution records that work at this incentive (PEP111). Populated for objectives (the day's

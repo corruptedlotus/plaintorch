@@ -81,11 +81,6 @@ public sealed class DeclarativeApiService(
 			Calendar = PinnedCalendarFor(orbit),
 		};
 
-		if (!string.IsNullOrWhiteSpace(plan.ParentIncentiveId))
-		{
-			await ApplyParentAsync(fate, plan.ParentIncentiveId, cancellationToken);
-		}
-
 		context.Fates.Add(fate);
 		await writeQueue.WriteAsync(fate, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "fate.create", subject: fate, cancellationToken: cancellationToken);
@@ -119,18 +114,6 @@ public sealed class DeclarativeApiService(
 			var directiveId = string.IsNullOrWhiteSpace(update.DirectiveId.Value) ? null : update.DirectiveId.Value;
 			await EnsureDirectiveExistsAsync(directiveId, cancellationToken);
 			fate.DirectiveId = directiveId;
-		}
-
-		if (update.ParentIncentiveId.IsSet)
-		{
-			if (string.IsNullOrWhiteSpace(update.ParentIncentiveId.Value))
-			{
-				fate.ParentIncentiveId = null;
-			}
-			else
-			{
-				await ApplyParentAsync(fate, update.ParentIncentiveId.Value, cancellationToken);
-			}
 		}
 
 		if (update.Orbit is not null)
@@ -181,15 +164,8 @@ public sealed class DeclarativeApiService(
 	public async Task DeleteFateAsync(string fateId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(fateId);
-		var fate = await context.Fates
-			.Include(item => item.ChildIncentives)
-			.FirstOrDefaultAsync(item => item.Id == fateId, cancellationToken)
+		var fate = await context.Fates.FirstOrDefaultAsync(item => item.Id == fateId, cancellationToken)
 			?? throw new InvalidOperationException($"Fate '{fateId}' was not found.");
-
-		if (fate.ChildIncentives.Count > 0)
-		{
-			throw new InvalidOperationException("Fate cannot be deleted while other incentives still name it as their parent.");
-		}
 
 		var graveyardEntry = temporalDataService.StageEntityArchive(fate, "api-delete", Environment.UserName);
 		context.Fates.Remove(fate);
@@ -649,18 +625,6 @@ public sealed class DeclarativeApiService(
 		return await hardeningService.EnsureEventiveIntoContextAsync(occurrence.OwnerId, recurrenceId, cancellationToken);
 	}
 
-	private async Task ApplyParentAsync(Incentive child, string parentIncentiveId, CancellationToken cancellationToken)
-	{
-		var parent = await context.Incentives
-			.AsNoTracking()
-			.IgnoreAutoIncludes()
-			.FirstOrDefaultAsync(item => item.Id == parentIncentiveId, cancellationToken)
-			?? throw new InvalidOperationException($"Parent incentive '{parentIncentiveId}' was not found.");
-
-		IncentiveParenting.EnsureValidParent(child, parent);
-		child.ParentIncentiveId = parent.Id;
-	}
-
 	private async Task EnsureDirectiveExistsAsync(string? directiveId, CancellationToken cancellationToken)
 	{
 		if (string.IsNullOrWhiteSpace(directiveId))
@@ -682,7 +646,6 @@ public sealed class DeclarativeApiService(
 			Id = fate.Id,
 			Title = fate.Title,
 			DirectiveId = fate.DirectiveId,
-			ParentIncentiveId = fate.ParentIncentiveId,
 			Status = fate.Status,
 			Orbit = fate.Orbit,
 		};

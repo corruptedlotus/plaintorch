@@ -279,17 +279,11 @@ public sealed class VaultWatcherSyncService(
 			await NormalizeObjectiveForeignKeysAsync(objective, candidate.VaultRelativePath, cancellationToken);
 		}
 
-		if (existing is Incentive existingIncentive)
-		{
-			// Parenting is not markdown-mapped, so a frontmatter sync must never clear it.
-			existingIncentive.ParentIncentiveId = existingEntry.OriginalValues.GetValue<string?>(nameof(Incentive.ParentIncentiveId));
-		}
-
 		if (existing is OnrushSprint existingSprint)
 		{
 			// The milestone binding and the graph layout are database-only state (PEP102), never written to the
-			// sprint's frontmatter, so a frontmatter sync must never clear them the way SetValues otherwise does —
-			// the same reasoning as parenting above. Losing the milestone id detaches a sprint from its milestone
+			// sprint's frontmatter, so a frontmatter sync must never clear them the way SetValues otherwise does.
+			// Losing the milestone id detaches a sprint from its milestone
 			// (it then reads as an ordinary checkpoint); losing the layout discards the saved canvas arrangement.
 			existingSprint.MilestoneCheckpointId = existingEntry.OriginalValues.GetValue<string?>(nameof(OnrushSprint.MilestoneCheckpointId));
 			existingSprint.GraphLayout = existingEntry.OriginalValues.GetValue<string?>(nameof(OnrushSprint.GraphLayout));
@@ -657,8 +651,8 @@ public sealed class VaultWatcherSyncService(
 			return;
 		}
 
-		// Rows that still reference the entity through a restricting relationship (a directive's children, an incentive's
-		// child incentives) make the database refuse the removal — and the API refuses the same deletes. Attempting it
+		// Rows that still reference the entity through a restricting relationship (a directive's subdirectives and
+		// incentives) make the database refuse the removal — and the API refuses the same deletes. Attempting it
 		// anyway failed on every retry, so the blocked delete is reported as such and nothing is written. An incentive's
 		// executives do not block: the save-time state rule releases them in the removing save.
 		var blockers = await entityGateway.FindDeleteBlockersAsync(existing, cancellationToken);

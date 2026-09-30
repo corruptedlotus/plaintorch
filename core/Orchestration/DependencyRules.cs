@@ -1,8 +1,7 @@
 namespace Pleiades.Orchestration;
 
 /// <summary>
-/// Enforces the structural rules of the dependency system (PEP101), mirroring how
-/// <see cref="IncentiveParenting"/> guards the incentive parent graph. Endpoint existence and kind validity
+/// Enforces the structural rules of the dependency system (PEP101). Endpoint existence and kind validity
 /// (which require resolving loose references) are enforced in the application layer; these rules are pure.
 /// </summary>
 public static class DependencyRules

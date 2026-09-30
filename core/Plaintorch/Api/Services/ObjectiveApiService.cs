@@ -129,24 +129,6 @@ public sealed class ObjectiveApiService(
 			objective.Due = update.Due.Value;
 		}
 
-		if (update.ParentIncentiveId.IsSet)
-		{
-			if (string.IsNullOrWhiteSpace(update.ParentIncentiveId.Value))
-			{
-				objective.ParentIncentiveId = null;
-			}
-			else
-			{
-				var parent = await context.Incentives
-					.AsNoTracking()
-					.IgnoreAutoIncludes()
-					.FirstOrDefaultAsync(item => item.Id == update.ParentIncentiveId.Value, cancellationToken)
-					?? throw new InvalidOperationException($"Parent incentive '{update.ParentIncentiveId.Value}' was not found.");
-				IncentiveParenting.EnsureValidParent(objective, parent);
-				objective.ParentIncentiveId = parent.Id;
-			}
-		}
-
 		await writeQueue.WriteAsync(objective, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.update", subject: objective, cancellationToken: cancellationToken);
 		return objective;

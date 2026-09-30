@@ -122,25 +122,6 @@ public sealed class AvailabilityAffinityTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Availability_never_inherits_through_a_parent_incentive()
-	{
-		var (availability, college) = await CreateTimeframesAsync();
-		var directive = await Directives(api => api.CreateStandaloneAsync("Raptor", cancellationToken: Ct));
-		await Directives(api => api.SetAvailabilityAsync(directive.Id, availability, Ct));
-		var parent = await Objectives(api => api.CreateFromDirectiveAsync(directive.Id, "Ship it", cancellationToken: Ct));
-		var subtask = await Objectives(api => api.CreateStandaloneAsync("Write the notes", cancellationToken: Ct));
-		subtask = await Objectives(api => api.UpdateAsync(subtask.Id, new ObjectiveUpdate(ParentIncentiveId: parent.Id), Ct));
-		Assert.Equal(parent.Id, subtask.ParentIncentiveId);
-		Assert.Null(subtask.DirectiveId);
-
-		var planned = await Polaris(api => api.PlanExecutiveAsync(new PolarisExecutivePlan(
-			PolarisExecutivePlanningMode.FromObjective, ObjectiveId: subtask.Id), cancellationToken: Ct));
-
-		// Only the directive lineage carries availability; the subtask has no directive, so its college decides.
-		Assert.Equal(college, planned.Executive.AffinityTimeframeId);
-	}
-
-	[Fact]
 	public async Task Availability_seeds_at_creation_only_and_never_rewrites_an_existing_executive()
 	{
 		var (availability, college) = await CreateTimeframesAsync();

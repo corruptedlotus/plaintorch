@@ -43,8 +43,6 @@ export class Objective {
 	title: string = ''
 	directiveId: string | undefined
 	directive?: Directive | undefined
-	/** Parent incentive per the PEP100 parent system: another objective (subtask) or a fate. */
-	parentIncentiveId: string | undefined
 	onrushSprintId: string | undefined
 	onrushSprint?: OnrushSprint | undefined
 	/** The optional deadline — a moment plus zone (PEP111), not just a date. */
@@ -79,8 +77,6 @@ export interface ObjectiveUpdate {
 	celestronValue?: number | undefined
 	/** Due moment (PEP111). Omit to keep, a value to set, `null` to clear. */
 	due?: Due | null | undefined
-	/** Parent incentive. Omit to keep, an id to set, `null` to clear. */
-	parentIncentiveId?: string | null | undefined
 }
 
 export interface ObjectiveWorkflowShift {
