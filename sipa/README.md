@@ -13,6 +13,27 @@ one adapter among two.
 - `components/` — the UI. Imports inside the package are relative; hosts import from `@pleiades/sipa` only.
 - `orbits/` — the orbit notation humaniser (`@pleiades/sipa/orbits`); `orbit-humanize.tsx` is its dev REPL.
 - `assets/` — SVG/PNG assets, indexed into `assets/*/index.ts` by `npm run index-assets`.
+- `vendor/mitra/` — Mitra's embeddable calendar bundle (`<mitra-embed>`), built elsewhere and checked in; the
+  Forecast tab (`components/forecast`) runs on it. Refreshed with `npm run vendor-mitra -- <Mitra checkout>`; see
+  its README for why it is vendored and how it is loaded.
+
+## The Polaris surfaces
+Two components draw a Polaris cycle, both derived from `PolarisBriefingBase` (the executives list with its drag
+source, the inline creation row into *that* cycle, and the recycle bin the footer turns into while one of the cycle's
+executives is dragged):
+
+- `p7t-briefing-polaris` — the Throne Room card: the day being worked, with its timer, reflectives, progress and
+  Conclude (or Begin, while the current cycle is a day planned ahead that has not begun).
+- `p7t-polaris-column` — one day of the Forecast tab: executives in **planning** mode (`p7t-incentive-item-exec`'s
+  `planning` flag makes the notch the estimate, edited in place), the day's total estimate, and Delete for a plan
+  (nothing for the active cycle; an ended day is read-only). An executive dropped on another day's column moves
+  there — refused where that day already holds the same objective or decree. A day without a cycle shows a
+  button planning it, where the Forecast offers one (`forecastHorizon` in the SDK: the first three days from today,
+  and one day past the last planned one).
+
+The Forecast tab (`p7t-forecast-view`) is a Mitra `week-all-day` strip, three days wide from today and scrolling
+sideways, with a `p7t-polaris-column` slotted into every day through the embed's `dayFill` hook; its cycles come
+from the SDK's `polarisDays` record.
 
 ## Transitional coupling
 Until the `PlatformHost` inversion completes, parts of `components/` still import `obsidian` (dialogs, `Notice`,

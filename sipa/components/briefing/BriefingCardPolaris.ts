@@ -1,23 +1,31 @@
-import { component, css, eventListener, html, nothing, state } from "@a11d/lit"
-import { BriefingCard } from "./BriefingCard"
-import { Objective, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
-import {
-	addObjectiveToPolaris, core, isObjectiveInCycle, polarisActivityKind, polarisActivityKinds, removePolarisActivity,
-	TransferController, type CreationRowCreated, type PolarisActivity, type PolarisActivityCreated
-} from ".."
+import { component, css, eventListener, html, nothing, state, type PropertyValues } from "@a11d/lit"
+import { PolarisBriefingBase } from "./PolarisBriefingBase"
+import { Objective, ObjectiveStatus, Reflective } from "@pleiades/sdk"
+import { addObjectiveToPolaris, core, isObjectiveInCycle, revalidatePolarisCycles, TransferController } from ".."
+import { toast } from "../../host"
 
+/**
+ * The briefing's Polaris card: the cycle of the day being worked — its timer, its reflectives, its executives and
+ * the progress against their estimates, and Conclude. The list, the creation row and the recycle bin are the shared
+ * {@link PolarisBriefingBase}.
+ *
+ * The card shows whatever the briefing calls the current cycle, which is today's cycle when none is active — so a day
+ * planned ahead (on the forecast) and not yet begun shows here too, as a plan: no timer yet, and Begin in place of
+ * Conclude.
+ */
 @component('p7t-briefing-polaris')
-export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
+export class BriefingCardPolaris extends PolarisBriefingBase {
 	override readonly icon = 'polaris'
-	override readonly preHeading = 'Active Polaris Cycle'
 
 	// The self-watch now lives on BriefingCard, so every card re-renders on an in-place edit — this one no
 	// longer needs its own.
 
 	@state() private reflectivesExpanded = false
 
-	/** Whether the inline creation row is open at the foot of the list. */
-	@state() private creating = false
+	/** Whether the cycle shown has begun — a cycle planned for today has not, until Begin. */
+	private get begun() {
+		return !!this.data?.startTime
+	}
 
 	/**
 	 * Takes objectives dropped from any host offering them (the Onrush card). The receive is translated: rather
@@ -34,78 +42,9 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		accept: objective => addObjectiveToPolaris(objective),
 	})
 
-	/**
-	 * Offers the cycle's own activities for dragging. Source-only, and it keeps what it hands out: what a drop
-	 * means is the receiver's business — here, the bin below — and the list is the repository's to redraw.
-	 */
-	protected readonly activities = new TransferController<PolarisActivity>(this, {
-		kind: polarisActivityKind,
-		accepts: [],
-	})
-
-	/**
-	 * The recycle bin. While one of this cycle's activities is in the air the footer becomes a bin, and a drop
-	 * there takes the activity out of the cycle — deleting the executive or attentive, not the objective or decree
-	 * behind it. A controller of its own, since a host's source is never a candidate for its own drag. The footer
-	 * frame is the drop target rather than the bin drawn in it: the frame is there before the drag starts.
-	 */
-	protected readonly bin = new TransferController<PolarisActivity>(this, {
-		accepts: polarisActivityKinds,
-		canAccept: (_, transaction) => transaction.source === this.activities,
-		accept: activity => removePolarisActivity(activity),
-		dropTarget: () => this.renderRoot.querySelector("[part='footer']"),
-	})
-
 	static override get styles() {
 		return css`
 			${super.styles}
-
-			:host {
-				--p7t-flare-accent: var(--p7t-accent-polaris);
-				outline: 2px dashed transparent;
-				outline-offset: -2px;
-				transition: outline-color .3s ease, box-shadow .3s ease;
-			}
-
-			/* A compatible objective is in the air: show the card as a place it can land. */
-			:host([transfer-target]) {
-				outline-color: color-mix(in srgb, var(--p7t-flare-accent) 55%, transparent);
-			}
-
-			/* ...and it is over the card. */
-			:host([transfer-over]) {
-				outline-style: solid;
-				outline-color: var(--p7t-flare-accent);
-				box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--p7t-flare-accent) 8%, transparent);
-			}
-
-			/* The footer as a recycle bin, for the life of a drag of one of the cycle's activities. */
-			.bin {
-				grid-column: 1 / -1;
-				display: flex;
-				align-items: center;
-				justify-content: center;
-				gap: .6em;
-				padding: .7em 1em;
-				border-radius: 12px;
-				border: 2px dashed color-mix(in srgb, var(--text-error, crimson) 55%, transparent);
-				color: var(--text-error, crimson);
-				font-weight: 500;
-				transition: background-color .2s ease, border-color .2s ease;
-				/* The frame takes the drop; the bin's own children must not break the hover into enter/leave pairs. */
-				pointer-events: none;
-			}
-
-			.bin p7t-icon {
-				width: 1.3em;
-				height: 1.3em;
-			}
-
-			[part='footer'][transfer-over] .bin {
-				border-style: solid;
-				border-color: var(--text-error, crimson);
-				background-color: color-mix(in srgb, var(--text-error, crimson) 16%, transparent);
-			}
 
 			/* The timer with the timeframe(s) in play beside it, at chip scale against the heading's size. */
 			.heading-line {
@@ -118,15 +57,6 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 				font-size: .5em;
 				font-weight: 400;
 				line-height: 1;
-			}
-
-			.add-button {
-				margin: .4em 1.2em;
-
-				&::part(icon) {
-					height: 1.4em;
-					width: 1.4em;
-				}
 			}
 
 			.group-header {
@@ -183,6 +113,11 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		`
 	}
 
+	protected override willUpdate(changed: PropertyValues<this>) {
+		super.willUpdate(changed)
+		this.preHeading = this.begun || !this.data ? 'Active Polaris Cycle' : 'Planned Polaris Cycle'
+	}
+
 	protected override get offlineTemplate() {
 		return html`
 			<span class='no-data'>The Polaris Rests in the Void</span>
@@ -193,7 +128,7 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 	override get headingTemplate() {
 		return html`
 			<span class='heading-line'>
-				<p7t-elapsed-view .epoch=${this.data!.startTime}></p7t-elapsed-view>
+				${!this.begun ? html`<span>Not yet begun</span>` : html`<p7t-elapsed-view .epoch=${this.data!.startTime}></p7t-elapsed-view>`}
 				<p7t-active-timeframes></p7t-active-timeframes>
 			</span>
 		`
@@ -202,31 +137,9 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 	protected override get listContent() {
 		return html`
 			${this.reflectivesGroup}
-			${this.data!.executives.map(executive => html`
-				<p7t-incentive-item-exec
-					interactive
-					.executive=${executive}
-					${this.activities.draggable(executive)}>
-				</p7t-incentive-item-exec>
-			`)}
-			${!this.creating ? html`
-				<p7t-button @click=${() => this.addActivity()} icon='lucide:plus' class='add-button'>Add Activity</p7t-button>
-			` : html`
-				<p7t-polaris-creation-row
-					.cycle=${this.data}
-					@cancel=${() => this.creating = false}
-					@created=${(e: CustomEvent<CreationRowCreated<PolarisActivityCreated>>) => this.onActivityCreated(e)}>
-				</p7t-polaris-creation-row>
-			`}
+			${this.executivesTemplate}
+			${this.creationTemplate}
 		`
-	}
-
-	/** A committed row: the cycle re-reads itself through the row's own revalidation; the row stays only to make another. */
-	private onActivityCreated(e: CustomEvent<CreationRowCreated<PolarisActivityCreated>>) {
-		e.stopPropagation()
-		if (e.detail.mode !== 'again') {
-			this.creating = false
-		}
 	}
 
 	private get reflectivesGroup() {
@@ -253,24 +166,15 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		`
 	}
 
-	protected override get footer() {
-		if (this.bin.isCandidate) {
-			return html`
-				<div class='bin'>
-					<p7t-icon icon='lucide:trash-2'></p7t-icon>
-					<span>Drop here to remove from this cycle</span>
-				</div>
-			`
-		}
-
-		const totalEstimation = this.data!.executives.reduce((acc, executive) => acc + (executive.estimation ?? 0), 0)
-		const totalElapsed = this.data!.executives.reduce((acc, executive) => acc + (executive.elapsed ?? 0), 0)
+	protected override get footerTemplate() {
 		return html`
-			<p7t-value-progress icon='state-polaris' value=${totalElapsed} max=${totalEstimation}
+			<p7t-value-progress icon='state-polaris' value=${this.totalElapsed} max=${this.totalEstimation}
 				.valueTemplate=${(value: number) => html`<p7t-time-unit .value=${value}></p7t-time-unit>`}
 				.maxTemplate=${(max: number) => html`<p7t-time-unit .value=${max}></p7t-time-unit>`}
 			></p7t-value-progress>
-			<p7t-button @click=${() => this.conclude()}>Conclude</p7t-button>
+			${this.begun
+				? html`<p7t-button @click=${() => this.conclude()}>Conclude</p7t-button>`
+				: html`<p7t-button @click=${() => this.beginPlanned()}>Begin</p7t-button>`}
 		`
 	}
 
@@ -291,17 +195,29 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		core.polaris.startNew().then(polaris => this.data = polaris)
 	}
 
+	/** Begins the day's planned cycle in place — what it holds is the day's plan, and it now runs. */
+	private async beginPlanned() {
+		const cycle = this.data
+		if (!cycle || this.begun) return
+		const begun = await core.polaris.beginCycle(cycle.id)
+		if (!begun) {
+			toast(`PLAINTORCH could not begin ${cycle.title}.`, 'error')
+			return
+		}
+
+		this.data = begun
+		await revalidatePolarisCycles()
+	}
+
 	private conclude() {
 		if (!this.data) return
 		core.polaris.end(new Date().toISOString()).then(polaris => {
-			if (!!polaris) this.data = undefined
+			if (!!polaris) {
+				this.data = undefined
+				// The briefing's current cycle falls back to today's, which may be a day planned ahead: show it at once.
+				void revalidatePolarisCycles()
+			}
 		})
-	}
-
-	/** Opens the inline creation row at the foot of the list, in place of the picker modal it replaced. */
-	private addActivity() {
-		if (!this.data) return
-		this.creating = true
 	}
 }
 

@@ -114,6 +114,17 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	public readonly agenda: DerivedRepository<PolarisAgenda>
 
 	/**
+	 * Polaris cycles day by day — the forecast surface's record — keyed by the ISO date of the first day wanted
+	 * (`2026-09-30`): every cycle from that day on, forecast, active and ended alike, in day order.
+	 *
+	 * Unbounded ahead on purpose. A surface planning forward must know the LAST planned day wherever it lies — which
+	 * days it offers for planning depends on it — not only the days it happens to show, and the days ahead hold
+	 * forecasts only, which stay few. The cycles inside are canonical, so a column showing one and the briefing card
+	 * showing the same cycle agree.
+	 */
+	public readonly polarisDays: DerivedRepository<PolarisCycle[]>
+
+	/**
 	 * The timeframes active right now (PEP100 patch 2), cached under {@link briefingRecordKey}.
 	 *
 	 * A derived record like {@link agenda}: which timeframes are active is a question about the clock and the
@@ -190,6 +201,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		this.onrushCurrent = new DerivedRepository(async () => await client.onrush.getCurrent())
 		this.onrushPlanning = new DerivedRepository(async () => await client.onrush.getPlanning())
 		this.agenda = new DerivedRepository(async () => await client.polaris.getAgenda())
+		this.polarisDays = new DerivedRepository(async (from) => await client.polaris.listByDay(from))
 		this.activeTimeframes = new DerivedRepository(async () => await client.directives.listActiveTimeframes())
 		this.preferences = new DerivedRepository(async () => await client.preferences.list())
 
@@ -238,6 +250,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 			this.onrushCurrent as DerivedRepository<unknown>,
 			this.onrushPlanning as DerivedRepository<unknown>,
 			this.agenda as DerivedRepository<unknown>,
+			this.polarisDays as DerivedRepository<unknown>,
 			this.activeTimeframes as DerivedRepository<unknown>,
 			this.preferences as DerivedRepository<unknown>
 		]

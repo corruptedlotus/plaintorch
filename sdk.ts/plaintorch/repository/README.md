@@ -262,6 +262,14 @@ Diagnostics: `store.recordCount`, `store.pendingChangeCount`, `store.inFlightRea
 - **New listings must be eviction roots.** Every `DerivedRepository` must appear in `PlaintorchRepositories`'
   private `records` getter (used for both revalidation and eviction roots). A listing left out would pin
   entities the sweep can't see and evict them out from under it.
+- **A listing can never EMPTY a collection.** Absorption withholds a *nested* entity's empty array as
+  "not loaded" (`authoritativeKeys`), and every entity a listing serves is nested — so re-reading a listing
+  after the last member of an entity's collection left (a Polaris cycle's last executive moved to another day)
+  keeps drawing the member that is gone. Only a response with the entity at its root applies the emptying:
+  after a write that can empty a collection, refresh that entity through its own repository
+  (`core.repos.polaris.refresh(id)`; SIPA's `revalidatePolarisCycles(...emptied)` does this for the cycles a
+  write took executives out of). Note also that `EntityRepository.revalidateObserved` only revalidates
+  entities fetched through that repository, not those a listing brought in.
 
 ---
 
