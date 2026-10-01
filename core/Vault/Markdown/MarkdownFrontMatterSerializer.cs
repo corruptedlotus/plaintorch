@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Globalization;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -14,7 +15,12 @@ namespace Pleiades.Vault.Markdown;
 /// </summary>
 public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 {
-	private static readonly NullabilityInfoContext NullabilityContext = new();
+	/// <summary>
+	/// Per-property answers of <see cref="CanBeNull"/>, shared by every concurrent (de)serialization (watcher, API, tests).
+	/// It caches the result rather than a shared <see cref="NullabilityInfoContext"/>, which is not thread-safe: its internal
+	/// caches are plain dictionaries that concurrent first-time lookups corrupt.
+	/// </summary>
+	private static readonly ConcurrentDictionary<PropertyInfo, bool> NullableProperties = new();
 
 	/// <summary>
 	/// The frontmatter field name used to persist quiet PUCK identity.
@@ -640,6 +646,12 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		return Nullable.GetUnderlyingType(type) ?? type;
 	}
 
+	/// <summary>
+	/// Determines whether a frontmatter property accepts <see langword="null"/>: <see cref="Nullable{T}"/> value types do,
+	/// other value types do not, and reference types do unless their write state is annotated as not-null.
+	/// Thread-safe: reference-type answers are cached in <see cref="NullableProperties"/>, each computed on a fresh
+	/// <see cref="NullabilityInfoContext"/> so no context is ever shared across threads.
+	/// </summary>
 	private static bool CanBeNull(PropertyInfo property)
 	{
 		if (Nullable.GetUnderlyingType(property.PropertyType) is not null)
@@ -652,7 +664,9 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 			return false;
 		}
 
-		return NullabilityContext.Create(property).WriteState != NullabilityState.NotNull;
+		return NullableProperties.GetOrAdd(
+			property,
+			static candidate => new NullabilityInfoContext().Create(candidate).WriteState != NullabilityState.NotNull);
 	}
 
 	private static string UnwrapString(string rawValue)
