@@ -131,7 +131,13 @@ public sealed class OrbitLimitTests
 	[Fact]
 	public void A_top_level_at_counts_once_then_the_stream_ends()
 	{
-		Assert.Equal(["10-02 Fri", "10-04 Sun", "end"], Stream("d{2,4,6,8}@2", "2026-09-28", 3));
+		Assert.Equal(["10-02 Fri", "10-04 Sun", "end"], Stream("M[d{2,4,6,8}]@2", "2026-09-28", 3));
+	}
+
+	[Fact]
+	public void An_indexed_globals_at_counts_in_its_implicit_cycle()
+	{
+		Assert.Equal(["10-02 Fri", "10-04 Sun", "11-02 Mon", "11-04 Wed"], Stream("d{2,4,6,8}@2", "2026-09-28", 4));
 	}
 
 	[Fact]
@@ -164,13 +170,17 @@ public sealed class OrbitLimitTests
 	{
 		Assert.Equal(
 			["10-01 Thu", "10-15 Thu", "11-01 Sun", "11-15 Sun", "12-15 Tue"],
-			Stream("d{1}@2+d{15}", "2026-09-28", 5));
+			Stream("M[d{1}]@2+d{15}", "2026-09-28", 5));
 	}
 
 	[Fact]
 	public void A_literal_carries_its_limits()
 	{
-		Assert.Equal(["09-28 09:00 Mon", "09-29 09:00 Tue", "09-30 09:00 Wed", "end"], Stream("z{09:00}@3", "2026-09-28", 4));
+		Assert.Equal(["09-28 09:00 Mon", "09-29 09:00 Tue", "09-30 09:00 Wed", "end"], Stream("d[z{09:00}]@3", "2026-09-28", 4));
+		// A z{h:m} is an indexed hour, bound to the day: its own limits count per day.
+		Assert.Equal(
+			["09-28 09:00 Mon", "09-28 11:00 Mon", "09-28 13:00 Mon", "09-29 09:00 Tue"],
+			Stream("z{09:00}%2*3", "2026-09-28", 4));
 	}
 
 	[Fact]
@@ -209,6 +219,38 @@ public sealed class OrbitLimitTests
 	public void The_stream_starts_after_a_lower_bound_the_same_way()
 	{
 		Assert.Equal(["10-05 Mon", "10-09 Fri"], Stream("w[d{1,5}]>2026/10/1", "2026-09-28", 2));
+	}
+
+	// --- Implicit cycles: an indexed global is bound to the cycle it recurs in ---
+
+	[Theory]
+	[InlineData("m{15}", "h[m{15}]")]
+	[InlineData("h{11}", "d[h{11}]")]
+	[InlineData("s{30}", "m[s{30}]")]
+	[InlineData("d{1,15}", "M[d{1,15}]")]
+	[InlineData("w{12}", "y[w{12}]")]
+	[InlineData("M{6}", "y[M{6}]")]
+	[InlineData("z{09:30}", "d[h{9}[m{30}]]")]
+	[InlineData("d{1}+d{15}", "M[d{1}]+M[d{15}]")]
+	public void An_indexed_global_reads_as_if_its_cycle_were_written_around_it(string bound, string written)
+	{
+		Assert.Equal(Stream(written, "2026-09-28T09:20:00Z", 5), Stream(bound, "2026-09-28T09:20:00Z", 5));
+	}
+
+	[Fact]
+	public void An_indexed_global_starts_at_its_cycles_first_complete_period()
+	{
+		// Minute 15 of the 09:00 hour has passed at 09:20, so the first hour is the next one.
+		Assert.Equal(["09-28 10:15 Mon", "09-28 11:15 Mon", "09-28 12:15 Mon"], Stream("m{15}", "2026-09-28T09:20:00Z", 3));
+		Assert.Equal(["09-29 11:00 Tue", "09-30 11:00 Wed"], Stream("h{11}", "2026-09-28T12:00:00Z", 2));
+		Assert.Equal(["10-01 Thu", "10-15 Thu", "11-01 Sun"], Stream("d{1,15}", "2026-09-10", 3));
+	}
+
+	[Fact]
+	public void A_year_and_a_bare_unit_have_no_implicit_cycle()
+	{
+		Assert.Equal(["01-01 Fri", "end"], Stream("y{2027}", "2026-09-28", 2));
+		Assert.Equal(["09-28 Mon", "09-29 Tue", "end"], Stream("d@2", "2026-09-28", 3));
 	}
 
 	// --- Window bounds: >t and <t name a calendar date as Z{…} does ---
@@ -299,9 +341,10 @@ public sealed class OrbitLimitTests
 	}
 
 	[Fact]
-	public void A_top_level_week_index_addresses_its_implicit_month_but_a_bare_week_runs_across_months()
+	public void A_top_level_week_index_is_a_calendar_week_but_a_bare_week_runs_across_months()
 	{
-		Assert.Equal(["06-01 Mon", "07-06 Mon", "08-03 Mon"], Stream("w{1}[d{1}]", "2026-06-01", 3));
+		Assert.Equal(["01-04 Mon", "01-03 Mon", "01-01 Mon"], Stream("w{1}[d{1}]", "2026-06-01", 3));
+		Assert.Equal(["06-01 Mon", "07-06 Mon", "08-03 Mon"], Stream("M[w{1}[d{1}]]", "2026-06-01", 3));
 		Assert.Equal(["07-27 Mon", "07-29 Wed", "07-31 Fri", "08-02 Sun", "08-03 Mon"], Stream("w[d{1}%2]", "2026-07-27", 5));
 	}
 
@@ -358,6 +401,7 @@ public sealed class OrbitLimitTests
 	[InlineData("M[w[d{1}%2]@7]")]
 	[InlineData("w[d*3]*4")]
 	[InlineData("d{2,4,6,8}@2")]
+	[InlineData("M[d{2,4,6,8}]@2")]
 	[InlineData("w[d{#3}]")]
 	[InlineData("d[h{9,12,15,18}@2]")]
 	[InlineData("d{5}%3*4")]
@@ -423,7 +467,8 @@ public sealed class OrbitLimitTests
 	public void Only_a_top_level_limit_blocks_promotion()
 	{
 		Assert.False(OrbitEngine.FromNotation("w[d{1}]*3", 0, Calendar).IsAnchorStable());
-		Assert.False(OrbitEngine.FromNotation("d{2,4}@1", 0, Calendar).IsAnchorStable());
+		Assert.False(OrbitEngine.FromNotation("M[d{2,4}]@1", 0, Calendar).IsAnchorStable());
+		Assert.True(OrbitEngine.FromNotation("d{2,4}@1", 0, Calendar).IsAnchorStable());
 		Assert.True(OrbitEngine.FromNotation("M[w[d{1}%2]@7]", 0, Calendar).IsAnchorStable());
 		Assert.True(OrbitEngine.FromNotation("w[d*3]", 0, Calendar).IsAnchorStable());
 	}

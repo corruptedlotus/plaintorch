@@ -32,6 +32,9 @@ public sealed record OrbitSpanEntry(long StartMs, long EndMs, OrbitUnit Granular
 /// <remarks>
 /// How the limits read (the notation's contract, resolved structurally by the solver):
 /// <list type="bullet">
+/// <item>An indexed node written at the top level is bound to its implicit cycle (see <see cref="OrbitCycles"/>):
+/// <c>m{15}</c> is <c>h[m{15}]</c>, <c>h{11}</c> is <c>d[h{11}]</c>, <c>d{1}</c> is <c>M[d{1}]</c>, <c>w{12}</c> is
+/// <c>y[w{12}]</c>. Only a year, and a bare unit, are top-level as written.</item>
 /// <item>A node's <b>life</b> is one period of its written parent — each parent period gives it a fresh life. A
 /// top-level node (the root, or an operand of a top-level set operation) has a single life, from its first complete
 /// period at or after the stream start (the anchor, snapped to the schedule's granularity and advanced past any
@@ -47,9 +50,9 @@ public sealed record OrbitSpanEntry(long StartMs, long EndMs, OrbitUnit Granular
 /// node's children fire in it.</item>
 /// <item><c>@x</c> limits a node's <b>emission</b>: its own instances (what its subtree produces, before any enclosing
 /// set operation acts on them) are counted per life in time order, and only the first x fire — so
-/// <c>M[w[d{1}%2]@7]</c> fires up to seven times a month, and a top-level <c>d{2,4,6,8}@2</c> fires twice in all.</item>
-/// <item>A week inside a month (written, or implied by a top-level week index) or inside a written year (a calendar
-/// week) is numbered from that cycle's first complete week: the week the cycle starts in belongs to it only when every
+/// <c>M[w[d{1}%2]@7]</c> fires up to seven times a month, and <c>M[d{2,4,6,8}]@2</c> twice in all (where
+/// <c>d{2,4,6,8}@2</c>, bound to its month, fires on the 2nd and 4th of every month).</item>
+/// <item>A week inside a month or inside a year (a calendar week, as a top-level week index is) is numbered from that cycle's first complete week: the week the cycle starts in belongs to it only when every
 /// instance the week node asks for falls inside the cycle, so <c>M[w{1}[d{1}]]</c> is the first Monday of every month
 /// and <c>y[w{1}[d{1}]]</c> the first of every year. The weeks run to the one the cycle ends in, whose days past its end
 /// are cut off. A bare top-level week (<c>w[d{1,5}]</c>) belongs to no cycle: it runs week after week across months. A
@@ -135,7 +138,8 @@ public sealed class OrbitEngine
 		// Desugar z/Z datetime literals into their equivalent nested time-unit chain up
 		// front, so every downstream pass (limits, normalize, span-building) only ever sees
 		// OrbitTimeUnitNode / OrbitSetOperationNode and needs no literal awareness.
-		var source = ExpandLiterals(ast);
+		// Then bind each indexed global to its implicit cycle (m{15} -> h[m{15}]), which is written.
+		var source = OrbitCycles.Bind(ExpandLiterals(ast));
 		// Record each node's written parent BEFORE normalization adds synthetic y>M>...
 		// wrappers, then normalize.
 		IndexNodes(source, null);
@@ -1526,8 +1530,8 @@ public sealed class OrbitEngine
 	// A week inside a month or a year is numbered from that cycle's first complete week (see WeekOffset), and a day inside
 	// a year is its day of the year; every other node reads its unit as the parent-aware unit helpers below do.
 
-	// The cycle a week node is counted within: a month — written, or the one a top-level week index addresses — or a
-	// written year (a calendar week). A bare top-level week has none: it runs week after week.
+	// The cycle a week node is counted within: a written month, or a year (a calendar week, written or the cycle a
+	// top-level week index is bound to). A bare top-level week has none: it runs week after week.
 	private OrbitUnit? WeekCycle(OrbitTimeUnitNode node, OrbitUnit? parentUnit)
 	{
 		if (node.Unit != OrbitUnit.Week || !_nodes.TryGetValue(node, out var info))
@@ -1535,24 +1539,14 @@ public sealed class OrbitEngine
 			return null;
 		}
 
-		if (parentUnit == OrbitUnit.Year && info.Parent == OrbitUnit.Year)
-		{
-			return OrbitUnit.Year;
-		}
-
-		if (parentUnit == OrbitUnit.Month && (info.Parent is not null || node.Indices is not null))
-		{
-			return OrbitUnit.Month;
-		}
-
-		return null;
+		return info.Parent is OrbitUnit.Month or OrbitUnit.Year && info.Parent == parentUnit ? info.Parent : null;
 	}
 
-	// Whether a node is a bare top-level week: it runs week after week, so the month it is implicitly wrapped in does not
-	// cut it, and a week that straddles two months keeps its days in both. (Cut there, the days past the seam were lost:
-	// stepping on to the next week lands in the new month's second week.)
+	// Whether a node is a bare top-level week (an indexed one is bound to its year): it runs week after week, so the
+	// month it is implicitly wrapped in does not cut it, and a week that straddles two months keeps its days in both.
+	// (Cut there, the days past the seam were lost: stepping on to the next week lands in the new month's second week.)
 	private bool RunsAcrossMonths(OrbitTimeUnitNode node, OrbitUnit? parentUnit)
-		=> node.Unit == OrbitUnit.Week && parentUnit == OrbitUnit.Month && _nodes.TryGetValue(node, out var info) && info.Parent is null && node.Indices is null;
+		=> node.Unit == OrbitUnit.Week && parentUnit == OrbitUnit.Month && _nodes.TryGetValue(node, out var info) && info.Parent is null;
 
 	// Whether a node is a day counted within a written year: its day of the year.
 	private static bool IsDayOfYear(OrbitTimeUnitNode node, OrbitUnit? parentUnit)

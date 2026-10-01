@@ -122,6 +122,7 @@ export interface NamedValue {
 
 /** A time of day. Kept as raw numbers so the realizer decides the format ("09:00", "9am", "@9"). */
 export interface ClockTime {
+	/** The listed hours; empty when the time recurs in an hour {@link ClockTime.cycle}. */
 	hours: number[]
 	/** The listed minutes; empty when the minutes run as a {@link ClockTime.step} stream. */
 	minutes: number[]
@@ -129,6 +130,20 @@ export interface ClockTime {
 	seconds: number[]
 	/** A `%N` (or a bare, streaming unit) on one clock unit, when the time recurs within the day rather than once. */
 	step?: ClockStep
+	/**
+	 * The clock unit the time recurs in, when it names no value of it: `h[m{15}]` is minute 15 of every hour, `m[s{30}]`
+	 * second 30 of every minute — the shape an indexed minute or second takes, bound to its implicit cycle. The cycling
+	 * unit and every coarser one name no values (`hours` is empty, and `minutes` too for a minute cycle).
+	 */
+	cycle?: ClockCycle
+}
+
+/** A bare hour or minute a clock recurs in: every {@link interval} of {@link unit}, phased from the schedule's anchor. */
+export interface ClockCycle {
+	unit: 'h' | 'm'
+	interval: number
+	/** A top-level cycle's `*x`: the schedule runs for x of its periods ("for 3 hours"). */
+	run?: number
 }
 
 /**

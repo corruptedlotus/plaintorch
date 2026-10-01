@@ -12,7 +12,7 @@
 // per period of the node's parent ("up to 7 times a month") or in all.
 
 import type { DurationPart, SetOperator, TimeUnit } from './ast'
-import type { Bound, CalendarDate, CalendarUnit, ClockStep, ClockTime, CompoundSchedule, Frame, InstantSchedule, NamedValue, ScheduleModel, Selection, SimpleSchedule } from './scheduleModel'
+import type { Bound, CalendarDate, CalendarUnit, ClockCycle, ClockStep, ClockTime, CompoundSchedule, Frame, InstantSchedule, NamedValue, ScheduleModel, Selection, SimpleSchedule } from './scheduleModel'
 
 const UNIT_WORD: Record<CalendarUnit, string> = { y: 'year', M: 'month', w: 'week', d: 'day' }
 const CLOCK_WORD: Record<ClockStep['unit'], string> = { h: 'hour', m: 'minute', s: 'second' }
@@ -39,7 +39,8 @@ export function realizeLong(model: ScheduleModel): string {
 }
 
 function realizeCompound(model: CompoundSchedule): string {
-	return joinSides(model.operator, realizeLong(model.left), realizeLong(model.right))
+	const clocks = model.operator === '+' ? sharedClock(model.left, model.right) : null
+	return clocks ?? joinSides(model.operator, realizeLong(model.left), realizeLong(model.right))
 }
 
 /**
@@ -66,8 +67,14 @@ function realizeInstant(model: InstantSchedule): string {
 }
 
 function realizeSimple(model: SimpleSchedule): string {
-	let text = model.branches ? phraseBranches(model) : phraseFrames(model.frames)
-	if (model.time) text += clockClause(model.time)
+	let text: string
+	if (model.time?.cycle && !model.branches) {
+		// A clock cycle says its own cadence ("every hour at :15"), after the frames when any of them narrows it.
+		text = model.frames.every(isPlain) ? cycleClause(model.time) : `${phraseFrames(model.frames)}, ${cycleClause(model.time)}`
+	} else {
+		text = model.branches ? phraseBranches(model) : phraseFrames(model.frames)
+		if (model.time) text += clockClause(model.time)
+	}
 	// A span above a nested set is said on each of its sides.
 	if (model.span && model.span.length > 0 && !model.branches) text += ` for ${formatDuration(model.span)}`
 
@@ -104,19 +111,39 @@ function underFrames(frames: Frame[], branch: ScheduleModel, span?: DurationPart
 }
 
 /**
- * Two sides that differ only in a plain time of day, read as one: "every day at 09:00 and 17:30". Null when they
- * differ in anything else.
+ * Two sides that differ only in a plain time of day, read as one: "every day at 09:00 and 17:30", "every hour at :00
+ * and :30". Null when they differ in anything else.
  */
 function sharedClock(left: ScheduleModel, right: ScheduleModel): string | null {
 	if (left.kind !== 'simple' || right.kind !== 'simple') return null
 	if (!left.time || !right.time || left.time.step || right.time.step) return null
 	if (left.bounds.length > 0 || right.bounds.length > 0 || left.branches || right.branches) return null
+	if (left.frames[0]?.repeat !== undefined || right.frames[0]?.repeat !== undefined) return null
 	const frames = phraseFrames(left.frames)
 	if (frames !== phraseFrames(right.frames)) return null
 	const spans = [left.span, right.span].map(span => span && span.length > 0 ? formatDuration(span) : '')
 	if (spans[0] !== spans[1]) return null
+	const span = spans[0] ? ` for ${spans[0]}` : ''
+	if (left.time.cycle || right.time.cycle) {
+		const cycle = sharedCycle(left.time, right.time)
+		if (!cycle) return null
+		return `${left.frames.every(isPlain) ? '' : `${frames}, `}${cycleClause(cycle)}${span}`
+	}
 	const times = [...clockParts(left.time), ...clockParts(right.time)].filter((time, index, all) => all.indexOf(time) === index)
-	return `${frames} at ${joinAnd(times)}${spans[0] ? ` for ${spans[0]}` : ''}`
+	return `${frames} at ${joinAnd(times)}${span}`
+}
+
+/**
+ * Two clock cycles of the same cadence as one, their marks together: the minutes of an hour cycle that names no
+ * seconds, or the seconds of a minute cycle. Null when they differ otherwise.
+ */
+function sharedCycle(left: ClockTime, right: ClockTime): ClockTime | null {
+	const [a, b] = [left.cycle, right.cycle]
+	if (!a || !b || a.unit !== b.unit || a.interval !== b.interval || a.run !== undefined || b.run !== undefined) return null
+	const merge = (x: number[], y: number[]) => [...new Set([...x, ...y])].sort((p, q) => p - q)
+	if (a.unit === 'm') return { hours: [], minutes: [], seconds: merge(left.seconds, right.seconds), cycle: a }
+	if (left.seconds.length > 0 || right.seconds.length > 0) return null
+	return { hours: [], minutes: merge(left.minutes, right.minutes), seconds: [], cycle: a }
 }
 
 /** The longest " of …" tail two phrases share, each keeping something before it; null when they share none. */
@@ -158,7 +185,7 @@ export function realizeShort(model: ScheduleModel): string {
 	}
 
 	const parts: string[] = []
-	const base = model.branches ? shortBranches(model) : shortFrames(model.frames)
+	const base = model.branches ? shortBranches(model) : (model.time?.cycle && model.frames.every(isPlain) ? '' : shortFrames(model.frames))
 	if (base) parts.push(base)
 	if (model.time) parts.push(...shortClockParts(model.time))
 	if (model.span && model.span.length > 0) parts.push(`~${shortDuration(model.span)}`)
@@ -310,6 +337,7 @@ function shortSelection(frame: Frame): string {
 
 /** The clock, terse: "@9", and a step after it as its cadence ("@9 /2h", "@9 /15m" within the 9 o'clock hour). */
 function shortClockParts(time: ClockTime): string[] {
+	if (time.cycle) return shortCycleParts(time, time.cycle)
 	const clock = `@${shortClock(time)}`
 	if (!time.step) return [clock]
 	const cadence = `/${time.step.interval}${SHORT_DUR[time.step.unit]}`
@@ -539,6 +567,8 @@ function tryDate(frames: Frame[]): string | null {
 /** One frame in isolation: "every month", "Monday and Wednesday", "the 1st and 15th", "3 random weeks", "the first 3 days". */
 function phraseFrame(frame: Frame): string {
 	if (isCalendarWeek(frame)) return phraseCalendarWeeks(frame)
+	const years = frame.unit === 'y' ? phraseYears(frame) : null
+	if (years) return years
 	const unit = UNIT_WORD[frame.unit]
 	const interval = frame.interval
 	const sel = frame.selection
@@ -561,6 +591,15 @@ function phraseFrame(frame: Frame): string {
 	}
 	const inner = valueList(sel, unit, dayOfMonth)
 	return interval ? `${intervalWord(frame.unit, interval)} from ${inner}` : inner
+}
+
+/** Years read as themselves, not as ordinals: "the year 2027", "the years 2027 through 2030", "every other year from 2027". */
+function phraseYears(frame: Frame): string | null {
+	const sel = frame.selection
+	if (sel.kind !== 'list' && sel.kind !== 'range') return null
+	const values = sel.kind === 'list' ? joinAnd(sel.values.map(value => String(value.value))) : `${sel.start.value} through ${sel.end.value}`
+	if (frame.interval) return `${intervalWord('y', frame.interval)} from ${values}`
+	return `the year${sel.kind === 'range' || sel.values.length > 1 ? 's' : ''} ${values}`
 }
 
 /**
@@ -671,6 +710,48 @@ function clockClause(time: ClockTime): string {
 	}
 	const within = `, ${every} within the ${joinAnd(windows)} ${window}${windows.length > 1 ? 's' : ''}`
 	return step.times === undefined ? within : `${within}, ${upTo(step.times)} ${PER_WORD[coarserClock(step.unit)]}`
+}
+
+/**
+ * A clock cycle in words: "every hour at :15", "every other hour at :00 and :30", "every minute at second 30", and a
+ * step under it running to the end of each cycle ("every 15 minutes from :10 to the end of every hour").
+ */
+function cycleClause(time: ClockTime): string {
+	const cycle = time.cycle!
+	const every = clockEvery({ unit: cycle.unit, interval: cycle.interval })
+	const marks = cycleMarks(time, cycle)
+	let text: string
+	if (time.step) text = `${clockEvery(time.step)} from ${joinAnd(marks)} to the end of ${every}`
+	else if (cycle.unit === 'm') text = `${every} at ${time.seconds.length > 1 ? 'seconds' : 'second'} ${joinAnd(time.seconds.map(String))}`
+	else text = `${every} at ${joinAnd(marks)}`
+	return cycle.run === undefined ? text : `${text}, ${cycleRun(time, cycle, cycle.run)}`
+}
+
+/**
+ * A top-level cycle's `*x`: "for 3 hours". Stepped by `%N`, x periods would read as a span of x units, so a cycle
+ * firing once in each says how many times ("3 times") and any other how many of its periods ("for 3 such hours").
+ */
+function cycleRun(time: ClockTime, cycle: ClockCycle, run: number): string {
+	const word = CLOCK_WORD[cycle.unit]
+	if (cycle.interval <= 1) return `for ${run} ${word}${run === 1 ? '' : 's'}`
+	return cycleMarks(time, cycle).length === 1 && !time.step ? timesWord(run) : `for ${run} such ${word}${run === 1 ? '' : 's'}`
+}
+
+/** Where in its cycle a clock fires: ":15" or ":15:30" past the hour, ":30" past the minute. */
+function cycleMarks(time: ClockTime, cycle: ClockCycle): string[] {
+	if (cycle.unit === 'm') return time.seconds.map(second => `:${pad(second)}`)
+	if (time.seconds.length === 0) return time.minutes.map(minute => `:${pad(minute)}`)
+	return time.minutes.flatMap(minute => time.seconds.map(second => `:${pad(minute)}:${pad(second)}`))
+}
+
+/** A clock cycle, terse: "hourly @:15", "/2h @:00&:30", "every min @30s", a step after it ("hourly @:10 /15m"). */
+function shortCycleParts(time: ClockTime, cycle: ClockCycle): string[] {
+	const cadence = cycle.interval > 1 ? `/${cycle.interval}${SHORT_DUR[cycle.unit]}` : (cycle.unit === 'h' ? 'hourly' : 'every min')
+	const marks = cycle.unit === 'm' ? time.seconds.map(second => `${second}s`) : cycleMarks(time, cycle)
+	const parts = [cadence, `@${marks.join('&')}`]
+	if (time.step) parts.push(`/${time.step.interval}${SHORT_DUR[time.step.unit]}`)
+	if (cycle.run !== undefined) parts.push(cycle.interval > 1 && marks.length === 1 && !time.step ? `×${cycle.run}` : `×${cycle.run}${SHORT_DUR[cycle.unit]}`)
+	return parts
 }
 
 /** The clock unit a finer one streams within: minutes within the hour, seconds within the minute. */
