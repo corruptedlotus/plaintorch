@@ -1,4 +1,4 @@
-import { Component, component, css, html, repeat, unsafeCSS } from '@a11d/lit'
+import { Component, component, css, html, repeat } from '@a11d/lit'
 import type { EntitySubscription } from '@pleiades/sdk'
 import { core, DerivedRef, tooltip } from '..'
 import { 'project-everglow-banner-webp' as EverglowBanner } from '../../assets/design'
@@ -34,36 +34,9 @@ export class MoonlightView extends Component {
 			}
 
 			/*
-			 * Tall enough that the banner's centrepiece sits clear above the title rather than behind it. Not isolated: the
-			 * banner blends with the page frame behind it, so nothing between the two may form a group of its own.
+			 * The reflection title: centred and spacious like the page's own (p7t-page-hero), a step smaller, and with the
+			 * room above it the banner gives the page title.
 			 */
-			.masthead {
-				position: relative;
-				display: flex;
-				flex-direction: column;
-				justify-content: flex-end;
-				align-items: center;
-				min-height: 18em;
-				padding-block-end: .6em;
-			}
-
-			/*
-			 * The banner bleeds out to the briefing's page frame — past the page's own padding, and into its rounded top
-			 * corners — and fades out downward, so the page reads as rising out of it. It lightens what lies beneath, so
-			 * its near-black sky gives way to the frame's own surface and only its light shows.
-			 */
-			.banner {
-				position: absolute;
-				inset: -.4em -.5em 0;
-				border-radius: 16px 16px 0 0;
-				background: url('${unsafeCSS(EverglowBanner)}') center 55% / cover no-repeat;
-				mask-image: linear-gradient(to bottom, black 30%, transparent);
-				mix-blend-mode: lighten;
-				pointer-events: none;
-			}
-
-			/* The page's titles: centred and spacious, big on a wide page and shrinking with a narrow pane. */
-			h1,
 			h2 {
 				position: relative;
 				display: flex;
@@ -72,6 +45,8 @@ export class MoonlightView extends Component {
 				flex-wrap: wrap;
 				gap: .35em;
 				margin: 0;
+				padding-block: 2.4em .5em;
+				font-size: clamp(1.5em, 5.6cqi, 2.3em);
 				font-weight: 200;
 				letter-spacing: .05em;
 				line-height: 1.1;
@@ -83,17 +58,6 @@ export class MoonlightView extends Component {
 					height: 1em;
 					color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 75%, var(--text-normal));
 				}
-			}
-
-			h1 {
-				font-size: clamp(1.7em, 7cqi, 2.9em);
-				text-shadow: 0 2px 24px rgb(0 0 0 / .7);
-			}
-
-			/* A step below the page title, with the room above it the banner gives the page title. */
-			h2 {
-				padding-block: 2.4em .5em;
-				font-size: clamp(1.5em, 5.6cqi, 2.3em);
 			}
 
 			/* The tally beside the reflection title: the decrees reflecting in chaos, then those on an orbit. */
@@ -183,13 +147,7 @@ export class MoonlightView extends Component {
 
 	protected override get template() {
 		return html`
-			<header class='masthead'>
-				<div class='banner'></div>
-				<h1>
-					<p7t-icon icon='project-moonlight'></p7t-icon>
-					Project Moonlight
-				</h1>
-			</header>
+			<p7t-page-hero heading='Project Moonlight' icon='project-moonlight' .banner=${EverglowBanner}></p7t-page-hero>
 			${!this.directives.value ? html`<div class='notice'>Loading…</div>` : html`
 				${this.cardsTemplate}
 				${this.reflectionTemplate}

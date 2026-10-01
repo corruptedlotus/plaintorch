@@ -26,6 +26,9 @@ const heroDuration = 320
  * Each page keeps its own scroll position, saved as the page leaves and restored at the deck's swap, while no page is
  * visible. The hero's motion is arranged around that: it animates only where it can be seen to without shoving a page
  * around, at the top of the pane, and otherwise settles at once, out of sight.
+ *
+ * A page that sticks chrome of its own to the top of the pane (a search bar, a grid's heading row) sticks it beneath
+ * the tab bar: the briefing measures the bar and hands its height down as `--p7t-page-sticky-top`.
  */
 @component('p7t-briefing')
 export class Briefing extends Component {
@@ -46,6 +49,13 @@ export class Briefing extends Component {
 	private readonly scrollPositions = new Map<string, number>()
 
 	@query('.hero') private readonly heroElement!: HTMLElement
+	@query('.navbar') private readonly navbarElement?: HTMLElement
+
+	/** Hands the tab bar's height down to the pages, as where their own sticky chrome stops (`--p7t-page-sticky-top`). */
+	private readonly navbarObserver = new ResizeObserver(([entry]) => {
+		const height = entry?.borderBoxSize[0]?.blockSize ?? entry?.target.getBoundingClientRect().height ?? 0
+		this.style.setProperty('--p7t-page-sticky-top', `${height}px`)
+	})
 
 	private readonly briefingRef = new DerivedRef(this, core.repos.briefing)
 
@@ -53,12 +63,24 @@ export class Briefing extends Component {
 		return this.briefingRef.value
 	}
 
+	protected override connected() {
+		void this.updateComplete.then(() => {
+			if (this.isConnected && this.navbarElement) {
+				this.navbarObserver.observe(this.navbarElement)
+			}
+		})
+	}
+
+	protected override disconnected() {
+		this.navbarObserver.disconnect()
+	}
+
 	/** The tabs, in the order the tab bar shows them. */
 	private get tabs(): readonly BriefingTab[] {
 		return [
 			{ key: throne, icon: 'everglow', label: 'Throne Room', template: () => html`<p7t-throne-view .data=${this.data}></p7t-throne-view>` },
 			{ key: 'planning', icon: 'onrush', label: 'Planning', template: () => html`<p7t-dependency-canvas></p7t-dependency-canvas>` },
-			{ key: 'backlog', icon: 'directive', label: 'Backlog', template: () => html`<p7t-entity-grid></p7t-entity-grid>` },
+			{ key: 'backlog', icon: 'directive', label: 'Backlog', template: () => html`<p7t-backlog-view></p7t-backlog-view>` },
 			{ key: 'moonlight', icon: 'directive-lunar', label: 'Moonlight', template: () => html`<p7t-moonlight-view></p7t-moonlight-view>` },
 			{ key: 'lore', icon: 'lorepage', label: 'Lore', template: () => html`<p7t-lore-grid></p7t-lore-grid>` }
 		]

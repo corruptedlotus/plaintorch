@@ -5,7 +5,7 @@ import {
 	SelectStatusModal, objectiveStatusDescriptors, directiveStatusDescriptors, lunarDirectiveStatusDescriptors
 } from '..'
 import {
-	directiveActions, entityIcon, entityKindLabel, entityKindOf, entityStatusName, isDirectiveKind,
+	directiveActions, entityIcon, entityKindLabel, entityKindOf, entityStatusName, isDirectiveKind, isInactiveEntity,
 	objectiveActions, reparentEntity, reparentRefusal, saveEntityField, saveFateSchedule, type EditableField
 } from './entityActions'
 import { GridItemBase } from './GridItemBase'
@@ -108,6 +108,11 @@ export class GridItem extends GridItemBase {
 
 	protected override get kindName() {
 		return entityKindLabel(entityKindOf(this.row!.entity as GridEntity))
+	}
+
+	/** A directive or incentive done with is dimmed; the world heading carries no entity, and so no state. */
+	protected override get inactive() {
+		return this.row?.kind !== 'root' && isInactiveEntity(this.row?.entity)
 	}
 
 	protected override get entityIcon() {

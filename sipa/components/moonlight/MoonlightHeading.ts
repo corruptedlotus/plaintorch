@@ -1,10 +1,10 @@
-import { Component, component, css, html, nothing, property } from '@a11d/lit'
+import { Component, component, css, html, nothing, property, type PropertyValues } from '@a11d/lit'
 import type { Directive } from '@pleiades/sdk'
 import {
 	ContextMenuController, EntityWatch, LunarDirectiveModal, ReactiveBinder, SelectStatusModal,
 	entityContextMenu, lunarDirectiveStatusDescriptors
 } from '..'
-import { directiveActions, entityStatusName, saveEntityField } from '../grid/entityActions'
+import { directiveActions, entityStatusName, isInactiveEntity, saveEntityField } from '../grid/entityActions'
 
 /** How prominently a {@link MoonlightHeading} reads: as a card's own heading, a section's, or a box's. */
 export type MoonlightHeadingLevel = 'card' | 'section' | 'box'
@@ -131,7 +131,18 @@ export class MoonlightHeading extends Component {
 				flex-direction: column;
 				margin-block: -.2em;
 			}
+
+			/* A stale directive is dimmed like any item done with; its actions keep their strength. */
+			:host([inactive]) :is(.crest, .text) {
+				opacity: .4;
+			}
 		`
+	}
+
+	protected override updated(changed: PropertyValues<this>) {
+		super.updated(changed)
+		// Read off the watched directive each render rather than set as a property, so a state edited anywhere shows here.
+		this.toggleAttribute('inactive', isInactiveEntity(this.directive))
 	}
 
 	protected override get template() {

@@ -75,6 +75,12 @@ export abstract class GridBase extends Component {
 	/** The expandable rows seen so far, so a row that gains children opens by itself only the first time. */
 	private readonly seenExpandable = new Set<string>()
 
+	/** The rows the reader had open when a search began, to return to once it ends; unset while no search is on. */
+	private openBeforeSearch?: ReadonlySet<string>
+
+	/** The rows a search has already opened, so one the reader closes during the search stays closed. */
+	private readonly openedBySearch = new Set<string>()
+
 	private layoutRestored = false
 
 	private storeSubscription?: EntitySubscription
@@ -123,14 +129,16 @@ export abstract class GridBase extends Component {
 
 			/*
 			 * The heading row sticks to the top of whatever scrolls the grid, so the columns stay named however far
-			 * down the list runs. It needs a surface of its own for the rows to pass under.
+			 * down the list runs — beneath the briefing's sticky tab bar (--p7t-page-sticky-top), or wherever a page
+			 * sets --p7t-grid-header-top to, below chrome of its own. It needs a surface of its own for the rows to pass
+			 * under.
 			 */
 			.header {
 				display: grid;
 				grid-template-columns: subgrid;
 				grid-column: 1 / -1;
 				position: sticky;
-				top: var(--p7t-grid-header-top, 0px);
+				top: var(--p7t-grid-header-top, var(--p7t-page-sticky-top, 0px));
 				z-index: 4;
 				margin-block-end: .3em;
 				background: var(--p7t-grid-header-background, color-mix(in srgb, black 20%, var(--background-primary)));
@@ -281,6 +289,7 @@ export abstract class GridBase extends Component {
 		super.willUpdate(changedProperties)
 		this.tree = this.buildTree()
 		this.openNewlyExpandableRows()
+		this.revealSearchResults()
 	}
 
 	protected override updated(changedProperties: PropertyValues<this>) {
@@ -361,6 +370,32 @@ export abstract class GridBase extends Component {
 
 		if (opened.length > 0) {
 			this.grid.details.expanded = [...this.grid.details.expanded, ...opened]
+		}
+	}
+
+	/**
+	 * While the variant is {@link searching}, the rows open so that what matched is in sight: every row with anything to
+	 * open opens the first time the search shows it, and one the reader closes meanwhile stays closed. When the search
+	 * ends, the rows the reader had open before it are open again, and only those.
+	 */
+	private revealSearchResults() {
+		const { records, details } = this.grid
+		if (!this.searching) {
+			if (this.openBeforeSearch) {
+				const before = this.openBeforeSearch
+				this.openBeforeSearch = undefined
+				this.openedBySearch.clear()
+				details.expanded = records.records.filter(record => before.has(record.data.id))
+			}
+
+			return
+		}
+
+		this.openBeforeSearch ??= new Set(details.expanded.map(record => record.data.id))
+		const opened = records.records.filter(record => details.hasDetail(record) && !this.openedBySearch.has(record.data.id))
+		if (opened.length > 0) {
+			opened.forEach(record => this.openedBySearch.add(record.data.id))
+			details.expanded = [...details.expanded, ...opened]
 		}
 	}
 
@@ -568,6 +603,14 @@ export abstract class GridBase extends Component {
 
 	/** Whether rows start open. The user's collapses are kept either way. */
 	protected get expandsByDefault(): boolean {
+		return false
+	}
+
+	/**
+	 * Whether the reader is searching the grid — narrowing it by text or filters, as opposed to defaults alone. The rows
+	 * then open to reveal what matched (see {@link revealSearchResults}). False by default, for grids without a search.
+	 */
+	protected get searching(): boolean {
 		return false
 	}
 

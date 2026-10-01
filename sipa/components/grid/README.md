@@ -18,7 +18,8 @@ reaches the row unchanged, since a `GridRow` is the node spread with the grid's 
 |---|---|
 | The tree's **shape**: which node sits under which, sibling order, cycles, the world heading | the variant's builder (`buildEntityTree`, `buildLoreTree`) |
 | **Flattening** the tree into records with level, position and set size | the controller (`records`, via `@3mo/hierarchy`) |
-| Which rows are **open** | the controller (`details`, an `@3mo/expandability` controller keyed by `GridNode.id`) |
+| Which rows are **open** | the controller (`details`, an `@3mo/expandability` controller keyed by `GridNode.id`); `GridBase` opens them while a search is on |
+| Which entities a tree shows (search results with their ancestors) | the variant's builder, given the variant's criteria (`buildEntityTree(source, include)`) |
 | The **columns**: definitions, and what the user did to them (width, order, visibility) | the controller (`columns`) |
 | **Treegrid semantics** on the grid, the header and the rows (`role`, `aria-level`, `aria-setsize`, `aria-posinset`, `aria-expanded`, `columnheader`) | the controller, stamped onto the parts it is handed |
 | Rendering: the sticky header, the column tracks, the row elements, the FAB | `GridBase` |
@@ -59,8 +60,10 @@ protected override readonly columns = [
   resized title gives up, so the open-note and add columns stay at the far edge. The rows draw a `.filler` span
   for it. The add column's content is the row's `trailingAction`: the add button by default, or a variant's own
   icon button where it has nothing to add (Lunar Reflection's "Edit decree").
-- **The header** sticks to the top of whatever scrolls the grid (`--p7t-grid-header-top`, default `0`). Its
-  surface is `--p7t-grid-header-background`.
+- **The header** sticks to the top of whatever scrolls the grid, at `--p7t-grid-header-top`. That defaults to
+  `--p7t-page-sticky-top`, the height of the briefing's sticky tab bar, which the briefing measures and hands down
+  (`0` outside the briefing). A page with sticky chrome of its own sets `--p7t-grid-header-top` below that (the
+  backlog adds its search bar). Its surface is `--p7t-grid-header-background`.
   - Dragging a heading moves its column.
   - Dragging a heading's edge resizes the column. A dashed guide follows the pointer, and the new width applies
     on release.
@@ -92,3 +95,25 @@ CSV export. They are inert here:
 `LoreGrid` sets `expandsByDefault`. A row opens by itself the first time it has anything to open. The user's
 collapses are kept across rebuilds, and a row that newly gains children still opens. This is the old
 "toggled set tracks collapsed rows" behaviour, expressed through the controller's expansion state.
+
+## Searching the backlog
+
+`EntityGrid` takes `criteria` (`GridCriteria`: `matches(entity)` and `active`), which the backlog page
+(`../backlog/BacklogView.ts`) gets from its search box (`../search/README.md`).
+
+- **Results stay in their hierarchy.** `buildEntityTree(source, include)` keeps an entity that passes, and keeps a
+  directive that does not pass while anything beneath it does. A result is never shown without its ancestors. The world
+  heading keeps the incentives without a directive that pass. With none, it stays as the vacant drop target.
+- **The defaults are criteria too.** With no `status:` chosen, the backlog's status filter hides the archived states,
+  so an archived directive appears only as the ancestor of something that is not archived.
+- **Rows open to reveal results.** While a variant's `searching` getter is true (`criteria.active`: words or chips,
+  not defaults alone), `GridBase` opens every row with anything to open, the first time the search shows it. A row the
+  reader closes during the search stays closed. When the search ends, exactly the rows that were open before it are
+  open again.
+
+## Rows done with
+
+A row whose entity is in a terminal state is drawn dimmed: done, fulfilled, failed, cancelled, archived, over, opted
+out, abandoned, stale (`isInactiveStatus`, set on the status table in `../entities/StatusItem.ts`). It dims its kind
+icon, title and cells, but keeps its indent lanes and action columns at full strength. A variant says so through
+`GridItemBase.inactive`; `GridItem` reads it off the entity with `isInactiveEntity`.

@@ -235,6 +235,15 @@ export abstract class GridItemBase extends Component {
 				background-color: color-mix(in srgb, var(--interactive-accent) 22%, transparent);
 				box-shadow: inset 0 0 0 1px var(--interactive-accent);
 			}
+
+			/*
+			 * An item done with is dimmed, the way an item row dims (itemStyles). The indent lanes keep their strength, so a
+			 * group's lining runs unbroken past the row, and so do the action columns, which still act at full strength.
+			 */
+			:host([inactive]) :is(.kind, .leading, .title),
+			:host([inactive]) .cell[role='gridcell']:not(.lead) {
+				opacity: .4;
+			}
 		`
 	}
 
@@ -242,6 +251,7 @@ export abstract class GridItemBase extends Component {
 		// The active wash is driven by an attribute rather than a reactive property so a variant that never marks a row
 		// active needs to opt into nothing; a plain row simply carries no attribute.
 		this.toggleAttribute('active', !!this.row?.active)
+		this.toggleAttribute('inactive', this.inactive)
 		this.toggleAttribute('transfer-source', this.transfer.isSource)
 		this.syncHoverExpansion()
 	}
@@ -331,6 +341,14 @@ export abstract class GridItemBase extends Component {
 
 	protected get entityIcon(): MediaReference | undefined {
 		return undefined
+	}
+
+	/**
+	 * Whether the row's entity is done with — in a terminal state — and so drawn dimmed. Read on every render, so a
+	 * state edited anywhere dims or restores the row at once. False by default, for variants without states.
+	 */
+	protected get inactive(): boolean {
+		return false
 	}
 
 	/** The name of the entity's own kind, shown as a tooltip on the kind icon. */

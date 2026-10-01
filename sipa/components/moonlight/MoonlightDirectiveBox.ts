@@ -1,6 +1,6 @@
-import { Component, component, css, html, property } from '@a11d/lit'
+import { Component, component, css, html, property, type PropertyValues } from '@a11d/lit'
 import { IconName, tooltip } from '..'
-import { entityKindOf, type EntityKind } from '../grid/entityActions'
+import { entityKindOf, isInactiveEntity, type EntityKind } from '../grid/entityActions'
 import type { MoonlightNode } from './moonlightTree'
 
 /** One kind of thing a box holds, counted. */
@@ -77,7 +77,17 @@ export class MoonlightDirectiveBox extends Component {
 				opacity: .6;
 				font-style: italic;
 			}
+
+			/* A stale directive's box is dimmed; its heading dims itself, its actions keep their strength. */
+			:host([inactive]) .tallies {
+				opacity: .4;
+			}
 		`
+	}
+
+	protected override updated(changed: PropertyValues<this>) {
+		super.updated(changed)
+		this.toggleAttribute('inactive', isInactiveEntity(this.node?.directive))
 	}
 
 	/** What the directive holds, one entry per kind present. */

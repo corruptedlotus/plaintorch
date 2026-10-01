@@ -69,12 +69,45 @@ export interface GridRow extends GridNode {
 	readonly columns: readonly string[]
 }
 
+/**
+ * What a grid shows of its tree. An entity that passes is shown inside its hierarchy: every ancestor it sits under is
+ * shown with it, whether or not that ancestor passes itself.
+ */
+export interface GridCriteria {
+	/** Whether an entity passes. */
+	matches(entity: GridEntity): boolean
+	/**
+	 * Whether the reader is searching — has typed or chosen something — rather than only standing defaults being in
+	 * force. While a search is on, the grid opens its rows so that what matched is in sight.
+	 */
+	readonly active: boolean
+}
+
 /** The flat listings a tree is composed from. */
 export interface EntityTreeSource {
 	readonly directives?: readonly Directive[]
 	readonly objectives?: readonly Objective[]
 	readonly fates?: readonly Fate[]
 	readonly decrees?: readonly Decree[]
+}
+
+/**
+ * The stellar backlog the listings hold: the stellar directives, and the incentives that are not a lunar directive's.
+ *
+ * Lunar directives and what they own live on the Moonlight page. Their incentives are dropped along with them rather
+ * than left behind, which would surface them here as world incentives — which they are not.
+ */
+export function stellarBacklogSource(source: EntityTreeSource): EntityTreeSource {
+	const lunarIds = new Set(source.directives?.filter(directive => directive.isLunar).map(directive => directive.id))
+	const outsideMoonlight = <T extends { directiveId?: string }>(incentives: readonly T[] | undefined) =>
+		incentives?.filter(incentive => !incentive.directiveId || !lunarIds.has(incentive.directiveId))
+
+	return {
+		directives: source.directives?.filter(directive => !directive.isLunar),
+		objectives: outsideMoonlight(source.objectives),
+		fates: outsideMoonlight(source.fates),
+		decrees: outsideMoonlight(source.decrees)
+	}
 }
 
 /** Identifies a row, and the entity behind it, in the entity store. */
@@ -98,8 +131,11 @@ export const worldHeadingKey = 'world-incentives'
  * expansion belong to the grid, which walks the tree through each node's {@link GridNode.children}; every row still
  * ends up a direct child of one grid, so the columns line up however deep a row sits. The lining is drawn inside each
  * row from its own {@link GridNode.guides}.
+ *
+ * Only the entities that pass `include` are shown, each inside its hierarchy: a directive that does not pass itself is
+ * still drawn while anything beneath it does, so a result never loses its ancestors (see {@link GridCriteria}).
  */
-export function buildEntityTree(source: EntityTreeSource): GridNode[] {
+export function buildEntityTree(source: EntityTreeSource, include: (entity: GridEntity) => boolean = () => true): GridNode[] {
 	const directives = source.directives ?? []
 	const incentives: GridEntity[] = [
 		...(source.objectives ?? []),
@@ -155,10 +191,15 @@ export function buildEntityTree(source: EntityTreeSource): GridNode[] {
 		const children = [
 			...[...subdirectives.get(directive.id) ?? []].sort(byTitle)
 				.map(child => directiveNode(child, [...guides, 'directive'])),
-			...[...owned.get(directive.id) ?? []].sort(byTitle)
+			...[...owned.get(directive.id) ?? []].filter(include).sort(byTitle)
 				.map(incentive => incentiveNode(incentive, 'incentive', [...guides, 'incentive']))
 		].filter(node => node !== undefined)
 		visiting.delete(directive.id)
+
+		// Shown when it passes, or as the ancestor of something beneath it that does.
+		if (children.length === 0 && !include(directive)) {
+			return undefined
+		}
 
 		return {
 			id: gridRowKey(directive),
@@ -177,15 +218,16 @@ export function buildEntityTree(source: EntityTreeSource): GridNode[] {
 	// heading, which never collapses. The heading is also where a drag lands to take an entity out from under its
 	// directive, so it is emitted even with nothing beneath it — vacant, and unseen until a drag needs it. An empty
 	// grid has nothing to drag, and keeps its "nothing here" notice.
-	if (rootIncentives.length > 0 || roots.length > 0) {
+	const worldIncentives = rootIncentives.filter(include)
+	if (worldIncentives.length > 0 || roots.length > 0) {
 		roots.push({
 			id: worldHeadingKey,
 			entity: null!,
 			kind: 'root',
 			guides: [],
 			collapsible: false,
-			vacant: rootIncentives.length === 0,
-			children: [...rootIncentives].sort(byTitle).map(incentive => incentiveNode(incentive, 'world', ['world']))
+			vacant: worldIncentives.length === 0,
+			children: worldIncentives.sort(byTitle).map(incentive => incentiveNode(incentive, 'world', ['world']))
 		})
 	}
 

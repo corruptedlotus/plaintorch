@@ -1,9 +1,9 @@
-import { component, html, HTMLTemplateResult } from '@a11d/lit'
+import { component, html, HTMLTemplateResult, property } from '@a11d/lit'
 import type { DataRecord } from '@3mo/data-grid/controller'
 import type { EntityTypeName } from '@pleiades/sdk'
 import { core, DerivedRef, ExpandingAction } from '..'
 import { creationActions } from './entityActions'
-import { buildEntityTree, type GridNode, type GridRow } from './entityTree'
+import { buildEntityTree, stellarBacklogSource, type GridCriteria, type GridNode, type GridRow } from './entityTree'
 import { GridBase } from './GridBase'
 import { EntityGridColumn } from './GridItem'
 
@@ -16,9 +16,15 @@ import { EntityGridColumn } from './GridItem'
  *
  * Lunar directives, and the incentives they own, are left out: they live on the Moonlight page
  * (`<p7t-moonlight-view>`), which lays the lunar hierarchy out as cards instead.
+ *
+ * Given {@link criteria}, the grid shows only what passes them, each result inside its hierarchy, and opens its rows
+ * while a search is on. The backlog page hands it the criteria of its search box.
  */
 @component('p7t-entity-grid')
 export class EntityGrid extends GridBase {
+	/** What the grid shows of its tree; everything when unset. */
+	@property({ attribute: false }) criteria?: GridCriteria
+
 	private readonly directives = new DerivedRef(this, core.repos.directiveList)
 	private readonly objectives = new DerivedRef(this, core.repos.objectiveList)
 	private readonly fates = new DerivedRef(this, core.repos.fateList)
@@ -36,20 +42,23 @@ export class EntityGrid extends GridBase {
 		return ['StellarDirective', 'Objective', 'Fate', 'Decree']
 	}
 
-	protected override buildTree(): GridNode[] {
-		const directives = this.directives.value
-		const lunarIds = new Set(directives?.filter(directive => directive.isLunar).map(directive => directive.id))
-		// An incentive under a lunar directive is shown on the Moonlight page; dropping only its owner would surface it
-		// here as a world incentive, which it is not.
-		const outsideMoonlight = <T extends { directiveId?: string }>(incentives: readonly T[] | undefined) =>
-			incentives?.filter(incentive => !incentive.directiveId || !lunarIds.has(incentive.directiveId))
-
-		return buildEntityTree({
-			directives: directives?.filter(directive => !directive.isLunar),
-			objectives: outsideMoonlight(this.objectives.value),
-			fates: outsideMoonlight(this.fates.value),
-			decrees: outsideMoonlight(this.decrees.value)
+	/** The stellar backlog the listings hold, before any criteria. */
+	private get source() {
+		return stellarBacklogSource({
+			directives: this.directives.value,
+			objectives: this.objectives.value,
+			fates: this.fates.value,
+			decrees: this.decrees.value
 		})
+	}
+
+	protected override buildTree(): GridNode[] {
+		const criteria = this.criteria
+		return buildEntityTree(this.source, criteria && (entity => criteria.matches(entity)))
+	}
+
+	protected override get searching() {
+		return !!this.criteria?.active
 	}
 
 	protected override get loading() {
@@ -60,8 +69,15 @@ export class EntityGrid extends GridBase {
 		return 'backlog'
 	}
 
+	/** Why nothing shows: a search that found nothing, defaults that hide everything there is, or an empty backlog. */
 	protected override get emptyLabel(): string {
-		return 'No directives or incentives yet'
+		if (this.criteria?.active) {
+			return 'Nothing matches the search'
+		}
+
+		const { directives, objectives, fates, decrees } = this.source
+		const held = [directives, objectives, fates, decrees].some(listing => (listing?.length ?? 0) > 0)
+		return held ? 'Everything here is archived — search status:all to see it' : 'No directives or incentives yet'
 	}
 
 	protected override get fabLabel(): string {

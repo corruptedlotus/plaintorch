@@ -1,8 +1,8 @@
 import { component, css, html } from '@a11d/lit'
-import { DecreeStatus, FateStatus, ObjectiveStatus, type Decree, type Fate, type Objective } from '@pleiades/sdk'
+import { ObjectiveStatus, type Decree, type Fate, type Objective } from '@pleiades/sdk'
 import { core, objectiveStatusDescriptors, SelectStatusModal } from '..'
 import { EntityItem } from '../entities/EntityItem'
-import { entityIcon, entityKindLabel, entityKindOf, entityStatusName } from '../grid/entityActions'
+import { entityIcon, entityKindLabel, entityKindOf, entityStatusName, isInactiveEntity } from '../grid/entityActions'
 import type { GridEntity } from '../grid/entityTree'
 import { toast } from '../../host'
 
@@ -83,14 +83,9 @@ export class MoonlightIncentiveItem extends EntityItem<GridEntity> {
 		`
 	}
 
+	/** An incentive done with — in any terminal state — is drawn dimmed. */
 	override get disabled() {
-		const entity = this.entity
-		switch (entity && entityKindOf(entity)) {
-			case 'objective': return (entity as Objective).status > ObjectiveStatus.Done
-			case 'fate': return (entity as Fate).status !== FateStatus.Active
-			case 'decree': return (entity as Decree).status === DecreeStatus.Abandoned
-			default: return false
-		}
+		return isInactiveEntity(this.entity)
 	}
 
 	protected override get notchTemplate() {
