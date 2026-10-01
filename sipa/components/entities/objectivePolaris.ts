@@ -8,7 +8,16 @@ import { toast } from '../../host'
  * surface showing membership (a checked button, a filtered picker, a refused drop) reads the same answer.
  */
 export function isObjectiveInCycle(objectiveId: string, cycle: PolarisCycle | undefined | null): boolean {
-	return !!cycle?.executives.some(executive => (executive.incentiveId ?? executive.incentive?.id) === objectiveId)
+	return isIncentiveInCycle(objectiveId, cycle)
+}
+
+/**
+ * Whether a cycle already holds an executive for an incentive — an objective or a decree. The rule behind
+ * {@link isObjectiveInCycle}, for either kind: a cycle holds at most one executive per incentive, whether the
+ * executive is added, planned or moved in from another day.
+ */
+export function isIncentiveInCycle(incentiveId: string, cycle: PolarisCycle | undefined | null): boolean {
+	return !!cycle?.executives.some(executive => (executive.incentiveId ?? executive.incentive?.id) === incentiveId)
 }
 
 /** The active Polaris cycle as the briefing record knows it — cached, and kept current by the repositories. */

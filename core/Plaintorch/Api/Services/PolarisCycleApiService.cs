@@ -26,13 +26,23 @@ public sealed class PolarisCycleApiService(
 	IServiceScopeFactory scopeFactory,
 	AgendaProjectionService projectionService,
 	VaultAuditLogService auditLogService,
+	VaultTemporalDataService temporalDataService,
 	ILogger<PolarisCycleApiService> logger) : IPolarisCycleApi
 {
 	/// <inheritdoc />
 	public async Task<PolarisCycle> PlanAsync(DateOnly forecastReference, int daysAhead, string? body = null, CancellationToken cancellationToken = default)
 	{
+		// Checked before an id is minted for the day, as the lifecycle would only refuse it afterwards.
+		ArgumentOutOfRangeException.ThrowIfNegative(daysAhead);
 		var targetDate = forecastReference.AddDays(daysAhead);
-		var id = puckCreationService.CreateIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: targetDate)]);
+		// A day holds one cycle (its id IS the day), so a second plan for it is refused before anything is minted.
+		var dayId = puckCreationService.ComposeIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: targetDate)]);
+		if (await context.PolarisCycles.AnyAsync(item => item.Id == dayId, cancellationToken))
+		{
+			throw new InvalidOperationException($"{targetDate:yyyy-MM-dd} already has a Polaris cycle ('{dayId}').");
+		}
+
+		var id = await MintDayIdAsync(targetDate, cancellationToken);
 		var cycle = lifecycle.PlanForecast(forecastReference, daysAhead, id);
 
 		context.PolarisCycles.Add(cycle);
@@ -144,8 +154,8 @@ public sealed class PolarisCycleApiService(
 
 		var created = new PolarisCycle
 		{
-			// No cycle exists for the day, so mint (register) the id now.
-			Id = puckCreationService.CreateIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: targetDate)]),
+			// No cycle exists for the day, so mint (register) the id now — or reuse it, when a deleted cycle held it.
+			Id = await MintDayIdAsync(targetDate, cancellationToken),
 			Title = PlaintorchDefaultTitleFactory.CreatePolarisTitle(targetDate),
 		};
 		context.PolarisCycles.Add(created);
@@ -227,6 +237,97 @@ public sealed class PolarisCycleApiService(
 			.Where(cycle => cycle.Forecast != null && cycle.StartTime == null)
 			.OrderBy(cycle => cycle.Id)
 			.ToListAsync(cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public async Task<IReadOnlyList<PolarisCycle>> ListByDayAsync(DateOnly from, DateOnly? to = null, CancellationToken cancellationToken = default)
+	{
+		// A cycle's day is its id (a Pleiadean date stamp), which SQL cannot compare as a date, so the range is resolved
+		// over the ids first: one small column, a row per planned or worked day.
+		var ids = (await context.PolarisCycles
+				.AsNoTracking()
+				.Select(cycle => cycle.Id)
+				.ToListAsync(cancellationToken))
+			.Where(id => PolarisCycle.TryParseDay(id, out var day) && day >= from && (to is null || day <= to))
+			.ToList();
+
+		if (ids.Count == 0)
+		{
+			return [];
+		}
+
+		// The same shape GetAsync serves, so a cycle absorbed from this listing never overwrites a richer copy of it
+		// (the briefing's current cycle, say) with less.
+		var cycles = await context.PolarisCycles
+			.AsNoTracking()
+			.Include(item => item.Executives)
+				.ThenInclude(executive => executive.Incentive)
+					.ThenInclude(incentive => incentive!.Directive)
+			.Include(item => item.Executives)
+				.ThenInclude(executive => executive.AffinityTimeframe)
+			.Include(item => item.Reflectives)
+				.ThenInclude(reflective => reflective.Decree)
+					.ThenInclude(decree => decree!.Directive)
+			.Where(cycle => ids.Contains(cycle.Id))
+			.ToListAsync(cancellationToken);
+
+		return cycles.OrderBy(cycle => cycle.Day).ToList();
+	}
+
+	/// <inheritdoc />
+	public async Task DeleteAsync(string polarisCycleId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(polarisCycleId);
+		var cycle = await context.PolarisCycles
+			.Include(item => item.Executives)
+			.Include(item => item.Reflectives)
+			.FirstOrDefaultAsync(item => item.Id == polarisCycleId, cancellationToken)
+			?? throw new InvalidOperationException($"Polaris cycle '{polarisCycleId}' was not found.");
+
+		// Only a plan can be taken back: a begun cycle — active or ended — is the record of a day as it was worked.
+		if (cycle.StartTime is not null)
+		{
+			throw new InvalidOperationException($"Polaris cycle '{cycle.Id}' has begun; only a cycle that has not begun can be deleted.");
+		}
+
+		// The executives and reflectives ARE the plan, so they go with it. The objectives and decrees behind them stay as
+		// they are, state included — the core never walks backlog state back (see RemoveExecutiveAsync).
+		var removedExecutives = cycle.Executives.Count;
+		context.RemoveRange(cycle.Executives);
+		context.RemoveRange(cycle.Reflectives);
+		// The graveyard keeps the cycle's own record; a scalar snapshot, as the loaded plan hangs off the tracked one.
+		var graveyardEntry = temporalDataService.StageEntityArchive(Clone(cycle), "api-delete", Environment.UserName);
+		context.PolarisCycles.Remove(cycle);
+		await writeQueue.RecordRemoveAsync(cycle, cancellationToken);
+		await context.SaveChangesAsync(cancellationToken);
+		await writeQueue.DrainRemoveAsync(cycle, cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"polaris.delete",
+			subjectType: nameof(PolarisCycle),
+			subjectId: cycle.Id,
+			subjectTitle: cycle.Title,
+			details: new { removedExecutives },
+			temporalKind: "database",
+			temporalEntryKey: graveyardEntry.EntryKey,
+			temporalEntityType: graveyardEntry.EntityType,
+			temporalEntityId: graveyardEntry.EntityId,
+			temporalEntityTitle: graveyardEntry.EntityTitle,
+			cancellationToken: cancellationToken);
+	}
+
+	/// <summary>
+	/// The id of the cycle for <paramref name="date"/>, registering it with PUCK only the first time. A cycle's id IS its
+	/// day, so a day whose cycle was deleted — a forecast taken back, its note removed — still holds that id in the PUCK
+	/// registry, and minting it a second time would collide with the entry. The registered id is reused instead.
+	/// </summary>
+	private async Task<string> MintDayIdAsync(DateOnly date, CancellationToken cancellationToken)
+	{
+		var segments = new[] { new PuckSegmentInput(Date: date) };
+		var id = puckCreationService.ComposeIdFor<PolarisCycle>(systemSegments: segments);
+		return await context.PuckRegistryEntries.AnyAsync(entry => entry.Id == id, cancellationToken)
+			? id
+			: puckCreationService.CreateIdFor<PolarisCycle>(systemSegments: segments);
 	}
 
 	/// <inheritdoc />
@@ -461,7 +562,7 @@ public sealed class PolarisCycleApiService(
 			return existing;
 		}
 
-		var id = puckCreationService.CreateIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: nextDate)]);
+		var id = await MintDayIdAsync(nextDate, cancellationToken);
 		var forecast = lifecycle.PlanForecast(currentDate, 1, id);
 		context.PolarisCycles.Add(forecast);
 		// A Polaris cycle is vault-backed, so its creation goes through the write queue (PEP110), like PlanAsync.

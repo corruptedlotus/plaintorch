@@ -56,6 +56,11 @@ export class PolarisCycle {
 	startTime: string | undefined
 	endTime: string | undefined
 	isForecast?: boolean
+	/**
+	 * The calendar day the cycle stands for, as an ISO date (`2026-09-30`): a forecast's target day, a begun cycle's
+	 * start day. A day holds at most one cycle — the core derives the cycle's id from it.
+	 */
+	day?: string
 	/** Everything the cycle holds to work at (PEP111): objective- and decree-backed executives alike. */
 	executives: Executive[] = []
 	reflectives: Reflective[] = []

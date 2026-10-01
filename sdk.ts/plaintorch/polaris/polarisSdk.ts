@@ -30,6 +30,24 @@ export class PlaintorchPolarisSdk {
 		return (await this.client.getJson<PolarisCycle[]>("/api/polaris/forecasts")) ?? []
 	}
 
+	/**
+	 * The cycles of the days from `from` through `to` (ISO dates; unbounded ahead when `to` is omitted) — forecast,
+	 * active and ended alike — in day order, each with its executives and reflectives. Resolves to `undefined` when
+	 * the core could not answer, so a caller can tell a failed read from an empty range.
+	 */
+	public async listByDay(from: string, to?: string): Promise<PolarisCycle[] | undefined> {
+		const query = new URLSearchParams({ from, ...(to ? { to } : {}) })
+		return await this.client.getJson<PolarisCycle[]>(`/api/polaris/days?${query}`)
+	}
+
+	/**
+	 * Deletes a cycle that has not begun — a forecast — with its plan (its executives and reflectives). The
+	 * objectives and decrees behind them stay. A begun cycle is never deleted; the core refuses it.
+	 */
+	public async delete(polarisCycleId: string): Promise<boolean> {
+		return await this.client.delete(`/api/polaris/${encodeURIComponent(polarisCycleId)}`)
+	}
+
 	public async update(polarisCycleId: string, update: PolarisCycleUpdate): Promise<PolarisCycle | undefined> {
 		return await this.client.putForJson<PolarisCycle>(`/api/polaris/${encodeURIComponent(polarisCycleId)}`, update)
 	}

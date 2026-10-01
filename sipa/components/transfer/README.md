@@ -116,6 +116,36 @@ Styling hooks, on the drop target (the host by default, or `dropTarget()`):
 
 ---
 
+## Touch
+
+A finger never goes through the platform's drag and drop: it is absent in some web views (Android's), a different
+gesture on every platform that has it, and everywhere a race with the long press's context menu. The controller
+carries an item on a finger itself (`TouchCarry`, on pointer events), through the very same exchange — same
+transaction, same candidacy, same `transfer-target`/`transfer-over`, same `accept` and outbound policy. Hosts need
+nothing new: `draggable(item, image?)` covers both, and `image` is also what the finger is seen carrying.
+
+1. **Press** — a finger lands on an item. Nothing yet: moving away is a scroll (the platform's, untouched), lifting
+   soon is a tap (its click goes through).
+2. **Lift** — the finger rested 350 ms: a copy of the item rises into the top layer (a lit element is re-made from its
+   properties, with the custom properties it inherits where it stands), the original fades, a light haptic tick, and
+   the page stops panning under the finger (a non-passive `touchmove` on the draggable, the one listener the platform
+   is sure to consult).
+3. **Carry** — the lifted item moves past 8 px: the transaction opens and every candidate is flagged, the copy
+   follows the finger, and the target under it is hovered — hit-tested through every shadow root, the innermost
+   candidate winning (a column's footer bin before the column around it), as a native drop goes to the deepest
+   target that stops it. Resting near a scroller's edge scrolls the innermost one that can still go that way (a day
+   strip sideways, a list down), its snapping suspended for the rest of the carry.
+4. **Set down** — over a target the item lands there; anywhere else the carry is cancelled.
+
+A lift released **without moving** is a long press, and opens the item's context menu as a long press always did.
+Platforms send their own long-press menu (and a trailing click) at different moments of the press — during the hold,
+or on release — so the carry swallows theirs and raises the menu itself.
+
+A mouse and a pen keep the platform's drag and drop; a drag the platform starts from a finger on its own yields to the
+carry.
+
+---
+
 ## Alongside the repository system
 
 - **By reference, not by copy.** `clone` is about the *source keeping its item*, not about duplicating the

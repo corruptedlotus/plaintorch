@@ -1,5 +1,5 @@
-import type { Executive } from '@pleiades/sdk'
-import { core, type ContextMenuEntry, type ContextMenuSpec } from '..'
+import type { Executive, PolarisCycle } from '@pleiades/sdk'
+import { core, isIncentiveInCycle, type ContextMenuEntry, type ContextMenuSpec } from '..'
 import { ExecutiveModal } from './ExecutiveModal'
 import { openEntityEditor } from './entityMenu'
 import { toast } from '../../host'
@@ -82,8 +82,61 @@ export async function setPolarisActivityDone(activity: PolarisActivity, done: bo
 		return undefined
 	}
 
-	await revalidateCycle()
+	await revalidatePolarisCycles()
 	return updated
+}
+
+/**
+ * Sets an activity's estimate — its primary time allocation — on its own, the one allocation a planning surface edits
+ * in place (the rest stay with the allocation modal). `undefined` clears it. Resolves to the updated activity, or
+ * `undefined` when the core refused.
+ */
+export async function setPolarisActivityEstimation(activity: PolarisActivity, estimation: number | undefined): Promise<PolarisActivity | undefined> {
+	const executive = await core.polaris.updateExecutive(activity.id, { estimation: estimation ?? null })
+	if (!executive) {
+		toast(`PLAINTORCH could not update the estimate of ${polarisActivityTitle(activity)}.`, 'error')
+		return undefined
+	}
+
+	await revalidatePolarisCycles()
+	// The update answers with the bare record; the row keeps drawing what it already resolved.
+	return {
+		...activity,
+		...executive,
+		incentive: executive.incentive ?? activity.incentive,
+		affinityTimeframe: executive.affinityTimeframe ?? activity.affinityTimeframe,
+	}
+}
+
+/**
+ * Whether an activity can move into a cycle: not the one it is in, and not one already holding an executive for the
+ * same objective or decree — a cycle holds one of each, and the core refuses a second.
+ */
+export function canMovePolarisActivity(activity: PolarisActivity, cycle: PolarisCycle): boolean {
+	const incentiveId = activity.incentiveId ?? activity.incentive?.id
+	return activity.polarisCycleId !== cycle.id && !(incentiveId && isIncentiveInCycle(incentiveId, cycle))
+}
+
+/**
+ * Moves an activity into another Polaris cycle — another day's (PEP111's relocation). Its allocation and tracked time
+ * travel with it unchanged; only the cycle it belongs to changes. Both cycles re-read themselves. Resolves to whether
+ * it moved.
+ */
+export async function movePolarisActivity(activity: PolarisActivity, cycle: PolarisCycle): Promise<boolean> {
+	const title = polarisActivityTitle(activity)
+	if (!canMovePolarisActivity(activity, cycle)) {
+		toast(`${cycle.title} already holds ${title}.`, 'info')
+		return false
+	}
+
+	const moved = await core.polaris.updateExecutive(activity.id, { moveToPolarisCycleId: cycle.id })
+	if (!moved) {
+		toast(`PLAINTORCH could not move ${title} to ${cycle.title}.`, 'error')
+		return false
+	}
+
+	await revalidatePolarisCycles(activity.polarisCycleId)
+	return true
 }
 
 /**
@@ -106,7 +159,7 @@ export async function moveToNextPolaris(activity: PolarisActivity): Promise<bool
 		return false
 	}
 
-	await revalidateCycle()
+	await revalidatePolarisCycles(activity.polarisCycleId)
 	toast(`Moved ${title} to the next Polaris cycle.`, 'success')
 	return true
 }
@@ -130,15 +183,26 @@ export async function removePolarisActivity(activity: PolarisActivity): Promise<
 		return false
 	}
 
-	await revalidateCycle()
+	await revalidatePolarisCycles(activity.polarisCycleId)
 	toast(`Removed ${title} from the Polaris cycle.`, 'success')
 	return true
 }
 
-/** The cycle and the briefing both draw the activity list; whichever is on screen re-reads itself. */
-async function revalidateCycle() {
+/**
+ * Every surface drawing a cycle's activities — a cycle itself, the briefing's current one, the forecast's days —
+ * re-reads whatever of it is on screen.
+ *
+ * `emptied` names the cycles a write took an executive out of, which may have left one with none: those are re-read
+ * on their own. The briefing and the forecast serve their cycles nested in a record, and the store withholds a nested
+ * entity's EMPTY collection as "not loaded" — so a cycle whose last executive left would keep drawing it until the
+ * cycle is fetched as the root of a response.
+ */
+export async function revalidatePolarisCycles(...emptied: Array<string | undefined>) {
+	const cycleIds = [...new Set(emptied)].filter((id): id is string => !!id)
 	await Promise.all([
 		core.repos.polaris.revalidateObserved(),
-		core.repos.briefing.revalidateIfObserved()
+		core.repos.briefing.revalidateIfObserved(),
+		core.repos.polarisDays.revalidateObserved(),
+		...cycleIds.map(id => core.repos.polaris.refresh(id))
 	])
 }
