@@ -284,10 +284,18 @@ export abstract class GridItemBase extends Component {
 				<p7t-button ghost icon='lucide:square-arrow-out-up-right' label='Open note' @click=${() => this.open()}></p7t-button>
 			</div>
 			<div class='cell actions'>
-				${this.actions.length === 0 ? nothing : html`
-					<p7t-expanding-actions .actions=${this.actions} actionLabel='Add'></p7t-expanding-actions>
-				`}
+				${this.trailingAction}
 			</div>
+		`
+	}
+
+	/**
+	 * What the last action column holds: by default the add button offering {@link actions}. A variant with nothing to
+	 * add may put its own single icon button there instead — Lunar Reflection opens the decree's full banner from it.
+	 */
+	protected get trailingAction(): HTMLTemplateResult | typeof nothing {
+		return this.actions.length === 0 ? nothing : html`
+			<p7t-expanding-actions .actions=${this.actions} actionLabel='Add'></p7t-expanding-actions>
 		`
 	}
 

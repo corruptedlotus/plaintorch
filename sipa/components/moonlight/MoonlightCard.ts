@@ -1,48 +1,79 @@
-import { Component, component, css, html, HTMLTemplateResult, nothing, property, repeat } from '@a11d/lit'
+import { component, css, html, HTMLTemplateResult, nothing, repeat } from '@a11d/lit'
+import { BriefingCard } from '../briefing/BriefingCard'
 import { creationActions, createEntity } from '../grid/entityActions'
 import { gridRowKey, type GridEntity } from '../grid/entityTree'
 import type { MoonlightNode } from './moonlightTree'
 
 /**
- * One top-level lunar directive on the Moonlight page, as a card.
+ * One top-level lunar directive on the Moonlight page, as a briefing card whose {@link data} is the directive's
+ * {@link MoonlightNode}.
  *
  * Beneath its heading the card is split into sections, one per child directive. Each section lays out what that child
  * holds as a horizontally scrolling grid two tiles tall: a directive nested further is a box spanning both rows, an
  * incentive a node-shaped tile taking one. A thinner section closes the card, holding the incentives the card's own
  * directive owns and the affordances to add a child directive or an incentive to it.
+ *
+ * The card keeps the briefing card's structure — its watermark crest, header, content and footer parts — but not its
+ * throne-room dress: it sits flat in a grid of its peers, sized by what it holds. So the radial wash, the margins, the
+ * part gap and the fixed-height scrolling content are put back to a plain grid cell's, and the crest is drawn as a
+ * small corner watermark rather than a full-width mask. The node is no tracked entity, so the base's entity watch rests;
+ * every heading watches its own directive.
  */
 @component('p7t-moonlight-card')
-export class MoonlightCard extends Component {
-	@property({ type: Object }) node?: MoonlightNode
+export class MoonlightCard extends BriefingCard<MoonlightNode> {
+	protected override readonly icon = 'directive-lunar'
 
 	static override get styles() {
 		return css`
+			${super.styles}
+
+			/* A flat cell of the page's card grid: no radial wash, no margins between cards, no gap between the parts. */
 			:host {
-				position: relative;
-				display: flex;
-				flex-direction: column;
 				min-width: 0;
-				box-sizing: border-box;
+				margin: 0;
+				gap: 0;
 				padding: .9em .9em .5em;
-				border-radius: 16px;
-				background-color: var(--background-primary-alt);
-				color: var(--text-normal);
+				background: var(--background-primary-alt);
+				background-blend-mode: normal;
 				overflow: clip;
 			}
 
-			/* The card's watermark: the lunar crest, large and faint, bleeding off the top corner. */
-			.watermark {
-				position: absolute;
-				top: -2.2em;
-				inset-inline-end: -2.2em;
+			/* The crest as a small watermark bleeding off the top corner, rather than the briefing card's full-width mask. */
+			.mask {
+				inset-block: -2.2em auto;
+				inset-inline: auto -2.2em;
 				width: 10em;
 				height: 10em;
 				color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 9%, transparent);
-				pointer-events: none;
+				overflow: visible;
+
+				&::part(icon-frame) {
+					margin-top: 0;
+					mask-position: center;
+				}
+			}
+
+			/*
+			 * The content grows with the card rather than scrolling inside a fixed height, so the card is as tall as its
+			 * sections, and the closing section can sink to the bottom of a card stretched by its row. Its scrollbar
+			 * colours are put back too: they are inherited, and Chromium drops the strips' own slim scrollbars wherever
+			 * scrollbar-color is set.
+			 */
+			:host::part(content) {
+				inset-inline: auto;
+				width: auto;
+				padding-inline: 0;
+				overflow: visible;
+				flex: 1 1 auto;
+				display: flex;
+				flex-direction: column;
+				scrollbar-width: auto;
+				scrollbar-color: auto;
 			}
 
 			p7t-moonlight-heading[level='card'] {
-				position: relative;
+				flex: 1;
+				min-width: 0;
 				padding-block-end: .7em;
 			}
 
@@ -164,16 +195,20 @@ export class MoonlightCard extends Component {
 		`
 	}
 
+	/** Without a node there is nothing to show, not the briefing card's "No Data" panel. */
 	protected override get template() {
-		const node = this.node
-		if (!node) {
-			return html``
-		}
+		return this.data ? super.template : html``
+	}
 
+	/** The directive's own heading — its crest, editable title and state, and its full banner a click away. */
+	protected override get headerTemplate() {
+		return html`<p7t-moonlight-heading level='card' .directive=${this.data!.directive}></p7t-moonlight-heading>`
+	}
+
+	protected override get content() {
+		const node = this.data!
 		const id = node.directive.id
 		return html`
-			<p7t-icon class='watermark' icon='directive-lunar'></p7t-icon>
-			<p7t-moonlight-heading level='card' .directive=${node.directive}></p7t-moonlight-heading>
 			${repeat(node.subdirectives, child => child.directive.id, child => html`
 				<section class='section'>
 					<p7t-moonlight-heading level='section' addable .directive=${child.directive}></p7t-moonlight-heading>

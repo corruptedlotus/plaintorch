@@ -1,6 +1,6 @@
 import { Component, component, css, html, repeat, unsafeCSS } from '@a11d/lit'
 import type { EntitySubscription } from '@pleiades/sdk'
-import { core, DerivedRef } from '..'
+import { core, DerivedRef, tooltip } from '..'
 import { 'project-everglow-banner-webp' as EverglowBanner } from '../../assets/design'
 import { createEntity } from '../grid/entityActions'
 import { buildLunarReflection, buildMoonlightTree } from './moonlightTree'
@@ -11,7 +11,7 @@ import { buildLunarReflection, buildMoonlightTree } from './moonlightTree'
  *
  * The page opens on its title, big and centred over the Project Everglow banner, which fades out downward into the
  * page. The cards follow in a grid that fits as many to a row as the width allows — at least one, with no upper bound —
- * with a last tile after them that adds a new top-level directive; the Lunar Reflection list closes the page. It draws
+ * with a last tile after them that adds a new top-level directive; the Lunar Reflection grid closes the page. It draws
  * from the same directive and incentive listings as the backlog grid, which leaves the lunar hierarchy to this page.
  */
 @component('p7t-moonlight-view')
@@ -33,10 +33,12 @@ export class MoonlightView extends Component {
 				font-family: var(--font-interface);
 			}
 
-			/* Tall enough that the banner's centrepiece sits clear above the title rather than behind it. */
+			/*
+			 * Tall enough that the banner's centrepiece sits clear above the title rather than behind it. Not isolated: the
+			 * banner blends with the page frame behind it, so nothing between the two may form a group of its own.
+			 */
 			.masthead {
 				position: relative;
-				isolation: isolate;
 				display: flex;
 				flex-direction: column;
 				justify-content: flex-end;
@@ -47,36 +49,66 @@ export class MoonlightView extends Component {
 
 			/*
 			 * The banner bleeds out to the briefing's page frame — past the page's own padding, and into its rounded top
-			 * corners — and fades out downward, so the page reads as rising out of it.
+			 * corners — and fades out downward, so the page reads as rising out of it. It lightens what lies beneath, so
+			 * its near-black sky gives way to the frame's own surface and only its light shows.
 			 */
 			.banner {
 				position: absolute;
-				z-index: -1;
 				inset: -.4em -.5em 0;
 				border-radius: 16px 16px 0 0;
 				background: url('${unsafeCSS(EverglowBanner)}') center 55% / cover no-repeat;
 				mask-image: linear-gradient(to bottom, black 30%, transparent);
+				mix-blend-mode: lighten;
 				pointer-events: none;
 			}
 
-			h1 {
+			/* The page's titles: centred and spacious, big on a wide page and shrinking with a narrow pane. */
+			h1,
+			h2 {
+				position: relative;
 				display: flex;
 				align-items: center;
+				justify-content: center;
+				flex-wrap: wrap;
 				gap: .35em;
 				margin: 0;
-				/* Big on a wide page, shrinking with a narrow pane rather than overflowing it. */
-				font-size: clamp(1.7em, 7cqi, 2.9em);
 				font-weight: 200;
 				letter-spacing: .05em;
 				line-height: 1.1;
 				text-align: center;
-				text-shadow: 0 2px 24px rgb(0 0 0 / .7);
 
 				& p7t-icon {
 					flex: none;
 					width: 1em;
 					height: 1em;
 					color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 75%, var(--text-normal));
+				}
+			}
+
+			h1 {
+				font-size: clamp(1.7em, 7cqi, 2.9em);
+				text-shadow: 0 2px 24px rgb(0 0 0 / .7);
+			}
+
+			/* A step below the page title, with the room above it the banner gives the page title. */
+			h2 {
+				padding-block: 2.4em .5em;
+				font-size: clamp(1.5em, 5.6cqi, 2.3em);
+			}
+
+			/* The tally beside the reflection title: the decrees reflecting in chaos, then those on an orbit. */
+			.tally {
+				align-self: flex-start;
+				margin-block-start: .15em;
+				color: var(--text-muted);
+				/* Half the title, but never so small the accent stops reading on a narrow pane. */
+				font-size: max(.5em, .85rem);
+				font-weight: 400;
+				letter-spacing: .02em;
+
+				& .chaos {
+					color: var(--p7t-flare-accent, var(--interactive-accent));
+					font-weight: 500;
 				}
 			}
 
@@ -133,36 +165,7 @@ export class MoonlightView extends Component {
 				display: flex;
 				flex-direction: column;
 				gap: .5em;
-				margin-block: .6em 1em;
-			}
-
-			h2 {
-				display: flex;
-				align-items: center;
-				gap: .45em;
-				margin: 0;
-				padding-inline: .4em;
-				font-size: 1.4em;
-				font-weight: 250;
-				letter-spacing: .02em;
-
-				& p7t-icon {
-					width: 1.1em;
-					height: 1.1em;
-					color: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 65%, var(--text-normal));
-				}
-
-				& .count {
-					color: var(--text-faint, var(--text-muted));
-					font-size: .7em;
-					font-weight: 400;
-				}
-			}
-
-			.panel {
-				padding: .7em .4em;
-				border-radius: 16px;
-				background-color: var(--background-primary-alt);
+				margin-block-end: 1em;
 			}
 		`
 	}
@@ -205,7 +208,7 @@ export class MoonlightView extends Component {
 		return html`
 			<div class='cards'>
 				${repeat(roots, root => root.directive.id, root => html`
-					<p7t-moonlight-card .node=${root}></p7t-moonlight-card>
+					<p7t-moonlight-card .data=${root}></p7t-moonlight-card>
 				`)}
 				<button class='new-card' @click=${() => createEntity('lunar-directive')}>
 					<p7t-icon icon='lucide:plus'></p7t-icon>
@@ -215,20 +218,25 @@ export class MoonlightView extends Component {
 		`
 	}
 
+	/**
+	 * The Lunar Reflection title, tallying its decrees as those reflecting in chaos (no orbit) plus those on an orbit,
+	 * over the grid that lists them.
+	 */
 	private get reflectionTemplate() {
 		const entries = buildLunarReflection({ directives: this.directives.value, decrees: this.decrees.value })
+		const chaos = entries.filter(({ decree }) => !decree.orbit).length
 		return html`
 			<section class='reflection'>
 				<h2>
 					<p7t-icon icon='reflective'></p7t-icon>
 					Lunar Reflection
-					<span class='count'>${entries.length}</span>
+					<span class='tally'>
+						<span class='chaos' ${tooltip('Reflecting in chaos, on no orbit')}>${chaos}</span>
+						+
+						<span ${tooltip('Reflecting on an orbit')}>${entries.length - chaos}</span>
+					</span>
 				</h2>
-				<div class='panel'>
-					${entries.length > 0
-						? html`<p7t-lunar-reflection-list .entries=${entries}></p7t-lunar-reflection-list>`
-						: html`<div class='notice'>No decree takes part in Lunar Reflection yet.</div>`}
-				</div>
+				<p7t-lunar-reflection-grid></p7t-lunar-reflection-grid>
 			</section>
 		`
 	}

@@ -1,9 +1,14 @@
 # Grids
 
-The backlog (`p7t-entity-grid`) and the lore hierarchy (`p7t-lore-grid`) are one grid system: a shell,
-`GridBase`, that owns the structure, and row elements, `GridItemBase` variants, that draw each line. The shell's
-structure is 3MO's **`DataGridController`** (`@3mo/data-grid/controller`), a headless data grid the shell renders
-its own way. Nothing of 3MO's visual `mo-data-grid` is used or bundled.
+The backlog (`p7t-entity-grid`), the lore hierarchy (`p7t-lore-grid`) and the Moonlight page's Lunar Reflection
+(`p7t-lunar-reflection-grid`, in `../moonlight`) are one grid system: a shell, `GridBase`, that owns the structure,
+and row elements, `GridItemBase` variants, that draw each line. The shell's structure is 3MO's
+**`DataGridController`** (`@3mo/data-grid/controller`), a headless data grid the shell renders its own way. Nothing
+of 3MO's visual `mo-data-grid` is used or bundled.
+
+A variant need not nest. Lunar Reflection's tree is flat, one leaf node per decree, so it takes the header, the
+column arrangement and the row lead without any expansion. Its nodes carry an extra field (the owning directive), which
+reaches the row unchanged, since a `GridRow` is the node spread with the grid's placement.
 
 ---
 
@@ -52,7 +57,8 @@ protected override readonly columns = [
   7em floor.
 - The tracks are `[one per visible column] auto max-content max-content`. The `auto` filler takes the room a
   resized title gives up, so the open-note and add columns stay at the far edge. The rows draw a `.filler` span
-  for it.
+  for it. The add column's content is the row's `trailingAction`: the add button by default, or a variant's own
+  icon button where it has nothing to add (Lunar Reflection's "Edit decree").
 - **The header** sticks to the top of whatever scrolls the grid (`--p7t-grid-header-top`, default `0`). Its
   surface is `--p7t-grid-header-background`.
   - Dragging a heading moves its column.
@@ -62,7 +68,7 @@ protected override readonly columns = [
   - The chevron button in the title heading opens or closes every row.
   - Right-clicking the header opens a menu: show or hide columns, fit all columns, reset, expand or collapse all.
 - The **arrangement** (widths, order, hidden columns) is kept in `localStorage` under
-  `plaintorch.grid-layout.<layoutKey>` (`backlog`, `lore`). "Reset columns" clears it.
+  `plaintorch.grid-layout.<layoutKey>` (`backlog`, `lore`, `lunar-reflection`). "Reset columns" clears it.
 
 ## What is deliberately not used
 
