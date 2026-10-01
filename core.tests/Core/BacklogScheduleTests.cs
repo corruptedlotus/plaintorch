@@ -8,6 +8,7 @@ using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Changes;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Hosting;
+using Pleiades.Puck;
 using Pleiades.Tests.Harness;
 using Pleiades.Vault.Database;
 using Xunit;
@@ -194,6 +195,68 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		var synced = await Objective(api => api.GetAsync(objective.Id, Ct));
 		Assert.Equal(ObjectiveStatus.Polaris, synced!.Status);
 		Record(await StoredAsync(objective.Id), LifecyclePhase.Begin);
+	}
+
+	// --- recording: one interceptor, every save ---
+
+	[Fact]
+	public async Task A_synchronous_save_is_recorded_and_settled_like_any_other()
+	{
+		var objective = await Objective(api => api.CreateStandaloneAsync("Synchronous", cancellationToken: Ct));
+
+		await Vault.WithScopeAsync(services =>
+		{
+			var context = services.GetRequiredService<PlainfraContext>();
+			context.Objectives.Single(item => item.Id == objective.Id).Status = ObjectiveStatus.Polaris;
+			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecyclePhase.Finish, Time = new DateTime(2026, 10, 1) });
+			context.SaveChanges();
+			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecyclePhase.Finish, Time = new DateTime(2026, 10, 2) });
+			context.SaveChanges();
+			return Task.CompletedTask;
+		});
+
+		var schedules = await StoredAsync(objective.Id);
+		Record(schedules, LifecyclePhase.Begin);
+		Assert.Equal(new DateTime(2026, 10, 2), Slot(schedules, BacklogScheduleType.Plan, LifecyclePhase.Finish)!.Time);
+		Assert.Equal(2, schedules.Count);
+	}
+
+	[Fact]
+	public async Task Minting_an_id_mid_operation_still_records_the_change_it_flushes()
+	{
+		// PUCK issuance saves synchronously on the caller's context, so whatever the caller had pending is saved there, not
+		// by the caller's own save later. The record must be written in that save all the same.
+		var objective = await Objective(api => api.CreateStandaloneAsync("Flushed", cancellationToken: Ct));
+
+		await Vault.WithScopeAsync(async services =>
+		{
+			var context = services.GetRequiredService<PlainfraContext>();
+			var tracked = await context.Objectives.SingleAsync(item => item.Id == objective.Id, Ct);
+			tracked.Status = ObjectiveStatus.Polaris;
+			services.GetRequiredService<PuckCreationService>().CreateIdFor<Checkpoint>();
+			Assert.Equal(EntityState.Unchanged, context.Entry(tracked).State);
+			await context.SaveChangesAsync(Ct);
+		});
+
+		Record(await StoredAsync(objective.Id), LifecyclePhase.Begin);
+	}
+
+	[Fact]
+	public async Task A_status_set_on_an_attached_copy_is_compared_with_what_is_stored()
+	{
+		// An entity attached rather than loaded carries no original values of its own, so the transition is judged against
+		// the stored row.
+		var objective = await Objective(api => api.CreateStandaloneAsync("Attached", cancellationToken: Ct));
+
+		await Vault.WithScopeAsync(async services =>
+		{
+			var context = services.GetRequiredService<PlainfraContext>();
+			context.Objectives.Update(new Objective { Id = objective.Id, Title = objective.Title, Status = ObjectiveStatus.Done });
+			await context.SaveChangesAsync(Ct);
+		});
+
+		var schedules = await StoredAsync(objective.Id);
+		Assert.Equal(Record(schedules, LifecyclePhase.Begin).Time, Record(schedules, LifecyclePhase.Finish).Time);
 	}
 
 	// --- recording: the other kinds ---

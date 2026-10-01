@@ -23,7 +23,7 @@ An objective's only begin phase is now `Polaris`. `Onrush` commits it to a sprin
 - **Time:** a civil wall-clock moment, like a due. A plan at midnight stands for the whole day.
 - **Owner:** exactly one incentive (objective, fate, decree), directive (stellar or lunar) or checkpoint, each through a real foreign key. Schedules die with their owner.
 
-An owner holds one schedule per type and state. Adding one to an occupied slot replaces the one there, on every write pathway, since the rule runs in the core's save hook.
+An owner holds one schedule per type and state. Adding one to an occupied slot replaces the one there. This rule and the records below live in one save interceptor, `BacklogScheduleInterceptor`, which hooks synchronous saves as well as asynchronous ones, so no write pathway has to remember them.
 
 Records are the core's to write, and a record stands exactly while its phase does. Whenever an item enters a begun status from one that is not, the core adds a `Begin` record at that moment, and a `Finish` record when it enters a finished status. Pulling the status back out of a phase withdraws its record: un-finishing drops the finish record, un-beginning the begin record. A finish implies a begin, so a jump straight from Standby to Done records both, and pulling it back to Standby withdraws both. Objectives, stellar directives, fates and checkpoints are recorded; lunar directives and decrees have no lifecycle and only take plans.
 

@@ -50,6 +50,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<PlaintorchStatePolicyProcessor>();
 		services.AddScoped<PlaintorchStatePolicyFileSyncService>();
 		services.AddScoped<PlaintorchStatePolicyInterceptor>();
+		services.AddScoped<BacklogScheduleInterceptor>();
 		services.AddSingleton<PlaintorchChangeBroker>();
 		services.AddScoped<PlaintorchChangeFeedInterceptor>();
 		// The active lore spine, cached once per vault session and stamped onto responses by a filter rather
@@ -69,8 +70,11 @@ public sealed class PlaintorchModule : Module
 			// write do not meet a whole-file lock with no timeout. Stateless, so a fresh instance per context.
 			options.AddInterceptors(new SqlitePragmaConnectionInterceptor());
 			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchStatePolicyInterceptor>());
-			// Registered after the state policy, so the changes it announces are the ones policy left
-			// behind rather than what the caller originally asked for.
+			// The one place backlog records are inferred (PEP101), on synchronous and asynchronous saves alike. After the
+			// state policy, so it records the statuses policy left behind (a checkpoint just unlocked included).
+			options.AddInterceptors(serviceProvider.GetRequiredService<BacklogScheduleInterceptor>());
+			// Registered after the state policy and the schedule records, so the changes it announces are the ones they
+			// left behind rather than what the caller originally asked for.
 			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchChangeFeedInterceptor>());
 			options.AddInterceptors(serviceProvider.GetRequiredService<LoreActiveCacheInterceptor>());
 			options.AddInterceptors(serviceProvider.GetRequiredService<TimeframeCandidateCacheInterceptor>());

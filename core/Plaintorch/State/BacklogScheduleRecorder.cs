@@ -6,23 +6,24 @@ using Pleiades.Vault.Database;
 namespace Pleiades.Plaintorch.State;
 
 /// <summary>
-/// Keeps the backlog schedules of a unit of work coherent (PEP101). Runs inside the state-policy pass, and therefore
-/// the save interceptor, so every write pathway — the API, the markdown watcher, the CLI, a bare context save — records
-/// lifecycle transitions and replaces occupied slots the same way.
+/// Keeps the backlog schedules of a unit of work coherent (PEP101). Run on every save by
+/// <see cref="BacklogScheduleInterceptor"/>, so every write pathway — the API, the markdown watcher, the CLI, PUCK issuance,
+/// a bare context save, synchronous or not — records lifecycle transitions and replaces occupied slots the same way.
 /// </summary>
 /// <remarks>
 /// Two rules, applied in order:
 /// <list type="number">
 /// <item><description>
 /// <b>Recording.</b> For every incentive, directive or checkpoint the save touches, each lifecycle phase its kind passes
-/// through (<see cref="EntityLifecycleResolver.GetPhases"/>) is compared before and after the save. Entering the phase adds
-/// a <see cref="BacklogScheduleType.Record"/> of it, stamped with the save's moment; leaving it — pulling the status back —
-/// withdraws that record. So a record stands exactly while its phase does: un-finishing drops the finish record,
-/// un-beginning the begin record. Begun and finished are the resolver's reading, the same one the dependency system gates
-/// on: a finish implies a begin, so a jump from an unbegun status straight to a finished one records both at the same
-/// moment, and a status that declares no phase (an objective's Blocked) is not begun. An entity created begun or finished
-/// counts as entering it. A one-shot kind (a checkpoint, which finishes by unlocking) only ever gets a finish record, and
-/// kinds with no lifecycle (lunar directives, decrees) are never recorded, though every kind can hold plans.
+/// through (<see cref="EntityLifecycleResolver.GetPhases"/>) is compared between what is stored and what the save is
+/// about to store. Entering the phase adds a <see cref="BacklogScheduleType.Record"/> of it, stamped with the save's
+/// moment; leaving it — pulling the status back — withdraws that record. So a record stands exactly while its phase does:
+/// un-finishing drops the finish record, un-beginning the begin record. Begun and finished are the resolver's reading, the
+/// same one the dependency system gates on: a finish implies a begin, so a jump from an unbegun status straight to a
+/// finished one records both at the same moment, and a status that declares no phase (an objective's Blocked) is not
+/// begun. An entity created begun or finished counts as entering it. A one-shot kind (a checkpoint, which finishes by
+/// unlocking) only ever gets a finish record, and kinds with no lifecycle (lunar directives, decrees) are never recorded,
+/// though every kind can hold plans.
 /// </description></item>
 /// <item><description>
 /// <b>Replacement.</b> Every schedule added in the save replaces the other schedules of its slot — the same owner,
@@ -43,7 +44,7 @@ public sealed class BacklogScheduleRecorder(EntityLifecycleResolver lifecycleRes
 		// A record is a civil wall-clock moment, like every schedule time: the local time with no kind, which would
 		// otherwise serialize with the machine's offset. One moment for the whole save, so a jump straight to a finished
 		// status records its begin and its finish at the same instant.
-		var withdrawn = RecordLifecycleTransitions(context, DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified));
+		var withdrawn = await RecordLifecycleTransitionsAsync(context, DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified), cancellationToken);
 		await SettleSlotsAsync(context, withdrawn, cancellationToken);
 	}
 
@@ -51,25 +52,27 @@ public sealed class BacklogScheduleRecorder(EntityLifecycleResolver lifecycleRes
 	/// Adds a record for every phase an owner enters in this save, and returns the slots of the records to withdraw for
 	/// every phase an owner leaves.
 	/// </summary>
-	private List<BacklogSchedule> RecordLifecycleTransitions(PlainfraContext context, DateTime now)
+	private async Task<List<BacklogSchedule>> RecordLifecycleTransitionsAsync(PlainfraContext context, DateTime now, CancellationToken cancellationToken)
 	{
 		var entered = new List<BacklogSchedule>();
 		var withdrawn = new List<BacklogSchedule>();
-		foreach (var entry in context.ChangeTracker.Entries())
+		// A snapshot: reading the stored values below must not enumerate the tracker while it is being walked.
+		var owners = context.ChangeTracker.Entries()
+			.Where(entry => entry.State is (EntityState.Added or EntityState.Modified) && BacklogSchedule.CanOwn(entry.Entity))
+			.ToList();
+		foreach (var entry in owners)
 		{
-			if (entry.State is not (EntityState.Added or EntityState.Modified) || !BacklogSchedule.CanOwn(entry.Entity))
-			{
-				continue;
-			}
-
 			var phases = lifecycleResolver.GetPhases(entry.Entity.GetType());
 			if (phases.Count == 0)
 			{
 				continue;
 			}
 
-			// The entity as it stood before the save: its original values on a detached copy, read by the same resolver.
-			var before = entry.State == EntityState.Added ? null : entry.OriginalValues.ToObject();
+			// The entity as it stands in the database, read onto a detached copy that the same resolver judges. The stored
+			// row, not the tracked original values, is the reference: an entity attached rather than loaded (whose original
+			// values are only its current ones) is compared correctly all the same. An added entity has nothing stored.
+			var stored = entry.State == EntityState.Added ? null : await entry.GetDatabaseValuesAsync(cancellationToken);
+			var before = stored?.ToObject();
 			foreach (var phase in phases)
 			{
 				var was = before is not null && HasReached(before, phase);
@@ -85,7 +88,6 @@ public sealed class BacklogScheduleRecorder(EntityLifecycleResolver lifecycleRes
 			}
 		}
 
-		// Added after the scan: adding while enumerating the tracker would change the collection under it.
 		context.BacklogSchedules.AddRange(entered);
 		return withdrawn;
 	}
