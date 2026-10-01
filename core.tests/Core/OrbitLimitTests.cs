@@ -208,7 +208,68 @@ public sealed class OrbitLimitTests
 	[Fact]
 	public void The_stream_starts_after_a_lower_bound_the_same_way()
 	{
+		Assert.Equal(["10-05 Mon", "10-09 Fri"], Stream("w[d{1,5}]>2026/10/1", "2026-09-28", 2));
+	}
+
+	// --- Window bounds: >t and <t name a calendar date as Z{…} does ---
+
+	[Fact]
+	public void A_bound_is_written_y_M_d_with_an_optional_time_as_Z_is()
+	{
+		Assert.Equal(["01-01 Thu", "01-02 Fri", "end"], Stream("d<2026/1/3", "2026-01-01", 3));
+		Assert.Equal(["01-01 09:00 Thu", "01-02 09:00 Fri"], Stream("d[h{9}]>2026/1/1T08:59:59", "2025-12-01", 2));
+		Assert.Equal(["01-05 Mon", "end"], Stream("Z{2026/1/5}>2026/1/1", "2025-12-01", 2));
+	}
+
+	[Fact]
+	public void A_lower_bound_inside_a_period_skips_that_period_instead_of_ending_the_stream()
+	{
+		Assert.Equal(["01-02 Fri", "01-03 Sat"], Stream("d>2026/1/1T12:00", "2025-12-01", 2));
+		Assert.Equal(["01-02 09:00 Fri", "01-03 09:00 Sat"], Stream("d[h{9}]>2026/1/1T12:00", "2025-12-01", 2));
+		Assert.Equal(["01-02 Fri", "01-03 Sat"], Stream("d>2026-01-01T12:00", "2025-12-01", 2));
+	}
+
+	[Fact]
+	public void An_ISO_bound_the_older_form_still_reads_as_a_UTC_instant()
+	{
 		Assert.Equal(["10-05 Mon", "10-09 Fri"], Stream("w[d{1,5}]>2026-10-01", "2026-09-28", 2));
+	}
+
+	[Fact]
+	public void A_dash_right_after_a_bound_is_the_set_difference()
+	{
+		Assert.Equal(["01-05 Mon", "01-07 Wed", "01-08 Thu"], Stream("d>2026/1/5-d{6}", "2026-01-01", 3));
+		Assert.Equal(["01-05 Mon", "01-07 Wed", "01-08 Thu"], Stream("d>2026-01-05-d{6}", "2026-01-01", 3));
+	}
+
+	[Fact]
+	public void A_bound_that_names_no_date_of_its_calendar_or_no_date_at_all_is_refused()
+	{
+		Assert.Contains("does not have", Assert.Throws<FormatException>(() => Stream("d>2026/2/30", "2026-01-01", 1)).Message);
+		Assert.Contains("does not have", Assert.Throws<FormatException>(() => Stream("d>2026/13/1", "2026-01-01", 1)).Message);
+		Assert.Contains("after year in a bound", Assert.Throws<FormatException>(() => Stream("d>1-1-1", "2026-01-01", 1)).Message);
+		Assert.Contains("after month in a bound", Assert.Throws<FormatException>(() => Stream("d>2026/1", "2026-01-01", 1)).Message);
+	}
+
+	[Fact]
+	public void A_bound_windows_the_stream_and_a_continuous_interval_keeps_the_anchors_phase()
+	{
+		// Phased from the anchor (1 December), every other day lands on the even days of January either way.
+		Assert.Equal(["01-02 Fri", "01-04 Sun", "01-06 Tue"], Stream("d%2>2026/1/1", "2025-12-01", 3));
+		Assert.Equal(["01-02 Fri", "01-04 Sun", "01-06 Tue"], Stream("d%2>2026/1/2", "2025-12-01", 3));
+	}
+
+	[Fact]
+	public void A_bound_names_its_date_in_the_orbits_calendar_as_Z_does()
+	{
+		// The 7th of Solaria (the second Pleiadean month) of year 4.
+		var calendar = OrbitDays.Pleiadean;
+		var bounded = OrbitEngine.FromNotation("d>4/2/7", Instant("2026-05-01"), calendar, 1).Next() as OrbitResolutionEntry;
+		var literal = OrbitEngine.FromNotation("Z{4/2/7}", Instant("2026-05-01"), calendar, 1).Next() as OrbitResolutionEntry;
+		Assert.NotNull(bounded);
+		Assert.NotNull(literal);
+		Assert.Equal(literal.TimestampMs, bounded.TimestampMs);
+		Assert.Equal((4, 2, 7), (calendar.Get(bounded.TimestampMs, OrbitUnit.Year), calendar.Get(bounded.TimestampMs, OrbitUnit.Month), calendar.Get(bounded.TimestampMs, OrbitUnit.Day)));
 	}
 
 	// --- Weeks within a month ---

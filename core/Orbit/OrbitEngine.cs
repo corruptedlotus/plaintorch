@@ -168,11 +168,19 @@ public sealed class OrbitEngine
 		{
 			if (limit.Kind == OrbitLimitKind.After && limit.At > start)
 			{
-				start = _calendar.SnapToStart(limit.At, _globalGranularity);
+				start = PeriodFrom(limit.At);
 			}
 		}
 
 		return start;
+	}
+
+	// The first period of the stream's granularity that starts at or after `at`. A lower bound inside a period skips
+	// that period, whose start falls before the bound.
+	private long PeriodFrom(long at)
+	{
+		var start = _calendar.SnapToStart(at, _globalGranularity);
+		return start < at ? _calendar.Add(start, _globalGranularity, 1) : start;
 	}
 
 	// --- Construction / persistence ---
@@ -916,7 +924,7 @@ public sealed class OrbitEngine
 				// ">t": skip anything before the lower bound and jump the cursor to it.
 				if (matchTime < limit.At)
 				{
-					_cursor = _calendar.SnapToStart(limit.At, _globalGranularity);
+					_cursor = PeriodFrom(limit.At);
 					return LimitVerdict.Skip;
 				}
 			}
@@ -1741,7 +1749,7 @@ public sealed class OrbitEngine
 		return result;
 	}
 
-	private static List<ResolvedLimit> CollectLimits(OrbitAstNode node)
+	private List<ResolvedLimit> CollectLimits(OrbitAstNode node)
 	{
 		var output = new List<ResolvedLimit>();
 		void Visit(OrbitAstNode n)
@@ -1758,7 +1766,11 @@ public sealed class OrbitEngine
 			{
 				if (limit.Kind is OrbitLimitKind.Before or OrbitLimitKind.After)
 				{
-					if (JsDate.TryParseIso(limit.Timestamp, out var at))
+					if (limit.Moment is { } moment)
+					{
+						output.Add(new ResolvedLimit(limit.Kind, MomentTime(moment, limit.Timestamp), unitNode.Unit));
+					}
+					else if (JsDate.TryParseIso(limit.Timestamp, out var at))
 					{
 						output.Add(new ResolvedLimit(limit.Kind, at, unitNode.Unit));
 					}
@@ -1775,6 +1787,42 @@ public sealed class OrbitEngine
 
 		Visit(node);
 		return output;
+	}
+
+	// A bound's calendar date as an instant, composed in this engine's calendar as Z{…} is matched in it: the start of
+	// the written day, or of its written time. A date the calendar does not have (a 30th of February) is an error.
+	private long MomentTime(OrbitCalendarMoment moment, string written)
+	{
+		(OrbitUnit Unit, int? Value)[] parts =
+		[
+			(OrbitUnit.Year, moment.Year), (OrbitUnit.Month, moment.Month), (OrbitUnit.Day, moment.Day),
+			(OrbitUnit.Hour, moment.Hour), (OrbitUnit.Minute, moment.Minute), (OrbitUnit.Second, moment.Second),
+		];
+		var missing = $"The bound '{written}' names a date its calendar does not have.";
+		var date = _calendar.SnapToStart(_anchor, OrbitUnit.Year);
+		foreach (var (unit, value) in parts)
+		{
+			if (value is not { } target)
+			{
+				break;
+			}
+
+			try
+			{
+				date = _calendar.SnapToStart(_calendar.Set(date, unit, target), unit);
+			}
+			catch (ArgumentException exception)
+			{
+				throw new FormatException(missing, exception);
+			}
+
+			if (_calendar.Get(date, unit) != target)
+			{
+				throw new FormatException(missing);
+			}
+		}
+
+		return date;
 	}
 
 	// Walks the RAW (un-normalized) AST recording every written node's parent unit (null for a top-level node) and

@@ -20,7 +20,7 @@ const EXAMPLES = [
 	"w[d{5}[h{17}[m{30}]]]%2",
 	"d{1}=2h",
 	"w[d{1}]@5",
-	"d{1}>2027-01-01",
+	"d{1}>2027/1/1",
 ]
 
 function cap(text: string): string {

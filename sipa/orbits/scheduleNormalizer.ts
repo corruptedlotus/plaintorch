@@ -21,10 +21,10 @@
 // said as declared instead: its starts and its step, with a `*x` read as a cap per parent period (`y[w{1}%2*20]` is
 // every other week from calendar week 1, up to 20 times a year).
 
-import type { ASTNode, DateTimeLiteralNode, DurationPart, IndexSpec, LimitSpec, TimeUnit, TimeUnitNode } from './ast'
+import type { ASTNode, CalendarMoment, DateTimeLiteralNode, DurationPart, IndexSpec, LimitSpec, TimeUnit, TimeUnitNode } from './ast'
 import type { CalendarSystem } from './calendar'
 import {
-	Bound, Branches, CalendarUnit, ClockStep, ClockTime, Frame, NamedValue, ScheduleModel, Selection,
+	Bound, Branches, CalendarDate, CalendarUnit, ClockStep, ClockTime, Frame, NamedValue, ScheduleModel, Selection,
 	isClockUnit, naturalParent,
 } from './scheduleModel'
 
@@ -63,7 +63,7 @@ function normalizeBranch(node: ASTNode, enclosing: CalendarUnit, calendar: Calen
 	if (node.kind === 'DateTimeLiteralNode') {
 		// A time-only z{h:m} is a clock under the frame; a dated literal cannot sit inside a chain.
 		if (node.year !== undefined) throw new UnsupportedShapeError('dated literal inside a chain')
-		const bounds = windowBounds(node.limits)
+		const bounds = windowBounds(node.limits, calendar)
 		const span = node.duration && node.duration.length > 0 ? node.duration : undefined
 		return { kind: 'simple', frames: [], time: readLiteralClock(node, enclosing, bounds), span, bounds }
 	}
@@ -75,13 +75,13 @@ function normalizeBranch(node: ASTNode, enclosing: CalendarUnit, calendar: Calen
  * (`z{h:m}`, no date) is just a daily clock — a frameless simple schedule with only a `time`.
  */
 function normalizeLiteral(node: DateTimeLiteralNode, calendar: CalendarSystem): ScheduleModel {
-	const bounds = windowBounds(node.limits)
+	const bounds = windowBounds(node.limits, calendar)
 	const span = node.duration && node.duration.length > 0 ? node.duration : undefined
 
 	if (node.year !== undefined) {
 		// A dated literal's modifiers ride on its year, a single moment: an index `%` does not step, so its `*x` means
 		// nothing, and its `@x` caps what already fires once.
-		const time = node.hour === undefined ? undefined : { hours: [node.hour], minutes: [node.minute ?? 0], seconds: node.second !== undefined ? [node.second] : [] }
+		const time = clockAt(node.hour, node.minute, node.second)
 		return { kind: 'instant', year: node.year, month: named(node.month!, 'M', 'y', calendar), day: node.day!, time, span, bounds }
 	}
 	return { kind: 'simple', frames: [], time: readLiteralClock(node, undefined, bounds), span, bounds }
@@ -113,7 +113,7 @@ function normalizeChain(root: TimeUnitNode, calendar: CalendarSystem, enclosing?
 		}
 
 		// Window bounds and the span can hang off any node in the spine; gather them wherever they are.
-		bounds.push(...windowBounds(node.limits))
+		bounds.push(...windowBounds(node.limits, calendar))
 		if (node.duration && node.duration.length > 0) span = node.duration
 
 		if (node.kind === 'DateTimeLiteralNode') {
@@ -127,7 +127,7 @@ function normalizeChain(root: TimeUnitNode, calendar: CalendarSystem, enclosing?
 			// The h/m/s tail is the time of day; nothing calendar follows it. Its minute and second nodes can carry
 			// window bounds and a span too, gathered like the spine's.
 			time = readClock(node, enclosing, bounds, clockNode => {
-				bounds.push(...windowBounds(clockNode.limits))
+				bounds.push(...windowBounds(clockNode.limits, calendar))
 				if (clockNode.duration && clockNode.duration.length > 0) span = clockNode.duration
 			})
 			break
@@ -208,13 +208,29 @@ function readFrame(node: TimeUnitNode, unit: CalendarUnit, parent: CalendarUnit 
 }
 
 /** The window bounds (`<t >t`) among a node's limits; `*x` and `@x` belong to their node and are read with it. */
-function windowBounds(limits: LimitSpec[]): Bound[] {
+function windowBounds(limits: LimitSpec[], calendar: CalendarSystem): Bound[] {
 	const bounds: Bound[] = []
 	for (const limit of limits) {
-		if (limit.type === 'after') bounds.push({ kind: 'after', at: limit.timestamp })
-		if (limit.type === 'before') bounds.push({ kind: 'before', at: limit.timestamp })
+		if (limit.type !== 'after' && limit.type !== 'before') continue
+		bounds.push(limit.moment
+			? { kind: limit.type, at: limit.timestamp, date: calendarDate(limit.moment, calendar) }
+			: { kind: limit.type, at: limit.timestamp })
 	}
 	return bounds
+}
+
+/** A `y/M/d[Th:m[:s]]` bound's date, its month named by the calendar. */
+function calendarDate(moment: CalendarMoment, calendar: CalendarSystem): CalendarDate {
+	const date: CalendarDate = { year: moment.year, month: named(moment.month, 'M', 'y', calendar), day: moment.day }
+	const time = clockAt(moment.hour, moment.minute, moment.second)
+	if (time) date.time = time
+	return date
+}
+
+/** The single time of day a dated moment pins, when it has a `T` part. */
+function clockAt(hour: number | undefined, minute: number | undefined, second: number | undefined): ClockTime | undefined {
+	if (hour === undefined) return undefined
+	return { hours: [hour], minutes: [minute ?? 0], seconds: second !== undefined ? [second] : [] }
 }
 
 /** A node's tightest limit of one kind, as the engine reads a repeated `*x`/`@x`. */

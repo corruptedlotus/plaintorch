@@ -5,7 +5,7 @@
 // upstream code (mirrors assets/icons/index.ts).
 
 // parser.ts
-import { ASTNode, TimeUnitNode, DateTimeLiteralNode, IndexSpec, TimeUnit, DurationPart } from './ast'
+import { ASTNode, TimeUnitNode, DateTimeLiteralNode, IndexSpec, TimeUnit, DurationPart, CalendarMoment } from './ast'
 
 const TIME_UNITS = ['y', 'M', 'w', 'd', 'h', 'm', 's']
 
@@ -145,22 +145,7 @@ export class OrbitParser {
 	// time part is optional; the deepest present component fixes the granularity.
 	private parseDateTimeLiteral(): DateTimeLiteralNode {
 		if (!this.match('{')) throw new Error(`Expected '{' after 'Z' shorthand`)
-
-		const year = this.parseNumber()
-		if (!this.match('/')) throw new Error(`Expected '/' after year in 'Z' shorthand`)
-		const month = this.parseNumber()
-		if (!this.match('/')) throw new Error(`Expected '/' after month in 'Z' shorthand`)
-		const day = this.parseNumber()
-
-		let hour: number | undefined, minute: number | undefined, second: number | undefined
-		if (this.match('T')) {
-			hour = this.parseNumber()
-			if (!this.match(':')) throw new Error(`Expected ':' in 'Z' time part`)
-			minute = this.parseNumber()
-			if (this.match(':')) {
-				second = this.parseNumber()
-			}
-		}
+		const { year, month, day, hour, minute, second } = this.parseMoment(`'Z' shorthand`)
 		if (!this.match('}')) throw new Error(`Expected '}' closing 'Z' shorthand`)
 
 		const node: DateTimeLiteralNode = { kind: 'DateTimeLiteralNode', year, month, day, hour, minute, second, limits: [] }
@@ -208,9 +193,9 @@ export class OrbitParser {
 			} else if (this.match('@')) {
 				node.limits.push({ type: 'instances', count: this.parseNumber() })
 			} else if (this.match('<')) {
-				node.limits.push({ type: 'before', timestamp: this.parseTimestamp() })
+				node.limits.push({ type: 'before', ...this.parseBound() })
 			} else if (this.match('>')) {
-				node.limits.push({ type: 'after', timestamp: this.parseTimestamp() })
+				node.limits.push({ type: 'after', ...this.parseBound() })
 			} else if (this.match('=')) {
 				node.duration = this.parseDuration()
 			} else {
@@ -261,22 +246,36 @@ export class OrbitParser {
 		return parseInt(str, 10)
 	}
 
-	private parseTimestamp(): string {
-		let str = ''
-		// Timestamps read until they hit an operator or structural character.
-		// NOTE: '-' is intentionally NOT a stop char so ISO dates like 2026-07-15
-		// (and 2026-07-15T12:30:00Z) parse. A '-' exclusion directly after a
-		// timestamp must therefore be whitespace-separated (e.g. "d>2026-01-01 - d{1}").
-		const stopChars = new Set(['%', '*', '@', '<', '>', '=', '+', '&', '^', '[', ']', '(', ')', '{', '}'])
-		while (
-			this.pos < this.input.length &&
-			!stopChars.has(this.peek()) &&
-			!/\s/.test(this.peek())
-		) {
-			str += this.consume()
+	// y/M/d[Th:m[:s]] -> a calendar date, as Z{…} writes one and a bound does.
+	private parseMoment(context: string): CalendarMoment {
+		const year = this.parseNumber()
+		if (!this.match('/')) throw new Error(`Expected '/' after year in ${context}`)
+		const month = this.parseNumber()
+		if (!this.match('/')) throw new Error(`Expected '/' after month in ${context}`)
+		const day = this.parseNumber()
+
+		const moment: CalendarMoment = { year, month, day }
+		if (this.match('T')) {
+			moment.hour = this.parseNumber()
+			if (!this.match(':')) throw new Error(`Expected ':' in the time part of ${context}`)
+			moment.minute = this.parseNumber()
+			if (this.match(':')) moment.second = this.parseNumber()
 		}
-		if (str === '') throw new Error(`Expected timestamp at position ${this.pos}`)
-		return str
+		return moment
+	}
+
+	// <t / >t -> a bound, a calendar date written as Z{…} writes one (`>2026/7/15`, `<2026/7/15T12:30`). An ISO
+	// timestamp (`>2026-07-15`, `>2026-07-15T12:30:00Z`), the older form, still reads as a UTC instant; it ends with its
+	// last ISO field, so a '-' right after it is the set difference.
+	private parseBound(): { timestamp: string; moment?: CalendarMoment } {
+		const start = this.pos
+		const iso = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?/.exec(this.input.slice(start))
+		if (iso) {
+			this.pos += iso[0].length
+			return { timestamp: iso[0] }
+		}
+		const moment = this.parseMoment('a bound')
+		return { timestamp: this.input.slice(start, this.pos), moment }
 	}
 
 	private skipWhitespace() {

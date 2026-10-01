@@ -145,11 +145,23 @@ export interface ClockStep {
 	times?: number
 }
 
-/** A bound on the stream. */
+/** A bound on the stream. A window bound keeps its text as written (`at`) and, when it names a calendar date, that date. */
 export type Bound =
-	| { kind: 'count'; times: number; per?: TimeUnit } // @x — at most x of a node's instances per period of its parent, or in all
-	| { kind: 'after'; at: string }                    // >t — not before this timestamp
-	| { kind: 'before'; at: string }                   // <t — not after this timestamp
+	| { kind: 'count'; times: number; per?: TimeUnit }   // @x — at most x of a node's instances per period of its parent, or in all
+	| { kind: 'after'; at: string; date?: CalendarDate }  // >t — not before this moment
+	| { kind: 'before'; at: string; date?: CalendarDate } // <t — before this moment
+
+/**
+ * A calendar date a window bound names, written as `Z{…}` writes one (`>2027/6/5`, `<2027/6/5T18:00`), its month
+ * carrying the calendar's name for it. An ISO bound (`>2027-06-05`, the older form) names none and reads as written.
+ */
+export interface CalendarDate {
+	year: number
+	month: NamedValue
+	day: number
+	/** The time of day, when the bound pinned one (its `T` part). */
+	time?: ClockTime
+}
 
 /** The natural enclosing unit of a calendar unit when it is not explicitly nested under another. */
 export function naturalParent(unit: CalendarUnit): CalendarUnit | undefined {

@@ -12,7 +12,7 @@
 // per period of the node's parent ("up to 7 times a month") or in all.
 
 import type { DurationPart, SetOperator, TimeUnit } from './ast'
-import type { Bound, CalendarUnit, ClockStep, ClockTime, CompoundSchedule, Frame, InstantSchedule, NamedValue, ScheduleModel, Selection, SimpleSchedule } from './scheduleModel'
+import type { Bound, CalendarDate, CalendarUnit, ClockStep, ClockTime, CompoundSchedule, Frame, InstantSchedule, NamedValue, ScheduleModel, Selection, SimpleSchedule } from './scheduleModel'
 
 const UNIT_WORD: Record<CalendarUnit, string> = { y: 'year', M: 'month', w: 'week', d: 'day' }
 const CLOCK_WORD: Record<ClockStep['unit'], string> = { h: 'hour', m: 'minute', s: 'second' }
@@ -57,9 +57,7 @@ function joinSides(operator: SetOperator, left: string, right: string): string {
 
 /** A fixed moment: "the 5th of June 2027", "the 5th of June 2027 at 18:00 for 2 hours". */
 function realizeInstant(model: InstantSchedule): string {
-	const monthName = model.month.name ?? `month ${model.month.value}`
-	let text = `the ${ordinal(model.day)} of ${monthName} ${model.year}`
-	if (model.time) text += clockClause(model.time)
+	let text = phraseCalendarDate(model)
 	if (model.span && model.span.length > 0) text += ` for ${formatDuration(model.span)}`
 
 	const bounds = model.bounds.map(phraseBound)
@@ -193,8 +191,7 @@ function shortOperand(model: ScheduleModel): string {
 
 /** A fixed moment, terse: dates read day-first as "d/MMM y" — "5/Jun 2027", "5/Jun 2027 @18", "35/Xun 3 ~2h". */
 function shortInstant(model: InstantSchedule): string {
-	const parts = [`${model.day}/${shortLabel(model.month)} ${model.year}`]
-	if (model.time) parts.push(...shortClockParts(model.time))
+	const parts = [shortCalendarDate(model)]
 	if (model.span && model.span.length > 0) parts.push(`~${shortDuration(model.span)}`)
 	for (const bound of model.bounds) parts.push(shortBound(bound))
 	return parts.join(' ')
@@ -343,9 +340,16 @@ function shortDuration(parts: DurationPart[]): string {
 function shortBound(bound: Bound): string {
 	switch (bound.kind) {
 		case 'count': return bound.per ? `×${bound.times}/${SHORT_DUR[bound.per]}` : `×${bound.times}`
-		case 'after': return `>${bound.at}`
-		case 'before': return `<${bound.at}`
+		case 'after': return `>${bound.date ? shortCalendarDate(bound.date) : bound.at}`
+		case 'before': return `<${bound.date ? shortCalendarDate(bound.date) : bound.at}`
 	}
+}
+
+/** A calendar date, terse and day-first: "5/Jun 2027", its clock after it ("5/Jun 2027 @18"). */
+function shortCalendarDate(date: CalendarDate): string {
+	const parts = [`${date.day}/${shortLabel(date.month)} ${date.year}`]
+	if (date.time) parts.push(...shortClockParts(date.time))
+	return parts.join(' ')
 }
 
 function clip(name: string): string {
@@ -608,9 +612,15 @@ function intervalWord(unit: CalendarUnit, interval: number): string {
 function phraseBound(bound: Bound): string {
 	switch (bound.kind) {
 		case 'count': return bound.per ? `${upTo(bound.times)} ${PER_WORD[bound.per]}` : inAll(bound.times)
-		case 'after': return `from ${bound.at}`
-		case 'before': return `until ${bound.at}`
+		case 'after': return `from ${bound.date ? phraseCalendarDate(bound.date) : bound.at}`
+		case 'before': return `until ${bound.date ? phraseCalendarDate(bound.date) : bound.at}`
 	}
+}
+
+/** A calendar date in words: "the 5th of June 2027", its clock after it ("the 5th of June 2027 at 18:00"). */
+function phraseCalendarDate(date: CalendarDate): string {
+	const text = `the ${ordinal(date.day)} of ${date.month.name ?? `month ${date.month.value}`} ${date.year}`
+	return date.time ? text + clockClause(date.time) : text
 }
 
 /** An emission cap within a period: "at most once", "up to twice", "up to 7 times". */

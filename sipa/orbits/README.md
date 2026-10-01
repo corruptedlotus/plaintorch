@@ -99,7 +99,9 @@ drop `limits` `*x @x <t >t` and `duration` `=<dur>`), and they are two hand-sync
   frameless daily clock. Throws `UnsupportedShapeError` for shapes not yet modelled (a set-op nested mid-chain,
   a non-clock time unit, a clock shape it cannot express) so the caller can fall back. A `%N` on a clock unit
   becomes the clock time's `step`: `h{9}%2` runs from 09:00 to the end of the day, `h{9}[m{10}%15]` to the end
-  of the hour, and a bare `h{9}[m%15]` streams within the 09:00 hour. Before the step it was dropped outright.
+  of the hour, and a bare `h{9}[m%15]` streams within the 09:00 hour. Before the step it was dropped outright. A
+  `<t`/`>t` bound that names a calendar date (`>2026/7/15`, written as `Z{…}` is) carries it as `Bound.date`, read
+  like an instant ("from the 15th of July 2026", `>15/Jul 2026`); an ISO bound, the older form, reads as written.
 - `scheduleRealizer.ts` — ScheduleModel → phrase, in **two registers over the same model**. Idioms cover the
   weekday of a month's week ("the 1st Monday of every month", "the first 2 Mondays of every month") and the weekdays of
   each week of a month, which a month counts from its first complete week ("every Monday, Wednesday, Friday, and Sunday
