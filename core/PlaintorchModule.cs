@@ -123,6 +123,11 @@ public sealed class PlaintorchModule : Module
 			preferences.AutoMaterialiseOptOut = store.Get(PreferenceKeys.AutoMaterialiseOptOut, preferences.AutoMaterialiseOptOut);
 			preferences.DefaultCalendar = store.Get(PreferenceKeys.DefaultCalendar, preferences.DefaultCalendar);
 		});
+		services.AddOptions<ReflectionPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
+		{
+			preferences.BaseDailyReflectives = store.Get(PreferenceKeys.BaseDailyReflectives, preferences.BaseDailyReflectives);
+			preferences.DailyReward = store.Get(PreferenceKeys.ReflectionDailyReward, preferences.DailyReward);
+		});
 		services.AddOptions<CalDavPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
 		{
 			preferences.FloatingRender = store.Get(PreferenceKeys.CalDavFloatingRender, preferences.FloatingRender);

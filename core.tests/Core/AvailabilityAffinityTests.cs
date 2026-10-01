@@ -105,6 +105,11 @@ public sealed class AvailabilityAffinityTests : VaultTestBase
 		var root = await Directives(api => api.CreateLunarAsync("Tide", cancellationToken: Ct));
 		var child = await Directives(api => api.CreateLunarAsync("Ebb", parentDirectiveId: root.Id, cancellationToken: Ct));
 		var sibling = await Directives(api => api.CreateLunarAsync("Calm", cancellationToken: Ct));
+		foreach (var lunar in new[] { root, child, sibling })
+		{
+			// Lunar directives start On Hold, which pauses reflection (PEP104).
+			await Directives(api => api.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Active), Ct));
+		}
 		await Directives(api => api.SetAvailabilityAsync(root.Id, availability, Ct));
 		var inherited = await Declaratives(api => api.CreateDecreeAsync(new DecreePlan("Evening reflection", DirectiveId: child.Id, Orbit: "d", Reflect: true), Ct));
 		var plain = await Declaratives(api => api.CreateDecreeAsync(new DecreePlan("Morning reflection", DirectiveId: sibling.Id, Orbit: "d", Reflect: true), Ct));

@@ -17,6 +17,7 @@ public sealed class PreferenceCatalog
 	{
 		var watcher = new WatcherPreferences();
 		var agenda = new AgendaPreferences();
+		var reflection = new ReflectionPreferences();
 		var calDav = new CalDavPreferences();
 
 		Descriptors =
@@ -48,6 +49,24 @@ public sealed class PreferenceCatalog
 				Kind = PreferenceKind.Enum,
 				DefaultRaw = UserPreferenceSerializer.Serialize(agenda.DefaultCalendar),
 				Options = Enum.GetNames<DeclarativeCalendar>(),
+			},
+			new PreferenceDescriptor
+			{
+				Key = PreferenceKeys.BaseDailyReflectives,
+				Label = "Base daily reflectives",
+				Group = "Lunar Reflection",
+				Description = "How many orbit-less reflect-decrees each Polaris cycle draws, on top of every reflect-decree whose orbit lands on its day.",
+				Kind = PreferenceKind.Integer,
+				DefaultRaw = UserPreferenceSerializer.Serialize(reflection.BaseDailyReflectives),
+			},
+			new PreferenceDescriptor
+			{
+				Key = PreferenceKeys.ReflectionDailyReward,
+				Label = "Daily reflection reward (Celestron)",
+				Group = "Lunar Reflection",
+				Description = "The Celestron granted once every reflective of a Polaris cycle is done.",
+				Kind = PreferenceKind.Integer,
+				DefaultRaw = UserPreferenceSerializer.Serialize(reflection.DailyReward),
 			},
 			new PreferenceDescriptor
 			{

@@ -135,6 +135,9 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 		var lunar = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IDirectiveApi>()
 			.CreateLunarAsync("Moon Law", cancellationToken: cancellationToken));
+		await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Active), cancellationToken));
 		var lunarDecree = await WithApi(api => api.CreateDecreeAsync(new DecreePlan(
 			"Evening reflection", DirectiveId: lunar.Id, Orbit: "d", Reflect: true), cancellationToken));
 

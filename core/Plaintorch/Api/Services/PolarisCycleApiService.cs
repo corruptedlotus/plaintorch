@@ -690,46 +690,6 @@ public sealed class PolarisCycleApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<IReadOnlyList<Reflective>> DrawReflectivesAsync(ReflectiveDrawRequest request, CancellationToken cancellationToken = default)
-	{
-		ArgumentNullException.ThrowIfNull(request);
-		if (request.Count < 1)
-		{
-			throw new ArgumentOutOfRangeException(nameof(request), "At least one reflective must be requested.");
-		}
-
-		var cycle = await ResolveOrStartCurrentAsync(request.PolarisCycleId, cancellationToken);
-
-		var existingCount = await context.Set<Reflective>()
-			.CountAsync(item => item.PolarisCycleId == cycle.Id, cancellationToken);
-
-		var created = new List<Reflective>();
-		for (var index = 0; index < request.Count; index++)
-		{
-			var reflective = new Reflective
-			{
-				Description = $"Reflective prompt {existingCount + index + 1} for {cycle.Title}",
-				PolarisCycleId = cycle.Id,
-				Executed = false,
-			};
-
-			context.Add(reflective);
-			created.Add(reflective);
-		}
-
-		await context.SaveChangesAsync(cancellationToken);
-		await auditLogService.WriteAsync(
-			"api",
-			"polaris.draw-reflectives",
-			subjectType: nameof(PolarisCycle),
-			subjectId: cycle.Id,
-			subjectTitle: cycle.Title,
-			details: new { count = created.Count },
-			cancellationToken: cancellationToken);
-		return created;
-	}
-
-	/// <inheritdoc />
 	public async Task<Reflective> UpdateReflectiveAsync(long reflectiveId, ReflectiveUpdate update, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(update);

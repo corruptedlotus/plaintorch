@@ -6,7 +6,7 @@ import { toast } from "../../host"
 
 /**
  * A single daily reflective. Its notch quick-switches the executed flag; its toplane surfaces the lunar
- * directive of the decree that generated it (absent for manual/drawn reflectives). While its affinity timeframe is
+ * directive of the decree that generated it (absent once that decree is deleted). While its affinity timeframe is
  * active the row wears the item flare, like an executive row (PEP100 patch 3).
  *
  * The record is owned by the aggregate that rendered it, so a committed toggle is announced upward with a

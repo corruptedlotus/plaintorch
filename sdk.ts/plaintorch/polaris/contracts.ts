@@ -13,6 +13,5 @@ export type {
 	PolarisExecutivePlanResult,
 	PolarisForecast,
 	Reflective,
-	ReflectiveDrawRequest,
 	ReflectiveUpdate
 } from "./models"

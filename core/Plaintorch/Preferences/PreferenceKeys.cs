@@ -16,6 +16,12 @@ public static class PreferenceKeys
 	/// <summary>Backs <see cref="AgendaPreferences.DefaultCalendar"/>.</summary>
 	public const string DefaultCalendar = "agenda.default-calendar";
 
+	/// <summary>Backs <see cref="ReflectionPreferences.BaseDailyReflectives"/>.</summary>
+	public const string BaseDailyReflectives = "reflection.base-daily-reflectives";
+
+	/// <summary>Backs <see cref="ReflectionPreferences.DailyReward"/>.</summary>
+	public const string ReflectionDailyReward = "reflection.daily-reward";
+
 	/// <summary>Backs <see cref="CalDavPreferences.FloatingRender"/>.</summary>
 	public const string CalDavFloatingRender = "caldav.floating-render";
 }

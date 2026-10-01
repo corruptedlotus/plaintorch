@@ -11,7 +11,7 @@ namespace Pleiades.Plaintorch.Materialization;
 /// <summary>
 /// Hardens declarative occurrences into persisted rows on the two non-interactive triggers (Strategy 1 / soft
 /// agenda, PEP100). <see cref="MaterializeForCycleAsync"/> runs at Polaris cycle begin and generates the
-/// cycle-bound reflectives of matching lunar reflect-decrees. <see cref="MaterializeForNowAsync"/> is the
+/// cycle-bound reflectives of lunar reflect-decrees (PEP104). <see cref="MaterializeForNowAsync"/> is the
 /// rolling harden-on-time pass: when time is treated as an interaction it advances each schedule's cursor to
 /// <c>now</c> and hardens the occurrences whose time has arrived, so history becomes durable rows while every
 /// still-future occurrence stays a live projection (see <see cref="AgendaProjectionService"/>).
@@ -29,13 +29,21 @@ public sealed class ProximityMaterializationService(
 	TimeframeAffinityResolver affinityResolver,
 	MaterializationPolicyOptions policy,
 	IOptionsSnapshot<AgendaPreferences> agendaPreferences,
+	IOptionsSnapshot<ReflectionPreferences> reflectionPreferences,
 	VaultAuditLogService auditLogService)
 {
 	/// <summary>
-	/// Generates the cycle-bound reflectives for a beginning cycle from its matching lunar reflect-decrees. The
-	/// cycle's other inclusions are projected on read, so nothing else is hardened here. Returns the number of
-	/// reflectives created.
+	/// Generates the cycle-bound reflectives for a beginning cycle (PEP104). Every live reflect-decree whose orbit
+	/// resolves onto the cycle's start day is taken, and <see cref="ReflectionPreferences.BaseDailyReflectives"/> more
+	/// are drawn at random from the live reflect-decrees that have no orbit. A reflect-decree is live when it is active
+	/// and its lunar hierarchy is active (<see cref="PlaintorchOrbitService.IsLunarHierarchyActiveAsync"/>). The cycle's
+	/// other inclusions are projected on read, so nothing else is hardened here. Returns the number of reflectives
+	/// created.
 	/// </summary>
+	/// <remarks>
+	/// A decree gets at most one reflective per cycle, so running this twice for the same cycle creates nothing new:
+	/// the orbit matches are already there, and pool decrees already reflected in the cycle count toward the draw.
+	/// </remarks>
 	public async Task<int> MaterializeForCycleAsync(PolarisCycle cycle, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(cycle);
@@ -45,33 +53,55 @@ public sealed class ProximityMaterializationService(
 		}
 
 		var startDay = DateOnly.FromDateTime(cycle.StartTime.Value.LocalDateTime);
-		var created = 0;
-
-		// Lunar reflect-decrees resolve at day granularity against the cycle's start day and bind their
-		// reflective to the cycle. Seeking advances the schedule state so the same occurrence is not re-emitted;
-		// the rolling harden-on-time pass deliberately leaves reflect-decrees alone, so cycle begin is the only
-		// place their cursor advances.
 		var reflectDecrees = await context.Decrees
 			.IgnoreAutoIncludes()
-			.Where(decree => decree.Status == DecreeStatus.Active && decree.Orbit != null && decree.Reflect)
+			.Where(decree => decree.Status == DecreeStatus.Active && decree.Reflect)
 			.ToListAsync(cancellationToken);
+		var reflectedDecreeIds = (await context.Set<Reflective>()
+				.Where(item => item.PolarisCycleId == cycle.Id && item.DecreeId != null)
+				.Select(item => item.DecreeId!)
+				.ToListAsync(cancellationToken))
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+		var selected = new List<Decree>();
+		var pool = new List<Decree>();
 		foreach (var decree in reflectDecrees)
 		{
-			if (!await orbitService.IsInLunarHierarchyAsync(decree.DirectiveId, cancellationToken))
+			if (!await orbitService.IsLunarHierarchyActiveAsync(decree.DirectiveId, cancellationToken))
 			{
 				continue;
 			}
 
-			var occurrences = await orbitService.SeekOccurrencesAsync(decree, decree.Orbit!, startDay.AddDays(1), cancellationToken);
-			if (!occurrences.Any(occurrence => occurrence.Date <= startDay && startDay < occurrence.PeriodEndExclusive))
+			if (string.IsNullOrWhiteSpace(decree.Orbit))
 			{
+				pool.Add(decree);
 				continue;
 			}
 
-			var reflectiveExists = await context.Set<Reflective>()
-				.AnyAsync(item => item.PolarisCycleId == cycle.Id && item.DecreeId == decree.Id, cancellationToken);
-			if (reflectiveExists)
+			// Orbit reflect-decrees resolve at day granularity against the cycle's start day. Seeking advances the
+			// schedule state so the same occurrence is not re-emitted; the rolling harden-on-time pass deliberately
+			// leaves reflect-decrees alone, so cycle begin is the only place their cursor advances. A paused decree is
+			// skipped above without seeking, and the days it missed are never generated afterwards.
+			var occurrences = await orbitService.SeekOccurrencesAsync(decree, decree.Orbit, startDay.AddDays(1), cancellationToken);
+			if (occurrences.Any(occurrence => occurrence.Date <= startDay && startDay < occurrence.PeriodEndExclusive))
+			{
+				selected.Add(decree);
+			}
+		}
+
+		var drawCount = Math.Max(0, reflectionPreferences.Value.BaseDailyReflectives)
+			- pool.Count(decree => reflectedDecreeIds.Contains(decree.Id));
+		if (drawCount > 0)
+		{
+			var candidates = pool.Where(decree => !reflectedDecreeIds.Contains(decree.Id)).ToArray();
+			Random.Shared.Shuffle(candidates);
+			selected.AddRange(candidates.Take(drawCount));
+		}
+
+		var created = 0;
+		foreach (var decree in selected)
+		{
+			if (!reflectedDecreeIds.Add(decree.Id))
 			{
 				continue;
 			}
