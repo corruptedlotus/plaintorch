@@ -86,12 +86,6 @@ public sealed class PolarisCycleModule : Module
 		cycles.MapPost("/{polarisCycleId}/decrees", async (string polarisCycleId, PolarisDecreeAdd request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.AddDecreeExecutiveAsync(request, polarisCycleId, cancellationToken)));
 
-		cycles.MapPost("/{polarisCycleId}/reflectives/draw", async (string polarisCycleId, ReflectiveDrawRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.DrawReflectivesAsync(request with { PolarisCycleId = polarisCycleId }, cancellationToken)));
-
-		cycles.MapPost("/current/reflectives/draw", async (ReflectiveDrawRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.DrawReflectivesAsync(request with { PolarisCycleId = null }, cancellationToken)));
-
 		var executives = endpoints.MapEnrichedGroup("/api/executives");
 		executives.MapPut("/{executiveId:long}", async (long executiveId, ExecutiveUpdate request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateExecutiveAsync(executiveId, request, cancellationToken)));

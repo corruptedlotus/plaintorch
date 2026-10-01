@@ -114,24 +114,25 @@ public sealed class IncentiveDeletionTests : VaultTestBase
 	[Fact]
 	public async Task Deleting_a_decree_keeps_its_ended_reflectives_and_drops_its_live_ones()
 	{
-		// A decree's reflectives are work records too: they used to block its delete outright.
+		// A decree's reflectives are work records too: they used to block its delete outright. Reflectives exist only from
+		// a cycle's begin (PEP104), so the orbit-less reflect-decree below is drawn into each cycle as it begins.
+		var lunar = await Vault.WithScopeAsync(services => services.GetRequiredService<IDirectiveApi>()
+			.CreateLunarAsync("Moon Law", cancellationToken: Token));
+		await Vault.WithScopeAsync(services => services.GetRequiredService<IDirectiveApi>()
+			.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Active), Token));
 		var decree = await Vault.WithScopeAsync(services => services.GetRequiredService<IDeclarativeApi>()
-			.CreateDecreeAsync(new DecreePlan("Reflect", Reflect: true), Token));
-		async Task<long> DrawAsync(string? cycleId)
-		{
-			var reflective = Assert.Single(await Polaris(api => api.DrawReflectivesAsync(new ReflectiveDrawRequest(cycleId), Token)));
-			await Vault.QueryAsync(context => context.Set<Reflective>()
-				.Where(item => item.Id == reflective.Id)
-				.ExecuteUpdateAsync(setters => setters.SetProperty(item => item.DecreeId, decree.Id), Token));
-			return reflective.Id;
-		}
+			.CreateDecreeAsync(new DecreePlan("Reflect", DirectiveId: lunar.Id, Reflect: true), Token));
+		Task<long> ReflectiveOfAsync(string cycleId)
+			=> Vault.QueryAsync(context => context.Set<Reflective>()
+				.Where(item => item.PolarisCycleId == cycleId && item.DecreeId == decree.Id)
+				.Select(item => item.Id)
+				.SingleAsync(Token));
 
 		var past = await Polaris(api => api.StartNewAsync(DateTimeOffset.Now.AddDays(-3), cancellationToken: Token));
-		var ended = await DrawAsync(past.Id);
+		var ended = await ReflectiveOfAsync(past.Id);
 		await Polaris(api => api.EndAsync(past.Id, DateTimeOffset.Now.AddDays(-3).AddHours(2), Token));
-		var active = await DrawAsync(null);
-		var forecastCycle = await Polaris(api => api.PlanAsync(DateOnly.FromDateTime(DateTime.Today), 2, cancellationToken: Token));
-		var forecast = await DrawAsync(forecastCycle.Id);
+		var current = await Polaris(api => api.StartNewAsync(cancellationToken: Token));
+		var active = await ReflectiveOfAsync(current.Id);
 
 		await Vault.WithScopeAsync(services => services.GetRequiredService<IDeclarativeApi>().DeleteDecreeAsync(decree.Id, Token));
 
@@ -139,6 +140,6 @@ public sealed class IncentiveDeletionTests : VaultTestBase
 		var kept = await Vault.QueryAsync(context => context.Set<Reflective>().AsNoTracking().FirstOrDefaultAsync(item => item.Id == ended, Token));
 		Assert.NotNull(kept);
 		Assert.Null(kept.DecreeId);
-		Assert.False(await Vault.QueryAsync(context => context.Set<Reflective>().AnyAsync(item => item.Id == active || item.Id == forecast, Token)));
+		Assert.False(await Vault.QueryAsync(context => context.Set<Reflective>().AnyAsync(item => item.Id == active, Token)));
 	}
 }

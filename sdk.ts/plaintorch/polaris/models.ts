@@ -131,11 +131,14 @@ export interface Reflective {
 	polarisCycleId: string
 	polarisCycle?: PolarisCycle | undefined
 	executed: boolean
-	/** Optional time of day (PEP100); further reflective behavior belongs to PEP104. */
+	/** Optional time of day (PEP100). */
 	time: string | undefined
-	/** Originating decree when generated through lunar reflection (PEP100). */
+	/**
+	 * Originating decree when generated through lunar reflection (PEP104): its orbit landed on the cycle's day, or the
+	 * cycle drew it from the orbit-less pool. Executing the reflective also grants that decree's per-run reward.
+	 */
 	decreeId: string | undefined
-	/** Originating decree, carrying the relevant lunar directive when served. Absent for manual/drawn reflectives. */
+	/** Originating decree, carrying the relevant lunar directive when served. Absent once the decree is deleted. */
 	decree?: Decree | undefined
 	/**
 	 * Preferred timeframe for this reflective (affinity, PEP100 patch). Seeded at cycle begin through auto-inclusion:
@@ -188,13 +191,6 @@ export interface ExecutiveUpdate {
 	affinityTimeframeId?: number | null | undefined
 	/** Relocates the executive to another Polaris cycle (successor to moving a bound attentive, PEP111). */
 	moveToPolarisCycleId?: string | undefined
-}
-
-export interface ReflectiveDrawRequest {
-	polarisCycleId?: string | undefined
-	count?: number
-	includeRoutine?: boolean
-	includeRandom?: boolean
 }
 
 export interface ReflectiveUpdate {

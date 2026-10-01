@@ -262,6 +262,43 @@ public sealed class PlaintorchOrbitService(
 	}
 
 	/// <summary>
+	/// Determines whether lunar reflection is live for a directive lineage (PEP104): the lineage belongs to a Moonlight
+	/// hierarchy (see <see cref="IsInLunarHierarchyAsync"/>) and every lunar directive on it, the directive itself and
+	/// each ancestor, is <see cref="LunarDirectiveStatus.Active"/>. An On Hold or Stale lunar directive pauses reflection
+	/// for its whole subtree; the walk never looks at stellar directives' own states.
+	/// </summary>
+	public async Task<bool> IsLunarHierarchyActiveAsync(string? directiveId, CancellationToken cancellationToken = default)
+	{
+		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var foundLunar = false;
+		var currentId = directiveId;
+		while (!string.IsNullOrWhiteSpace(currentId) && visited.Add(currentId))
+		{
+			var directive = await context.Directives
+				.AsNoTracking()
+				.FirstOrDefaultAsync(item => item.Id == currentId, cancellationToken);
+			if (directive is null)
+			{
+				break;
+			}
+
+			if (directive is LunarDirective lunar)
+			{
+				if (lunar.Status != LunarDirectiveStatus.Active)
+				{
+					return false;
+				}
+
+				foundLunar = true;
+			}
+
+			currentId = directive.ParentDirectiveId;
+		}
+
+		return foundLunar;
+	}
+
+	/// <summary>
 	/// Loads the declarative's persisted schedule state, lazily creating one (anchored at
 	/// <paramref name="fallbackEpoch"/>) when the orbit has never been resolved before.
 	/// The lazy row is what pins the schedule's random seed, so previews stay deterministic.

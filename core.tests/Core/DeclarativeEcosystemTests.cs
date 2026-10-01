@@ -305,12 +305,26 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 
+		// Two orbit-less reflect-decrees under an active lunar directive: a cycle draws both as it begins (PEP104).
+		var lunar = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.CreateLunarAsync("Moon Law", cancellationToken: cancellationToken));
+		await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Active), cancellationToken));
+		foreach (var title in new[] { "Gratitude", "Dreams" })
+		{
+			await WithApi(api => api.CreateDecreeAsync(new DecreePlan(title, DirectiveId: lunar.Id, Reflect: true), cancellationToken));
+		}
+
 		var cycle = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
 			.StartNewAsync(cancellationToken: cancellationToken));
-		var reflectives = await Vault.WithScopeAsync(services => services
-			.GetRequiredService<IPolarisCycleApi>()
-			.DrawReflectivesAsync(new ReflectiveDrawRequest(Count: 2), cancellationToken));
+		var reflectives = await Vault.QueryAsync(context => context.Set<Reflective>()
+			.AsNoTracking()
+			.Where(item => item.PolarisCycleId == cycle.Id)
+			.ToListAsync(cancellationToken));
+		Assert.Equal(2, reflectives.Count);
 
 		await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
