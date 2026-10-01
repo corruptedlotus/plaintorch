@@ -1,8 +1,8 @@
 import { component, css, html, property } from "@a11d/lit"
 import { Executive, ExecutiveIncentive, isDecreeIncentive } from "@pleiades/sdk"
 import { EntityItem } from "./EntityItem"
-import { ActiveTimeframesRef, ExecutiveModal, tooltip, type ContextMenuSpec } from ".."
-import { polarisActivityMenu } from "./polarisActivity"
+import { ActiveTimeframesRef, ExecutiveModal, tooltip, type ContextMenuSpec, type EditableTimeUnit } from ".."
+import { polarisActivityMenu, setPolarisActivityEstimation } from "./polarisActivity"
 
 /**
  * A Polaris executive as a list row — the single successor to the former ObjectiveItemExecutive and
@@ -11,6 +11,9 @@ import { polarisActivityMenu } from "./polarisActivity"
  * chip where a bare incentive would show its Celestron. A decree-backed executive carries a small decree glyph
  * so the two kinds still read apart. While its affinity timeframe is active the row wears the item flare, a side
  * glass glow in the flare accent (PEP100 patch 3).
+ *
+ * With {@link planning} on, the notch is the executive's estimate instead, edited in place — for surfaces that plan
+ * days rather than work them.
  *
  * A committed change is announced upward with a bubbling `updateRequest` event so the hosting cycle reconciles.
  */
@@ -24,6 +27,13 @@ export class IncentiveItemExecutive extends EntityItem<ExecutiveIncentive> {
 		}
 	}) executive?: Executive
 
+	/**
+	 * Planning mode: the notch stops reading out the allocation's state and becomes the executive's estimate — its
+	 * total planned time — edited in place, since planning a day is setting how long each thing gets. The full
+	 * allocation (minimum, maximum, tracked time) stays one right-click away, under Time Management.
+	 */
+	@property({ type: Boolean, reflect: true }) planning = false
+
 	/** The timeframes active right now — the one listing the active-timeframe chips read too. */
 	private readonly activeTimeframes = new ActiveTimeframesRef(this)
 
@@ -33,11 +43,14 @@ export class IncentiveItemExecutive extends EntityItem<ExecutiveIncentive> {
 
 	/**
 	 * An open executive flares while its affinity timeframe is active (PEP100 patch 3): the row is where its work
-	 * belongs right now. A done one never does — there is nothing left to point at.
+	 * belongs right now. A done one never does — there is nothing left to point at — and neither does a row planning a
+	 * day or recording an ended one (non-interactive): "right now" is the worked day's business.
 	 */
 	protected override get flaring() {
 		const executive = this.executive
 		return !!executive
+			&& this.interactive
+			&& !this.planning
 			&& !executive.executed
 			&& this.activeTimeframes.isActive(executive.affinityTimeframeId ?? executive.affinityTimeframe?.id)
 	}
@@ -56,6 +69,12 @@ export class IncentiveItemExecutive extends EntityItem<ExecutiveIncentive> {
 
 			.decree-indicator {
 				opacity: .7;
+			}
+
+			/* The estimate stands where the allocation chip would, at the chip's scale. */
+			.estimate {
+				font-size: 1.5em;
+				font-weight: 400;
 			}
 		`
 	}
@@ -96,17 +115,48 @@ export class IncentiveItemExecutive extends EntityItem<ExecutiveIncentive> {
 	}
 
 	protected override async notchAction() {
-		if (!this.executive) return
+		// In planning mode the notch is an editor of its own; a press there edits the estimate, nothing more.
+		if (!this.executive || this.planning) return
 		new ExecutiveModal(this.executive, executive => {
 			this.executive = executive
 			this.dispatchEvent(new CustomEvent<void>('updateRequest', { bubbles: true, composed: true }))
 		}).open()
 	}
 
+	/** Commits an estimate edited in the planning notch. An unchanged value writes nothing. */
+	private async commitEstimation(e: Event) {
+		const executive = this.executive
+		const estimation = (e.target as EditableTimeUnit).value ?? undefined
+		if (!executive || estimation === (executive.estimation ?? undefined)) return
+
+		const updated = await setPolarisActivityEstimation(executive, estimation)
+		if (!updated) {
+			// Refused: draw the estimate it still has, not the one typed.
+			this.requestUpdate()
+			return
+		}
+
+		this.executive = updated
+		this.dispatchEvent(new CustomEvent<void>('updateRequest', { bubbles: true, composed: true }))
+	}
+
 	protected override get notchTemplate() {
+		const executive = this.executive
+		if (this.planning) {
+			return html`
+				<p7t-editable-time-unit
+					class='estimate'
+					nullable
+					accent
+					${tooltip('Estimate')}
+					.value=${executive?.estimation}
+					@change=${(e: Event) => this.commitEstimation(e)}>
+				</p7t-editable-time-unit>
+			`
+		}
+
 		// The allocation chip owns the whole state read — resolved, no-allocation, time-left, active, overworked —
 		// and its progress tooltip.
-		const executive = this.executive
 		return html`
 			<p7t-allocation-item
 				?executed=${!!executive?.executed}

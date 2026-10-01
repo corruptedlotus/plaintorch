@@ -1,5 +1,6 @@
 import { Component, component, css, html, nothing, property, query, state } from '@a11d/lit'
 import { IconName } from '../PleiadesIcon'
+import { confirmAction, type ConfirmationOptions } from './ConfirmationBubble'
 
 /** How prominently the trigger floats: not at all, as the main FAB, or as a smaller secondary one beside it. */
 export type ExpandingActionsSize = false | 'main' | 'secondary'
@@ -10,6 +11,8 @@ export interface ExpandingAction {
 	readonly icon: IconName
 	readonly label: string
 	readonly run: () => void | Promise<void>
+	/** Asks before running — a confirmation bubble beside the choice, the panel staying open until it is answered. */
+	readonly confirm?: ConfirmationOptions
 }
 
 /**
@@ -152,7 +155,7 @@ export class ExpandingActions extends Component {
 			</p7t-button>
 			<div class='panel' popover='auto' ?data-stacked=${this.stacked}>
 				${this.actions.map(action => html`
-					<p7t-button ghost class='choice' icon=${action.icon} @click=${() => this.choose(action)}>
+					<p7t-button ghost class='choice' icon=${action.icon} @click=${(e: Event) => this.choose(action, e)}>
 						${action.label}
 					</p7t-button>
 				`)}
@@ -172,8 +175,16 @@ export class ExpandingActions extends Component {
 		e.stopPropagation()
 	}
 
-	private async choose(action: ExpandingAction) {
-		this.panelElement.hidePopover()
+	/** Asks first when the action wants it, the panel staying open meanwhile; then closes and runs. */
+	private async choose(action: ExpandingAction, event: Event) {
+		if (action.confirm && !await confirmAction(event, action.confirm)) {
+			return
+		}
+
+		if (this.panelElement.matches(':popover-open')) {
+			this.panelElement.hidePopover()
+		}
+
 		await action.run()
 	}
 

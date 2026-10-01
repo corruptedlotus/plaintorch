@@ -132,6 +132,24 @@ export class ConfirmationBubble extends InteractionBubbleBase<boolean, Confirmat
  */
 export const confirmAction = (ConfirmationBubble.prompt<ConfirmationBubble>).bind(ConfirmationBubble)
 
+/** Asks before deleting something: the danger tint and a "Delete" action under the bin glyph. */
+export function deleteConfirmation(message: string | HTMLTemplateResult): ConfirmationOptions {
+	return { message, action: 'Delete', actionIcon: 'lucide:trash-2', severity: 'danger' }
+}
+
+/**
+ * Asks before taking something out of where it is (an Onrush, a Polaris cycle). Danger by default, for a removal that
+ * loses something on the way; `default` for one the user can simply take back by adding it again.
+ */
+export function removeConfirmation(message: string | HTMLTemplateResult, severity: ConfirmationSeverity = 'danger'): ConfirmationOptions {
+	return { message, action: 'Remove', actionIcon: 'lucide:x', severity }
+}
+
+/** Asks before concluding a running Onrush or Polaris cycle, under the concluded state's glyph. */
+export function concludeConfirmation(message: string | HTMLTemplateResult): ConfirmationOptions {
+	return { message, action: 'Conclude', actionIcon: 'state-archived' }
+}
+
 declare global {
 	interface HTMLElementTagNameMap {
 		'p7t-confirmation-bubble': ConfirmationBubble

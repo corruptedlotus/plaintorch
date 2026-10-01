@@ -1,7 +1,7 @@
 import { component, css, html, nothing } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
 import { DependencyEndpointKind, Objective, ObjectiveStatus, OnrushSprint } from "@pleiades/sdk"
-import { core, DerivedRef, tooltip, TransferController } from ".."
+import { concludeConfirmation, confirmAction, core, DerivedRef, tooltip, TransferController } from ".."
 import { endpointKey, immediatePrerequisites, unresolvedPrerequisites } from "../canvas/graphModel"
 import { createChild, SuggestModalBase } from "../../host"
 
@@ -216,7 +216,7 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 			<p7t-value-progress icon='starfire' value=${this.currentStarfire} max=${this.maxStarfire}>
 				<span>Day ${currentDay}</span>
 			</p7t-value-progress>
-			<p7t-button @click=${() => this.conclude()}>Conclude</p7t-button>
+			<p7t-button @click=${(e: Event) => this.conclude(e)}>Conclude</p7t-button>
 		`
 	}
 
@@ -233,8 +233,10 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 		core.onrush.startNew().then(sprint => this.data = sprint)
 	}
 
-	private conclude() {
+	/** Concludes the running sprint now, once confirmed beside the button. */
+	private async conclude(e: Event) {
 		if (!this.data) return
+		if (!await confirmAction(e, concludeConfirmation(`Conclude the Onrush "${this.data.title}"? It ends now.`)) || !this.data) return
 		core.onrush.end(this.data.id).then(sprint => {
 			if (!!sprint) this.data = undefined
 		})

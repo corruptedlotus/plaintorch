@@ -1,5 +1,5 @@
 import { typeNameOf } from '@pleiades/sdk'
-import { core, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec } from '..'
+import { core, deleteConfirmation, navigateToEntity, removeConfirmation, type ContextMenuEntry, type ContextMenuSpec } from '..'
 import { EntityEditModal } from './EntityEditModal'
 import { toast } from '../../host'
 
@@ -17,7 +17,8 @@ const deletableTypes = new Set(['Objective', 'StellarDirective', 'LunarDirective
  *
  * Every entity offers to be edited and to open its note; an objective that sits in an Onrush offers to leave it; and
  * any kind the SDK can delete offers deletion, set apart below a separator and in the destructive colour. A kind
- * with no delete call simply omits that row rather than offering one that would silently do nothing.
+ * with no delete call simply omits that row rather than offering one that would silently do nothing. Leaving the
+ * Onrush and deleting both ask first.
  */
 export function entityContextMenu(entity: InteractableEntity): ContextMenuSpec {
 	const typeName = typeNameOf(entity)
@@ -27,11 +28,22 @@ export function entityContextMenu(entity: InteractableEntity): ContextMenuSpec {
 	]
 
 	if (typeName === 'Objective' && (entity as { onrushSprintId?: string }).onrushSprintId) {
-		entries.push({ label: 'Remove from Onrush', icon: 'onrush', run: () => removeFromOnrush(entity.id) })
+		entries.push({
+			label: 'Remove from Onrush',
+			icon: 'onrush',
+			confirm: removeConfirmation(`Remove "${entity.title}" from its Onrush?`, 'default'),
+			run: () => removeFromOnrush(entity.id)
+		})
 	}
 
 	if (canDeleteEntity(typeName)) {
-		entries.push({ separator: true }, { label: 'Delete', icon: 'lucide:trash-2', danger: true, run: () => deleteEntity(entity) })
+		entries.push({ separator: true }, {
+			label: 'Delete',
+			icon: 'lucide:trash-2',
+			danger: true,
+			confirm: deleteConfirmation(`Delete "${entity.title}"?`),
+			run: () => deleteEntity(entity)
+		})
 	}
 
 	return { title: entity.title, entries }

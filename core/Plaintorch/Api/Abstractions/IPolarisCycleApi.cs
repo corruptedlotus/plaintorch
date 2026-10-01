@@ -9,9 +9,27 @@ namespace Pleiades.Plaintorch.Api.Abstractions;
 public interface IPolarisCycleApi
 {
 	/// <summary>
-	/// Plans a forecast Polaris cycle.
+	/// Plans a forecast Polaris cycle for the day <paramref name="daysAhead"/> days after
+	/// <paramref name="forecastReference"/> — zero plans the reference day itself. A day holds one cycle, so planning a
+	/// day that already has one is refused.
 	/// </summary>
+	/// <exception cref="InvalidOperationException">The day already has a Polaris cycle.</exception>
 	Task<PolarisCycle> PlanAsync(DateOnly forecastReference, int daysAhead, string? body = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Lists the Polaris cycles of the days from <paramref name="from"/> through <paramref name="to"/> (unbounded when
+	/// omitted) — forecast, active and ended alike — in day order, each with its executives and reflectives as
+	/// <see cref="GetAsync"/> serves them. The day of a cycle is <see cref="PolarisCycle.Day"/>.
+	/// </summary>
+	Task<IReadOnlyList<PolarisCycle>> ListByDayAsync(DateOnly from, DateOnly? to = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Deletes a Polaris cycle that has not begun — a forecast — together with its plan: its executives and reflectives.
+	/// The objectives and decrees behind them stay, in whatever state they have. A begun cycle, active or ended, is the
+	/// record of a worked day and is never deleted.
+	/// </summary>
+	/// <exception cref="InvalidOperationException">The cycle does not exist, or it has begun.</exception>
+	Task DeleteAsync(string polarisCycleId, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Begins a Polaris cycle.

@@ -5,6 +5,7 @@ import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 import type { EditablePart } from "../editing/EditableDataLink"
 import type { EditableTimeUnit } from "../editing/EditableTimeUnit"
 import { createChild, ModalBase, toast } from "../../host"
+import { offerObjectiveDone } from "./polarisActivity"
 
 type Allocation = 'elapsed' | 'estimation' | 'minimum' | 'maximum'
 
@@ -291,11 +292,19 @@ export class ExecutiveEditor extends Component {
 		this.applyUpdate({ [allocation]: value ?? null } as ExecutiveUpdate)
 	}
 
-	private commitExecuted(e: Event) {
-		const executed = (e.target as EditablePart<boolean>).value
+	/** Toggles the executed flag; marked done, it then offers beside the switch to mark the objective done too. */
+	private async commitExecuted(e: Event) {
+		const toggle = e.target as EditablePart<boolean>
+		const executed = toggle.value
 		if (executed === undefined || executed === this.executive?.executed) return
 
-		this.applyUpdate({ executed })
+		if (!await this.applyUpdate({ executed }) || !executed) return
+
+		const objective = await offerObjectiveDone(this.executive!, toggle)
+		if (objective) {
+			this.executive = { ...this.executive!, incentive: objective }
+			this.notifyChange()
+		}
 	}
 
 	private async commitAffinity(e: Event) {
@@ -356,14 +365,15 @@ export class ExecutiveEditor extends Component {
 		this.notifyChange()
 	}
 
-	private async applyUpdate(update: ExecutiveUpdate) {
+	/** Persists an executive edit and folds the answer back in. Resolves to whether the core accepted it. */
+	private async applyUpdate(update: ExecutiveUpdate): Promise<boolean> {
 		const executive = this.executive
-		if (!executive) return
+		if (!executive) return false
 
 		const updated = await core.polaris.updateExecutive(executive.id, update)
 		if (!updated) {
 			toast('Failed to update executive.', 'error')
-			return
+			return false
 		}
 
 		// The update response carries no navigation properties, so the known incentive and affinity timeframe are
@@ -375,6 +385,7 @@ export class ExecutiveEditor extends Component {
 			affinityTimeframe: updated.affinityTimeframe ?? executive.affinityTimeframe,
 		}
 		this.notifyChange()
+		return true
 	}
 
 	private notifyChange() {

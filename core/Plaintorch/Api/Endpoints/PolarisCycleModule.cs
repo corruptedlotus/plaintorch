@@ -35,6 +35,9 @@ public sealed class PolarisCycleModule : Module
 		cycles.MapGet("/forecasts", async (IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListForecastsAsync(cancellationToken)));
 
+		cycles.MapGet("/days", async (DateOnly from, DateOnly? to, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.ListByDayAsync(from, to, cancellationToken)));
+
 		cycles.MapGet("/{polarisCycleId}", async (string polarisCycleId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 		{
 			var cycle = await api.GetAsync(polarisCycleId, cancellationToken);
@@ -43,6 +46,12 @@ public sealed class PolarisCycleModule : Module
 
 		cycles.MapPut("/{polarisCycleId}", async (string polarisCycleId, PolarisCycleUpdate request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateAsync(polarisCycleId, request, cancellationToken)));
+
+		cycles.MapDelete("/{polarisCycleId}", async (string polarisCycleId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+		{
+			await api.DeleteAsync(polarisCycleId, cancellationToken);
+			return Results.NoContent();
+		});
 
 		cycles.MapPost("/plan", async (PolarisCyclePlanRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 		{

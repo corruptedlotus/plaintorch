@@ -3,7 +3,7 @@ import { EntityBanner } from './EntityBanner'
 import { DependencyEndpointKind, Objective, ObjectiveUpdate, PolarisCycle } from '@pleiades/sdk'
 import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
 import { OnrushSprint } from "@pleiades/sdk"
-import { addObjectiveToPolaris, core, IconItem, IconName, isObjectiveInCycle, followRenamedNote, objectiveStatusDescriptors, SelectCollegeModal, SelectStatusModal } from ".."
+import { addObjectiveToPolaris, confirmAction, core, IconItem, IconName, isObjectiveInCycle, followRenamedNote, objectiveStatusDescriptors, removeConfirmation, SelectCollegeModal, SelectStatusModal } from ".."
 import { createChild, SuggestModalBase, toast } from '../../host'
 
 @component('p7t-objective-banner')
@@ -38,8 +38,9 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 		return !!this.entity && isObjectiveInCycle(this.entity.id, this.activePolaris)
 	}
 
-	pickOnrush = () => {
-		new AddToOnrushModal(this).open()
+	/** Opens the Onrush picker; `button` is where a removal it leads to is confirmed, once the picker has closed. */
+	pickOnrush = (button?: HTMLElement) => {
+		new AddToOnrushModal(this, button).open()
 	}
 
 	addToPolaris = async () => {
@@ -144,7 +145,7 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 
 		return html`
 			<p7t-editable-starfire ${this.binder.bind('celestronValue')}></p7t-editable-starfire>
-			<p7t-button large icon='onrush' @click=${() => this.pickOnrush()}>
+			<p7t-button large icon='onrush' @click=${(e: Event) => this.pickOnrush(e.currentTarget as HTMLElement)}>
 				${!onrush ? html`<span>Add to Onrush</span>` : html`
 					<span>${onrushText}</span>
 					<span class='switcher'>Reassign</span>
@@ -166,7 +167,7 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 }
 
 class AddToOnrushModal extends SuggestModalBase<OnrushSprint | null> {
-	constructor(protected readonly objectiveBanner: ObjectiveBanner) {
+	constructor(protected readonly objectiveBanner: ObjectiveBanner, private readonly button?: HTMLElement) {
 		super()
 	}
 
@@ -186,8 +187,18 @@ class AddToOnrushModal extends SuggestModalBase<OnrushSprint | null> {
 		createChild(el, 'small', { text: (sprint.id === 'x0000' ? 'In-Planning' : 'Active') + ' Onrush' })
 	}
 
+	/** Moves the objective to the chosen sprint; "No Onrush" takes it out of its sprint, which is confirmed first. */
 	override async onChooseSuggestion(item: OnrushSprint | null) {
-		const objectiveId = this.objectiveBanner.entity!.id
+		const objective = this.objectiveBanner.entity!
+		if (!item && (objective.onrushSprintId || objective.onrushSprint)) {
+			// The picker is gone by now, so the question is asked where it was opened from: the banner's Onrush button.
+			const removing = removeConfirmation(`Remove "${objective.title}" from its Onrush?`, 'default')
+			if (!await confirmAction(this.button ?? this.objectiveBanner, removing)) {
+				return
+			}
+		}
+
+		const objectiveId = objective.id
 		const succeeded = await core.repos.objectives.mutate(objectiveId, async () => !item
 			? await core.objectives.removeFromOnrush(objectiveId)
 			: await core.objectives.addToOnrush(objectiveId, item.id))
