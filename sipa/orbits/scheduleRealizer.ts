@@ -138,7 +138,7 @@ function commonTail(left: string, right: string): string | null {
 function outerRun(outer: Frame, model: SimpleSchedule): string {
 	const count = outer.repeat!
 	const unit = UNIT_WORD[outer.unit]
-	if ((outer.interval ?? 1) <= 1) return `for ${count} ${unit}${count > 1 ? 's' : ''}`
+	if (outer.interval === undefined) return `for ${count} ${unit}${count > 1 ? 's' : ''}`
 	const single = model.frames.length === 1 && !model.time
 	if (single) return timesWord(count)
 	return count === 1 ? `for one such ${unit}` : `for ${count} such ${unit}s`
@@ -182,7 +182,7 @@ function shortBranches(model: SimpleSchedule): string {
 /** The outermost frame's run, terse: "×10w" for ten weeks, "×3" for three single occurrences stepped by `%N`. */
 function shortOuterRun(outer: Frame, model: SimpleSchedule): string {
 	const single = model.frames.length === 1 && !model.time
-	return (outer.interval ?? 1) > 1 && single ? `×${outer.repeat}` : `×${outer.repeat}${SHORT_DUR[outer.unit]}`
+	return outer.interval !== undefined && single ? `×${outer.repeat}` : `×${outer.repeat}${SHORT_DUR[outer.unit]}`
 }
 
 /** A set-operation operand, parenthesised when it is itself compound so the grouping stays legible. */
@@ -219,7 +219,7 @@ function shortFrames(frames: Frame[]): string {
 	// A single selected frame over plain cadence: render just that selection. A unit-prefixed value ("w1") or
 	// a day-of-month ("1st") stands alone, but a day-of-year ("d1") would be misread as a day-of-month, so it
 	// takes a "/cadence" tag to disambiguate ("d1 /y").
-	const selected = kept.filter(frame => frame.selection.kind !== 'all' || (frame.interval ?? 1) > 1)
+	const selected = kept.filter(frame => frame.selection.kind !== 'all' || frame.interval !== undefined)
 	if (selected.length === 1) {
 		const only = selected[0]!
 		const payload = shortFrame(only)
@@ -238,7 +238,7 @@ function shortFrames(frames: Frame[]): string {
 function shortWeekly(week: Frame, day: Frame): string {
 	const days = day.selection.kind === 'all' ? 'daily' : shortSelection(day)
 	if (week.selection.kind === 'all') {
-		const interval = week.interval && week.interval > 1 ? week.interval : 1
+		const interval = week.interval ?? 1
 		return interval === 1 ? days : `${days} /${interval}w`
 	}
 	return `${shortWeekValues(week)} ${days}`
@@ -266,11 +266,11 @@ function shortWeekValues(week: Frame): string {
 
 function shortDate(frames: Frame[]): string | null {
 	const day = frames[frames.length - 1]!
-	if (!isDayOfMonth(day) || (day.interval && day.interval > 1)) return null
+	if (!isDayOfMonth(day) || day.interval !== undefined) return null
 	const dayValue = onlyValue(day.selection)
 	if (!dayValue) return null
 	const month = frames[frames.length - 2]
-	if (!month || month.unit !== 'M') return null
+	if (!month || month.unit !== 'M' || month.interval !== undefined) return null
 	const monthValue = onlyValue(month.selection)
 	if (!monthValue?.name) return null
 	if (!frames.slice(0, frames.length - 2).every(frame => frame.unit === 'y' && frame.selection.kind === 'all')) return null
@@ -279,7 +279,7 @@ function shortDate(frames: Frame[]): string | null {
 }
 
 function shortFrame(frame: Frame, inner = false): string {
-	const interval = frame.interval && frame.interval > 1 ? frame.interval : undefined
+	const interval = frame.interval
 	if (frame.selection.kind === 'all') {
 		const cadence = interval ? `/${interval}${SHORT_DUR[frame.unit]}` : SHORT_CADENCE[frame.unit]
 		// An inner frame's `*x` under a continuous `%N`: the first x of its on-phase values.
@@ -306,9 +306,9 @@ function shortSelection(frame: Frame): string {
 		if (sel.start.value === sel.end.value) return dayOfMonth ? ordinal(sel.start.value) : `${prefix}${sel.start.value}`
 		return dayOfMonth ? `${ordinal(sel.start.value)}-${ordinal(sel.end.value)}` : `${prefix}${sel.start.value}-${sel.end.value}`
 	}
-	return sel.values.map(value =>
-		value.name ? shortLabel(value) : (dayOfMonth ? ordinal(value.value) : `${prefix}${value.value}`)
-	).join('&')
+	// Unnamed values share their unit, said once for the list ("CW1&3&5", "d1&100").
+	if (!dayOfMonth && sel.values.every(value => !value.name)) return `${prefix}${sel.values.map(value => value.value).join('&')}`
+	return sel.values.map(value => value.name ? shortLabel(value) : (dayOfMonth ? ordinal(value.value) : `${prefix}${value.value}`)).join('&')
 }
 
 /** The clock, terse: "@9", and a step after it as its cadence ("@9 /2h", "@9 /15m" within the 9 o'clock hour). */
@@ -406,7 +406,7 @@ function isRedundantParent(frame: Frame, child: Frame | undefined): boolean {
 	if (isBare(child)) return true
 	// Naming June, or calendar week 12, already says "every year".
 	if (frame.unit === 'y' && isCalendarWeek(child)) return true
-	return frame.unit === 'y' && child.unit === 'M' && !(child.interval && child.interval > 1) && namedDays(child.selection)
+	return frame.unit === 'y' && child.unit === 'M' && child.interval === undefined && namedDays(child.selection)
 }
 
 /** A week within a year: a calendar week. */
@@ -422,7 +422,7 @@ function withoutOuterRun(frames: Frame[]): Frame[] {
 
 /** A frame that selects every value of its unit, with nothing to say beyond "every <unit>". */
 function isPlain(frame: Frame): boolean {
-	return isBare(frame) && !(frame.interval && frame.interval > 1)
+	return isBare(frame) && frame.interval === undefined
 }
 
 /** A frame that takes every value of its unit, or every N-th under a continuous `%N`: its parent does not shape it. */
@@ -432,7 +432,7 @@ function isBare(frame: Frame): boolean {
 
 /** w[d] shapes the weekly idiom voices: a bare or single-valued week over a weekday selection. */
 function isWeeklyWeekday(week: Frame, day: Frame): boolean {
-	return week.unit === 'w' && day.unit === 'd' && day.parent === 'w' && !(day.interval && day.interval > 1) && day.repeat === undefined
+	return week.unit === 'w' && day.unit === 'd' && day.parent === 'w' && day.interval === undefined && day.repeat === undefined
 		&& (week.selection.kind === 'all' || (onlyValue(week.selection) !== null && !isCalendarWeek(week)))
 }
 
@@ -443,7 +443,7 @@ function weeklyWeekday(week: Frame, day: Frame): string {
 		const weekValue = onlyValue(week.selection)!
 		return `the ${ordinal(weekValue.value)} ${phraseFrame(day)} of every month`
 	}
-	const interval = week.interval && week.interval > 1 ? week.interval : 1
+	const interval = week.interval ?? 1
 	const every = interval === 1 ? 'every week' : interval === 2 ? 'every other week' : `every ${interval} weeks`
 	// Selections that are not named days read as a share of the week.
 	if (sel.kind === 'all') return interval === 1 ? 'every day' : `every day of ${every}`
@@ -463,8 +463,8 @@ function cycleWeekdayShape(frames: Frame[]): { cycle: Frame; week: Frame; day: F
 	const [cycle, week, day] = frames as [Frame, Frame, Frame]
 	if ((cycle.unit !== 'M' && cycle.unit !== 'y') || week.unit !== 'w' || day.unit !== 'd' || day.parent !== 'w') return null
 	if (!isPlain(cycle)) return null
-	if (week.interval && week.interval > 1) return null
-	if (day.interval && day.interval > 1) return null
+	if (week.interval !== undefined) return null
+	if (day.interval !== undefined) return null
 	if (day.selection.kind !== 'list' && day.selection.kind !== 'range') return null
 	if (!namedDays(day.selection)) return null
 	return { cycle, week, day }
@@ -515,18 +515,18 @@ function namedDays(selection: Selection): boolean {
 /** (y-all?) + M{single named} + d{single} -> "the 5th of June"; null when the frames aren't that shape. */
 function tryDate(frames: Frame[]): string | null {
 	const day = frames[frames.length - 1]!
-	if (!isDayOfMonth(day) || (day.interval && day.interval > 1)) return null
+	if (!isDayOfMonth(day) || day.interval !== undefined) return null
 	const dayValue = onlyValue(day.selection)
 	if (!dayValue) return null
 
 	const month = frames[frames.length - 2]
-	if (!month || month.unit !== 'M' || (month.interval && month.interval > 1)) return null
+	if (!month || month.unit !== 'M' || month.interval !== undefined) return null
 	const monthValue = onlyValue(month.selection)
 	if (!monthValue?.name) return null
 
 	// Anything coarser than the month must be a plain "every year" (annual, and implied by naming the month).
 	const coarser = frames.slice(0, frames.length - 2)
-	if (!coarser.every(frame => frame.unit === 'y' && frame.selection.kind === 'all' && !(frame.interval && frame.interval > 1))) {
+	if (!coarser.every(frame => frame.unit === 'y' && frame.selection.kind === 'all' && frame.interval === undefined)) {
 		return null
 	}
 	return `the ${ordinal(dayValue.value)} of ${monthValue.name}`
@@ -536,7 +536,7 @@ function tryDate(frames: Frame[]): string | null {
 function phraseFrame(frame: Frame): string {
 	if (isCalendarWeek(frame)) return phraseCalendarWeeks(frame)
 	const unit = UNIT_WORD[frame.unit]
-	const interval = frame.interval && frame.interval > 1 ? frame.interval : undefined
+	const interval = frame.interval
 	const sel = frame.selection
 	const dayOfMonth = isDayOfMonth(frame)
 
@@ -565,7 +565,7 @@ function phraseFrame(frame: Frame): string {
  */
 function phraseCalendarWeeks(frame: Frame): string {
 	const sel = frame.selection
-	const interval = frame.interval && frame.interval > 1 ? frame.interval : undefined
+	const interval = frame.interval
 	let weeks: string
 	switch (sel.kind) {
 		case 'all':
@@ -599,8 +599,9 @@ function valueRange(sel: Extract<Selection, { kind: 'range' }>, unit: string, da
 	return dayOfMonth ? `the ${span}` : `the ${span} ${unit}s`
 }
 
-/** "every other week" for interval 2, "every 3 weeks" otherwise — the idiomatic reading of `%N`. */
+/** "every week" for interval 1, "every other week" for 2, "every 3 weeks" otherwise — the idiomatic reading of `%N`. */
 function intervalWord(unit: CalendarUnit, interval: number): string {
+	if (interval === 1) return `every ${UNIT_WORD[unit]}`
 	return interval === 2 ? `every other ${UNIT_WORD[unit]}` : `every ${interval} ${UNIT_WORD[unit]}s`
 }
 

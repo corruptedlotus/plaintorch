@@ -95,6 +95,25 @@ public sealed class OrbitLimitTests
 	}
 
 	[Fact]
+	public void Percent_one_steps_an_index_too_as_a_run_of_every_value_on_from_it()
+	{
+		// The 5th to the 8th of every month, where d{5}*4 (no %) is the 5th alone.
+		Assert.Equal(
+			["10-05 Mon", "10-06 Tue", "10-07 Wed", "10-08 Thu", "11-05 Thu", "11-06 Fri"],
+			Stream("d{5}%1*4", "2026-09-28", 6));
+		Assert.Equal(["10-05 Mon", "11-05 Thu"], Stream("d{5}*4", "2026-09-28", 2));
+
+		// Without a *x the run reaches the end of the parent period: February has no 29th, so nothing then.
+		Assert.Equal(
+			["01-29 Thu", "01-30 Fri", "01-31 Sat", "03-29 Sun", "03-30 Mon", "03-31 Tue"],
+			Stream("M[d{29}%1]", "2026-01-01", 6));
+		Assert.Equal(["10-02 Fri", "10-03 Sat", "10-04 Sun", "10-09 Fri"], Stream("w[d{5}%1]", "2026-09-28", 4));
+		Assert.Equal(
+			["09-28 21:00 Mon", "09-28 22:00 Mon", "09-28 23:00 Mon", "09-29 21:00 Tue"],
+			Stream("d[h{21}%1]", "2026-09-28", 4));
+	}
+
+	[Fact]
 	public void A_repetition_counts_whether_or_not_its_children_fire_in_it()
 	{
 		// February has no 31st, but it is still the second of the three months.

@@ -82,7 +82,11 @@ export interface Frame {
 	unit: CalendarUnit
 	/** The enclosing unit — an actual parent when nested, else the unit's natural parent. Drives naming. */
 	parent?: CalendarUnit
-	/** `%N`: recur every N of this unit. Undefined/1 = every one. */
+	/**
+	 * `%N`: recur every N of this unit, set only when it steps. On a selection it runs on from each value, every N-th to
+	 * the end of the parent period — `%1` included, every value after it. On a bare unit it is every N-th; a bare unit's
+	 * `%1` is every one, so it is left unset, as for no `%` at all.
+	 */
 	interval?: number
 	/** Which values within the parent this frame selects. */
 	selection: Selection

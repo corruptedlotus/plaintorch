@@ -39,11 +39,12 @@ public sealed record OrbitSpanEntry(long StartMs, long EndMs, OrbitUnit Granular
 /// the start; an incomplete one is skipped whole, so a schedule never begins partway through one of its own
 /// periods.</item>
 /// <item><c>*x</c> limits a node's <b>repetition</b>. A bare unit is a single run from the start of its life, one
-/// value after another (or every N-th under a continuous <c>%N</c>); an index is a run of one value, unless <c>%N</c>
-/// steps it (b, b+N, … to the end of the parent period). Each run keeps its first x values — so <c>d*5</c> is five
-/// days, <c>w[d*3]</c> the first three days of every week, <c>d{5}%3*4</c> the 5th, 8th, 11th and 14th, and <c>*x</c>
-/// on an index <c>%</c> does not step (a list or a range) does nothing. A repetition counts whether or not the node's
-/// children fire in it.</item>
+/// value after another (or every N-th under a continuous <c>%N</c>); an index is a run of one value, unless an
+/// explicit <c>%N</c> steps it (b, b+N, … to the end of the parent period — <c>%1</c> included, so <c>d{5}%1</c> runs on
+/// from the 5th every day). Each run keeps its first x values — so <c>d*5</c> is five days, <c>w[d*3]</c> the first
+/// three days of every week, <c>d{5}%3*4</c> the 5th, 8th, 11th and 14th, <c>d{5}%1*4</c> the 5th to the 8th, and
+/// <c>*x</c> on an index no <c>%</c> steps (a list or a range) does nothing. A repetition counts whether or not the
+/// node's children fire in it.</item>
 /// <item><c>@x</c> limits a node's <b>emission</b>: its own instances (what its subtree produces, before any enclosing
 /// set operation acts on them) are counted per life in time order, and only the first x fire — so
 /// <c>M[w[d{1}%2]@7]</c> fires up to seven times a month, and a top-level <c>d{2,4,6,8}@2</c> fires twice in all.</item>
@@ -1162,11 +1163,13 @@ public sealed class OrbitEngine
 		var bases = ResolveBases(node, cursor.Ms, parentUnit);
 		_nodes.TryGetValue(node, out var info);
 		var repeat = _lifeSetAside.Contains(node) ? null : info?.Repeat;
+		// An index steps under any explicit %N, %1 included: d{5}%1 runs on from the 5th, every day.
+		var stepped = node.Interval is >= 1;
 
 		// Fast path: pure whitelist. Jump straight to the next allowed value
 		// >= currentVal instead of scanning every value. (A *x changes nothing
-		// here: an index % does not step is a run of one value.)
-		if (interval == 1 && bases is not null)
+		// here: an index no % steps is a run of one value.)
+		if (!stepped && bases is not null)
 		{
 			foreach (var b in bases)
 			{
@@ -1205,7 +1208,7 @@ public sealed class OrbitEngine
 		{
 			// Local offset loop (e.g. h{4}%3 -> every 3h starting from hour 4); a *x
 			// keeps each run's first x values.
-			if (interval > 1 && bases is not null)
+			if (stepped && bases is not null)
 			{
 				var matched = false;
 				foreach (var b in bases)

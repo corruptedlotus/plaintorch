@@ -14,7 +14,12 @@
 // does not step — and `@x` caps its emission per period of its written parent (in all, at the top level). Where a
 // limit can be said as a plainer selection it becomes one: `d{5}%3*4` is the 5th, 8th, 11th and 14th, `w[d*3]` the
 // first 3 days of every week, and an `@x` on a nested list keeps its first x values (`d[h{9,12,15,18}@2]` is 09:00 and
-// 12:00). A `%` on a weekday or a month is spelled out the same way, since it names a handful of values.
+// 12:00). A `%` on a weekday or a month is spelled out the same way, since it names a handful of values. Any explicit
+// `%N` steps an index, `%1` included (`d{5}%1*4` is the 5th through 8th); on a bare unit `%1` is every one, as without.
+//
+// A spelled-out expansion names at most four values, or any number of consecutive ones as a range. Past that it is
+// said as declared instead: its starts and its step, with a `*x` read as a cap per parent period (`y[w{1}%2*20]` is
+// every other week from calendar week 1, up to 20 times a year).
 
 import type { ASTNode, DateTimeLiteralNode, DurationPart, IndexSpec, LimitSpec, TimeUnit, TimeUnitNode } from './ast'
 import type { CalendarSystem } from './calendar'
@@ -148,15 +153,31 @@ function readFrame(node: TimeUnitNode, unit: CalendarUnit, parent: CalendarUnit 
 	const emit = limitOf(node.limits, 'instances')
 	if (repeat === 0 || emit === 0) throw new UnsupportedShapeError('a limit that lets nothing fire')
 	const leaf = !node.child
-	const frame: Frame = { unit, parent, interval: node.interval, selection: toSelection(node.indices, unit, parent, calendar) }
-	const stepped = (frame.interval ?? 1) > 1
+	const interval = stepInterval(node)
+	const frame: Frame = { unit, parent, interval, selection: toSelection(node.indices, unit, parent, calendar) }
+	const stepped = interval !== undefined
 	const values = staticValues(node.indices)
+	// Whether this node's `@x` has been read into its selection already, so it is not capped a second time below.
+	let emitRead = false
 
 	if (values && stepped && (repeat !== undefined || isNamedDomain(unit, parent, calendar) || (emit !== undefined && leaf && written !== undefined))) {
 		// A stepped index keeps the first x steps of each run (`d{5}%3*4`); a stepped weekday or month names its runs
-		// outright (`w[d{1}%2]` is Monday, Wednesday, Friday and Sunday). Either way it reads as the values it lands on.
-		frame.selection = listOf(expandRuns(values, frame.interval!, repeat, unitCeiling(unit, parent, calendar)), unit, parent, calendar)
-		frame.interval = undefined
+		// outright (`w[d{1}%2]` is Monday, Wednesday, Friday and Sunday). Either way it reads as the values it lands on —
+		// unless they are too many to name, when the run is said as declared and its `*x` caps it per parent period.
+		const capped = emit !== undefined && leaf && written !== undefined
+		let runs = expandRuns(values, interval, repeat, unitCeiling(unit, parent, calendar))
+		if (capped) runs = runs.slice(0, Math.max(0, emit))
+		const spelled = spelledOut(runs, unit, parent, calendar)
+		if (spelled) {
+			frame.selection = spelled
+			frame.interval = undefined
+			emitRead = capped
+		} else if (repeat !== undefined) {
+			// Each start's run keeps x steps, so the period holds up to x per start (fewer where runs meet).
+			const times = Math.min(repeat * values.length, capped ? emit : Number.POSITIVE_INFINITY)
+			bounds.push(parent === undefined ? { kind: 'count', times } : { kind: 'count', times, per: parent })
+			emitRead = capped
+		}
 	} else if (!node.indices && repeat !== undefined) {
 		if (written === undefined) frame.repeat = repeat
 		else if (!stepped) frame.selection = firstOf(repeat, unit, parent, calendar)
@@ -167,7 +188,7 @@ function readFrame(node: TimeUnitNode, unit: CalendarUnit, parent: CalendarUnit 
 	}
 	// Any other `*x` sits on an index `%` does not step: a run of one value, so it means nothing.
 
-	if (emit !== undefined) {
+	if (emit !== undefined && !emitRead) {
 		const listed = staticSelectionValues(frame.selection)
 		if (written !== undefined && leaf && listed && !frame.interval) {
 			// A nested list's first x values are the ones that fire in every period; a run of them reads as a range.
@@ -276,7 +297,8 @@ function clockChild(node: ASTNode, unit: 'm' | 's'): TimeUnitNode {
 /**
  * An hour, minute or second node's listed values, pushing its step onto `steps`: a listed node steps on a `%N`, and a
  * bare node always streams (every 1 of the unit, or every N with a `%N`), reading as no listed values. Its `*x` keeps
- * the first x steps of each run (a stepped list is spelled out; a streaming unit carries it as the step's `times`),
+ * the first x steps of each run (a stepped list is spelled out, up to four values, else capped per period of the unit
+ * above it; a streaming unit carries it as the step's `times`),
  * and its `@x` keeps the first x values when it is the finest unit under a written parent, else caps it per period of
  * `per` (in all at the top level).
  */
@@ -291,12 +313,26 @@ function readClockValues(node: TimeUnitNode, per: TimeUnit | undefined, bounds: 
 
 	if (node.indices?.type === 'list') {
 		let values = [...new Set(node.indices.values)].sort((a, b) => a - b)
-		let stepped = interval > 1
-		if (stepped && (repeat !== undefined || (emit !== undefined && leaf && per !== undefined))) {
-			values = expandRuns(values, interval, repeat, ceiling)
-			stepped = false
+		// A listed clock value steps under any explicit `%N`, `%1` included (`h{9}%1` is every hour from 09:00).
+		let stepped = stepInterval(node) !== undefined
+		let emitRead = false
+		const capped = emit !== undefined && leaf && per !== undefined
+		if (stepped && (repeat !== undefined || capped)) {
+			let runs = expandRuns(values, interval, repeat, ceiling)
+			if (capped) runs = runs.slice(0, Math.max(0, emit))
+			if (runs.length <= SPELL_OUT_LIMIT) {
+				values = runs
+				stepped = false
+				emitRead = capped
+			} else if (repeat !== undefined) {
+				// Too many times to name: the run is said as declared, each start's run keeping x steps per period of the
+				// unit above (the day, for an hour at the top level).
+				const times = Math.min(repeat * values.length, capped ? emit : Number.POSITIVE_INFINITY)
+				bounds.push({ kind: 'count', times, per: per ?? coarserClockUnit(unit) })
+				emitRead = capped
+			}
 		}
-		if (emit !== undefined) {
+		if (emit !== undefined && !emitRead) {
 			if (leaf && per !== undefined && !stepped) values = values.slice(0, Math.max(0, emit))
 			else bounds.push(per === undefined ? { kind: 'count', times: emit } : { kind: 'count', times: emit, per })
 		}
@@ -313,6 +349,11 @@ function readClockValues(node: TimeUnitNode, per: TimeUnit | undefined, bounds: 
 		return []
 	}
 	throw new UnsupportedShapeError(`unmodelled ${unit} selection`)
+}
+
+/** The unit a clock unit's values sit within: an hour within the day, a minute within the hour, a second within the minute. */
+function coarserClockUnit(unit: ClockStep['unit']): TimeUnit {
+	return unit === 's' ? 'm' : unit === 'm' ? 'h' : 'd'
 }
 
 function toSelection(indices: IndexSpec | undefined, unit: CalendarUnit, parent: CalendarUnit | undefined, calendar: CalendarSystem): Selection {
@@ -348,6 +389,34 @@ function staticSelectionValues(selection: Selection): number[] | undefined {
 		return values
 	}
 	return undefined
+}
+
+/**
+ * The step a node's `%N` gives it, or undefined when it does not step. On an index any explicit `%N` steps, `%1`
+ * included — from each value, every value after it — as the engine resolves it. On a bare unit `%1` takes every value,
+ * as no `%` does, so only a larger step counts. (A `%0` steps nothing in the engine either.)
+ */
+function stepInterval(node: TimeUnitNode): number | undefined {
+	const interval = node.interval
+	if (interval === undefined || interval < 1) return undefined
+	return node.indices || interval > 1 ? interval : undefined
+}
+
+/** The most values a reading names one by one; an expansion past it is said as declared instead. */
+const SPELL_OUT_LIMIT = 4
+
+/**
+ * The values an expansion lands on, as a selection a reader takes in at a glance: three or more consecutive values as a
+ * range ("the 5th through 13th", "Monday through Sunday"), however many; otherwise each value named, up to
+ * {@link SPELL_OUT_LIMIT} of them. Undefined past that, for the caller to say the expansion as declared.
+ */
+function spelledOut(values: number[], unit: CalendarUnit, parent: CalendarUnit | undefined, calendar: CalendarSystem): Selection | undefined {
+	const first = values[0]
+	const last = values[values.length - 1]
+	if (first !== undefined && last !== undefined && values.length >= 3 && last - first === values.length - 1) {
+		return { kind: 'range', start: named(first, unit, parent, calendar), end: named(last, unit, parent, calendar) }
+	}
+	return values.length <= SPELL_OUT_LIMIT ? listOf(values, unit, parent, calendar) : undefined
 }
 
 /** Every run of a stepped index — from each value b: b, b+N, … up to `ceiling`, the first `times` of each — merged and sorted. */

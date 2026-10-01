@@ -57,7 +57,8 @@ the long child-first one:
 | `z{12:00}` | Every day at 12:00 | Daily @12:00 |
 
 Conventions: weekday/month names clip to three letters; `at HH:MM` becomes `@HH:MM`; unit words
-abbreviate (`yr mo wk day hr min sec`); lists join with `&`; set operators render as `+ & − ^`.
+abbreviate (`yr mo wk day hr min sec`); lists join with `&`, saying a unit prefix once (`CW1&3&5`); set operators
+render as `+ & − ^`.
 Phrases are lower-cased internally and only the first letter is capitalized by `humanizeOrbit`, so
 a nested reading stays correct ("Day 2–4 of every wk"). Anything the compact serializer cannot
 shorten cleanly it throws on, and `humanizeOrbit` falls back to the **full** phrase (never the raw
@@ -87,10 +88,13 @@ drop `limits` `*x @x <t >t` and `duration` `=<dur>`), and they are two hand-sync
   them: a `*x` on an inner bare unit becomes a `first` selection ("the first 3 days of every week"), on the outermost
   frame the schedule's run (`Frame.repeat`, "for 10 weeks"); on a `%`-stepped index it keeps each run's first x steps,
   spelled out as the values they land on (`d{5}%3*4` is the 5th, 8th, 11th and 14th); on any other index it means
-  nothing and is dropped. An `@x` keeps a nested list's first x values (`d[h{9,12,15,18}@2]` is 09:00 and 12:00), else it
+  nothing and is dropped. A spelled-out expansion names at most four values, and a consecutive one of any length reads
+  as a range (`M[d{5}%1*20]` is the 5th through 24th); past that it is said as declared, its starts and step with the
+  `*x` as a count per parent (`y[w{1}%2*20]` is "every other week from calendar week 1, up to 20 times a year"). Any
+  explicit `%N` steps an index, `%1` included (`M[d{5}%1]` is every day from the 5th); on a bare unit `%1` is no step. An `@x` keeps a nested list's first x values (`d[h{9,12,15,18}@2]` is 09:00 and 12:00), else it
   becomes a `count` bound per period of the node's written parent ("up to 7 times a month"), or in all at the top level.
   A `%` on a weekday or month is spelled out too (`w[d{1}%2]` is Monday, Wednesday, Friday and Sunday), bounded by the
-  values the calendar names. A set operation nested under the frames (`M[d{15}+d{4}%4]`) becomes the schedule's
+  values the calendar names and by the same four-value cap. A set operation nested under the frames (`M[d{15}+d{4}%4]`) becomes the schedule's
   `branches`: each side is a schedule of its own, read relative to the frame above it. A dated `Z{…}` becomes an `instant`; a bare `z{h:m}` a
   frameless daily clock. Throws `UnsupportedShapeError` for shapes not yet modelled (a set-op nested mid-chain,
   a non-clock time unit, a clock shape it cannot express) so the caller can fall back. A `%N` on a clock unit
