@@ -160,6 +160,16 @@ export class DependencyCanvas extends Component {
 	private observedSignature?: string
 	private layoutCache?: { readonly signature: string, readonly layout: CanvasLayout }
 	private framed = false
+	/**
+	 * The pan and zoom the last framing left, which tells a resize whether the reader has panned or zoomed since (every
+	 * gesture assigns a new pan or scale). While nobody has, the framing follows the viewport rather than staying fitted
+	 * to a size it no longer has: a pane resized, a page coming out of dormancy at its real size, the briefing's hero
+	 * ducking away and giving the canvas its height.
+	 */
+	private framedView?: { readonly pan: Point, readonly scale: number }
+	private viewportObserver?: ResizeObserver
+	/** The viewport element the observer is watching. */
+	private observedViewport?: HTMLElement
 	/** Whether the drag in progress has actually moved, which is what tells a drag from a click. */
 	private dragged = false
 	/**
@@ -427,6 +437,7 @@ export class DependencyCanvas extends Component {
 		// A node grows when its title is edited or its content loads, and that is not a canvas render on its own —
 		// the observer is what keeps the edges attached to it through changes the canvas never hears about.
 		this.resizeObserver = new ResizeObserver(entries => this.onNodesResized(entries))
+		this.viewportObserver = new ResizeObserver(() => this.onViewportResized())
 	}
 
 	protected override disconnected() {
@@ -435,6 +446,9 @@ export class DependencyCanvas extends Component {
 		this.resizeObserver?.disconnect()
 		this.resizeObserver = undefined
 		this.observedSignature = undefined
+		this.viewportObserver?.disconnect()
+		this.viewportObserver = undefined
+		this.observedViewport = undefined
 		this.livePointers.clear()
 		window.clearTimeout(this.layoutSaveTimer)
 	}
@@ -1717,6 +1731,11 @@ export class DependencyCanvas extends Component {
 	protected override updated() {
 		this.adoptSavedLayout()
 		this.syncNodeMeasurement()
+		if (this.viewportObserver && this.viewportElement && this.viewportElement !== this.observedViewport) {
+			this.observedViewport = this.viewportElement
+			this.viewportObserver.disconnect()
+			this.viewportObserver.observe(this.viewportElement)
+		}
 
 		// Framed once, when there is finally something to frame, and never again — refitting on every change
 		// would move the graph out from under someone reading it.
@@ -1853,6 +1872,15 @@ export class DependencyCanvas extends Component {
 		this.pan = {
 			x: (rect.width - layout.width * scale) / 2,
 			y: (rect.height - layout.height * scale) / 2
+		}
+		this.framedView = { pan: this.pan, scale: this.scale }
+	}
+
+	/** Frames the graph afresh for the viewport's new size, unless the reader has panned or zoomed since it was framed. */
+	private onViewportResized() {
+		const layout = this.layoutCache?.layout
+		if (layout && this.framedView?.pan === this.pan && this.framedView.scale === this.scale) {
+			this.frame(layout)
 		}
 	}
 }
