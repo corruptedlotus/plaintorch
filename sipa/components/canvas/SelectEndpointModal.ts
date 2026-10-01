@@ -46,12 +46,14 @@ export class SelectEndpointModal extends SuggestModalBase<EndpointHit> {
 		return found.filter(hit => !this.excluded.has(`${DependencyEndpointKind[hit.kind]}:${hit.id}`))
 	}
 
+	/** A row is the endpoint's title behind its kind icon, its kind chipped beside it for the kinds that share an icon. */
 	override renderSuggestion(hit: EndpointHit, el: HTMLElement) {
 		const item = createChild(el, 'p7t-icon-item')
 		item.data = hit
 		item.icon = kindIcons[hit.kind]
-		// The kind icon tells them apart at a glance; the label follows for the kinds that share an icon.
-		item.text = `${hit.title} · ${kindLabels[hit.kind]}`
+		item.text = hit.title
+		item.chipped = true
+		createChild(item, 'span', { text: kindLabels[hit.kind] }).slot = 'chips'
 	}
 
 	override async onClose() {
