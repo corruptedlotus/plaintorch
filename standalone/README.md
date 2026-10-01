@@ -19,11 +19,14 @@ and one build; the flavour is baked in at build time.
   and the change feed streamed line by line), and vault images through the `plaintorch-media://` scheme. It is the
   shell's main window: clicking the tray icon, relaunching the app, and a visible launch (once the core is up) open it.
   Notes have no in-app editor yet, so opening one says so.
+- **Planning windows**: a planning graph file (`.p7tpx`, a saved global planning context) opens in a window of its own
+  with the file-backed dependency canvas, as the Obsidian plugin opens it in a tab; see
+  [Planning files](#planning-files).
 - A **tray icon** with the phase, the active vault, the briefing and the status window, activate/deactivate,
   start-at-login, the logs folder, restart, updates, and quit.
 - A **status window** with the core, the shell settings, and the watcher (`p7t-watcher-status-card`: its health, what
   it means, and the issues the plugin's status-bar drawer lists), drawn with the SIPA cards, chips and buttons.
-- **Custom window frames**: the status and briefing windows are frameless and draw their own title bar
+- **Custom window frames**: the status, briefing and planning windows are frameless and draw their own title bar
   (`p7t-window-frame`, below).
 - **Start at login** through the OS login-item API on Windows and macOS, and an XDG autostart entry on Linux.
 - **Updates** through electron-updater in the "download the new installer and run it" flow; see `../installer`.
@@ -77,10 +80,50 @@ The shell logs its pick on the console: the origin, the path and the version (`<
 fell back to `core-dist`, or when a candidate it passed over has a newer `plaintorch.dll` than the one it chose;
 rebuild the chosen one, or point `PLAINTORCH_CORE_PATH` at the newer one.
 
+## Planning files
+
+A planning graph file (`.p7tpx`) is a saved global planning context (PEP102): the pinned entities and where they were
+arranged, as JSON. The Obsidian plugin opens one in a tab; the shell opens one in a **planning window**: the same
+`p7t-dependency-canvas`, locked to the file's one global context (no onrush mode switcher), under the window's own
+title bar, which is named after the file.
+
+- **Opening**: the installer associates the extension with the app (`installer/electron-builder.yml`,
+  `fileAssociations`), so opening a file from the file manager launches the shell with the file's path. A launch
+  naming planning files opens them instead of the briefing, when the splash hands over (at once without a splash);
+  files asked for while the splash is still up wait for it. A second launch hands its
+  command line to the running shell (`second-instance`), which opens the files it names and brings the briefing
+  forward when it names none; macOS delivers files as `open-file` instead. Arguments are resolved against the
+  launching process's working directory, and only existing files count. Each file gets one window: opening a file
+  already open brings its window forward (the path is compared without case on Windows and macOS).
+- **The file belongs to the main process** (`src/main/planning-files.ts`), since the sandboxed page has no file access.
+  The page reads it and writes it over `window.plaintorch.planning`, and only the file of its own window. Writes are
+  coalesced for a moment, skipped when nothing changed, and the last one lands when the window closes or the shell
+  quits.
+- **Changes from elsewhere** (Obsidian showing the same file, another editor, a sync) are followed. The file's folder
+  is watched, so a save that renames a new file over the old one is followed too. A changed text replaces the canvas's
+  pins, as the Obsidian view does; the canvas keeps its own layout once it has adopted the file's. The shell's own
+  writes never echo back. A change from elsewhere wins over a write still waiting.
+- **A file moved or deleted elsewhere** is announced in a toast and never written back into being: edits are kept in
+  the window but not saved until a file is at the path again, which is announced too.
+- **Saving a new one**: the briefing's scratch *Global Planning* context has **Save to file**, which asks where through
+  a native save dialog (`window.plaintorch.planning.saveAs`, modal to the window that asked). The dialog starts in the
+  served vault (the documents folder without one) under a name not taken there yet ("Global planning.p7tpx", then
+  numbered), may save anywhere, and confirms replacing a file. A name typed without the extension gets it, and a file
+  that already has the resulting name is refused rather than replaced unconfirmed. The saved file opens in a planning
+  window, and the toast names it vault-relative, or by its full path outside the vault. Saving over a file open in a
+  planning window replaces it through that window, which shows the new pins at once.
+- **The vault**: like the briefing, the canvas waits for a core serving an active vault whose startup sweep is done.
+  The pins are the active vault's entities, so a file from another vault shows its pins by their saved titles, but
+  they do not resolve.
+
+In development nothing is registered with the OS. Open a file by handing it to a running dev shell (a second launch on
+the same profile), e.g. `npx electron . C:\path\to\Roadmap.p7tpx` next to `npm run dev`, or start a shell with it:
+`npx electron . --profile <dir> C:\path\to\Roadmap.p7tpx`.
+
 ## Window frames
 
-The status and briefing windows draw their own title bar: `p7t-window-frame` (`src/renderer/WindowFrame.ts`) wraps
-each page — the PLAINTORCH mark, the window's title, a `title-bar` slot for a page's own controls, and the minimize,
+The status, briefing and planning windows draw their own title bar: `p7t-window-frame`
+(`src/renderer/WindowFrame.ts`) wraps each page — the PLAINTORCH mark, the window's title, a `title-bar` slot for a page's own controls, and the minimize,
 maximize/restore and close buttons — over the page, which fills and scrolls in the rest of the window.
 
 - **Main process** (`src/main/window-frame.ts`): `customFrame()` gives `frame: false` on Windows and Linux (the window
@@ -121,10 +164,14 @@ are committed; re-run it after changing a mark.
 - `src/main`: the Electron main process. `shell.ts` is the single source of truth; `core-process.ts` supervises the
   spawned core and `core-location.ts` picks which core that is; `core-transport.ts` is HTTP over the pipe/socket (the SDK's socket transport); `core-streams.ts`
   relays the change feed to the windows; `media-protocol.ts` serves vault files; `request-guard.ts` refuses hosted
-  `file:` requests (UNC/SMB); `window-frame.ts` makes the custom frames work; `windows.ts`, `tray.ts`,
+  `file:` requests (UNC/SMB); `window-frame.ts` makes the custom frames work; `planning-files.ts` finds planning
+  files in a launch's arguments, reads, writes and watches each planning window's file, and saves new ones through
+  the save dialog; `windows.ts`, `tray.ts`,
   `autostart.ts`, `updater.ts`, `config.ts`, `profile.ts` do what their names say.
 - `src/preload`: the only bridge into the sandboxed renderer (`window.plaintorch`).
-- `src/renderer`: `splash.ts` (the splash, kept small), `status.ts` (the status window) and `briefing.ts` (the SIPA
-  briefing), each its own bundle and page; the status window and the briefing install the SIPA host and share
-  `bridgeTransport.ts` and `WindowFrame.ts`. Both resolve `@a11d/lit` to the package's copy, so there is one lit.
+- `src/renderer`: `splash.ts` (the splash, kept small), `status.ts` (the status window), `briefing.ts` (the SIPA
+  briefing) and `planning.ts` (a planning window), each its own bundle and page. The briefing and the planning windows
+  mount through `vaultWindow.ts` (the SIPA host, the core client and its change feed, the wait for the vault); every
+  SIPA window shares `bridgeTransport.ts` and `WindowFrame.ts`. All resolve `@a11d/lit` to the package's copy, so
+  there is one lit.
 - `src/shared/contracts.ts`: the shapes shared by all three, mirroring `core/Plaintorch/Hosting`.

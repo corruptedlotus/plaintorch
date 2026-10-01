@@ -12,7 +12,7 @@ import { core, PromptTextModal } from '..'
 import { host, toast } from '../../host'
 import { effectiveConstraint, effectiveTrigger, sourceRef, targetRef, type CanvasEdge, type CanvasNode } from './graphModel'
 import type { CanvasContextMode } from './graphContext'
-import { GLOBAL_CONTEXT_EXTENSION, serializeGlobalContext } from './globalContextFile'
+import { serializeGlobalContext } from './globalContextFile'
 
 /**
  * The canvas's writes.
@@ -332,35 +332,27 @@ export async function saveGraphLayout(sprintId: string, layout: string | undefin
  * Writes a scratch global context to a new `.p7tpx` file and opens it, graduating it into something durable.
  *
  * The file's own view takes over from there — this is a one-time hand-off, not the ongoing save, which the
- * file view does as the context is edited. A dismissed name prompt does nothing; a name already taken is
- * refused rather than overwritten.
+ * file view does as the context is edited. Where the file goes is the host's to ask (a name at the vault root in
+ * Obsidian, a save dialog in the standalone shell); backing out of that saves nothing.
  */
 export async function saveGlobalContextToFile(pinned: readonly EndpointHit[], layout: string | undefined): Promise<void> {
-	let name: string | undefined
-	try {
-		name = await PromptTextModal.prompt('Save global context', 'File name', '', 'Save')
-	}
-	catch {
-		return
-	}
-
-	if (!name) {
-		return
-	}
-
 	const contexts = host.globalContexts
 	if (!contexts) {
 		return
 	}
 
-	const fileName = `${name.replace(/[\\/:*?"<>|]/g, '').trim()}.${GLOBAL_CONTEXT_EXTENSION}`
-	const { created, path } = await contexts.createAndOpen(fileName, serializeGlobalContext(pinned, layout))
-	if (!created) {
-		toast(`A file named "${path}" already exists.`, 'warning')
+	let saved: { readonly path: string } | undefined
+	try {
+		saved = await contexts.saveAndOpen(serializeGlobalContext(pinned, layout))
+	}
+	catch (error) {
+		toast(`PLAINTORCH could not save the global context: ${error instanceof Error ? error.message : String(error)}`, 'error')
 		return
 	}
 
-	toast(`Saved global context to ${path}.`, 'success')
+	if (saved) {
+		toast(`Saved global context to ${saved.path}.`, 'success')
+	}
 }
 
 /** Which repository record a mode reads its sprint from. */

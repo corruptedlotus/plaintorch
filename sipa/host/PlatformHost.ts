@@ -87,8 +87,13 @@ export interface IconHost {
 /** File-backed global dependency contexts (the `.p7tpx` files). */
 export interface GlobalContextHost {
 	/**
-	 * Creates `fileName` at the vault root holding `text` and opens it in its file-backed view. A name already taken
-	 * is refused — nothing is written — and reported as `created: false`. `path` is the normalised path either way.
+	 * Saves `text` — a serialised global context — as a new planning graph file and opens it in its file-backed view.
+	 * Where the file goes is the host's to ask: Obsidian asks for a name and creates it at the vault root, refusing a
+	 * name already taken; the standalone shell shows a save dialog, which may put it anywhere and confirms replacing a
+	 * file. A host reports its own refusals.
+	 *
+	 * Resolves the path the file was saved to, as the user knows it (vault-relative inside the vault), or undefined
+	 * when nothing was saved — the user backed out, or the host refused. Rejects when the file could not be written.
 	 */
-	createAndOpen(fileName: string, text: string): Promise<{ readonly created: boolean, readonly path: string }>
+	saveAndOpen(text: string): Promise<{ readonly path: string } | undefined>
 }

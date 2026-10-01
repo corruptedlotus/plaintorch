@@ -1,19 +1,29 @@
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import { BrowserWindow, screen, shell } from "electron"
+import { BrowserWindow, screen, shell, type WebContents } from "electron"
 import type { ShellStatus } from "../shared/contracts"
 import { ipc } from "../shared/contracts"
+import { PlanningFile, planningFileKey } from "./planning-files"
 import { customFrame, relayFrameState } from "./window-frame"
 
 const splashSize = { width: 943, height: 405 }
 const statusSize = { width: 720, height: 560 }
 const briefingSize = { width: 1180, height: 820 }
+const planningSize = { width: 1180, height: 820 }
+
+/** A planning window and the file it shows. */
+interface PlanningWindow {
+	readonly window: BrowserWindow
+	/** The page's `webContents` id, kept because a destroyed window no longer gives out its `webContents`. */
+	readonly contentsId: number
+	readonly file: PlanningFile
+}
 
 /**
  * A window's page. Each has a bundle of its own: the splash stays small, so it shows the moment the app starts, while
- * the status window and the briefing carry the SIPA UI.
+ * the status window, the briefing and the planning windows carry the SIPA UI.
  */
-function pageUrl(page: "splash.html" | "status.html" | "briefing.html"): string {
+function pageUrl(page: "splash.html" | "status.html" | "briefing.html" | "planning.html"): string {
 	// pathToFileURL gives a well-formed file:/// URL; a hand-built "file://" + a Windows path would leave the drive
 	// letter parsed as a host and, depending on the platform, fail to load.
 	return pathToFileURL(path.join(__dirname, page)).href
@@ -33,20 +43,22 @@ const minimumSplashMs = 1_400
 
 /**
  * The shell's windows, each on a page of its own: the frameless splash that mirrors the old startup popup, the status
- * window, and the briefing — the SIPA UI. The status and briefing windows draw their own title bars
- * ({@link customFrame}).
+ * window, the briefing — the SIPA UI — and a planning window for each planning graph file (`.p7tpx`) opened. The
+ * status, briefing and planning windows draw their own title bars ({@link customFrame}).
  */
 export class ShellWindows {
 	private splash?: BrowserWindow
 	private status?: BrowserWindow
 	private briefing?: BrowserWindow
+	/** The planning windows, by {@link planningFileKey}: one per file. */
+	private readonly planning = new Map<string, PlanningWindow>()
 	private latest?: ShellStatus
 	private splashShownAt = 0
 
 	/** Pushes a status to every open window; windows opened later receive it on load. */
 	public broadcast(status: ShellStatus): void {
 		this.latest = status
-		for (const window of [this.splash, this.status, this.briefing]) {
+		for (const window of [this.splash, this.status, this.briefing, ...this.planningWindows]) {
 			if (window && !window.isDestroyed()) {
 				window.webContents.send(ipc.status, status)
 			}
@@ -179,14 +191,82 @@ export class ShellWindows {
 		void this.briefing.loadURL(pageUrl("briefing.html"))
 	}
 
+	/**
+	 * Opens a planning graph file in a window of its own — the file-backed dependency canvas the Obsidian plugin opens
+	 * the file into — or brings forward the window it is already open in.
+	 */
+	public showPlanning(filePath: string): void {
+		const key = planningFileKey(filePath)
+		const open = this.planning.get(key)
+		if (open && !open.window.isDestroyed()) {
+			if (open.window.isMinimized()) {
+				open.window.restore()
+			}
+
+			open.window.show()
+			open.window.focus()
+			return
+		}
+
+		const window = new BrowserWindow({
+			...planningSize,
+			...customFrame(),
+			minWidth: 640,
+			minHeight: 420,
+			title: "PLAINTORCH Planning",
+			show: false,
+			backgroundColor: "#1f1a22",
+			icon: windowIcon(),
+			webPreferences: this.webPreferences()
+		})
+		const file = new PlanningFile(path.resolve(filePath), snapshot => {
+			if (!window.isDestroyed()) {
+				window.webContents.send(ipc.planningChanged, snapshot)
+			}
+		})
+		const entry: PlanningWindow = { window, contentsId: window.webContents.id, file }
+		this.planning.set(key, entry)
+		this.guard(window)
+		relayFrameState(window)
+		window.once("ready-to-show", () => window.show())
+		window.on("closed", () => {
+			file.close()
+			if (this.planning.get(key) === entry) {
+				this.planning.delete(key)
+			}
+		})
+		void window.loadURL(pageUrl("planning.html"))
+	}
+
+	/** The file of the planning window open on a path, if one is. */
+	public planningFileAt(filePath: string): PlanningFile | undefined {
+		const open = this.planning.get(planningFileKey(filePath))
+		return open && !open.window.isDestroyed() ? open.file : undefined
+	}
+
+	/** The file of the planning window a page runs in; undefined for any other page. */
+	public planningFileOf(contents: WebContents): PlanningFile | undefined {
+		for (const entry of this.planning.values()) {
+			if (entry.contentsId === contents.id) {
+				return entry.file
+			}
+		}
+
+		return undefined
+	}
+
 	/** The status window, when open. */
 	public get statusWindow(): BrowserWindow | undefined {
 		return this.status && !this.status.isDestroyed() ? this.status : undefined
 	}
 
-	/** Destroys every window, for quitting. */
+	/** Destroys every window, for quitting. A planning window's last write lands first. */
 	public destroyAll(): void {
-		for (const window of [this.splash, this.status, this.briefing]) {
+		for (const { file } of this.planning.values()) {
+			file.close()
+		}
+
+		for (const window of [this.splash, this.status, this.briefing, ...this.planningWindows]) {
 			if (window && !window.isDestroyed()) {
 				window.destroy()
 			}
@@ -195,6 +275,11 @@ export class ShellWindows {
 		this.splash = undefined
 		this.status = undefined
 		this.briefing = undefined
+		this.planning.clear()
+	}
+
+	private get planningWindows(): BrowserWindow[] {
+		return Array.from(this.planning.values(), entry => entry.window)
 	}
 
 	/**

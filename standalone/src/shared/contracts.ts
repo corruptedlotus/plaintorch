@@ -131,6 +131,29 @@ export interface WindowFrameState {
  */
 export const mediaScheme = "plaintorch-media"
 
+/**
+ * The extension of a saved global planning context — a planning graph file (PEP102). SIPA's
+ * `GLOBAL_CONTEXT_EXTENSION`, restated here for the main process, which does not bundle the UI; the installer's file
+ * association (`installer/electron-builder.yml`) names it too.
+ */
+export const planningFileExtension = "p7tpx"
+
+/** A planning window's file, as the main process last read it. */
+export interface PlanningFileSnapshot {
+	/** The file's absolute path. */
+	path: string
+	/** The file's name without its extension, for the window's title. */
+	name: string
+	/** The file's text, or `undefined` while there is no file at the path: it was moved or deleted elsewhere. */
+	text?: string
+}
+
+/**
+ * What saving a new planning file came to: the path it was saved to, as the user knows it (vault-relative inside the
+ * served vault, absolute elsewhere), or why it could not be saved.
+ */
+export type PlanningSaveOutcome = { path: string } | { error: string }
+
 /** IPC channel names, in one place so the preload and the main process cannot drift. */
 export const ipc = {
 	getStatus: "shell:get-status",
@@ -155,7 +178,11 @@ export const ipc = {
 	frameState: "frame:state",
 	frameMinimize: "frame:minimize",
 	frameToggleMaximize: "frame:toggle-maximize",
-	frameClose: "frame:close"
+	frameClose: "frame:close",
+	planningRead: "planning:read",
+	planningWrite: "planning:write",
+	planningChanged: "planning:changed",
+	planningSaveAs: "planning:save-as"
 } as const
 
 /** The API the preload exposes on `window.plaintorch`. */
@@ -194,5 +221,22 @@ export interface PlaintorchBridge {
 		/** Maximizes the window, or restores it when it is maximized. */
 		toggleMaximize(): Promise<void>
 		close(): Promise<void>
+	}
+	/**
+	 * Planning graph files. `read`, `write` and `onChanged` are a planning window's own file: each call acts on the file
+	 * of the window that makes it, and only that file, so a window opened for no file reads `undefined` and writes
+	 * nothing. `saveAs` makes a new one from any window.
+	 */
+	planning: {
+		read(): Promise<PlanningFileSnapshot | undefined>
+		/** Replaces the file's text. Writes are coalesced and land shortly after; closing the window lands the last one. */
+		write(text: string): Promise<void>
+		/** The file changed on disk from elsewhere — another editor, Obsidian, a sync — or went missing, or came back. */
+		onChanged(listener: (snapshot: PlanningFileSnapshot) => void): () => void
+		/**
+		 * Asks where to save a new planning file — a save dialog, modal to this window, starting in the served vault —
+		 * writes `text` there and opens the file in a planning window. `undefined` when the dialog was cancelled.
+		 */
+		saveAs(text: string): Promise<PlanningSaveOutcome | undefined>
 	}
 }

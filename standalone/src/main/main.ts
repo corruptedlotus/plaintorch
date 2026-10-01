@@ -5,6 +5,7 @@ import { setAutostartEnabled } from "./autostart"
 import { relayCoreStreams } from "./core-streams"
 import { hostsCore } from "./flavor"
 import { handleMediaScheme, registerMediaScheme } from "./media-protocol"
+import { handlePlanningFiles, planningFilesIn } from "./planning-files"
 import { resolveUserProfile } from "./profile"
 import { refuseRemoteFiles } from "./request-guard"
 import { Shell } from "./shell"
@@ -14,7 +15,8 @@ import { ShellWindows } from "./windows"
 
 /**
  * The main process: one instance per user, a tray icon, a splash while the core comes up, the briefing (the SIPA
- * UI) and a status window on demand, and a clean stop of the core on quit. Everything stateful lives in {@link Shell}; this file only wires
+ * UI) and a status window on demand, a planning window for each planning graph file (`.p7tpx`) the app is asked to
+ * open, and a clean stop of the core on quit. Everything stateful lives in {@link Shell}; this file only wires
  * Electron's lifecycle and the surfaces to it.
  */
 
@@ -24,6 +26,8 @@ function readArgument(name: string): string | undefined {
 }
 
 const launchedHidden = process.argv.includes("--hidden")
+/** The planning graph files the launch names: opening one from the file manager launches the app with its path. */
+const launchFiles = planningFilesIn(process.argv, process.cwd())
 const profile = resolveUserProfile(readArgument("--profile"))
 mkdirSync(profile.shellDataPath, { recursive: true })
 // Electron keys its single-instance lock on the userData folder, so moving it into the profile, before the lock is
@@ -110,7 +114,41 @@ async function run(): Promise<void> {
 		quit: () => void quit()
 	})
 
-	let briefingShownAfterSplash = false
+	/** Planning files waiting for the launch's windows: those the launch named, and any asked for before they show. */
+	const pendingFiles = [...launchFiles]
+	let launchWindowsShown = false
+	/**
+	 * The windows a launch ends in, once: the planning files waiting, or — for a visible launch that asked for none —
+	 * the main window. A login launch stays in the tray.
+	 */
+	const showLaunchWindows = () => {
+		if (launchWindowsShown) {
+			return
+		}
+
+		launchWindowsShown = true
+		const files = pendingFiles.splice(0)
+		if (files.length === 0 && !launchedHidden) {
+			windows.showBriefing()
+		}
+
+		for (const file of files) {
+			windows.showPlanning(file)
+		}
+	}
+
+	/** Opens planning files, or holds them for the launch's windows while the app is not ready or the splash is up. */
+	const openPlanningFiles = (files: readonly string[]) => {
+		if (!launchWindowsShown && (!app.isReady() || windows.isSplashOpen)) {
+			pendingFiles.push(...files)
+			return
+		}
+
+		for (const file of files) {
+			windows.showPlanning(file)
+		}
+	}
+
 	const publish = (status: ShellStatus) => {
 		tray.update(status)
 		windows.broadcast(status)
@@ -123,11 +161,7 @@ async function run(): Promise<void> {
 				}
 
 				windows.closeSplash()
-				// A visible launch ends in the main window once the core is up; a login launch stays in the tray.
-				if (!launchedHidden && !briefingShownAfterSplash) {
-					briefingShownAfterSplash = true
-					windows.showBriefing()
-				}
+				showLaunchWindows()
 			}, 900)
 		}
 	}
@@ -157,8 +191,35 @@ async function run(): Promise<void> {
 
 	relayCoreStreams(shell.transport)
 	handleFrameControls()
+	handlePlanningFiles({
+		fileOf: contents => windows.planningFileOf(contents),
+		fileAt: filePath => windows.planningFileAt(filePath),
+		servedVault: () => shell.servedVault,
+		open: filePath => windows.showPlanning(filePath)
+	})
 
-	app.on("second-instance", () => !quitting && windows.showBriefing())
+	// A second launch hands its command line over: the planning files it names open here, and a launch naming none
+	// brings the main window forward.
+	app.on("second-instance", (_, argv, workingDirectory) => {
+		if (quitting) {
+			return
+		}
+
+		const files = planningFilesIn(argv, workingDirectory)
+		if (files.length === 0) {
+			windows.showBriefing()
+		}
+		else {
+			openPlanningFiles(files)
+		}
+	})
+	// macOS hands a file over as an event instead, before the app is ready when the file launched it.
+	app.on("open-file", (event, file) => {
+		event.preventDefault()
+		if (!quitting) {
+			openPlanningFiles(planningFilesIn([file], process.cwd()))
+		}
+	})
 	// A tray app stays alive with no windows.
 	app.on("window-all-closed", () => { })
 	app.on("before-quit", event => {
@@ -180,9 +241,8 @@ async function run(): Promise<void> {
 	if (showSplash) {
 		windows.showSplash()
 	}
-
-	if (!launchedHidden && !showSplash) {
-		windows.showBriefing()
+	else {
+		showLaunchWindows()
 	}
 
 	await shell.start()

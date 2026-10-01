@@ -1,4 +1,5 @@
 import { getIcon, getIconIds, normalizePath, Notice, type App, type TFile } from "obsidian"
+import { GLOBAL_CONTEXT_EXTENSION, PromptTextModal } from "@pleiades/sipa"
 import type {
 	DialogHost,
 	GlobalContextHost,
@@ -80,16 +81,34 @@ export class ObsidianHost implements PlatformHost {
 			.map(id => id.slice(lucideIdPrefix.length)),
 	}
 
+	/**
+	 * A global context is saved under a name asked for, at the vault root — Obsidian opens only the vault's own
+	 * files — and opens in a new tab. A dismissed prompt saves nothing; a name already taken is refused rather than
+	 * overwritten.
+	 */
 	readonly globalContexts: GlobalContextHost = {
-		createAndOpen: async (fileName: string, text: string) => {
-			const path = normalizePath(fileName)
+		saveAndOpen: async (text: string) => {
+			let name: string | undefined
+			try {
+				name = await PromptTextModal.prompt("Save global context", "File name", "", "Save")
+			}
+			catch {
+				return undefined
+			}
+
+			if (!name) {
+				return undefined
+			}
+
+			const path = normalizePath(`${name.replace(/[\\/:*?"<>|]/g, "").trim()}.${GLOBAL_CONTEXT_EXTENSION}`)
 			if (this.app.vault.getAbstractFileByPath(path)) {
-				return { created: false, path }
+				new Notice(`A file named "${path}" already exists.`)
+				return undefined
 			}
 
 			const file = await this.app.vault.create(path, text)
 			await this.app.workspace.getLeaf(true).openFile(file)
-			return { created: true, path }
+			return { path }
 		},
 	}
 

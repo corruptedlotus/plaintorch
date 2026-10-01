@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<!-- As on the briefing, no 'self' for images: on a file: page it admits file://host/… too (SMB). -->
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src data: blob: plaintorch-media:; font-src 'self' data:">
+	<title>PLAINTORCH Planning</title>
+	<style>
+		:root {
+			/* The title bar's height and the canvas's toolbar: toasts appear below them, clear of the window buttons. */
+			--p7t-safe-top: 48px;
+		}
+
+		/* The canvas pans rather than scrolls, so it is given the window's height rather than growing to its graph's. */
+		#planning {
+			box-sizing: border-box;
+			display: flex;
+			flex-direction: column;
+			height: 100%;
+			padding: 0.2em 0.4em 0.4em;
+			overflow: hidden;
+		}
+
+		#planning > p7t-dependency-canvas {
+			flex: 1;
+			min-height: 0;
+		}
+	</style>
+</head>
+<body>
+	<p7t-window-frame>
+		<div id="planning" class="plaintorch-canvas-view plaintorch-root"></div>
+	</p7t-window-frame>
+	<script src="./planning.js"></script>
+</body>
+</html>
