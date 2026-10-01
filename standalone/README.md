@@ -19,8 +19,17 @@ and one build; the flavour is baked in at build time.
   and the change feed streamed line by line), and vault images through the `plaintorch-media://` scheme. It is the
   shell's main window: clicking the tray icon, relaunching the app, and a visible launch (once the core is up) open it.
   Notes have no in-app editor yet, so opening one says so.
-- A **tray icon** with the phase, the active vault, the briefing and the status window, activate/deactivate,
-  start-at-login, the logs folder, restart, updates, and quit.
+- A **tray icon** whose menu is kept short: the phase and the active vault (as read-only lines), **Check Status**,
+  **Open Briefing**, **Restart core** (standalone flavour only), the update entry (check, download, or install and
+  restart, following the updater's state), and **Quit PLAINTORCH**. Clicking the icon opens the briefing.
+- The **status window** holds everything else the shell does: activating and deactivating a vault, restarting the
+  core (standalone flavour), opening the logs folder and the briefing, start-at-login, updates, and quit. The briefing
+  also offers **Activate vault…** while the core is idle.
+- **Activating a vault** picks a folder and writes it as `ActiveVaultPath`. A folder that is no vault yet (no
+  `.plaintorch` settings file) is offered for initialization first; once the user agrees, the shell runs the core's
+  own `init` against it (`plaintorch init --vault <folder> --profile <root>`, see `src/main/vault-initialization.ts`)
+  and only then writes the path, so the core never sees it uninitialized. The client flavour ships no core to
+  initialize with, and says to run `plaintorch core init` instead.
 - A **status window** with the core, the shell settings, and the watcher (`p7t-watcher-status-card`: its health, what
   it means, and the issues the plugin's status-bar drawer lists), drawn with the SIPA cards, chips and buttons.
 - **Custom window frames**: the status and briefing windows are frameless and draw their own title bar
@@ -116,12 +125,26 @@ are committed; re-run it after changing a mark.
 > `useDefineForClassFields` must stay `false` (see `tsconfig.json` and the esbuild `tsconfigRaw`). With it on, a view
 > renders once and then never updates — the class field shadows the decorator's accessor and reactivity dies silently.
 
+## Fonts
+
+The shell embeds its type rather than relying on what the machine has installed: Outfit (the interface), Space
+Grotesk (text) and Cascadia Code (monospace), all variable and under the SIL Open Font License, from the
+`@fontsource-variable/*` packages. `src/renderer/fonts.css` imports them; esbuild bundles it into `dist/fonts.css` and
+copies each face to `dist/assets/fonts/`, and every page links the stylesheet. The faces are split by script, and a
+page fetches only those whose `unicode-range` it draws.
+
+The families keep fontsource's names, `"Outfit Variable"` and so on, which the SIPA host's `--font-*` tokens and the
+splash name first, with the installed names behind them. So no installed font of the same name can shadow the embedded
+one. That was the cause of accented letters drawn in a fallback face: a stale variable Outfit without them, installed
+per user, won over the good one in newer Chromium.
+
 ## Layout
 
 - `src/main`: the Electron main process. `shell.ts` is the single source of truth; `core-process.ts` supervises the
   spawned core and `core-location.ts` picks which core that is; `core-transport.ts` is HTTP over the pipe/socket (the SDK's socket transport); `core-streams.ts`
   relays the change feed to the windows; `media-protocol.ts` serves vault files; `request-guard.ts` refuses hosted
-  `file:` requests (UNC/SMB); `window-frame.ts` makes the custom frames work; `windows.ts`, `tray.ts`,
+  `file:` requests (UNC/SMB); `window-frame.ts` makes the custom frames work; `vault-initialization.ts` runs the
+  core's `init` on a folder to be activated; `windows.ts`, `tray.ts`,
   `autostart.ts`, `updater.ts`, `config.ts`, `profile.ts` do what their names say.
 - `src/preload`: the only bridge into the sandboxed renderer (`window.plaintorch`).
 - `src/renderer`: `splash.ts` (the splash, kept small), `status.ts` (the status window) and `briefing.ts` (the SIPA

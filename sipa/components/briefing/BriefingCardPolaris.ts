@@ -1,6 +1,7 @@
-import { component, css, eventListener, html, nothing, state } from "@a11d/lit"
+import { component, css, eventListener, html, nothing, state, type PropertyValues } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
 import { Objective, ObjectiveStatus, PolarisCycle, Reflective } from "@pleiades/sdk"
+import { toast } from "../../host"
 import {
 	addObjectiveToPolaris, core, isObjectiveInCycle, polarisActivityKind, polarisActivityKinds, removePolarisActivity,
 	TransferController, type CreationRowCreated, type PolarisActivity, type PolarisActivityCreated
@@ -9,7 +10,8 @@ import {
 @component('p7t-briefing-polaris')
 export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 	override readonly icon = 'polaris'
-	override readonly preHeading = 'Active Polaris Cycle'
+	/** Follows the cycle's state: see {@link willUpdate}. */
+	override preHeading = 'Active Polaris Cycle'
 
 	// The self-watch now lives on BriefingCard, so every card re-renders on an in-place edit — this one no
 	// longer needs its own.
@@ -120,6 +122,12 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 				line-height: 1;
 			}
 
+			/* A planned cycle has no time to show yet: its state, faint, where the timer will run. */
+			.heading-line .unbegun {
+				color: var(--text-muted);
+				font-weight: 300;
+			}
+
 			.add-button {
 				margin: .4em 1.2em;
 
@@ -190,10 +198,27 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		`
 	}
 
+	/**
+	 * Whether the cycle shown has not begun yet. When no cycle is running the briefing falls back to today's cycle
+	 * whatever its state, so a forecast planned for today arrives here with no start time (and a `null` one on the
+	 * wire, not a missing one): it is shown planned, with a way to begin it, rather than timed from nothing.
+	 */
+	private get unbegun() {
+		return !!this.data && !this.data.startTime
+	}
+
+	protected override willUpdate(changedProperties: PropertyValues<this>) {
+		super.willUpdate(changedProperties)
+		// Every update, not only a new `data`: beginning the cycle edits the same canonical instance in place.
+		this.preHeading = this.unbegun ? 'Planned Polaris Cycle' : 'Active Polaris Cycle'
+	}
+
 	override get headingTemplate() {
 		return html`
 			<span class='heading-line'>
-				<p7t-elapsed-view .epoch=${this.data!.startTime}></p7t-elapsed-view>
+				${this.unbegun
+					? html`<span class='unbegun'>Not Started</span>`
+					: html`<p7t-elapsed-view .epoch=${this.data!.startTime}></p7t-elapsed-view>`}
 				<p7t-active-timeframes></p7t-active-timeframes>
 			</span>
 		`
@@ -270,7 +295,9 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 				.valueTemplate=${(value: number) => html`<p7t-time-unit .value=${value}></p7t-time-unit>`}
 				.maxTemplate=${(max: number) => html`<p7t-time-unit .value=${max}></p7t-time-unit>`}
 			></p7t-value-progress>
-			<p7t-button @click=${() => this.conclude()}>Conclude</p7t-button>
+			${this.unbegun
+				? html`<p7t-button icon='polaris' @click=${() => void this.beginPlanned()}>Begin</p7t-button>`
+				: html`<p7t-button @click=${() => this.conclude()}>Conclude</p7t-button>`}
 		`
 	}
 
@@ -286,13 +313,32 @@ export class BriefingCardPolaris extends BriefingCard<PolarisCycle> {
 		void core.repos.briefing.revalidateIfObserved()
 	}
 
-	private begin() {
+	/**
+	 * Starts the day's cycle. A cycle's id is its day, so once today's has concluded there is none to start: the core
+	 * hands the concluded one back, which the card must not take up as if it ran again.
+	 */
+	private async begin() {
 		if (this.data) return
-		core.polaris.startNew().then(polaris => this.data = polaris)
+		const polaris = await core.polaris.startNew()
+		if (polaris?.startTime && !polaris.endTime) {
+			this.data = polaris
+		}
+		else if (polaris?.endTime) {
+			toast("Today's Polaris cycle has already concluded. The next one begins tomorrow.", 'info')
+		}
+	}
+
+	/** Begins the planned cycle shown: activated in place (its id is its day, so a new one would collide). */
+	private async beginPlanned() {
+		const cycle = this.data
+		if (!cycle || !this.unbegun) return
+		const begun = await core.repos.polaris.mutate(cycle.id, () => core.polaris.beginCycle(cycle.id))
+		if (begun) this.data = begun
+		await core.repos.briefing.revalidateIfObserved()
 	}
 
 	private conclude() {
-		if (!this.data) return
+		if (!this.data || this.unbegun) return
 		core.polaris.end(new Date().toISOString()).then(polaris => {
 			if (!!polaris) this.data = undefined
 		})

@@ -8,6 +8,7 @@ import { CoreTransport } from "./core-transport"
 import { flavor, hostsCore } from "./flavor"
 import type { UserProfile } from "./profile"
 import { ShellUpdater } from "./updater"
+import { initializeVault, type VaultInitialization } from "./vault-initialization"
 
 const attachedPollMs = 5_000
 
@@ -118,6 +119,28 @@ export class Shell extends EventEmitter<{ status: [ShellStatus], log: [string] }
 		clearInterval(this.pollTimer)
 		this.configuration.stopWatching()
 		await this.stopCore()
+	}
+
+	/**
+	 * Initializes a folder as a PLAINTORCH vault (see {@link initializeVault}), saying so on every surface while the
+	 * core's `init` runs. Call it before {@link activateVault}, so the core never sees the folder uninitialized.
+	 */
+	public async initializeVault(folder: string): Promise<VaultInitialization> {
+		const previous = this.message
+		const progress = `Initializing ${folder} as a PLAINTORCH vault...`
+		this.message = progress
+		this.publish()
+		this.emit("log", `Initializing vault '${folder}'.`)
+
+		const result = await initializeVault(folder, this.profile)
+		this.emit("log", result.initialized ? `Initialized vault '${folder}'.` : `Could not initialize vault '${folder}': ${result.reason}`)
+		// The core may have reported in the meantime; its word stands over the stale one.
+		if (this.message === progress) {
+			this.message = previous
+		}
+
+		this.publish()
+		return result
 	}
 
 	/** Writes the active vault into the shared configuration; the core reconciles from there. */

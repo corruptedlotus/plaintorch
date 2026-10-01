@@ -139,7 +139,7 @@ export class ScheduleItem extends InfoItem {
 	protected override get content() {
 		if (this.scheduleMode === 'orbit') {
 			return html`
-				<span class='schedule'>
+				<span class='schedule' ${this.tooltipAttachment}>
 					<p7t-icon icon='lucide:repeat'></p7t-icon>
 					${this.orbitTemplate()}
 				</span>
@@ -148,7 +148,7 @@ export class ScheduleItem extends InfoItem {
 
 		if (this.scheduleMode === 'datetime') {
 			return html`
-				<span class='schedule'>
+				<span class='schedule' ${this.tooltipAttachment}>
 					<p7t-icon icon='lucide:calendar-clock'></p7t-icon>
 					${this.dateTemplate()}
 					${this.timeTemplate()}

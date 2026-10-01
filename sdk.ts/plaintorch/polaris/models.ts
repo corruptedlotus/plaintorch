@@ -53,7 +53,12 @@ export class PolarisCycle {
 	id: string = ''
 	title: string = ''
 	forecast: PolarisForecast | undefined
+	/**
+	 * When the cycle began. Unset for one that has not begun — a forecast, which the briefing still shows when it is
+	 * today's — and the core sends that as `null`, not as a missing key: test it for truthiness, never parse it bare.
+	 */
 	startTime: string | undefined
+	/** When the cycle concluded; unset (`null` on the wire) while it is planned or running. */
 	endTime: string | undefined
 	isForecast?: boolean
 	/** Everything the cycle holds to work at (PEP111): objective- and decree-backed executives alike. */

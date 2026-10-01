@@ -144,9 +144,11 @@ export function wouldCycle(edges: readonly CanvasEdge[], source: string, target:
 	const pending = [source]
 	while (pending.length > 0) {
 		const current = pending.pop()
-		if (current === undefined || !visited.add(current)) {
+		if (current === undefined || visited.has(current)) {
 			continue
 		}
+
+		visited.add(current)
 
 		if (current === target) {
 			return true
@@ -204,8 +206,10 @@ export function unresolvedPrerequisites(
 					collected.set(key, source)
 				}
 
-				// Descend into each prerequisite once, so its own unmet prerequisites join the chain.
-				if (visited.add(key)) {
+				// Descend into each prerequisite once, so its own unmet prerequisites join the chain. (`Set.add` returns the
+				// set, not whether it grew, so membership is tested first — else a loop of prerequisites never ends.)
+				if (!visited.has(key)) {
+					visited.add(key)
 					pending.push(key)
 				}
 			}

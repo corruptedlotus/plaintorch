@@ -262,10 +262,6 @@ public class PlainfraContext : DbContext
 			.Property(x => x.Status)
 			.HasConversion<string>();
 
-		modelBuilder.Entity<Incentive>()
-			.Navigation(x => x.Directive)
-			.AutoInclude();
-
 		// Sibling declarative fields get explicit column names so the shared table stays readable and
 		// same-named properties across siblings map deliberately.
 		modelBuilder.Entity<Fate>()
@@ -449,6 +445,15 @@ public class PlainfraContext : DbContext
 		modelBuilder.Entity<LorePage>()
 			.Property(x => x.Id)
 			.HasColumnName("Puck");
+
+		// An incentive's owning directive. Declared here, after every call that shapes the incentive hierarchy, and
+		// not beside the incentive configuration above: the first `Entity<Declarative>()` inserts that abstract base
+		// between Incentive and its declaratives, and EF rebuilds the inherited navigation as it does so, dropping
+		// its eager-load flag. Declared any earlier, it silently stops applying, and every objective, fate and
+		// decree is read without its directive while only write responses carry it (see ModelAutoIncludeTests).
+		modelBuilder.Entity<Incentive>()
+			.Navigation(x => x.Directive)
+			.AutoInclude();
 
 		modelBuilder.Entity<Executive>()
 			.Navigation(x => x.Incentive)

@@ -209,12 +209,17 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 			?? this.objectiveList.value?.find(objective => objective.id === id)
 	}
 
+	/** The sprint's day, 1 on its start date; undefined while it is in planning and has no start date yet. */
+	private get currentDay() {
+		const start = this.data?.startDate ? Date.parse(this.data.startDate) : NaN
+		return Number.isNaN(start) ? undefined : Math.floor((Date.now() - start) / (1000 * 60 * 60 * 24)) + 1
+	}
+
 	protected override get footer() {
-		const timespan = Date.now() - new Date(Date.parse(this.data!.startDate!)).getTime()
-		const currentDay = Math.floor(timespan / (1000 * 60 * 60 * 24)) + 1
+		const currentDay = this.currentDay
 		return html`
 			<p7t-value-progress icon='starfire' value=${this.currentStarfire} max=${this.maxStarfire}>
-				<span>Day ${currentDay}</span>
+				<span>${currentDay === undefined ? 'In Planning' : `Day ${currentDay}`}</span>
 			</p7t-value-progress>
 			<p7t-button @click=${() => this.conclude()}>Conclude</p7t-button>
 		`
