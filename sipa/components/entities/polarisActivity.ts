@@ -1,5 +1,5 @@
-import type { Executive, PolarisCycle } from '@pleiades/sdk'
-import { core, isIncentiveInCycle, type ContextMenuEntry, type ContextMenuSpec } from '..'
+import { isObjectiveIncentive, ObjectiveStatus, type Executive, type Objective, type PolarisCycle } from '@pleiades/sdk'
+import { confirmAction, core, isIncentiveInCycle, removeConfirmation, type ContextMenuEntry, type ContextMenuSpec, type InteractionBubbleAnchor } from '..'
 import { ExecutiveModal } from './ExecutiveModal'
 import { openEntityEditor } from './entityMenu'
 import { toast } from '../../host'
@@ -41,29 +41,85 @@ function entityOf(activity: PolarisActivity) {
  *
  * `changed` is called with the updated executive after Done or the allocation modal commits, so the row showing
  * it can redraw at once rather than wait for the cycle to be re-read.
+ *
+ * Moving and removing ask first; marking an objective's executive done then offers to mark the objective done too,
+ * where the menu was opened.
  */
 export function polarisActivityMenu(activity: PolarisActivity, changed?: (updated: PolarisActivity) => void): ContextMenuSpec {
 	const done = isPolarisActivityDone(activity)
 	const entity = entityOf(activity)
+	const title = polarisActivityTitle(activity)
 	const entries: ContextMenuEntry[] = [
 		{
 			label: done ? 'Not done' : 'Done',
 			icon: done ? 'lucide:undo-2' : 'lucide:check',
-			run: async () => {
+			run: async origin => {
 				const updated = await setPolarisActivityDone(activity, !done)
-				if (updated) {
-					changed?.(updated)
+				if (!updated) {
+					return
+				}
+
+				changed?.(updated)
+				const objective = !done ? await offerObjectiveDone(updated, origin) : undefined
+				if (objective) {
+					changed?.({ ...updated, incentive: objective })
 				}
 			}
 		},
 		{ label: 'Time Management', icon: 'lucide:clock', run: () => openPolarisActivityAllocation(activity, changed) },
 		{ label: 'Edit', icon: 'lucide:pencil', disabled: !entity, run: () => { entity && openEntityEditor(entity) } },
-		{ label: 'Move to next Polaris', icon: 'lucide:calendar-plus', run: () => moveToNextPolaris(activity) },
+		{
+			label: 'Move to next Polaris',
+			icon: 'lucide:calendar-plus',
+			confirm: { message: `Move "${title}" to the next Polaris cycle?`, action: 'Move', actionIcon: 'lucide:calendar-plus' },
+			run: () => moveToNextPolaris(activity)
+		},
 		{ separator: true },
-		{ label: 'Remove', icon: 'lucide:trash-2', danger: true, run: () => removePolarisActivity(activity) }
+		{
+			label: 'Remove',
+			icon: 'lucide:trash-2',
+			danger: true,
+			// The executive goes with its tracked time, which is worth saying when there is some.
+			confirm: removeConfirmation((activity.elapsed ?? 0) > 0
+				? `Remove "${title}" from this Polaris cycle? Its tracked time goes with it.`
+				: `Remove "${title}" from this Polaris cycle?`),
+			run: () => removePolarisActivity(activity)
+		}
 	]
 
-	return { title: polarisActivityTitle(activity), entries }
+	return { title, entries }
+}
+
+/**
+ * Having marked an activity done, offers beside `anchor` to mark the objective behind it done too — when it is an
+ * objective still open (a decree has no such status). Resolves to the objective as updated, or `undefined` when not
+ * offered, declined or refused.
+ */
+export async function offerObjectiveDone(activity: PolarisActivity, anchor: InteractionBubbleAnchor): Promise<Objective | undefined> {
+	const objective = isObjectiveIncentive(activity.incentive) ? activity.incentive : undefined
+	if (!objective || objective.status >= ObjectiveStatus.Done) {
+		return undefined
+	}
+
+	const confirmed = await confirmAction(anchor, {
+		message: `Mark "${objective.title}" as done too?`,
+		action: 'Mark done',
+		actionIcon: 'lucide:check',
+		cancel: 'Not yet',
+		severity: 'positive',
+	})
+	if (!confirmed) {
+		return undefined
+	}
+
+	const updated = await core.repos.objectives.mutate(objective.id, () => core.objectives.shiftWorkflow(objective.id, { status: ObjectiveStatus.Done }))
+	if (!updated) {
+		toast(`PLAINTORCH could not mark ${objective.title} as done.`, 'error')
+		return undefined
+	}
+
+	await revalidatePolarisCycles()
+	return updated
 }
 
 /** Opens the activity's allocation modal — its time, its affinity, its done flag. */

@@ -2,6 +2,7 @@ import { Component, component, css, html, nothing, property } from '@a11d/lit'
 import type { DeclarativeCalendar, EntityExistence } from '@pleiades/sdk/plaintorch'
 import { core, DerivedRef, EntityRef } from './data'
 import { canDeleteEntity, deleteEntityByType } from './entities/entityMenu'
+import { confirmAction, deleteConfirmation } from './design/ConfirmationBubble'
 import { canMaterializeKind, createEntityNote, openEntityNote } from './grid/entityActions'
 
 /** The minimal shape every entity a banner resolves shares — a PUCK identity and a title. */
@@ -243,7 +244,7 @@ export class FullBanner extends Component {
 					<p7t-button ghost icon='lucide:file-plus' @click=${() => this.createNote(kind)}><span>Create note</span></p7t-button>
 				`}
 				${!canDelete ? nothing : html`
-					<p7t-button ghost danger icon='lucide:trash-2' @click=${() => this.deleteEntity(kind)}><span>Delete</span></p7t-button>
+					<p7t-button ghost danger icon='lucide:trash-2' @click=${(e: Event) => this.deleteEntity(kind, e)}><span>Delete</span></p7t-button>
 				`}
 			</div>
 		`
@@ -257,8 +258,11 @@ export class FullBanner extends Component {
 		void createEntityNote({ id: this.puck }, kind)
 	}
 
-	private deleteEntity(kind: string) {
-		void deleteEntityByType(typeNameByKind[kind], this.puck, this.title)
+	/** Deletes the entity once confirmed beside the button. */
+	private async deleteEntity(kind: string, e: Event) {
+		if (await confirmAction(e, deleteConfirmation(`Delete "${this.title}"?`))) {
+			await deleteEntityByType(typeNameByKind[kind], this.puck, this.title)
+		}
 	}
 }
 

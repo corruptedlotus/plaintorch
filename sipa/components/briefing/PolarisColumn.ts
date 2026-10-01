@@ -2,8 +2,8 @@ import { component, css, html, nothing, property, state, type PropertyValues } f
 import { isoDay, isoDaysBetween } from "@pleiades/sdk"
 import { PolarisBriefingBase } from "./PolarisBriefingBase"
 import {
-	canMovePolarisActivity, core, movePolarisActivity, polarisActivityKinds, revalidatePolarisCycles, TransferController,
-	type PolarisActivity
+	canMovePolarisActivity, confirmAction, core, deleteConfirmation, movePolarisActivity, polarisActivityKinds, revalidatePolarisCycles,
+	TransferController, type PolarisActivity
 } from ".."
 import { toast } from "../../host"
 
@@ -237,7 +237,7 @@ export class PolarisColumn extends PolarisBriefingBase {
 				<p7t-time-unit .value=${this.totalEstimation}></p7t-time-unit>
 			</span>
 			${!deletable ? nothing : html`
-				<p7t-button ghost danger icon='lucide:trash-2' ?disabled=${this.busy} @click=${() => this.delete()}>Delete</p7t-button>
+				<p7t-button ghost danger icon='lucide:trash-2' ?disabled=${this.busy} @click=${(e: Event) => this.delete(e)}>Delete</p7t-button>
 			`}
 		`
 	}
@@ -263,10 +263,16 @@ export class PolarisColumn extends PolarisBriefingBase {
 		}
 	}
 
-	/** Deletes the day's plan — the forecast cycle and the executives in it; the objectives and decrees behind them stay. */
-	private async delete() {
+	/**
+	 * Deletes the day's plan — the forecast cycle and the executives in it; the objectives and decrees behind them stay.
+	 * Asks first, beside the button.
+	 */
+	private async delete(e: Event) {
 		const cycle = this.data
 		if (!cycle || cycle.startTime || this.busy) return
+		if (!await confirmAction(e, deleteConfirmation(`Delete the plan "${cycle.title}"? Its activities go with it; the objectives and decrees behind them stay.`))) return
+		// The day may have changed hands while the question was open.
+		if (this.data?.id !== cycle.id || this.busy) return
 		this.busy = true
 		try {
 			if (!await core.polaris.delete(cycle.id)) {

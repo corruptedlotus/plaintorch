@@ -1,7 +1,7 @@
 import { component, css, eventListener, html, nothing, state, type PropertyValues } from "@a11d/lit"
 import { PolarisBriefingBase } from "./PolarisBriefingBase"
 import { Objective, ObjectiveStatus, Reflective } from "@pleiades/sdk"
-import { addObjectiveToPolaris, core, isObjectiveInCycle, revalidatePolarisCycles, TransferController } from ".."
+import { addObjectiveToPolaris, concludeConfirmation, confirmAction, core, isObjectiveInCycle, revalidatePolarisCycles, TransferController } from ".."
 import { toast } from "../../host"
 
 /**
@@ -173,7 +173,7 @@ export class BriefingCardPolaris extends PolarisBriefingBase {
 				.maxTemplate=${(max: number) => html`<p7t-time-unit .value=${max}></p7t-time-unit>`}
 			></p7t-value-progress>
 			${this.begun
-				? html`<p7t-button @click=${() => this.conclude()}>Conclude</p7t-button>`
+				? html`<p7t-button @click=${(e: Event) => this.conclude(e)}>Conclude</p7t-button>`
 				: html`<p7t-button @click=${() => this.beginPlanned()}>Begin</p7t-button>`}
 		`
 	}
@@ -209,8 +209,10 @@ export class BriefingCardPolaris extends PolarisBriefingBase {
 		await revalidatePolarisCycles()
 	}
 
-	private conclude() {
+	/** Concludes the running cycle now, once confirmed beside the button. */
+	private async conclude(e: Event) {
 		if (!this.data) return
+		if (!await confirmAction(e, concludeConfirmation(`Conclude "${this.data.title}"? It ends now.`)) || !this.data) return
 		core.polaris.end(new Date().toISOString()).then(polaris => {
 			if (!!polaris) {
 				this.data = undefined

@@ -1,6 +1,6 @@
 import { Component, component, css, html, live, nothing, property, PropertyValues, repeat, state } from '@a11d/lit'
 import { ObjectiveCollege, Timeframe, TimeframeInclusion, TimeframeUpdate } from '@pleiades/sdk'
-import { core, SelectCollegeModal, SelectInclusionModal } from '..'
+import { confirmAction, core, deleteConfirmation, SelectCollegeModal, SelectInclusionModal } from '..'
 import type { EditablePart } from '../editing/EditableDataLink'
 import type { EditableToggle } from '../editing/EditableToggle'
 import { inclusionDescriptorOf } from './inclusionDescriptors'
@@ -209,7 +209,7 @@ export class TimeframesEditor extends Component {
 						.value=${timeframe.title}
 						@change=${(e: Event) => this.saveTimeframe(timeframe.id, { title: (e.target as EditablePart<string>).value ?? '' })}>
 					</p7t-editable-plaintext>
-					<p7t-button ghost danger icon='lucide:trash-2' label='Remove timeframe' @click=${() => this.removeTimeframe(timeframe)}></p7t-button>
+					<p7t-button ghost danger icon='lucide:trash-2' label='Remove timeframe' @click=${(e: Event) => this.removeTimeframe(timeframe, e)}></p7t-button>
 				</div>
 				<div class='fields'>
 					<div class='field'>
@@ -365,7 +365,12 @@ export class TimeframesEditor extends Component {
 		await this.refresh()
 	}
 
-	private async removeTimeframe(timeframe: Timeframe) {
+	/** Deletes a timeframe once confirmed beside its button. */
+	private async removeTimeframe(timeframe: Timeframe, e: Event) {
+		if (!await confirmAction(e, deleteConfirmation(`Delete the timeframe "${timeframe.title}"?`))) {
+			return
+		}
+
 		const removed = await core.directives.deleteTimeframe(timeframe.id)
 		if (!removed) {
 			toast('PLAINTORCH could not remove that timeframe.', 'error')

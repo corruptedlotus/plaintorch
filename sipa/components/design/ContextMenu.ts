@@ -1,12 +1,23 @@
 import { Component, component, css, html, nothing, property, query } from '@a11d/lit'
+import { PopoverPlacement, type PopoverCoordinates } from '@3mo/popover'
 import { IconName } from '../PleiadesIcon'
+import { confirmAction, type ConfirmationOptions } from './ConfirmationBubble'
 
 /** A clickable menu row. */
 export interface ContextMenuAction {
 	label: string
 	icon?: IconName
-	/** The action to perform. Its return is ignored; when it is async the menu still awaits it before it is gone. */
-	run: () => void
+	/**
+	 * The action to perform, handed the viewport point the menu was opened at: by then the menu is gone, and that
+	 * point is where a follow-up question can still be asked. Its return is ignored; when it is async the menu still
+	 * awaits it before it is gone.
+	 */
+	run: (origin: PopoverCoordinates) => void
+	/**
+	 * Asks before running — a confirmation bubble beside the row, the menu staying open until it is answered. Opens to
+	 * the row's side unless the options place it otherwise.
+	 */
+	confirm?: ConfirmationOptions
 	/** Shown in the error colour, for a destructive action. */
 	danger?: boolean
 	/** Rendered with a selected accent, for a toggle among mutually exclusive options. */
@@ -38,13 +49,17 @@ const isNote = (entry: ContextMenuEntry): entry is ContextMenuNote => 'note' in 
  * It renders as a native `popover`, so it sits in the top layer — never clipped by whatever it was opened inside —
  * and light-dismisses on an outside click or Escape for free. Open it imperatively through {@link ContextMenu.open}:
  * it mounts a transient menu to the document, positions it at the pointer within the viewport, closes it after an
- * action runs, and removes itself on dismissal.
+ * action runs, and removes itself on dismissal. A row carrying `confirm` asks in a confirmation bubble beside it
+ * before running.
  */
 @component('p7t-context-menu')
 export class ContextMenu extends Component {
 	@property({ type: Object }) spec?: ContextMenuSpec
 
 	@query('.menu') private readonly panel!: HTMLElement
+
+	/** The viewport point the menu was opened at, handed to the row that runs. */
+	private origin: PopoverCoordinates = [0, 0]
 
 	/**
 	 * Opens a menu at a viewport point. Mounts a transient instance to the document body — so it escapes any
@@ -170,25 +185,37 @@ export class ContextMenu extends Component {
 				class='menu-item ${entry.danger ? 'danger' : ''}'
 				aria-pressed=${entry.pressed ?? nothing}
 				?disabled=${entry.disabled}
-				@click=${() => void this.choose(entry)}>
+				@click=${(e: Event) => void this.choose(entry, e)}>
 				${!entry.icon ? nothing : html`<p7t-icon icon=${entry.icon}></p7t-icon>`}
 				<span>${entry.label}</span>
 			</button>
 		`
 	}
 
-	/** Closes first, then runs — so a slow action never leaves the menu hanging over the surface it acted on. */
-	private async choose(entry: ContextMenuAction) {
+	/**
+	 * Asks first when the entry wants it — the menu stays open meanwhile, and a declined row leaves it open for
+	 * another choice — then closes, then runs, so a slow action never leaves the menu hanging over the surface it
+	 * acted on.
+	 */
+	private async choose(entry: ContextMenuAction, event: Event) {
 		if (entry.disabled) {
 			return
 		}
 
-		this.panel.hidePopover()
-		await entry.run()
+		if (entry.confirm && !await confirmAction(event, { placement: PopoverPlacement.InlineEnd, ...entry.confirm })) {
+			return
+		}
+
+		if (this.panel.matches(':popover-open')) {
+			this.panel.hidePopover()
+		}
+
+		await entry.run(this.origin)
 	}
 
 	/** Shows the popover and places it at the pointer, flipping above and clamping to the viewport as needed. */
 	async openAt(clientX: number, clientY: number) {
+		this.origin = [clientX, clientY]
 		// The size to place against is the size of the content just assigned, which is not laid out until the
 		// update it triggered has run.
 		await this.updateComplete

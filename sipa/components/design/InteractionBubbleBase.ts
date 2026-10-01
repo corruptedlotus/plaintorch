@@ -386,6 +386,19 @@ export abstract class InteractionBubbleBase<TData, TOptions extends InteractionB
 	}
 
 	/**
+	 * Moves the focus to the body's `autofocus` control. Not at once: a bubble raised by an Enter (a choice in a picker,
+	 * a menu row) opens while that keystroke is still under way, and a button focused now would take its activation
+	 * and answer the bubble unasked.
+	 */
+	private takeFocus() {
+		setTimeout(() => {
+			if (this.open && !this.settled) {
+				this.renderRoot.querySelector<HTMLElement>('[autofocus]')?.focus({ preventScroll: true })
+			}
+		})
+	}
+
+	/**
 	 * Focus left inside the closing bubble falls to the document, so it goes back where it was before the bubble
 	 * opened. Not at once: the keystroke that closed it (an Enter in a field) is still under way and would carry on into
 	 * the element given the focus, pressing the trigger again. And only while it is still stranded — on the document,
@@ -422,7 +435,7 @@ export abstract class InteractionBubbleBase<TData, TOptions extends InteractionB
 			this.settled = false
 			this.startingData = this.data
 			this.listen()
-			this.renderRoot.querySelector<HTMLElement>('[autofocus]')?.focus({ preventScroll: true })
+			this.takeFocus()
 		}
 		else if (!this.open && this.shown) {
 			this.shown = false

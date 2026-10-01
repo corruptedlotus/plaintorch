@@ -1,6 +1,6 @@
 import { Component, component, css, event, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
 import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
-import { ContextMenu, core, DerivedRef, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
+import { concludeConfirmation, ContextMenu, core, deleteConfirmation, DerivedRef, navigateToEntity, removeConfirmation, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
 import { activatePlanningOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
 import { OnrushDetailModal } from './OnrushDetailModal'
@@ -718,17 +718,32 @@ export class DependencyCanvas extends Component {
 		`
 	}
 
-	/** The sprint-lifecycle actions the tray's menu offers, which differ by mode; empty in a global context. */
+	/**
+	 * The sprint-lifecycle actions the tray's menu offers, which differ by mode; empty in a global context. Deleting and
+	 * concluding ask first.
+	 */
 	private get lifecycleActions(): ExpandingAction[] {
 		if (this.mode === 'onrush-planning' && this.sprint) {
 			return [
 				{ key: 'activate', icon: 'state-onrush', label: 'Activate', run: () => this.onActivate() },
-				{ key: 'delete', icon: 'lucide:trash-2', label: 'Delete', run: () => this.onDelete() }
+				{
+					key: 'delete',
+					icon: 'lucide:trash-2',
+					label: 'Delete',
+					confirm: deleteConfirmation(`Delete the planned Onrush "${this.sprint.title}"?`),
+					run: () => this.onDelete()
+				}
 			]
 		}
 
 		if (this.sprint) {
-			return [{ key: 'conclude', icon: 'state-archived', label: 'Conclude', run: () => this.onConclude() }]
+			return [{
+				key: 'conclude',
+				icon: 'state-archived',
+				label: 'Conclude',
+				confirm: concludeConfirmation(`Conclude the Onrush "${this.sprint.title}"?`),
+				run: () => this.onConclude()
+			}]
 		}
 
 		return []
@@ -947,7 +962,13 @@ export class DependencyCanvas extends Component {
 				{ label: "Gates the dependant's finish", icon: 'lucide:flag', pressed: constraint === DependencyConstraint.ToFinish, run: () => this.reshape(edge, trigger, DependencyConstraint.ToFinish) })
 		}
 
-		entries.push({ separator: true }, { label: 'Remove dependency', icon: 'lucide:unlink', danger: true, run: () => deleteDependency(edge) })
+		entries.push({ separator: true }, {
+			label: 'Remove dependency',
+			icon: 'lucide:unlink',
+			danger: true,
+			confirm: { ...removeConfirmation('Remove this dependency? The entities it joins stay.'), actionIcon: 'lucide:unlink' },
+			run: () => deleteDependency(edge)
+		})
 		return { title: `This ${describeEdge(edge.dependency)}`, entries }
 	}
 
@@ -987,7 +1008,7 @@ export class DependencyCanvas extends Component {
 			{ label: 'Remove from view', icon: 'lucide:eye-off', run: () => this.removeFromView(node, false) },
 			{ label: 'Remove with connected group', icon: 'lucide:git-fork', run: () => this.removeFromView(node, true) },
 			{ separator: true },
-			{ label: 'Delete', icon: 'lucide:trash-2', danger: true, run: () => deleteEntity(node) }
+			this.deleteEntry(node)
 		)
 		return entries
 	}
@@ -997,10 +1018,26 @@ export class DependencyCanvas extends Component {
 			{ label: 'Open note', icon: 'lucide:file-text', run: () => navigateToEntity(node.entity.id) },
 			node.ghostly
 				? { note: 'A prerequisite outside this Onrush. It goes when the block is resolved.' }
-				: { label: 'Remove from Onrush', icon: 'onrush', run: () => removeObjectiveFromOnrush(node.entity.id) },
+				: {
+					label: 'Remove from Onrush',
+					icon: 'onrush',
+					confirm: removeConfirmation(`Remove "${node.entity.title}" from this Onrush?`, 'default'),
+					run: () => removeObjectiveFromOnrush(node.entity.id)
+				},
 			{ separator: true },
-			{ label: 'Delete', icon: 'lucide:trash-2', danger: true, run: () => deleteEntity(node) }
+			this.deleteEntry(node)
 		]
+	}
+
+	/** Deleting the entity behind a node, which asks first — the one destructive row a node's menu offers. */
+	private deleteEntry(node: CanvasNode): ContextMenuEntry {
+		return {
+			label: 'Delete',
+			icon: 'lucide:trash-2',
+			danger: true,
+			confirm: deleteConfirmation(`Delete "${node.entity.title}"?`),
+			run: () => deleteEntity(node)
+		}
 	}
 
 	private checkpointMenuEntries(node: CanvasNode): ContextMenuEntry[] {
@@ -1016,7 +1053,13 @@ export class DependencyCanvas extends Component {
 
 		return [
 			{ separator: true },
-			{ label: 'Delete checkpoint', icon: 'lucide:trash-2', danger: true, run: () => deleteCheckpoint(node.entity.id) }
+			{
+				label: 'Delete checkpoint',
+				icon: 'lucide:trash-2',
+				danger: true,
+				confirm: deleteConfirmation(`Delete the checkpoint "${node.entity.title}" and the dependencies through it?`),
+				run: () => deleteCheckpoint(node.entity.id)
+			}
 		]
 	}
 
