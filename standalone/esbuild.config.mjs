@@ -77,7 +77,7 @@ const shared = {
 	// define semantics or they shadow those accessors and reactivity silently dies (the view renders once, then never
 	// updates). Set here too so a build never depends on tsconfig auto-discovery.
 	tsconfigRaw: { compilerOptions: { experimentalDecorators: true, useDefineForClassFields: false } },
-	loader: { ".png": "dataurl", ".svg": "dataurl" }
+	loader: { ".png": "dataurl", ".svg": "dataurl", ".webp": "dataurl" }
 }
 
 // The renderers bundle the SIPA UI from source. Its lit runtime lives in the package's own node_modules, and the

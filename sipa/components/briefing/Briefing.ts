@@ -83,6 +83,7 @@ export class Briefing extends Component {
 				<p7t-navitem key='throne' icon='everglow' ?active=${this.page === 'throne'}>Throne Room</p7t-navitem>
 				<p7t-navitem key='planning' icon='onrush' ?active=${this.page === 'planning'}>Planning</p7t-navitem>
 				<p7t-navitem key='backlog' icon='directive' ?active=${this.page === 'backlog'}>Backlog</p7t-navitem>
+				<p7t-navitem key='moonlight' icon='directive-lunar' ?active=${this.page === 'moonlight'}>Moonlight</p7t-navitem>
 				<p7t-navitem key='lore' icon='lorepage' ?active=${this.page === 'lore'}>Lore</p7t-navitem>
 				<p7t-button ghost emphasis label='Settings' class='settings' icon='lucide:settings' aria-label='Settings' @click=${() => this.openSettings()}></p7t-button>
 			</div>
@@ -96,6 +97,8 @@ export class Briefing extends Component {
 				return html`<p7t-throne-view .data=${this.data}></p7t-throne-view>`
 			case 'backlog':
 				return html`<p7t-entity-grid></p7t-entity-grid>`
+			case 'moonlight':
+				return html`<p7t-moonlight-view></p7t-moonlight-view>`
 			case 'lore':
 				return html`<p7t-lore-grid></p7t-lore-grid>`
 			case 'planning':

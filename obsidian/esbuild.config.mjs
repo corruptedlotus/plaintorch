@@ -29,6 +29,7 @@ const context = await esbuild.context({
   loader: {
 	".svg": "dataurl",
 	".png": "dataurl",
+	".webp": "dataurl",
   },
   format: "cjs",
   target: "es2020",

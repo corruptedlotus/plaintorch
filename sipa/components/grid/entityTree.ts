@@ -186,9 +186,10 @@ export function buildGridRows(source: EntityTreeSource, expanded: ReadonlySet<st
  * Determines whether following a directive's parents ever reaches a directive that has none.
  *
  * A vault is hand-editable, so a parent chain that loops back on itself is a reachable state rather than
- * a theoretical one, and every directive in such a loop would otherwise be invisible.
+ * a theoretical one, and every directive in such a loop would otherwise be invisible. Shared by every surface that
+ * draws a directive tree, so each surfaces the same directives at the top.
  */
-function descendsFromARoot(
+export function descendsFromARoot(
 	directive: Directive,
 	byId: ReadonlyMap<string, Directive>,
 	known: ReadonlySet<string>

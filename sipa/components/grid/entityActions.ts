@@ -1,5 +1,5 @@
-import { Directive, Objective, typeNameOf } from '@pleiades/sdk'
-import { addObjectiveToPolaris, core, ExpandingAction, IconName, PromptTextModal, type ScheduleValue } from '..'
+import { DecreeStatus, Directive, DirectiveStatus, FateStatus, LunarDirectiveStatus, Objective, ObjectiveStatus, typeNameOf } from '@pleiades/sdk'
+import { addObjectiveToPolaris, core, ExpandingAction, IconName, PromptTextModal, type ScheduleValue, type Status } from '..'
 import { host, toast } from '../../host'
 import type { GridEntity } from './entityTree'
 
@@ -55,6 +55,23 @@ export function entityIcon(entity: GridEntity): IconName {
 
 export function entityKindLabel(kind: EntityKind): string {
 	return kindLabels[kind]
+}
+
+/**
+ * The descriptor name of an entity's workflow state.
+ *
+ * Every kind numbers its own state enum from zero, so the value alone is ambiguous — a directive's `2` is Active while
+ * an objective's is Onrush. The kind has to pick the enum.
+ */
+export function entityStatusName(entity: GridEntity): Status {
+	const status = (entity as { status?: number }).status ?? 0
+	switch (entityKindOf(entity)) {
+		case 'lunar-directive': return (LunarDirectiveStatus[status] ?? 'OnHold') as Status
+		case 'stellar-directive': return (DirectiveStatus[status] ?? 'Planned') as Status
+		case 'fate': return (FateStatus[status] ?? 'Active') as Status
+		case 'decree': return (DecreeStatus[status] ?? 'Active') as Status
+		default: return (ObjectiveStatus[status] ?? 'Standby') as Status
+	}
 }
 
 /**
