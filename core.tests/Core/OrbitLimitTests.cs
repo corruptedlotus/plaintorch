@@ -294,11 +294,25 @@ public sealed class OrbitLimitTests
 	}
 
 	[Fact]
-	public void A_bound_windows_the_stream_and_a_continuous_interval_keeps_the_anchors_phase()
+	public void A_lower_bound_is_the_origin_and_a_continuous_interval_is_phased_from_it_whatever_the_anchor()
 	{
-		// Phased from the anchor (1 December), every other day lands on the even days of January either way.
-		Assert.Equal(["01-02 Fri", "01-04 Sun", "01-06 Tue"], Stream("d%2>2026/1/1", "2025-12-01", 3));
+		Assert.Equal(["01-01 Thu", "01-03 Sat", "01-05 Mon"], Stream("d%2>2026/1/1", "2025-12-01", 3));
 		Assert.Equal(["01-02 Fri", "01-04 Sun", "01-06 Tue"], Stream("d%2>2026/1/2", "2025-12-01", 3));
+		Assert.Equal(["03-10 Tue", "03-12 Thu"], Stream("d%2>2026/1/1", "2026-03-10", 2));
+		Assert.Equal(["03-11 Wed", "03-13 Fri"], Stream("d%2>2026/1/2", "2026-03-10", 2));
+		Assert.Equal(["01-12 Mon", "01-26 Mon"], Stream("w[d{1}]%2>2026/1/12", "2025-12-01", 2));
+		// A mid-period bound phases from the day it falls in; that day's occurrence is before it.
+		Assert.Equal(["01-03 Sat", "01-05 Mon"], Stream("d%2>2026/1/1T12:00", "2025-12-01", 2));
+	}
+
+	[Fact]
+	public void A_schedule_joined_after_its_origin_keeps_what_has_fired_since()
+	{
+		// The stream is joined at the anchor (10 March); the life and its limits count from the bound.
+		Assert.Equal(["end"], Stream("d*5>2026/1/1", "2026-03-10", 1));
+		Assert.Equal(["end"], Stream("M[d{1}]@3>2026/1/1", "2026-03-10", 1));
+		Assert.Equal(["03-15 Sun", "04-01 Wed"], Stream("M[d{1,15}]>2026/1/1", "2026-03-10", 2));
+		Assert.Equal(["04-01 Wed", "04-15 Wed"], Stream("M[d{1,15}]", "2026-03-10", 2));
 	}
 
 	[Fact]
@@ -405,6 +419,9 @@ public sealed class OrbitLimitTests
 	[InlineData("w[d{#3}]")]
 	[InlineData("d[h{9,12,15,18}@2]")]
 	[InlineData("d{5}%3*4")]
+	[InlineData("d%2>2026/7/14")]
+	[InlineData("w[d{1}]%2>2026/7/13")]
+	[InlineData("d%3*40>2026/6/20")]
 	public void A_stream_resumed_at_every_step_matches_one_long_lived_engine(string notation)
 	{
 		var reference = Stream(notation, "2026-07-01", 60, seed: 7);
