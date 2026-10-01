@@ -63,12 +63,9 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<TimeframeCandidateCacheInterceptor>();
 		services.AddDbContext<PlainfraContext>((serviceProvider, options) =>
 		{
-			var layout = serviceProvider.GetRequiredService<VaultLayout>();
-			Directory.CreateDirectory(layout.MetadataRoot);
-			options.UseSqlite($"Data Source={layout.DatabasePath}");
-			// Sets WAL and a busy timeout on every connection so the concurrent reads a client fires around a
-			// write do not meet a whole-file lock with no timeout. Stateless, so a fresh instance per context.
-			options.AddInterceptors(new SqlitePragmaConnectionInterceptor());
+			// The store, with WAL and a busy timeout on every connection so the concurrent reads a client fires around a
+			// write do not meet a whole-file lock with no timeout — shared with the bare contexts PUCK issuance uses.
+			PlainfraStoreContextFactory.ConfigureStore(options, serviceProvider.GetRequiredService<VaultLayout>());
 			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchStatePolicyInterceptor>());
 			// The one place backlog records are inferred (PEP101), on synchronous and asynchronous saves alike. After the
 			// state policy, so it records the statuses policy left behind (a checkpoint just unlocked included).
@@ -80,6 +77,9 @@ public sealed class PlaintorchModule : Module
 			options.AddInterceptors(serviceProvider.GetRequiredService<TimeframeCandidateCacheInterceptor>());
 		});
 
+		// Bare contexts over the same store, with none of the save hooks above: PUCK issuance registers its ids on one of
+		// its own, so minting an id never saves what the caller's context has pending.
+		services.AddSingleton<PlainfraStoreContextFactory>();
 		services.AddScoped<PlainfraContextInitializer>();
 		services.AddScoped<VaultBootstrapper>();
 		services.AddScoped<PlaintorchRepository>();

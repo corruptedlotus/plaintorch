@@ -38,18 +38,23 @@ public sealed class OnrushSprintApiService(
 		};
 
 		context.OnrushSprints.Add(sprint);
-		AttachMilestone(sprint);
 		await writeQueue.WriteAsync(sprint, cancellationToken: cancellationToken);
+		await AttachMilestoneAsync(sprint, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.plan", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
 
 	/// <summary>
-	/// Gives a sprint its milestone checkpoint (PEP102), unless it already has one. The checkpoint is tracked
-	/// by the sprint like an objective, and named as its milestone; it carries no toll or external condition,
+	/// Gives a sprint its milestone checkpoint (PEP102), unless it already has one, and saves it. The checkpoint is
+	/// tracked by the sprint like an objective, and named as its milestone; it carries no toll or external condition,
 	/// so it stands purely for the sprint's completion.
 	/// </summary>
-	private void AttachMilestone(OnrushSprint sprint)
+	/// <remarks>
+	/// The sprint must already be saved: the sprint and its milestone name each other, and one save cannot insert both
+	/// sides of that cycle. Both links are database-only, so this save writes no note. (The old order leaned on minting the
+	/// milestone's id, which saved the sprint on the caller's context as a side effect.)
+	/// </remarks>
+	private async Task AttachMilestoneAsync(OnrushSprint sprint, CancellationToken cancellationToken)
 	{
 		if (!string.IsNullOrWhiteSpace(sprint.MilestoneCheckpointId))
 		{
@@ -66,6 +71,7 @@ public sealed class OnrushSprintApiService(
 		context.Checkpoints.Add(milestone);
 		sprint.MilestoneCheckpointId = milestone.Id;
 		sprint.MilestoneCheckpoint = milestone;
+		await context.SaveChangesAsync(cancellationToken);
 	}
 
 	/// <inheritdoc />
@@ -126,20 +132,18 @@ public sealed class OnrushSprintApiService(
 				// would otherwise still name it.
 				sprint.MilestoneCheckpointId = null;
 			}
-			else
-			{
-				AttachMilestone(activatedSprint);
-			}
 
 			context.OnrushSprints.Remove(sprint);
 			await writeQueue.WriteAsync(activatedSprint, previous, cancellationToken);
+			// Only a placeholder that carried no milestone leaves the real sprint without one; it gets its own now.
+			await AttachMilestoneAsync(activatedSprint, cancellationToken);
 			await auditLogService.WriteAsync("api", "onrush.begin", subject: activatedSprint, cancellationToken: cancellationToken);
 			return activatedSprint;
 		}
 
 		sprint.StartDate = resolvedStartDate;
-		AttachMilestone(sprint);
 		await writeQueue.WriteAsync(sprint, previous, cancellationToken);
+		await AttachMilestoneAsync(sprint, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.begin", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
@@ -156,8 +160,8 @@ public sealed class OnrushSprintApiService(
 		};
 
 		context.OnrushSprints.Add(sprint);
-		AttachMilestone(sprint);
 		await writeQueue.WriteAsync(sprint, cancellationToken: cancellationToken);
+		await AttachMilestoneAsync(sprint, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.start-new", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}

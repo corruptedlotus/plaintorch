@@ -7,8 +7,8 @@ namespace Pleiades.Plaintorch.State;
 
 /// <summary>
 /// Keeps the backlog schedules of a unit of work coherent (PEP101). Run on every save by
-/// <see cref="BacklogScheduleInterceptor"/>, so every write pathway — the API, the markdown watcher, the CLI, PUCK issuance,
-/// a bare context save, synchronous or not — records lifecycle transitions and replaces occupied slots the same way.
+/// <see cref="BacklogScheduleInterceptor"/>, so every write pathway — the API, the markdown watcher, the CLI, a bare context
+/// save, synchronous or not — records lifecycle transitions and replaces occupied slots the same way.
 /// </summary>
 /// <remarks>
 /// Two rules, applied in order:

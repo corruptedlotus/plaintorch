@@ -222,11 +222,11 @@ public sealed class BacklogScheduleTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Minting_an_id_mid_operation_still_records_the_change_it_flushes()
+	public async Task Minting_an_id_mid_operation_leaves_the_change_to_the_callers_own_save()
 	{
-		// PUCK issuance saves synchronously on the caller's context, so whatever the caller had pending is saved there, not
-		// by the caller's own save later. The record must be written in that save all the same.
-		var objective = await Objective(api => api.CreateStandaloneAsync("Flushed", cancellationToken: Ct));
+		// PUCK issuance registers its id on a context of its own, so a change the caller has pending is not saved as a side
+		// effect of minting; the caller's own save stores it, through every save hook, and records it.
+		var objective = await Objective(api => api.CreateStandaloneAsync("Pending", cancellationToken: Ct));
 
 		await Vault.WithScopeAsync(async services =>
 		{
@@ -234,7 +234,8 @@ public sealed class BacklogScheduleTests : VaultTestBase
 			var tracked = await context.Objectives.SingleAsync(item => item.Id == objective.Id, Ct);
 			tracked.Status = ObjectiveStatus.Polaris;
 			services.GetRequiredService<PuckCreationService>().CreateIdFor<Checkpoint>();
-			Assert.Equal(EntityState.Unchanged, context.Entry(tracked).State);
+			Assert.Equal(EntityState.Modified, context.Entry(tracked).State);
+			Assert.Empty(await StoredAsync(objective.Id));
 			await context.SaveChangesAsync(Ct);
 		});
 

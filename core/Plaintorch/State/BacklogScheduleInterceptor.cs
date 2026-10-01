@@ -15,10 +15,11 @@ namespace Pleiades.Plaintorch.State;
 /// records it adds and withdraws are announced.
 /// </para>
 /// <para>
-/// The synchronous hook matters: PUCK issuance saves synchronously on the caller's context, which flushes whatever the
-/// caller had pending — minting a milestone's id saves the sprint planned just before it. That save runs the same
-/// recorder, blocking on it; the SQLite provider completes its asynchronous calls synchronously, so this ties up no extra
-/// thread, as the engine's own startup already does.
+/// The synchronous hook runs the same recorder, blocking on it; the SQLite provider completes its asynchronous calls
+/// synchronously, so this ties up no extra thread, as the engine's own startup already does. PUCK issuance used to be the
+/// synchronous saver that mattered — it saved on the caller's context, storing whatever the caller had pending — and now
+/// registers its ids on a bare context of its own (<c>PlainfraStoreContextFactory</c>); the hook stays so that no
+/// synchronous save of domain state can slip past the records.
 /// </para>
 /// <para>
 /// What no save interceptor sees, this one included: bulk <c>ExecuteUpdate</c>/<c>ExecuteDelete</c> and raw SQL, which
