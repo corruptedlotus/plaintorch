@@ -11,6 +11,14 @@ import {
 import { GridItemBase } from './GridItemBase'
 import type { GridEntity } from './entityTree'
 
+/** The backlog grid's columns besides the title, by key. */
+export enum EntityGridColumn {
+	/** A kind's own quantity or schedule: an objective's Celestron, a declarative's timing. */
+	Measure = 'measure',
+	/** A kind's workflow state. */
+	Status = 'status'
+}
+
 /**
  * One line of the backlog entity grid: a directive, or an incentive it owns.
  *
@@ -82,8 +90,10 @@ export class GridItem extends GridItemBase {
 				display: inline;
 			}
 			
+			/* The heading names a group rather than filling columns, so it runs the whole width of the row. */
 			.root {
-				
+				grid-column: 1 / -1;
+
 				& .title {
 					font-weight: 500;
 					font-size: .85em;
@@ -142,12 +152,16 @@ export class GridItem extends GridItemBase {
 	}
 
 	/**
-	 * The first middle cell holds whatever quantity or schedule a kind carries, the second its workflow state.
+	 * The measure column holds whatever quantity or schedule a kind carries, the status column its workflow state.
 	 * Splitting them this way is what the shared tracks are for: every kind's state lands in one column, so a run of
 	 * mixed rows can be read straight down.
 	 */
-	protected override get middleCells(): (HTMLTemplateResult | typeof nothing)[] {
-		return [this.measureCell, this.statusCell]
+	protected override cellContent(column: string): HTMLTemplateResult | typeof nothing {
+		switch (column) {
+			case EntityGridColumn.Measure: return this.measureCell
+			case EntityGridColumn.Status: return this.statusCell
+			default: return nothing
+		}
 	}
 
 	/** The kind's own quantity or schedule: an objective's Celestron, a declarative's timing. */
@@ -215,7 +229,7 @@ export class GridItem extends GridItemBase {
 
 	override get template() {
 		return this.row?.kind !== 'root' ? super.template : html`
-			<div class='cell lead root'>
+			<div class='cell lead root' role='gridcell'>
 				<p7t-icon class='notch' icon='lucide:astroid'></p7t-icon>
 				<div class='leading'>${this.leadingCell}</div>
 				<span class='title'>World Quests & Events</span>

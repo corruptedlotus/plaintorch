@@ -5,7 +5,7 @@ import {
 	type ContextMenuSpec, type InteractableEntity
 } from '..'
 import { openEntityNote } from './entityActions'
-import type { GridRow } from './entityTree'
+import { gridTitleColumn, type GridRow } from './entityTree'
 import { MediaReference } from '@pleiades/sdk'
 
 /**
@@ -13,10 +13,12 @@ import { MediaReference } from '@pleiades/sdk'
  *
  * Renders as a subgrid rather than a self-contained row, so its cells sit on the column tracks of the grid that
  * owns it — that is what keeps every row's columns aligned while each row stays an independent component knowing
- * nothing about its neighbours. The lead (indent lanes + type notch), the editable title, the trailing open-note and
- * add columns, the right-click menu, and the canonical-entity watch are all shared here; a variant supplies only what
- * its middle cells hold ({@link middleCells}), what its add button offers ({@link actions}), which icon its kind draws
- * ({@link kindIcon}), and how an edited field is persisted ({@link persistField}).
+ * nothing about its neighbours. It draws one cell per column the grid shows, in the order the user arranged them
+ * ({@link GridRow.columns}), then the trailing open-note and add columns, which never move. The lead (indent lanes +
+ * type notch + editable title, in the title column), the right-click menu, and the canonical-entity watch are all
+ * shared here; a variant supplies only what its other columns hold ({@link cellContent}), what its add button offers
+ * ({@link actions}), which icon its kind draws ({@link kindIcon}), and how an edited field is persisted
+ * ({@link persistField}).
  *
  * A row also takes part in drag-and-drop transfers, as far as its variant lets it: one that names a
  * {@link transferKind} can be picked up by its kind icon, and one that answers {@link canTakeTransfer} is a drop
@@ -171,6 +173,17 @@ export abstract class GridItemBase extends Component {
 				min-width: 0;
 			}
 
+			/*
+			 * A column resized narrower than its content clips it at the column's edge rather than spilling into the
+			 * next one. Only sideways: the indent lanes reach past the lead's bottom to join the next row's, and the
+			 * margin keeps focus rings and glows that reach just past the cell intact.
+			 */
+			.cell[role='gridcell'] {
+				min-width: 0;
+				overflow-x: clip;
+				overflow-clip-margin: .3em;
+			}
+
 			p7t-editable-plaintext {
 				justify-content: flex-start;
 				text-align: start;
@@ -263,7 +276,26 @@ export abstract class GridItemBase extends Component {
 		}
 
 		return html`
-			<div class='cell lead'>
+			${row.columns.map(column => column === gridTitleColumn ? this.leadTemplate : html`
+				<div class='cell' role='gridcell' data-column=${column}>${this.cellContent(column)}</div>
+			`)}
+			<span class='filler'></span>
+			<div class='cell actions'>
+				<p7t-button ghost icon='lucide:square-arrow-out-up-right' label='Open note' @click=${() => this.open()}></p7t-button>
+			</div>
+			<div class='cell actions'>
+				${this.actions.length === 0 ? nothing : html`
+					<p7t-expanding-actions .actions=${this.actions} actionLabel='Add'></p7t-expanding-actions>
+				`}
+			</div>
+		`
+	}
+
+	/** The title column's cell: the indent lanes, the notch that opens the row, the kind icon, and the title. */
+	protected get leadTemplate() {
+		const row = this.row!
+		return html`
+			<div class='cell lead' role='gridcell' data-column=${gridTitleColumn}>
 				${row.guides.map(guide => html`<span class='lane' data-guide=${guide}></span>`)}
 				<div
 					class='notch ${row.expandable ? 'expandable' : ''} ${row.expanded ? 'open' : ''}'
@@ -282,15 +314,6 @@ export abstract class GridItemBase extends Component {
 				</p7t-media>
 				<div class='leading'>${this.leadingCell}</div>
 				<p7t-editable-plaintext required editButton class='title' ${this.binder.bind('title')}></p7t-editable-plaintext>
-			</div>
-			${this.middleCells.map(cell => html`<div class='cell'>${cell}</div>`)}
-			<div class='cell actions'>
-				<p7t-button ghost icon='lucide:square-arrow-out-up-right' label='Open note' @click=${() => this.open()}></p7t-button>
-			</div>
-			<div class='cell actions'>
-				${this.actions.length === 0 ? nothing : html`
-					<p7t-expanding-actions .actions=${this.actions} actionLabel='Add'></p7t-expanding-actions>
-				`}
 			</div>
 		`
 	}
@@ -336,11 +359,12 @@ export abstract class GridItemBase extends Component {
 	}
 
 	/**
-	 * The cells between the title and the two trailing action columns. Every variant lands them on the same shared
-	 * tracks, so a run of mixed rows can still be read straight down.
+	 * What the row holds in one of its grid's columns other than the title, by the column's key. Every row lands its
+	 * cells on the same shared tracks, so a run of mixed rows can still be read straight down; a column the row has
+	 * nothing for stays an empty cell.
 	 */
-	protected get middleCells(): (HTMLTemplateResult | typeof nothing)[] {
-		return []
+	protected cellContent(_column: string): HTMLTemplateResult | typeof nothing {
+		return nothing
 	}
 
 	/** What the row's add button offers, which depends on what the row holds. Empty hides the button. */

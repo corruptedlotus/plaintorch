@@ -1,0 +1,88 @@
+# Grids
+
+The backlog (`p7t-entity-grid`) and the lore hierarchy (`p7t-lore-grid`) are one grid system: a shell,
+`GridBase`, that owns the structure, and row elements, `GridItemBase` variants, that draw each line. The shell's
+structure is 3MO's **`DataGridController`** (`@3mo/data-grid/controller`), a headless data grid the shell renders
+its own way. Nothing of 3MO's visual `mo-data-grid` is used or bundled.
+
+---
+
+## Who owns what
+
+| Concern | Owner |
+|---|---|
+| The tree's **shape**: which node sits under which, sibling order, cycles, the world heading | the variant's builder (`buildEntityTree`, `buildLoreTree`) |
+| **Flattening** the tree into records with level, position and set size | the controller (`records`, via `@3mo/hierarchy`) |
+| Which rows are **open** | the controller (`details`, an `@3mo/expandability` controller keyed by `GridNode.id`) |
+| The **columns**: definitions, and what the user did to them (width, order, visibility) | the controller (`columns`) |
+| **Treegrid semantics** on the grid, the header and the rows (`role`, `aria-level`, `aria-setsize`, `aria-posinset`, `aria-expanded`, `columnheader`) | the controller, stamped onto the parts it is handed |
+| Rendering: the sticky header, the column tracks, the row elements, the FAB | `GridBase` |
+| A row's cells, bindings, entity watch, context menu, drag and drop | the row element (`GridItemBase` and its variants) |
+
+The builders emit a **tree of `GridNode`s**. A node's `children` hold its sub-nodes, and its `guides` name the
+lining of each indent lane, so the row can draw the lanes itself. The controller walks `children`. Its expansion
+keys come from a field named `id`, so `GridNode.id` is load-bearing: it is the row key (`identify(entity)`), stable
+across rebuilds.
+
+`GridBase` rebuilds the tree once per update, in `willUpdate`, so every read within an update sees the same tree.
+It renders the **visible** records: every root, and the children of every open record. A node with
+`collapsible: false` never opens or closes, so its children always show; the world heading is one. Each record
+reaches its row element as a `GridRow`: the node, plus whether it is `expandable`/`expanded`, plus the keys of the
+visible `columns` in display order. The row element also carries the record's registration,
+`${this.grid.row(record)}`, which is how the controller stamps its place in the tree onto it.
+
+## Columns and the header
+
+A variant declares its columns once, as a field. Keep the same array for the grid's lifetime, since a new array
+re-syncs the columns:
+
+```ts
+protected override readonly columns = [
+	GridBase.titleColumnDefinition(),
+	GridBase.column(EntityGridColumn.Measure, 'Measure'),
+	GridBase.column(EntityGridColumn.Status, 'Status')
+]
+```
+
+- A column is known by a **key**, not by a path into the data, because the row element draws each cell itself:
+  `cellContent(key)`. The title column (`gridTitleColumn`) is drawn by `GridItemBase` as the lead cell: indent
+  lanes, notch, kind icon, leading label and title.
+- The **title column** is flexible (`minmax(7em, 1fr)`) and pinned first. It is `sticky: 'start'`, which the
+  controller treats as "cannot be moved or dropped before". It is not drawn sticky. Once resized, it keeps its
+  7em floor.
+- The tracks are `[one per visible column] auto max-content max-content`. The `auto` filler takes the room a
+  resized title gives up, so the open-note and add columns stay at the far edge. The rows draw a `.filler` span
+  for it.
+- **The header** sticks to the top of whatever scrolls the grid (`--p7t-grid-header-top`, default `0`). Its
+  surface is `--p7t-grid-header-background`.
+  - Dragging a heading moves its column.
+  - Dragging a heading's edge resizes the column. A dashed guide follows the pointer, and the new width applies
+    on release.
+  - Double-clicking the edge fits the column to its content.
+  - The chevron button in the title heading opens or closes every row.
+  - Right-clicking the header opens a menu: show or hide columns, fit all columns, reset, expand or collapse all.
+- The **arrangement** (widths, order, hidden columns) is kept in `localStorage` under
+  `plaintorch.grid-layout.<layoutKey>` (`backlog`, `lore`). "Reset columns" clears it.
+
+## What is deliberately not used
+
+The controller also offers sorting, selection, row reordering, cell navigation, inline editing, virtualization and
+CSV export. They are inert here:
+
+- **Sorting.** Each column is `sortable: false`. Sibling order is structure, not presentation. A directive's
+  subdirectives come before its incentives, and the world heading comes last. The controller sorts every sibling set
+  as one list, which would interleave the two groups and move the heading. Status values are also per-kind enums,
+  so they do not compare across kinds.
+- **Cell registration (`grid.cell`)**, and with it arrow-key cell navigation. The controller's cell keyboard
+  grammar acts on any key event inside a registered cell. It turns Enter into a click on the cell, which swallows a
+  focused button's activation. It also moves between cells on arrow keys and copies the whole cell on Ctrl+C, even
+  inside the text fields the cells are full of. Row-level keyboard navigation needs a design of its own. Cells carry
+  `role='gridcell'` themselves.
+- **Row reordering and selection.** Rows move by reparenting, through the row's own drag and drop (see
+  `../transfer/README.md`). Nothing selects rows yet.
+
+## Lore starts open
+
+`LoreGrid` sets `expandsByDefault`. A row opens by itself the first time it has anything to open. The user's
+collapses are kept across rebuilds, and a row that newly gains children still opens. This is the old
+"toggled set tracks collapsed rows" behaviour, expressed through the controller's expansion state.
