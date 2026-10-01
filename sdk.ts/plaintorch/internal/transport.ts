@@ -145,11 +145,14 @@ export async function* toLines(chunks: AsyncIterable<string>): AsyncIterable<str
 }
 
 function wrapFetchResponse(response: Response): PlaintorchCoreResponse {
+	// A fetch body is a one-shot stream: a second `response.text()` throws. Callers read a response more than once
+	// (the client's debug trace reads it beside the real read), so every call shares the first read.
+	let body: Promise<string> | undefined
 	return {
 		ok: response.ok,
 		status: response.status,
-		async text() {
-			return await response.text()
+		text() {
+			return body ??= response.text()
 		},
 		header(name) {
 			return response.headers.get(name) ?? undefined
