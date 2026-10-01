@@ -1,7 +1,7 @@
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { BrowserWindow, screen, shell, type WebContents } from "electron"
-import type { ShellStatus } from "../shared/contracts"
+import type { OnrushCanvasMode, PlanningPopOut, PlanningWindowContent, ShellStatus } from "../shared/contracts"
 import { ipc } from "../shared/contracts"
 import { PlanningFile, planningFileKey } from "./planning-files"
 import { customFrame, relayFrameState } from "./window-frame"
@@ -11,12 +11,29 @@ const statusSize = { width: 720, height: 560 }
 const briefingSize = { width: 1180, height: 820 }
 const planningSize = { width: 1180, height: 820 }
 
-/** A planning window and the file it shows. */
+/** What a planning window shows: a file, a global context not saved to one yet, or an onrush. */
+type PlanningSubject =
+	| { readonly kind: "file", readonly file: PlanningFile }
+	| { readonly kind: "unsaved", text: string }
+	| { readonly kind: "onrush", readonly mode: OnrushCanvasMode }
+
+/** A planning window and what it shows. */
 interface PlanningWindow {
 	readonly window: BrowserWindow
 	/** The page's `webContents` id, kept because a destroyed window no longer gives out its `webContents`. */
 	readonly contentsId: number
-	readonly file: PlanningFile
+	/** The window's key among the planning windows; an unsaved window takes its file's once saved. */
+	key: string
+	subject: PlanningSubject
+}
+
+/** What a planning window's page is told it shows. */
+function contentOf(subject: PlanningSubject): PlanningWindowContent {
+	switch (subject.kind) {
+		case "file": return subject.file.snapshot
+		case "unsaved": return { kind: "unsaved", text: subject.text }
+		case "onrush": return { kind: "onrush", mode: subject.mode }
+	}
 }
 
 /**
@@ -43,15 +60,21 @@ const minimumSplashMs = 1_400
 
 /**
  * The shell's windows, each on a page of its own: the frameless splash that mirrors the old startup popup, the status
- * window, the briefing — the SIPA UI — and a planning window for each planning graph file (`.p7tpx`) opened. The
- * status, briefing and planning windows draw their own title bars ({@link customFrame}).
+ * window, the briefing — the SIPA UI — and the planning windows: one for each planning graph file (`.p7tpx`) opened,
+ * one for each onrush popped out of a canvas, and one for each global context popped out unsaved. The status,
+ * briefing and planning windows draw their own title bars ({@link customFrame}).
  */
 export class ShellWindows {
 	private splash?: BrowserWindow
 	private status?: BrowserWindow
 	private briefing?: BrowserWindow
-	/** The planning windows, by {@link planningFileKey}: one per file. */
+	/**
+	 * The planning windows, by key: a file's {@link planningFileKey}, `onrush:<mode>`, or `unsaved:<n>` — one window
+	 * per file and per onrush.
+	 */
 	private readonly planning = new Map<string, PlanningWindow>()
+	/** Counts the unsaved planning windows opened, for their keys. */
+	private unsavedCount = 0
 	private latest?: ShellStatus
 	private splashShownAt = 0
 
@@ -196,7 +219,108 @@ export class ShellWindows {
 	 * the file into — or brings forward the window it is already open in.
 	 */
 	public showPlanning(filePath: string): void {
+		this.openPlanning(planningFileKey(filePath), window => ({ kind: "file", file: this.planningFile(window, filePath) }))
+	}
+
+	/**
+	 * Opens a canvas context in a planning window, as a planning graph file opens. An onrush has one window, brought
+	 * forward when open; a global context, popped out unsaved, gets a new window every time — it has no identity
+	 * until it is saved to a file.
+	 */
+	public showPlanningContext(context: PlanningPopOut): void {
+		if (context.mode === "global") {
+			this.openPlanning(`unsaved:${++this.unsavedCount}`, () => ({ kind: "unsaved", text: context.text }))
+		}
+		else {
+			const mode = context.mode
+			this.openPlanning(`onrush:${mode}`, () => ({ kind: "onrush", mode }))
+		}
+	}
+
+	/** What the planning window a page runs in shows; undefined for any other page. */
+	public planningContentOf(contents: WebContents): PlanningWindowContent | undefined {
+		const entry = this.planningEntryOf(contents)
+		return entry && contentOf(entry.subject)
+	}
+
+	/**
+	 * Takes the global context text a planning window's page hands over: written to its file, or kept as its unsaved
+	 * context, which a reload of the page reads back.
+	 */
+	public writePlanning(contents: WebContents, text: string): void {
+		const subject = this.planningEntryOf(contents)?.subject
+		if (subject?.kind === "file") {
+			subject.file.write(text)
+		}
+		else if (subject?.kind === "unsaved") {
+			subject.text = text
+		}
+	}
+
+	/**
+	 * A page saved a new planning file. The unsaved planning window that saved it becomes that file's window — unless
+	 * another window has the file open, which comes forward instead while the unsaved one closes, its context saved.
+	 * Saved from any other page, the file opens in a window of its own.
+	 */
+	public savedPlanning(contents: WebContents, filePath: string): void {
+		const entry = this.planningEntryOf(contents)
+		if (entry?.subject.kind !== "unsaved") {
+			this.showPlanning(filePath)
+			return
+		}
+
 		const key = planningFileKey(filePath)
+		const open = this.planning.get(key)
+		if (open && !open.window.isDestroyed()) {
+			this.showPlanning(filePath)
+			entry.window.close()
+			return
+		}
+
+		this.planning.delete(entry.key)
+		entry.key = key
+		entry.subject = { kind: "file", file: this.planningFile(entry.window, filePath) }
+		this.planning.set(key, entry)
+		entry.window.webContents.send(ipc.planningChanged, contentOf(entry.subject))
+	}
+
+	/** The file of the planning window open on a path, if one is. */
+	public planningFileAt(filePath: string): PlanningFile | undefined {
+		const open = this.planning.get(planningFileKey(filePath))
+		return open && !open.window.isDestroyed() && open.subject.kind === "file" ? open.subject.file : undefined
+	}
+
+	/** The status window, when open. */
+	public get statusWindow(): BrowserWindow | undefined {
+		return this.status && !this.status.isDestroyed() ? this.status : undefined
+	}
+
+	/** Destroys every window, for quitting. A planning window's last write lands first. */
+	public destroyAll(): void {
+		for (const { subject } of this.planning.values()) {
+			if (subject.kind === "file") {
+				subject.file.close()
+			}
+		}
+
+		for (const window of [this.splash, this.status, this.briefing, ...this.planningWindows]) {
+			if (window && !window.isDestroyed()) {
+				window.destroy()
+			}
+		}
+
+		this.splash = undefined
+		this.status = undefined
+		this.briefing = undefined
+		this.planning.clear()
+	}
+
+	private get planningWindows(): BrowserWindow[] {
+		return Array.from(this.planning.values(), entry => entry.window)
+	}
+
+	/** Brings forward the planning window under `key`, or opens one showing what `subjectFor` gives it. */
+	private openPlanning(key: string, subjectFor: (window: BrowserWindow) => PlanningSubject): void {
 		const open = this.planning.get(key)
 		if (open && !open.window.isDestroyed()) {
 			if (open.window.isMinimized()) {
@@ -219,67 +343,41 @@ export class ShellWindows {
 			icon: windowIcon(),
 			webPreferences: this.webPreferences()
 		})
-		const file = new PlanningFile(path.resolve(filePath), snapshot => {
-			if (!window.isDestroyed()) {
-				window.webContents.send(ipc.planningChanged, snapshot)
-			}
-		})
-		const entry: PlanningWindow = { window, contentsId: window.webContents.id, file }
+		const entry: PlanningWindow = { window, contentsId: window.webContents.id, key, subject: subjectFor(window) }
 		this.planning.set(key, entry)
 		this.guard(window)
 		relayFrameState(window)
 		window.once("ready-to-show", () => window.show())
 		window.on("closed", () => {
-			file.close()
-			if (this.planning.get(key) === entry) {
-				this.planning.delete(key)
+			if (entry.subject.kind === "file") {
+				entry.subject.file.close()
+			}
+
+			// The key, not the one the window opened under: an unsaved window that was saved is now its file's.
+			if (this.planning.get(entry.key) === entry) {
+				this.planning.delete(entry.key)
 			}
 		})
 		void window.loadURL(pageUrl("planning.html"))
 	}
 
-	/** The file of the planning window open on a path, if one is. */
-	public planningFileAt(filePath: string): PlanningFile | undefined {
-		const open = this.planning.get(planningFileKey(filePath))
-		return open && !open.window.isDestroyed() ? open.file : undefined
+	/** Opens a planning window's file, which tells the window's page of every change it hears from elsewhere. */
+	private planningFile(window: BrowserWindow, filePath: string): PlanningFile {
+		return new PlanningFile(path.resolve(filePath), snapshot => {
+			if (!window.isDestroyed()) {
+				window.webContents.send(ipc.planningChanged, snapshot)
+			}
+		})
 	}
 
-	/** The file of the planning window a page runs in; undefined for any other page. */
-	public planningFileOf(contents: WebContents): PlanningFile | undefined {
+	private planningEntryOf(contents: WebContents): PlanningWindow | undefined {
 		for (const entry of this.planning.values()) {
 			if (entry.contentsId === contents.id) {
-				return entry.file
+				return entry
 			}
 		}
 
 		return undefined
-	}
-
-	/** The status window, when open. */
-	public get statusWindow(): BrowserWindow | undefined {
-		return this.status && !this.status.isDestroyed() ? this.status : undefined
-	}
-
-	/** Destroys every window, for quitting. A planning window's last write lands first. */
-	public destroyAll(): void {
-		for (const { file } of this.planning.values()) {
-			file.close()
-		}
-
-		for (const window of [this.splash, this.status, this.briefing, ...this.planningWindows]) {
-			if (window && !window.isDestroyed()) {
-				window.destroy()
-			}
-		}
-
-		this.splash = undefined
-		this.status = undefined
-		this.briefing = undefined
-		this.planning.clear()
-	}
-
-	private get planningWindows(): BrowserWindow[] {
-		return Array.from(this.planning.values(), entry => entry.window)
 	}
 
 	/**

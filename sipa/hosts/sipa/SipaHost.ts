@@ -1,4 +1,4 @@
-import { adoptStyles, componentStyles, type GlobalContextHost, type PlatformHost, type ToastKind } from '../../host'
+import { adoptStyles, componentStyles, type CanvasWindowHost, type GlobalContextHost, type PlatformHost, type ToastKind } from '../../host'
 import { lucideIcons } from './icons'
 import { ModalShell } from './Modal'
 import { SuggestModalShell } from './SuggestModal'
@@ -18,13 +18,16 @@ export interface SipaHostOptions {
 	 * it the canvas offers no "Save to file".
 	 */
 	readonly globalContexts?: GlobalContextHost
+	/** Popping canvas contexts out into the shell's planning windows. Without it the canvas offers no pop-out. */
+	readonly canvasWindows?: CanvasWindowHost
 }
 
 /**
  * The SIPA {@link PlatformHost}: toasts in a top-right stack, dialogs and pickers on native `<dialog>`s, lucide glyphs
  * from the bundled `lucide` package, and vault images through the shell's media URLs. There is no note editor yet, so
- * opening a note says so, and following a renamed note is silent. Saving a global context to a file is the shell's,
- * when it passes {@link SipaHostOptions.globalContexts}.
+ * opening a note says so, and following a renamed note is silent. Saving a global context to a file and popping a
+ * canvas out into a window are the shell's, when it passes {@link SipaHostOptions.globalContexts} and
+ * {@link SipaHostOptions.canvasWindows}.
  *
  * Also installs the shell's stylesheet and the components' document rules into the page.
  */
@@ -53,5 +56,6 @@ export function createSipaHost(options: SipaHostOptions): PlatformHost {
 			createSuggest: view => new SuggestModalShell(view),
 		},
 		globalContexts: options.globalContexts,
+		canvasWindows: options.canvasWindows,
 	}
 }

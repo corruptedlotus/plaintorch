@@ -5,7 +5,7 @@ import { setAutostartEnabled } from "./autostart"
 import { relayCoreStreams } from "./core-streams"
 import { hostsCore } from "./flavor"
 import { handleMediaScheme, registerMediaScheme } from "./media-protocol"
-import { handlePlanningFiles, planningFilesIn } from "./planning-files"
+import { handlePlanningWindows, planningFilesIn } from "./planning-files"
 import { resolveUserProfile } from "./profile"
 import { refuseRemoteFiles } from "./request-guard"
 import { Shell } from "./shell"
@@ -16,7 +16,7 @@ import { ShellWindows } from "./windows"
 /**
  * The main process: one instance per user, a tray icon, a splash while the core comes up, the briefing (the SIPA
  * UI) and a status window on demand, a planning window for each planning graph file (`.p7tpx`) the app is asked to
- * open, and a clean stop of the core on quit. Everything stateful lives in {@link Shell}; this file only wires
+ * open and each canvas context popped out, and a clean stop of the core on quit. Everything stateful lives in {@link Shell}; this file only wires
  * Electron's lifecycle and the surfaces to it.
  */
 
@@ -191,11 +191,13 @@ async function run(): Promise<void> {
 
 	relayCoreStreams(shell.transport)
 	handleFrameControls()
-	handlePlanningFiles({
-		fileOf: contents => windows.planningFileOf(contents),
+	handlePlanningWindows({
+		contentOf: contents => windows.planningContentOf(contents),
+		write: (contents, text) => windows.writePlanning(contents, text),
 		fileAt: filePath => windows.planningFileAt(filePath),
 		servedVault: () => shell.servedVault,
-		open: filePath => windows.showPlanning(filePath)
+		saved: (contents, filePath) => windows.savedPlanning(contents, filePath),
+		popOut: context => windows.showPlanningContext(context)
 	})
 
 	// A second launch hands its command line over: the planning files it names open here, and a launch naming none

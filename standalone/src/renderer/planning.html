@@ -25,10 +25,37 @@
 			flex: 1;
 			min-height: 0;
 		}
+
+		/* Beside the title while the window holds a global context no file has: a dot and the word, in the warning colour. */
+		.unsaved {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			padding: 1px 8px 1px 7px;
+			border-radius: 999px;
+			background: color-mix(in srgb, var(--p7t-warn) 14%, transparent);
+			color: var(--p7t-warn);
+			font-size: 11px;
+			letter-spacing: 0.04em;
+			white-space: nowrap;
+		}
+
+		.unsaved::before {
+			content: "";
+			width: 6px;
+			height: 6px;
+			border-radius: 50%;
+			background: currentColor;
+		}
+
+		.unsaved[hidden] {
+			display: none;
+		}
 	</style>
 </head>
 <body>
 	<p7t-window-frame>
+		<span id="unsaved" class="unsaved" slot="title-bar" title="Not saved to a file yet. Save to file keeps it." hidden>Unsaved</span>
 		<div id="planning" class="plaintorch-canvas-view plaintorch-root"></div>
 	</p7t-window-frame>
 	<script src="./planning.js"></script>

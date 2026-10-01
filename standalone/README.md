@@ -20,8 +20,8 @@ and one build; the flavour is baked in at build time.
   shell's main window: clicking the tray icon, relaunching the app, and a visible launch (once the core is up) open it.
   Notes have no in-app editor yet, so opening one says so.
 - **Planning windows**: a planning graph file (`.p7tpx`, a saved global planning context) opens in a window of its own
-  with the file-backed dependency canvas, as the Obsidian plugin opens it in a tab; see
-  [Planning files](#planning-files).
+  with the file-backed dependency canvas, as the Obsidian plugin opens it in a tab, and the briefing's canvas pops its
+  context — an onrush, or an unsaved global context — out into one the same way; see [Planning files](#planning-files).
 - A **tray icon** with the phase, the active vault, the briefing and the status window, activate/deactivate,
   start-at-login, the logs folder, restart, updates, and quit.
 - A **status window** with the core, the shell settings, and the watcher (`p7t-watcher-status-card`: its health, what
@@ -116,6 +116,25 @@ title bar, which is named after the file.
   The pins are the active vault's entities, so a file from another vault shows its pins by their saved titles, but
   they do not resolve.
 
+### Popping a canvas out
+
+The briefing's canvas has a pop-out button (*Open in a new window*, beside the readout) that opens the context on
+screen in a planning window, as if it were a file (`host.canvasWindows` → `window.plaintorch.planning.popOut`). A
+planning window shows one context alone (`singleContext`: no mode switcher, no pop-out), and the main process keeps
+what each window shows: a file, an unsaved global context, or an onrush.
+
+- **An onrush** (active or planning) has one window each, brought forward when popped out again. The vault holds the
+  onrush, so the briefing keeps showing it too and both stay current. A move to the other onrush from inside its
+  window — *Go to planning* on an empty active onrush, or activating the planning one — opens that onrush's window
+  rather than switching this one.
+- **A scratch global context** moves into a new window — every pop-out a window of its own — as the text its file
+  would hold, and the briefing's canvas starts a fresh scratch. The window is marked **Unsaved** in its title bar (and
+  "(unsaved)" in its taskbar title). The main process keeps the context as it is edited, so a reload keeps it, but
+  closing the window discards it, as closing a scratch tab does.
+- **Save to file** in an unsaved window turns that window into the saved file's: titled after it, no longer marked,
+  its edits written to the file from then on. Saved over a file already open in another window, that window takes the
+  saved context and the unsaved one closes.
+
 In development nothing is registered with the OS. Open a file by handing it to a running dev shell (a second launch on
 the same profile), e.g. `npx electron . C:\path\to\Roadmap.p7tpx` next to `npm run dev`, or start a shell with it:
 `npx electron . --profile <dir> C:\path\to\Roadmap.p7tpx`.
@@ -123,7 +142,8 @@ the same profile), e.g. `npx electron . C:\path\to\Roadmap.p7tpx` next to `npm r
 ## Window frames
 
 The status, briefing and planning windows draw their own title bar: `p7t-window-frame`
-(`src/renderer/WindowFrame.ts`) wraps each page — the PLAINTORCH mark, the window's title, a `title-bar` slot for a page's own controls, and the minimize,
+(`src/renderer/WindowFrame.ts`) wraps each page — the PLAINTORCH mark, the window's title, a `title-bar` slot beside
+the title for a page's own controls (a planning window's *Unsaved* mark), and the minimize,
 maximize/restore and close buttons — over the page, which fills and scrolls in the rest of the window.
 
 - **Main process** (`src/main/window-frame.ts`): `customFrame()` gives `frame: false` on Windows and Linux (the window
@@ -165,8 +185,8 @@ are committed; re-run it after changing a mark.
   spawned core and `core-location.ts` picks which core that is; `core-transport.ts` is HTTP over the pipe/socket (the SDK's socket transport); `core-streams.ts`
   relays the change feed to the windows; `media-protocol.ts` serves vault files; `request-guard.ts` refuses hosted
   `file:` requests (UNC/SMB); `window-frame.ts` makes the custom frames work; `planning-files.ts` finds planning
-  files in a launch's arguments, reads, writes and watches each planning window's file, and saves new ones through
-  the save dialog; `windows.ts`, `tray.ts`,
+  files in a launch's arguments, reads, writes and watches each planning window's file, saves new ones through the
+  save dialog, and answers the planning windows' pages; `windows.ts`, `tray.ts`,
   `autostart.ts`, `updater.ts`, `config.ts`, `profile.ts` do what their names say.
 - `src/preload`: the only bridge into the sandboxed renderer (`window.plaintorch`).
 - `src/renderer`: `splash.ts` (the splash, kept small), `status.ts` (the status window), `briefing.ts` (the SIPA

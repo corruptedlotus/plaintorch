@@ -151,6 +151,8 @@ The standalone shell (SIPA) opens the same files in a **planning window** of the
 
 Where **Save to file…** puts the file is the host's to ask (`GlobalContextHost.saveAndOpen`): Obsidian asks for a name and creates the file at the vault root, refusing a name already taken, since it opens only the vault's own files; the shell shows a native save dialog, starting in the served vault, which may put the file anywhere and confirms replacing one, and opens the result in a planning window.
 
+The shell's canvas also **pops out** (`PlatformHost.canvasWindows`): the context on screen opens in a planning window as if it were a file. An onrush, active or planning, gets one window each, and the vault keeps both views current. A scratch global context moves into a window of its own, marked *Unsaved* until its **Save to file…** makes that window the file's. A popped-out canvas is `singleContext` (no mode switcher), so moving to the other onrush from inside it opens that onrush's window instead.
+
 ### Open edges
 - **Eventive occurrence nodes** are deferred — the search returns whole fates; pinning a specific `RECURRENCE-ID` occurrence is a follow-up over the same recurrence mechanism dependency edges already use.
 - The endpoint search is a bounded three-table title match, not a real global search index; a proper search service is later work, and a better picker UI can sit on top of it.

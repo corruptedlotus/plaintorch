@@ -5,6 +5,7 @@ import { activatePlanningOnrush, addObjectiveToOnrush, concludeOnrush, createChe
 import { EntityDetailModal } from './EntityDetailModal'
 import { OnrushDetailModal } from './OnrushDetailModal'
 import { contextModeLabels, edgeEndpoints, globalContext, onrushContext, type CanvasContextMode, type EndpointResolver } from './graphContext'
+import { serializeGlobalContext } from './globalContextFile'
 import { edgeCurve, edgeEnds, edgeMidpoint, layoutGraph, linkCurve, parsePositions, serializePositions, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
 import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpointTypeNames, sourceRef, targetRef, wouldCycle, type CanvasEdge, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
 import { SelectObjectiveModal } from './SelectObjectiveModal'
@@ -112,9 +113,16 @@ export class DependencyCanvas extends Component {
 
 	/**
 	 * Whether this canvas *is* a global context rather than hosting the onrush tabs. The file view sets it, so
-	 * a `.p7tpx` leaf shows only its one context, no mode switcher.
+	 * a `.p7tpx` leaf shows only its one context, no mode switcher, and it has no "Save to file".
 	 */
 	@property({ type: Boolean, reflect: true }) fileBacked = false
+
+	/**
+	 * Whether this canvas is the whole of a window of its own, showing its one context — an onrush or an unsaved
+	 * global context popped out — with no mode switcher and no pop-out. A move to another context (the planning
+	 * onrush, the active one it was activated into) opens that context's window instead of switching this one.
+	 */
+	@property({ type: Boolean, reflect: true }) singleContext = false
 
 	/** Announces a global context change (pins or layout) so a file-backed host can persist it. */
 	@event({ bubbles: true, composed: true }) contextChanged!: EventDispatcher<GlobalContextSnapshot>
@@ -558,7 +566,7 @@ export class DependencyCanvas extends Component {
 
 		return html`
 			<div class='toolbar'>
-				${this.fileBacked ? nothing : (['onrush-active', 'onrush-planning', 'global'] as const).map(mode => html`
+				${this.fileBacked || this.singleContext ? nothing : (['onrush-active', 'onrush-planning', 'global'] as const).map(mode => html`
 					<button
 						class='mode'
 						aria-pressed=${this.mode === mode}
@@ -568,6 +576,10 @@ export class DependencyCanvas extends Component {
 				`)}
 				<div class='spacer'></div>
 				<span class='readout'>${graph.nodes.length} nodes · ${graph.edges.length} edges · ${Math.round(this.scale * 100)}%</span>
+				${this.fileBacked || this.singleContext || !host.canvasWindows ? nothing : html`
+					<p7t-button ghost class='pop-out' icon='lucide:square-arrow-out-up-right' label='Open in a new window'
+						@click=${() => void this.onPopOut()}></p7t-button>
+				`}
 			</div>
 			<div
 				class='viewport'
@@ -668,7 +680,7 @@ export class DependencyCanvas extends Component {
 						<p7t-button emphasis icon='state-onrush' @click=${() => void this.onStartNow()}>
 							<span>Start now</span>
 						</p7t-button>
-						<p7t-button icon='lucide:arrow-right' @click=${() => this.setMode('onrush-planning')}>
+						<p7t-button icon='lucide:arrow-right' @click=${() => void this.showMode('onrush-planning')}>
 							<span>Go to planning</span>
 						</p7t-button>
 					` : html`
@@ -764,7 +776,54 @@ export class DependencyCanvas extends Component {
 	private async onActivate() {
 		const sprint = this.sprint
 		if (sprint && await activatePlanningOnrush(sprint.id)) {
-			this.setMode('onrush-active')
+			await this.showMode('onrush-active')
+		}
+	}
+
+	/**
+	 * Moves to another context: this canvas switches to it, unless it is a window's {@link singleContext}, which
+	 * opens that context's own window instead and stays on its own.
+	 */
+	private async showMode(mode: 'onrush-active' | 'onrush-planning') {
+		const windows = host.canvasWindows
+		if (!this.singleContext || !windows) {
+			this.setMode(mode)
+			return
+		}
+
+		try {
+			await windows.popOut({ mode })
+		}
+		catch {
+			toast(`PLAINTORCH could not open the ${contextModeLabels[mode].toLowerCase()} in a window.`, 'error')
+		}
+	}
+
+	/**
+	 * Pops the context on screen out into a window of its own. An onrush stays on screen here too — the vault holds
+	 * it, so both stay current. A scratch global context moves: it is held nowhere but here, so its window takes it,
+	 * unsaved, and this canvas starts a fresh one.
+	 */
+	private async onPopOut() {
+		const windows = host.canvasWindows
+		if (!windows) {
+			return
+		}
+
+		try {
+			if (this.mode === 'global') {
+				await windows.popOut({ mode: 'global', text: serializeGlobalContext(this.pinned, serializePositions(this.overrides)) })
+				this.pinned = []
+				this.overrides = new Map()
+				this.framed = false
+				this.emitContextChanged()
+			}
+			else {
+				await windows.popOut({ mode: this.mode })
+			}
+		}
+		catch {
+			toast(`PLAINTORCH could not open the ${contextModeLabels[this.mode].toLowerCase()} in a window.`, 'error')
 		}
 	}
 

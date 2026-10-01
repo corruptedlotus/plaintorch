@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-import { ipc, type BridgeRequest, type BridgeResponse, type BridgeStreamLine, type PlaintorchBridge, type PlanningFileSnapshot, type PlanningSaveOutcome, type ShellStatus, type WindowFrameState } from "../shared/contracts"
+import { ipc, type BridgeRequest, type BridgeResponse, type BridgeStreamLine, type PlaintorchBridge, type PlanningSaveOutcome, type PlanningWindowContent, type ShellStatus, type WindowFrameState } from "../shared/contracts"
 
 /** The streams this document has open, by id: where their lines and their end go. */
 const streams = new Map<string, { onLine: (line: string) => void, onEnd: () => void }>()
@@ -75,14 +75,15 @@ const bridge: PlaintorchBridge = {
 		close: () => ipcRenderer.invoke(ipc.frameClose) as Promise<void>
 	},
 	planning: {
-		read: () => ipcRenderer.invoke(ipc.planningRead) as Promise<PlanningFileSnapshot | undefined>,
+		read: () => ipcRenderer.invoke(ipc.planningRead) as Promise<PlanningWindowContent | undefined>,
 		write: text => ipcRenderer.invoke(ipc.planningWrite, text) as Promise<void>,
 		onChanged: listener => {
-			const handler = (_: Electron.IpcRendererEvent, snapshot: PlanningFileSnapshot) => listener(snapshot)
+			const handler = (_: Electron.IpcRendererEvent, content: PlanningWindowContent) => listener(content)
 			ipcRenderer.on(ipc.planningChanged, handler)
 			return () => ipcRenderer.removeListener(ipc.planningChanged, handler)
 		},
-		saveAs: text => ipcRenderer.invoke(ipc.planningSaveAs, text) as Promise<PlanningSaveOutcome | undefined>
+		saveAs: text => ipcRenderer.invoke(ipc.planningSaveAs, text) as Promise<PlanningSaveOutcome | undefined>,
+		popOut: context => ipcRenderer.invoke(ipc.planningPopOut, context) as Promise<void>
 	}
 }
 

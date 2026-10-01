@@ -31,6 +31,12 @@ export interface PlatformHost {
 	 * it out, and the canvas then offers no "Save to file".
 	 */
 	readonly globalContexts?: GlobalContextHost
+
+	/**
+	 * Popping a dependency canvas's context out into a window of its own. Optional: without it the canvas offers no
+	 * pop-out.
+	 */
+	readonly canvasWindows?: CanvasWindowHost
 }
 
 /** What a {@link PlatformHost.toast | toast} reports. */
@@ -96,4 +102,22 @@ export interface GlobalContextHost {
 	 * when nothing was saved — the user backed out, or the host refused. Rejects when the file could not be written.
 	 */
 	saveAndOpen(text: string): Promise<{ readonly path: string } | undefined>
+}
+
+/**
+ * A dependency canvas context to pop out: an onrush, by which one — the one under way or the one being planned — or a
+ * global context, as the text a planning graph file would hold.
+ */
+export type CanvasPopOut =
+	| { readonly mode: 'onrush-active' | 'onrush-planning' }
+	| { readonly mode: 'global', readonly text: string }
+
+/** Dependency canvas contexts in windows of their own (the standalone shell's planning windows). */
+export interface CanvasWindowHost {
+	/**
+	 * Opens a context in a window of its own, as a planning graph file opens. An onrush has one window, brought forward
+	 * when it is already open; a global context opens a new window that holds it unsaved until it is saved to a file.
+	 * Rejects when no window could be opened.
+	 */
+	popOut(context: CanvasPopOut): Promise<void>
 }

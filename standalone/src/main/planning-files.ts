@@ -1,7 +1,7 @@
 import { readFileSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs"
 import path from "node:path"
 import { app, BrowserWindow, dialog, ipcMain, type WebContents } from "electron"
-import { ipc, planningFileExtension, type PlanningFileSnapshot, type PlanningSaveOutcome } from "../shared/contracts"
+import { ipc, planningFileExtension, type PlanningFileSnapshot, type PlanningPopOut, type PlanningSaveOutcome, type PlanningWindowContent } from "../shared/contracts"
 
 /** How long a run of edits rests before it is written: a drag's end and the pin change after it land as one write. */
 const writeDelayMs = 400
@@ -78,7 +78,7 @@ export class PlanningFile {
 
 	/** The file as last read or written. */
 	public get snapshot(): PlanningFileSnapshot {
-		return { path: this.path, name: this.name, text: this.known }
+		return { kind: "file", path: this.path, name: this.name, text: this.known }
 	}
 
 	/** Replaces the file's text once edits have rested for a moment. */
@@ -177,28 +177,39 @@ export class PlanningFile {
 	}
 }
 
-/** What {@link handlePlanningFiles} needs of the shell. */
-export interface PlanningFileHost {
-	/** The file of the planning window a page runs in; undefined for any other page. */
-	fileOf(contents: WebContents): PlanningFile | undefined
+/** What {@link handlePlanningWindows} needs of the shell. */
+export interface PlanningWindowHost {
+	/** What the planning window a page runs in shows; undefined for any other page. */
+	contentOf(contents: WebContents): PlanningWindowContent | undefined
+	/** Takes the global context text a planning window's page hands over: its file's, or its unsaved context's. */
+	write(contents: WebContents, text: string): void
 	/** The file of the planning window open on a path, if one is. */
 	fileAt(filePath: string): PlanningFile | undefined
 	/** The vault the core serves, where a new planning file is offered a place. */
 	servedVault(): string | undefined
-	/** Opens a planning file in its window. */
-	open(filePath: string): void
+	/** A page saved a new planning file: the unsaved planning window that saved it becomes its window, else it opens. */
+	saved(contents: WebContents, filePath: string): void
+	/** Opens a canvas context in a planning window. */
+	popOut(context: PlanningPopOut): void
 }
 
 /**
- * Answers the pages: a planning window's page reads and writes the file of the window it runs in, and no other file;
- * any page may save a new planning file, through a save dialog, and have it opened.
+ * Answers the pages: a planning window's page reads and writes what the window it runs in shows, and nothing else;
+ * any page may save a new planning file through a save dialog, and pop a canvas context out into a planning window.
  */
-export function handlePlanningFiles(host: PlanningFileHost): void {
-	ipcMain.handle(ipc.planningRead, event => host.fileOf(event.sender)?.snapshot)
+export function handlePlanningWindows(host: PlanningWindowHost): void {
+	ipcMain.handle(ipc.planningRead, event => host.contentOf(event.sender))
 	ipcMain.handle(ipc.planningWrite, (event, text: unknown) => {
 		if (typeof text === "string") {
-			host.fileOf(event.sender)?.write(text)
+			host.write(event.sender, text)
 		}
+	})
+	ipcMain.handle(ipc.planningPopOut, (_, context: unknown) => {
+		if (!isPopOut(context)) {
+			throw new Error("Not a canvas context.")
+		}
+
+		host.popOut(context)
 	})
 	ipcMain.handle(ipc.planningSaveAs, async (event, text: unknown): Promise<PlanningSaveOutcome | undefined> => {
 		if (typeof text !== "string") {
@@ -230,9 +241,15 @@ export function handlePlanningFiles(host: PlanningFileHost): void {
 			return { error: error instanceof Error ? error.message : String(error) }
 		}
 
-		host.open(file.path)
+		host.saved(event.sender, file.path)
 		return { path: displayPath(file.path, vault) }
 	})
+}
+
+function isPopOut(value: unknown): value is PlanningPopOut {
+	const context = value as { mode?: unknown, text?: unknown } | null
+	return typeof context === "object" && context !== null
+		&& (context.mode === "onrush-active" || context.mode === "onrush-planning" || (context.mode === "global" && typeof context.text === "string"))
 }
 
 /**
