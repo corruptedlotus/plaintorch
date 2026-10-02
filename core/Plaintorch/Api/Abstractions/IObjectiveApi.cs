@@ -19,7 +19,8 @@ public interface IObjectiveApi
 	Task<IReadOnlyList<Objective>> ListAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Finds objectives using a free-text query.
+	/// Finds objectives using a free-text query over id and title, ordered by title. Case and accents are ignored and
+	/// every word of the query must turn up, in either field; the take caps the result.
 	/// </summary>
 	Task<IReadOnlyList<Objective>> FindAsync(SearchRequest search, CancellationToken cancellationToken = default);
 

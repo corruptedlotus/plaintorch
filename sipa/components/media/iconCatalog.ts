@@ -1,5 +1,6 @@
 import * as icons from '../../assets/icons'
 import { host } from '../../host'
+import { fuzzyFilter } from '../editing/fuzzy'
 
 /** The `lucide:` scheme p7t-icon uses for a lucide glyph the host draws (see {@link PleiadesIcon}). */
 const lucideScheme = 'lucide:'
@@ -20,15 +21,20 @@ export function allIconKeys(): string[] {
 }
 
 /**
- * Searches the icon catalog. A `lucide:`-prefixed query restricts the search to lucide icons and matches on the
- * name after the scheme; any other query matches Pleiades glyphs and lucide icons alike, on their whole key (so a
- * lucide hit keeps its `lucide:` scheme in the result). An empty query lists the whole catalog.
+ * Searches the icon catalog by {@link fuzzyFilter}, best match first, on each icon's name — its key without the
+ * `lucide:` scheme, though a lucide hit keeps the scheme in the result. A `lucide:`-prefixed query restricts the
+ * search to lucide icons; any other query matches Pleiades glyphs and lucide icons alike. An empty query lists the
+ * whole catalog.
  */
 export function searchIconKeys(query: string, limit = 50): string[] {
-	const trimmed = query.trim().toLowerCase()
-	const lucideOnly = trimmed.startsWith(lucideScheme)
+	const trimmed = query.trim()
+	const lucideOnly = trimmed.toLowerCase().startsWith(lucideScheme)
 	const needle = lucideOnly ? trimmed.slice(lucideScheme.length) : trimmed
 	const pool = lucideOnly ? lucideIconKeys() : allIconKeys()
-	const matches = needle ? pool.filter(key => key.toLowerCase().includes(needle)) : pool
-	return matches.slice(0, limit)
+	return fuzzyFilter(needle, pool, iconName).slice(0, limit)
+}
+
+/** An icon key's name: the key itself for a Pleiades glyph, the part after the scheme for a lucide icon. */
+function iconName(key: string): string {
+	return key.startsWith(lucideScheme) ? key.slice(lucideScheme.length) : key
 }

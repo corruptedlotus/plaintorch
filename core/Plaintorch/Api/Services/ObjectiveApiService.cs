@@ -47,18 +47,17 @@ public sealed class ObjectiveApiService(
 		ArgumentNullException.ThrowIfNull(search);
 		ArgumentException.ThrowIfNullOrWhiteSpace(search.Query);
 
-		var query = context.Objectives
+		IQueryable<Objective> query = context.Objectives
 			.AsNoTracking()
-			.Where(objective => objective.Id.Contains(search.Query) || objective.Title.Contains(search.Query));
+			.WhereMatchesSearch(search.Query, objective => objective.Id, objective => objective.Title)
+			.OrderBy(objective => objective.Title);
 
 		if (search.Take is > 0)
 		{
 			query = query.Take(search.Take.Value);
 		}
 
-		return await query
-			.OrderBy(objective => objective.Title)
-			.ToListAsync(cancellationToken);
+		return await query.ToListAsync(cancellationToken);
 	}
 
 	/// <inheritdoc />
