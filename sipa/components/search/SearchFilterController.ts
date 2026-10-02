@@ -1,5 +1,5 @@
 import { Controller, ElementRef, type ReactiveElement } from '@a11d/lit'
-import { fuzzyScore } from '../editing/fuzzy'
+import { fuzzyFilter } from '../editing/fuzzy'
 import type { IconName } from '../PleiadesIcon'
 
 /** One value a {@link SearchFilter} offers. */
@@ -396,16 +396,11 @@ export class SearchFilterController<T, THost extends ReactiveElement = ReactiveE
 			return offered.map(option => ({ kind: 'option', filter, option }))
 		}
 
+		// A value named in full by its text or its label leads; the rest follow in the shared fuzzy order, matched on both.
 		const exact = normalise(typed)
-		return offered
-			.map((option, index) => {
-				const fuzzy = Math.max(fuzzyScore(typed, option.text) ?? -Infinity, fuzzyScore(typed, option.label) ?? -Infinity)
-				const whole = normalise(option.text) === exact || normalise(option.label) === exact
-				return { option, index, score: whole ? Infinity : fuzzy }
-			})
-			.filter(entry => entry.score > -Infinity)
-			.sort((a, b) => b.score - a.score || a.index - b.index)
-			.map(({ option }) => ({ kind: 'option', filter, option }))
+		const named = offered.filter(option => normalise(option.text) === exact || normalise(option.label) === exact)
+		const matched = fuzzyFilter(typed, offered, option => `${option.text} ${option.label}`).filter(option => !named.includes(option))
+		return [...named, ...matched].map(option => ({ kind: 'option', filter, option }))
 	}
 
 	/** The option a typed value names in full, by its text or its label. */
