@@ -3,6 +3,7 @@ import { BriefingCard } from "./BriefingCard"
 import { DependencyEndpointKind, Objective, ObjectiveStatus, OnrushSprint } from "@pleiades/sdk"
 import { concludeConfirmation, confirmAction, core, DerivedRef, tooltip, TransferController } from ".."
 import { endpointKey, immediatePrerequisites, unresolvedPrerequisites } from "../canvas/graphModel"
+import { fuzzyFilter } from "../editing/fuzzy"
 import { createChild, SuggestModalBase } from "../../host"
 
 @component('p7t-briefing-onrush')
@@ -258,14 +259,18 @@ function hasId<T extends { id?: string }>(value: T | undefined | null): value is
 	return !!value && typeof value.id === 'string' && value.id.length > 0
 }
 
+/** Picks a live objective to add to the sprint, matching the objective listing — fetched once per opening — by {@link fuzzyFilter}. */
 class AddObjectiveModal extends SuggestModalBase<Objective> {
+	private objectives?: Promise<Objective[]>
+
 	constructor(protected readonly host: BriefingCardOnrush) {
 		super()
 	}
 
 	override async getSuggestions(query: string) {
-		const results = query.length > 2 ? await core.objectives.search(query) : await core.objectives.list()
-		return results.filter(objective => objective.status < ObjectiveStatus.Archived)
+		this.objectives ??= core.objectives.list()
+		const live = (await this.objectives).filter(objective => objective.status < ObjectiveStatus.Archived)
+		return fuzzyFilter(query, live, objective => objective.title)
 	}
 
 	renderSuggestion(objective: Objective, el: HTMLElement) {

@@ -85,22 +85,17 @@ public sealed class DirectiveApiService(
 		ArgumentNullException.ThrowIfNull(search);
 		ArgumentException.ThrowIfNullOrWhiteSpace(search.Query);
 
-		var query = context.Directives
+		IQueryable<Directive> query = context.Directives
 			.AsNoTracking()
-			.Where(directive =>
-				directive.Id.Contains(search.Query)
-				|| directive.Title.Contains(search.Query)
-				|| (directive.Codename != null && directive.Codename.Contains(search.Query)));
+			.WhereMatchesSearch(search.Query, directive => directive.Id, directive => directive.Title, directive => directive.Codename)
+			.OrderBy(directive => directive.Title);
 
 		if (search.Take is > 0)
 		{
 			query = query.Take(search.Take.Value);
 		}
 
-		var directives = await query
-			.OrderBy(directive => directive.Title)
-			.ToListAsync(cancellationToken);
-		return directives;
+		return await query.ToListAsync(cancellationToken);
 	}
 
 	/// <inheritdoc />

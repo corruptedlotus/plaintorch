@@ -3,6 +3,7 @@ import { createChild, sleep, SuggestModalBase } from "../../host"
 import { core } from ".."
 import { IconName } from "../PleiadesIcon"
 import { createDeferredExecutor, DeferredPromiseExecutor } from "@open-draft/deferred-promise"
+import { fuzzyFilter } from "./fuzzy"
 
 /**
  * A chosen timeframe, or `null` for an explicit none: it clears an executive's affinity or a directive's availability
@@ -59,11 +60,9 @@ export class SelectTimeframeModal extends SuggestModalBase<TimeframeChoice> {
 		return new Promise(modal.dpe)
 	}
 
-	/** The leading `null` row, then the timeframes whose title or directive title holds the query. */
+	/** The leading `null` row, then the timeframes whose title or directive title fuzzily match the query, best first. */
 	override getSuggestions(query: string): TimeframeChoice[] {
-		const q = query.trim().toLowerCase()
-		const matches = this.timeframes.filter(timeframe =>
-			!q || timeframe.title.toLowerCase().includes(q) || timeframe.directiveTitle.toLowerCase().includes(q))
+		const matches = fuzzyFilter(query, this.timeframes, timeframe => `${timeframe.title} ${timeframe.directiveTitle}`)
 		return [null, ...matches]
 	}
 

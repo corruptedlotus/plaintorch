@@ -35,7 +35,9 @@ public interface IDirectiveApi
 	Task<IReadOnlyList<LunarDirective>> ListLunarAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Finds directives using a free-text query across every kind.
+	/// Finds directives of every kind using a free-text query over id, title, and codename, ordered by title. Case
+	/// and accents are ignored and every word of the query must turn up, in any of those fields; the take caps the
+	/// result.
 	/// </summary>
 	Task<IReadOnlyList<Directive>> FindAsync(SearchRequest search, CancellationToken cancellationToken = default);
 

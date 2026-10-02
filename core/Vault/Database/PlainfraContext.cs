@@ -185,9 +185,24 @@ public class PlainfraContext : DbContext
 			? Pleiades.Diagnostics.OperationSeverity.Warning
 			: Enum.Parse<Pleiades.Diagnostics.OperationSeverity>(stored, ignoreCase: true);
 
+	/// <summary>
+	/// Adds the <see cref="SearchFoldingConnectionInterceptor"/> to whatever options the context was made with, so the
+	/// search folding the model maps is registered on every connection the context opens.
+	/// </summary>
+	/// <param name="optionsBuilder">The options builder for the context.</param>
+	protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+	{
+		base.OnConfiguring(optionsBuilder);
+		optionsBuilder.AddInterceptors(SearchFoldingConnectionInterceptor.Instance);
+	}
+
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
 		base.OnModelCreating(modelBuilder);
+
+		// Searches fold case and accents inside SQLite, through a function each connection registers (see OnConfiguring).
+		modelBuilder.HasDbFunction(typeof(SearchFolding).GetMethod(nameof(SearchFolding.Fold))!)
+			.HasName(SearchFolding.FunctionName);
 
 		// PEP108: operation-status transition log. Enum columns are stored as readable strings; severities read back
 		// through a converter that also understands names retired by the regrading (see ReadStoredSeverity).

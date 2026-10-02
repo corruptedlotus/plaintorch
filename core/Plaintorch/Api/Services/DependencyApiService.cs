@@ -25,6 +25,9 @@ public sealed class DependencyApiService(
 {
 	private const string CheckpointTollDescriptionPrefix = "PLAINTORCH checkpoint toll";
 
+	// How many hits of each endpoint kind a search returns when the caller names no cap.
+	private const int DefaultEndpointHitsPerKind = 50;
+
 	/// <inheritdoc />
 	public async Task<Dependency> CreateAsync(EndpointRef source, EndpointRef target, DependencyTrigger? trigger = null, DependencyConstraint? constraint = null, CancellationToken cancellationToken = default)
 	{
@@ -75,46 +78,47 @@ public sealed class DependencyApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<IReadOnlyList<EndpointHit>> SearchEndpointsAsync(SearchRequest search, CancellationToken cancellationToken = default)
+	public Task<IReadOnlyList<EndpointHit>> ListEndpointsAsync(CancellationToken cancellationToken = default)
+		=> CollectEndpointsAsync(search: null, perKind: null, cancellationToken);
+
+	/// <inheritdoc />
+	public Task<IReadOnlyList<EndpointHit>> SearchEndpointsAsync(SearchRequest search, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(search);
+		ArgumentException.ThrowIfNullOrWhiteSpace(search.Query);
 
-		// The same title/id substring match the objective and directive finders use, run over each endpoint
-		// kind and unioned. An empty query returns a bounded slice rather than everything, so the picker opens
-		// usefully before anything is typed. Only stellar directives take part — the OfType filter is what
-		// excludes lunar directives — and decrees and Polaris-level records are simply never queried.
-		// Checkpoints take part too, whichever sprint (or none) they belong to: a global context may pin one.
-		var query = search.Query?.Trim();
-		var hasQuery = !string.IsNullOrWhiteSpace(query);
-		var perKind = search.Take is > 0 ? search.Take.Value : hasQuery ? 50 : 20;
+		return CollectEndpointsAsync(search.Query, search.Take is > 0 ? search.Take.Value : DefaultEndpointHitsPerKind, cancellationToken);
+	}
 
-		var directives = context.Directives
-			.OfType<StellarDirective>()
-			.AsNoTracking()
-			.Where(directive => !hasQuery || directive.Id.Contains(query!) || directive.Title.Contains(query!))
-			.OrderBy(directive => directive.Title)
-			.Take(perKind)
+	// Each endpoint kind is matched, title-ordered and capped on its own, then the kinds are unioned. Only stellar
+	// directives take part — the OfType filter is what excludes lunar directives — and decrees and Polaris-level
+	// records are simply never queried. Checkpoints take part too, whichever sprint (or none) they belong to: a
+	// global context may pin one.
+	private async Task<IReadOnlyList<EndpointHit>> CollectEndpointsAsync(string? search, int? perKind, CancellationToken cancellationToken)
+	{
+		var directives = Capped(context.Directives
+				.OfType<StellarDirective>()
+				.AsNoTracking()
+				.WhereMatchesSearch(search, directive => directive.Id, directive => directive.Title)
+				.OrderBy(directive => directive.Title), perKind)
 			.Select(directive => new EndpointHit(DependencyEndpointKind.Directive, directive.Id, directive.Title));
 
-		var objectives = context.Objectives
-			.AsNoTracking()
-			.Where(objective => !hasQuery || objective.Id.Contains(query!) || objective.Title.Contains(query!))
-			.OrderBy(objective => objective.Title)
-			.Take(perKind)
+		var objectives = Capped(context.Objectives
+				.AsNoTracking()
+				.WhereMatchesSearch(search, objective => objective.Id, objective => objective.Title)
+				.OrderBy(objective => objective.Title), perKind)
 			.Select(objective => new EndpointHit(DependencyEndpointKind.Objective, objective.Id, objective.Title));
 
-		var fates = context.Fates
-			.AsNoTracking()
-			.Where(fate => !hasQuery || fate.Id.Contains(query!) || fate.Title.Contains(query!))
-			.OrderBy(fate => fate.Title)
-			.Take(perKind)
+		var fates = Capped(context.Fates
+				.AsNoTracking()
+				.WhereMatchesSearch(search, fate => fate.Id, fate => fate.Title)
+				.OrderBy(fate => fate.Title), perKind)
 			.Select(fate => new EndpointHit(DependencyEndpointKind.Fate, fate.Id, fate.Title));
 
-		var checkpoints = context.Checkpoints
-			.AsNoTracking()
-			.Where(checkpoint => !hasQuery || checkpoint.Id.Contains(query!) || checkpoint.Title.Contains(query!))
-			.OrderBy(checkpoint => checkpoint.Title)
-			.Take(perKind)
+		var checkpoints = Capped(context.Checkpoints
+				.AsNoTracking()
+				.WhereMatchesSearch(search, checkpoint => checkpoint.Id, checkpoint => checkpoint.Title)
+				.OrderBy(checkpoint => checkpoint.Title), perKind)
 			.Select(checkpoint => new EndpointHit(DependencyEndpointKind.Checkpoint, checkpoint.Id, checkpoint.Title));
 
 		var hits = new List<EndpointHit>();
@@ -123,6 +127,8 @@ public sealed class DependencyApiService(
 		hits.AddRange(await fates.ToListAsync(cancellationToken));
 		hits.AddRange(await checkpoints.ToListAsync(cancellationToken));
 		return hits;
+
+		static IQueryable<T> Capped<T>(IQueryable<T> query, int? take) => take is { } count ? query.Take(count) : query;
 	}
 
 	/// <inheritdoc />

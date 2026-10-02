@@ -19,21 +19,24 @@ export class PlaintorchDependenciesSdk {
 	}
 
 	/**
-	 * Searches the entities that may be a dependency endpoint — stellar directives, objectives, fates —
-	 * kind-tagged for a picker (PEP102). An empty query returns a bounded slice across the kinds.
+	 * Lists every entity that may be a dependency endpoint — stellar directives, objectives, fates, checkpoints —
+	 * kind-tagged, for a picker to match against as one types (PEP102).
 	 */
-	public async searchEndpoints(query?: string, take?: number): Promise<EndpointHit[]> {
-		const params = new URLSearchParams()
-		if (query) {
-			params.set("q", query)
-		}
+	public async listEndpoints(): Promise<EndpointHit[]> {
+		return (await this.client.getJson<EndpointHit[]>("/api/dependencies/endpoints")) ?? []
+	}
 
+	/**
+	 * Searches the entities that may be a dependency endpoint by id or title, kind-tagged (PEP102). Case and accents
+	 * are ignored and every word of the query must turn up; `take` caps the hits of each kind.
+	 */
+	public async searchEndpoints(query: string, take?: number): Promise<EndpointHit[]> {
+		const params = new URLSearchParams({ q: query })
 		if (take !== undefined) {
 			params.set("take", String(take))
 		}
 
-		const suffix = params.toString()
-		return (await this.client.getJson<EndpointHit[]>(`/api/dependencies/endpoints${suffix ? `?${suffix}` : ""}`)) ?? []
+		return (await this.client.getJson<EndpointHit[]>(`/api/dependencies/endpoints?${params}`)) ?? []
 	}
 
 	/** Creates a dependency edge (source blocks target). */
