@@ -91,7 +91,8 @@ export function mountVaultWindow(options: VaultWindowOptions): VaultWindow {
 			}
 		},
 		// A canvas context pops out into a planning window, as a planning graph file opens.
-		canvasWindows: {
+		canvasPopOut: {
+			label: "Open in a new window",
 			popOut: context => bridge.planning.popOut(context.mode === "global" ? { mode: "global", text: context.text } : { mode: context.mode })
 		}
 	}))

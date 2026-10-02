@@ -333,9 +333,10 @@ export async function saveGraphLayout(sprintId: string, layout: string | undefin
  *
  * The file's own view takes over from there — this is a one-time hand-off, not the ongoing save, which the
  * file view does as the context is edited. Where the file goes is the host's to ask (a name at the vault root in
- * Obsidian, a save dialog in the standalone shell); backing out of that saves nothing.
+ * Obsidian, a save dialog in the standalone shell); backing out of that saves nothing. `origin` is the canvas that
+ * asked, so a popped-out context's own tab can become the file's.
  */
-export async function saveGlobalContextToFile(pinned: readonly EndpointHit[], layout: string | undefined): Promise<void> {
+export async function saveGlobalContextToFile(pinned: readonly EndpointHit[], layout: string | undefined, origin?: HTMLElement): Promise<void> {
 	const contexts = host.globalContexts
 	if (!contexts) {
 		return
@@ -343,7 +344,7 @@ export async function saveGlobalContextToFile(pinned: readonly EndpointHit[], la
 
 	let saved: { readonly path: string } | undefined
 	try {
-		saved = await contexts.saveAndOpen(serializeGlobalContext(pinned, layout))
+		saved = await contexts.saveAndOpen(serializeGlobalContext(pinned, layout), origin)
 	}
 	catch (error) {
 		toast(`PLAINTORCH could not save the global context: ${error instanceof Error ? error.message : String(error)}`, 'error')

@@ -13,6 +13,7 @@ This is the initial scaffold for the PLAINTORCH Obsidian plugin.
 - onrush objectives and executive-linked objectives are navigable links back into vault notes
 - objective note decoration includes quick actions for adding the objective to onrush or Polaris
 - objective note decoration also includes a directive picker that edits the note frontmatter so watcher-driven sync can reconcile the directive change back into core state
+- the dependency canvas pops its context out into a tab of its own (*Open in a new tab*, `PlaintorchPlanningView`): one tab per onrush, and a new tab for a scratch global context, marked *Unsaved* (in its title and its canvas toolbar) and kept in the tab's view state across reloads until its *Save to file* turns that tab into the saved `.p7tpx` file's view
 
 ## Authority lookup
 The plugin now asks the local PLAINTORCH core for the authoritative entity kind of a vault note by calling `/api/system/resolve-note`.

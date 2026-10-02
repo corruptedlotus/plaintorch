@@ -119,7 +119,8 @@ title bar, which is named after the file.
 ### Popping a canvas out
 
 The briefing's canvas has a pop-out button (*Open in a new window*, beside the readout) that opens the context on
-screen in a planning window, as if it were a file (`host.canvasWindows` → `window.plaintorch.planning.popOut`). A
+screen in a planning window, as if it were a file (`host.canvasPopOut` → `window.plaintorch.planning.popOut`; the
+Obsidian plugin pops out into tabs the same way). A
 planning window shows one context alone (`singleContext`: no mode switcher, no pop-out), and the main process keeps
 what each window shows: a file, an unsaved global context, or an onrush.
 

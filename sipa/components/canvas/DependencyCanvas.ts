@@ -92,6 +92,8 @@ function isMouseWheel(e: WheelEvent): boolean {
  * Keeping the nodes as elements is what lets each one be an {@link CanvasNodeItem} — a real entity item, with
  * the same reactivity and the same theming as every other surface — rather than something redrawn by hand
  * inside the SVG.
+ *
+ * @slot toolbar - A host's own items at the start of the toolbar, such as a popped-out tab's "Unsaved" mark.
  */
 @component('p7t-dependency-canvas')
 export class DependencyCanvas extends Component {
@@ -118,9 +120,9 @@ export class DependencyCanvas extends Component {
 	@property({ type: Boolean, reflect: true }) fileBacked = false
 
 	/**
-	 * Whether this canvas is the whole of a window of its own, showing its one context — an onrush or an unsaved
-	 * global context popped out — with no mode switcher and no pop-out. A move to another context (the planning
-	 * onrush, the active one it was activated into) opens that context's window instead of switching this one.
+	 * Whether this canvas is the whole of a window or tab of its own, showing its one context — an onrush or an
+	 * unsaved global context popped out — with no mode switcher and no pop-out. A move to another context (the
+	 * planning onrush, the active one it was activated into) pops that context out instead of switching this one.
 	 */
 	@property({ type: Boolean, reflect: true }) singleContext = false
 
@@ -566,6 +568,7 @@ export class DependencyCanvas extends Component {
 
 		return html`
 			<div class='toolbar'>
+				<slot name='toolbar'></slot>
 				${this.fileBacked || this.singleContext ? nothing : (['onrush-active', 'onrush-planning', 'global'] as const).map(mode => html`
 					<button
 						class='mode'
@@ -576,8 +579,8 @@ export class DependencyCanvas extends Component {
 				`)}
 				<div class='spacer'></div>
 				<span class='readout'>${graph.nodes.length} nodes · ${graph.edges.length} edges · ${Math.round(this.scale * 100)}%</span>
-				${this.fileBacked || this.singleContext || !host.canvasWindows ? nothing : html`
-					<p7t-button ghost class='pop-out' icon='lucide:square-arrow-out-up-right' label='Open in a new window'
+				${this.fileBacked || this.singleContext || !host.canvasPopOut ? nothing : html`
+					<p7t-button ghost class='pop-out' icon='lucide:square-arrow-out-up-right' label=${host.canvasPopOut.label}
 						@click=${() => void this.onPopOut()}></p7t-button>
 				`}
 			</div>
@@ -781,49 +784,49 @@ export class DependencyCanvas extends Component {
 	}
 
 	/**
-	 * Moves to another context: this canvas switches to it, unless it is a window's {@link singleContext}, which
-	 * opens that context's own window instead and stays on its own.
+	 * Moves to another context: this canvas switches to it, unless it is a popped-out {@link singleContext}, which
+	 * pops that context out on its own instead and stays on its own.
 	 */
 	private async showMode(mode: 'onrush-active' | 'onrush-planning') {
-		const windows = host.canvasWindows
-		if (!this.singleContext || !windows) {
+		const popOut = host.canvasPopOut
+		if (!this.singleContext || !popOut) {
 			this.setMode(mode)
 			return
 		}
 
 		try {
-			await windows.popOut({ mode })
+			await popOut.popOut({ mode })
 		}
 		catch {
-			toast(`PLAINTORCH could not open the ${contextModeLabels[mode].toLowerCase()} in a window.`, 'error')
+			toast(`PLAINTORCH could not open the ${contextModeLabels[mode].toLowerCase()}.`, 'error')
 		}
 	}
 
 	/**
-	 * Pops the context on screen out into a window of its own. An onrush stays on screen here too — the vault holds
-	 * it, so both stay current. A scratch global context moves: it is held nowhere but here, so its window takes it,
-	 * unsaved, and this canvas starts a fresh one.
+	 * Pops the context on screen out on its own — a window or a tab, as the host has it. An onrush stays on screen here
+	 * too — the vault holds it, so both stay current. A scratch global context moves: it is held nowhere but here, so
+	 * the popped-out one takes it, unsaved, and this canvas starts a fresh one.
 	 */
 	private async onPopOut() {
-		const windows = host.canvasWindows
-		if (!windows) {
+		const popOut = host.canvasPopOut
+		if (!popOut) {
 			return
 		}
 
 		try {
 			if (this.mode === 'global') {
-				await windows.popOut({ mode: 'global', text: serializeGlobalContext(this.pinned, serializePositions(this.overrides)) })
+				await popOut.popOut({ mode: 'global', text: serializeGlobalContext(this.pinned, serializePositions(this.overrides)) })
 				this.pinned = []
 				this.overrides = new Map()
 				this.framed = false
 				this.emitContextChanged()
 			}
 			else {
-				await windows.popOut({ mode: this.mode })
+				await popOut.popOut({ mode: this.mode })
 			}
 		}
 		catch {
-			toast(`PLAINTORCH could not open the ${contextModeLabels[this.mode].toLowerCase()} in a window.`, 'error')
+			toast(`PLAINTORCH could not open the ${contextModeLabels[this.mode].toLowerCase()} on its own.`, 'error')
 		}
 	}
 
@@ -1298,7 +1301,7 @@ export class DependencyCanvas extends Component {
 
 	/** Graduates a scratch global context into a `.p7tpx` file and opens it. */
 	private async onSaveToFile() {
-		await saveGlobalContextToFile(this.pinned, serializePositions(this.overrides))
+		await saveGlobalContextToFile(this.pinned, serializePositions(this.overrides), this)
 	}
 
 	private async reshape(edge: CanvasEdge, trigger: DependencyTrigger, constraint: DependencyConstraint) {
