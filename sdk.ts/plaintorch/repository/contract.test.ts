@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { ModelValueConstructor } from "@a11d/api-dotnet"
 import { EntityStore } from "./entityStore"
+import { plaintorchEntityPolicy } from "../repositoryPolicy"
 import { PlaintorchRepositories } from "./repositories"
 import type { PlaintorchCoreClient } from "../coreClient"
 
@@ -17,7 +18,7 @@ describe("repository contract / drift guard", () => {
 		// Importing repositories loaded every model module for its @model side effect; construction then runs
 		// register() for each routed type, which throws if one is not registered. This is what would have
 		// caught both the StellarDirective drift and the five interface-only models.
-		const client = { store: new EntityStore() } as unknown as PlaintorchCoreClient
+		const client = { store: new EntityStore(plaintorchEntityPolicy) } as unknown as PlaintorchCoreClient
 		expect(() => new PlaintorchRepositories(client)).not.toThrow()
 	})
 
@@ -33,7 +34,7 @@ describe("repository contract / drift guard", () => {
 	})
 
 	it("routes each type name back to a repository through forTypeName", () => {
-		const client = { store: new EntityStore() } as unknown as PlaintorchCoreClient
+		const client = { store: new EntityStore(plaintorchEntityPolicy) } as unknown as PlaintorchCoreClient
 		const repositories = new PlaintorchRepositories(client)
 		for (const typeName of routedTypes) {
 			expect(repositories.forTypeName(typeName), `${typeName} routes`).toBeDefined()

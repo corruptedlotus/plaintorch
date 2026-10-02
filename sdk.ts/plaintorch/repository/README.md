@@ -44,6 +44,14 @@ reference is looking at current state by construction; synchronizing them is jus
 - `PlaintorchRepositories` — wires one repository per type, the derived records, invalidation, the feed, and
   the eviction sweep.
 - `identity.ts` / `absorption.ts` / `equivalence.ts` / `mutation.ts` — the primitives.
+- `policy.ts` — the `EntityPolicy` a store is built with: what an entity is, how a payload becomes a model,
+  and which of a payload's fields merge.
+
+**PLAINTORCH's declarations (`sdk.ts/plaintorch/`)**
+- `repositoryPolicy.ts` — the policy the client's store is built with (`identify`, the `@model` constructor
+  adapter, the unloaded-collection and unloaded-reference merge rules).
+- `repositoryDependents.ts` — the table the `InvalidationScheduler` is handed: what a change to each type
+  makes stale.
 
 **Binding layer (`sipa/components/data/EntityRef.ts`)**
 - `EntityRef<T>` — resolves an entity by id, subscribes, re-renders on change, releases on disconnect. Owns
@@ -54,6 +62,10 @@ reference is looking at current state by construction; synchronizing them is jus
 ---
 
 ## Identity — what is and isn't tracked
+
+What counts as an entity is the store's **policy** — `new EntityStore({ identify, models?, mergeableKeys? })`.
+The files in this directory assume no shape of their own; `identifyByShape({ typeKey, idKey?, requires? })`
+builds an identifier for the common one. What follows is PLAINTORCH's policy (`repositoryPolicy.ts`).
 
 An entity is recognised **structurally**, not by a hard-coded list of type names: a runtime `@type` **plus a
 non-empty string `id` plus a string `title`**. Key is `` `${@type}:${id}` ``.

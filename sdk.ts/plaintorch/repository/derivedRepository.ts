@@ -1,5 +1,4 @@
-import { isEquivalent } from "./equivalence"
-import type { EntitySubscriber, EntitySubscription } from "./entityStore"
+import type { EntityStore, EntitySubscriber, EntitySubscription } from "./entityStore"
 
 /** Resolves one derived record from the core. */
 export type DerivedFetcher<T> = (key: string) => Promise<T | undefined>
@@ -26,6 +25,9 @@ const defaultFreshnessMs = 15_000
  * These have no identity of their own, so they are cached under a key of the caller's choosing. The
  * entities they contain are still absorbed on the way through the client, so a record and the surfaces
  * showing its contents individually agree without either knowing about the other.
+ *
+ * The store is what tells a record whether it changed: a re-resolved view is compared with the entities
+ * inside it taken by identity, so a listing of the same members in a fresh array notifies nobody.
  */
 export class DerivedRepository<T> {
 	private readonly records = new Map<string, DerivedRecord<T>>()
@@ -33,6 +35,7 @@ export class DerivedRepository<T> {
 	private readonly freshnessMs: number
 
 	public constructor(
+		private readonly store: EntityStore,
 		private readonly fetcher: DerivedFetcher<T>,
 		options: DerivedRepositoryOptions = {}
 	) {
@@ -143,7 +146,7 @@ export class DerivedRepository<T> {
 
 	private commit(key: string, value: T | undefined): void {
 		const record = this.records.get(key) ?? this.create(key)
-		const changed = !record.resolved || !isEquivalent(record.value, value)
+		const changed = !record.resolved || !this.store.isEquivalent(record.value, value)
 		record.value = value
 		record.resolvedAt = Date.now()
 		record.resolved = true

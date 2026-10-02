@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { EntityStore } from "./entityStore"
 import { runWrite } from "./mutation"
 import type { InvalidationScheduler } from "./invalidation"
-import { makeEntity } from "./test-utils"
+import { makeEntity, testPolicy } from "./test-utils"
 
 // The change ledger (`changedAt`) grows one entry per locally edited identity and, before this, only ever
 // shrank when the core declared a change authoritative — so a long session leaked. The prune bounds it: a
@@ -29,7 +29,7 @@ function respond(store: EntityStore, id: string, status: number, issuedAt: numbe
 
 describe("beginRead / endRead — tracking reads in flight", () => {
 	it("stamps a read with the current revision, like currentRevision did", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		const before = store.currentRevision
 		expect(store.beginRead()).toBe(before)
 		store.endRead(before)
@@ -41,7 +41,7 @@ describe("beginRead / endRead — tracking reads in flight", () => {
 	})
 
 	it("tracks concurrent reads at the same revision as a multiset, not a set", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		const a = store.beginRead()
 		const b = store.beginRead()
 		expect(a).toBe(b) // same revision — no edits between them
@@ -54,7 +54,7 @@ describe("beginRead / endRead — tracking reads in flight", () => {
 	})
 
 	it("ignores an endRead for a revision it never opened", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		expect(() => store.endRead(999)).not.toThrow()
 		expect(store.inFlightReadCount).toBe(0)
 	})
@@ -62,7 +62,7 @@ describe("beginRead / endRead — tracking reads in flight", () => {
 
 describe("prune — bounding the change ledger", () => {
 	it("clears the whole ledger once the last read settles with nothing else in flight", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 		seed(store, "O2", { status: 0 })
 		seed(store, "O3", { status: 0 })
@@ -79,7 +79,7 @@ describe("prune — bounding the change ledger", () => {
 	})
 
 	it("is read-driven: a local change lingers until some read settles, then is swept", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 		store.patch(KEY, { status: 5 })
 		expect(store.pendingChangeCount).toBe(1) // no read has settled yet, so nothing pruned
@@ -90,7 +90,7 @@ describe("prune — bounding the change ledger", () => {
 	})
 
 	it("prunes only markers at or below the oldest read still in flight", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 		const readA = store.beginRead() // revision 0
 		store.patch(KEY, { status: 5 }) // revision 1 — the marker
@@ -106,7 +106,7 @@ describe("prune — bounding the change ledger", () => {
 
 describe("prune safety — never strands an edit a slower read could clobber", () => {
 	it("keeps the marker while an older read is in flight, so that read's stale response is dropped", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 		const stale = store.beginRead() // an aggregate/list read leaves, carrying pre-edit state
 		store.patch(KEY, { status: 5 }) // the user edits after it went out
@@ -121,7 +121,7 @@ describe("prune safety — never strands an edit a slower read could clobber", (
 	})
 
 	it("holds a marker until the LAST read at the oldest revision settles (multiset is load-bearing)", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 		const a = store.beginRead() // revision 0
 		const b = store.beginRead() // revision 0 — a second reader at the same point
@@ -138,7 +138,7 @@ describe("prune safety — never strands an edit a slower read could clobber", (
 	})
 
 	it("once pruned, a genuinely newer read applies normally", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 		const first = store.beginRead()
 		store.patch(KEY, { status: 5 })
@@ -153,7 +153,7 @@ describe("prune safety — never strands an edit a slower read could clobber", (
 
 describe("versions clashing — overlapping reads and writes", () => {
 	it("discards a read taken mid-write via the end-of-write marker, then prunes", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 
 		store.beginWrite(KEY) // notes a local change at the start
@@ -169,7 +169,7 @@ describe("versions clashing — overlapping reads and writes", () => {
 	})
 
 	it("newer overlapping read wins; the older one is dropped, and neither reverts the edit", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 		const oldRead = store.beginRead() // revision 0
 		store.patch(KEY, { status: 5 }) // local edit, revision 1
@@ -189,7 +189,7 @@ describe("versions clashing — overlapping reads and writes", () => {
 	})
 
 	it("a sparse merge under an in-flight read is unaffected by the prune", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		store.absorb(makeEntity("Objective", "O1", { title: "T", status: 0, college: 3 }),
 			["@type", "id", "title", "status", "college"])
 		const read = store.beginRead()
@@ -207,7 +207,7 @@ describe("versions clashing — overlapping reads and writes", () => {
 
 describe("editing lifecycle (e2e)", () => {
 	it("get, edit + commit, a concurrent stale list dropped, then the ledger empties", async () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		const invalidation = { invalidate: () => {} } as unknown as InvalidationScheduler
 
 		// 1) Initial GET resolves the entity, then settles — nothing to prune yet.
@@ -241,7 +241,7 @@ describe("editing lifecycle (e2e)", () => {
 	})
 
 	it("a read that throws still deregisters and prunes (the finally in the client's read path)", async () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 
 		async function failingRead(): Promise<void> {

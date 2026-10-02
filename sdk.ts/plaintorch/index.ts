@@ -1,6 +1,8 @@
 export * from "./coreClient"
 export { toLines, type PlaintorchCoreRequest, type PlaintorchCoreResponse, type PlaintorchCoreTransport } from "./internal/transport"
 export * from "./repository"
+export * from "./repositoryPolicy"
+export * from "./repositoryDependents"
 export * from "./system"
 export * from "./media"
 export * from "./directives"

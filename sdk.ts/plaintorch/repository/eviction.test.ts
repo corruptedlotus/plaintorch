@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { EntityStore } from "./entityStore"
+import { identify, plaintorchEntityPolicy } from "../repositoryPolicy"
 import { createAbsorbingReviver } from "./absorption"
 import { collectEntityKeys } from "./identity"
 import { PlaintorchRepositories } from "./repositories"
@@ -26,7 +27,7 @@ function absorbGraph<T>(store: EntityStore, value: unknown): T {
 describe("collectEntityKeys — reachability walk", () => {
 	it("collects a flat entity's key", () => {
 		const into = new Set<string>()
-		collectEntityKeys(makeEntity("Objective", "O1"), into)
+		collectEntityKeys(makeEntity("Objective", "O1"), into, identify)
 		expect([...into]).toEqual(["Objective:O1"])
 	})
 
@@ -36,7 +37,7 @@ describe("collectEntityKeys — reachability walk", () => {
 			nested: { deep: makeEntity("Fate", "F1") }
 		}
 		const into = new Set<string>()
-		collectEntityKeys(view, into)
+		collectEntityKeys(view, into, identify)
 		expect([...into].sort()).toEqual(["Fate:F1", "Objective:O1", "Objective:O2"])
 	})
 
@@ -47,23 +48,23 @@ describe("collectEntityKeys — reachability walk", () => {
 		sprint.objectives = [objective]
 
 		const into = new Set<string>()
-		collectEntityKeys(objective, into)
+		collectEntityKeys(objective, into, identify)
 		expect([...into].sort()).toEqual(["Objective:O1", "OnrushSprint:N1"])
 	})
 
 	it("ignores non-entities — value objects without a title, numeric-keyed records, primitives", () => {
 		const into = new Set<string>()
-		collectEntityKeys({ "@type": "EndpointRef", id: "O1" }, into) // a reference: id but no title
-		collectEntityKeys({ "@type": "Dependency", id: 5, title: "d" }, into) // numeric key
-		collectEntityKeys(null, into)
-		collectEntityKeys(42, into)
+		collectEntityKeys({ "@type": "EndpointRef", id: "O1" }, into, identify) // a reference: id but no title
+		collectEntityKeys({ "@type": "Dependency", id: 5, title: "d" }, into, identify) // numeric key
+		collectEntityKeys(null, into, identify)
+		collectEntityKeys(42, into, identify)
 		expect(into.size).toBe(0)
 	})
 })
 
 describe("EntityStore.sweep — keep and evict", () => {
 	it("evicts an unsubscribed entity nothing holds, leaving no index or ledger trace", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		seed(store, "O1")
 		store.noteLocalChange("Objective:O1") // a change marker to prove it is dropped too
 		expect(store.recordCount).toBe(1)
@@ -76,7 +77,7 @@ describe("EntityStore.sweep — keep and evict", () => {
 	})
 
 	it("keeps a subscribed entity even when no view holds it", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		seed(store, "O1")
 		store.subscribe("Objective:O1", () => {})
 		expect(store.sweep()).toBe(0)
@@ -84,14 +85,14 @@ describe("EntityStore.sweep — keep and evict", () => {
 	})
 
 	it("keeps an entity a live view still reaches (external root)", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		seed(store, "O1")
 		expect(store.sweep(new Set(["Objective:O1"]))).toBe(0)
 		expect(store.has("Objective:O1")).toBe(true)
 	})
 
 	it("keeps the entities a subscribed entity nests (closure over subscribed roots)", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		absorbGraph(store, {
 			"@type": "OnrushSprint", id: "N1", title: "s",
 			checkpoints: [{ "@type": "Checkpoint", id: "C1", title: "c" }]
@@ -104,7 +105,7 @@ describe("EntityStore.sweep — keep and evict", () => {
 	})
 
 	it("keeps an entity with a write in flight", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		seed(store, "O1")
 		store.beginWrite("Objective:O1")
 		expect(store.sweep()).toBe(0)
@@ -113,14 +114,14 @@ describe("EntityStore.sweep — keep and evict", () => {
 	})
 
 	it("keeps a subscribed placeholder and does not choke on its undefined value", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		store.subscribe("Objective:O1", () => {}) // creates a placeholder, value still undefined
 		expect(() => store.sweep()).not.toThrow()
 		expect(store.recordCount).toBe(1) // retained — it is observed
 	})
 
 	it("evicts several at once and reports the count", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		seed(store, "O1")
 		seed(store, "O2")
 		seed(store, "O3")
@@ -134,7 +135,7 @@ describe("EntityStore.sweep — keep and evict", () => {
 
 describe("EntityStore.sweep — canonical-instance safety", () => {
 	it("keeps a held entity as the same instance; an unheld one evicts and refetches fresh", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		const first = seed(store, "O1", { status: 0 })
 
 		// Held by a live view → kept, and it is the very same instance every surface shares.
@@ -153,7 +154,7 @@ describe("EntityStore.sweep — canonical-instance safety", () => {
 
 describe("PlaintorchRepositories.sweep — reachable through derived views", () => {
 	it("keeps entities a resolved listing holds and evicts the rest", async () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		let objectiveListValue: unknown[] = []
 		const client = {
 			store,
@@ -174,7 +175,7 @@ describe("PlaintorchRepositories.sweep — reachable through derived views", () 
 	})
 
 	it("keeps a subscribed entity that appears in no listing", async () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		const client = { store, objectives: { list: async () => [] } } as unknown as PlaintorchCoreClient
 		const repositories = new PlaintorchRepositories(client)
 
@@ -193,7 +194,7 @@ describe("periodic eviction sweep — the trigger", () => {
 	})
 
 	function makeRepos() {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		const client = { store, objectives: { list: async () => [] } } as unknown as PlaintorchCoreClient
 		return { repositories: new PlaintorchRepositories(client), store }
 	}

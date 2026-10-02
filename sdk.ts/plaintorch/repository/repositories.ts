@@ -8,12 +8,12 @@ import type { LorePage } from "../lore/models"
 import type { Checkpoint, Dependency } from "../dependencies/models"
 import type { EntityExistence, SystemBriefing } from "../system/models"
 import type { PreferenceView } from "../preferences/contracts"
+import { plaintorchDependents } from "../repositoryDependents"
 import { EntityRepository, type EntityFetcher } from "./entityRepository"
-import { DerivedRepository } from "./derivedRepository"
+import { DerivedRepository, type DerivedFetcher, type DerivedRepositoryOptions } from "./derivedRepository"
 import { InvalidationScheduler, type InvalidationTarget } from "./invalidation"
 import { PlaintorchChangeFeed } from "./changeFeed"
 import { collectEntityKeys, entityKey, type EntityKey, type EntityTypeName } from "./identity"
-import { ModelValueConstructor } from "@a11d/api-dotnet"
 
 // Imported for their load-time `@model` registration side effect: absorption can reconstruct an entity into
 // its class only once that class is registered, and these modules are otherwise reached only through erased
@@ -146,7 +146,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	public constructor(private readonly client: PlaintorchCoreClient, options: PlaintorchRepositoriesOptions = {}) {
 		const store = client.store
 		// Resolved lazily: the scheduler reaches back into the repositories it is handed to.
-		this.invalidation = new InvalidationScheduler(store, () => this)
+		this.invalidation = new InvalidationScheduler(store, () => this, plaintorchDependents)
 		const entity = { invalidation: this.invalidation }
 
 		// Registering an entity repository also routes it by type name, so one cannot be added without
@@ -156,7 +156,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 			// A routed type that is not `@model`-registered would be absorbed as a prototype-less plain object —
 			// the identify-vs-construct split. Fail fast at construction rather than let it surface later as a
 			// missing getter or a value that is not an instance of its class.
-			if (!ModelValueConstructor.modelConstructorsByTypeName.has(typeName)) {
+			if (!store.policy.models.isRegistered(typeName)) {
 				throw new Error(
 					`PLAINTORCH: entity type "${typeName}" is routed to a repository but is not registered with @model, `
 					+ `so absorption would track it as a prototype-less plain object. Declare its model class with @model('${typeName}').`
@@ -179,24 +179,27 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		this.lore = register("LorePage", (id) => client.lore.get(id))
 		this.checkpoints = register("Checkpoint", (id) => client.dependencies.getCheckpoint(id))
 
-		this.directiveList = new DerivedRepository(async () => await client.directives.list())
-		this.objectiveList = new DerivedRepository(async () => await client.objectives.list())
-		this.fateList = new DerivedRepository(async () => await client.declaratives.listFates())
-		this.decreeList = new DerivedRepository(async () => await client.declaratives.listDecrees())
-		this.loreList = new DerivedRepository(async () => await client.lore.list())
+		const derived = <T>(fetcher: DerivedFetcher<T>, derivedOptions?: DerivedRepositoryOptions): DerivedRepository<T> =>
+			new DerivedRepository<T>(store, fetcher, derivedOptions)
 
-		this.dependencyList = new DerivedRepository(async () => await client.dependencies.list())
-		this.checkpointList = new DerivedRepository(async () => await client.dependencies.listCheckpoints())
-		this.onrushCurrent = new DerivedRepository(async () => await client.onrush.getCurrent())
-		this.onrushPlanning = new DerivedRepository(async () => await client.onrush.getPlanning())
-		this.agenda = new DerivedRepository(async () => await client.polaris.getAgenda())
-		this.activeTimeframes = new DerivedRepository(async () => await client.directives.listActiveTimeframes())
-		this.preferences = new DerivedRepository(async () => await client.preferences.list())
+		this.directiveList = derived(async () => await client.directives.list())
+		this.objectiveList = derived(async () => await client.objectives.list())
+		this.fateList = derived(async () => await client.declaratives.listFates())
+		this.decreeList = derived(async () => await client.declaratives.listDecrees())
+		this.loreList = derived(async () => await client.lore.list())
+
+		this.dependencyList = derived(async () => await client.dependencies.list())
+		this.checkpointList = derived(async () => await client.dependencies.listCheckpoints())
+		this.onrushCurrent = derived(async () => await client.onrush.getCurrent())
+		this.onrushPlanning = derived(async () => await client.onrush.getPlanning())
+		this.agenda = derived(async () => await client.polaris.getAgenda())
+		this.activeTimeframes = derived(async () => await client.directives.listActiveTimeframes())
+		this.preferences = derived(async () => await client.preferences.list())
 
 		const resolution = { freshnessMs: options.resolutionFreshnessMs }
-		this.briefing = new DerivedRepository(async () => await client.system.getBriefing())
-		this.noteResolution = new DerivedRepository(async (path) => await client.system.resolveNote(path), resolution)
-		this.entityResolution = new DerivedRepository(async (puck) => await client.system.resolveEntity(puck), resolution)
+		this.briefing = derived(async () => await client.system.getBriefing())
+		this.noteResolution = derived(async (path) => await client.system.resolveNote(path), resolution)
+		this.entityResolution = derived(async (puck) => await client.system.resolveEntity(puck), resolution)
 
 		this.changeFeed = new PlaintorchChangeFeed(client, this)
 	}
@@ -300,7 +303,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		const reachable = new Set<EntityKey>()
 		for (const record of this.records) {
 			for (const value of record.resolvedValues()) {
-				collectEntityKeys(value, reachable)
+				collectEntityKeys(value, reachable, this.client.store.identify)
 			}
 		}
 

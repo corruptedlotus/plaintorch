@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { EntityStore } from "./entityStore"
-import { makeEntity, flushMicrotasks } from "./test-utils"
+import { makeEntity, flushMicrotasks, testPolicy } from "./test-utils"
 
 type Obj = { "@type": string, id: string, title: string, status?: number, college?: number, celestronValue?: number, tags?: string[] }
 const KEY = "Objective:O1"
@@ -13,14 +13,14 @@ function seed(store: EntityStore, id: string, extra: Record<string, unknown> = {
 
 describe("absorb & merge", () => {
 	it("adopts a new entity, then serves it from peek", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 		expect(store.has(KEY)).toBe(true)
 		expect(store.peek<Obj>(KEY)!.id).toBe("O1")
 	})
 
 	it("merges only the keys the payload carried — a sparse response never erases richer cached fields", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		store.absorb(makeEntity("Objective", "O1", { title: "Original", status: 0, college: 3, celestronValue: 5 }),
 			["@type", "id", "title", "status", "college", "celestronValue"])
 
@@ -34,7 +34,7 @@ describe("absorb & merge", () => {
 	})
 
 	it("keeps the same instance across merges (references stay stable for surfaces holding it)", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 		const first = store.peek<Obj>(KEY)
 		store.absorb(makeEntity("Objective", "O1", { status: 4 }), ["@type", "id", "title", "status"])
@@ -42,7 +42,7 @@ describe("absorb & merge", () => {
 	})
 
 	it("does not bump the version or notify when nothing actually changed", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		store.absorb(makeEntity("Objective", "O1", { title: "Original", status: 2 }), ["@type", "id", "title", "status"])
 		const version = store.version(KEY)
 		let fired = 0
@@ -53,7 +53,7 @@ describe("absorb & merge", () => {
 	})
 
 	it("returns a non-entity untouched", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		const value = { id: "not-an-entity", title: "x" }
 		expect(store.absorb(value)).toBe(value)
 	})
@@ -61,7 +61,7 @@ describe("absorb & merge", () => {
 
 describe("supersede ordering", () => {
 	it("discards a response issued before a local change to the same identity", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "S1", { status: 0 })
 		const issuedAt = store.currentRevision
 		store.noteLocalChange("Objective:S1") // a local edit happens after the read went out
@@ -71,7 +71,7 @@ describe("supersede ordering", () => {
 	})
 
 	it("applies an authoritative response even over a local change", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "S1", { status: 0 })
 		const issuedAt = store.currentRevision
 		store.noteLocalChange("Objective:S1")
@@ -81,7 +81,7 @@ describe("supersede ordering", () => {
 	})
 
 	it("acceptAuthority gives up the local claim so the next read applies whatever its age", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "S2", { status: 0 })
 		const issuedAt = store.currentRevision
 		store.noteLocalChange("Objective:S2")
@@ -92,7 +92,7 @@ describe("supersede ordering", () => {
 	})
 
 	it("without an issuedAt, a response is never treated as superseded", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "S3", { status: 0 })
 		store.noteLocalChange("Objective:S3")
 		store.absorb(makeEntity("Objective", "S3", { status: 5 }), ["@type", "id", "title", "status"])
@@ -102,7 +102,7 @@ describe("supersede ordering", () => {
 
 describe("subscriptions", () => {
 	it("fires a per-identity subscriber synchronously on an in-place edit", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 		let fired = 0
 		store.subscribe(KEY, () => fired++)
@@ -111,7 +111,7 @@ describe("subscriptions", () => {
 	})
 
 	it("lets a component subscribe before the entity is absorbed (placeholder), then fires on first absorb", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		let fired = 0
 		store.subscribe(KEY, () => fired++) // creates a placeholder
 		expect(store.peek(KEY)).toBeUndefined()
@@ -121,7 +121,7 @@ describe("subscriptions", () => {
 	})
 
 	it("releases a per-identity subscription", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1")
 		let fired = 0
 		const release = store.subscribe(KEY, () => fired++)
@@ -131,7 +131,7 @@ describe("subscriptions", () => {
 	})
 
 	it("coalesces a burst into one store-wide notification", async () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1")
 		let global = 0
 		store.subscribeAll(() => global++)
@@ -142,7 +142,7 @@ describe("subscriptions", () => {
 	})
 
 	it("notifies a type subscriber for its own type only", async () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1")
 		store.absorb(makeEntity("Fate", "F1"), ["@type", "id", "title"])
 		let objective = 0
@@ -163,7 +163,7 @@ describe("subscriptions", () => {
 	})
 
 	it("enumerates a type's members through the index", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1")
 		seed(store, "O2")
 		store.absorb(makeEntity("Fate", "F1"), ["@type", "id", "title"])
@@ -173,7 +173,7 @@ describe("subscriptions", () => {
 	})
 
 	it("schedules nothing when no structural observer exists", async () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1")
 		// No subscribeAll / subscribeType — a change must not throw and entitiesOfType still works.
 		store.touch(KEY)
@@ -184,7 +184,7 @@ describe("subscriptions", () => {
 
 describe("in-place edits", () => {
 	it("patch merges a change and notifies", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 		let fired = 0
 		store.subscribe(KEY, () => fired++)
@@ -194,7 +194,7 @@ describe("in-place edits", () => {
 	})
 
 	it("restore reverts to a snapshot", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { status: 0 })
 		const snapshot = store.snapshot(KEY)!
 		store.patch(KEY, { status: 9 })
@@ -203,7 +203,7 @@ describe("in-place edits", () => {
 	})
 
 	it("snapshot is shallow — nested collections are shared with the live instance (documented limitation)", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1", { tags: ["a"] })
 		const snapshot = store.snapshot(KEY)!
 		expect(snapshot.tags).toBe(store.peek<Obj>(KEY)!.tags)
@@ -212,7 +212,7 @@ describe("in-place edits", () => {
 
 describe("write guard & revision", () => {
 	it("marks a write in flight and notes a local change at both ends", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1")
 		const start = store.currentRevision
 		store.beginWrite(KEY)
@@ -227,7 +227,7 @@ describe("write guard & revision", () => {
 
 describe("staleness", () => {
 	it("markStale then absorb clears staleness", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1")
 		store.markStale(KEY)
 		expect(store.isStale(KEY)).toBe(true)
@@ -236,7 +236,7 @@ describe("staleness", () => {
 	})
 
 	it("markAllStale marks every held identity", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		seed(store, "O1")
 		seed(store, "O2")
 		store.markAllStale()
@@ -245,7 +245,7 @@ describe("staleness", () => {
 	})
 
 	it("an unknown identity reads as stale", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		expect(store.isStale("Objective:nope")).toBe(true)
 	})
 })

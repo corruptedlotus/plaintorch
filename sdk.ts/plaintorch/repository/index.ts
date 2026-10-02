@@ -1,4 +1,5 @@
 export * from "./identity"
+export * from "./policy"
 export * from "./equivalence"
 export * from "./entityStore"
 export * from "./absorption"

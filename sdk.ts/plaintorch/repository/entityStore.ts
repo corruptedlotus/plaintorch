@@ -1,5 +1,6 @@
-import { collectEntityKeys, identify, typeNameFromKey, type EntityKey, type EntityTypeName } from "./identity"
+import { collectEntityKeys, typeNameFromKey, type EntityIdentifier, type EntityKey, type EntityTypeName } from "./identity"
 import { isEquivalent } from "./equivalence"
+import { resolvePolicy, type EntityPolicy, type ResolvedEntityPolicy } from "./policy"
 
 /** Notified when the canonical instance behind an identity changes. */
 export type EntitySubscriber = () => void
@@ -17,14 +18,6 @@ interface EntityRecord {
 }
 
 /**
- * Holds exactly one canonical instance per entity identity.
- *
- * Responses are absorbed rather than handed out directly: an entity already in the store has the
- * incoming fields merged into the instance that is already on screen, so every surface holding a
- * reference is looking at current state by construction. Synchronizing surfaces is then only a matter
- * of telling them to re-render, which is what subscriptions are for.
- */
-/**
  * What a caller knows about a response when handing it to the store.
  */
 export interface AbsorptionContext {
@@ -40,7 +33,25 @@ export interface AbsorptionContext {
 	readonly authoritative?: boolean
 }
 
+/**
+ * Holds exactly one canonical instance per entity identity.
+ *
+ * Responses are absorbed rather than handed out directly: an entity already in the store has the
+ * incoming fields merged into the instance that is already on screen, so every surface holding a
+ * reference is looking at current state by construction. Synchronizing surfaces is then only a matter
+ * of telling them to re-render, which is what subscriptions are for.
+ *
+ * The store knows nothing about the domain it holds. What an entity is, how a payload becomes a model, and
+ * which of a payload's fields are trusted are all told to it once, as its {@link EntityPolicy}.
+ */
 export class EntityStore {
+	/** The domain policy this store was built with, defaults filled in. */
+	public readonly policy: ResolvedEntityPolicy
+	/**
+	 * Resolves the store identity of a value, or `undefined` when it is not a tracked entity. The policy's
+	 * identifier, held as a property so it can be handed on as a plain function.
+	 */
+	public readonly identify: EntityIdentifier
 	private readonly records = new Map<EntityKey, EntityRecord>()
 	private readonly globalSubscribers = new Set<EntitySubscriber>()
 	/** Subscribers to all entities of one type — for filtered, live-collection views (query refs). */
@@ -72,6 +83,19 @@ export class EntityStore {
 	 */
 	private readonly outstandingReads = new Map<number, number>()
 
+	public constructor(policy: EntityPolicy) {
+		this.policy = resolvePolicy(policy)
+		this.identify = this.policy.identify
+	}
+
+	/**
+	 * Determines whether an existing value is indistinguishable from an incoming one, with entities compared
+	 * by identity as this store recognizes them.
+	 */
+	public isEquivalent(a: unknown, b: unknown): boolean {
+		return isEquivalent(a, b, this.identify)
+	}
+
 	/**
 	 * Registers or merges a value and returns the canonical instance for its identity.
 	 *
@@ -84,7 +108,7 @@ export class EntityStore {
 	 * overwrite the cached value with a default.
 	 */
 	public absorb<T>(value: T, payloadKeys?: readonly string[], context?: AbsorptionContext): T {
-		const key = identify(value)
+		const key = this.identify(value)
 		if (key === undefined) {
 			return value
 		}
@@ -119,7 +143,7 @@ export class EntityStore {
 			return value
 		}
 
-		const changed = mergeInto(existing.value, value as object, payloadKeys)
+		const changed = mergeInto(existing.value, value as object, this.identify, payloadKeys)
 		existing.stale = false
 		if (changed) {
 			existing.version++
@@ -397,7 +421,7 @@ export class EntityStore {
 		const retained = new Set<EntityKey>(externalRoots)
 		for (const record of this.records.values()) {
 			if (record.subscribers.size > 0 && record.value) {
-				collectEntityKeys(record.value, retained)
+				collectEntityKeys(record.value, retained, this.identify)
 			}
 		}
 
@@ -478,7 +502,7 @@ export class EntityStore {
 			return
 		}
 
-		if (mergeInto(record.value, snapshot)) {
+		if (mergeInto(record.value, snapshot, this.identify)) {
 			record.version++
 			this.announce(record)
 		}
@@ -495,7 +519,7 @@ export class EntityStore {
 
 		this.noteLocalChange(key)
 
-		if (mergeInto(record.value, change)) {
+		if (mergeInto(record.value, change, this.identify)) {
 			record.version++
 			this.announce(record)
 		}
@@ -613,7 +637,7 @@ export class EntityStore {
  * cached fields, and unchanged values are left in place so array and object references stay stable
  * across refetches.
  */
-function mergeInto(target: object, source: object, keys?: readonly string[]): boolean {
+function mergeInto(target: object, source: object, identify: EntityIdentifier, keys?: readonly string[]): boolean {
 	let changed = false
 	for (const key of keys ?? Object.keys(source)) {
 		if (!isAssignable(target, key)) {
@@ -622,7 +646,7 @@ function mergeInto(target: object, source: object, keys?: readonly string[]): bo
 
 		const value = (source as Record<string, unknown>)[key]
 		const current = (target as Record<string, unknown>)[key]
-		if (isEquivalent(current, value)) {
+		if (isEquivalent(current, value, identify)) {
 			continue
 		}
 

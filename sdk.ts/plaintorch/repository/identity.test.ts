@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { entityKey, typeNameFromKey, typeNameOf, identify, isEntity } from "./identity"
+import { entityKey, typeNameFromKey } from "./identity"
+import { typeNameOf, identify, isEntity } from "../repositoryPolicy"
 
 const entity = (over: Record<string, unknown> = {}) => ({ "@type": "Objective", id: "O1", title: "Ship it", ...over })
 

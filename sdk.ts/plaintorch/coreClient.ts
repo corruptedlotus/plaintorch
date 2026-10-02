@@ -17,6 +17,7 @@ import { PlaintorchSystemSdk } from "./system/systemSdk"
 import { PlaintorchPreferencesSdk } from "./preferences/preferencesSdk"
 import { PlaintorchMediaSdk } from "./media/mediaSdk"
 import { createAbsorbingReviver, EntityStore, PlaintorchRepositories, type AbsorptionContext } from "./repository"
+import { plaintorchEntityPolicy } from "./repositoryPolicy"
 
 
 export interface PlaintorchCoreClientOptions {
@@ -71,7 +72,7 @@ export class PlaintorchCoreClient {
 				headers: options.headers
 			})
 		]
-		this.store = new EntityStore()
+		this.store = new EntityStore(plaintorchEntityPolicy)
 		this.system = new PlaintorchSystemSdk(this)
 		this.media = new PlaintorchMediaSdk(this)
 		this.directives = new PlaintorchDirectivesSdk(this)

@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest"
-import { isEquivalent } from "./equivalence"
+import { isEquivalent as isEquivalentUnder } from "./equivalence"
+import { testPolicy } from "./test-utils"
+
+const isEquivalent = (a: unknown, b: unknown): boolean => isEquivalentUnder(a, b, testPolicy.identify)
 
 describe("isEquivalent — base", () => {
 	it("compares primitives and identical references", () => {

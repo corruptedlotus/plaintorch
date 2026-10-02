@@ -24,6 +24,8 @@ An entity is recognised by *shape*, not by a hard-coded list of type names. The 
 
 Both halves of the shape test carry weight. The `id` must be a string because child records such as a dependency edge key on a number and must not be tracked. The `title` must be present because a value object can carry a string `id` that is a *reference* to another entity — a dependency endpoint does — and tracking those would merge two unrelated references that happen to point at the same entity into one instance.
 
+The shape test is PLAINTORCH's *policy*, not something the store assumes. A store is built with a policy naming what an entity is, how a payload becomes a model instance, and which of a payload's fields are trusted; PLAINTORCH declares its own once (`repositoryPolicy.ts`), and the generic files under `repository/` hold no domain knowledge.
+
 Recognising an entity is therefore structural and universal; only *routing* a type name to a specific repository is declared by hand. This is deliberate: an earlier closed list of type names drifted out of step with the core (the concrete stellar directive serialises as `StellarDirective`, the list said `Directive`), and every directive silently stopped being tracked, which is invisible because an entity that is never absorbed simply never notifies anyone.
 
 ## Absorption

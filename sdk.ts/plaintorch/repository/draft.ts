@@ -1,11 +1,7 @@
-import { ModelValueConstructor } from "@a11d/api-dotnet"
 import type { EntityStore } from "./entityStore"
 import type { EntityKey, EntityTypeName } from "./identity"
 import type { InvalidationScheduler } from "./invalidation"
-import { isEquivalent } from "./equivalence"
 import { runWrite } from "./mutation"
-
-const modelValueConstructor = new ModelValueConstructor()
 
 /** Persists a draft's committed changes. Receives the changed fields and the reconciled canonical entity. */
 export type DraftPersist<T> = (patch: Partial<T>, entity: T) => Promise<unknown>
@@ -42,7 +38,11 @@ export class EntityDraft<T extends object> {
 	) {
 		// Copied through the same construction absorption uses, so the draft is a real instance of its class
 		// (getters, methods, prototype) rather than a plain spread that would drop them.
-		this.value = modelValueConstructor.construct(canonical) as T
+		const { models } = store.policy
+		const constructed = models.shallConstruct(canonical) ? models.construct(canonical) : canonical
+		// A type with no model class comes back as the very object handed in, and editing that would be
+		// editing the canonical instance — so it is copied here instead, keeping whatever prototype it has.
+		this.value = (constructed === canonical ? copyOf(canonical) : constructed) as T
 		this.baseline = { ...(canonical as Record<string, unknown>) }
 	}
 
@@ -51,7 +51,7 @@ export class EntityDraft<T extends object> {
 		const patch: Record<string, unknown> = {}
 		const value = this.value as Record<string, unknown>
 		for (const field of Object.keys(value)) {
-			if (!isEquivalent(value[field], this.baseline[field])) {
+			if (!this.store.isEquivalent(value[field], this.baseline[field])) {
 				patch[field] = value[field]
 			}
 		}
@@ -104,4 +104,9 @@ export class EntityDraft<T extends object> {
 	public cancel(): void {
 		this.spent = true
 	}
+}
+
+/** A shallow copy of an object's own fields that keeps its prototype. */
+function copyOf<T extends object>(source: T): T {
+	return Object.assign(Object.create(Object.getPrototypeOf(source)) as T, source)
 }

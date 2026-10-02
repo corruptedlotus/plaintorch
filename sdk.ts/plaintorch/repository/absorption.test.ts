@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { createAbsorbingReviver } from "./absorption"
 import { EntityStore } from "./entityStore"
+import { plaintorchEntityPolicy } from "../repositoryPolicy"
 import { Objective } from "../objectives/models"
 import { OnrushSprint } from "../onrush/models"
 import { Attentive, Decree, Eventive, Occurrence } from "../declaratives/models"
@@ -12,7 +13,7 @@ function absorb<T>(store: EntityStore, value: unknown): T {
 
 describe("createAbsorbingReviver", () => {
 	it("turns a list response into constructed instances, not plain objects", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		const list = absorb<Objective[]>(store, [
 			{ "@type": "Objective", id: "O1", title: "a" },
 			{ "@type": "Objective", id: "O2", title: "b" }
@@ -23,7 +24,7 @@ describe("createAbsorbingReviver", () => {
 	})
 
 	it("makes a nested entity the same instance as a directly fetched one (identity map)", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		const sprint = absorb<OnrushSprint>(store, {
 			"@type": "OnrushSprint", id: "N1", title: "s",
 			objectives: [{ "@type": "Objective", id: "O1", title: "a" }]
@@ -34,13 +35,13 @@ describe("createAbsorbingReviver", () => {
 	})
 
 	it("returns non-entity nodes untouched", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		const value = absorb<{ note: string, count: number }>(store, { note: "plain", count: 3 })
 		expect(value).toEqual({ note: "plain", count: 3 })
 	})
 
 	it("revives occurrences into their model classes by the runtime type the core stamps", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		const epoch = { "@type": "Epoch", moment: "2026-07-20T14:30:00", granularity: 6, duration: null, timeZone: null }
 		const agenda = absorb<{ attentives: Attentive[], eventives: Eventive[] }>(store, {
 			"@type": "PolarisAgenda",
@@ -71,7 +72,7 @@ describe("createAbsorbingReviver", () => {
 
 describe("authoritativeKeys — root vs nested collections", () => {
 	it("applies a root's empty array (a directly fetched sprint genuinely emptied its checkpoints)", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		absorb(store, { "@type": "OnrushSprint", id: "N1", title: "s", checkpoints: [{ "@type": "Checkpoint", id: "C1", title: "c" }] })
 		expect(store.peek<OnrushSprint>("OnrushSprint:N1")!.checkpoints.length).toBe(1)
 
@@ -80,7 +81,7 @@ describe("authoritativeKeys — root vs nested collections", () => {
 	})
 
 	it("withholds a nested entity's empty array, so an Include back-reference cannot wipe a populated collection", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		absorb(store, { "@type": "OnrushSprint", id: "N1", title: "s", checkpoints: [{ "@type": "Checkpoint", id: "C1", title: "c" }] })
 
 		// An objective dragged the sprint in as a back-reference whose checkpoints were not loaded (empty array).
@@ -92,7 +93,7 @@ describe("authoritativeKeys — root vs nested collections", () => {
 	})
 
 	it("withholds a nested array holed with null (a cycle back-reference under IgnoreCycles)", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		absorb(store, { "@type": "OnrushSprint", id: "N1", title: "s", checkpoints: [{ "@type": "Checkpoint", id: "C1", title: "c" }] })
 
 		absorb(store, {
@@ -103,7 +104,7 @@ describe("authoritativeKeys — root vs nested collections", () => {
 	})
 
 	it("still merges a nested entity's populated array and scalar fields", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		absorb(store, { "@type": "OnrushSprint", id: "N1", title: "s", checkpoints: [] })
 		absorb(store, {
 			"@type": "Objective", id: "O1", title: "a",

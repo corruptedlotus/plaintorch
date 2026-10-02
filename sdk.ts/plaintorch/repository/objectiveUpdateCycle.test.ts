@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { EntityStore } from "./entityStore"
+import { plaintorchEntityPolicy } from "../repositoryPolicy"
 import { createAbsorbingReviver } from "./absorption"
 // Imported for their @model registration side effect, so the reviver constructs real instances.
 import "../objectives/models"
@@ -22,7 +23,7 @@ function absorb<T>(store: EntityStore, value: unknown): T {
 
 describe("objective update — cyclic serialization of the whole entity", () => {
 	it("the canonical objective is a cyclic graph and cannot be a write body — why writes send partials", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		// A response cross-linking objective <-> directive, as the identity map does once both sides are seen.
 		absorb(store, {
 			"@type": "Objective", id: "O1", title: "Ship it", directiveId: "D1",
@@ -41,7 +42,7 @@ describe("objective update — cyclic serialization of the whole entity", () => 
 	})
 
 	it("a partial update body (only the changed field) has no cycle — the direction a fix takes", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		absorb(store, {
 			"@type": "Objective", id: "O1", title: "Ship it", directiveId: "D1",
 			directive: {

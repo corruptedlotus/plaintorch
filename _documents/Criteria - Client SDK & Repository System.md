@@ -11,7 +11,26 @@ Tests live beside their subject as `plaintorch/**/*.test.ts` and run under **Vit
 
 ---
 
+## Policy — `policy.test.ts`
+The files under `repository/` assume no domain. A store is built with an `EntityPolicy` (identity, model construction, mergeable keys), and these run it over a domain that shares nothing with PLAINTORCH's to prove each is the policy's to decide. Suites about the store's mechanics use the small `testPolicy` in `test-utils.ts`; suites about what PLAINTORCH tells the store (identity, absorption, navigation properties, eviction, the contract) use `plaintorchEntityPolicy`.
+
+| Behaviour / Invariant | Kind | Status | Test ref |
+|---|---|---|---|
+| `identifyByShape` recognises a type name + string id under configured fields | happy | ✅ | `policy.test.ts` |
+| `identifyByShape` rejects empty / missing / non-string type or id, and non-objects | fault | ✅ | `policy.test.ts` |
+| `identifyByShape` applies a further `requires` test | edge | ✅ | `policy.test.ts` |
+| `resolvePolicy` defaults to plain models and every-key merging | happy | ✅ | `policy.test.ts` |
+| A foreign-shaped entity (no `@type`, no title) is tracked, one instance across responses | happy | ✅ | `policy.test.ts` |
+| A value the policy does not recognise is not tracked, whatever another policy would say | fault | ✅ | `policy.test.ts` |
+| Equivalence, the reachability walk and the sweep all follow the store's identifier | happy | ✅ | `policy.test.ts` |
+| A payload absorbs as an instance of the class the policy constructs | happy | ✅ | `policy.test.ts` |
+| A draft of a type with no model class is still an isolated copy, prototype kept | fault | ✅ | `policy.test.ts` (alias-the-canonical guard) |
+| Default merge trusts every key; a policy withholds keys and is told which value is the root | happy/edge | ✅ | `policy.test.ts` |
+| No file under `repository/` imports `@a11d/api*` | fault | ✅ | `policy.test.ts` (separation guard) |
+
 ## Identity — `identity.test.ts`
+PLAINTORCH's identifier (`repositoryPolicy.ts`), built on `identifyByShape`.
+
 | Behaviour / Invariant | Kind | Status | Test ref |
 |---|---|---|---|
 | `entityKey` / `typeNameFromKey` round-trip | happy | ✅ | `identity.test.ts` |
@@ -135,6 +154,10 @@ The identity map is bounded by a reachability sweep. `collectEntityKeys` walks a
 | Behaviour / Invariant | Kind | Status | Test ref |
 |---|---|---|---|
 | Dependents resolved against the canonical instance, not the payload | happy | ✅ | `invalidation.test.ts` |
+| A type the table does not name, or no table, dirties only the entity and the records | edge | ✅ | `invalidation.test.ts` |
+| An entity the store does not hold has no relations to follow | edge | ✅ | `invalidation.test.ts` |
+| PLAINTORCH's table: objective → directive, sprint, parent, cycles; decree, fate, directive, sprint ↔ order, lore | happy | ✅ | `repositoryDependents.test.ts` |
+| PLAINTORCH's table leaves an absent relation undefined rather than naming an empty identity | edge | ✅ | `repositoryDependents.test.ts` |
 | `settled()` waits for the flush, not resolving before it begins | fault | ✅ | `invalidation.test.ts` (nit regression) |
 | A burst coalesces into one pass | happy | ✅ | `invalidation.test.ts` |
 | Work queued mid-flush drains on the same chain — no concurrent flush | fault | ✅ | `invalidation.test.ts` (nit regression) |
@@ -149,20 +172,26 @@ The identity map is bounded by a reachability sweep. `collectEntityKeys` walks a
 
 ---
 
-## Tier 2 — repositories, drafts, feed, client (planned)
+## Tier 2 — repositories, drafts, feed, client (repositories done; drafts, feed and client planned)
 | Behaviour / Invariant | Kind | Status | Test ref |
 |---|---|---|---|
-| `EntityRepository.get` serves fresh; refetches stale/expired; `force` bypass | happy/edge | ⏳ | — |
-| Two concurrent `get(id)` share one fetch (in-flight dedup) | edge | ⏳ | — |
-| `mutate` rolls back on reject, invalidates on success | happy/fault | ⏳ | — |
-| `commit` (store-direct) returns a boolean; `fork` undefined when unresolved | happy/edge | ⏳ | — |
-| `revalidateIfObserved` skips when unobserved **and** when writing | edge | ⏳ | — |
-| `EntityDraft`: prototype-correct copy; isolation before commit | happy | ⏳ | — |
-| `EntityDraft.diff` is only the fields changed from the fork baseline | happy | ⏳ | — |
+| `EntityRepository.get` serves fresh; refetches stale/expired; `force` bypass | happy/edge | ✅ | `entityRepository.test.ts` |
+| A refetch that changed a field keeps the same instance | happy | ✅ | `entityRepository.test.ts` |
+| Two concurrent `get(id)` share one fetch (in-flight dedup); a forced read joins it | edge | ✅ | `entityRepository.test.ts` |
+| A failed fetch does not poison the identity — the next read issues a fresh request | fault | ✅ | `entityRepository.test.ts` (dedup-poisoning guard) |
+| `mutate` holds the identity, rolls back on reject or throw, invalidates on success | happy/fault | ✅ | `entityRepository.test.ts` |
+| A successful `mutate` counts as a fresh resolution | edge | ✅ | `entityRepository.test.ts` |
+| `commit` (store-direct) returns a boolean; `fork` undefined when unresolved | happy/edge | ✅ | `entityRepository.test.ts` |
+| `revalidateIfObserved` skips when unobserved **and** when writing | edge | ✅ | `entityRepository.test.ts` |
+| `revalidateObserved` refetches only resolved, observed identities | edge | ✅ | `entityRepository.test.ts` |
+| `EntityDraft`: prototype-correct copy; isolation before commit | happy | ✅ | `policy.test.ts`, `entityRepository.test.ts` |
+| `EntityDraft.diff` is only the fields changed from the fork baseline | happy | ✅ | `entityRepository.test.ts` |
 | `commit` applies + invalidates; rolls back on reject; concurrency survival | happy/fault | ⏳ | — |
 | `cancel`; spent-after-commit; empty-diff no-op; shallow caveat | edge | ⏳ | — |
-| `DerivedRepository.commit` notifies only when the value actually changed | edge | ⏳ | — |
-| `DerivedRepository` freshness / in-flight dedup | happy | ⏳ | — |
+| `DerivedRepository.commit` notifies only when the value actually changed | edge | ✅ | `derivedRepository.test.ts` |
+| A listing of the same canonical members in a fresh array notifies nobody; a membership change does | edge | ✅ | `derivedRepository.test.ts` |
+| `DerivedRepository` freshness / in-flight dedup / failed fetch not poisoning the key | happy/fault | ✅ | `derivedRepository.test.ts` |
+| `DerivedRepository` `invalidate` (one / all), `revalidateIfObserved`, `revalidateObserved`, `resolvedValues` | happy/edge | ✅ | `derivedRepository.test.ts` |
 | `ChangeFeed` `toLines` reassembly (split line, multi-line chunk, CRLF, partial) | edge | ⏳ | — |
 | `ChangeFeed.dispatch`: critical → acceptAuthority + invalidate; malformed ignored | happy/fault | ⏳ | — |
 | `ChangeFeed` reconnect backoff (doubling, capped, reset on good connection) | edge | ⏳ | — |

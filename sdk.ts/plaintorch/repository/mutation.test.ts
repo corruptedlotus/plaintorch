@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { isSuccessfulMutation, runWrite } from "./mutation"
 import { EntityStore } from "./entityStore"
 import type { InvalidationScheduler } from "./invalidation"
-import { makeEntity } from "./test-utils"
+import { makeEntity, testPolicy } from "./test-utils"
 
 describe("isSuccessfulMutation", () => {
 	it("treats an absent result — undefined, null, false — as a rejection", () => {
@@ -20,7 +20,7 @@ describe("isSuccessfulMutation", () => {
 })
 
 function fixture() {
-	const store = new EntityStore()
+	const store = new EntityStore(testPolicy)
 	store.absorb(makeEntity("Objective", "O1", { title: "Original", status: 0 }), ["@type", "id", "title", "status"])
 	const key = "Objective:O1"
 	const invalidated: Array<[string, string]> = []

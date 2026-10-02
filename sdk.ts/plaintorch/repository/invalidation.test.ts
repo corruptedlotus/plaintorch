@@ -1,33 +1,63 @@
 import { describe, it, expect } from "vitest"
 import { InvalidationScheduler, type InvalidationTarget } from "./invalidation"
 import { EntityStore } from "./entityStore"
-import { makeEntity, recordingInvalidationTarget } from "./test-utils"
+import { entityKey } from "./identity"
+import { makeEntity, recordingInvalidationTarget, testPolicy } from "./test-utils"
 
 describe("InvalidationScheduler — dependents", () => {
 	it("dirties an entity and everything the dependency table derives from its canonical instance", async () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		store.absorb(
-			makeEntity("Objective", "O1", { directiveId: "D1", onrushSprintId: "N1", executives: [{ polarisCycleId: "P1" }] }),
-			["@type", "id", "title", "directiveId", "onrushSprintId", "executives"]
+			makeEntity("Task", "T1", { projectId: "P1", assignees: [{ userId: "U1" }, { userId: "U2" }] }),
+			["@type", "id", "title", "projectId", "assignees"]
 		)
 		const recording = recordingInvalidationTarget()
-		const scheduler = new InvalidationScheduler(store, () => recording.target)
+		const scheduler = new InvalidationScheduler(store, () => recording.target, {
+			Task: (task) => [
+				entityKey("Project", task.projectId as string),
+				...(task.assignees as { userId: string }[]).map((assignee) => entityKey("User", assignee.userId)),
+				undefined
+			]
+		})
 
-		scheduler.invalidate("Objective", "O1")
+		// The call names only the task; its relations are read off the instance the store holds.
+		scheduler.invalidate("Task", "T1")
 		await scheduler.settled()
 
 		// settled() having resolved with these present is itself the regression check: it must wait for the
 		// flush, not resolve before it has begun.
-		expect(recording.entities).toContain("Objective:O1")
-		expect(recording.entities).toContain("StellarDirective:D1")
-		expect(recording.entities).toContain("LunarDirective:D1")
-		expect(recording.entities).toContain("OnrushSprint:N1")
-		expect(recording.entities).toContain("PolarisCycle:P1")
+		expect(new Set(recording.entities)).toEqual(new Set(["Task:T1", "Project:P1", "User:U1", "User:U2"]))
 		expect(recording.recordPasses).toBe(1)
 	})
 
+	it("a type the table does not name, or no table at all, dirties only the entity and the records", async () => {
+		const store = new EntityStore(testPolicy)
+		store.absorb(makeEntity("Task", "T1", { projectId: "P1" }))
+		const recording = recordingInvalidationTarget()
+		const scheduler = new InvalidationScheduler(store, () => recording.target)
+
+		scheduler.invalidate("Task", "T1")
+		await scheduler.settled()
+
+		expect(recording.entities).toEqual(["Task:T1"])
+		expect(recording.recordPasses).toBe(1)
+	})
+
+	it("an entity the store does not hold has no relations to follow", async () => {
+		const store = new EntityStore(testPolicy)
+		const recording = recordingInvalidationTarget()
+		const scheduler = new InvalidationScheduler(store, () => recording.target, {
+			Task: () => [entityKey("Project", "P1")]
+		})
+
+		scheduler.invalidate("Task", "T1")
+		await scheduler.settled()
+
+		expect(recording.entities).toEqual(["Task:T1"])
+	})
+
 	it("coalesces a burst so one write touching several aggregates is a single pass", async () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		const recording = recordingInvalidationTarget()
 		const scheduler = new InvalidationScheduler(store, () => recording.target)
 
@@ -41,7 +71,7 @@ describe("InvalidationScheduler — dependents", () => {
 	})
 
 	it("drains work queued mid-flush on the same chain — never a second, concurrent flush", async () => {
-		const store = new EntityStore()
+		const store = new EntityStore(testPolicy)
 		const entities: string[] = []
 		let passes = 0
 		let injected = false

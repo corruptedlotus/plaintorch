@@ -1,56 +1,24 @@
 import { entityKey, type EntityKey, type EntityTypeName } from "./identity"
 import type { EntityStore } from "./entityStore"
 
-/** Names the identities a change to one entity makes stale. */
-type DependentResolver = (entity: Record<string, unknown>) => (EntityKey | undefined)[]
-
-const key = (typeName: EntityTypeName, id: unknown): EntityKey | undefined =>
-	typeof id === "string" && id.length > 0 ? entityKey(typeName, id) : undefined
-
-const asArray = (value: unknown): Record<string, unknown>[] =>
-	Array.isArray(value) ? value as Record<string, unknown>[] : []
+/**
+ * Names the identities a change to one entity makes stale, given its canonical instance. An entry may be
+ * `undefined` — a relation the entity does not currently have — so a resolver can list its relations without
+ * guarding each one.
+ */
+export type DependentResolver = (entity: Record<string, unknown>) => (EntityKey | undefined)[]
 
 /**
  * What a change to each entity type makes stale, beyond the entity itself.
  *
  * Resolved against the canonical instance rather than a response payload, which is the only place the
- * answer is complete: an objective carries no cycle of its own, but the instance in the store carries the
- * executives that name every cycle holding it.
+ * answer is complete: an entity rarely carries every relation on every response, but the instance in the
+ * store carries whatever any earlier response loaded.
  *
  * Declaring this once is the point. The alternative is every mutation site knowing what else to refresh,
  * which is the arrangement this replaces.
  */
-const dependents: Partial<Record<EntityTypeName, DependentResolver>> = {
-	Objective: (objective) => [
-		key("StellarDirective", objective.directiveId),
-		key("LunarDirective", objective.directiveId),
-		key("OnrushSprint", objective.onrushSprintId),
-		key("Objective", objective.parentIncentiveId),
-		key("Fate", objective.parentIncentiveId),
-		...asArray(objective.executives).map((executive) => key("PolarisCycle", executive.polarisCycleId))
-	],
-	Fate: (fate) => [
-		key("StellarDirective", fate.directiveId),
-		key("LunarDirective", fate.directiveId),
-		key("Fate", fate.parentIncentiveId)
-	],
-	Decree: (decree) => [
-		key("StellarDirective", decree.directiveId),
-		key("LunarDirective", decree.directiveId),
-		...asArray(decree.executives).map((executive) => key("PolarisCycle", executive.polarisCycleId))
-	],
-	StellarDirective: (directive) => [
-		key("StellarDirective", directive.parentDirectiveId),
-		key("LunarDirective", directive.parentDirectiveId)
-	],
-	LunarDirective: (directive) => [
-		key("StellarDirective", directive.parentDirectiveId),
-		key("LunarDirective", directive.parentDirectiveId)
-	],
-	OnrushSprint: (sprint) => asArray(sprint.executiveOrders).map((order) => key("ExecutiveOrder", order.id)),
-	ExecutiveOrder: (order) => [key("OnrushSprint", order.onrushSprintId)],
-	LorePage: (page) => [key("LorePage", page.parentId)]
-}
+export type DependentTable = Readonly<Partial<Record<EntityTypeName, DependentResolver>>>
 
 /** Revalidates identities and records that a change made stale. */
 export interface InvalidationTarget {
@@ -72,9 +40,14 @@ export class InvalidationScheduler {
 	/** The running flush chain, or undefined when nothing is queued. */
 	private flushing?: Promise<void>
 
+	/**
+	 * @param dependents What a change to each type makes stale beyond itself. Left out, a change dirties only
+	 * the entity it names and the derived records.
+	 */
 	public constructor(
 		private readonly store: EntityStore,
-		private readonly target: () => InvalidationTarget
+		private readonly target: () => InvalidationTarget,
+		private readonly dependents: DependentTable = {}
 	) { }
 
 	/**
@@ -86,7 +59,7 @@ export class InvalidationScheduler {
 
 		const entity = this.store.peek<Record<string, unknown>>(self)
 		if (entity) {
-			for (const dependent of dependents[typeName]?.(entity) ?? []) {
+			for (const dependent of this.dependents[typeName]?.(entity) ?? []) {
 				if (dependent !== undefined) {
 					this.dirtyEntities.add(dependent)
 				}
