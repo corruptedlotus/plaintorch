@@ -1,25 +1,23 @@
 import { component, html, nothing, property } from "@a11d/lit"
-import { Eventive, type DeclarativeCalendar } from "@pleiades/sdk"
+import { Eventive } from "@pleiades/sdk"
 import { OccurrenceItem } from "./OccurrenceItem"
 import "../system/DatetimeView"
 import { occurrenceMenu, openOccurrenceModal, type OccurrenceTarget } from "./OccurrenceModal"
+import { eventiveStateDescriptors } from "./occurrenceDescriptors"
+import { occurrenceTime } from "./occurrenceTime"
 import { type ContextMenuSpec } from ".."
 
 /**
  * A single upcoming eventive — a per-occurrence instance of a fate or of an objective's due date. Eventives
  * happen rather than get done (PEP100), so the notch is display-only; the row surfaces the owner's title,
  * the owner's directive, and when the occurrence falls — read at the occurrence's granularity, on its fate's
- * calendar (PEP111), like the attentive rows beside it.
+ * calendar (PEP111), like the attentive rows beside it. As a {@link mini} line it reads its resolution, its time,
+ * and whether it came from the fate's orbit or was added by hand.
  */
 @component('p7t-eventive-item')
 export class EventiveItem extends OccurrenceItem {
 	@property({ type: Object }) eventive?: Eventive
 
-	/**
-	 * The owning fate's calendar, supplied by a host that knows it when the eventive arrives without its fate (a fate's
-	 * own agenda lists them bare). The eventive's own fate wins when it carries one.
-	 */
-	@property({ type: Number }) calendar?: DeclarativeCalendar
 
 	protected override get heading() {
 		return this.eventive?.fate?.title ?? this.eventive?.objective?.title ?? 'Eventive'
@@ -33,17 +31,33 @@ export class EventiveItem extends OccurrenceItem {
 		return html`<p7t-icon icon='eventive'></p7t-icon>`
 	}
 
+	/** Born of its fate's orbit, when it carries its fate. */
+	protected override get schedule() {
+		return this.eventive?.fate
+	}
+
+	protected override get occurrence() {
+		return this.eventive
+	}
+
+	protected override get state() {
+		return this.eventive ? eventiveStateDescriptors[this.eventive.resolution] : undefined
+	}
+
 	protected override get info() {
 		const eventive = this.eventive
 		if (!eventive) return nothing
 		// A live relative phrase at the occurrence's granularity ("Tomorrow at 18:00", "This week"), falling back to the
-		// absolute reading beyond its reach, with the exact moment in its tooltip.
+		// absolute reading beyond its reach, with the exact moment in its tooltip. A zoned occurrence reads on this
+		// device's clock, its own wall time in the tooltip.
+		const time = occurrenceTime(eventive.epoch)
 		return html`
 			<p7t-datetime-view relative
-				.date=${eventive.epoch.date}
-				.time=${eventive.epoch.timeOfDay}
+				.date=${time.date}
+				.time=${time.time}
+				.anchor=${time.anchor?.label}
 				.granularity=${eventive.epoch.granularity}
-				.calendar=${eventive.fate?.calendar ?? this.calendar}>
+				.calendar=${this.ownerCalendar}>
 			</p7t-datetime-view>
 		`
 	}

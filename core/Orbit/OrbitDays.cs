@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Pleiades.Orbits;
 
 /// <summary>
@@ -44,7 +46,7 @@ public sealed record OrbitOccurrenceInstance(
 /// The resolver calendar is modular: decree orbits (attentives) and reflective day-matching default to the
 /// Pleiadean calendar, while fate orbits (eventives) keep the Gregorian calendar.
 /// </remarks>
-public static class OrbitDays
+public static partial class OrbitDays
 {
 	/// <summary>The Gregorian resolver calendar (fate orbits / eventives).</summary>
 	public static readonly OrbitGregorianCalendar Gregorian = new();
@@ -161,6 +163,43 @@ public static class OrbitDays
 	/// <see langword="null"/>; the engine would never select such a literal either. Returns <see langword="null"/> for a
 	/// notation that does not parse, is not a lone literal, or lacks a year, month or day.
 	/// </remarks>
+	/// <summary>
+	/// Rewrites a lone fixed-datetime literal from one calendar into another so it keeps naming the same day: the
+	/// literal's year, month and day are read on <paramref name="from"/> (<see cref="FixedLiteralDate(string, IOrbitCalendar)"/>)
+	/// and written back as that day's year, month and day on <paramref name="to"/>. The time of day and every trailing
+	/// modifier (<c>=&lt;dur&gt;</c>, limits) are kept as written. Returns <see langword="null"/> when the notation is not
+	/// a lone literal, names no day on <paramref name="from"/>, or lands on a day <paramref name="to"/> cannot write as
+	/// a literal (a year before its first).
+	/// </summary>
+	public static string? RewriteFixedLiteral(string notation, IOrbitCalendar from, IOrbitCalendar to)
+	{
+		ArgumentNullException.ThrowIfNull(from);
+		ArgumentNullException.ThrowIfNull(to);
+		if (FixedLiteralDate(notation, from) is not { } date)
+		{
+			return null;
+		}
+
+		var match = FixedLiteralPattern().Match(notation);
+		if (!match.Success)
+		{
+			return null;
+		}
+
+		var ms = JsDate.DaysFromCivil(date.Year, date.Month, date.Day) * JsDate.MsPerDay;
+		var (year, month, day) = (to.Get(ms, OrbitUnit.Year), to.Get(ms, OrbitUnit.Month), to.Get(ms, OrbitUnit.Day));
+		if (year < 0)
+		{
+			return null;
+		}
+
+		return $"{match.Groups["lead"].Value}Z{{{year}/{month}/{day}{match.Groups["time"].Value}}}{match.Groups["rest"].Value}";
+	}
+
+	/// <summary>A lone <c>Z{y/M/d[Th:m[:s]]}</c> literal: its leading space, its time part, and whatever follows the brace.</summary>
+	[GeneratedRegex(@"^(?<lead>\s*)Z\{\d+/\d+/\d+(?<time>T[^}]*)?\}(?<rest>.*)$", RegexOptions.Singleline)]
+	private static partial Regex FixedLiteralPattern();
+
 	public static DateOnly? FixedLiteralDate(string notation, IOrbitCalendar calendar)
 	{
 		ArgumentNullException.ThrowIfNull(calendar);

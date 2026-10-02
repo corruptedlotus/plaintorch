@@ -1,4 +1,4 @@
-import { Directive, Objective, typeNameOf } from '@pleiades/sdk'
+import { Directive, Objective, typeNameOf, type FateUpdate } from '@pleiades/sdk'
 import { addObjectiveToPolaris, core, ExpandingAction, IconName, PromptTextModal, type ScheduleValue } from '..'
 import { host, toast } from '../../host'
 import type { GridEntity } from './entityTree'
@@ -256,59 +256,19 @@ export function isSingleInstanceFate(entity: GridEntity): boolean {
 }
 
 /**
- * Folds a chosen schedule into the orbit a fate stores (PEP111). A fate is orbit-only, so an orbit passes
- * through while a fixed date/time becomes a `Z{y/M/d[Th:m]}` literal (with a `=<dur>` span for an event
- * window). An empty result clears the schedule server-side.
+ * The update a schedule chosen through the editable schedule makes to a fate (PEP111): its orbit — empty clears the
+ * schedule server-side — and, for a one-shot `Z{…}` literal, the calendar the literal was written on, so the core reads
+ * its day on that calendar. A recurring orbit leaves the fate's calendar as it is.
  */
-export function fateScheduleToOrbit(schedule: ScheduleValue): string {
-	if (schedule.mode === 'orbit') {
-		return schedule.orbit ?? ''
-	}
-
-	if (!schedule.date) {
-		return ''
-	}
-
-	const [year = '', month = '', day = ''] = schedule.date.split('-')
-	let literal = `Z{${Number(year)}/${Number(month)}/${Number(day)}`
-	if (schedule.time) {
-		const [hour = '', minute = ''] = schedule.time.split(':')
-		literal += `T${Number(hour)}:${minute}`
-	}
-
-	literal += '}'
-	const span = eventSpanNotation(schedule.time, schedule.endTime)
-	return span ? `${literal}=${span}` : literal
+export function fateScheduleUpdate(schedule: ScheduleValue): FateUpdate {
+	const orbit = schedule.orbit ?? ''
+	return schedule.calendar === undefined ? { orbit } : { orbit, calendar: schedule.calendar }
 }
 
-/** The `=<dur>` span notation from a start/end time pair, or undefined when there is no positive window. */
-function eventSpanNotation(startTime: string | undefined, endTime: string | undefined): string | undefined {
-	if (!startTime || !endTime) {
-		return undefined
-	}
-
-	const minutes = timeToMinutes(endTime) - timeToMinutes(startTime)
-	if (minutes <= 0) {
-		return undefined
-	}
-
-	const hours = Math.floor(minutes / 60)
-	const mins = minutes % 60
-	return `${hours > 0 ? `${hours}h` : ''}${mins > 0 ? `${mins}m` : ''}` || undefined
-}
-
-function timeToMinutes(time: string): number {
-	const [hour = '', minute = ''] = time.split(':')
-	return Number(hour) * 60 + Number(minute)
-}
-
-/**
- * Persists a fate's chosen schedule as its orbit (PEP111): a recurring orbit or a one-off `Z{…}` literal
- * folded from a fixed date/time. A fate is orbit-only, so there is only ever one shape to send.
- */
+/** Persists a fate's chosen schedule (see {@link fateScheduleUpdate}). */
 export async function saveFateSchedule(entity: GridEntity, schedule: ScheduleValue): Promise<boolean> {
 	return !!await core.repos.fates.mutate(entity.id, async () =>
-		await core.declaratives.updateFate(entity.id, { orbit: fateScheduleToOrbit(schedule) }))
+		await core.declaratives.updateFate(entity.id, fateScheduleUpdate(schedule)))
 }
 
 /** Opens the note an entity is the authority for, in a new tab. Takes any entity with a PUCK identity. */

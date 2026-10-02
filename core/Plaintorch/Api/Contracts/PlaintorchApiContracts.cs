@@ -457,12 +457,20 @@ public sealed record FatePlan(
 /// so rescheduling — whether a one-off or a recurrence — is done by setting a new <paramref name="Orbit"/>
 /// (a <c>Z{…}</c> literal for a one-off).
 /// </summary>
+/// <param name="Calendar">
+/// The calendar the orbit resolves against: omit to keep, a value to override, <see langword="null"/> to follow the
+/// vault default. Sent with an <paramref name="Orbit"/>, it is the calendar that orbit's literal is written in; sent
+/// alone on a one-off fate, the literal is rewritten into it so the fate keeps its day.
+/// </param>
+/// <param name="TimeZone">The fate's IANA time zone: omit to keep, a zone to set, <see langword="null"/> for floating.</param>
 public sealed record FateUpdate(
 	string? Title = null,
 	FateStatus? Status = null,
 	Optional<string?> DirectiveId = default,
 	Optional<string?> ParentIncentiveId = default,
-	string? Orbit = null);
+	string? Orbit = null,
+	Optional<DeclarativeCalendar?> Calendar = default,
+	Optional<string?> TimeZone = default);
 
 /// <summary>
 /// Represents the data required to create a decree declarative (PEP100).
@@ -479,6 +487,11 @@ public sealed record DecreePlan(
 /// <summary>
 /// Represents the mutable fields of a decree declarative for generic update actions.
 /// </summary>
+/// <param name="Calendar">
+/// The calendar the orbit resolves against: omit to keep, a value to override, <see langword="null"/> to follow the
+/// vault default. A lone <c>Z{…}</c> literal orbit is rewritten into a calendar sent alone, as a fate's is.
+/// </param>
+/// <param name="TimeZone">The decree's IANA time zone: omit to keep, a zone to set, <see langword="null"/> for floating.</param>
 public sealed record DecreeUpdate(
 	string? Title = null,
 	DecreeStatus? Status = null,
@@ -486,7 +499,9 @@ public sealed record DecreeUpdate(
 	string? Orbit = null,
 	int? DefaultLength = null,
 	int? ActiveCelestron = null,
-	bool? Reflect = null);
+	bool? Reflect = null,
+	Optional<DeclarativeCalendar?> Calendar = default,
+	Optional<string?> TimeZone = default);
 
 /// <summary>
 /// Represents a mutable update to an eventive occurrence. Eventives are never Polaris-bound, so their time
@@ -509,15 +524,35 @@ public sealed record AttentiveUpdate(
 	Optional<long?> AffinityTimeframeId = default);
 
 /// <summary>
+/// Adds a <b>manual</b> eventive to a fate: an occurrence added by hand rather than generated from the fate's orbit,
+/// so it carries no RECURRENCE-ID and is addressed by its row id from then on. It is given its position in time
+/// whole, as the <see cref="Pleiades.Orchestration.Epoch"/> it will own: the civil moment, its granularity, an
+/// optional nominal duration (Orbit duration notation) and an optional time zone (floating when absent).
+/// </summary>
+/// <param name="FateId">The fate the eventive belongs to.</param>
+/// <param name="Epoch">
+/// Its position in time. Only <see cref="Pleiades.Orchestration.Epoch.Moment"/>,
+/// <see cref="Pleiades.Orchestration.Epoch.Granularity"/>, <see cref="Pleiades.Orchestration.Epoch.Duration"/> and
+/// <see cref="Pleiades.Orchestration.Epoch.TimeZone"/> are read; the rest is computed from them.
+/// </param>
+public sealed record EventivePlan(
+	string FateId,
+	Epoch Epoch);
+
+/// <summary>
 /// Addresses a single eventive occurrence by its owner UID (a fate or objective id) and RECURRENCE-ID
 /// (Strategy 1): the recurrence-id resolves a projected occurrence and its hardened twin identically, so an
-/// interaction hardens the occurrence and applies to it without ever needing a database row id.
+/// interaction hardens the occurrence and applies to it without ever needing a database row id. A manual eventive
+/// has no RECURRENCE-ID, so it — like any hardened row — is addressed by its row <paramref name="Id"/> instead,
+/// which wins when given.
 /// </summary>
 /// <param name="OwnerId">The owning fate or objective id (the iCalendar <c>UID</c>).</param>
 /// <param name="RecurrenceId">The occurrence's original slot moment (<see cref="Occurrence.RecurrenceId"/>).</param>
+/// <param name="Id">The hardened row's id — the only address a manual eventive has.</param>
 public sealed record EventiveOccurrenceRef(
-	string OwnerId,
-	DateTime RecurrenceId);
+	string? OwnerId = null,
+	DateTime? RecurrenceId = null,
+	long? Id = null);
 
 /// <summary>
 /// Addresses a single attentive occurrence by its decree + RECURRENCE-ID: the recurrence-id resolves a projected

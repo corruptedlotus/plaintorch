@@ -62,6 +62,47 @@ export interface Epoch {
 	timeOfDay: string | undefined
 	/** Server-computed: the exclusive end moment ({@link moment} plus {@link duration}, or one granularity unit). Read-only. */
 	endMoment: string
+	/**
+	 * Server-computed: the absolute instant a timed epoch anchored in a {@link timeZone} names — {@link moment} read on
+	 * that zone's clock — as an ISO timestamp with its offset. Undefined for a floating or all-day epoch. Read it
+	 * through {@link epochOnLocalClock}. Read-only.
+	 */
+	instant?: string | undefined
+}
+
+/** An epoch's day and time of day as they fall on this device's clock. */
+export interface LocalEpochReading {
+	/** The day (`'YYYY-MM-DD'`). */
+	date: string
+	/** The time of day (`'HH:mm:ss'`), or undefined for an all-day epoch. */
+	timeOfDay: string | undefined
+}
+
+const pad = (value: number) => String(value).padStart(2, "0")
+
+/**
+ * Where an epoch falls on this device's clock: a timed epoch anchored in a time zone at the instant it names, read
+ * here ("18:00 in Tehran" is 16:30 in Berlin); a floating or all-day one exactly as written, as such a time is meant
+ * on whatever clock reads it.
+ */
+export function epochOnLocalClock(epoch: Epoch): LocalEpochReading {
+	const instant = epoch.instant ? new Date(epoch.instant) : undefined
+	if (!instant || Number.isNaN(instant.valueOf())) {
+		return { date: epoch.date, timeOfDay: epoch.timeOfDay ?? undefined }
+	}
+
+	const date = `${instant.getFullYear()}-${pad(instant.getMonth() + 1)}-${pad(instant.getDate())}`
+	const timeOfDay = `${pad(instant.getHours())}:${pad(instant.getMinutes())}:${pad(instant.getSeconds())}`
+	return { date, timeOfDay }
+}
+
+/** Whether a pending occurrence's time has passed: a timed one at its moment (its instant, when anchored), an all-day one once its day has begun. */
+function epochHasPassed(epoch: Epoch): boolean {
+	if (epoch.instant) {
+		return new Date(epoch.instant) < new Date()
+	}
+
+	return new Date(epoch.date) < new Date()
 }
 
 export enum EventiveResolution {
@@ -94,9 +135,12 @@ export class Fate {
 	orbit: string | undefined
 	/**
 	 * The calendar the orbit resolves against (PEP111); undefined falls back to the vault's preferred calendar. A
-	 * one-off (`Z{…}`) fate is pinned to Gregorian by the core.
+	 * one-off (`Z{…}`) literal names a day on it: the core pins one written with no calendar named to Gregorian, and
+	 * rewrites the literal when the calendar is changed alone, so the fate keeps its day.
 	 */
 	calendar: DeclarativeCalendar | undefined
+	/** The IANA time zone the fate's orbit runs on — its occurrences are stamped with it — or undefined for floating (wall-clock) time. */
+	timeZone: string | undefined
 	/** Read-only denormalized moment of the next upcoming occurrence, or undefined when none is scheduled (PEP111). */
 	nextOccurrence: string | undefined
 	eventives?: Eventive[]
@@ -113,6 +157,8 @@ export class Decree {
 	orbit: string | undefined
 	/** The calendar the orbit resolves against (PEP111); undefined falls back to the vault's preferred calendar. */
 	calendar: DeclarativeCalendar | undefined
+	/** The IANA time zone the decree's orbit runs on — its occurrences are stamped with it — or undefined for floating (wall-clock) time. */
+	timeZone: string | undefined
 	/** Read-only denormalized moment of the next upcoming occurrence, or undefined when none is scheduled (PEP111). */
 	nextOccurrence: string | undefined
 	/** Default length in whole minutes, seeding the allocation of executives this decree materializes. */
@@ -145,13 +191,20 @@ export abstract class Occurrence {
 	/**
 	 * The iCalendar RECURRENCE-ID: the occurrence's original {@link Epoch.moment}, pinned when it materializes and
 	 * never moved by a reschedule — a civil ISO datetime (`'2026-07-20T14:30:00'`; midnight for an all-day slot).
+	 * Absent (null on the wire) for a {@link isManual manual} occurrence, which belongs to no recurrence set and is
+	 * addressed by its {@link id} alone.
 	 */
-	recurrenceId: string = ''
+	recurrenceId: string | undefined
 	/**
 	 * Server-computed: the owning declarative's UID — the fate or objective id for an eventive, the decree id for
 	 * an attentive. With {@link recurrenceId} it addresses the occurrence. Read-only.
 	 */
 	recurrenceOwnerUid: string = ''
+	/**
+	 * Server-computed: whether the occurrence was added by hand rather than generated from its owner's schedule —
+	 * it carries no {@link recurrenceId}. Only a fate's eventive can be manual. Read-only.
+	 */
+	isManual: boolean = false
 }
 
 /**
@@ -168,7 +221,7 @@ export class Eventive extends Occurrence {
 
 	get isOverdue() {
 		return this.resolution === EventiveResolution.Pending
-			&& new Date(this.epoch.date) < new Date()
+			&& epochHasPassed(this.epoch)
 	}
 }
 
@@ -191,7 +244,7 @@ export class Attentive extends Occurrence {
 
 	get isOverdue() {
 		return this.resolution === AttentiveResolution.Pending
-			&& new Date(this.epoch.date) < new Date()
+			&& epochHasPassed(this.epoch)
 	}
 }
 
@@ -222,6 +275,14 @@ export interface FateUpdate {
 	parentIncentiveId?: string | null | undefined
 	/** A fate is orbit-only (PEP111): reschedule — a one-off (`Z{…}` literal) or a recurrence — by setting a new orbit. */
 	orbit?: string | undefined
+	/**
+	 * The calendar the orbit resolves against: omit to keep, a value to override, `null` to follow the vault default.
+	 * Sent with an {@link orbit}, it is the calendar that orbit's literal is written in; sent alone on a one-off fate,
+	 * the core rewrites the literal into it so the fate keeps its day.
+	 */
+	calendar?: DeclarativeCalendar | null | undefined
+	/** The IANA time zone: omit to keep, a zone to set, `null` for floating. */
+	timeZone?: string | null | undefined
 }
 
 export interface DecreePlan {
@@ -243,6 +304,10 @@ export interface DecreeUpdate {
 	defaultLength?: number | undefined
 	activeCelestron?: number | undefined
 	reflect?: boolean | undefined
+	/** The calendar the orbit resolves against: omit to keep, a value to override, `null` to follow the vault default. */
+	calendar?: DeclarativeCalendar | null | undefined
+	/** The IANA time zone: omit to keep, a zone to set, `null` for floating. */
+	timeZone?: string | null | undefined
 }
 
 export interface EventiveUpdate {
@@ -265,14 +330,45 @@ export interface AttentiveUpdate {
 }
 
 /**
+ * An {@link Epoch} as a client gives it: the stored members alone, without the ones the server computes from them. A
+ * day-or-finer {@link moment} is cut down to the start of its {@link granularity} unit; a week, month or year one is
+ * kept as given, since where those begin depends on the calendar it was chosen on.
+ */
+export interface EpochPlan {
+	/** The civil (wall-clock) moment (`'YYYY-MM-DDTHH:mm:ss'`), read in {@link timeZone} or as floating time. */
+	moment: string
+	/** How much of {@link moment} is meaningful — the unit window the occurrence stands for. */
+	granularity: OrbitUnit
+	/** Nominal block length in Orbit duration notation (`"90m"`, `"1d6h"`, `"1M"`); omit to fill one granularity unit. */
+	duration?: string | undefined
+	/** The IANA time zone {@link moment} is anchored in; omit for wall/floating time. */
+	timeZone?: string | undefined
+}
+
+/**
+ * Adds a manual eventive to a fate: an occurrence added by hand rather than generated from the fate's orbit, so it
+ * carries no RECURRENCE-ID and is addressed by its row id from then on. It is given its whole position in time.
+ */
+export interface EventivePlan {
+	/** The fate the eventive belongs to. */
+	fateId: string
+	/** Its position in time — the {@link Epoch} it will own. */
+	epoch: EpochPlan
+}
+
+/**
  * Addresses a single eventive occurrence by its owner UID (a fate or objective id) and RECURRENCE-ID
- * (Strategy 1). Interacting with the occurrence hardens it, so a projected occurrence needs no row id.
+ * (Strategy 1). Interacting with the occurrence hardens it, so a projected occurrence needs no row id. A manual
+ * eventive has no RECURRENCE-ID, so it — like any hardened row — is addressed by its {@link id} instead, which wins
+ * when given.
  */
 export interface EventiveOccurrenceRef {
 	/** The owning fate or objective id (the iCalendar UID). */
-	ownerId: string
+	ownerId?: string | undefined
 	/** The occurrence's {@link Occurrence.recurrenceId} — its original slot moment. */
-	recurrenceId: string
+	recurrenceId?: string | undefined
+	/** The hardened row's id — the only address a manual eventive has. */
+	id?: number | undefined
 }
 
 /**

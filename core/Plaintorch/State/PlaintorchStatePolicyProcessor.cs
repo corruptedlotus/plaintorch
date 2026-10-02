@@ -200,7 +200,7 @@ public sealed class PlaintorchStatePolicyProcessor(
 	/// while already-hardened occurrences persist untouched. Timeframes created with, or changed to, a different
 	/// orbit get the same treatment for their orbit state (PEP100 patch 2), except that a recurring timeframe orbit
 	/// anchors at the earlier of today and the open Polaris cycle's day, and a timeframe's fixed <c>Z{…}</c> literal is
-	/// read on the timeframe calendar (the vault default) rather than as a Gregorian date.
+	/// read on the timeframe calendar (the vault default), as a declarative's is read on its own resolved calendar.
 	/// </summary>
 	private async Task ResetChangedScheduleCursorsAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
@@ -239,9 +239,9 @@ public sealed class PlaintorchStatePolicyProcessor(
 		{
 			// A one-off fixed-datetime orbit (a Z{…} literal) anchors its cursor at the literal's own date, so its
 			// single occurrence is caught by a seek whether it is in the past or the future (PEP111); a recurring
-			// schedule anchors today so it generates forward with no backfill. The literal is read as Gregorian, as a
-			// one-off fate is pinned to that calendar.
-			await orbitService.ResetStateAsync(incentive, orbit, ResetEpoch(orbit, today, OrbitDays.Gregorian), cancellationToken);
+			// schedule anchors today so it generates forward with no backfill. The literal names a day on the calendar
+			// its declarative resolves on — Gregorian for a pinned one-off, but a one-off may be moved onto another.
+			await orbitService.ResetStateAsync(incentive, orbit, ResetEpoch(orbit, today, orbitService.ResolveCalendar(incentive)), cancellationToken);
 		}
 
 		if (timeframesToReset.Count == 0)
@@ -268,7 +268,7 @@ public sealed class PlaintorchStatePolicyProcessor(
 
 	/// <summary>
 	/// The epoch a reset schedule cursor anchors at: a lone fixed-datetime literal's own date with its year, month and
-	/// day read on <paramref name="literalCalendar"/> (Gregorian for a declarative, the vault default calendar for a
+	/// day read on <paramref name="literalCalendar"/> (a declarative's resolved calendar, the vault default calendar for a
 	/// timeframe), otherwise <paramref name="anchor"/> — today for a declarative, the earlier of today and the open
 	/// cycle's day for a timeframe. A literal naming a day the calendar cannot hold falls back to
 	/// <paramref name="anchor"/> as well, so an out-of-range literal never fails the save.
@@ -324,7 +324,7 @@ public sealed class PlaintorchStatePolicyProcessor(
 		}
 
 		var orbitService = serviceProvider.GetRequiredService<PlaintorchOrbitService>();
-		var now = DateTime.Now;
+		var now = DateTimeOffset.Now;
 		foreach (var fate in fates)
 		{
 			// A paused fate (cancelled) generates nothing, so it has no upcoming occurrence; an active or opted-out
@@ -780,9 +780,11 @@ public sealed class PlaintorchStatePolicyProcessor(
 	{
 		// The key format predates the single RECURRENCE-ID and is persisted in the ledger, so it is kept: the date
 		// alone for a midnight (all-day) slot, the date and minute otherwise.
-		var slot = attentive.RecurrenceId.TimeOfDay == TimeSpan.Zero
-			? attentive.RecurrenceId.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
-			: attentive.RecurrenceId.ToString("yyyy-MM-dd'T'HH\\:mm", CultureInfo.InvariantCulture);
+		// An attentive is always schedule-born, so its RECURRENCE-ID is present (the column is required).
+		var recurrenceId = attentive.RecurrenceId!.Value;
+		var slot = recurrenceId.TimeOfDay == TimeSpan.Zero
+			? recurrenceId.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+			: recurrenceId.ToString("yyyy-MM-dd'T'HH\\:mm", CultureInfo.InvariantCulture);
 		return $"attentive {slot}";
 	}
 

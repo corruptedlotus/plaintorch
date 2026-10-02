@@ -787,7 +787,8 @@ function clockParts(time: ClockTime): string[] {
 	return parts
 }
 
-function formatDuration(parts: DurationPart[]): string {
+/** A span in words, as a schedule reads it after "for": "2 hours", "1 day and 6 hours". */
+export function formatDuration(parts: DurationPart[]): string {
 	return joinAnd(parts.map(part => `${part.count} ${DUR_WORD[part.unit]}${part.count > 1 ? 's' : ''}`))
 }
 

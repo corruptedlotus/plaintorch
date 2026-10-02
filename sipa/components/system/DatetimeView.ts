@@ -65,6 +65,12 @@ export class DatetimeView extends Component {
 	 */
 	@property({ type: Number }) calendar?: DeclarativeCalendar
 
+	/**
+	 * Where the moment is anchored, when it was read off another clock onto this one — a zoned occurrence's own wall
+	 * time ("18:30 in Tehran"). Appended to the tooltip, so the face reads local time and the hover says what it was.
+	 */
+	@property() anchor?: string
+
 	/** Ticks off the shared app clock while a live reading is on ({@link relative} phrase or a {@link warn} threshold). */
 	protected readonly tick = new TickController(this, () => this.relative || this.warn !== 'none')
 
@@ -123,8 +129,9 @@ export class DatetimeView extends Component {
 	override get template() {
 		const pleiadean = this.pleiadean
 		const warning = this.isWarning
+		const label = this.unifiedLabel(pleiadean)
 		return html`
-			<span class='moment ${warning ? 'warn' : ''}' ${tooltip(this.unifiedLabel(pleiadean))}>
+			<span class='moment ${warning ? 'warn' : ''}' ${tooltip(this.anchor ? `${label} — ${this.anchor}` : label)}>
 				${this.faceTemplate(pleiadean)}
 				${warning ? html`<p7t-icon class='warn-icon' icon='lucide:clock-alert'></p7t-icon>` : nothing}
 			</span>

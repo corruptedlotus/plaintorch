@@ -8,6 +8,7 @@ import type {
 	DecreeUpdate,
 	Eventive,
 	EventiveOccurrenceRef,
+	EventivePlan,
 	EventiveUpdate,
 	Fate,
 	FatePlan,
@@ -85,6 +86,14 @@ export class PlaintorchDeclarativesSdk {
 	public async listAttentives(decreeId?: string): Promise<Attentive[]> {
 		const suffix = decreeId ? `?decreeId=${encodeURIComponent(decreeId)}` : ""
 		return (await this.client.getJson<Attentive[]>(`/api/attentives${suffix}`)) ?? []
+	}
+
+	/**
+	 * Adds a manual eventive to a fate — one added by hand rather than generated from its orbit. It is born hardened
+	 * with no RECURRENCE-ID, so it is addressed by its row id from then on.
+	 */
+	public async createEventive(plan: EventivePlan): Promise<Eventive | undefined> {
+		return await this.client.postForJson<Eventive>("/api/eventives", plan)
 	}
 
 	public async updateEventive(occurrence: EventiveOccurrenceRef, update: EventiveUpdate): Promise<Eventive | undefined> {

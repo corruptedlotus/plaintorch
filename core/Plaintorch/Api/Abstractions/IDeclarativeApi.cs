@@ -82,9 +82,17 @@ public interface IDeclarativeApi
 	Task<IReadOnlyList<Attentive>> ListAttentivesAsync(string? decreeId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Adds a manual eventive to a fate — an occurrence added by hand rather than generated from its orbit, so it
+	/// carries no RECURRENCE-ID and is addressed by its row id. It is created Pending, and is refused for a cancelled
+	/// fate or a fate whose materialization is locked by an unmet dependency (PEP101).
+	/// </summary>
+	Task<Eventive> CreateEventiveAsync(EventivePlan plan, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Applies a mutable update to an eventive occurrence addressed by its owner and RECURRENCE-ID. A
 	/// still-projected occurrence is resolved into the same save, so the materialization and the interaction
-	/// persist together and the state-policy pass enforces hardening centrally.
+	/// persist together and the state-policy pass enforces hardening centrally. A hardened row — the only kind a
+	/// manual eventive ever is — may instead be addressed by its row id.
 	/// </summary>
 	Task<Eventive> UpdateEventiveAsync(EventiveOccurrenceRef occurrence, EventiveUpdate update, CancellationToken cancellationToken = default);
 

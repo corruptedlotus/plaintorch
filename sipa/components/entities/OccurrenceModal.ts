@@ -13,6 +13,7 @@ import { core, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, ty
 import type { EditablePart } from "../editing/EditableDataLink"
 import "../editing/EditableDate"
 import "../editing/EditableTime"
+import { zoneCity } from "../editing/TimeZoneSelect"
 import { createChild, ModalBase, toast } from "../../host"
 
 /** The occurrence a single {@link OccurrenceEditor} edits: an attentive of a decree, or an eventive of a fate/objective. */
@@ -66,9 +67,14 @@ function attentiveRef(attentive: Attentive): AttentiveOccurrenceRef {
 	return { decreeId: attentive.decreeId, recurrenceId: attentive.recurrenceId }
 }
 
-/** Addresses an eventive occurrence by its owner id + RECURRENCE-ID. */
+/**
+ * Addresses an eventive occurrence by its owner id + RECURRENCE-ID, so a still-projected one hardens on interaction.
+ * A manual eventive has no RECURRENCE-ID and is always a hardened row, so it is addressed by its row id.
+ */
 function eventiveRef(eventive: Eventive): EventiveOccurrenceRef {
-	return { ownerId: eventive.fateId ?? eventive.objectiveId ?? '', recurrenceId: eventive.recurrenceId }
+	return eventive.recurrenceId
+		? { ownerId: eventive.fateId ?? eventive.objectiveId ?? '', recurrenceId: eventive.recurrenceId }
+		: { id: eventive.id }
 }
 
 /**
@@ -204,6 +210,20 @@ export class OccurrenceEditor extends Component {
 			.open-owner {
 				align-self: flex-start;
 			}
+
+			/* A zoned occurrence is rescheduled on its own zone's clock, which the row names. */
+			.zone {
+				display: inline-flex;
+				align-items: center;
+				gap: .35ch;
+				font-size: .8em;
+				opacity: .7;
+
+				& p7t-icon {
+					width: 1.1em;
+					height: 1.1em;
+				}
+			}
 		`
 	}
 
@@ -250,6 +270,11 @@ export class OccurrenceEditor extends Component {
 						.value=${epoch.timeOfDay}
 						@change=${(e: Event) => this.commitTime((e.target as EditablePart<string>).value)}>
 					</p7t-editable-time>
+					${!epoch.timeZone || epoch.isAllDay ? nothing : html`
+						<span class='zone' title=${epoch.timeZone}>
+							<p7t-icon icon='lucide:globe'></p7t-icon>${zoneCity(epoch.timeZone)} time
+						</span>
+					`}
 				</div>
 			</div>
 		`

@@ -115,11 +115,11 @@ public sealed class PolarisAgendaTests : VaultTestBase
 			context.Add(new Fate { Id = "agenda-test-fate", Title = "Conference", DirectiveId = directive.Id });
 
 			context.Attentives.AddRange(
-				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today, null, OrbitUnit.Day), Resolution = AttentiveResolution.Pending },
-				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today.AddDays(-1), null, OrbitUnit.Day), Resolution = AttentiveResolution.Pending },
+				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today, null, OrbitUnit.Day), RecurrenceId = today.ToDateTime(TimeOnly.MinValue), Resolution = AttentiveResolution.Pending },
+				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today.AddDays(-1), null, OrbitUnit.Day), RecurrenceId = today.AddDays(-1).ToDateTime(TimeOnly.MinValue), Resolution = AttentiveResolution.Pending },
 				// Resolved two hours ago: Done and outside the one-hour retention window, so it stays excluded.
-				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today, null, OrbitUnit.Day), Resolution = AttentiveResolution.Done, ResolvedOn = DateTimeOffset.UtcNow.AddHours(-2) },
-				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today.AddDays(2), null, OrbitUnit.Day), Resolution = AttentiveResolution.Pending });
+				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today, null, OrbitUnit.Day), RecurrenceId = today.ToDateTime(TimeOnly.MinValue), Resolution = AttentiveResolution.Done, ResolvedOn = DateTimeOffset.UtcNow.AddHours(-2) },
+				new Attentive { DecreeId = decree.Id, Epoch = Epoch.From(today.AddDays(2), null, OrbitUnit.Day), RecurrenceId = today.AddDays(2).ToDateTime(TimeOnly.MinValue), Resolution = AttentiveResolution.Pending });
 
 			context.Eventives.AddRange(
 				new Eventive { FateId = "agenda-test-fate", Epoch = Epoch.From(today.AddDays(3), null, OrbitUnit.Day), RecurrenceId = today.AddDays(3).ToDateTime(TimeOnly.MinValue), Resolution = EventiveResolution.Pending },
@@ -147,6 +147,38 @@ public sealed class PolarisAgendaTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task Agenda_lists_a_pending_period_attentive_that_began_before_today_once()
+	{
+		var ct = TestContext.Current.CancellationToken;
+		var today = DateOnly.FromDateTime(DateTime.Today);
+		var weekStart = today.AddDays(-2);
+
+		var decree = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
+			.CreateDecreeAsync(new DecreePlan("Weekly review"), ct));
+
+		// A week-born attentive that began two days ago still spans today: it is both overdue (its start has passed,
+		// still pending) and in the projected window (its period reaches into it).
+		await Vault.WithScopeAsync(async s =>
+		{
+			var context = s.GetRequiredService<PlainfraContext>();
+			context.Attentives.Add(new Attentive
+			{
+				DecreeId = decree.Id,
+				Epoch = Epoch.From(weekStart, null, OrbitUnit.Week, durationMinutes: 7 * 24 * 60),
+				RecurrenceId = weekStart.ToDateTime(TimeOnly.MinValue),
+				Resolution = AttentiveResolution.Pending,
+			});
+			await context.SaveChangesAsync(ct);
+		});
+
+		var agenda = await Vault.WithScopeAsync(s => s.GetRequiredService<IPolarisCycleApi>()
+			.GetAgendaAsync(ct));
+
+		var attentive = Assert.Single(agenda.Attentives, item => item.DecreeId == decree.Id);
+		Assert.Equal(weekStart, attentive.Epoch.Date);
+	}
+
+	[Fact]
 	public async Task Agenda_includes_only_unbound_attentives_resolved_within_the_past_hour()
 	{
 		var ct = TestContext.Current.CancellationToken;
@@ -166,6 +198,7 @@ public sealed class PolarisAgendaTests : VaultTestBase
 				{
 					DecreeId = decree.Id,
 					Epoch = Epoch.From(today.AddDays(14), null, OrbitUnit.Day),
+					RecurrenceId = today.AddDays(14).ToDateTime(TimeOnly.MinValue),
 					Resolution = AttentiveResolution.Done,
 					ResolvedOn = recentlyResolvedOn,
 				},
@@ -173,6 +206,7 @@ public sealed class PolarisAgendaTests : VaultTestBase
 				{
 					DecreeId = decree.Id,
 					Epoch = Epoch.From(today.AddDays(14), null, OrbitUnit.Day),
+					RecurrenceId = today.AddDays(14).ToDateTime(TimeOnly.MinValue),
 					Resolution = AttentiveResolution.Done,
 					ResolvedOn = DateTimeOffset.UtcNow.AddHours(-2),
 				});

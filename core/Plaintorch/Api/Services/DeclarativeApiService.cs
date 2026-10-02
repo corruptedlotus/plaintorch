@@ -24,7 +24,8 @@ namespace Pleiades.Plaintorch.Api.Services;
 /// Polaris cycle through the Polaris API, and a bound attentive — having no meaningful recurrence-id — is
 /// addressed by its row id instead. Interaction with an orbit-scheduled occurrence is resolved through preview
 /// (non-seeking) resolution so a future instance never pushes the schedule state forward; its recurrence-id is
-/// its identity, so the later seeking pass recognizes it.
+/// its identity, so the later seeking pass recognizes it. A manual eventive — added to a fate by hand, outside its
+/// recurrence set — has no RECURRENCE-ID; it is born hardened and addressed by its row id.
 /// </remarks>
 public sealed class DeclarativeApiService(
 	PlainfraContext context,
@@ -138,16 +139,31 @@ public sealed class DeclarativeApiService(
 			// empty orbit unschedules the fate.
 			var normalizedOrbit = string.IsNullOrWhiteSpace(update.Orbit) ? null : update.Orbit;
 			PlaintorchOrbitService.ValidateFateOrbit(normalizedOrbit);
+			var previousOrbit = fate.Orbit;
 			fate.Orbit = normalizedOrbit;
-			// Re-pin: a one-off Z{…} literal resolves Gregorian, a recurrence follows the global default (PEP111).
-			fate.Calendar = PinnedCalendarFor(normalizedOrbit);
+			// A calendar sent alongside is the one the new orbit is written in. Without one, a one-off literal must still
+			// be read on a definite calendar: Gregorian, as a client naming none writes it (PEP111).
+			if (!update.Calendar.IsSet)
+			{
+				fate.Calendar = CalendarForNewOrbit(fate.Calendar, previousOrbit, normalizedOrbit);
+			}
+		}
+
+		if (update.Calendar.IsSet)
+		{
+			fate.Orbit = ApplyCalendar(fate, fate.Orbit, update.Calendar.Value, rewriteOneOff: update.Orbit is null);
+		}
+
+		if (update.TimeZone.IsSet)
+		{
+			fate.TimeZone = ValidTimeZone(update.TimeZone.Value, nameof(update));
 		}
 
 		// Resuming a paused fate (cancelled or opted out → active) seeks its cursor to now, so generation picks up
 		// from now with no backfill of the occurrences that elapsed while it was paused (PEP100/PEP111).
 		if (previous.Status != FateStatus.Active && fate.Status == FateStatus.Active && !string.IsNullOrWhiteSpace(fate.Orbit))
 		{
-			await orbitService.FastForwardToNowAsync(fate, fate.Orbit!, DateTime.Now, cancellationToken);
+			await orbitService.FastForwardToNowAsync(fate, fate.Orbit!, DateTimeOffset.Now, cancellationToken);
 		}
 
 		// A fate is orbit-only (PEP111), so there is no fixed-date shape to reconcile here — the update above
@@ -285,6 +301,16 @@ public sealed class DeclarativeApiService(
 			decree.Reflect = update.Reflect.Value;
 		}
 
+		if (update.Calendar.IsSet)
+		{
+			decree.Orbit = ApplyCalendar(decree, decree.Orbit, update.Calendar.Value, rewriteOneOff: update.Orbit is null);
+		}
+
+		if (update.TimeZone.IsSet)
+		{
+			decree.TimeZone = ValidTimeZone(update.TimeZone.Value, nameof(update));
+		}
+
 		// Validate the resulting combination: reflecting decrees demand day-granularity orbits.
 		PlaintorchOrbitService.ValidateDecreeOrbit(decree.Orbit, decree.Reflect);
 
@@ -292,7 +318,7 @@ public sealed class DeclarativeApiService(
 		// backfill of the occurrences that elapsed while it was abandoned (PEP100/PEP111).
 		if (previous.Status != DecreeStatus.Active && decree.Status == DecreeStatus.Active && !string.IsNullOrWhiteSpace(decree.Orbit))
 		{
-			await orbitService.FastForwardToNowAsync(decree, decree.Orbit!, DateTime.Now, cancellationToken);
+			await orbitService.FastForwardToNowAsync(decree, decree.Orbit!, DateTimeOffset.Now, cancellationToken);
 		}
 
 		await writeQueue.WriteAsync(decree, previous, cancellationToken);
@@ -364,16 +390,54 @@ public sealed class DeclarativeApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task<Eventive> CreateEventiveAsync(EventivePlan plan, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(plan);
+		ArgumentException.ThrowIfNullOrWhiteSpace(plan.FateId);
+		var epoch = ManualEpoch(plan.Epoch);
+
+		var fate = await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == plan.FateId, cancellationToken)
+			?? throw new InvalidOperationException($"Fate '{plan.FateId}' was not found.");
+		// A cancelled fate takes no occurrences, as it materializes none (PEP100). An opted-out fate still accepts one:
+		// adding it by hand is the explicit interaction that opts that single occurrence in.
+		if (fate.Status == FateStatus.Cancelled)
+		{
+			throw new InvalidOperationException($"Fate '{fate.Id}' is {fate.Status} and takes no eventives.");
+		}
+
+		// PEP101: a locked whole-fate freezes all materialization. A manual occurrence has no slot, so no single
+		// occurrence lock can name it.
+		if (await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, recurrenceId: null, cancellationToken))
+		{
+			throw new InvalidOperationException($"Fate '{fate.Id}' is blocked by unmet dependencies and cannot take an eventive.");
+		}
+
+		var eventive = new Eventive
+		{
+			FateId = fate.Id,
+			Epoch = epoch,
+			RecurrenceId = null,
+			Resolution = EventiveResolution.Pending,
+		};
+		context.Eventives.Add(eventive);
+		await context.SaveChangesAsync(cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"eventive.create",
+			subjectType: nameof(Eventive),
+			subjectId: eventive.Id.ToString(CultureInfo.InvariantCulture),
+			details: new { eventive.FateId, manual = true, date = eventive.Epoch.Date.ToString("yyyy-MM-dd") },
+			cancellationToken: cancellationToken);
+		return eventive;
+	}
+
+	/// <inheritdoc />
 	public async Task<Eventive> UpdateEventiveAsync(EventiveOccurrenceRef occurrence, EventiveUpdate update, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(occurrence);
 		ArgumentNullException.ThrowIfNull(update);
 
-		// Resolve the occurrence into the current unit of work (evaluate the orbit, find its hardened twin, or
-		// build the projected row) without a save of its own; the single SaveChanges below persists the
-		// materialization together with this interaction, and the state-policy pass runs over it centrally. The
-		// recurrence-id resolves a projected occurrence and its hardened twin identically, so no row id is needed.
-		var eventive = await hardeningService.EnsureEventiveIntoContextAsync(occurrence.OwnerId, occurrence.RecurrenceId, cancellationToken);
+		var eventive = await ResolveEventiveAsync(occurrence, cancellationToken);
 
 		// Eventives are never Polaris-bound, so moving their time specification is always allowed. Moving is a
 		// change to the occurrence's Epoch: date shifts the moment's day, a start time shifts its time of day
@@ -462,6 +526,127 @@ public sealed class DeclarativeApiService(
 			details: new { attentive.DecreeId, resolution = attentive.Resolution.ToString(), date = attentive.Epoch.Date.ToString("yyyy-MM-dd") },
 			cancellationToken: cancellationToken);
 		return attentive;
+	}
+
+	/// <summary>
+	/// A time zone as a declarative or an epoch stores it: trimmed, <see langword="null"/> for none (floating), and
+	/// refused when this host does not know it as an IANA (or system) zone.
+	/// </summary>
+	private static string? ValidTimeZone(string? requested, string parameterName)
+	{
+		var timeZone = string.IsNullOrWhiteSpace(requested) ? null : requested.Trim();
+		if (timeZone is not null && !TimeZoneInfo.TryFindSystemTimeZoneById(timeZone, out _))
+		{
+			throw new ArgumentException($"'{timeZone}' is not a known time zone.", parameterName);
+		}
+
+		return timeZone;
+	}
+
+	/// <summary>
+	/// The calendar a fate keeps when its orbit is replaced and the update names none: a one-off literal is read on
+	/// the fate's own calendar, else pinned to Gregorian (the calendar a client naming none writes it in); a recurrence
+	/// replacing such a pinned one-off returns to the vault default, as that pin served only the literal (PEP111).
+	/// Any other calendar — one the user chose — is kept.
+	/// </summary>
+	private static DeclarativeCalendar? CalendarForNewOrbit(DeclarativeCalendar? current, string? previousOrbit, string? orbit)
+	{
+		if (IsOneOffLiteral(orbit))
+		{
+			return current ?? DeclarativeCalendar.Gregorian;
+		}
+
+		return IsOneOffLiteral(previousOrbit) && current == DeclarativeCalendar.Gregorian ? null : current;
+	}
+
+	/// <summary>
+	/// Sets a declarative's calendar and returns the orbit it keeps. A lone one-off literal names a day on the calendar
+	/// it is read in, so when the calendar actually changes (<paramref name="rewriteOneOff"/>, and the resolved calendar
+	/// moves) the literal is rewritten into the new one and keeps its day; a recurrence only resolves on the new
+	/// calendar from here on. A literal the new calendar cannot write is refused rather than left naming another day.
+	/// </summary>
+	private string? ApplyCalendar(Declarative declarative, string? orbit, DeclarativeCalendar? calendar, bool rewriteOneOff)
+	{
+		var from = orbitService.ResolveCalendar(declarative);
+		declarative.Calendar = calendar;
+		var to = orbitService.ResolveCalendar(declarative);
+		if (!rewriteOneOff || ReferenceEquals(from, to) || orbit is null || OrbitDays.FixedLiteralDate(orbit, from) is null)
+		{
+			return orbit;
+		}
+
+		return OrbitDays.RewriteFixedLiteral(orbit, from, to)
+			?? throw new InvalidOperationException($"'{orbit}' names a day the {calendar?.ToString() ?? "default"} calendar cannot write as a one-off date.");
+	}
+
+	private static bool IsOneOffLiteral(string? orbit)
+		=> !string.IsNullOrWhiteSpace(orbit) && orbit.TrimStart().StartsWith("Z{", StringComparison.Ordinal);
+
+	/// <summary>
+	/// Validates the position in time a manual eventive is given and copies it into a fresh <see cref="Epoch"/>: the
+	/// granularity must be a known unit, the duration well-formed Orbit duration notation (or absent, filling one
+	/// granularity unit), and the time zone one this host knows (or absent, floating). A day-or-finer moment is cut
+	/// down to the start of its unit, as an orbit occurrence's is; a week, month or year moment is kept as given, since
+	/// where those begin depends on the calendar it was chosen on.
+	/// </summary>
+	private static Epoch ManualEpoch(Epoch? requested)
+	{
+		ArgumentNullException.ThrowIfNull(requested, "epoch");
+		if (!Enum.IsDefined(requested.Granularity))
+		{
+			throw new ArgumentException($"'{requested.Granularity}' is not a granularity.", "epoch");
+		}
+
+		var duration = string.IsNullOrWhiteSpace(requested.Duration) ? null : requested.Duration.Trim();
+		if (duration is not null && !OccurrenceDurations.IsValid(duration))
+		{
+			throw new ArgumentException($"'{duration}' is not an Orbit duration (such as 90m, 1d6h or 1M).", "epoch");
+		}
+
+		var timeZone = ValidTimeZone(requested.TimeZone, "epoch");
+
+		var moment = requested.Moment;
+		var start = requested.Granularity switch
+		{
+			OrbitUnit.Day => moment.Date,
+			OrbitUnit.Hour => moment.Date.AddHours(moment.Hour),
+			OrbitUnit.Minute => moment.Date.AddHours(moment.Hour).AddMinutes(moment.Minute),
+			OrbitUnit.Second => moment.Date.AddHours(moment.Hour).AddMinutes(moment.Minute).AddSeconds(moment.Second),
+			_ => moment,
+		};
+
+		return new Epoch
+		{
+			// Civil (wall-clock) time: whatever kind the wire gave it, the stored moment carries no zone of its own.
+			Moment = DateTime.SpecifyKind(start, DateTimeKind.Unspecified),
+			Granularity = requested.Granularity,
+			Duration = duration,
+			TimeZone = timeZone,
+		};
+	}
+
+	/// <summary>
+	/// Resolves the eventive an occurrence reference addresses into the current unit of work, without a save of its
+	/// own. A row id names a hardened row directly — the only address a manual eventive has. Otherwise the owner and
+	/// recurrence-id resolve it through the hardening service (evaluate the orbit, find the hardened twin, or build
+	/// the projected row), which addresses a projected occurrence and its hardened twin identically; the caller's
+	/// single SaveChanges then persists the materialization together with the interaction, and the state-policy pass
+	/// runs over it centrally.
+	/// </summary>
+	private async Task<Eventive> ResolveEventiveAsync(EventiveOccurrenceRef occurrence, CancellationToken cancellationToken)
+	{
+		if (occurrence.Id is long id)
+		{
+			return await context.Eventives.FirstOrDefaultAsync(item => item.Id == id, cancellationToken)
+				?? throw new InvalidOperationException($"Eventive '{id}' was not found.");
+		}
+
+		if (string.IsNullOrWhiteSpace(occurrence.OwnerId) || occurrence.RecurrenceId is not DateTime recurrenceId)
+		{
+			throw new ArgumentException("An eventive occurrence must be addressed by its row id, or by owner and recurrence-id.", nameof(occurrence));
+		}
+
+		return await hardeningService.EnsureEventiveIntoContextAsync(occurrence.OwnerId, recurrenceId, cancellationToken);
 	}
 
 	private async Task ApplyParentAsync(Incentive child, string parentIncentiveId, CancellationToken cancellationToken)

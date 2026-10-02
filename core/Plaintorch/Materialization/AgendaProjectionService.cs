@@ -20,7 +20,8 @@ public sealed record AgendaProjection(IReadOnlyList<Eventive> Eventives, IReadOn
 /// </summary>
 /// <remarks>
 /// Eventives and attentives alike dedup by <c>(owner UID, RecurrenceId)</c> — the stable iCalendar identity of an
-/// <see cref="Occurrence"/> — so a moved occurrence still overrides its original projected slot.
+/// <see cref="Occurrence"/> — so a moved occurrence still overrides its original projected slot. A manual eventive
+/// (no RecurrenceId) is always a hardened row with no projected twin, so it simply stands as itself.
 /// </remarks>
 public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchOrbitService orbitService)
 {
@@ -42,36 +43,46 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		var windowStart = startInclusive.ToDateTime(TimeOnly.MinValue);
 		var windowEndExclusive = endExclusive.ToDateTime(TimeOnly.MinValue);
 
-		// Hardened rows overlapping the window are the source of truth for their recurrence-id.
-		var eventives = await context.Eventives
+		// Hardened rows overlapping the window are the source of truth for their recurrence-id. The window is on this
+		// host's clock, while a zoned eventive's stored moment is on its zone's: the query admits every moment a zone
+		// apart could place in the window, and the window itself is decided on the local moment in memory.
+		var hardenedEventives = await context.Eventives
 			.AsNoTracking()
 			.Include(item => item.Fate)
 			.Include(item => item.Objective)
-			.Where(item => item.Epoch.Moment >= windowStart && item.Epoch.Moment < windowEndExclusive)
+			.Where(item => item.Epoch.Moment >= windowStart.AddDays(-OccurrenceZones.ReachDays) && item.Epoch.Moment < windowEndExclusive.AddDays(OccurrenceZones.ReachDays))
 			.ToListAsync(cancellationToken);
+		var eventives = hardenedEventives
+			.Where(item => item.Epoch.LocalMoment >= windowStart && item.Epoch.LocalMoment < windowEndExclusive)
+			.ToList();
 		// An attentive also overlaps the window when it starts before it and its duration (a super-day period or a
 		// span) reaches into it. Its end (Epoch.EndMoment) is derived rather than stored, so SQL admits every
 		// duration-bearing attentive starting within the longest period before the window and the overlap itself
-		// is decided in memory.
+		// is decided in memory, on this host's clock like the eventives.
 		var lookbackStart = windowStart.AddDays(-LongestPeriodDays);
-		var attentives = (await context.Attentives
+		var hardenedAttentives = await context.Attentives
 			.AsNoTracking()
 			.Include(item => item.Decree)
-			.Where(item => item.Epoch.Moment < windowEndExclusive
-				&& (item.Epoch.Moment >= windowStart || (item.Epoch.Duration != null && item.Epoch.Moment >= lookbackStart)))
-			.ToListAsync(cancellationToken))
-			.Where(item => item.Epoch.Moment >= windowStart || item.Epoch.EndMoment > windowStart)
+			.Where(item => item.Epoch.Moment < windowEndExclusive.AddDays(OccurrenceZones.ReachDays)
+				&& (item.Epoch.Moment >= windowStart.AddDays(-OccurrenceZones.ReachDays) || (item.Epoch.Duration != null && item.Epoch.Moment >= lookbackStart)))
+			.ToListAsync(cancellationToken);
+		var attentives = hardenedAttentives
+			.Where(item => item.Epoch.LocalMoment < windowEndExclusive
+				&& (item.Epoch.LocalMoment >= windowStart || item.Epoch.LocalEndMoment > windowStart))
 			.ToList();
 
-		var eventiveKeys = eventives.Select(OccurrenceKey).ToHashSet();
-		var attentiveKeys = attentives.Select(OccurrenceKey).ToHashSet();
+		// Every hardened row found shadows its projected twin, even one whose own moment falls just outside the window
+		// once read on this host's clock.
+		var eventiveKeys = hardenedEventives.Select(OccurrenceKey).ToHashSet();
+		var attentiveKeys = hardenedAttentives.Select(OccurrenceKey).ToHashSet();
 
 		// Orbit fates: preview occurrences overlapping the window (Gregorian calendar). A fate is orbit-only (PEP111),
 		// so a one-off is just a fixed-datetime Z{…} occurrence resolved here alongside recurrences. Every projected
 		// owner drops its auto-includes to keep the bulk read lean, then re-adds only the owning Directive explicitly
 		// so the agenda can surface it (PEP100). An opted-out fate keeps generating, so its occurrences are still
 		// projected — stamped OptOut so the display agenda hides them while they can still be interacted with or
-		// opted back in (PEP100/PEP111).
+		// opted back in (PEP100/PEP111). Each occurrence is stamped with its declarative's zone, and the preview keeps
+		// those that fall in the window on this host's clock.
 		var orbitFates = await context.Fates
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
@@ -87,7 +98,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 				{
 					FateId = fate.Id,
 					Fate = fate,
-					Epoch = Epoch.For(occurrence),
+					Epoch = PlaintorchOrbitService.EpochOf(fate, occurrence),
 					RecurrenceId = occurrence.Moment,
 					Resolution = resolution,
 				});
@@ -138,19 +149,20 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 				{
 					DecreeId = decree.Id,
 					Decree = decree,
-					Epoch = Epoch.For(occurrence),
+					Epoch = PlaintorchOrbitService.EpochOf(decree, occurrence),
 					RecurrenceId = occurrence.Moment,
 				};
 				AddAttentive(attentives, attentiveKeys, attentive);
 			}
 		}
 
-		eventives.Sort(static (left, right) => Compare(left.Epoch.Date, left.Epoch.TimeOfDay, right.Epoch.Date, right.Epoch.TimeOfDay));
-		attentives.Sort(static (left, right) => Compare(left.Epoch.Date, left.Epoch.TimeOfDay, right.Epoch.Date, right.Epoch.TimeOfDay));
+		// Ordered as they fall on this host's clock, so a zoned occurrence takes its place by the instant it names.
+		eventives.Sort(static (left, right) => Compare(left.Epoch.LocalDate, left.Epoch.LocalTimeOfDay, right.Epoch.LocalDate, right.Epoch.LocalTimeOfDay));
+		attentives.Sort(static (left, right) => Compare(left.Epoch.LocalDate, left.Epoch.LocalTimeOfDay, right.Epoch.LocalDate, right.Epoch.LocalTimeOfDay));
 		return new AgendaProjection(eventives, attentives);
 	}
 
-	private static void AddEventive(List<Eventive> list, HashSet<(string, DateTime)> keys, Eventive eventive)
+	private static void AddEventive(List<Eventive> list, HashSet<(string, DateTime?)> keys, Eventive eventive)
 	{
 		if (keys.Add(OccurrenceKey(eventive)))
 		{
@@ -158,7 +170,7 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		}
 	}
 
-	private static void AddAttentive(List<Attentive> list, HashSet<(string, DateTime)> keys, Attentive attentive)
+	private static void AddAttentive(List<Attentive> list, HashSet<(string, DateTime?)> keys, Attentive attentive)
 	{
 		if (keys.Add(OccurrenceKey(attentive)))
 		{
@@ -167,8 +179,10 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 	}
 
 	// The CalDAV occurrence identity — owner UID + RECURRENCE-ID — shared by eventives and attentives, so a
-	// hardened row overrides its projected twin even after the occurrence's current start was rescheduled.
-	private static (string, DateTime) OccurrenceKey(Occurrence occurrence)
+	// hardened row overrides its projected twin even after the occurrence's current start was rescheduled. Only
+	// projected occurrences are added through the key check, and they always carry a RECURRENCE-ID, so the null key
+	// of a manual eventive never shadows one.
+	private static (string, DateTime?) OccurrenceKey(Occurrence occurrence)
 		=> (occurrence.RecurrenceOwnerUid, occurrence.RecurrenceId);
 
 	private static int Compare(DateOnly leftDate, TimeOnly? leftTime, DateOnly rightDate, TimeOnly? rightTime)

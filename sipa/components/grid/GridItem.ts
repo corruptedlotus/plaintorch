@@ -157,15 +157,12 @@ export class GridItem extends GridItemBase {
 			case 'objective':
 				return html`<p7t-editable-starfire ${this.binder.bind('celestronValue')}></p7t-editable-starfire>`
 			case 'fate': {
-				// A fate is scheduled either way — a recurring Orbit or a fixed date/time — and the editable
-				// lets the user switch and clears whichever it is not.
-				const fate = entity as { orbit?: string, date?: string, startTime?: string, calendar?: DeclarativeCalendar }
+				// A fate is orbit-only (PEP111): a recurrence, or a one-shot `Z{…}` literal the editable's bubble writes.
+				const fate = entity as { orbit?: string, calendar?: DeclarativeCalendar }
 				return html`<p7t-editable-schedule
-					shortOrbit
+					short
 					.calendar=${fate.calendar}
 					.orbit=${fate.orbit}
-					.date=${fate.date}
-					.time=${fate.startTime}
 					@schedulechange=${(e: CustomEvent<ScheduleValue>) => saveFateSchedule(entity, e.detail)}>
 				</p7t-editable-schedule>`
 			}

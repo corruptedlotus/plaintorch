@@ -213,7 +213,7 @@ namespace plaintorch.Vault.Database.Migrations
                     b.Property<string>("ObjectiveId")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime>("RecurrenceId")
+                    b.Property<DateTime?>("RecurrenceId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Resolution")
@@ -961,6 +961,9 @@ namespace plaintorch.Vault.Database.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("NextOccurrence")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TimeZone")
                         .HasColumnType("TEXT");
 
                     b.HasDiscriminator().HasValue("Declarative");

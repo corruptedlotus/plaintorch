@@ -87,6 +87,12 @@ public sealed class DeclarativeModule : Module
 		eventives.MapGet("/", async (string? fateId, string? objectiveId, IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListEventivesAsync(fateId, objectiveId, cancellationToken)));
 
+		eventives.MapPost("/", async (EventivePlan request, IDeclarativeApi api, CancellationToken cancellationToken) =>
+		{
+			var eventive = await api.CreateEventiveAsync(request, cancellationToken);
+			return Results.Created($"/api/eventives?fateId={Uri.EscapeDataString(request.FateId)}", eventive);
+		});
+
 		eventives.MapPut("/", async (EventiveUpdateRequest request, IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateEventiveAsync(request.Occurrence, request.Update, cancellationToken)));
 

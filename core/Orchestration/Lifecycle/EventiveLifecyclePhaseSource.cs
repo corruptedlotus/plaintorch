@@ -6,9 +6,10 @@ namespace Pleiades.Orchestration.Lifecycle;
 /// terminal <see cref="EventiveResolution"/> with its time window rather than reading a status enum.
 /// </summary>
 /// <remarks>
-/// The temporal comparison is naive (wall-clock UTC against the occurrence's date/time), matching the rest of
-/// the codebase's direct <see cref="DateTimeOffset.UtcNow"/> usage. Terminal resolutions give a deterministic
-/// finished signal independent of the clock.
+/// A timed occurrence anchored in a time zone is compared at the instant it names (<see cref="Epoch.Instant"/>). A
+/// floating one is compared naively (wall-clock UTC against the occurrence's date/time), matching the rest of the
+/// codebase's direct <see cref="DateTimeOffset.UtcNow"/> usage. Terminal resolutions give a deterministic finished
+/// signal independent of the clock.
 /// </remarks>
 public sealed class EventiveLifecyclePhaseSource : ILifecyclePhaseSource
 {
@@ -36,13 +37,17 @@ public sealed class EventiveLifecyclePhaseSource : ILifecyclePhaseSource
 
 	private static DateTimeOffset OccurrenceStart(Eventive eventive)
 	{
-		return new DateTimeOffset(eventive.Epoch.Moment, TimeSpan.Zero);
+		return eventive.Epoch.Instant ?? new DateTimeOffset(eventive.Epoch.Moment, TimeSpan.Zero);
 	}
 
 	private static DateTimeOffset OccurrenceEnd(Eventive eventive)
 	{
 		// The occurrence's end is its moment advanced by the duration, or by one granularity unit when it has
-		// no explicit span — so an all-day (day-granular) occurrence still finishes at the end of its day.
-		return new DateTimeOffset(eventive.Epoch.EndMoment, TimeSpan.Zero);
+		// no explicit span — so an all-day (day-granular) occurrence still finishes at the end of its day. An
+		// anchored one ends that span after the instant it names.
+		var epoch = eventive.Epoch;
+		return epoch.Instant is { } instant
+			? instant + (epoch.EndMoment - epoch.Moment)
+			: new DateTimeOffset(epoch.EndMoment, TimeSpan.Zero);
 	}
 }

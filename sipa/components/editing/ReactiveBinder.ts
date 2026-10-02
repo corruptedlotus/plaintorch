@@ -17,9 +17,11 @@ export class ReactiveBinder<T> extends Binder<T> {
 	}
 
 	override bind = (...[parameter]: BinderParameters<T>) => {
+		// The host is only known as a bind source here; the key names the property the binder was created for.
+		const host = this.host as ReactiveElement
 		const key = this.key as keyof ReactiveElement
 		const parameters = (typeof parameter === 'string' ? { keyPath: parameter } : parameter) as BindDirectiveParametersOptions<T>
-		return bind(this.host, key, this.getParameters(parameters) as unknown as BindDirectiveParametersOptions<ReactiveElement[keyof ReactiveElement]>)
+		return bind(host, key, this.getParameters(parameters) as unknown as BindDirectiveParametersOptions<ReactiveElement[keyof ReactiveElement]>)
 	}
 
 	protected override getParameters(parameters: BindDirectiveParametersOptions<T>) {

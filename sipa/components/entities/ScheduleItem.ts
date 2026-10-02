@@ -3,6 +3,7 @@ import { PleiadeanDate, type DeclarativeCalendar } from '@pleiades/sdk'
 import { humanizeOrbit } from '../../orbits'
 import { CalendarRef } from '../data/CalendarRef'
 import { InfoItem } from '../design/InfoItem'
+import { orbitTooltip } from './orbitTooltip'
 import { gregorianDateLabel } from '../system/PleiadeanDateView'
 import { localeTimeLabel } from '../system/TimeView'
 import '../system/PleiadeanDateView'
@@ -21,8 +22,9 @@ import '../system/TimeView'
  * calculator ({@link PleiadeanDate.fromISO}) so every surface agrees on the Pleiadean day. The orbit face is
  * length-aware: {@link max} caps its width with an ellipsis, the full reading staying in the tooltip.
  *
- * {@link EditableSchedule} extends this and overrides the three chip methods with their editable counterparts,
- * inheriting the mode logic, the calculator and the tooltips unchanged.
+ * The face carries the chip's tooltip ({@link tooltip}): for an orbit, its full reading over the raw notation
+ * ({@link orbitTooltip}), the one an orbit-born occurrence tips its source with too; for a date, the one Gregorian line.
+ * {@link EditableSchedule} extends this, keeping the face and its tooltip, and edits the orbit in a bubble.
  */
 @component('p7t-schedule-item')
 export class ScheduleItem extends InfoItem {
@@ -139,7 +141,7 @@ export class ScheduleItem extends InfoItem {
 	protected override get content() {
 		if (this.scheduleMode === 'orbit') {
 			return html`
-				<span class='schedule'>
+				<span class='schedule' ${this.tooltipDirective}>
 					<p7t-icon icon='lucide:repeat'></p7t-icon>
 					${this.orbitTemplate()}
 				</span>
@@ -148,7 +150,7 @@ export class ScheduleItem extends InfoItem {
 
 		if (this.scheduleMode === 'datetime') {
 			return html`
-				<span class='schedule'>
+				<span class='schedule' ${this.tooltipDirective}>
 					<p7t-icon icon='lucide:calendar-clock'></p7t-icon>
 					${this.dateTemplate()}
 					${this.timeTemplate()}
@@ -161,24 +163,7 @@ export class ScheduleItem extends InfoItem {
 
 	protected override get tooltip() {
 		if (this.scheduleMode === 'orbit') {
-			// The full humanized reading (never truncated) over the raw notation it stands for.
-			const { text, invalid } = humanizeOrbit(this.orbit, false, this.calendars.orbitCalendar)
-			return html`
-				<style>
-					.schedule-tip .tip-phrase { font-weight: 400; }
-					.schedule-tip .tip-raw {
-						display: block;
-						margin-block-start: .35em;
-						font-family: var(--font-monospace);
-						font-size: .9em;
-						opacity: .6;
-					}
-				</style>
-				<div class='schedule-tip'>
-					${!text || invalid ? nothing : html`<div class='tip-phrase'>${text}</div>`}
-					<code class='tip-raw'>${this.orbit}</code>
-				</div>
-			`
+			return orbitTooltip(this.orbit!, this.calendars.orbitCalendar)
 		}
 
 		if (this.scheduleMode === 'datetime') {

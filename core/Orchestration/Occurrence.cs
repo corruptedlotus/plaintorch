@@ -38,7 +38,20 @@ public abstract class Occurrence
 	/// set, so orbit dedup, the agenda projection, and dependency references resolve the same occurrence after it
 	/// moves. A civil (wall-clock) moment, like <see cref="Epoch.Moment"/>; an all-day slot sits at midnight.
 	/// </summary>
-	public DateTime RecurrenceId { get; set; }
+	/// <remarks>
+	/// <see langword="null"/> for a <b>manual</b> occurrence (see <see cref="IsManual"/>): one added by hand rather than
+	/// born of its owner's schedule. Like a standalone iCalendar instance it belongs to no recurrence set, so it has
+	/// no projected twin to dedup against and is addressed by its row <see cref="Id"/> alone. Only a fate's eventive
+	/// can be manual; a decree's attentive and an objective's due eventive always carry one.
+	/// </remarks>
+	public DateTime? RecurrenceId { get; set; }
+
+	/// <summary>
+	/// Gets whether the occurrence was added by hand rather than generated from its owner's schedule — it carries no
+	/// <see cref="RecurrenceId"/>. Server-computed.
+	/// </summary>
+	[NotMapped]
+	public bool IsManual => RecurrenceId is null;
 
 	/// <summary>
 	/// Gets the owning declarative's UID: the fate or objective id for an eventive, the decree id for an

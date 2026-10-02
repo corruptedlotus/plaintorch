@@ -3,6 +3,7 @@ import { EntityBanner } from './EntityBanner'
 import { Decree, DecreeStatus, DecreeUpdate, PolarisCycle } from '@pleiades/sdk'
 import { core, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, decreeStatusDescriptors } from ".."
 import { toast } from '../../host'
+import { declarativeResolutionStyles, declarativeResolutionTemplate, type DeclarativeResolutionUpdate } from './declarativeResolution'
 
 /**
  * Banner for a Decree declarative (PEP100). Decrees are enduring routines: the banner shows
@@ -86,6 +87,8 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		return css`
 			${super.styles}
 
+			${declarativeResolutionStyles}
+
 			:host {
 				padding-inline: 1.2em;
 			}
@@ -168,7 +171,15 @@ export class DecreeBanner extends EntityBanner<Decree> {
 			<div class='schedule'>
 				<p7t-editable-orbit .calendar=${this.entity?.calendar} ${this.binder.bind('orbit')}></p7t-editable-orbit>
 			</div>
+			${declarativeResolutionTemplate(this.entity!, update => void this.saveResolution(update))}
 		`
+	}
+
+	/** Persists a calendar or time zone chosen in the resolution row. */
+	private async saveResolution(update: DeclarativeResolutionUpdate) {
+		const entity = this.entity!
+		this.beginEntityEdit()
+		await this.commitEntityEdit(async () => await core.declaratives.updateDecree(entity.id, update))
 	}
 
 	protected override get actions() {

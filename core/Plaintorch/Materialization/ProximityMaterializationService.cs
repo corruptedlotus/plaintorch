@@ -136,14 +136,14 @@ public sealed class ProximityMaterializationService(
 		foreach (var fate in orbitFates)
 		{
 			var resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
-			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(fate, fate.Orbit!, localNow, cancellationToken))
+			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(fate, fate.Orbit!, now, cancellationToken))
 			{
 				created += await EnsureFateEventiveAsync(fate, occurrence, resolution, cancellationToken) ? 1 : 0;
 			}
 
 			// Advance the denormalized next occurrence as time passes; only touch the row when it actually rolls
 			// forward, so an idle tick writes nothing.
-			var next = await orbitService.ComputeNextOccurrenceAsync(fate, localNow, cancellationToken);
+			var next = await orbitService.ComputeNextOccurrenceAsync(fate, now, cancellationToken);
 			if (fate.NextOccurrence != next)
 			{
 				fate.NextOccurrence = next;
@@ -163,12 +163,12 @@ public sealed class ProximityMaterializationService(
 				continue;
 			}
 
-			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(decree, decree.Orbit!, localNow, cancellationToken))
+			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(decree, decree.Orbit!, now, cancellationToken))
 			{
 				created += await EnsureDecreeAttentiveAsync(decree, occurrence, cancellationToken) ? 1 : 0;
 			}
 
-			var next = await orbitService.ComputeNextOccurrenceAsync(decree, localNow, cancellationToken);
+			var next = await orbitService.ComputeNextOccurrenceAsync(decree, now, cancellationToken);
 			if (decree.NextOccurrence != next)
 			{
 				decree.NextOccurrence = next;
@@ -232,7 +232,7 @@ public sealed class ProximityMaterializationService(
 		var attentive = new Attentive
 		{
 			DecreeId = decree.Id,
-			Epoch = Epoch.For(occurrence),
+			Epoch = PlaintorchOrbitService.EpochOf(decree, occurrence),
 			RecurrenceId = slot,
 		};
 		context.Attentives.Add(attentive);
@@ -265,7 +265,7 @@ public sealed class ProximityMaterializationService(
 		var eventive = new Eventive
 		{
 			FateId = fate.Id,
-			Epoch = Epoch.For(occurrence),
+			Epoch = PlaintorchOrbitService.EpochOf(fate, occurrence),
 			RecurrenceId = slot,
 			Resolution = resolution,
 		};

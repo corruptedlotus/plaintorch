@@ -52,26 +52,28 @@ public static class InclusionWindow
 	/// <summary>
 	/// Determines whether an attentive collides with the inclusion window: an attentive with a duration — a
 	/// super-day period or a span — occupies [moment, moment + duration), a timed one its instant, and an all-day
-	/// one its whole day.
+	/// one its whole day. The window is on this host's clock, so the attentive is read there too
+	/// (<see cref="Epoch.LocalMoment"/>): a zoned one at the instant it names.
 	/// </summary>
 	public static bool AttentiveIntersects(Attentive attentive, DateTime windowStart, DateTime windowEnd)
 	{
 		ArgumentNullException.ThrowIfNull(attentive);
 		if (attentive.Epoch.Duration is not null)
 		{
-			return attentive.Epoch.EndMoment >= windowStart && attentive.Epoch.Moment < windowEnd;
+			return attentive.Epoch.LocalEndMoment >= windowStart && attentive.Epoch.LocalMoment < windowEnd;
 		}
 
-		return Intersects(attentive.Epoch.Date, attentive.Epoch.TimeOfDay, attentive.Epoch.TimeOfDay, windowStart, windowEnd);
+		return Intersects(attentive.Epoch.LocalDate, attentive.Epoch.LocalTimeOfDay, attentive.Epoch.LocalTimeOfDay, windowStart, windowEnd);
 	}
 
 	/// <summary>
-	/// Determines whether an eventive collides with the inclusion window, using its epoch: the occurrence spans
-	/// [moment, moment + duration) — an all-day occurrence's duration being its whole day.
+	/// Determines whether an eventive collides with the inclusion window, using its epoch on this host's clock: the
+	/// occurrence spans [moment, moment + duration) — an all-day occurrence's duration being its whole day, and a
+	/// zoned one's moment the instant it names.
 	/// </summary>
 	public static bool EventiveIntersects(Eventive eventive, DateTime windowStart, DateTime windowEnd)
 	{
 		ArgumentNullException.ThrowIfNull(eventive);
-		return eventive.Epoch.EndMoment >= windowStart && eventive.Epoch.Moment < windowEnd;
+		return eventive.Epoch.LocalEndMoment >= windowStart && eventive.Epoch.LocalMoment < windowEnd;
 	}
 }

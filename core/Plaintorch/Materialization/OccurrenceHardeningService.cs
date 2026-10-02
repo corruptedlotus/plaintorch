@@ -88,7 +88,7 @@ public sealed class OccurrenceHardeningService(
 		var attentive = new Attentive
 		{
 			DecreeId = decree.Id,
-			Epoch = occurrence is not null ? Epoch.For(occurrence) : Epoch.FromSlot(slot),
+			Epoch = occurrence is not null ? PlaintorchOrbitService.EpochOf(decree, occurrence) : Epoch.FromSlot(slot, PlaintorchOrbitService.ResolveTimeZone(decree)),
 			RecurrenceId = slot,
 		};
 		context.Attentives.Add(attentive);
@@ -171,7 +171,7 @@ public sealed class OccurrenceHardeningService(
 		var eventive = new Eventive
 		{
 			FateId = fate.Id,
-			Epoch = occurrence is not null ? Epoch.For(occurrence) : Epoch.FromSlot(slot),
+			Epoch = occurrence is not null ? PlaintorchOrbitService.EpochOf(fate, occurrence) : Epoch.FromSlot(slot, PlaintorchOrbitService.ResolveTimeZone(fate)),
 			RecurrenceId = slot,
 			Resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending,
 		};

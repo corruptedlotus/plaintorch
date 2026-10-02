@@ -89,6 +89,9 @@ const viewportClamp: FloatingMiddleware = {
  * `auto` popover it was raised from. Focus moves in on opening, to the element of the body marked `autofocus`, and goes
  * back where it was when it closes. Only one bubble is open at a time.
  *
+ * A popover raised from inside the body — a select's list, a picker — lives in a popover host outside the bubble, yet
+ * counts as part of it: a press in it dismisses nothing, and while one is open an Escape closes that one alone.
+ *
  * `data` is replaced, never mutated: the starting data is what a dismissal resolves with, so an edit bubble writes a
  * new value into {@link data} rather than changing the one it was handed.
  *
@@ -468,21 +471,42 @@ export abstract class InteractionBubbleBase<TData, TOptions extends InteractionB
 		this.anchorObserver.disconnect()
 	}
 
-	// A press on the anchor is left alone: its own click prompts again, which closes the bubble (see prompt).
+	// A press on the anchor is left alone: its own click prompts again, which closes the bubble (see prompt). So is one
+	// in a popover raised from inside the bubble, which the top layer hosts outside it.
 	private readonly onDocumentPointerDown = (event: PointerEvent) => {
 		const path = event.composedPath()
-		if (!path.includes(this) && !(this.anchor && path.includes(this.anchor))) {
+		if (!this.holds(path[0]) && !(this.anchor && path.includes(this.anchor))) {
 			this.dismiss()
 		}
 	}
 
 	// Taken before anything else hears it, so an Escape meant for the bubble does not also close a dialog around it.
+	// While a popover raised from inside the bubble is open, the Escape is that popover's: it closes only it.
 	private readonly onDocumentKeyDown = (event: KeyboardEvent) => {
-		if (event.key === 'Escape') {
+		if (event.key === 'Escape' && !this.raisedPopoverOpen) {
 			event.preventDefault()
 			event.stopPropagation()
 			this.dismiss()
 		}
+	}
+
+	/**
+	 * Whether a node is part of the bubble: inside it, or inside a popover raised from inside it — a select's list, a
+	 * picker — which lives in a popover host outside the bubble, so it is followed back to the anchor that raised it.
+	 */
+	private holds(node: EventTarget | null | undefined): boolean {
+		for (let current = node instanceof Node ? node : null; current; current = current !== this && current instanceof MoPopover && current.anchor ? current.anchor : composedParent(current)) {
+			if (current === this) {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	/** Whether a popover raised from inside the bubble is open now. */
+	private get raisedPopoverOpen(): boolean {
+		return openPopovers(document).some(popover => popover !== this && this.holds(popover))
 	}
 
 	private followAnchor() {
@@ -555,6 +579,22 @@ function composedParent(node: Node): Node | null {
 
 	const parent = node.parentNode
 	return parent instanceof ShadowRoot ? parent.host : parent
+}
+
+/** The open popovers under a root, looked for through open shadow roots. */
+function openPopovers(root: Document | ShadowRoot): HTMLElement[] {
+	const found: HTMLElement[] = []
+	for (const element of Array.from(root.querySelectorAll<HTMLElement>('*'))) {
+		if (element.matches(':popover-open')) {
+			found.push(element)
+		}
+
+		if (element.shadowRoot) {
+			found.push(...openPopovers(element.shadowRoot))
+		}
+	}
+
+	return found
 }
 
 /** The focused element, looked for through open shadow roots. */

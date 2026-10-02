@@ -653,13 +653,16 @@ public sealed class PolarisCycleApiService(
 		// while interacted/resolved ones carry their persisted state.
 		var projection = await projectionService.ProjectAsync(today, horizon, cancellationToken);
 
-		// Overdue pending attentives sit before the projected window (a direct query over hardened rows).
-		var overdueAttentives = await context.Attentives
+		// Overdue pending attentives sit before the projected window (a direct query over hardened rows). "Before today"
+		// is on this host's clock, so a zoned attentive is admitted a zone's reach early and decided by its local moment.
+		var overdueAttentives = (await context.Attentives
 			.AsNoTracking()
 			.Include(item => item.Decree)
-			.Where(item => item.Epoch.Moment < todayStart
+			.Where(item => item.Epoch.Moment < todayStart.AddDays(OccurrenceZones.ReachDays)
 				&& item.Resolution == AttentiveResolution.Pending)
-			.ToListAsync(cancellationToken);
+			.ToListAsync(cancellationToken))
+			.Where(item => item.Epoch.LocalMoment < todayStart)
+			.ToList();
 
 		// Recently-resolved attentives are retained for an hour regardless of their date, so they are fetched
 		// independently of the projection window. SQLite lacks reliable translated DateTimeOffset comparison, so the
@@ -670,19 +673,23 @@ public sealed class PolarisCycleApiService(
 			.Where(item => item.ResolvedOn != null)
 			.ToListAsync(cancellationToken);
 
+		// A pending period (week/month/year) attentive that began before today but still spans it is both overdue and
+		// projected — its period reaches into the window — so it is listed once, from the projection.
+		var projectedIds = projection.Attentives.Where(item => item.Id != 0).Select(item => item.Id).ToHashSet();
 		var attentives = projection.Attentives
-			.Concat(overdueAttentives)
+			.Concat(overdueAttentives.Where(item => !projectedIds.Contains(item.Id)))
 			.Where(item => item.Resolution == AttentiveResolution.Pending
-				&& item.Epoch.Date <= attentiveThrough)
+				&& item.Epoch.LocalDate <= attentiveThrough)
 			.Concat(recentlyResolved.Where(item => item.ResolvedOn >= resolvedSince && item.ResolvedOn <= now))
-			.OrderBy(item => item.Epoch.Moment)
+			.OrderBy(item => item.Epoch.LocalMoment)
 			.ToList();
 
+		// Days are this host's: a zoned eventive falls on the day its instant does here.
 		var eventives = projection.Eventives
 			.Where(item => item.Resolution == EventiveResolution.Pending
-				&& item.Epoch.Date >= today
-				&& item.Epoch.Date <= horizon)
-			.OrderBy(item => item.Epoch.Moment)
+				&& item.Epoch.LocalDate >= today
+				&& item.Epoch.LocalDate <= horizon)
+			.OrderBy(item => item.Epoch.LocalMoment)
 			.ToList();
 
 		return new PolarisAgenda(attentives, eventives);

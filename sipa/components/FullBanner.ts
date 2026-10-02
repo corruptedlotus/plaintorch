@@ -204,7 +204,12 @@ export class FullBanner extends Component {
 
 	/** A declarative's own calendar (PEP111), when the resolved entity is one that names it. */
 	private get declarativeCalendar(): DeclarativeCalendar | undefined {
-		return (this.entity as { calendar?: DeclarativeCalendar } | undefined)?.calendar
+		return (this.entity as { calendar?: DeclarativeCalendar | null } | undefined)?.calendar ?? undefined
+	}
+
+	/** A declarative's own time zone, when the resolved entity is one that names it. */
+	private get declarativeTimeZone(): string | undefined {
+		return (this.entity as { timeZone?: string | null } | undefined)?.timeZone ?? undefined
 	}
 
 	/** The special in-place editors an entity carries beneath its banner, handed the owner's PUCK (and a declarative its calendar). */
@@ -212,8 +217,8 @@ export class FullBanner extends Component {
 		switch (kind) {
 			case 'lunar-directive': return html`<p7t-timeframes-editor class='editor' .directiveId=${this.puck}></p7t-timeframes-editor>`
 			case 'onrush-sprint': return html`<p7t-onrush-orders class='editor' .onrushId=${this.puck}></p7t-onrush-orders>`
-			case 'fate': return html`<p7t-declarative-agenda class='editor' .fateId=${this.puck} .calendar=${this.declarativeCalendar}></p7t-declarative-agenda>`
-			case 'decree': return html`<p7t-declarative-agenda class='editor' .decreeId=${this.puck} .calendar=${this.declarativeCalendar}></p7t-declarative-agenda>`
+			case 'fate': return html`<p7t-declarative-agenda class='editor' .fateId=${this.puck} .calendar=${this.declarativeCalendar} .timeZone=${this.declarativeTimeZone}></p7t-declarative-agenda>`
+			case 'decree': return html`<p7t-declarative-agenda class='editor' .decreeId=${this.puck} .calendar=${this.declarativeCalendar} .timeZone=${this.declarativeTimeZone}></p7t-declarative-agenda>`
 			default: return nothing
 		}
 	}

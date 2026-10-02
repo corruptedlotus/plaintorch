@@ -369,6 +369,13 @@ public class PlainfraContext : DbContext
 		modelBuilder.Entity<Eventive>()
 			.OwnsOne(x => x.Epoch, epoch => epoch.Property(e => e.Granularity).HasConversion<string>());
 
+		// The RECURRENCE-ID is optional on the shared occurrence base only because a fate's eventive can be added by
+		// hand (a manual occurrence, outside any recurrence set). An attentive is always schedule-born, so its column
+		// stays required.
+		modelBuilder.Entity<Attentive>()
+			.Property(x => x.RecurrenceId)
+			.IsRequired();
+
 		// A deadline is an optional owned value: its Due_Moment/Due_TimeZone columns live on the owner's table and
 		// are all-null when there is no due.
 		modelBuilder.Entity<Objective>().OwnsOne(x => x.Due);

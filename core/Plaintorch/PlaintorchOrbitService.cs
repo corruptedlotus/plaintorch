@@ -52,6 +52,22 @@ public sealed class PlaintorchOrbitService(
 	}
 
 	/// <summary>
+	/// Resolves the time zone an incentive's orbit runs on: a declarative's own <see cref="Declarative.TimeZone"/>, or
+	/// <see langword="null"/> (floating). An orbit resolves civil times, so this is the clock they are meant on: every
+	/// occurrence it yields is stamped with it (<see cref="EpochOf"/>), and "now" is read on it wherever the orbit is
+	/// sought or counted from (<see cref="ClockOf"/>).
+	/// </summary>
+	public static string? ResolveTimeZone(Incentive incentive) => (incentive as Declarative)?.TimeZone;
+
+	/// <summary>Builds the epoch of one of an incentive's orbit occurrences, anchored in the zone its orbit runs on.</summary>
+	public static Epoch EpochOf(Incentive incentive, OrbitOccurrenceInstance occurrence)
+		=> Epoch.For(occurrence, ResolveTimeZone(incentive));
+
+	/// <summary>Reads an instant on the clock an incentive's orbit runs on: its zone's, or this host's when it floats.</summary>
+	public static DateTime ClockOf(Incentive incentive, DateTimeOffset instant)
+		=> OccurrenceZones.Clock(ResolveTimeZone(incentive), instant);
+
+	/// <summary>
 	/// Validates a fate orbit: it must parse. Fates may use any granularity, and span-format orbits
 	/// (<c>=&lt;dur&gt;</c>) are welcome — the span supplies the eventive length, so no duration override
 	/// is needed for orbit-based fates.
@@ -143,32 +159,34 @@ public sealed class PlaintorchOrbitService(
 
 	/// <summary>
 	/// SEEKING to an instant: resolves and consumes every pending occurrence of the declarative's orbit strictly
-	/// before <paramref name="endExclusive"/> (an instant, not a whole day), advancing and persisting the
-	/// schedule state. This is the harden-on-time catch-up — it hardens occurrences whose time has already
-	/// arrived without consuming the still-future occurrences of the same day.
+	/// before <paramref name="endExclusive"/> (an instant, not a whole day, read on the orbit's clock — see
+	/// <see cref="ClockOf"/>), advancing and persisting the schedule state. This is the harden-on-time catch-up — it
+	/// hardens occurrences whose time has already arrived without consuming the still-future occurrences of the same day.
 	/// </summary>
 	public async Task<IReadOnlyList<OrbitOccurrenceInstance>> SeekOccurrencesThroughInstantAsync(
-		Incentive incentive, string orbit, DateTime endExclusive, CancellationToken cancellationToken = default)
+		Incentive incentive, string orbit, DateTimeOffset endExclusive, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
-		var state = await GetOrCreateStateAsync(incentive, orbit, DateOnly.FromDateTime(DateTime.Today), cancellationToken);
-		var (occurrences, advanced) = OrbitDays.SeekOccurrencesThroughInstant(state.StateJson, endExclusive, ResolveCalendar(incentive));
+		var clock = ClockOf(incentive, endExclusive);
+		var state = await GetOrCreateStateAsync(incentive, orbit, DateOnly.FromDateTime(clock), cancellationToken);
+		var (occurrences, advanced) = OrbitDays.SeekOccurrencesThroughInstant(state.StateJson, clock, ResolveCalendar(incentive));
 		state.StateJson = advanced;
 		state.UpdatedUtc = DateTimeOffset.UtcNow;
 		return occurrences;
 	}
 
 	/// <summary>
-	/// FAST-FORWARD: advances and persists the declarative's schedule cursor to <paramref name="now"/> WITHOUT
-	/// emitting the occurrences it passes. This is the resume-from-pause seek (PEP100): re-activating a cancelled
-	/// fate or an abandoned decree picks generation up from now forward, so the occurrences that elapsed while it
-	/// was paused are skipped rather than back-filled by the next harden-on-time pass.
+	/// FAST-FORWARD: advances and persists the declarative's schedule cursor to <paramref name="now"/> (read on the
+	/// orbit's clock) WITHOUT emitting the occurrences it passes. This is the resume-from-pause seek (PEP100):
+	/// re-activating a cancelled fate or an abandoned decree picks generation up from now forward, so the occurrences
+	/// that elapsed while it was paused are skipped rather than back-filled by the next harden-on-time pass.
 	/// </summary>
-	public async Task FastForwardToNowAsync(Incentive incentive, string orbit, DateTime now, CancellationToken cancellationToken = default)
+	public async Task FastForwardToNowAsync(Incentive incentive, string orbit, DateTimeOffset now, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
-		var state = await GetOrCreateStateAsync(incentive, orbit, DateOnly.FromDateTime(DateTime.Today), cancellationToken);
-		var (_, advanced) = OrbitDays.SeekOccurrencesThroughInstant(state.StateJson, now, ResolveCalendar(incentive));
+		var clock = ClockOf(incentive, now);
+		var state = await GetOrCreateStateAsync(incentive, orbit, DateOnly.FromDateTime(clock), cancellationToken);
+		var (_, advanced) = OrbitDays.SeekOccurrencesThroughInstant(state.StateJson, clock, ResolveCalendar(incentive));
 		state.StateJson = advanced;
 		state.UpdatedUtc = DateTimeOffset.UtcNow;
 	}
@@ -198,30 +216,40 @@ public sealed class PlaintorchOrbitService(
 	}
 
 	/// <summary>
-	/// PREVIEW: the declarative's orbit occurrences whose period overlaps <c>[startInclusive, endExclusive)</c>,
-	/// resolved from the epoch without pushing the schedule state forward. A super-day occurrence whose period
-	/// began before the window is included, so weekly/monthly instances that merely span the window are caught.
+	/// PREVIEW: the declarative's orbit occurrences whose period overlaps the days <c>[startInclusive, endExclusive)</c>
+	/// on this host's clock, resolved from the epoch without pushing the schedule state forward. A super-day occurrence
+	/// whose period began before the window is included, so weekly/monthly instances that merely span the window are
+	/// caught.
 	/// </summary>
+	/// <remarks>
+	/// A zoned orbit's civil times are on its zone's clock, up to a day off this host's: its occurrences are resolved
+	/// <see cref="OccurrenceZones.ReachDays"/> either side of the window and a timed one is kept by the day its instant
+	/// falls on here (<see cref="Epoch.LocalDate"/>). A floating or all-day occurrence names its day wherever it is read.
+	/// </remarks>
 	public async Task<IReadOnlyList<OrbitOccurrenceInstance>> PreviewOccurrencesAsync(
 		Incentive incentive, string orbit, DateOnly startInclusive, DateOnly endExclusive, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
 		var today = DateOnly.FromDateTime(DateTime.Today);
+		var reach = OccurrenceZones.Find(ResolveTimeZone(incentive)) is null ? 0 : OccurrenceZones.ReachDays;
 		// Look back far enough that a super-day period starting earlier can still cover the window.
 		var lookbackStart = startInclusive.AddDays(-400);
 		var state = await GetOrCreateStateAsync(incentive, orbit, lookbackStart < today ? lookbackStart : today, cancellationToken);
-		return OrbitDays.PreviewOccurrencesWithin(state.StateJson, lookbackStart, endExclusive, ResolveCalendar(incentive))
-			.Where(occurrence => occurrence.Date < endExclusive && occurrence.PeriodEndExclusive > startInclusive)
+		return OrbitDays.PreviewOccurrencesWithin(state.StateJson, lookbackStart, endExclusive.AddDays(reach), ResolveCalendar(incentive))
+			.Where(occurrence => EpochOf(incentive, occurrence) is { Instant: not null } anchored
+				? anchored.LocalDate >= startInclusive && anchored.LocalDate < endExclusive
+				: occurrence.Date < endExclusive && occurrence.PeriodEndExclusive > startInclusive)
 			.ToList();
 	}
 
 	/// <summary>
-	/// Computes the declarative's next upcoming occurrence at or after <paramref name="from"/> from its persisted
-	/// schedule state, without advancing it — the value cached in <see cref="Declarative.NextOccurrence"/>. Returns
-	/// <see langword="null"/> when the declarative has no schedule state (unscheduled) or no occurrence within the
-	/// lookahead horizon. Sees a state added earlier in the current unit of work, so it is correct mid-save.
+	/// Computes the declarative's next upcoming occurrence at or after <paramref name="from"/> (read on the orbit's
+	/// clock) from its persisted schedule state, without advancing it — the value cached in
+	/// <see cref="Declarative.NextOccurrence"/>. Returns <see langword="null"/> when the declarative has no schedule state
+	/// (unscheduled) or no occurrence within the lookahead horizon. Sees a state added earlier in the current unit of
+	/// work, so it is correct mid-save.
 	/// </summary>
-	public async Task<DateTime?> ComputeNextOccurrenceAsync(Incentive incentive, DateTime from, CancellationToken cancellationToken = default)
+	public async Task<DateTime?> ComputeNextOccurrenceAsync(Incentive incentive, DateTimeOffset from, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
 		var tracked = context.ChangeTracker.Entries<IncentiveOrbitScheduleState>()
@@ -229,7 +257,7 @@ public sealed class PlaintorchOrbitService(
 				&& entry.Entity.IncentiveId == incentive.Id)?.Entity;
 		var state = tracked
 			?? await context.IncentiveOrbitScheduleStates.FirstOrDefaultAsync(item => item.IncentiveId == incentive.Id, cancellationToken);
-		return state is null ? null : OrbitDays.NextOccurrence(state.StateJson, from, ResolveCalendar(incentive));
+		return state is null ? null : OrbitDays.NextOccurrence(state.StateJson, ClockOf(incentive, from), ResolveCalendar(incentive));
 	}
 
 	/// <summary>

@@ -199,7 +199,7 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		Assert.Equal(0, persisted);
 
 		var agenda = await AgendaAsync();
-		Assert.Contains(agenda.Attentives, item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId) == new TimeOnly(21, 0));
+		Assert.Contains(agenda.Attentives, item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId!.Value) == new TimeOnly(21, 0));
 	}
 
 	[Fact]

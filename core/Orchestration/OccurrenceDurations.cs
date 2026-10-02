@@ -92,6 +92,18 @@ public static partial class OccurrenceDurations
 		_ => moment,
 	};
 
+	/// <summary>
+	/// Whether <paramref name="duration"/> is well-formed Orbit duration notation: one or more positive
+	/// <c>&lt;count&gt;&lt;unit&gt;</c> parts and nothing else (<c>"90m"</c>, <c>"1d6h"</c>, <c>"1M"</c>).
+	/// </summary>
+	public static bool IsValid(string? duration)
+		=> !string.IsNullOrWhiteSpace(duration)
+			&& WholeDuration().IsMatch(duration)
+			&& DurationPart().Matches(duration).All(part => int.TryParse(part.Groups[1].Value, out var count) && count > 0);
+
 	[GeneratedRegex(@"(\d+)([yMwdhms])")]
 	private static partial Regex DurationPart();
+
+	[GeneratedRegex(@"^(\d+[yMwdhms])+$")]
+	private static partial Regex WholeDuration();
 }
