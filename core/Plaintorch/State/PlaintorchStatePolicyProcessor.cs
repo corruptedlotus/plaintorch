@@ -2,9 +2,11 @@ using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Materialization;
+using Pleiades.Plaintorch.Preferences;
 using Pleiades.Puck;
 using Pleiades.Vault.Database;
 
@@ -21,18 +23,14 @@ namespace Pleiades.Plaintorch.State;
 /// </remarks>
 public sealed class PlaintorchStatePolicyProcessor(
 	DependencyReconciler dependencyReconciler,
+	IOptionsSnapshot<ReflectionPreferences> reflectionPreferences,
 	IServiceProvider serviceProvider)
 {
 	private const string ObjectiveSettlementDescriptionPrefix = "PLAINTORCH objective settlement";
 	private const string AttentiveExecutionDescriptionPrefix = "PLAINTORCH attentive execution";
 	private const string DecreeExecutionDescriptionPrefix = "PLAINTORCH decree execution";
+	private const string ReflectiveExecutionDescriptionPrefix = "PLAINTORCH reflective execution";
 	private const string ReflectiveCollectionDescriptionPrefix = "PLAINTORCH reflective collection";
-
-	/// <summary>
-	/// The fixed Celestron amount granted when all reflectives of a single Polaris cycle are done (PEP100).
-	/// The concrete amount is a placeholder until a proposal pins it down.
-	/// </summary>
-	public const decimal ReflectiveCollectionReward = 10;
 
 	/// <summary>
 	/// Applies all centralized state policies to the supplied context.
@@ -51,7 +49,8 @@ public sealed class PlaintorchStatePolicyProcessor(
 		await ApplyObjectiveSettlementRulesAsync(context, cancellationToken);
 		await ApplyAttentiveResolutionRulesAsync(context, cancellationToken);
 		await ApplyDecreeExecutiveRewardRulesAsync(context, cancellationToken);
-		await ApplyReflectiveCollectionRewardRulesAsync(context, cancellationToken);
+		await ApplyReflectiveDecreeRewardRulesAsync(context, cancellationToken);
+		await ApplyReflectiveCollectionRewardRulesAsync(context, reflectionPreferences.Value.DailyReward, cancellationToken);
 		await HardenReferencedOccurrencesAsync(context, cancellationToken);
 		await dependencyReconciler.ReconcileAsync(context, cancellationToken);
 
@@ -708,11 +707,73 @@ public sealed class PlaintorchStatePolicyProcessor(
 	}
 
 	/// <summary>
-	/// Applies the reflective collection reward (PEP100): reflectives ignore decree rewards; instead, once
-	/// all reflectives of a single Polaris cycle are done, the whole collection grants a fixed Celestron
-	/// amount. Un-executing a reflective revokes the cycle's collection reward.
+	/// Grants a decree-backed reflective's per-run Celestron reward (PEP104): executing a reflective generated from a
+	/// decree grants that decree's <see cref="Decree.ActiveCelestron"/>, on top of the cycle's collection reward, and
+	/// un-executing it revokes it. A reflective without a decree grants nothing here. Keyed by decree + cycle, since a
+	/// decree yields at most one reflective per cycle, so the ledger entry is stable and idempotent across re-saves.
 	/// </summary>
-	private static async Task ApplyReflectiveCollectionRewardRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	private static async Task ApplyReflectiveDecreeRewardRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var reflectiveEntries = context.ChangeTracker.Entries<Reflective>()
+			.Where(entry => entry.State is EntityState.Added or EntityState.Modified)
+			.ToList();
+		foreach (var entry in reflectiveEntries)
+		{
+			var current = entry.Entity;
+			if (string.IsNullOrWhiteSpace(current.DecreeId))
+			{
+				continue;
+			}
+
+			var wasExecuted = entry.State != EntityState.Added
+				&& entry.OriginalValues.GetValue<bool>(nameof(Reflective.Executed));
+			if (wasExecuted == current.Executed)
+			{
+				continue;
+			}
+
+			var reward = await context.Decrees
+				.AsNoTracking()
+				.IgnoreAutoIncludes()
+				.Where(item => item.Id == current.DecreeId)
+				.Select(item => item.ActiveCelestron)
+				.FirstOrDefaultAsync(cancellationToken);
+			if (reward == 0)
+			{
+				continue;
+			}
+
+			var description = $"{ReflectiveExecutionDescriptionPrefix} (cycle {current.PolarisCycleId})";
+			var existingTransactions = await context.CelestronLedger
+				.Where(item => item.SourcePuck == current.DecreeId && item.Description == description)
+				.ToListAsync(cancellationToken);
+
+			if (current.Executed)
+			{
+				if (existingTransactions.Count == 0)
+				{
+					context.CelestronLedger.Add(new CelestronTransaction
+					{
+						Amount = reward,
+						SourcePuck = current.DecreeId,
+						Description = description,
+					});
+				}
+			}
+			else if (existingTransactions.Count > 0)
+			{
+				context.CelestronLedger.RemoveRange(existingTransactions);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Applies the reflective collection reward (PEP100, PEP104): once all reflectives of a single Polaris cycle are
+	/// done, the whole collection grants <paramref name="dailyReward"/> Celestron
+	/// (<see cref="ReflectionPreferences.DailyReward"/>), once. Un-executing a reflective revokes the cycle's collection
+	/// reward. A reward of 0 or less grants nothing.
+	/// </summary>
+	private static async Task ApplyReflectiveCollectionRewardRulesAsync(PlainfraContext context, int dailyReward, CancellationToken cancellationToken)
 	{
 		var affectedCycleIds = context.ChangeTracker.Entries<Reflective>()
 			.Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
@@ -752,11 +813,11 @@ public sealed class PlaintorchStatePolicyProcessor(
 
 			if (allDone)
 			{
-				if (existingTransactions.Count == 0)
+				if (existingTransactions.Count == 0 && dailyReward > 0)
 				{
 					context.CelestronLedger.Add(new CelestronTransaction
 					{
-						Amount = ReflectiveCollectionReward,
+						Amount = dailyReward,
 						SourcePuck = cycleId,
 						Description = collectionDescription,
 					});

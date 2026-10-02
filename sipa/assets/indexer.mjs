@@ -21,6 +21,7 @@ assetFolders.forEach(folder => {
 	const files = fs.readdirSync(folderPath)
 	const svgFiles = files.filter(file => file.endsWith('.svg'))
 	const pngFiles = files.filter(file => file.endsWith('.png'))
+	const webpFiles = files.filter(file => file.endsWith('.webp'))
 	const indexPath = path.join(folderPath, 'index.ts')
 	let indexContent = '// @ts-nocheck\n'
 	let i = 0
@@ -36,6 +37,13 @@ assetFolders.forEach(folder => {
 		const name = path.basename(file, '.png')
 		const relativePath = `./${file}`
 		indexContent += exportTemplate(`${name}-png`, relativePath)
+		i++
+	})
+
+	webpFiles.forEach(file => {
+		const name = path.basename(file, '.webp')
+		const relativePath = `./${file}`
+		indexContent += exportTemplate(`${name}-webp`, relativePath)
 		i++
 	})
 

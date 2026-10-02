@@ -112,11 +112,6 @@ public interface IPolarisCycleApi
 	Task<Executive> AddDecreeExecutiveAsync(PolarisDecreeAdd request, string? polarisCycleId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Draws reflectives for a Polaris cycle.
-	/// </summary>
-	Task<IReadOnlyList<Reflective>> DrawReflectivesAsync(ReflectiveDrawRequest request, CancellationToken cancellationToken = default);
-
-	/// <summary>
 	/// Applies an update to a reflective record.
 	/// </summary>
 	Task<Reflective> UpdateReflectiveAsync(long reflectiveId, ReflectiveUpdate update, CancellationToken cancellationToken = default);

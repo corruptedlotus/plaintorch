@@ -52,9 +52,11 @@ public sealed class Decree : Declarative
 	public int ActiveCelestron { get; set; }
 
 	/// <summary>
-	/// Gets or sets a value indicating whether the decree participates in daily reflective generation.
-	/// Only meaningful for decrees living inside a Moonlight (lunar) directive hierarchy; the generation
-	/// engine itself belongs to PEP104.
+	/// Gets or sets a value indicating whether the decree participates in daily reflective generation (lunar
+	/// reflection, PEP100/PEP104). Only meaningful for decrees living inside a Moonlight (lunar) directive hierarchy,
+	/// and only while every lunar directive on that hierarchy is active. With an orbit, the decree yields a reflective
+	/// whenever its orbit resolves onto a beginning Polaris cycle's day; without one, it joins the pool that each cycle
+	/// draws its base number of daily reflectives from.
 	/// </summary>
 	[MarkdownField("reflect")]
 	public bool Reflect { get; set; }

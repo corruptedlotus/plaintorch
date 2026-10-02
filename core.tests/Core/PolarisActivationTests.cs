@@ -74,21 +74,6 @@ public sealed class PolarisActivationTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Drawing_reflectives_on_the_current_cycle_with_none_active_starts_one()
-	{
-		Assert.Equal(0, await CycleCountAsync());
-
-		var reflectives = await PolarisAsync(api => api.DrawReflectivesAsync(
-			new ReflectiveDrawRequest(Count: 1), TestContext.Current.CancellationToken));
-
-		Assert.Single(reflectives);
-		Assert.Equal(1, await CycleCountAsync());
-		var cycle = await SingleCycleAsync();
-		Assert.NotNull(cycle.StartTime);
-		Assert.Equal(cycle.Id, reflectives[0].PolarisCycleId);
-	}
-
-	[Fact]
 	public async Task Activating_a_cycle_supersedes_forecasts_on_or_before_its_date()
 	{
 		// Polaris ids are Pleiadean date stamps; the forecast-supersession cleanup parsed them as Gregorian and so was

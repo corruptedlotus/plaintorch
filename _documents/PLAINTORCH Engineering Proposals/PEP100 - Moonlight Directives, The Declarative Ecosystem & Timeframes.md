@@ -89,6 +89,8 @@ reflective when the cycle begins. The fuller generation engine (source pools, we
 synthesis) belongs to [[PEP104 - Reflective Generation Engine]].
 
 Reflectives are a special kind: they do not respect the reward of the decree that sets them. Instead, when all reflectives of a single Polaris cycle are done, that entire collection rewards the user with a fixed amount of Celestron.
+
+> Refined by [[PEP104 - Reflective Generation Engine]]. Generation pauses under an inactive lunar hierarchy. A cycle also draws a base number of orbit-less reflect-decrees. The collection reward is a preference. Decree-backed reflectives now grant their decree's per-run reward as well.
 ## Inclusion of Unbound Items
 A Polaris cycle still includes unbound (no-Polaris) items when they fall within 24h of its beginning. This inclusion is not structural: the cycle presents them alongside its own backlog, but does not relationally own them, and they stay unbound.
 # Timeframes

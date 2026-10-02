@@ -18,6 +18,7 @@
 		"typescript": "^5.9.3"
 	},
 	"dependencies": {
+		"@3mo/data-grid": "^0.38.5",
 		"@3mo/date-time": "^0.10.5",
 		"@3mo/date-time-fields": "^0.17.3",
 		"@3mo/focus-controller": "^1.2.1",

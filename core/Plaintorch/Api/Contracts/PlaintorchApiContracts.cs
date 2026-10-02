@@ -412,15 +412,6 @@ public sealed record ExecutiveUpdate(
 	string? MoveToPolarisCycleId = null);
 
 /// <summary>
-/// Represents the inputs used to draw reflectives for a Polaris cycle.
-/// </summary>
-public sealed record ReflectiveDrawRequest(
-	string? PolarisCycleId = null,
-	int Count = 1,
-	bool IncludeRoutine = true,
-	bool IncludeRandom = true);
-
-/// <summary>
 /// Represents a mutable update to a reflective record.
 /// </summary>
 public sealed record ReflectiveUpdate(

@@ -12,7 +12,6 @@ import type {
 	PolarisExecutivePlan,
 	PolarisExecutivePlanResult,
 	Reflective,
-	ReflectiveDrawRequest,
 	ReflectiveUpdate
 } from "./contracts"
 export class PlaintorchPolarisSdk {
@@ -107,22 +106,6 @@ export class PlaintorchPolarisSdk {
 				mode: 3,
 				objectiveId
 			})) !== undefined
-		)
-	}
-
-	public async drawReflectives(request: ReflectiveDrawRequest = {}): Promise<Reflective[]> {
-		return (await this.client.postForJson<Reflective[]>("/api/polaris/current/reflectives/draw", request)) ?? []
-	}
-
-	public async drawReflectivesForCycle(
-		polarisCycleId: string,
-		request: ReflectiveDrawRequest = {}
-	): Promise<Reflective[]> {
-		return (
-			(await this.client.postForJson<Reflective[]>(
-				`/api/polaris/${encodeURIComponent(polarisCycleId)}/reflectives/draw`,
-				request
-			)) ?? []
 		)
 	}
 

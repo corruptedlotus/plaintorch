@@ -25,6 +25,8 @@ public sealed class PolarisAgendaTests : VaultTestBase
 		// A lunar reflect decree yields a cycle-bound reflective on begin; its decree carries the lunar directive.
 		var lunar = await Vault.WithScopeAsync(s => s.GetRequiredService<IDirectiveApi>()
 			.CreateLunarAsync("Moon Law", cancellationToken: ct));
+		await Vault.WithScopeAsync(s => s.GetRequiredService<IDirectiveApi>()
+			.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Active), ct));
 		var lunarDecree = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
 			.CreateDecreeAsync(new DecreePlan("Evening reflection", DirectiveId: lunar.Id, Orbit: "d", Reflect: true), ct));
 

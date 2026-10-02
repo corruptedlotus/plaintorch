@@ -1,5 +1,11 @@
-import { Directive, Objective, typeNameOf, type FateUpdate } from '@pleiades/sdk'
-import { addObjectiveToPolaris, core, ExpandingAction, IconName, PromptTextModal, type ScheduleValue } from '..'
+import {
+	DecreeStatus, Directive, DirectiveStatus, FateStatus, LunarDirectiveStatus, Objective, ObjectiveStatus, typeNameOf,
+	type FateUpdate
+} from '@pleiades/sdk'
+import {
+	addObjectiveToPolaris, core, ExpandingAction, IconName, isArchivedStatus, isInactiveStatus, PromptTextModal,
+	type ScheduleValue, type Status
+} from '..'
 import { host, toast } from '../../host'
 import type { GridEntity } from './entityTree'
 
@@ -55,6 +61,45 @@ export function entityIcon(entity: GridEntity): IconName {
 
 export function entityKindLabel(kind: EntityKind): string {
 	return kindLabels[kind]
+}
+
+/**
+ * The descriptor name of an entity's workflow state.
+ *
+ * Every kind numbers its own state enum from zero, so the value alone is ambiguous — a directive's `2` is Active while
+ * an objective's is Onrush. The kind has to pick the enum.
+ */
+export function entityStatusName(entity: GridEntity): Status {
+	const status = (entity as { status?: number }).status ?? 0
+	switch (entityKindOf(entity)) {
+		case 'lunar-directive': return (LunarDirectiveStatus[status] ?? 'OnHold') as Status
+		case 'stellar-directive': return (DirectiveStatus[status] ?? 'Planned') as Status
+		case 'fate': return (FateStatus[status] ?? 'Active') as Status
+		case 'decree': return (DecreeStatus[status] ?? 'Active') as Status
+		default: return (ObjectiveStatus[status] ?? 'Standby') as Status
+	}
+}
+
+/** The runtime types {@link entityStatusName} can read a state off. */
+const statusedTypes = new Set(['StellarDirective', 'LunarDirective', 'Objective', 'Fate', 'Decree'])
+
+/**
+ * The state an entity is in, or `undefined` for a kind without one of these states (a checkpoint, an eventive). Told
+ * apart by runtime type first, since {@link entityKindOf} reads anything it does not know as an objective.
+ */
+function statusOf(entity: unknown): Status | undefined {
+	const typeName = typeNameOf(entity)
+	return typeName && statusedTypes.has(typeName) ? entityStatusName(entity as GridEntity) : undefined
+}
+
+/** Whether an entity is done with, one way or another, and so drawn dimmed (see {@link isInactiveStatus}). */
+export function isInactiveEntity(entity: unknown): boolean {
+	return isInactiveStatus(statusOf(entity))
+}
+
+/** Whether an entity is also put away, so the backlog hides it until a search asks for it (see {@link isArchivedStatus}). */
+export function isArchivedEntity(entity: unknown): boolean {
+	return isArchivedStatus(statusOf(entity))
 }
 
 /**

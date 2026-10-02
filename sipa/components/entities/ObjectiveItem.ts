@@ -1,7 +1,7 @@
 import { component, css, html, state } from "@a11d/lit"
 import { EntityItem } from "./EntityItem"
 import { Objective, ObjectiveStatus, OnrushSprint } from "@pleiades/sdk"
-import { core, objectiveStatusDescriptors, SelectStatusModal } from '..'
+import { core, isInactiveStatus, objectiveStatusDescriptors, SelectStatusModal, type Status } from '..'
 import { toast } from '../../host'
 
 @component('p7t-objective-item')
@@ -27,8 +27,9 @@ export class ObjectiveItem extends EntityItem<Objective> {
 		`
 	}
 
+	/** An objective done with — done, archived or failed — is drawn dimmed. */
 	override get disabled() {
-		return (this.entity?.status ?? 99) > ObjectiveStatus.Done
+		return this.entity !== undefined && isInactiveStatus(ObjectiveStatus[this.entity.status] as Status)
 	}
 
 	protected override async notchAction() {

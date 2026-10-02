@@ -1,6 +1,6 @@
 import { component, css, event, html, property, PropertyValues } from '@a11d/lit'
 import { DependencyEndpointKind, Directive, DirectiveStatus, ObjectiveStatus } from '@pleiades/sdk'
-import { EntityItem, IconName, statusDescriptors, tooltip } from '..'
+import { EntityItem, IconName, isInactiveEntity, statusDescriptors, tooltip } from '..'
 import type { CanvasEntity } from './graphModel'
 
 /** What each endpoint kind is drawn with, matching the icons the grid and banners already use. */
@@ -297,6 +297,15 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 		}
 
 		return kindIcons[this.kind]
+	}
+
+	/**
+	 * A node done with is dimmed, like any item — unless it is {@link finished}, which the card already shows in green.
+	 * So this dims the other terminal states: an archived or failed objective, a failed directive, a fate opted out of
+	 * or cancelled.
+	 */
+	override get disabled() {
+		return isInactiveEntity(this.entity) && !this.finished
 	}
 
 	/**
