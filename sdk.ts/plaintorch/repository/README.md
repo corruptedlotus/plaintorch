@@ -4,11 +4,13 @@ A single identity-keyed store of canonical entity instances, a typed repository 
 reactivity model that keeps every surface showing the same entity in sync — the frontend counterpart to the
 core's one-authority-many-observers boundary. Specified in `PEP106` and its `Patch106.1`.
 
-The core (this directory, `sdk.ts/plaintorch/repository/`) is framework-agnostic — plain TypeScript over the
-domain SDKs, no DOM, no lit. The **binding layer** — the `EntityRef` / `EntityWatch` / `QueryRef` lit
-controllers in `sipa/components/data/EntityRef.ts` — is what a component actually holds. If the system is
-ever extracted as a standalone library, the split is exactly that: this directory is the package, the
-controllers are a thin per-framework binding on top.
+The core (this directory, `sdk.ts/plaintorch/repository/`) is framework-agnostic and domain-agnostic — plain
+TypeScript, no DOM, no lit, and no import from outside the directory (a test in `policy.test.ts` enforces it).
+What PLAINTORCH tells it lives next door, in `sdk.ts/plaintorch/repos/`. The **binding layer** — the
+`EntityRef` / `EntityWatch` / `QueryRef` lit controllers in `sipa/components/data/EntityRef.ts` — is what a
+component actually holds. The system is being extracted as a standalone library
+(`_documents/Plan - Local Repo Separation.md`), and the split is exactly that: this directory is the package,
+`repos/` is one consumer's declarations, the controllers are a thin binding on top.
 
 ---
 
@@ -40,18 +42,24 @@ reference is looking at current state by construction; synchronizing them is jus
 - `DerivedRepository<T>` — cached views that aren't entities themselves (listings, the briefing, resolutions).
 - `EntityDraft<T>` — the fork-and-commit working copy.
 - `InvalidationScheduler` — declares what a change dirties and coalesces refreshes onto a microtask.
-- `PlaintorchChangeFeed` — carries core-originated writes (watcher, CLI, scheduler) back to the store.
-- `PlaintorchRepositories` — wires one repository per type, the derived records, invalidation, the feed, and
-  the eviction sweep.
+- `ChangeFeed` — turns a server-sent event stream into invalidations, carrying writes the frontend did not
+  make back to the store. Knows only a source (open a line stream) and a sink (what to invalidate).
+- `RepositorySet` — creates the repositories and owns what spans them: routing by type name, invalidation,
+  the feed's sink, and the eviction sweep. `set.entity(...)` and `set.derived(...)` are how a repository
+  comes to exist.
 - `identity.ts` / `absorption.ts` / `equivalence.ts` / `mutation.ts` — the primitives.
 - `policy.ts` — the `EntityPolicy` a store is built with: what an entity is, how a payload becomes a model,
   and which of a payload's fields merge.
+- `EntityStore.read` — the one call a client wraps around a request whose response is absorbed.
 
-**PLAINTORCH's declarations (`sdk.ts/plaintorch/`)**
-- `repositoryPolicy.ts` — the policy the client's store is built with (`identify`, the `@model` constructor
-  adapter, the unloaded-collection and unloaded-reference merge rules).
-- `repositoryDependents.ts` — the table the `InvalidationScheduler` is handed: what a change to each type
-  makes stale.
+**PLAINTORCH's declarations (`sdk.ts/plaintorch/repos/`)**
+- `policy.ts` — the policy the client's store is built with (`identify`, the `@model` constructor adapter,
+  the unloaded-collection and unloaded-reference merge rules).
+- `dependents.ts` — the table the `InvalidationScheduler` is handed: what a change to each type makes stale.
+- `changeFeed.ts` — `PlaintorchChangeFeed`, the feed pointed at the core's `/api/system/changes` stream
+  (watcher, CLI, scheduler writes).
+- `repositories.ts` — `PlaintorchRepositories`, a `RepositorySet` declaring one repository per PLAINTORCH
+  type and the derived records the UI observes. This is `core.repos`.
 
 **Binding layer (`sipa/components/data/EntityRef.ts`)**
 - `EntityRef<T>` — resolves an entity by id, subscribes, re-renders on change, releases on disconnect. Owns
@@ -65,7 +73,7 @@ reference is looking at current state by construction; synchronizing them is jus
 
 What counts as an entity is the store's **policy** — `new EntityStore({ identify, models?, mergeableKeys? })`.
 The files in this directory assume no shape of their own; `identifyByShape({ typeKey, idKey?, requires? })`
-builds an identifier for the common one. What follows is PLAINTORCH's policy (`repositoryPolicy.ts`).
+builds an identifier for the common one. What follows is PLAINTORCH's policy (`repos/policy.ts`).
 
 An entity is recognised **structurally**, not by a hard-coded list of type names: a runtime `@type` **plus a
 non-empty string `id` plus a string `title`**. Key is `` `${@type}:${id}` ``.
@@ -75,7 +83,8 @@ non-empty string `id` plus a string `title`**. Key is `` `${@type}:${id}` ``.
 - A child record keyed on a **number** (a dependency edge) is not an entity.
 - Recognising is structural; **constructing** the right class is gated on `@model` registration. A type
   identified but not `@model`-registered is absorbed as a prototype-less plain object — the failure mode that
-  once silently dropped every directive. `PlaintorchRepositories` asserts at construction that every routed
+  once silently dropped every directive. `RepositorySet.entity` refuses a type with no registered model, so
+  `PlaintorchRepositories` fails at construction unless every routed
   type is registered, so the two cannot drift (mirrors the core's `EntityTypeNameContractTests`).
 
 ---
@@ -236,11 +245,12 @@ halves (Patch106.1):
 
 - **Change-ledger prune** (automatic). `changedAt` grows one marker per locally edited entity. A marker at
   revision *r* only ever discards a response *issued before r*, so once no in-flight read predates it, it can
-  never drop a response again and is pruned. `beginRead`/`endRead` bracket every absorbing request; the oldest
+  never drop a response again and is pruned. `store.read` brackets every absorbing request (`beginRead` /
+  `endRead` underneath); the oldest
   in-flight read is the cutoff (a low-water mark). With nothing in flight, the ledger clears. The tempting
   shortcut — drop a marker as soon as any newer read lands — is unsafe: a slower *older* read would then
   revert the edit on arrival.
-- **Entity eviction** (`PlaintorchRepositories.sweep()`, on a periodic interval — `startEvictionSweep`).
+- **Entity eviction** (`RepositorySet.sweep()`, on a periodic interval — `startEvictionSweep`).
   Drops records nothing needs. The trap is the **canonical-instance guarantee**: derived caches hold their
   entities' instances for the cache's life, so eviction can't go by subscribers alone. The sweep keeps
   everything a resolved derived view reaches (walked with `collectEntityKeys`) plus what the store's own
@@ -271,9 +281,9 @@ Diagnostics: `store.recordCount`, `store.pendingChangeCount`, `store.inFlightRea
 - **A drifted type name renders blank, loudly.** A component asking for a type no repository serves warns once
   to the console rather than failing silently — check `entityTypeName` against the runtime `@type` the core
   emits.
-- **New listings must be eviction roots.** Every `DerivedRepository` must appear in `PlaintorchRepositories`'
-  private `records` getter (used for both revalidation and eviction roots). A listing left out would pin
-  entities the sweep can't see and evict them out from under it.
+- **Create repositories through the set.** `set.entity(...)` and `set.derived(...)` are what route a type and
+  make a listing a revalidation target and an eviction root. A `DerivedRepository` constructed by hand is
+  invisible to the sweep, which would evict the entities it holds out from under it.
 
 ---
 

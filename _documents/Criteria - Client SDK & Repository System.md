@@ -5,7 +5,7 @@ A living catalogue of what the TypeScript client SDK (`sdk.ts/`) — above all t
 **Status legend:** ✅ tested · ⏳ planned/pending · 🔲 not yet planned
 **Kind:** _happy_ (nominal), _edge_ (boundary/unusual input), _fault_ (must fail safely / reject)
 
-Tests live beside their subject as `plaintorch/**/*.test.ts` and run under **Vitest** (`npm test` in `sdk.ts`, i.e. `vitest run`). The reactive core is pure and in-memory, so a suite needs no core process, socket, or DOM — a real `EntityStore` and the fakes in `plaintorch/repository/test-utils.ts` (`makeEntity`, `flushMicrotasks`, `countingFetcher`, `recordingInvalidationTarget`) are the whole kit.
+Tests live beside their subject as `plaintorch/**/*.test.ts` — the generic repository system's under `plaintorch/repository/`, and those about what PLAINTORCH declares to it (its identifier, its merge rules, its dependents, its repositories) under `plaintorch/repos/` — and run under **Vitest** (`npm test` in `sdk.ts`, i.e. `vitest run`). The reactive core is pure and in-memory, so a suite needs no core process, socket, or DOM — a real `EntityStore` and the fakes in `plaintorch/repository/test-utils.ts` (`makeEntity`, `flushMicrotasks`, `countingFetcher`, `recordingInvalidationTarget`) are the whole kit.
 
 > **Toolchain note.** Vite 8's default transform is oxc, which does not apply the SDK's legacy `@model` registration decorators. `vitest.config.ts` therefore runs the project's own TypeScript through esbuild first (a `pre` plugin using `transformWithEsbuild`, which honours `experimentalDecorators`). `transformWithEsbuild` is deprecated in Vite 8; the long-term alternative is to convert the six `@model('X')` decorators to post-class `model('X')(Class)` calls (the form `directives/models.ts` already uses for its second registration), which every transformer handles natively and which would retire both the esbuild devDependency and the plugin.
 
@@ -26,10 +26,10 @@ The files under `repository/` assume no domain. A store is built with an `Entity
 | A payload absorbs as an instance of the class the policy constructs | happy | ✅ | `policy.test.ts` |
 | A draft of a type with no model class is still an isolated copy, prototype kept | fault | ✅ | `policy.test.ts` (alias-the-canonical guard) |
 | Default merge trusts every key; a policy withholds keys and is told which value is the root | happy/edge | ✅ | `policy.test.ts` |
-| No file under `repository/` imports `@a11d/api*` | fault | ✅ | `policy.test.ts` (separation guard) |
+| No file under `repository/` imports from outside the directory (suites may also import `vitest` and `node:`) | fault | ✅ | `policy.test.ts` (separation guard) |
 
 ## Identity — `identity.test.ts`
-PLAINTORCH's identifier (`repositoryPolicy.ts`), built on `identifyByShape`.
+PLAINTORCH's identifier (`repos/policy.ts`), built on `identifyByShape`; its suite is `repos/identity.test.ts`. The key helpers (`entityKey`, `typeNameFromKey`) stay in `repository/identity.test.ts`.
 
 | Behaviour / Invariant | Kind | Status | Test ref |
 |---|---|---|---|
@@ -77,7 +77,7 @@ PLAINTORCH's identifier (`repositoryPolicy.ts`), built on `identifyByShape`.
 | `beginWrite`/`endWrite`/`isWriting` guard + both-ends revision note | happy | ✅ | `entityStore.test.ts` |
 | `markStale` / `markAllStale` / unknown-reads-stale | happy/edge | ✅ | `entityStore.test.ts` |
 
-## Absorption — `absorption.test.ts`
+## Absorption — `repos/absorption.test.ts`
 | Behaviour / Invariant | Kind | Status | Test ref |
 |---|---|---|---|
 | A list response becomes constructed instances, not plain objects | happy | ✅ | `absorption.test.ts` (shallow-construct regression) |
@@ -88,7 +88,7 @@ PLAINTORCH's identifier (`repositoryPolicy.ts`), built on `identifyByShape`.
 | A nested `[null]`-holed array is withheld (IgnoreCycles hole) | fault | ✅ | `absorption.test.ts` |
 | A nested entity still merges its populated arrays and scalars | happy | ✅ | `absorption.test.ts` |
 
-## Navigation properties — `navigationProperties.test.ts`
+## Navigation properties — `repos/navigationProperties.test.ts`
 A null single-reference navigation (`directive`, `parentDirective`) is withheld unless the same payload also nulls its `<field>Id` — an id still set beside a null nav is incoherent, the signature of a nav that was not loaded rather than genuinely cleared. Closes the field-trial regressions where an objective update erased its directive and a directive banner lost its parent (while the tree, reading the scalar id, held).
 
 | Behaviour / Invariant | Kind | Status | Test ref |
@@ -145,8 +145,10 @@ The identity map is bounded by a reachability sweep. `collectEntityKeys` walks a
 | Keeps an entity with a write in flight | edge | ✅ | `eviction.test.ts` |
 | Keeps a subscribed placeholder; no choke on its undefined value | edge | ✅ | `eviction.test.ts` |
 | A held entity stays the same instance; an unheld one evicts and refetches fresh | fault | ✅ | `eviction.test.ts` (canonical-instance guard) |
-| `PlaintorchRepositories.sweep` keeps what a resolved listing holds, evicts the rest | happy | ✅ | `eviction.test.ts` |
-| `PlaintorchRepositories.sweep` keeps a subscribed entity absent from every listing | edge | ✅ | `eviction.test.ts` |
+| `RepositorySet.sweep` keeps what any resolved record holds, evicts the rest — every derived repository is a root | happy | ✅ | `repositorySet.test.ts` |
+| An unresolved or emptied record pins nothing | edge | ✅ | `repositorySet.test.ts` |
+| `PlaintorchRepositories.sweep` keeps what a resolved listing holds, evicts the rest | happy | ✅ | `repos/eviction.test.ts` |
+| `PlaintorchRepositories.sweep` keeps a subscribed entity absent from every listing | edge | ✅ | `repos/eviction.test.ts` |
 | Periodic sweep runs each interval; not before the first; stop halts it; start is idempotent | happy/edge | ✅ | `eviction.test.ts` |
 | A periodic tick actually evicts an unheld entity | happy | ✅ | `eviction.test.ts` |
 
@@ -163,7 +165,36 @@ The identity map is bounded by a reachability sweep. `collectEntityKeys` walks a
 | Work queued mid-flush drains on the same chain — no concurrent flush | fault | ✅ | `invalidation.test.ts` (nit regression) |
 | Relationship-creating writes cannot discover the new owner locally | edge | ⏳ | — (documented gap; feed-driven) |
 
-## Repository contract / drift guard — `contract.test.ts`
+## Repository set — `repositorySet.test.ts`
+`RepositorySet` is where a repository becomes known to everything that spans repositories. `PlaintorchRepositories` extends it and only declares which repositories exist.
+
+| Behaviour / Invariant | Kind | Status | Test ref |
+|---|---|---|---|
+| `entity` routes its type name; `forTypeName` is undefined for unknown / undefined | happy | ✅ | `repositorySet.test.ts` |
+| `entity` refuses a type the store's policy has no model for, naming it | fault | ✅ | `repositorySet.test.ts` |
+| A write through a set's repository revalidates the observed dependents the table names | happy | ✅ | `repositorySet.test.ts` |
+| A repository's own options (freshness) pass through | edge | ✅ | `repositorySet.test.ts` |
+| `revalidateEntityIfObserved` routes by key, splitting on the first colon only | edge | ✅ | `repositorySet.test.ts` |
+| A write revalidates observed records and leaves the rest stale | happy | ✅ | `repositorySet.test.ts` |
+| `invalidateAll` marks every entity and record stale without fetching | happy | ✅ | `repositorySet.test.ts` |
+| `revalidateObserved` refetches observed entities and records together | happy | ✅ | `repositorySet.test.ts` |
+| `acceptAuthority` gives up the local claim so an older response applies | edge | ✅ | `repositorySet.test.ts` |
+| As a change feed's sink: an event refetches an observed entity, a critical one over a local edit | happy | ✅ | `repositorySet.test.ts` |
+| Periodic sweep: each interval, not before the first, idempotent start, safe stop, a tick evicts | happy/edge | ✅ | `repositorySet.test.ts` |
+
+## Read bracketing — `read.test.ts`
+`EntityStore.read` is the one call a client wraps around a request whose response is absorbed; `PlaintorchCoreClient` runs every body-returning request through it (`coreClient.test.ts`).
+
+| Behaviour / Invariant | Kind | Status | Test ref |
+|---|---|---|---|
+| In flight for exactly the duration of the request | happy | ✅ | `read.test.ts` |
+| The parser absorbs to canonical instances, list responses element by element | happy | ✅ | `read.test.ts` |
+| A response for an identity changed while in flight is discarded | fault | ✅ | `read.test.ts` |
+| An authoritative read applies over such a change | edge | ✅ | `read.test.ts` |
+| The read closes when the request or the parse throws | fault | ✅ | `read.test.ts` |
+| The ledger prunes when the read settles, but not while an older read is in flight | fault | ✅ | `read.test.ts` |
+
+## Repository contract / drift guard — `repos/contract.test.ts`
 | Behaviour / Invariant | Kind | Status | Test ref |
 |---|---|---|---|
 | `PlaintorchRepositories` constructs — every routed type is `@model`-registered | fault | ✅ | `contract.test.ts` (mirrors core `EntityTypeNameContractTests`) |
@@ -172,7 +203,7 @@ The identity map is bounded by a reachability sweep. `collectEntityKeys` walks a
 
 ---
 
-## Tier 2 — repositories, drafts, feed, client (repositories done; drafts, feed and client planned)
+## Tier 2 — repositories, drafts, feed, client (the rest of `EntityDraft` still planned)
 | Behaviour / Invariant | Kind | Status | Test ref |
 |---|---|---|---|
 | `EntityRepository.get` serves fresh; refetches stale/expired; `force` bypass | happy/edge | ✅ | `entityRepository.test.ts` |
@@ -192,11 +223,15 @@ The identity map is bounded by a reachability sweep. `collectEntityKeys` walks a
 | A listing of the same canonical members in a fresh array notifies nobody; a membership change does | edge | ✅ | `derivedRepository.test.ts` |
 | `DerivedRepository` freshness / in-flight dedup / failed fetch not poisoning the key | happy/fault | ✅ | `derivedRepository.test.ts` |
 | `DerivedRepository` `invalidate` (one / all), `revalidateIfObserved`, `revalidateObserved`, `resolvedValues` | happy/edge | ✅ | `derivedRepository.test.ts` |
-| `ChangeFeed` `toLines` reassembly (split line, multi-line chunk, CRLF, partial) | edge | ⏳ | — |
-| `ChangeFeed.dispatch`: critical → acceptAuthority + invalidate; malformed ignored | happy/fault | ⏳ | — |
-| `ChangeFeed` reconnect backoff (doubling, capped, reset on good connection) | edge | ⏳ | — |
-| `coreClient` captures `issuedAt` before the request; reviver absorbs the response | happy | ⏳ | — |
-| `sendForSuccess` and the non-ok path consume the body | fault | ⏳ | — (socket-pin regression) |
+| `toLines` reassembly (split line, multi-line chunk, CRLF, trailing partial) | edge | ✅ | `internal/transport.test.ts` |
+| `ChangeFeed.dispatch`: critical → acceptAuthority + invalidate; malformed, comment and incomplete events ignored | happy/fault | ✅ | `changeFeed.test.ts` |
+| `ChangeFeed` resynchronises on every (re)connect; an absent or throwing source is not an error | happy/fault | ✅ | `changeFeed.test.ts` |
+| `ChangeFeed` `start` is idempotent; `stop` aborts the connection and ends reconnecting | edge | ✅ | `changeFeed.test.ts` |
+| `ChangeFeed` reconnect backoff (doubling, capped, reset on good connection) | edge | ✅ | `changeFeed.test.ts` |
+| `coreClient` opens the read before the request leaves; the response absorbs to the canonical instance | happy | ✅ | `coreClient.test.ts` |
+| `coreClient` discards a response superseded in flight; an authoritative read applies; the read closes on nothing / empty / refusal / throw | fault | ✅ | `coreClient.test.ts` |
+| A boolean write is not a read and consumes its body | fault | ✅ | `coreClient.test.ts` |
+| The non-ok path consumes the body | fault | ⏳ | — (socket-pin regression) |
 
 ## Tier 3 — transport integration (planned; real in-process socket/pipe)
 | Behaviour / Invariant | Kind | Status | Test ref |

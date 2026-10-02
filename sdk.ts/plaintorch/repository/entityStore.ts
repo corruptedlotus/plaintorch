@@ -1,6 +1,7 @@
 import { collectEntityKeys, typeNameFromKey, type EntityIdentifier, type EntityKey, type EntityTypeName } from "./identity"
 import { isEquivalent } from "./equivalence"
 import { resolvePolicy, type EntityPolicy, type ResolvedEntityPolicy } from "./policy"
+import { createAbsorbingReviver } from "./absorption"
 
 /** Notified when the canonical instance behind an identity changes. */
 export type EntitySubscriber = () => void
@@ -32,6 +33,12 @@ export interface AbsorptionContext {
 	 */
 	readonly authoritative?: boolean
 }
+
+/**
+ * Parses a response body into canonical instances, absorbing every entity in it under the read it was handed
+ * out for. See {@link EntityStore.read}.
+ */
+export type AbsorbingParser = <T>(text: string) => T
 
 /**
  * Holds exactly one canonical instance per entity identity.
@@ -241,6 +248,29 @@ export class EntityStore {
 		}
 
 		this.pruneSettledChanges()
+	}
+
+	/**
+	 * Runs one response-absorbing request as a read: opened before the request leaves, so a change made while
+	 * it is in flight supersedes it, and closed however it ends, so the change ledger can be pruned once this
+	 * response — and everything older — has settled.
+	 *
+	 * The request is handed the parser to read its response body with, which turns it into canonical instances
+	 * stamped with this read's revision. This is the whole of what a client owes the store for a GET, or for a
+	 * write that returns the updated entity; {@link beginRead} and {@link endRead} are what it is made of.
+	 *
+	 * @param context Marks the read authoritative, for a change the backend declares a client must not hold
+	 * off. Ordinary reads leave it unset and are discarded for any entity changed locally since they went out.
+	 */
+	public async read<T>(request: (parse: AbsorbingParser) => Promise<T>, context?: AbsorptionContext): Promise<T> {
+		const issuedAt = this.beginRead()
+		try {
+			const reviver = createAbsorbingReviver(this, { issuedAt, ...context })
+			return await request((text) => JSON.parse(text, reviver))
+		}
+		finally {
+			this.endRead(issuedAt)
+		}
 	}
 
 	/**

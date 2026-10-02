@@ -16,8 +16,9 @@ import { PlaintorchDependenciesSdk } from "./dependencies/dependenciesSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
 import { PlaintorchPreferencesSdk } from "./preferences/preferencesSdk"
 import { PlaintorchMediaSdk } from "./media/mediaSdk"
-import { createAbsorbingReviver, EntityStore, PlaintorchRepositories, type AbsorptionContext } from "./repository"
-import { plaintorchEntityPolicy } from "./repositoryPolicy"
+import { EntityStore, type AbsorptionContext } from "./repository"
+import { plaintorchEntityPolicy } from "./repos/policy"
+import { PlaintorchRepositories } from "./repos/repositories"
 
 
 export interface PlaintorchCoreClientOptions {
@@ -108,55 +109,15 @@ export class PlaintorchCoreClient {
 	 * out.
 	 */
 	public async getJson<T>(path: string, context?: AbsorptionContext): Promise<T | undefined> {
-		// Opened before the request leaves, so a change made while it is in flight supersedes it; closed in the
-		// finally so the store can prune the change ledger once this response — and everything older — settles.
-		const issuedAt = this.store.beginRead()
-		try {
-			return await this.readJsonResponse<T>(
-				await this.send({
-					method: "GET",
-					path
-				}),
-				{ issuedAt, ...context }
-			)
-		}
-		finally {
-			this.store.endRead(issuedAt)
-		}
+		return await this.sendForJson<T>({ method: "GET", path }, context)
 	}
 
 	public async postForJson<T>(path: string, body: unknown): Promise<T | undefined> {
-		const issuedAt = this.store.beginRead()
-		try {
-			return await this.readJsonResponse<T>(
-				await this.send({
-					method: "POST",
-					path,
-					body
-				}),
-				{ issuedAt }
-			)
-		}
-		finally {
-			this.store.endRead(issuedAt)
-		}
+		return await this.sendForJson<T>({ method: "POST", path, body })
 	}
 
 	public async putForJson<T>(path: string, body: unknown): Promise<T | undefined> {
-		const issuedAt = this.store.beginRead()
-		try {
-			return await this.readJsonResponse<T>(
-				await this.send({
-					method: "PUT",
-					path,
-					body
-				}),
-				{ issuedAt }
-			)
-		}
-		finally {
-			this.store.endRead(issuedAt)
-		}
+		return await this.sendForJson<T>({ method: "PUT", path, body })
 	}
 
 	public async delete(path: string): Promise<boolean> {
@@ -219,21 +180,20 @@ export class PlaintorchCoreClient {
 		return undefined
 	}
 
-	private async readJsonResponse<T>(
-		response: PlaintorchCoreResponse | undefined,
-		context?: AbsorptionContext
-	): Promise<T | undefined> {
-		if (!response) {
-			return undefined
-		}
+	/**
+	 * Sends a request whose response body is absorbed into the store — a GET, or a write that returns the
+	 * updated entity. The store runs it as a read, so a change made while it is in flight outranks it.
+	 */
+	private async sendForJson<T>(request: PlaintorchCoreRequest, context?: AbsorptionContext): Promise<T | undefined> {
+		return await this.store.read(async (parse) => {
+			const response = await this.send(request)
+			if (!response) {
+				return undefined
+			}
 
-		const payload = await response.text()
-		if (!payload || payload.trim().length === 0) {
-			return undefined
-		}
-
-		// A reviver per response, because whether it may overwrite local state depends on when it was issued.
-		return JSON.parse(payload, createAbsorbingReviver(this.store, context)) as T
+			const payload = await response.text()
+			return !payload || payload.trim().length === 0 ? undefined : parse<T>(payload)
+		}, context)
 	}
 
 	private async sendForSuccess(request: PlaintorchCoreRequest): Promise<boolean> {

@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest"
-import { plaintorchDependents } from "./repositoryDependents"
-import { plaintorchEntityPolicy } from "./repositoryPolicy"
-import { EntityStore } from "./repository/entityStore"
-import { InvalidationScheduler } from "./repository/invalidation"
-import { makeEntity, recordingInvalidationTarget } from "./repository/test-utils"
+import { plaintorchDependents } from "./dependents"
+import { plaintorchEntityPolicy } from "./policy"
+import { EntityStore } from "../repository/entityStore"
+import { InvalidationScheduler } from "../repository/invalidation"
+import { makeEntity, recordingInvalidationTarget } from "../repository/test-utils"
 
 // What a change to each PLAINTORCH entity makes stale. The scheduler's own mechanics are covered beside it;
 // this pins the table PLAINTORCH hands it.

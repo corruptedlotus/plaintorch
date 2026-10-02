@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
-import { EntityStore } from "./entityStore"
-import { plaintorchEntityPolicy } from "../repositoryPolicy"
-import { createAbsorbingReviver } from "./absorption"
+import { EntityStore } from "../repository/entityStore"
+import { plaintorchEntityPolicy } from "./policy"
+import { createAbsorbingReviver } from "../repository/absorption"
 // Imported for their @model registration side effect, so the reviver constructs real instances.
 import "../objectives/models"
 import "../directives/models"

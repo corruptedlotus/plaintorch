@@ -195,11 +195,24 @@ describe("EntityStore — which fields merge is the policy's", () => {
 })
 
 describe("the generic repository files", () => {
-	it("import nothing from @a11d/api — models reach the store through its policy", () => {
+	it("import nothing from outside this directory — the domain reaches them through policy and interfaces", () => {
 		const directory = dirname(fileURLToPath(import.meta.url))
-		const offenders = readdirSync(directory)
-			.filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
-			.filter((file) => /from\s+["']@a11d\/api/.test(readFileSync(join(directory, file), "utf8")))
+		// A sibling file, or what a suite runs on. Anything else — a parent directory, a package — is a
+		// dependency the library must not have.
+		const allowed = (specifier: string) =>
+			(specifier.startsWith("./") && !specifier.includes("..")) || specifier === "vitest" || specifier.startsWith("node:")
+
+		const offenders: string[] = []
+		for (const file of readdirSync(directory).filter((name) => name.endsWith(".ts"))) {
+			const source = readFileSync(join(directory, file), "utf8")
+			// A side-effect import, the closing line of a multi-line one, or a single-line import / re-export.
+			for (const match of source.matchAll(/^(?:\s*import\s+|\s*\}\s*from\s+|\s*(?:import|export)\s[^"'\n]*\sfrom\s+)["']([^"'\n]+)["']/gm)) {
+				const specifier = match[1]!
+				if (!allowed(specifier) || (!file.endsWith(".test.ts") && !specifier.startsWith("./"))) {
+					offenders.push(`${file} → ${specifier}`)
+				}
+			}
+		}
 
 		expect(offenders).toEqual([])
 	})

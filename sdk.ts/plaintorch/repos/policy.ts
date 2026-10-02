@@ -1,6 +1,6 @@
 import { ModelValueConstructor } from "@a11d/api-dotnet"
-import { identifyByShape, type EntityIdentifier } from "./repository/identity"
-import type { EntityPolicy, MergeableKeys, ModelConstructor } from "./repository/policy"
+import { identifyByShape, type EntityIdentifier } from "../repository/identity"
+import type { EntityPolicy, MergeableKeys, ModelConstructor } from "../repository/policy"
 
 // What the repository system has to be told about PLAINTORCH: what an entity looks like on the core's wire,
 // how a payload becomes one of the SDK's model classes, and which fields of a response the core means.

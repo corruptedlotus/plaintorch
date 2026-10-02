@@ -34,15 +34,15 @@ Everything PLAINTORCH-specific inside the generic files becomes a value handed i
 - [x] Guard: a test asserting no file under `repository/` imports `@a11d/api*`.
 
 # Stage 2 — Separate the composition
-*Size: medium. Behaviour-neutral.*
+*Size: medium. Behaviour-neutral. Done 2026-10-02.*
 
 The generic directory stops knowing that a PLAINTORCH client exists.
 
-- [ ] **Change feed.** A generic `ChangeFeed` over two small interfaces: a source (open a line stream) and a sink (invalidate one, invalidate all, revalidate observed, accept authority). The event parser is injectable; the default is today's JSON shape. `PlaintorchChangeFeed` becomes a thin declaration in the SDK carrying the `/api/system/changes` path.
-- [ ] **Repository set.** A generic base owning what `PlaintorchRepositories` does mechanically: type-name routing, `forTypeName`, the invalidation target, `sweep` and its timer, `invalidateAll`, `revalidateObserved`. Derived repositories are created through it, so each one is an eviction root automatically — this retires the "new listings must be added to `records`" gotcha. `PlaintorchRepositories` shrinks to its declarations.
-- [ ] **Read bracketing.** One store helper that opens a read, hands the caller an absorbing parser stamped with the right revision, and closes the read in a `finally`. The three hand-written copies in `coreClient.ts` collapse onto it, and an outside client has one call to get right instead of a protocol.
-- [ ] **Barrel split.** `repository/index.ts` exports only generic pieces. The PLAINTORCH composition (repositories, feed declaration, policy, dependents) moves up beside `coreClient.ts`; `plaintorch/index.ts` keeps exporting both, so no consumer import changes.
-- [ ] Guard: the stage-1 import test widens to "nothing under `repository/` imports from outside it".
+- [x] **Change feed.** A generic `ChangeFeed` over two small interfaces: a source (open a line stream) and a sink (invalidate one, invalidate all, revalidate observed, accept authority). The event parser is injectable; the default is today's JSON shape. `PlaintorchChangeFeed` becomes a thin declaration in the SDK carrying the `/api/system/changes` path.
+- [x] **Repository set.** A generic base owning what `PlaintorchRepositories` does mechanically: type-name routing, `forTypeName`, the invalidation target, `sweep` and its timer, `invalidateAll`, `revalidateObserved`. Derived repositories are created through it, so each one is an eviction root automatically — this retires the "new listings must be added to `records`" gotcha. `PlaintorchRepositories` shrinks to its declarations.
+- [x] **Read bracketing.** One store helper that opens a read, hands the caller an absorbing parser stamped with the right revision, and closes the read in a `finally`. The three hand-written copies in `coreClient.ts` collapse onto it, and an outside client has one call to get right instead of a protocol.
+- [x] **Barrel split.** `repository/index.ts` exports only generic pieces. The PLAINTORCH composition (repositories, feed declaration, policy, dependents) and the suites about it move to a folder of their own, `plaintorch/repos/` — named for the client's `repos`; `plaintorch/index.ts` keeps exporting both, so no consumer import changes.
+- [x] Guard: the stage-1 import test widens to "nothing under `repository/` imports from outside it".
 
 # Stage 3 — Close the behavioural gaps
 *Size: large. The only stage users can notice.*
@@ -64,8 +64,8 @@ Ordered so each fix rests on the one before it.
 *Size: medium.*
 
 - [ ] `EntityDraft`: prototype-correct copy, isolation before commit, diff against the fork baseline, rollback, spent-after-commit, the shallow caveat.
-- [ ] `ChangeFeed`: line reassembly, dispatch (critical, malformed, deleted), reconnect back-off under fake timers, reconnect marks everything stale.
-- [ ] Client wiring: revision captured before the request leaves, body always consumed, a throwing read still closes its bracket.
+- [x] `ChangeFeed`: line reassembly, dispatch (critical, malformed), reconnect back-off under fake timers, reconnect marks everything stale. *Written with stage 2, before the feed was made generic; the `Deleted` operation is tested when stage 3 gives it meaning.*
+- [x] Client wiring: revision captured before the request leaves, a boolean write's body consumed, a throwing read still closes its bracket. *Written with stage 2, before the bracketing moved into `store.read`. The non-ok path still does not consume its body — that stays open with the transport suite.*
 - [ ] Lit bindings under a DOM test environment: `EntityRef` lifecycle and edit cycle, `EntityWatch`, `QueryRef`, `DerivedRef`, and each of the not-loaded / loading / loaded / removed / failed states.
 - [ ] **The foreign-domain fixture** from *Goal* — the acceptance test for the whole effort, and the living example in the README.
 - [ ] [[Criteria - Client SDK & Repository System]] updated: Tier 2 rows flipped, new rows for the data states, removal, read outcomes and policy injection.
