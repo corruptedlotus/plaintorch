@@ -13,6 +13,14 @@ target runtime identifier) into `standalone/core-dist`, which electron-builder p
 is git-ignored and stays after the build; a development shell runs it only when the core has no build of its own, and
 warns when it does (see `standalone/README.md`).
 
+## File associations
+
+Both flavours register planning graph files (`.p7tpx`, `fileAssociations` in `electron-builder.yml`), so opening one
+from the file manager opens it in a planning window of the shell (see `standalone/README.md`, *Planning files*). On
+Windows the per-user install writes the ProgID `PLAINTORCH.PlanningGraph` ("PLAINTORCH Planning Graph") under
+`HKCU\Software\Classes`, whose open verb runs the app with the file's path, and the uninstaller removes it. The files
+take the app's icon; a `branding/p7tpx.ico` would give them one of their own. A development shell registers nothing.
+
 ## Updates
 
 `electron-builder.yml` configures electron-updater with a generic provider pointing at the update web repository.

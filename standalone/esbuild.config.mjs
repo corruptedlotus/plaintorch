@@ -59,7 +59,7 @@ const copyStaticPlugin = {
 	setup(build) {
 		build.onEnd(() => {
 			mkdirSync(outputDirectory, { recursive: true })
-			for (const page of ["splash.html", "status.html", "briefing.html"]) {
+			for (const page of ["splash.html", "status.html", "briefing.html", "planning.html"]) {
 				cpSync(path.join("src/renderer", page), path.join(outputDirectory, page))
 			}
 			cpSync("assets", path.join(outputDirectory, "assets"), { recursive: true })
@@ -126,6 +126,7 @@ const contexts = await Promise.all([
 		entryPoints: ["src/renderer/briefing.ts"],
 		outfile: `${outputDirectory}/briefing.js`
 	}),
+	
 	// The embedded fonts: one stylesheet every page links, its faces copied beside it rather than inlined, so a page
 	// fetches only the script subsets it draws.
 	esbuild.context({
@@ -136,6 +137,12 @@ const contexts = await Promise.all([
 		outfile: `${outputDirectory}/fonts.css`,
 		loader: { ".woff2": "file" },
 		assetNames: "assets/fonts/[name]-[hash]"
+	}),
+
+	esbuild.context({
+		...renderer,
+		entryPoints: ["src/renderer/planning.ts"],
+		outfile: `${outputDirectory}/planning.js`
 	})
 ])
 

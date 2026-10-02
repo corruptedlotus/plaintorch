@@ -102,15 +102,22 @@ export class WindowFrame extends Component {
 				grid-column: icon;
 			}
 
+			/* The title and whatever a page puts beside it, together in the centred column. */
+			.heading {
+				min-width: 0;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 8px;
+				grid-column: title;
+			}
+
 			.title {
 				min-width: 0;
 				overflow: hidden;
-				display: flex;
-				justify-content: center;
 				white-space: nowrap;
 				text-overflow: ellipsis;
 				letter-spacing: 0.04em;
-				grid-column: title;
 			}
 
 			:host([inactive]) .icon, :host([inactive]) .title, :host([inactive]) .control {
@@ -207,8 +214,10 @@ export class WindowFrame extends Component {
 		return html`
 			<header part="title-bar">
 				<img class="icon" part="icon" src=${mark} alt="">
-				<span class="title" part="title">${this.heading ?? document.title}</span>
-				<slot name="title-bar"></slot>
+				<div class="heading">
+					<span class="title" part="title">${this.heading ?? document.title}</span>
+					<slot name="title-bar"></slot>
+				</div>
 				${this.platform === "darwin" ? nothing : this.controlsTemplate}
 			</header>
 			<main part="content">

@@ -2,6 +2,7 @@ import { addIcon, Notice, Plugin, type WorkspaceLeaf } from "obsidian"
 import { PlaintorchBriefingView, PLAINTORCH_BRIEFING_VIEW_TYPE } from "./briefing/PlaintorchBriefingView"
 import { PlaintorchCanvasView, PLAINTORCH_CANVAS_VIEW_TYPE } from "./canvas/PlaintorchCanvasView"
 import { PlaintorchGlobalFileView, PLAINTORCH_GLOBAL_VIEW_TYPE } from "./canvas/PlaintorchGlobalFileView"
+import { PlaintorchPlanningView, PLAINTORCH_PLANNING_VIEW_TYPE } from "./canvas/PlaintorchPlanningView"
 import { PageBannerRenderer } from "./banner/PageBannerRenderer"
 
 import '@pleiades/sipa'
@@ -73,6 +74,12 @@ export default class PlaintorchObsidianPlugin extends Plugin {
 			(leaf: WorkspaceLeaf) => new PlaintorchGlobalFileView(leaf)
 		)
 		this.registerExtensions([GLOBAL_CONTEXT_EXTENSION], PLAINTORCH_GLOBAL_VIEW_TYPE)
+
+		// A canvas context popped out into a tab of its own: an onrush, or a global context not saved to a file yet.
+		this.registerView(
+			PLAINTORCH_PLANNING_VIEW_TYPE,
+			(leaf: WorkspaceLeaf) => new PlaintorchPlanningView(leaf)
+		)
 
 		// Core/watcher health indicator: a status-bar dot + hover tooltip listing active statuses (PEP108).
 		this.addStatusBarItem().appendChild(document.createElement("p7t-watcher-status"))
