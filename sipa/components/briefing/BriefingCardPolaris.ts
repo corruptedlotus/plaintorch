@@ -59,6 +59,12 @@ export class BriefingCardPolaris extends PolarisBriefingBase {
 				line-height: 1;
 			}
 
+			/* A planned cycle has no time to show yet: its state, faint, where the timer will run. */
+			.heading-line .unbegun {
+				color: var(--text-muted);
+				font-weight: 300;
+			}
+
 			.group-header {
 				display: flex;
 				align-items: center;
@@ -128,7 +134,9 @@ export class BriefingCardPolaris extends PolarisBriefingBase {
 	override get headingTemplate() {
 		return html`
 			<span class='heading-line'>
-				${!this.begun ? html`<span>Not yet begun</span>` : html`<p7t-elapsed-view .epoch=${this.data!.startTime}></p7t-elapsed-view>`}
+				${!this.begun
+					? html`<span class='unbegun'>Not Started</span>`
+					: html`<p7t-elapsed-view .epoch=${this.data!.startTime}></p7t-elapsed-view>`}
 				<p7t-active-timeframes></p7t-active-timeframes>
 			</span>
 		`
@@ -174,7 +182,7 @@ export class BriefingCardPolaris extends PolarisBriefingBase {
 			></p7t-value-progress>
 			${this.begun
 				? html`<p7t-button @click=${(e: Event) => this.conclude(e)}>Conclude</p7t-button>`
-				: html`<p7t-button @click=${() => this.beginPlanned()}>Begin</p7t-button>`}
+				: html`<p7t-button icon='polaris' @click=${() => void this.beginPlanned()}>Begin</p7t-button>`}
 		`
 	}
 
@@ -190,16 +198,29 @@ export class BriefingCardPolaris extends PolarisBriefingBase {
 		void core.repos.briefing.revalidateIfObserved()
 	}
 
-	private begin() {
+	/**
+	 * Starts the day's cycle. A cycle's id is its day, so once today's has concluded there is none to start: the core
+	 * hands the concluded one back, which the card must not take up as if it ran again.
+	 */
+	private async begin() {
 		if (this.data) return
-		core.polaris.startNew().then(polaris => this.data = polaris)
+		const polaris = await core.polaris.startNew()
+		if (polaris?.startTime && !polaris.endTime) {
+			this.data = polaris
+		}
+		else if (polaris?.endTime) {
+			toast("Today's Polaris cycle has already concluded. The next one begins tomorrow.", 'info')
+		}
 	}
 
-	/** Begins the day's planned cycle in place — what it holds is the day's plan, and it now runs. */
+	/**
+	 * Begins the day's planned cycle in place — what it holds is the day's plan, and it now runs. Its id is its day, so
+	 * a new cycle would collide; the begin goes through the repository so the canonical instance updates with it.
+	 */
 	private async beginPlanned() {
 		const cycle = this.data
 		if (!cycle || this.begun) return
-		const begun = await core.polaris.beginCycle(cycle.id)
+		const begun = await core.repos.polaris.mutate(cycle.id, () => core.polaris.beginCycle(cycle.id))
 		if (!begun) {
 			toast(`PLAINTORCH could not begin ${cycle.title}.`, 'error')
 			return
@@ -211,7 +232,7 @@ export class BriefingCardPolaris extends PolarisBriefingBase {
 
 	/** Concludes the running cycle now, once confirmed beside the button. */
 	private async conclude(e: Event) {
-		if (!this.data) return
+		if (!this.data || !this.begun) return
 		if (!await confirmAction(e, concludeConfirmation(`Conclude "${this.data.title}"? It ends now.`)) || !this.data) return
 		core.polaris.end(new Date().toISOString()).then(polaris => {
 			if (!!polaris) {

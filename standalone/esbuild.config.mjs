@@ -125,6 +125,17 @@ const contexts = await Promise.all([
 		...renderer,
 		entryPoints: ["src/renderer/briefing.ts"],
 		outfile: `${outputDirectory}/briefing.js`
+	}),
+	// The embedded fonts: one stylesheet every page links, its faces copied beside it rather than inlined, so a page
+	// fetches only the script subsets it draws.
+	esbuild.context({
+		bundle: true,
+		minify: production,
+		logLevel: "info",
+		entryPoints: ["src/renderer/fonts.css"],
+		outfile: `${outputDirectory}/fonts.css`,
+		loader: { ".woff2": "file" },
+		assetNames: "assets/fonts/[name]-[hash]"
 	})
 ])
 

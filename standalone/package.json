@@ -15,6 +15,9 @@
 		"make-icons": "electron scripts/make-icons.mjs"
 	},
 	"devDependencies": {
+		"@fontsource-variable/cascadia-code": "^5.3.0",
+		"@fontsource-variable/outfit": "^5.3.0",
+		"@fontsource-variable/space-grotesk": "^5.3.0",
 		"@pleiades/sdk": "file:../sdk.ts",
 		"@pleiades/sipa": "file:../sipa",
 		"@types/node": "^22.15.17",

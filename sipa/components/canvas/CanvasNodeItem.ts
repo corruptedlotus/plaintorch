@@ -43,8 +43,10 @@ export type NodeLock = 'none' | 'blocked' | 'raced'
  * An entity item with the affordances a graph needs rather than a component of its own: the card, the notch,
  * the title and — through the base's own {@link EntityItem} watch — the reactivity that makes a node follow
  * an edit made in a banner or the grid, all come from the derivation. What is added here is what a canvas
- * requires and a list does not: the two connection handles an edge is drawn from, and the states a node can
- * be in while the graph is being edited around it.
+ * requires and a list does not: the two connection handles an edge is drawn from, and the states a node can be in
+ * while the graph is being edited around it. Both handles draw an edge *out of* the node: the leading one is its
+ * out-pin, and the trailing one — where incoming edges arrive — works as a rear out-pin, so an edge can be pulled
+ * from whichever side faces the node it should reach.
  */
 @component('p7t-canvas-node')
 export class CanvasNodeItem extends EntityItem<CanvasEntity> {
@@ -163,6 +165,7 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 				transition: opacity .2s ease, background-color .2s ease;
 				touch-action: none;
 				z-index: 2;
+				cursor: crosshair;
 			}
 
 			.handle-in {
@@ -171,7 +174,6 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 
 			.handle-out {
 				inset-inline-end: -.4em;
-				cursor: crosshair;
 			}
 
 			:host(:hover) .handle,
@@ -180,7 +182,7 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 				opacity: 1;
 			}
 
-			.handle-out:hover {
+			.handle:hover {
 				background-color: var(--p7t-flare-accent, var(--interactive-accent));
 			}
 
@@ -229,7 +231,11 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 
 	protected override get template() {
 		return html`
-			<div class='handle handle-in' part='handle-in'></div>
+			<div
+				class='handle handle-in'
+				part='handle-in'
+				@pointerdown=${(e: PointerEvent) => this.onLinkStart(e)}>
+			</div>
 			${super.template}
 			<div
 				class='handle handle-out'
@@ -337,6 +343,7 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 		this.toggleAttribute('finished', this.finished)
 	}
 
+	/** Either pin starts an edge out of this node; the canvas draws it to wherever it is dropped. */
 	private onLinkStart(e: PointerEvent) {
 		// The handle owns this gesture outright: letting it reach the card would start a node drag underneath.
 		e.preventDefault()

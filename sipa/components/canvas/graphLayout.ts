@@ -180,6 +180,26 @@ export function sideAnchor(box: NodeBox, side: Side): Point {
 	}
 }
 
+/** Which way an edge runs at the side it meets: leaving the box by it, or arriving at the box through it. */
+export type EdgeRole = 'out' | 'in'
+
+/** How far apart, along a side, the edges leaving it and the edges arriving at it converge. */
+export const convergenceGap = 12
+
+/**
+ * Where the edges of one role meet a side: either side of its middle, {@link convergenceGap} apart — the
+ * leaving edges before the middle (above it on a left or right side, left of it on a top or bottom side), the
+ * arriving ones after it. Kept apart so a side both sending and receiving edges shows two bundles, not one knot
+ * whose direction cannot be read.
+ */
+export function convergencePoint(box: NodeBox, side: Side, role: EdgeRole): Point {
+	const middle = sideAnchor(box, side)
+	const offset = (role === 'out' ? -1 : 1) * convergenceGap / 2
+	return side === 'left' || side === 'right'
+		? { x: middle.x, y: middle.y + offset }
+		: { x: middle.x + offset, y: middle.y }
+}
+
 function centre(box: NodeBox): Point {
 	return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
 }
@@ -275,7 +295,7 @@ export interface EdgeEnds {
  */
 export function edgeEnds(source: NodeBox, target: NodeBox): EdgeEnds {
 	const [fromSide, toSide] = chooseSides(source, faceMidpoint(target, source))
-	return { from: sideAnchor(source, fromSide), fromSide, to: sideAnchor(target, toSide), toSide }
+	return { from: convergencePoint(source, fromSide, 'out'), fromSide, to: convergencePoint(target, toSide, 'in'), toSide }
 }
 
 function chooseSides(origin: NodeBox, aim: Point): [Side, Side] {
@@ -348,5 +368,5 @@ export function edgeMidpoint(from: Point, fromSide: Side, to: Point, toSide: Sid
 export function linkCurve(source: NodeBox, pointer: Point): string {
 	// The pointer is a point, not a box: it is its own face midpoint, and the sides are chosen as for a target.
 	const [fromSide, toSide] = chooseSides(source, pointer)
-	return edgeCurve(sideAnchor(source, fromSide), fromSide, pointer, toSide)
+	return edgeCurve(convergencePoint(source, fromSide, 'out'), fromSide, pointer, toSide)
 }

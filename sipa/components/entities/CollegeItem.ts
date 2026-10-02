@@ -55,7 +55,7 @@ export class CollegeItem extends InfoItem {
 	/** `badge` is a pill with no glyph — its own shape — so it steps outside the shared icon-text layout. */
 	protected override get content() {
 		if (this.mode === 'badge') {
-			return html`<span class='badge'>${this.descriptor.fullName}</span>`
+			return html`<span class='badge' ${this.tooltipAttachment}>${this.descriptor.fullName}</span>`
 		}
 
 		return super.content

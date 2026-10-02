@@ -22,6 +22,7 @@ namespace Pleiades.Tests.Core;
 /// Without the guard <c>Migrate</c> applied nothing, the core reported <c>Active</c>, and every query touching a changed
 /// table then failed (a missing column on every save, via the dependency reconciler).
 /// </summary>
+[Collection(CoordinatorEnvironmentCollection.Name)]
 public sealed class DatabaseAheadOfCoreTests : VaultTestBase
 {
 	private const string UnknownMigration = "20991231235959_FromANewerCore";

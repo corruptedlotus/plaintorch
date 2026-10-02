@@ -53,6 +53,8 @@ interface NodeSize {
 
 const minimumScale = 0.3
 const maximumScale = 2.5
+/** The margin a framed graph keeps from the viewport's edges, in screen pixels. */
+const framePadding = 48
 /** How far a pointer must travel before it is a drag rather than an unsteady click. */
 const dragThreshold = 3
 /**
@@ -167,6 +169,10 @@ export class DependencyCanvas extends Component {
 	 * ducking away and giving the canvas its height.
 	 */
 	private framedView?: { readonly pan: Point, readonly scale: number }
+	/**
+	 * Watches the viewport's own size: a canvas that could not frame yet (its viewport had no size) frames once it can,
+	 * and a framed one follows the viewport as long as nobody has panned or zoomed.
+	 */
 	private viewportObserver?: ResizeObserver
 	/** The viewport element the observer is watching. */
 	private observedViewport?: HTMLElement
@@ -445,10 +451,10 @@ export class DependencyCanvas extends Component {
 		this.storeSubscription = undefined
 		this.resizeObserver?.disconnect()
 		this.resizeObserver = undefined
-		this.observedSignature = undefined
 		this.viewportObserver?.disconnect()
 		this.viewportObserver = undefined
 		this.observedViewport = undefined
+		this.observedSignature = undefined
 		this.livePointers.clear()
 		window.clearTimeout(this.layoutSaveTimer)
 	}
@@ -1284,9 +1290,12 @@ export class DependencyCanvas extends Component {
 		const pending = [start]
 		while (pending.length > 0) {
 			const current = pending.pop()!
-			if (!group.add(current)) {
+			// Tested before it is added: `Set.add` returns the set, and every edge here runs both ways.
+			if (group.has(current)) {
 				continue
 			}
+
+			group.add(current)
 
 			pending.push(...adjacency.get(current) ?? [])
 		}
@@ -1780,11 +1789,10 @@ export class DependencyCanvas extends Component {
 			this.viewportObserver.observe(this.viewportElement)
 		}
 
-		// Framed once, when there is finally something to frame, and never again — refitting on every change
-		// would move the graph out from under someone reading it.
-		if (!this.framed && this.layoutCache && this.layoutCache.layout.nodes.size > 0 && this.viewportElement) {
-			this.framed = true
-			this.frame(this.layoutCache.layout)
+		// Framed once, when there is finally something to frame and somewhere to frame it, and never again —
+		// refitting on every change would move the graph out from under someone reading it.
+		if (!this.framed && this.layoutCache && this.layoutCache.layout.nodes.size > 0) {
+			this.framed = this.frame(this.layoutCache.layout)
 		}
 	}
 
@@ -1903,24 +1911,51 @@ export class DependencyCanvas extends Component {
 		this.contextChanged.dispatch({ pinned: this.pinned, layout: serializePositions(this.overrides) })
 	}
 
-	/** Centres the graph and zooms out far enough to hold it, never past life size. */
-	private frame(layout: CanvasLayout) {
+	/**
+	 * Centres the nodes and zooms out far enough to hold them, never past life size.
+	 *
+	 * Fitted to the nodes where they actually are — dragged or saved positions and measured sizes — not to the
+	 * layout's own box, which starts at the origin wherever the reader has since moved the graph. Resolves whether
+	 * it could: a viewport not laid out yet (a hidden tab, a view still opening) has nothing to fit into, and the
+	 * canvas frames again once it has a size.
+	 */
+	private frame(layout: CanvasLayout): boolean {
 		const rect = this.viewportElement?.getBoundingClientRect()
-		if (!rect || layout.width === 0 || layout.height === 0) {
+		const boxes = [...this.boxesFor(layout).values()]
+		if (!rect || rect.width === 0 || rect.height === 0 || boxes.length === 0) {
+			return false
+		}
+
+		const left = Math.min(...boxes.map(box => box.x))
+		const top = Math.min(...boxes.map(box => box.y))
+		const width = Math.max(...boxes.map(box => box.x + box.width)) - left
+		const height = Math.max(...boxes.map(box => box.y + box.height)) - top
+		const room = {
+			width: Math.max(rect.width - 2 * framePadding, 1),
+			height: Math.max(rect.height - 2 * framePadding, 1)
+		}
+
+		const scale = Math.min(1, Math.max(minimumScale, Math.min(room.width / width, room.height / height)))
+		this.scale = scale
+		this.pan = {
+			x: (rect.width - width * scale) / 2 - left * scale,
+			y: (rect.height - height * scale) / 2 - top * scale
+		}
+		this.framedView = { pan: this.pan, scale: this.scale }
+		return true
+	}
+
+	/**
+	 * The viewport changed size. A canvas loaded while its viewport had none (a hidden tab, a view still opening) could
+	 * not frame, and now can; a framed one is framed afresh for the new size, unless the reader has panned or zoomed
+	 * since it was framed.
+	 */
+	private onViewportResized() {
+		if (!this.framed) {
+			this.requestUpdate()
 			return
 		}
 
-		const scale = Math.min(1, Math.max(minimumScale, Math.min(rect.width / layout.width, rect.height / layout.height)))
-		this.scale = scale
-		this.pan = {
-			x: (rect.width - layout.width * scale) / 2,
-			y: (rect.height - layout.height * scale) / 2
-		}
-		this.framedView = { pan: this.pan, scale: this.scale }
-	}
-
-	/** Frames the graph afresh for the viewport's new size, unless the reader has panned or zoomed since it was framed. */
-	private onViewportResized() {
 		const layout = this.layoutCache?.layout
 		if (layout && this.framedView?.pan === this.pan && this.framedView.scale === this.scale) {
 			this.frame(layout)

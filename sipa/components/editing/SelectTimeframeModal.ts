@@ -1,6 +1,6 @@
 import { DirectiveTimeframeRecord, TimeframeInclusion } from "@pleiades/sdk"
 import { createChild, sleep, SuggestModalBase } from "../../host"
-import { core, resolveMediaIcon } from ".."
+import { core } from ".."
 import { IconName } from "../PleiadesIcon"
 import { createDeferredExecutor, DeferredPromiseExecutor } from "@open-draft/deferred-promise"
 
@@ -67,18 +67,20 @@ export class SelectTimeframeModal extends SuggestModalBase<TimeframeChoice> {
 		return [null, ...matches]
 	}
 
-	/** Draws the `null` row with its clearing label, and a timeframe as its glyph, title and owning directive. */
+	/** Draws the `null` row with its clearing label, and a timeframe as its chip, its owning directive chipped beside it. */
 	renderSuggestion(choice: TimeframeChoice, el: HTMLElement) {
-		const item = createChild(el, 'p7t-icon-item')
 		if (choice === null) {
+			const item = createChild(el, 'p7t-icon-item')
 			item.icon = 'lucide:x' as IconName
 			item.text = this.nullText
 			return
 		}
 
-		item.data = choice
-		item.icon = resolveMediaIcon(choice.iconMedia, 'lucide:clock') as IconName
-		item.text = `${choice.title} · ${choice.directiveTitle}`
+		// The timeframe chip itself, chipped with its owning directive — the same row a timeframe select lists, where
+		// two directives may each have a "Morning" — and its full details on hover.
+		const item = createChild(el, 'p7t-timeframe-item')
+		item.timeframe = choice
+		item.chipped = true
 	}
 
 	/** Resolves the pending prompt with the choice, `null` included. */

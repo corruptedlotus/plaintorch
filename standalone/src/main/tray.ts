@@ -6,10 +6,6 @@ import { hostsCore } from "./flavor"
 export interface TrayActions {
 	openBriefing(): void
 	openStatus(): void
-	activateVault(): void
-	deactivateVault(): void
-	setAutostart(enabled: boolean): void
-	openLogs(): void
 	restartCore(): void
 	checkForUpdates(): void
 	installUpdate(): void
@@ -17,7 +13,7 @@ export interface TrayActions {
 }
 
 /**
- * The tray icon and its menu, rebuilt from every status so the phase line, the vault entries, and the update entry
+ * The tray icon and its menu, rebuilt from every status so the phase line, the vault line, and the update entry
  * always reflect the shell's state. Clicking the icon opens the briefing, the shell's main window.
  */
 export class ShellTray {

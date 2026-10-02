@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell as electronShell, nativeTheme } from "electron"
 import { mkdirSync } from "node:fs"
+import path from "node:path"
 import { ipc, type BridgeRequest, type ShellStatus } from "../shared/contracts"
 import { setAutostartEnabled } from "./autostart"
 import { relayCoreStreams } from "./core-streams"
@@ -9,6 +10,7 @@ import { resolveUserProfile } from "./profile"
 import { refuseRemoteFiles } from "./request-guard"
 import { Shell } from "./shell"
 import { ShellTray } from "./tray"
+import { isVaultInitialized } from "./vault-initialization"
 import { handleFrameControls } from "./window-frame"
 import { ShellWindows } from "./windows"
 
@@ -62,8 +64,49 @@ async function run(): Promise<void> {
 		app.exit(0)
 	}
 
+	/** Shows a message box, modal to a window when there is one. */
+	const showMessage = (parent: BrowserWindow | undefined, options: Electron.MessageBoxOptions) =>
+		parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options)
+
+	/**
+	 * Makes a chosen folder that is no PLAINTORCH vault yet into one, once the user agrees — a stray pick would
+	 * otherwise scaffold a vault into the wrong folder. Resolves whether the folder is a vault now.
+	 */
+	const initializeChosenVault = async (parent: BrowserWindow | undefined, folder: string): Promise<boolean> => {
+		const { response } = await showMessage(parent, {
+			type: "question",
+			title: "Initialize vault",
+			message: `${path.basename(folder) || folder} is not a PLAINTORCH vault yet.`,
+			detail: `Initialize it to activate it: PLAINTORCH adds its settings file (.plaintorch), its data folder (.plaintorch-data) and its entity folders to\n${folder}`,
+			buttons: ["Initialize and activate", "Cancel"],
+			defaultId: 0,
+			cancelId: 1,
+			noLink: true
+		})
+		if (response !== 0 || quitting) {
+			return false
+		}
+
+		const result = await shell.initializeVault(folder)
+		if (!result.initialized && !quitting) {
+			await showMessage(parent, {
+				type: "error",
+				title: "Initialize vault",
+				message: `PLAINTORCH could not initialize ${path.basename(folder) || folder}.`,
+				detail: result.reason,
+				noLink: true
+			})
+		}
+
+		return result.initialized
+	}
+
 	let choosingVault = false
-	/** Asks for a vault folder, modal to the window that asked (the tray has none); one picker at a time. */
+	/**
+	 * Asks for a vault folder, modal to the window that asked (the tray has none); one picker at a time. A folder that
+	 * is not a vault yet is initialized first, before it is written as the active vault, so the core only ever sees
+	 * it ready to serve.
+	 */
 	const activateVault = async (owner?: BrowserWindow) => {
 		if (choosingVault) {
 			return
@@ -73,13 +116,21 @@ async function run(): Promise<void> {
 		try {
 			const options: Electron.OpenDialogOptions = {
 				title: "Activate a PLAINTORCH vault",
-				message: "Choose an initialized PLAINTORCH vault folder",
+				message: "Choose a PLAINTORCH vault folder, or a folder to initialize as one",
 				properties: ["openDirectory"]
 			}
 			const parent = owner ?? windows.statusWindow
 			const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
 			const chosen = result.filePaths[0]
-			if (!result.canceled && chosen && !quitting) {
+			if (result.canceled || !chosen || quitting) {
+				return
+			}
+
+			if (!isVaultInitialized(chosen) && !await initializeChosenVault(parent, chosen)) {
+				return
+			}
+
+			if (!quitting) {
 				shell.activateVault(chosen)
 			}
 		}
@@ -91,19 +142,6 @@ async function run(): Promise<void> {
 	const tray = new ShellTray({
 		openBriefing: () => windows.showBriefing(),
 		openStatus: () => windows.showStatus(),
-		activateVault: () => void activateVault(),
-		deactivateVault: () => shell.deactivateVault(),
-		setAutostart: enabled => {
-			setAutostartEnabled(enabled)
-			shell.configuration.updateShell(section => {
-				section.autostart = enabled
-			})
-			shell.publish()
-		},
-		openLogs: () => {
-			mkdirSync(profile.logsPath, { recursive: true })
-			void electronShell.openPath(profile.logsPath)
-		},
 		restartCore: () => void shell.restartCore(),
 		checkForUpdates: () => void shell.updater.check(),
 		installUpdate: () => void shell.updater.downloadAndInstall(),
