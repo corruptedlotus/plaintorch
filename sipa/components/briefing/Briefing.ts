@@ -7,10 +7,10 @@ interface BriefingTab extends DeckPage {
 	readonly label: string
 }
 
-/** The throne room, the one page the hero stands over. */
+/** The throne room, the one page the hero stands over in full. */
 const throne = 'throne'
 
-/** How long the hero's space takes to close or open when it animates, in milliseconds. */
+/** How long the hero takes to duck or rise when it animates, in milliseconds. */
 const heroDuration = 320
 
 /**
@@ -20,8 +20,8 @@ const heroDuration = 320
  * costs nothing to draw, and switching fades one page out and the next in. The tab bar sticks to the top of the pane
  * as a page scrolls beneath it.
  *
- * The hero belongs to the throne room. On any other page it ducks away (it slides up under the top edge as its space
- * closes, fading as it goes) and goes dormant; it rises back with the throne room.
+ * The hero stands in full over the throne room. On any other page it ducks to a short strip of the date and the banked
+ * starfire (its lore, executive orders and heading fold away as they fade), and it rises back with the throne room.
  *
  * Each page keeps its own scroll position, saved as the page leaves and restored at the deck's swap, while no page is
  * visible. The hero's motion is arranged around that: it animates only where it can be seen to without shoving a page
@@ -34,13 +34,11 @@ const heroDuration = 320
 export class Briefing extends Component {
 	@state() page = throne
 
-	/** Whether the hero is faded out: on its way out, or gone. */
-	@state() private heroFaded = false
-	/** Whether the hero's space is closed, which leaves it dormant. */
-	@state() private heroCollapsed = false
-	/** Whether the hero's space opens or closes at once on its next change instead of animating. */
+	/** Whether the hero is ducked to its strip: on its way down, or down. */
+	@state() private heroDucked = false
+	/** Whether the hero ducks or rises at once on its next change instead of animating. */
 	@state() private heroInstant = false
-	/** How long the hero's space takes to open or close when it animates, in milliseconds. */
+	/** How long the hero takes to duck or rise when it animates, in milliseconds. */
 	@state() private heroDuration = heroDuration
 
 	/** The page the deck last brought on show. It trails {@link page} through a switch. */
@@ -83,7 +81,7 @@ export class Briefing extends Component {
 			{ key: 'planning', icon: 'onrush', label: 'Planning', template: () => html`<p7t-dependency-canvas></p7t-dependency-canvas>` },
 			{ key: 'backlog', icon: 'directive', label: 'Backlog', template: () => html`<p7t-backlog-view></p7t-backlog-view>` },
 			{ key: 'moonlight', icon: 'directive-lunar', label: 'Moonlight', template: () => html`<p7t-moonlight-view></p7t-moonlight-view>` },
-			{ key: 'lore', icon: 'lorepage', label: 'Lore', template: () => html`<p7t-lore-grid></p7t-lore-grid>` }
+			{ key: 'lore', icon: 'lorepage', label: 'Lore', template: () => html`<p7t-lore-view></p7t-lore-view>` }
 		]
 	}
 
@@ -118,20 +116,17 @@ export class Briefing extends Component {
 		if (page === this.displayed) {
 			this.heroInstant = false
 			this.heroDuration = heroDuration
-			this.heroFaded = this.heroCollapsed = page !== throne
+			this.heroDucked = page !== throne
 			return
 		}
 
-		if (this.displayed === throne) {
-			this.heroFaded = true
-			// At the top of the pane the hero's space closes as the throne room fades, carrying the tab bar up with it. It
-			// closes faster when the page coming in resumes part-way down, so that it is shut by the swap. Any lower, the
-			// closing would drag the leaving page up the pane, so the space waits for the swap and closes out of sight.
-			if (this.heroAtTop) {
-				this.heroInstant = false
-				this.heroDuration = (this.scrollPositions.get(page) ?? 0) > 0 ? PageDeck.leaveDuration : heroDuration
-				this.heroCollapsed = true
-			}
+		// At the top of the pane the hero ducks as the throne room fades, carrying the tab bar up with it. It ducks faster
+		// when the page coming in resumes part-way down, so that it is down by the swap. Any lower, the ducking would drag
+		// the leaving page up the pane, so the hero waits for the swap and ducks out of sight.
+		if (this.displayed === throne && this.heroAtTop) {
+			this.heroInstant = false
+			this.heroDuration = (this.scrollPositions.get(page) ?? 0) > 0 ? PageDeck.leaveDuration : heroDuration
+			this.heroDucked = true
 		}
 	}
 
@@ -143,12 +138,11 @@ export class Briefing extends Component {
 		this.displayed = swap.to
 		const position = this.scrollPositions.get(swap.to) ?? 0
 		const raised = swap.to === throne
-		// A page that resumes part-way down has the hero out of sight above it, so the hero's space settles at once rather
-		// than shifting the page while it opens or closes. So does a space that was left open for the swap.
-		this.heroInstant = position > 0 || (!raised && !this.heroCollapsed)
+		// A page that resumes part-way down has the hero out of sight above it, so the hero settles at once rather than
+		// shifting the page while it ducks or rises. So does a hero left standing for the swap.
+		this.heroInstant = position > 0 || (!raised && !this.heroDucked)
 		this.heroDuration = heroDuration
-		this.heroFaded = !raised
-		this.heroCollapsed = !raised
+		this.heroDucked = !raised
 		await this.updateComplete
 		this.scroller.scrollTop = position
 		catchUpTicks()
@@ -171,69 +165,21 @@ export class Briefing extends Component {
 			}
 
 			/*
-			 * Three layers: the space (height), the slide (fade, shrink and slide), and the hero itself, which goes dormant
-			 * once its space has closed. Only the innermost goes dormant because an element inside a skipped subtree does
-			 * not transition reliably as the subtree is revealed, so every transition runs on a layer that is never skipped.
+			 * The hero folds its own parts as it ducks (see BriefingHero); the briefing times the fold, through
+			 * --p7t-hero-duck-duration, and lets the tab bar ride up into the full hero's foot but not into the strip.
 			 */
 			.hero {
-				margin-bottom: -.4em;
-				interpolate-size: allow-keywords;
-				transition:
-					height var(--hero-duration) cubic-bezier(.4, 0, .2, 1),
-					margin-bottom var(--hero-duration) cubic-bezier(.4, 0, .2, 1);
+				margin-bottom: -.3em;
+				transition: margin-bottom var(--p7t-hero-duck-duration) cubic-bezier(.4, 0, .2, 1);
 			}
 
-			.hero[collapsed] {
-				height: 0;
-				margin-bottom: 0;
+			.hero[ducked] {
+				margin-bottom: .3em;
 			}
 
-			/* The translate comes last, so an instant change that keeps only the first two keeps their own timings. */
-			.slide {
-				transform-origin: top center;
-				transition:
-					opacity ${PageDeck.enterDuration}ms cubic-bezier(0, 0, .2, 1),
-					scale ${PageDeck.enterDuration}ms cubic-bezier(0, 0, .2, 1),
-					translate var(--hero-duration) cubic-bezier(.4, 0, .2, 1);
-			}
-
-			.hero[faded] > .slide {
-				opacity: 0;
-				scale: .96;
-				transition-duration: ${PageDeck.leaveDuration}ms, ${PageDeck.leaveDuration}ms, var(--hero-duration);
-				transition-timing-function: cubic-bezier(.4, 0, 1, 1), cubic-bezier(.4, 0, 1, 1), cubic-bezier(.4, 0, .2, 1);
-			}
-
-			/* Slides up by its own height as its space closes, so its lower edge rides on the tab bar all the way. */
-			.hero[collapsed] > .slide {
-				translate: 0 -100%;
-			}
-
-			p7t-briefing-hero {
-				margin-bottom: .1em;
-				transition: content-visibility var(--hero-duration) allow-discrete;
-			}
-
-			.hero[collapsed] p7t-briefing-hero {
-				content-visibility: hidden;
-			}
-
-			.hero[instant], .hero[instant] p7t-briefing-hero {
-				transition: none;
-			}
-
-			.hero[instant] > .slide {
-				transition-property: opacity, scale;
-			}
-
-			/* Under reduced motion the hero only fades; its space opens and closes at once. */
 			@media (prefers-reduced-motion: reduce) {
-				.hero, .hero p7t-briefing-hero {
+				.hero {
 					transition: none;
-				}
-
-				.hero > .slide, .hero[instant] > .slide {
-					transition-property: opacity;
 				}
 			}
 
@@ -301,16 +247,11 @@ export class Briefing extends Component {
 	override get template() {
 		const tabs = this.tabs
 		return html`
-			<div class='hero'
-				?faded=${this.heroFaded}
-				?collapsed=${this.heroCollapsed}
-				?instant=${this.heroInstant}
-				?inert=${this.heroFaded}
-				style=${`--hero-duration: ${this.heroDuration}ms`}>
-				<div class='slide'>
-					<p7t-briefing-hero .briefing=${this.data}></p7t-briefing-hero>
-				</div>
-			</div>
+			<p7t-briefing-hero class='hero'
+				.briefing=${this.data}
+				?ducked=${this.heroDucked}
+				style=${`--p7t-hero-duck-duration: ${this.heroInstant ? 0 : this.heroDuration}ms`}>
+			</p7t-briefing-hero>
 			<nav class='navbar'>
 				<div class='tabs'>
 					${tabs.map(tab => html`

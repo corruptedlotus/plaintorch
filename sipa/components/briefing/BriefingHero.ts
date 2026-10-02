@@ -1,23 +1,35 @@
 import { component, css, html, nothing, property } from "@a11d/lit"
 import { ExecutiveOrder, SystemBriefing } from "@pleiades/sdk";
-import { toRomanNumeral } from "@pleiades/sdk/helpers";
 import { CardComponent, tooltip } from "../design"
+import '../lore/ActiveLore'
 import './ExecutiveOrderDetails'
 
+/**
+ * The briefing's hero: today's date under "Pleiades Today", the active lore beside its glyph, the banked starfire and the
+ * executive orders in effect, over the star.
+ *
+ * {@link ducked}, it keeps only the date and the starfire, on one short strip: the rest folds away (its space closing
+ * as it fades) and the hero shrinks with it. The briefing ducks it on every page but the throne room. The fold takes
+ * `--p7t-hero-duck-duration` (320ms by default; 0 to fold at once).
+ */
 @component('p7t-briefing-hero')
 export class BriefingHero extends CardComponent {
 	override preHeading = 'Pleiades Today';
 
 	@property({ type: Object }) briefing?: SystemBriefing
+	/** Keeps only the date and the starfire, folding the rest away. */
+	@property({ type: Boolean, reflect: true }) ducked = false
 
 	static override get styles() {
 		return css`
 			${super.styles}
 
 			:host {
+				--_duck: var(--p7t-hero-duck-duration, 320ms) cubic-bezier(.4, 0, .2, 1);
 				padding: 0;
 				background: none;
 				background-blend-mode: color, luminosity;
+				interpolate-size: allow-keywords;
 			}
 
 			.grid {
@@ -32,58 +44,7 @@ export class BriefingHero extends CardComponent {
 			}
 
 			.lore {
-				display: flex;
-				align-items: center;
-				gap: 10px;
-				align-items: center;
 				grid-area: lore;
-
-				& p7t-icon {
-					width: 64px;
-					height: 64px;
-				}
-
-				& .info {
-					display: flex;
-					flex-direction: column;
-				}
-
-				& .chapter {
-					font-size: 1em;
-					opacity: .6;
-					font-weight: 500;
-					margin-bottom: -.2em;
-				}
-
-				& .act {
-					font-size: 1.4em;
-					font-weight: 300;
-
-					& :first-child {
-						opacity: .6;
-						margin-inline-end: .1ch;
-					}
-				}
-
-				& .phase {
-					margin-top: .05em;
-					font-family: 'Georgia', serif;
-					font-size: .9em;
-					color: color-mix(in srgb, var(--text-normal) 80%, transparent);
-					font-style: italic;
-					font-weight: 300;
-
-					& :first-child {
-						font-family: var(--font-text);
-						background-color: color-mix(in srgb, var(--text-normal) 15%, transparent);
-						color: var(--text-normal);
-						padding: 0 .8ch;
-						font-style: normal;
-						font-weight: 800;
-						margin-inline-end: .8ch;
-						border-radius: .6em;
-					}
-				}
 			}
 
 			.extra {
@@ -173,7 +134,69 @@ export class BriefingHero extends CardComponent {
 			:host::part(header) {
 				grid-area: header;
 			}
+
+			/*
+			 * The duck. Each part that goes folds its own space away as it fades (its height to nothing, and the gap it held
+			 * open with it), so the hero shrinks smoothly around what stays: the date at the start of the strip, the starfire
+			 * at its end.
+			 */
+			.pre-heading, .lore, .exec-orders {
+				transition:
+					height var(--_duck),
+					margin var(--_duck),
+					opacity var(--_duck),
+					visibility var(--_duck);
+			}
+
+			.pre-heading {
+				display: block;
+			}
+
+			.mask {
+				transition: opacity var(--_duck);
+			}
+
+			.grid {
+				transition: row-gap var(--_duck);
+			}
+
+			:host([ducked]) {
+				.pre-heading, .lore, .exec-orders {
+					height: 0;
+					overflow: clip;
+					opacity: 0;
+					visibility: hidden;
+				}
+
+				/*
+				 * The gaps the folded parts held open: the header's above the date and the extra column's above the orders,
+				 * taken back by a negative margin; the grid's above the lore, closed outright (a grid track does not shrink
+				 * below nothing for an item's negative margin).
+				 */
+				.pre-heading { margin-bottom: -.4em; }
+				.exec-orders { margin-top: -.8rem; }
+
+				.grid {
+					row-gap: 0;
+					align-items: center;
+				}
+
+				.mask {
+					opacity: 0;
+				}
+			}
+
+			@media (prefers-reduced-motion: reduce) {
+				.pre-heading, .lore, .exec-orders {
+					transition-property: opacity, visibility;
+				}
+			}
 		`
+	}
+
+	protected override get preHeadingTemplate() {
+		// Its own box rather than the bare text, so the duck can fold it.
+		return html`<span class='pre-heading'>${this.preHeading}</span>`
 	}
 
 	/**
@@ -185,9 +208,6 @@ export class BriefingHero extends CardComponent {
 	}
 
 	override get template() {
-		const chapter = this.briefing?.activeLorePages.find(page => page.level === 'Cha')
-		const act = this.briefing?.activeLorePages.find(page => page.level === 'Act')
-		const phase = this.briefing?.activeLorePages.find(page => page.level === 'p')
 		return html`
 			<svg class="mask" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 275.45 200.57">
 				<path
@@ -202,28 +222,7 @@ export class BriefingHero extends CardComponent {
 			</svg>
 			<div class='grid'>
 				${this.headerTemplate}
-				<div class='lore'>
-					<p7t-icon icon="lorepage"></p7t-icon>
-					<div class='info'>
-						${!chapter ? nothing : html`
-							<span class='chapter'>
-								${chapter?.title}
-							</span>
-						`}
-						${!act ? nothing : html`
-							<span class='act'>
-								<span>${act?.overrideIdentifier ?? `Act ${toRomanNumeral(act?.act ?? 0)}`}:</span>
-								${act?.title}
-							</span>
-						`}
-						${!phase ? nothing : html`
-							<span class='phase'>
-								<span>${phase?.overrideIdentifier ?? phase?.phase}</span>
-								"${phase?.title}"
-							</span>
-						`}
-					</div>
-				</div>
+				<p7t-active-lore class='lore' glyph .pages=${this.briefing?.activeLorePages}></p7t-active-lore>
 				<div class='extra'>
 					<div class='info-chip'>
 						<span>${this.briefing?.celestronBanked ?? 0}</span>
