@@ -215,7 +215,7 @@ The temporal probe — the two-sided begin/finish state space the recursive CTE 
 ### Dependencies are the slave of structure
 A reparent cannot be refused for the sake of an edge — least of all a folder move the watcher sees after the fact. So when a directive or objective moves, or an end leaves or enters Failed, the stored edges the structure now contradicts are **purged** in the same save, on the audit record (`dependency.purge`), and so are the ones the intrinsic edges make redundant. Which of several goes: those touching the moved subtree are preferred; among them, the one whose removal leaves the fewest edges contradicted, the newest on a tie; one per round until the graph orders. Purging every contradicted edge at once would take innocent ones with the loop's true cause. A loop of intrinsic edges alone (a hand-edited parent chain that loops) has nothing to give up. The same slave rule releases every stored edge naming an entity that is deleted.
 
-The **v4→v5 vault migration** runs the same purge over the whole graph once, with no subtree preference, so an existing vault sets itself right on activation.
+The **v5→v6 vault migration** runs the same purge over the whole graph once, with no subtree preference, so an existing vault sets itself right on activation. (It was v4→v5 until it merged behind PEP101's directive start/end retirement, which took v5.)
 
 ### Batching
 Stamping and reconciling no longer resolve endpoints one query at a time: `DependencyEndpoints.ResolveLifecyclesAsync` loads each kind in one query (`Contains` over the ids, the tracker overlaid), and the directive-children rule reads the whole structure in two projections that carry both ends' state, so deriving costs no further lookups.

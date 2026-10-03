@@ -209,8 +209,8 @@ export function wouldContradict(
  *
  * Only the edges that still block are followed — a `satisfied` edge is left out of the adjacency, so the walk
  * stops at a met dependency: a prerequisite already satisfied holds nothing back, and whatever blocked *it* is
- * no longer part of what blocks the root. The adjacency runs dependant → prerequisite, the same direction
- * {@link wouldCycle} walks, so from a member the walk reaches the blocker, then the blocker's own blocker, and
+ * no longer part of what blocks the root. The adjacency runs dependant → prerequisite, against the forward walk of
+ * {@link wouldContradict}, so from a member the walk reaches the blocker, then the blocker's own blocker, and
  * on down the unmet chain.
  *
  * Returned per root, so a surface can attribute each prerequisite to the member it ultimately holds back (the

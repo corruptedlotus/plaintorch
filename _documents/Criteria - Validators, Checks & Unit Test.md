@@ -40,6 +40,9 @@ must be removed after use, while the dev sub-profile must persist between runs.
 | Stored version advances to current; a history row is recorded | happy | ✅ | `MigrationRoundTripTests` |
 | Runner short-circuits when the vault is already current | happy | ✅ | `MigrationRoundTripTests` |
 | v4→v5 drops the retired `startDate`/`endDate` keys from directive notes, keeps body and custom keys, leaves notes without them untouched (PEP101) | happy | ✅ | `DirectiveStartEndRetirementMigrationTests` |
+| v5→v6 purges the stored dependencies the intrinsic edges contradict or restate, keeps the rest, and a second pass purges nothing (PEP102 patch 9) | happy | ✅ | `IntrinsicDependencyPurgeMigrationTests` |
+| Backlog schedules survive the later SQLite table rebuilds of `Incentives` and `Directives` on the way to the latest EF migration (PEP101) | edge | ✅ | `BacklogSchedulesMigrationTests` |
+| The incentive-nesting removal applied out of order, after `DeclarativeTimeZone`, keeps the later `Incentives` column and empties the parent link (PEP102 patch 9) | edge | ✅ | `IncentiveNestingRemovalMigrationTests` |
 | Legacy file archived to the graveyard before rewrite (rollback) | happy | ⏳ | — |
 | Re-run after a completed migration is a no-op | edge | ⏳ | — |
 | Title-only pre-PUCK files are left untouched | edge | ⏳ | — |

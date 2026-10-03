@@ -44,9 +44,11 @@ public sealed class BacklogScheduleApiService(
 			throw new InvalidOperationException($"'{type}' is not a backlog schedule type.");
 		}
 
-		if (!Enum.IsDefined(state))
+		// A schedule places a phase its owner enters. Failed is not one: a failed item has not begun (PEP102 patch 9), so
+		// failing leaves the begin phase rather than entering a phase of its own.
+		if (state is not (LifecyclePhase.Begin or LifecyclePhase.Finish))
 		{
-			throw new InvalidOperationException($"'{state}' is not a lifecycle phase.");
+			throw new InvalidOperationException($"'{state}' is not a phase a schedule places: a schedule places a begin or a finish.");
 		}
 
 		if (type == BacklogScheduleType.Record)

@@ -10,8 +10,10 @@ namespace Pleiades.Orchestration;
 /// orders them the other way: when, walking forward in time from the target's constrained side, the source's
 /// triggering side is reachable. The walk lives in a two-sided state space (each node a begin and a finish) over three
 /// steps: an edge carries its source's triggering side to its dependant's constrained side; a node's begin precedes its
-/// own finish; and the start is the target's constrained side. A checkpoint has no side — its trigger and constraint
-/// are empty — so it is a dead end and drops out of the begin→finish step on its own. This is strictly finer than
+/// own finish; and the start is the target's constrained side. A checkpoint has no side — being one-shot, its only phase
+/// (its unlock, a finish) is implied, so its trigger and constraint are empty — so it is a dead end and drops out of the
+/// begin→finish step on its own. The walk does not yet order through a checkpoint's finish (PEP101 made that finish
+/// explicit; the walk predates it). This is strictly finer than
 /// node-level acyclicity: a node cycle whose begins and finishes order out (A.begin → B.begin → A.finish) is allowed.
 /// It used to run as a recursive CTE on the connection; it walks in memory now so derived edges take part and the
 /// contradicting path can be named.

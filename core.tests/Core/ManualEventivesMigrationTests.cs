@@ -105,7 +105,7 @@ public sealed class ManualEventivesMigrationTests : IDisposable
 		}
 	}
 
-	// Foreign keys are off so the seed rows need no owners; pooling is off so the database file can be deleted
+	// Foreign keys are off so the later seeds need no owners; pooling is off so the database file can be deleted
 	// afterwards.
 	private PlainfraContext CreateContext() => new(new DbContextOptionsBuilder<PlainfraContext>()
 		.UseSqlite($"Data Source={databasePath};Foreign Keys=False;Pooling=False")
@@ -121,11 +121,18 @@ public sealed class ManualEventivesMigrationTests : IDisposable
 	/// Builds the schema as it stood before manual eventives and writes a moved, timed fate eventive and an all-day
 	/// objective-due eventive in that shape, in the <c>yyyy-MM-dd HH:mm:ss</c> text form EF writes.
 	/// </summary>
+	/// <remarks>
+	/// Their owners exist: <c>BacklogSchedules</c>, earlier in the chain, rebuilds <c>Directives</c>, and a rebuild leaves
+	/// foreign keys on for the rest of the run, so this migration's copy into the rebuilt <c>Eventives</c> checks them.
+	/// </remarks>
 	private async Task SeedPreMigrationRowsAsync()
 	{
 		await MigrateAsync(PreviousMigration);
 
 		await ExecuteAsync("""
+			INSERT INTO Incentives (Id, Title, Discriminator, FateStatus) VALUES ('f-fate', 'Fate', 'Fate', 'Active');
+			INSERT INTO Incentives (Id, Title, Discriminator, Status, Objective_College, CelestronValue) VALUES
+				('o-objective', 'Objective', 'Objective', 'Standby', 'Unspecified', 0);
 			INSERT INTO Eventives (Id, FateId, ObjectiveId, RecurrenceId, Resolution, Epoch_Moment, Epoch_Granularity, Epoch_Duration) VALUES
 				(1, 'f-fate', NULL, '2026-07-20 14:30:00', 'Missed', '2026-07-20 15:30:00', 'Minute', '1h'),
 				(2, NULL, 'o-objective', '2026-07-21 00:00:00', 'Pending', '2026-07-21 00:00:00', 'Day', NULL);

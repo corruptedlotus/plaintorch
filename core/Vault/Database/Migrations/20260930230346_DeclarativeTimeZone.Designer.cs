@@ -52,6 +52,49 @@ namespace plaintorch.Vault.Database.Migrations
                     b.ToTable("Attentives");
                 });
 
+            modelBuilder.Entity("Pleiades.Orchestration.BacklogSchedule", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CheckpointId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DirectiveId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IncentiveId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("Time")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CheckpointId", "Type", "State")
+                        .IsUnique();
+
+                    b.HasIndex("DirectiveId", "Type", "State")
+                        .IsUnique();
+
+                    b.HasIndex("IncentiveId", "Type", "State")
+                        .IsUnique();
+
+                    b.ToTable("BacklogSchedules", t =>
+                        {
+                            t.HasCheckConstraint("CK_BacklogSchedules_SingleOwner", "(\"IncentiveId\" IS NOT NULL) + (\"DirectiveId\" IS NOT NULL) + (\"CheckpointId\" IS NOT NULL) = 1");
+                        });
+                });
+
             modelBuilder.Entity("Pleiades.Orchestration.CelestronTransaction", b =>
                 {
                     b.Property<Guid>("TransactionId")
@@ -318,9 +361,6 @@ namespace plaintorch.Vault.Database.Migrations
                         .HasMaxLength(13)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("ParentIncentiveId")
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -328,8 +368,6 @@ namespace plaintorch.Vault.Database.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("DirectiveId");
-
-                    b.HasIndex("ParentIncentiveId");
 
                     b.ToTable("Incentives", (string)null);
 
@@ -942,16 +980,15 @@ namespace plaintorch.Vault.Database.Migrations
                     b.Property<DateOnly?>("Due")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateOnly?>("EndDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateOnly?>("StartDate")
+                    b.Property<string>("OnrushSprintId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("TEXT")
                         .HasColumnName("Status");
+
+                    b.HasIndex("OnrushSprintId");
 
                     b.HasDiscriminator().HasValue("StellarDirective");
                 });
@@ -1121,6 +1158,30 @@ namespace plaintorch.Vault.Database.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Pleiades.Orchestration.BacklogSchedule", b =>
+                {
+                    b.HasOne("Pleiades.Orchestration.Checkpoint", "Checkpoint")
+                        .WithMany()
+                        .HasForeignKey("CheckpointId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("Pleiades.Orchestration.Directive", "Directive")
+                        .WithMany()
+                        .HasForeignKey("DirectiveId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("Pleiades.Orchestration.Incentive", "Incentive")
+                        .WithMany()
+                        .HasForeignKey("IncentiveId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Checkpoint");
+
+                    b.Navigation("Directive");
+
+                    b.Navigation("Incentive");
+                });
+
             modelBuilder.Entity("Pleiades.Orchestration.Checkpoint", b =>
                 {
                     b.HasOne("Pleiades.Orchestration.OnrushSprint", "OnrushSprint")
@@ -1255,13 +1316,7 @@ namespace plaintorch.Vault.Database.Migrations
                         .WithMany("Incentives")
                         .HasForeignKey("DirectiveId");
 
-                    b.HasOne("Pleiades.Orchestration.Incentive", "ParentIncentive")
-                        .WithMany("ChildIncentives")
-                        .HasForeignKey("ParentIncentiveId");
-
                     b.Navigation("Directive");
-
-                    b.Navigation("ParentIncentive");
                 });
 
             modelBuilder.Entity("Pleiades.Orchestration.OnrushSprint", b =>
@@ -1343,6 +1398,16 @@ namespace plaintorch.Vault.Database.Migrations
                     b.Navigation("Parent");
                 });
 
+            modelBuilder.Entity("Pleiades.Orchestration.StellarDirective", b =>
+                {
+                    b.HasOne("Pleiades.Orchestration.OnrushSprint", "OnrushSprint")
+                        .WithMany("Directives")
+                        .HasForeignKey("OnrushSprintId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("OnrushSprint");
+                });
+
             modelBuilder.Entity("Pleiades.Orchestration.Objective", b =>
                 {
                     b.HasOne("Pleiades.Orchestration.OnrushSprint", "OnrushSprint")
@@ -1404,14 +1469,14 @@ namespace plaintorch.Vault.Database.Migrations
 
             modelBuilder.Entity("Pleiades.Orchestration.Incentive", b =>
                 {
-                    b.Navigation("ChildIncentives");
-
                     b.Navigation("Executives");
                 });
 
             modelBuilder.Entity("Pleiades.Orchestration.OnrushSprint", b =>
                 {
                     b.Navigation("Checkpoints");
+
+                    b.Navigation("Directives");
 
                     b.Navigation("ExecutiveOrders");
 

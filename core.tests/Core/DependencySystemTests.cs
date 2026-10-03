@@ -573,12 +573,12 @@ public sealed class DependencySystemTests : VaultTestBase
 
 		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Failed), Ct));
 
-		// Failed is not a finish: the explicit edge stays unmet and holds its dependant's begin.
+		// Failed is not a finish: the explicit edge stays unmet and holds its dependant's begin (Polaris, PEP101).
 		var served = await Deps(api => api.ListAsync(quest.Id, Ct));
 		var stored = Assert.Single(served, dependency => dependency.Id == explicitEdge.Id);
 		Assert.False(stored.Satisfied);
 		await Assert.ThrowsAsync<InvalidOperationException>(() =>
-			Objective(api => api.ShiftWorkflowAsync(dependant.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Onrush), Ct)));
+			Objective(api => api.ShiftWorkflowAsync(dependant.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Polaris), Ct)));
 
 		// But the intrinsic edge is gone: a failed child neither holds its parent back nor counts as done.
 		Assert.DoesNotContain(served, dependency => dependency.Origin == DependencyOrigin.Intrinsic);

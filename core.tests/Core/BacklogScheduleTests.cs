@@ -180,6 +180,23 @@ public sealed class BacklogScheduleTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task Failing_un_begins_and_un_finishes()
+	{
+		// Failed is open and not begun (PEP102 patch 9), not a finish: a failed prerequisite keeps blocking what it gates,
+		// and a failed item holds neither record.
+		var objective = await Objective(api => api.CreateStandaloneAsync("Lost cause", cancellationToken: Ct));
+		await ShiftAsync(objective.Id, ObjectiveStatus.Polaris);
+		Record(await StoredAsync(objective.Id), LifecyclePhase.Begin);
+		await ShiftAsync(objective.Id, ObjectiveStatus.Failed);
+		Assert.Empty(await StoredAsync(objective.Id));
+
+		await ShiftAsync(objective.Id, ObjectiveStatus.Done);
+		Assert.Equal(2, (await StoredAsync(objective.Id)).Count);
+		await ShiftAsync(objective.Id, ObjectiveStatus.Failed);
+		Assert.Empty(await StoredAsync(objective.Id));
+	}
+
+	[Fact]
 	public async Task A_status_edited_in_the_note_is_recorded_like_an_api_shift()
 	{
 		// The recorder rides the save hook, so a frontmatter edit synced by the watcher records the begin too.
@@ -499,6 +516,10 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync("j99999999", BacklogScheduleType.Plan, LifecyclePhase.Begin, DateTime.Today, Ct)));
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(objective.Id, (BacklogScheduleType)42, LifecyclePhase.Begin, DateTime.Today, Ct)));
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, (LifecyclePhase)42, DateTime.Today, Ct)));
+		// Failed is a lifecycle phase but not one an item enters, so not even a kind with no declared lifecycle plans it.
+		var lunar = await Directive(api => api.CreateLunarAsync("Moon law", cancellationToken: Ct));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecyclePhase.Failed, DateTime.Today, Ct)));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(lunar.Id, BacklogScheduleType.Plan, LifecyclePhase.Failed, DateTime.Today, Ct)));
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.DeleteAsync(987654, Ct)));
 
 		var plan = await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecyclePhase.Finish, new DateTime(2026, 10, 31), Ct));

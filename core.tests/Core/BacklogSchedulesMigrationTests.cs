@@ -51,13 +51,49 @@ public sealed class BacklogSchedulesMigrationTests : IDisposable
 		Assert.Equal(3, await context.BacklogSchedules.CountAsync(Ct));
 		Assert.False(await context.BacklogSchedules.AnyAsync(item => item.Type == BacklogScheduleType.Record, Ct));
 
-		// The directives survive the table rebuild whole, and the dropped columns are gone.
-		var directives = await context.Directives.IgnoreAutoIncludes().OrderBy(item => item.Id).ToListAsync(Ct);
-		Assert.Equal(["A00000001", "A00000002", "A00000003", "LUNA001"], directives.Select(item => item.Id));
-		Assert.Equal(DirectiveStatus.Active, Assert.IsType<StellarDirective>(directives[0]).Status);
+		// The directives survive the table rebuild whole, and the dropped columns are gone. Read through SQL rather than
+		// the entity: the database sits at this migration, and later migrations have since added directive columns the
+		// current model would select.
 		var connection = context.Database.GetDbConnection();
 		await connection.OpenAsync(Ct);
+		Assert.Equal("A00000001;A00000002;A00000003;LUNA001", await ScalarAsync(connection, "SELECT group_concat(Id, ';') FROM (SELECT Id FROM Directives ORDER BY Id)"));
+		Assert.Equal("StellarDirective|Active", await ScalarAsync(connection, "SELECT Discriminator || '|' || Status FROM Directives WHERE Id = 'A00000001'"));
 		Assert.Equal("0", await ScalarAsync(connection, "SELECT COUNT(*) FROM pragma_table_info('Directives') WHERE name IN ('StartDate', 'EndDate')"));
+	}
+
+	[Fact]
+	public async Task Schedules_survive_the_later_table_rebuilds()
+	{
+		await SeedPreMigrationRowsAsync();
+		await MigrateAsync(ThisMigration);
+
+		await using (var context = CreateContext())
+		{
+			// An objective with a record of its own beside the directives' backfilled plans. Later migrations rebuild the
+			// Directives table (adding the onrush foreign key) and empty the nesting column of Incentives; a rebuild that
+			// dropped a table with foreign keys on would cascade its schedules away.
+			await context.Database.ExecuteSqlRawAsync("""
+				INSERT INTO Incentives (Id, Title, Discriminator, Status, Objective_College, CelestronValue) VALUES
+					('QUEST01', 'Quest', 'Objective', 'Polaris', 'WorldQuest', 0);
+				INSERT INTO BacklogSchedules (Type, State, Time, IncentiveId) VALUES
+					('Record', 'Begin', '2026-09-30 10:00:00', 'QUEST01');
+				""", Ct);
+		}
+
+		await MigrateAsync();
+
+		await using var migrated = CreateContext();
+		Assert.Empty(await migrated.Database.GetPendingMigrationsAsync(Ct));
+		Assert.Equal(3, await migrated.BacklogSchedules.CountAsync(item => item.DirectiveId != null, Ct));
+		var record = await migrated.BacklogSchedules.SingleAsync(item => item.IncentiveId == "QUEST01", Ct);
+		Assert.Equal((BacklogScheduleType.Record, LifecyclePhase.Begin, new DateTime(2026, 9, 30, 10, 0, 0)), (record.Type, record.State, record.Time));
+
+		// Every row came through, and the directives carry the later shape without the old dates.
+		var connection = migrated.Database.GetDbConnection();
+		await connection.OpenAsync(Ct);
+		Assert.Equal("4|1", await ScalarAsync(connection, "SELECT (SELECT COUNT(*) FROM Directives) || '|' || (SELECT COUNT(*) FROM Incentives)"));
+		Assert.Equal("OnrushSprintId", await ScalarAsync(connection, "SELECT group_concat(name) FROM pragma_table_info('Directives') WHERE name IN ('StartDate', 'EndDate', 'OnrushSprintId')"));
+		Assert.Equal("", await ScalarAsync(connection, "SELECT group_concat(\"table\") FROM pragma_foreign_key_check"));
 	}
 
 	[Fact]
@@ -103,7 +139,10 @@ public sealed class BacklogSchedulesMigrationTests : IDisposable
 		.UseSqlite($"Data Source={databasePath};Foreign Keys=True;Pooling=False")
 		.Options);
 
-	private async Task MigrateAsync(string targetMigration)
+	/// <summary>
+	/// Migrates the database to <paramref name="targetMigration"/>, or to the latest migration when none is given.
+	/// </summary>
+	private async Task MigrateAsync(string? targetMigration = null)
 	{
 		await using var context = CreateContext();
 		await context.GetService<IMigrator>().MigrateAsync(targetMigration, Ct);
