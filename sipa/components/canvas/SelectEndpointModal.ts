@@ -1,8 +1,9 @@
 import { createDeferredExecutor, DeferredPromiseExecutor } from '@open-draft/deferred-promise'
-import { DependencyEndpointKind, type EndpointHit } from '@pleiades/sdk'
+import { DependencyEndpointKind, type Directive, type EndpointHit } from '@pleiades/sdk'
 import { createChild, sleep, SuggestModalBase } from '../../host'
 import { core, type IconName } from '..'
 import { fuzzyFilter } from '../editing/fuzzy'
+import { directiveSearchText } from '../entities/directiveSearch'
 
 /** The type icon each endpoint kind is drawn with, matching the canvas nodes. */
 const kindIcons: Record<DependencyEndpointKind, IconName> = {
@@ -33,6 +34,8 @@ export class SelectEndpointModal extends SuggestModalBase<EndpointHit> {
 	private dpe?: DeferredPromiseExecutor<EndpointHit | undefined>
 	private excluded: ReadonlySet<string> = new Set()
 	private endpoints?: Promise<EndpointHit[]>
+	/** The directive listing by id, for the codename a directive hit does not carry. */
+	private directives?: Promise<Map<string, Directive>>
 
 	/** Prompts for an endpoint, resolving to nothing when dismissed. `excluded` holds the `kind:id` keys already pinned. */
 	public static prompt(excluded: ReadonlySet<string> = new Set()): Promise<EndpointHit | undefined> {
@@ -44,10 +47,19 @@ export class SelectEndpointModal extends SuggestModalBase<EndpointHit> {
 		return new Promise(modal.dpe)
 	}
 
+	/**
+	 * The hits matching the query. A directive hit carries only its title, so its codename is read off the directive
+	 * listing — read alongside the endpoints — and a directive is found by either, as everywhere else directives are
+	 * searched ({@link directiveSearchText}).
+	 */
 	override async getSuggestions(query: string): Promise<EndpointHit[]> {
 		this.endpoints ??= core.dependencies.listEndpoints()
-		const offered = (await this.endpoints).filter(hit => !this.excluded.has(`${DependencyEndpointKind[hit.kind]}:${hit.id}`))
-		return fuzzyFilter(query, offered, hit => hit.title)
+		this.directives ??= core.repos.directiveList.get().then(directives => new Map((directives ?? []).map(directive => [directive.id, directive])))
+		const [endpoints, directives] = await Promise.all([this.endpoints, this.directives])
+		const offered = endpoints.filter(hit => !this.excluded.has(`${DependencyEndpointKind[hit.kind]}:${hit.id}`))
+		return fuzzyFilter(query, offered, hit => hit.kind === DependencyEndpointKind.Directive
+			? directiveSearchText(directives.get(hit.id) ?? hit)
+			: hit.title)
 	}
 
 	/** A row is the endpoint's title behind its kind icon, its kind chipped beside it for the kinds that share an icon. */

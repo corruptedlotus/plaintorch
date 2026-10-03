@@ -2,6 +2,7 @@ import { Directive } from "@pleiades/sdk"
 import { createChild, sleep, SuggestModalBase } from "../../host"
 import { core } from ".."
 import { directiveAncestors } from "../entities/directiveLineage"
+import { directiveSearchText } from "../entities/directiveSearch"
 import { createDeferredExecutor, DeferredPromiseExecutor } from "@open-draft/deferred-promise"
 import { fuzzyFilter } from "./fuzzy"
 
@@ -59,9 +60,7 @@ export class SelectDirectiveModal extends SuggestModalBase<DirectiveChoice> {
 
 	/** The text a directive is searched by: its title and codename, then every ancestor's. */
 	private searchTextOf(directive: Directive): string {
-		return [directive, ...directiveAncestors(directive, this.byId)]
-			.map(step => `${step.title} ${step.codename ?? ''}`)
-			.join(' ')
+		return [directive, ...directiveAncestors(directive, this.byId)].map(directiveSearchText).join(' ')
 	}
 
 	/** The leading `null` row when offered, then the directives fuzzily matching the query, best first. */

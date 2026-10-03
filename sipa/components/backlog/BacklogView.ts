@@ -2,7 +2,7 @@ import { Component, component, css, html, query, state } from '@a11d/lit'
 import { core, DerivedRef } from '..'
 import { stellarBacklogSource, type GridEntity } from '../grid/entityTree'
 import type { SearchCriteria, SearchFilter } from '../search/SearchFilterController'
-import { backlogDirectiveFilter, backlogStatusFilter, backlogTypeFilter } from './backlogFilters'
+import { backlogDirectiveFilter, backlogSearchText, backlogStatusFilter, backlogTypeFilter } from './backlogFilters'
 
 /**
  * The briefing's backlog page: the Stellar Backlog — every stellar directive and the incentives they hold, in the
@@ -96,9 +96,9 @@ export class BacklogView extends Component {
 			<div class='search'>
 				<div class='backdrop'>
 					<p7t-search-box
-						placeholder='Search titles, or filter with type:, status: and directive:'
+						placeholder='Search titles and codenames, or filter with type:, status: and directive:'
 						.filters=${this.filters}
-						.textOf=${(item: GridEntity) => item.title}
+						.textOf=${backlogSearchText}
 						@criteriachange=${(e: CustomEvent<SearchCriteria<GridEntity>>) => this.criteria = e.detail}>
 					</p7t-search-box>
 				</div>

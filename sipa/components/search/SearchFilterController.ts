@@ -14,6 +14,8 @@ export interface SearchFilterOption<V = unknown> {
 	readonly value: V
 	/** How the option reads in the drawer and on its chip. */
 	readonly label: string
+	/** Other words the option is found by while typing, beside its text and label — a directive's codename. */
+	readonly keywords?: string
 	/** The option's glyph. */
 	readonly icon?: IconName
 	/** A note beside the label in the drawer, such as where a directive sits in its hierarchy. */
@@ -396,10 +398,11 @@ export class SearchFilterController<T, THost extends ReactiveElement = ReactiveE
 			return offered.map(option => ({ kind: 'option', filter, option }))
 		}
 
-		// A value named in full by its text or its label leads; the rest follow in the shared fuzzy order, matched on both.
+		// A value named in full by its text or its label leads; the rest follow in the shared fuzzy order, matched on
+		// both and on the option's keywords.
 		const exact = normalise(typed)
 		const named = offered.filter(option => normalise(option.text) === exact || normalise(option.label) === exact)
-		const matched = fuzzyFilter(typed, offered, option => `${option.text} ${option.label}`).filter(option => !named.includes(option))
+		const matched = fuzzyFilter(typed, offered, option => `${option.text} ${option.label} ${option.keywords ?? ''}`).filter(option => !named.includes(option))
 		return [...named, ...matched].map(option => ({ kind: 'option', filter, option }))
 	}
 

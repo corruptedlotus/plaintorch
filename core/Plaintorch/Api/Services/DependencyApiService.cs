@@ -99,7 +99,7 @@ public sealed class DependencyApiService(
 		var directives = Capped(context.Directives
 				.OfType<StellarDirective>()
 				.AsNoTracking()
-				.WhereMatchesSearch(search, directive => directive.Id, directive => directive.Title)
+				.WhereMatchesSearch(search, directive => directive.Id, directive => directive.Title, directive => directive.Codename)
 				.OrderBy(directive => directive.Title), perKind)
 			.Select(directive => new EndpointHit(DependencyEndpointKind.Directive, directive.Id, directive.Title));
 

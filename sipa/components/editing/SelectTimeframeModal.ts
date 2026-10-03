@@ -4,6 +4,7 @@ import { core } from ".."
 import { IconName } from "../PleiadesIcon"
 import { createDeferredExecutor, DeferredPromiseExecutor } from "@open-draft/deferred-promise"
 import { fuzzyFilter } from "./fuzzy"
+import { timeframeSearchText } from "../entities/directiveSearch"
 
 /**
  * A chosen timeframe, or `null` for an explicit none: it clears an executive's affinity or a directive's availability
@@ -62,7 +63,7 @@ export class SelectTimeframeModal extends SuggestModalBase<TimeframeChoice> {
 
 	/** The leading `null` row, then the timeframes whose title or directive title fuzzily match the query, best first. */
 	override getSuggestions(query: string): TimeframeChoice[] {
-		const matches = fuzzyFilter(query, this.timeframes, timeframe => `${timeframe.title} ${timeframe.directiveTitle}`)
+		const matches = fuzzyFilter(query, this.timeframes, timeframeSearchText)
 		return [null, ...matches]
 	}
 

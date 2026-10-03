@@ -1,6 +1,8 @@
 import { DecreeStatus, DirectiveStatus, FateStatus, ObjectiveStatus, type Directive } from '@pleiades/sdk'
-import { isArchivedEntity, entityKindOf, entityStatusName } from '../grid/entityActions'
+import { isArchivedEntity, entityKindOf, entityStatusName, isDirectiveKind } from '../grid/entityActions'
 import type { GridEntity } from '../grid/entityTree'
+import { directiveChain } from '../entities/directiveLineage'
+import { directiveSearchText } from '../entities/directiveSearch'
 import { statusDescriptors, type Status } from '../entities/StatusItem'
 import type { SearchChip, SearchFilter, SearchFilterOption } from '../search/SearchFilterController'
 
@@ -36,6 +38,11 @@ const statusesOf: Record<BacklogKind, readonly Status[]> = {
 function kindOfItem(item: GridEntity): BacklogKind {
 	const kind = entityKindOf(item)
 	return kind === 'stellar-directive' || kind === 'lunar-directive' ? 'directive' : kind
+}
+
+/** The text the backlog's free search finds an item by: its title — and, for a directive, its codename too. */
+export function backlogSearchText(item: GridEntity): string {
+	return isDirectiveKind(entityKindOf(item)) ? directiveSearchText(item as Directive) : item.title
 }
 
 /** A value's written form: lowercase, words joined by hyphens — `OptOut` reads `opt-out`, a title `launch-the-atlas`. */
@@ -108,16 +115,8 @@ export const backlogStatusFilter: SearchFilter<GridEntity, Status | typeof anySt
 export function backlogDirectiveFilter(directives: readonly Directive[]): SearchFilter<GridEntity, string> {
 	const byId = new Map(directives.map(directive => [directive.id, directive]))
 
-	// The directives from a directive up to its root, the directive first. The vault is hand-editable, so the walk
-	// remembers where it has been rather than trusting a chain to end.
-	const lineage = (directiveId: string | undefined): Directive[] => {
-		const line: Directive[] = []
-		for (let current = byId.get(directiveId ?? ''); current && !line.includes(current); current = byId.get(current.parentDirectiveId ?? '')) {
-			line.push(current)
-		}
-
-		return line
-	}
+	// The directives from a directive up to its root, the directive first.
+	const lineage = (directiveId: string | undefined): Directive[] => directiveChain(directiveId, byId)
 
 	const paths = new Map(directives.map(directive => [directive.id, lineage(directive.id).reverse().map(step => step.title)]))
 	const ordered = [...directives].sort((a, b) => paths.get(a.id)!.join('\u0000').localeCompare(paths.get(b.id)!.join('\u0000')))
@@ -133,6 +132,8 @@ export function backlogDirectiveFilter(directives: readonly Directive[]): Search
 			text: count === 1 ? base : `${base}-${count}`,
 			value: directive.id,
 			label: directive.title,
+			// A directive is found by its codename here as everywhere it is searched.
+			keywords: directive.codename ?? undefined,
 			icon: 'directive',
 			detail: above.length > 0 ? above.join(' › ') : undefined
 		}

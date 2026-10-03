@@ -32,8 +32,10 @@ const statusFilter: SearchFilter<Item, Status> = {
 ```
 
 An option has a `text`, the one-word value written after the colon (`objective`, `opt-out`, `launch-the-atlas`), plus a
-`value` handed to `matches`, a `label`, and an optional `icon` and `detail`. Typing is matched against the text and the
-label. A value counts as typed out in full when either matches, ignoring case and treating spaces and hyphens alike.
+`value` handed to `matches`, a `label`, and an optional `icon`, `detail` and `keywords`. Typing is matched against the
+text, the label and the keywords (other words the option is found by — the backlog's `directive:` values carry the
+directive's codename). A value counts as typed out in full when the text or the label matches, ignoring case and
+treating spaces and hyphens alike.
 A chip taken apart writes its text back.
 
 `unset` is a filter's **default**. The backlog's status filter hides archived states until a status is chosen, and
@@ -82,7 +84,8 @@ A value becomes a chip, and applies, when:
 ## Criteria
 
 `SearchCriteria` holds the free `text`, the `chips`, `active` (anything asked beyond the defaults), and `matches(item)`.
-An item passes when its text (`textOf`, usually its title) holds every word of the free search, and every filter passes
+An item passes when its text (`textOf`: its title; the backlog's `backlogSearchText` adds a directive's codename, through
+the shared `directiveSearchText` every directive searcher uses) holds every word of the free search, and every filter passes
 it: any of that filter's chips, or its `unset` default when it has none. The controller announces the criteria through
 `handleCriteriaChange` whenever they change, and once after its host first renders. `results(items)` filters a flat list.
 

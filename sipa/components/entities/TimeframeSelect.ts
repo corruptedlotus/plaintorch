@@ -2,6 +2,7 @@ import { component, css, html, property, type HTMLTemplateResult } from "@a11d/l
 import type { DirectiveTimeframeRecord } from "@pleiades/sdk"
 import { core } from ".."
 import { fuzzyFilter } from "../editing/fuzzy"
+import { timeframeSearchText } from "./directiveSearch"
 import { SelectBase, type SelectOption } from "../editing/SelectBase"
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 
@@ -56,7 +57,7 @@ export class TimeframeSelect extends SelectBase<TimeframeChoice> {
 	 */
 	protected override async search(query: string): Promise<readonly SelectOption<TimeframeChoice>[]> {
 		this.timeframes ??= core.directives.listAllTimeframes()
-		const matches = fuzzyFilter(query, await this.timeframes, timeframe => `${timeframe.title} ${timeframe.directiveTitle}`)
+		const matches = fuzzyFilter(query, await this.timeframes, timeframeSearchText)
 
 		const autoOption: SelectOption<TimeframeChoice> = {
 			key: 'auto',
