@@ -88,7 +88,10 @@ CSV export. They are inert here:
   inside the text fields the cells are full of. Row-level keyboard navigation needs a design of its own. Cells carry
   `role='gridcell'` themselves.
 - **Row reordering and selection.** Rows move by reparenting, through the row's own drag and drop (see
-  `../transfer/README.md`). Nothing selects rows yet.
+  `../transfer/README.md`) or the "Move to…" row of the entity's context menu, which opens the directive picker
+  (`SelectDirectiveModal`) over the directives the row may go under — the same rules the drop applies
+  (`reparentRefusal`), the same write (`reparentEntity`). An entity's banner edits its place the same way, through
+  `p7t-editable-hierarchy` (`../entities/EditableHierarchy.ts`). Nothing selects rows yet.
 
 ## Lore starts open
 

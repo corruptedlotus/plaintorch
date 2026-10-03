@@ -96,7 +96,7 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 
 	protected override get secondary() {
 		return html`
-			<p7t-directive-breadcrumb placeholder='Constellation Directive' .rootId=${this.entity!.parentDirectiveId}></p7t-directive-breadcrumb>
+			<p7t-editable-hierarchy placeholder='Constellation Directive' .entity=${this.entity}></p7t-editable-hierarchy>
 		`
 	}
 

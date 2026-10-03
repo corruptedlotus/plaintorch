@@ -143,7 +143,7 @@ export class FateBanner extends EntityBanner<Fate> {
 
 	protected override get secondary() {
 		return html`
-			<p7t-directive-item .directive=${this.entity!.directive}></p7t-directive-item>
+			<p7t-editable-hierarchy .entity=${this.entity}></p7t-editable-hierarchy>
 		`
 	}
 

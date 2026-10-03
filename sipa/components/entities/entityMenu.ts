@@ -1,5 +1,8 @@
 import { typeNameOf } from '@pleiades/sdk'
-import { core, deleteConfirmation, navigateToEntity, removeConfirmation, type ContextMenuEntry, type ContextMenuSpec } from '..'
+import {
+	canMoveEntity, core, deleteConfirmation, moveEntity, navigateToEntity, removeConfirmation, type ContextMenuAction,
+	type ContextMenuEntry, type ContextMenuSpec, type GridEntity
+} from '..'
 import { EntityEditModal } from './EntityEditModal'
 import { toast } from '../../host'
 
@@ -13,37 +16,76 @@ export interface InteractableEntity {
 const deletableTypes = new Set(['Objective', 'StellarDirective', 'LunarDirective', 'Fate', 'Decree', 'LorePage'])
 
 /**
- * Builds the context menu for an entity, whatever kind it is (an entity item, a grid row).
+ * The rows of an entity's menu, each built here and nowhere else, so a surface composing a menu of its own — the
+ * canvas's node menu, the activity menu of a cycle's row — borrows the row rather than redrawing it.
+ */
+export const entityMenuEntries = {
+	/** Opens the entity's editing modal (its banner). */
+	edit: (entity: InteractableEntity): ContextMenuAction =>
+		({ label: 'Edit', icon: 'lucide:pencil', run: () => openEntityEditor(entity) }),
+
+	/** Opens the note the entity is the authority for. */
+	openNote: (entity: InteractableEntity): ContextMenuAction =>
+		({ label: 'Open note', icon: 'lucide:file-text', run: () => navigateToEntity(entity.id) }),
+
+	/** Moves the entity through the hierarchy, through the directive picker (see {@link moveEntity}). */
+	moveTo: (entity: InteractableEntity): ContextMenuAction =>
+		({ label: 'Move to…', icon: 'lucide:folder-symlink', run: () => void moveEntity(entity as unknown as GridEntity) }),
+
+	/** Takes an objective out of whichever Onrush holds it, asking first; the objective itself survives. */
+	removeFromOnrush: (entity: InteractableEntity): ContextMenuAction => ({
+		label: 'Remove from Onrush',
+		icon: 'onrush',
+		confirm: removeConfirmation(`Remove "${entity.title}" from its Onrush?`, 'default'),
+		run: () => removeFromOnrush(entity.id)
+	}),
+
+	/** Deletes the entity, asking first — the one destructive row, drawn in the destructive colour. */
+	delete: (entity: InteractableEntity): ContextMenuAction => ({
+		label: 'Delete',
+		icon: 'lucide:trash-2',
+		danger: true,
+		confirm: deleteConfirmation(`Delete "${entity.title}"?`),
+		run: () => deleteEntity(entity)
+	})
+}
+
+/**
+ * What each kind adds to the rows every entity gets, by runtime type name. A kind not listed here adds nothing; a kind
+ * with more to offer adds its rows here rather than in the item that draws it, so a grid row, a list item and a
+ * heading all raise the same menu for the same entity.
+ */
+const kindEntries: Record<string, (entity: InteractableEntity) => ContextMenuEntry[]> = {
+	Objective: entity => (entity as { onrushSprintId?: string }).onrushSprintId ? [entityMenuEntries.removeFromOnrush(entity)] : []
+}
+
+/**
+ * Builds the context menu for an entity, whatever kind it is (an entity item, a grid row, a heading).
  *
- * Every entity offers to be edited and to open its note; an objective that sits in an Onrush offers to leave it; and
- * any kind the SDK can delete offers deletion, set apart below a separator and in the destructive colour. A kind
- * with no delete call simply omits that row rather than offering one that would silently do nothing. Leaving the
+ * Every entity offers to be edited and to open its note; a kind that sits in the hierarchy — a directive, an
+ * incentive — offers to be moved through it; a kind with rows of its own adds them ({@link kindEntries}: an objective
+ * in an Onrush offers to leave it); and any kind the SDK can delete offers deletion, set apart below a separator. A
+ * kind with no delete call simply omits that row rather than offering one that would silently do nothing. Leaving the
  * Onrush and deleting both ask first.
+ *
+ * A surface whose row is not the entity itself — a cycle's activity, an occurrence, a canvas node — builds its own
+ * menu from {@link entityMenuEntries} instead, adding and replacing rows as its row needs.
  */
 export function entityContextMenu(entity: InteractableEntity): ContextMenuSpec {
 	const typeName = typeNameOf(entity)
 	const entries: ContextMenuEntry[] = [
-		{ label: 'Edit', icon: 'lucide:pencil', run: () => openEntityEditor(entity) },
-		{ label: 'Open note', icon: 'lucide:file-text', run: () => navigateToEntity(entity.id) }
+		entityMenuEntries.edit(entity),
+		entityMenuEntries.openNote(entity)
 	]
 
-	if (typeName === 'Objective' && (entity as { onrushSprintId?: string }).onrushSprintId) {
-		entries.push({
-			label: 'Remove from Onrush',
-			icon: 'onrush',
-			confirm: removeConfirmation(`Remove "${entity.title}" from its Onrush?`, 'default'),
-			run: () => removeFromOnrush(entity.id)
-		})
+	if (canMoveEntity(typeName)) {
+		entries.push(entityMenuEntries.moveTo(entity))
 	}
 
+	entries.push(...kindEntries[typeName ?? '']?.(entity) ?? [])
+
 	if (canDeleteEntity(typeName)) {
-		entries.push({ separator: true }, {
-			label: 'Delete',
-			icon: 'lucide:trash-2',
-			danger: true,
-			confirm: deleteConfirmation(`Delete "${entity.title}"?`),
-			run: () => deleteEntity(entity)
-		})
+		entries.push({ separator: true }, entityMenuEntries.delete(entity))
 	}
 
 	return { title: entity.title, entries }

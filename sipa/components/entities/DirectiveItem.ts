@@ -1,7 +1,9 @@
-import { component, css, html, nothing, property } from '@a11d/lit'
+import { component, css, html, nothing, property, repeat } from '@a11d/lit'
 import { Directive } from '@pleiades/sdk'
 import { IconName } from '../PleiadesIcon'
 import { InfoItem } from '../design/InfoItem'
+import { core } from '..'
+import { directiveAncestors } from './directiveLineage'
 import './DirectiveCard'
 
 /**
@@ -11,6 +13,9 @@ import './DirectiveCard'
  *
  * The built-in tooltip is a mini-banner (see {@link DirectiveCard}): the crest, the title, and the workflow state —
  * the gist of the directive's own banner, without leaving the surface the chip sits on.
+ *
+ * Its chips, where a consumer asks with `chipped` (a picker's list, where two directives may share a title), are the
+ * directives above it, nearest first — each a small chip of its own, resolved from the loaded directive listing.
  */
 @component('p7t-directive-item')
 export class DirectiveItem extends InfoItem {
@@ -62,6 +67,19 @@ export class DirectiveItem extends InfoItem {
 		return this.directive
 			? html`<p7t-directive-card .directive=${this.directive}></p7t-directive-card>`
 			: nothing
+	}
+
+	/**
+	 * The directives above this one, nearest first, each as a small chip — resolved from the directive listing as it is
+	 * loaded, so a directive whose listing is not in yet draws no chips. The ancestors are not themselves chipped, so
+	 * the row stays one level deep.
+	 */
+	protected override get chipsTemplate() {
+		const directive = this.directive
+		const ancestors = directive ? directiveAncestors(directive, core.repos.directiveList.peek() ?? []) : []
+		return html`${repeat(ancestors, ancestor => ancestor.id, ancestor => html`
+			<p7t-directive-item small .directive=${ancestor}></p7t-directive-item>
+		`)}`
 	}
 }
 

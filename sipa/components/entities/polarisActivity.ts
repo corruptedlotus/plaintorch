@@ -1,7 +1,7 @@
 import { isObjectiveIncentive, ObjectiveStatus, type Executive, type Objective, type PolarisCycle } from '@pleiades/sdk'
 import { confirmAction, core, isIncentiveInCycle, removeConfirmation, type ContextMenuEntry, type ContextMenuSpec, type InteractionBubbleAnchor } from '..'
 import { ExecutiveModal } from './ExecutiveModal'
-import { openEntityEditor } from './entityMenu'
+import { entityMenuEntries } from './entityMenu'
 import { toast } from '../../host'
 
 /**
@@ -67,7 +67,7 @@ export function polarisActivityMenu(activity: PolarisActivity, changed?: (update
 			}
 		},
 		{ label: 'Time Management', icon: 'lucide:clock', run: () => openPolarisActivityAllocation(activity, changed) },
-		{ label: 'Edit', icon: 'lucide:pencil', disabled: !entity, run: () => { entity && openEntityEditor(entity) } },
+		entity ? entityMenuEntries.edit(entity) : { label: 'Edit', icon: 'lucide:pencil', disabled: true, run: () => { } },
 		{
 			label: 'Move to next Polaris',
 			icon: 'lucide:calendar-plus',

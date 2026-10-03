@@ -1,6 +1,6 @@
 import { Component, component, css, event, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
 import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
-import { concludeConfirmation, ContextMenu, core, deleteConfirmation, DerivedRef, navigateToEntity, removeConfirmation, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
+import { concludeConfirmation, ContextMenu, core, deleteConfirmation, DerivedRef, entityMenuEntries, removeConfirmation, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
 import { activatePlanningOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
 import { OnrushDetailModal } from './OnrushDetailModal'
@@ -1069,7 +1069,7 @@ export class DependencyCanvas extends Component {
 					? this.globalMenuEntries(node)
 					: isCheckpoint
 						? this.checkpointMenuEntries(node)
-						: this.entityMenuEntries(node))
+						: this.entityNodeMenuEntries(node))
 			]
 		}
 	}
@@ -1083,7 +1083,7 @@ export class DependencyCanvas extends Component {
 	private globalMenuEntries(node: CanvasNode): ContextMenuEntry[] {
 		const entries: ContextMenuEntry[] = []
 		if (node.ref.kind !== DependencyEndpointKind.Checkpoint) {
-			entries.push({ label: 'Open note', icon: 'lucide:file-text', run: () => navigateToEntity(node.entity.id) })
+			entries.push(entityMenuEntries.openNote(node.entity))
 		}
 
 		entries.push(
@@ -1095,9 +1095,10 @@ export class DependencyCanvas extends Component {
 		return entries
 	}
 
-	private entityMenuEntries(node: CanvasNode): ContextMenuEntry[] {
+	/** An Onrush node's menu: its note, leaving the Onrush (a ghost cannot), and — set apart — deleting the entity. */
+	private entityNodeMenuEntries(node: CanvasNode): ContextMenuEntry[] {
 		return [
-			{ label: 'Open note', icon: 'lucide:file-text', run: () => navigateToEntity(node.entity.id) },
+			entityMenuEntries.openNote(node.entity),
 			node.ghostly
 				? { note: 'A prerequisite outside this Onrush. It goes when the block is resolved.' }
 				: {

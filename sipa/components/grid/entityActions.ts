@@ -4,7 +4,7 @@ import {
 } from '@pleiades/sdk'
 import {
 	addObjectiveToPolaris, core, ExpandingAction, IconName, isArchivedStatus, isInactiveStatus, PromptTextModal,
-	type ScheduleValue, type Status
+	SelectDirectiveModal, type DirectiveChoice, type ScheduleValue, type Status
 } from '..'
 import { host, toast } from '../../host'
 import type { GridEntity } from './entityTree'
@@ -292,6 +292,49 @@ export async function reparentEntity(entity: GridEntity, parent: Directive | und
 		? `PLAINTORCH could not move ${entity.title}.`
 		: parent ? `Moved ${entity.title} under ${parent.title}.` : `Moved ${entity.title} to the top level.`, moved ? 'success' : 'error')
 	return moved
+}
+
+/** The runtime types {@link moveEntity} can move through the hierarchy: the directives and the three incentives. */
+const movableTypes = new Set(['StellarDirective', 'LunarDirective', 'Objective', 'Fate', 'Decree'])
+
+/** Whether an entity of this runtime type can be moved through the hierarchy here — the show/hide test a "Move to…" row uses. */
+export function canMoveEntity(typeName: string | undefined): boolean {
+	return !!typeName && movableTypes.has(typeName)
+}
+
+/**
+ * Asks where to move an entity and moves it there — the picker-driven form of the grid's drop, behind the hierarchy
+ * editable and the "Move to…" row of an entity's menu.
+ *
+ * The directive picker offers only what {@link reparentRefusal} lets the entity go under (never itself or anything
+ * beneath it, never across the lunar/stellar line, never where it already is), led by the top level — a
+ * constellation directive, a world quest — when the entity is not there already. The chosen place is written through
+ * {@link reparentEntity}, which reports the outcome.
+ *
+ * Resolves to the new parent (`null` for the top level) once moved; `undefined` when the picker was dismissed or the
+ * move was not written.
+ */
+export async function moveEntity(entity: GridEntity): Promise<Directive | null | undefined> {
+	const directiveKind = isDirectiveKind(entityKindOf(entity))
+	let choice: DirectiveChoice | undefined
+	try {
+		choice = await SelectDirectiveModal.prompt({
+			placeholder: `Move ${entity.title} to…`,
+			nullText: reparentRefusal(entity, undefined) !== undefined
+				? undefined
+				: directiveKind ? 'Top level (a constellation directive)' : 'No directive (a world quest)',
+			allow: directive => reparentRefusal(entity, directive) === undefined
+		})
+	}
+	catch {
+		return undefined
+	}
+
+	if (choice === undefined) {
+		return undefined
+	}
+
+	return await reparentEntity(entity, choice ?? undefined) ? choice : undefined
 }
 
 /** Whether a fate is a one-off occurrence — an orbit that is a fixed-datetime `Z{…}` literal (PEP111). */

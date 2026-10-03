@@ -99,7 +99,7 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 	
 	protected override get secondary() {
 		return html`
-			<p7t-directive-breadcrumb .rootId=${this.entity!.directiveId}></p7t-directive-breadcrumb>
+			<p7t-editable-hierarchy .entity=${this.entity}></p7t-editable-hierarchy>
 		`
 	}
 
