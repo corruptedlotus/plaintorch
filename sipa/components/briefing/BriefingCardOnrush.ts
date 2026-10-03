@@ -1,6 +1,6 @@
-import { component, css, html, nothing } from "@a11d/lit"
+import { component, css, html, nothing, state } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
-import { DependencyEndpointKind, Objective, ObjectiveStatus, OnrushSprint } from "@pleiades/sdk"
+import { DependencyEndpointKind, Objective, ObjectiveStatus, OnrushSprint, type EndpointRef } from "@pleiades/sdk"
 import { concludeConfirmation, confirmAction, core, DerivedRef, tooltip, TransferController } from ".."
 import { endpointKey, immediatePrerequisites, unresolvedPrerequisites } from "../canvas/graphModel"
 import { fuzzyFilter } from "../editing/fuzzy"
@@ -31,12 +31,31 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 	private readonly dependencies = new DerivedRef(this, core.repos.dependencyList)
 	private readonly objectiveList = new DerivedRef(this, core.repos.objectiveList)
 
+	/** The members whose dependency group is unfolded, by endpoint key; every group starts folded. */
+	@state() private expandedGroups: ReadonlySet<string> = new Set()
+
 	static override get styles() {
 		return css`
 			${super.styles}
 
 			:host {
 				--p7t-flare-accent: var(--p7t-accent-onrush);
+			}
+
+			.dependency-group-heading {
+				cursor: pointer;
+				user-select: none;
+
+				&:hover {
+					opacity: .9;
+				}
+			}
+
+			.dependency-group-chevron {
+				width: 1em;
+				height: 1em;
+				flex: 0 0 auto;
+				margin-inline-start: -.3em;
 			}
 
 			.add-button {
@@ -92,60 +111,85 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 		return html`<span>${this.data!.title}</span>`
 	}
 
+	/**
+	 * The members, each followed by its own dependency group when it has one, then the groups of the members that
+	 * have no row here (the sprint's checkpoints).
+	 */
 	protected override get listContent() {
+		const groups = this.unresolvedGroups
+		const byMember = new Map(groups.map(group => [group.key, group]))
+		const placed = new Set<string>()
 		return html`
-			${this.data!.objectives.map(objective => html`
-				<p7t-objective-item interactive .currentOnrush=${this.data} .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
-			`)}
+			${this.data!.objectives.map(objective => {
+				const key = endpointKey({ kind: DependencyEndpointKind.Objective, id: objective.id })
+				const group = byMember.get(key)
+				if (group) {
+					placed.add(key)
+				}
+
+				return html`
+					<p7t-objective-item interactive .currentOnrush=${this.data} .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
+					${group ? this.dependencyGroupTemplate(group) : nothing}
+				`
+			})}
 			<!--<p7t-button @click=${() => this.addObjective()} icon='lucide:plus' class='add-button'>Add Objective</p7t-button>-->
-			${this.dependencySection}
+			${groups.filter(group => !placed.has(group.key)).map(group => this.dependencyGroupTemplate(group))}
 		`
 	}
 
 	/**
-	 * The onrush's unresolved dependencies, grouped under the member each holds back.
+	 * One member's unresolved dependencies, under a heading that folds them away — folded by default, the heading
+	 * still reading the member and the count, and unfolded per member for as long as the card lives.
 	 *
-	 * A group appears for every objective or checkpoint with at least one unmet prerequisite, walked
+	 * A group exists for every objective or checkpoint with at least one unmet prerequisite, walked
 	 * recursively down the blocking chain. The count is the true total across every kind of prerequisite;
 	 * the rows are the objective ones — the other kinds (checkpoints, directives, fates) count but do not
 	 * list, so a group can read a higher number than the rows beneath it. In the count's tooltip, a prerequisite that is
 	 * not holding the member's next transition back right now — one reached only through a gate on a later transition,
 	 * or on one already made — is drawn faint.
 	 */
-	private get dependencySection() {
-		const groups = this.unresolvedGroups
-		if (groups.length === 0) {
-			return nothing
-		}
-
+	private dependencyGroupTemplate(group: DependencyGroup) {
+		const expanded = this.expandedGroups.has(group.key)
 		return html`
-			${groups.map(group => html`
-				<div class='dependency-group'>
-					<div class='dependency-group-heading'>
-						<p7t-icon-item small icon='lucide:route-off' class='dependency-group-title'>${group.title}</p7t-icon-item>
-						<span
-							class='dependency-count'
-							?data-detail=${group.nonObjectiveCount > 0}
-							${group.nonObjectiveCount > 0
-								? tooltip(() => html`
-									<p7t-endpoint-list .endpoints=${group.refs} .nonImmediate=${group.nonImmediate} filter='non-objective'>
-										Blocked by
-									</p7t-endpoint-list>
-								`)
-								: nothing}
-						>${group.total}</span>
-					</div>
+			<div class='dependency-group' ?data-expanded=${expanded}>
+				<div class='dependency-group-heading' role='button' aria-expanded=${expanded} @click=${() => this.toggleGroup(group.key)}>
+					<p7t-icon class='dependency-group-chevron' icon=${expanded ? 'lucide:chevron-down' : 'lucide:chevron-right'}></p7t-icon>
+					<p7t-icon-item small icon='lucide:route-off' class='dependency-group-title'>${group.title}</p7t-icon-item>
+					<span
+						class='dependency-count'
+						?data-detail=${group.nonObjectiveCount > 0}
+						@click=${(e: Event) => e.stopPropagation()}
+						${group.nonObjectiveCount > 0
+							? tooltip(() => html`
+								<p7t-endpoint-list .endpoints=${group.refs} .nonImmediate=${group.nonImmediate} filter='non-objective'>
+									Blocked by
+								</p7t-endpoint-list>
+							`)
+							: nothing}
+					>${group.total}</span>
+				</div>
+				${!expanded ? nothing : html`
 					<div class='dependency-group-objectives'>
 						${group.objectives.map(objective => html`
 							<p7t-objective-item interactive .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
 						`)}
 					</div>
-				</div>
-			`)}
+				`}
+			</div>
 		`
 	}
 
-	private get unresolvedGroups() {
+	/** Folds or unfolds one member's group. */
+	private toggleGroup(key: string) {
+		const expanded = new Set(this.expandedGroups)
+		if (!expanded.delete(key)) {
+			expanded.add(key)
+		}
+
+		this.expandedGroups = expanded
+	}
+
+	private get unresolvedGroups(): DependencyGroup[] {
 		const sprint = this.data
 		if (!sprint) {
 			return []
@@ -180,7 +224,7 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 			const nonObjectiveCount = refs.filter(ref => ref.kind !== DependencyEndpointKind.Objective).length
 			const holding = immediate.get(member.key)
 			const nonImmediate = new Set(refs.map(endpointKey).filter(key => !holding?.has(key)))
-			return [{ title: member.title, total: refs.length, objectives, refs, nonObjectiveCount, nonImmediate }]
+			return [{ key: member.key, title: member.title, total: refs.length, objectives, refs, nonObjectiveCount, nonImmediate }]
 		})
 	}
 
@@ -252,6 +296,18 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 		if (!this.data) return
 		new AddObjectiveModal(this).open()
 	}
+}
+
+/** One member's unresolved prerequisites, as the card draws them (see `dependencyGroupTemplate`). */
+interface DependencyGroup {
+	/** The member's endpoint key — what the group is placed beneath, and folded or unfolded by. */
+	key: string
+	title: string
+	total: number
+	objectives: Objective[]
+	refs: EndpointRef[]
+	nonObjectiveCount: number
+	nonImmediate: ReadonlySet<string>
 }
 
 /** Guards a collection that travelled here inside another entity's payload against a gap or a stub. */
