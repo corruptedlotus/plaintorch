@@ -20,6 +20,12 @@ public interface ILorePageApi
 	Task<IReadOnlyList<LorePage>> ListAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Lists the active lore pages: the active spine of the lore index — the latest page to have begun, then each of its
+	/// ancestors up to its Era, deepest first — as the briefing's hero shows them.
+	/// </summary>
+	Task<IReadOnlyList<LorePage>> ListActiveAsync(CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Creates a lore page beneath the requested parent (or a new Era when none is given), composing its level, narrative
 	/// index, and PUCK identity, and materializing its self-named folder and file. Returns the created lore page.
 	/// </summary>
