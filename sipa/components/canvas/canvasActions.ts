@@ -156,9 +156,10 @@ export async function removeObjectiveFromOnrush(objectiveId: string): Promise<bo
  *
  * With a sprint it is created already bound to it, so it appears on the canvas as one of the sprint's
  * checkpoints beside its milestone; without one it is created free, for a global context to pin. Resolves to
- * the new checkpoint, or nothing when the prompt was dismissed (not a failure) or the core refused.
+ * the new checkpoint, or nothing when the prompt was dismissed (not a failure) or the core refused. `onCreated`
+ * hears of the checkpoint before the sprint is refreshed, so a canvas can place it before it is first drawn.
  */
-export async function createCheckpoint(sprint?: OnrushSprint): Promise<Checkpoint | undefined> {
+export async function createCheckpoint(sprint?: OnrushSprint, onCreated?: (checkpoint: Checkpoint) => void): Promise<Checkpoint | undefined> {
 	let title: string | undefined
 	try {
 		title = await PromptTextModal.prompt('New Checkpoint', 'Title')
@@ -178,6 +179,7 @@ export async function createCheckpoint(sprint?: OnrushSprint): Promise<Checkpoin
 	}
 
 	toast(`Checkpoint added: ${title}`, 'success')
+	onCreated?.(created)
 	await (sprint ? refreshOnrush() : core.repos.checkpointList.refresh())
 	return created
 }

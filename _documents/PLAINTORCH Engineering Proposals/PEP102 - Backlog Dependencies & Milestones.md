@@ -191,3 +191,22 @@ The endpoint list takes a `nonImmediate` set and draws those endpoints faint, af
 ### Open edges
 - A fate's or objective's occurrence-level edges are not rolled up into its banner's route.
 - An eventive's phase is temporal, so its begin and finish arrive with the clock. The listing only revalidates on a write, so a stamp on an eventive endpoint can trail the moment it passes, the same as `satisfied` already does.
+
+## Patch102.9 - Canvas menus
+
+### Joining a ghost to the Onrush
+A ghostly objective, a prerequisite outside the Onrush that holds a member back, now offers **Add to This Onrush** in its menu, where a member offers *Remove from Onrush*. It makes the blocker a member of the Onrush being graphed, so it is planned with the rest instead of only being shown. The add-FAB's picker leaves out every node already on the canvas, ghosts included, so this is the way a ghost joins. The core keeps an objective in one Onrush at a time and moves it out of any other, so a ghost that belongs to another Onrush asks first and names it. Other ghosts (a directive, a fate, a checkpoint) cannot join an Onrush, and keep their note.
+
+### The backdrop's menu
+A right-click on the empty canvas opens a menu of quick actions. It is titled with the Onrush, or the mode in a global context:
+- what the two FABs offer, the add-FAB's *Add to Canvas* choices and *New checkpoint*. What they add or create lands **where the menu was raised**, as if dragged there, and the arrangement is saved like a drag. Through a FAB the layout still places the node;
+- *Fit to view*, which frames the nodes where they are and keeps their positions, unlike *Reset layout*;
+- the tray's *Reset layout*, then *Onrush details*, or *Save to file* for a scratch global context.
+
+With no Onrush to show, it offers the empty state's way to one (*Start now*, *Go to planning*, *Create new*). While the graph loads it offers nothing. It answers only a press on the backdrop itself, the same test a pan starts by. A node raises its own menu; the tray, the FABs and an edge are left alone.
+
+### Nothing on the canvas selects
+A pan that swept over the tray's tallies or the toolbar's readout selected their text and interrupted the drag. The whole canvas is now `user-select: none`, as its nodes already were.
+
+### Membership redraws at once
+The canvas observed its node kinds but not the sprint. A sprint is a canonical entity, so a refetch that changes its members updates it in place, and its derived record never reports a change. A node joining or leaving therefore showed only when some objective notification happened to arrive after the sprint's. The canvas now observes `OnrushSprint` too, so an add or a removal, from a menu or the FAB, redraws as soon as the sprint is refetched.
