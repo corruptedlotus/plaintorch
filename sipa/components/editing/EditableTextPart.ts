@@ -6,6 +6,12 @@ import { toast } from "../../host"
 const warningDelay = 500
 
 /**
+ * A zero-width space that holds the caret in a field being edited with no text (see {@link EditableTextPart}). It is never
+ * part of the value: every read of the text being edited strips it.
+ */
+const caretAnchor = '​'
+
+/**
  * Hardened base for the contenteditable editables (title, summary, orbit).
  *
  * It centralises what the free-text editables used to each duplicate — and fixes the reported bug where a
@@ -17,6 +23,10 @@ const warningDelay = 500
  * - an invalid value warns (delayed) while editing and, on commit, raises a warning toast and reverts;
  * - a `placeholder` renders when empty so the box keeps a hit target even when void (the empty-contenteditable
  *   trap), and the caret is placed explicitly on focus.
+ * - a field being edited with no text — one that starts empty, or one emptied mid-edit — holds the caret on a
+ *   zero-width space. The field is a shadow host whose text is slotted, so with no light-DOM text there is no place
+ *   for a caret in it: Chromium puts the selection inside the shadow tree instead, and keystrokes are lost until the
+ *   field is refocused. The space gives the caret a text node to sit in; it is stripped from every read.
  *
  * Subclasses provide only the value shape: {@link toDisplayText}, {@link toEditableText}, {@link parseValue},
  * and optionally {@link validateContent}.
@@ -63,8 +73,12 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 				animation: none;
 			}
 
-			/* Rendered placeholder: gives an empty field size and a visible affordance so it stays clickable. */
-			:host(:empty)::before {
+			/*
+			 * Rendered placeholder: gives an empty field size and a visible affordance so it stays clickable. While an
+			 * empty field is edited it holds the caret anchor, so it is not :empty; [blank] marks it instead.
+			 */
+			:host(:empty)::before,
+			:host([blank])::before {
 				content: attr(data-placeholder);
 				opacity: .4;
 				font-weight: inherit;
@@ -77,11 +91,16 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 		super.updated?.(changed)
 		this.dataset.placeholder = this.placeholder
 		this.toggleAttribute('warning', this.warning)
-		// An inert field is not editable at all — it renders its read-only face and never takes the caret.
-		this.contentEditable = (this.disabled) ? 'false' : 'plaintext-only'
+		// An inert field is not editable at all — it renders its read-only face and never takes the caret. Assigned only
+		// when it changes: an update mid-edit (the warning outline) must not reset the editing host under the caret.
+		const editable = this.disabled ? 'false' : 'plaintext-only'
+		if (this.contentEditable !== editable) {
+			this.contentEditable = editable
+		}
 		// While editing, the caret lives in this text; rewriting it would collapse the selection, so the text
 		// is synced only when idle. The editing form is installed once, on focus.
 		if (this.active) return
+		this.removeAttribute('blank')
 		const display = this.toDisplayText(this.value)
 		if (this.textContent !== display) {
 			this.textContent = display
@@ -108,7 +127,6 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 	@eventListener({ type: 'focus', target: this })
 	protected handleFocus() {
 		if (!this.active && this.editButton) {
-			console.warn("hi!")
 			this.blur()
 			return
 		}
@@ -118,8 +136,7 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 			return
 		}
 
-		this.textContent = this.toEditableText(this.value)
-		this.placeCaretAtEnd()
+		this.setEditingText(this.toEditableText(this.value))
 	}
 
 	@eventListener({ type: 'keydown', target: this })
@@ -140,21 +157,29 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 	}
 
 	@eventListener({ type: 'input', target: this })
-	protected handleInput() {
+	protected handleInput(e: InputEvent) {
 		if (!this.active) return
 
-		const text = this.textContent ?? ''
+		const text = this.editingText
 		let sanitized = this.multiline ? text : text.replace(/[\r\n]+/g, ' ')
 		if (this.maxLength !== undefined && sanitized.length > this.maxLength) {
 			sanitized = sanitized.slice(0, this.maxLength)
 		}
 
-		// Only rewrite on the rare overflow/paste-newline path — normal typing leaves the caret untouched.
-		if (sanitized !== text) {
-			this.textContent = sanitized
-			this.placeCaretAtEnd()
+		// Only rewrite on the rare overflow/paste-newline path — normal typing leaves the caret untouched — and around
+		// the caret anchor (never mid-composition, which a rewrite would break): once on the first keystroke into an
+		// empty field, to let go of the anchor, and whenever an edit empties the field. Emptied, the field holds only
+		// the <br> Chromium leaves, and the caret is no longer in its text; some Chromium builds then type nowhere until
+		// the field is refocused, so the anchor takes the caret back at once.
+		const raw = this.textContent ?? ''
+		const composing = e.isComposing
+		const anchored = text !== '' && raw !== text && !composing
+		const emptied = sanitized === '' && raw !== caretAnchor && !composing
+		if (sanitized !== text || anchored || emptied) {
+			this.setEditingText(sanitized)
 		}
 
+		this.toggleAttribute('blank', sanitized === '')
 		this.scheduleWarning()
 	}
 
@@ -169,7 +194,7 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 			return
 		}
 
-		const raw = this.textContent ?? ''
+		const raw = this.editingText
 		const message = this.validateMessage(raw)
 		if (message !== undefined) {
 			toast(message, 'warning')
@@ -192,8 +217,20 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 	private scheduleWarning() {
 		clearTimeout(this.warnTimer)
 		this.warnTimer = setTimeout(() => {
-			this.warning = this.validateMessage(this.textContent ?? '') !== undefined
+			this.warning = this.validateMessage(this.editingText) !== undefined
 		}, warningDelay)
+	}
+
+	/** The text being edited, without the caret anchor an empty field holds. */
+	protected get editingText(): string {
+		return (this.textContent ?? '').replaceAll(caretAnchor, '')
+	}
+
+	/** Puts text in the field being edited with the caret at its end; with none, the caret anchor holds the caret. */
+	private setEditingText(text: string) {
+		this.textContent = text || caretAnchor
+		this.toggleAttribute('blank', text === '')
+		this.placeCaretAtEnd()
 	}
 
 	protected validateMessage(raw: string): string | undefined {
@@ -209,12 +246,23 @@ export abstract class EditableTextPart<T> extends EditablePart<T> {
 		return this.validateContent(trimmed)
 	}
 
+	/**
+	 * Puts the caret at the end of the text, inside its last text node. A position on the host itself is not enough: it
+	 * maps to the shadow tree when the host holds no text, so the caret is placed in the slotted text explicitly.
+	 */
 	private placeCaretAtEnd() {
 		const selection = this.ownerDocument.getSelection()
 		if (!selection) return
 		const range = this.ownerDocument.createRange()
-		range.selectNodeContents(this)
-		range.collapse(false)
+		const last = this.lastChild
+		if (last instanceof Text) {
+			range.setStart(last, last.length)
+		}
+		else {
+			range.selectNodeContents(this)
+			range.collapse(false)
+		}
+
 		selection.removeAllRanges()
 		selection.addRange(range)
 	}
