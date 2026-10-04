@@ -1,4 +1,4 @@
-import { component, css, html, state, type PropertyValues } from "@a11d/lit"
+import { component, css, html, nothing, state, type PropertyValues } from "@a11d/lit"
 import { OrbitUnit, type DeclarativeCalendar } from "@pleiades/sdk"
 import { humanizeOrbit } from "../../orbits"
 import { CalendarRef } from "../data/CalendarRef"
@@ -26,6 +26,14 @@ export interface OrbitBubbleData {
 export interface OrbitBubbleOptions extends InteractionBubbleOptions<OrbitBubbleData> {
 	/** The calendar the schedule's owner names, if any; the orbit is read, and a one-shot written, on it, else on the vault's preferred one. */
 	readonly calendar?: DeclarativeCalendar
+	/**
+	 * The scopes a one-shot may take, among {@link oneShotGranularities}. Unset, every one a `Z{…}` literal can write; an
+	 * owner whose orbit must stay day-granular (a timeframe, a reflecting decree) narrows it to the day. Empty, the
+	 * bubble edits notation alone.
+	 */
+	readonly oneShotUnits?: readonly OrbitUnit[]
+	/** Whether a one-shot may carry a duration, a span. A decree's or a timeframe's orbit takes none. Unset, it may. */
+	readonly oneShotDuration?: boolean
 }
 
 /** How the bubble edits the schedule: as orbit notation, or as one single moment written as a `Z{…}` literal. */
@@ -47,6 +55,10 @@ function today(): string {
  *
  * It opens in One-shot when the orbit is nothing but such a literal, and in Orbit otherwise. Switching carries the value
  * across: a one-shot opens Orbit on its literal, and a literal typed in Orbit opens One-shot on its moment.
+ *
+ * An owner narrows what a one-shot may be ({@link OrbitBubbleOptions.oneShotUnits}, {@link OrbitBubbleOptions.oneShotDuration}):
+ * a scope it cannot take is not offered (nor is the Scope choice when one is left), a duration it cannot carry has no
+ * field, and a literal outside those bounds opens in Orbit. With no scope left, One-shot is not offered at all.
  *
  * Its data is the orbit and, for a one-shot literal (however it was entered), the calendar it is written on. Save
  * (or Enter in the notation, Ctrl+Enter anywhere) commits; invalid notation, or a moment the calendar cannot write,
@@ -173,14 +185,38 @@ export class OrbitBubble extends InteractionBubbleBase<OrbitBubbleData, OrbitBub
 		`
 	}
 
-	/** Opens on the orbit it was handed: One-shot for a lone `Z{…}` literal, Orbit for anything else. */
+	/** The scopes a one-shot may take here: the owner's, else every one a literal can write. */
+	private get oneShotUnits(): readonly OrbitUnit[] {
+		return this.options?.oneShotUnits ?? oneShotGranularities
+	}
+
+	/** Whether a one-shot may carry a duration here. */
+	private get oneShotDuration(): boolean {
+		return this.options?.oneShotDuration ?? true
+	}
+
+	/** Whether a one-shot is within what the owner allows: one of its scopes, and a duration only where it takes one. */
+	private allows(oneShot: OneShot): boolean {
+		return this.oneShotUnits.includes(oneShot.granularity) && (this.oneShotDuration || !oneShot.duration)
+	}
+
+	/**
+	 * Opens on the orbit it was handed: One-shot for a lone `Z{…}` literal the owner allows, Orbit for anything else. A
+	 * fresh one-shot starts as today, all day, or at the first scope the owner allows when a whole day is not one.
+	 */
 	protected override willUpdate(changed: PropertyValues<this>) {
 		super.willUpdate(changed)
 		if (!this.hasUpdated) {
+			const units = this.oneShotUnits
+			if (units.length > 0 && !units.includes(this.oneShot.granularity)) {
+				this.oneShot = { moment: momentAtGranularity(this.oneShot.moment, units[0]!, this.calendars.calendar), granularity: units[0]! }
+			}
+
 			const oneShot = readOneShot(this.data.orbit, this.calendars.calendar)
+			const allowed = oneShot && this.allows(oneShot) ? oneShot : undefined
 			this.draft = this.data.orbit ?? ''
-			this.shape = oneShot ? 'one-shot' : 'orbit'
-			this.oneShot = oneShot ?? this.oneShot
+			this.shape = allowed ? 'one-shot' : 'orbit'
+			this.oneShot = allowed ?? this.oneShot
 		}
 	}
 
@@ -188,10 +224,12 @@ export class OrbitBubble extends InteractionBubbleBase<OrbitBubbleData, OrbitBub
 		return html`
 			<div class='head'>
 				<span id='label' class='title'>Schedule</span>
-				<div class='modes' role='radiogroup' aria-label='Schedule type'>
-					${this.modeButton('orbit', 'Orbit', 'lucide:repeat')}
-					${this.modeButton('one-shot', 'One-shot', 'lucide:calendar-clock')}
-				</div>
+				${this.oneShotUnits.length === 0 ? nothing : html`
+					<div class='modes' role='radiogroup' aria-label='Schedule type'>
+						${this.modeButton('orbit', 'Orbit', 'lucide:repeat')}
+						${this.modeButton('one-shot', 'One-shot', 'lucide:calendar-clock')}
+					</div>
+				`}
 			</div>
 			<div @keydown=${(e: KeyboardEvent) => this.onKeyDown(e)}>
 				${this.shape === 'orbit' ? this.orbitTemplate : this.oneShotTemplate}
@@ -224,16 +262,19 @@ export class OrbitBubble extends InteractionBubbleBase<OrbitBubbleData, OrbitBub
 		const oneShot = this.oneShot
 		const calendar = this.calendars.calendar
 		const literal = writeOneShot(oneShot, calendar)
+		const units = this.oneShotUnits
 		return html`
 			<div class='cells'>
-				<div class='cell'>
-					<span class='caption'>Scope</span>
-					<p7t-granularity-select
-						.units=${oneShotGranularities}
-						.value=${oneShot.granularity}
-						@change=${(e: Event) => this.changeGranularity((e.target as GranularitySelect).value)}>
-					</p7t-granularity-select>
-				</div>
+				${units.length < 2 ? nothing : html`
+					<div class='cell'>
+						<span class='caption'>Scope</span>
+						<p7t-granularity-select
+							.units=${units}
+							.value=${oneShot.granularity}
+							@change=${(e: Event) => this.changeGranularity((e.target as GranularitySelect).value)}>
+						</p7t-granularity-select>
+					</div>
+				`}
 				<div class='cell'>
 					<span class='caption'>When</span>
 					<p7t-editable-datetime autofocus
@@ -244,15 +285,17 @@ export class OrbitBubble extends InteractionBubbleBase<OrbitBubbleData, OrbitBub
 						@change=${(e: Event) => this.editOneShot({ moment: (e.target as EditablePart<string>).value ?? oneShot.moment })}>
 					</p7t-editable-datetime>
 				</div>
-				<div class='cell'>
-					<span class='caption'>Duration</span>
-					<p7t-editable-duration
-						nullable
-						.granularity=${oneShot.granularity}
-						.value=${oneShot.duration}
-						@change=${(e: Event) => this.editOneShot({ duration: (e.target as EditablePart<string>).value })}>
-					</p7t-editable-duration>
-				</div>
+				${!this.oneShotDuration ? nothing : html`
+					<div class='cell'>
+						<span class='caption'>Duration</span>
+						<p7t-editable-duration
+							nullable
+							.granularity=${oneShot.granularity}
+							.value=${oneShot.duration}
+							@change=${(e: Event) => this.editOneShot({ duration: (e.target as EditablePart<string>).value })}>
+						</p7t-editable-duration>
+					</div>
+				`}
 			</div>
 			<div class='reading ${literal ? '' : 'invalid'}'>
 				${literal ? html`<code class='literal'>${literal}</code>` : 'This calendar cannot write that day.'}
@@ -320,7 +363,9 @@ export class OrbitBubble extends InteractionBubbleBase<OrbitBubbleData, OrbitBub
 			this.draft = writeOneShot(this.oneShot, calendar) ?? this.draft
 		}
 		else {
-			this.oneShot = readOneShot(this.draft, calendar) ?? this.oneShot
+			// A literal typed beyond what the owner allows is not carried over; the one-shot keeps its own moment.
+			const typed = readOneShot(this.draft, calendar)
+			this.oneShot = typed && this.allows(typed) ? typed : this.oneShot
 		}
 
 		this.shape = mode

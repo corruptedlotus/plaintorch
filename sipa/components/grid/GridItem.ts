@@ -1,12 +1,12 @@
-import { component, css, html, HTMLTemplateResult, nothing, property, PropertyValues } from '@a11d/lit'
-import { Directive, Objective, typeNameOf, type DeclarativeCalendar } from '@pleiades/sdk'
+import { component, css, html, HTMLTemplateResult, live, nothing, property, PropertyValues } from '@a11d/lit'
+import { Directive, Objective, OrbitUnit, typeNameOf, type DeclarativeCalendar } from '@pleiades/sdk'
 import {
 	IconName, type AnyStatus, type ScheduleValue,
 	SelectStatusModal, objectiveStatusDescriptors, directiveStatusDescriptors, lunarDirectiveStatusDescriptors
 } from '..'
 import {
 	directiveActions, entityIcon, entityKindLabel, entityKindOf, entityStatusName, isDirectiveKind, isInactiveEntity,
-	objectiveActions, reparentEntity, reparentRefusal, saveEntityField, saveFateSchedule, type EditableField
+	objectiveActions, reparentEntity, reparentRefusal, saveDecreeSchedule, saveEntityField, saveFateSchedule, type EditableField
 } from './entityActions'
 import { GridItemBase } from './GridItemBase'
 import type { GridEntity } from './entityTree'
@@ -185,8 +185,18 @@ export class GridItem extends GridItemBase {
 					@schedulechange=${(e: CustomEvent<ScheduleValue>) => saveFateSchedule(entity, e.detail)}>
 				</p7t-editable-schedule>`
 			}
-			case 'decree':
-				return html`<p7t-editable-orbit short .calendar=${(entity as { calendar?: DeclarativeCalendar }).calendar} ${this.binder.bind('orbit')}></p7t-editable-orbit>`
+			case 'decree': {
+				// The same bubble as the banner's: a decree's one-shot takes no duration, and a reflecting decree's a whole day.
+				const decree = entity as { orbit?: string, calendar?: DeclarativeCalendar, reflect?: boolean }
+				return html`<p7t-editable-schedule
+					short
+					.calendar=${decree.calendar}
+					.orbit=${live(decree.orbit)}
+					.oneShotUnits=${decree.reflect ? [OrbitUnit.Day] : undefined}
+					.oneShotDuration=${false}
+					@schedulechange=${(e: CustomEvent<ScheduleValue>) => saveDecreeSchedule(entity, e.detail)}>
+				</p7t-editable-schedule>`
+			}
 			default:
 				return nothing
 		}

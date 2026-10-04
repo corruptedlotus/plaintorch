@@ -394,7 +394,7 @@ public sealed class DeclarativeApiService(
 	{
 		ArgumentNullException.ThrowIfNull(plan);
 		ArgumentException.ThrowIfNullOrWhiteSpace(plan.FateId);
-		var epoch = ManualEpoch(plan.Epoch);
+		var epoch = GivenEpoch(plan.Epoch);
 
 		var fate = await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == plan.FateId, cancellationToken)
 			?? throw new InvalidOperationException($"Fate '{plan.FateId}' was not found.");
@@ -440,8 +440,13 @@ public sealed class DeclarativeApiService(
 		var eventive = await ResolveEventiveAsync(occurrence, cancellationToken);
 
 		// Eventives are never Polaris-bound, so moving their time specification is always allowed. Moving is a
-		// change to the occurrence's Epoch: date shifts the moment's day, a start time shifts its time of day
-		// (and its granularity), and an end time becomes the nominal duration from the start.
+		// change to the occurrence's Epoch: a whole epoch replaces it, then a date shifts the moment's day, a start
+		// time shifts its time of day (and its granularity), and an end time becomes the nominal duration from the start.
+		if (update.Epoch is not null)
+		{
+			Reschedule(eventive.Epoch, GivenEpoch(update.Epoch));
+		}
+
 		if (update.Date is not null)
 		{
 			eventive.Epoch.Moment = update.Date.Value.ToDateTime(TimeOnly.FromDateTime(eventive.Epoch.Moment));
@@ -489,6 +494,11 @@ public sealed class DeclarativeApiService(
 		}
 
 		var attentive = await hardeningService.EnsureDecreeAttentiveIntoContextAsync(occurrence.DecreeId, recurrenceId, cancellationToken);
+
+		if (update.Epoch is not null)
+		{
+			Reschedule(attentive.Epoch, GivenEpoch(update.Epoch));
+		}
 
 		if (update.Date is not null)
 		{
@@ -583,13 +593,14 @@ public sealed class DeclarativeApiService(
 		=> !string.IsNullOrWhiteSpace(orbit) && orbit.TrimStart().StartsWith("Z{", StringComparison.Ordinal);
 
 	/// <summary>
-	/// Validates the position in time a manual eventive is given and copies it into a fresh <see cref="Epoch"/>: the
-	/// granularity must be a known unit, the duration well-formed Orbit duration notation (or absent, filling one
-	/// granularity unit), and the time zone one this host knows (or absent, floating). A day-or-finer moment is cut
-	/// down to the start of its unit, as an orbit occurrence's is; a week, month or year moment is kept as given, since
-	/// where those begin depends on the calendar it was chosen on.
+	/// Validates a position in time a client gives an occurrence (a manual eventive's on creation, or any occurrence's
+	/// when it is rescheduled whole) and copies it into a fresh <see cref="Epoch"/>: the granularity must be a known
+	/// unit, the duration well-formed Orbit duration notation (or absent, filling one granularity unit), and the time
+	/// zone one this host knows (or absent, floating). A day-or-finer moment is cut down to the start of its unit, as an
+	/// orbit occurrence's is; a week, month or year moment is kept as given, since where those begin depends on the
+	/// calendar it was chosen on.
 	/// </summary>
-	private static Epoch ManualEpoch(Epoch? requested)
+	private static Epoch GivenEpoch(Epoch? requested)
 	{
 		ArgumentNullException.ThrowIfNull(requested, "epoch");
 		if (!Enum.IsDefined(requested.Granularity))
@@ -623,6 +634,18 @@ public sealed class DeclarativeApiService(
 			Duration = duration,
 			TimeZone = timeZone,
 		};
+	}
+
+	/// <summary>
+	/// Moves an occurrence to a validated position in time (<see cref="GivenEpoch"/>), member by member, so the epoch it
+	/// owns stays the one tracked. Its RECURRENCE-ID is left alone: that is the slot it was born on, its identity.
+	/// </summary>
+	private static void Reschedule(Epoch epoch, Epoch to)
+	{
+		epoch.Moment = to.Moment;
+		epoch.Granularity = to.Granularity;
+		epoch.Duration = to.Duration;
+		epoch.TimeZone = to.TimeZone;
 	}
 
 	/// <summary>

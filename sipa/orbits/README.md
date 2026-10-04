@@ -3,7 +3,7 @@
 `ast.ts`, `calendar.ts`, `parser.ts` and `humanizer.ts` are copied **verbatim** from the
 [`@pleiades/orbits`](../../../orbit-scheduler) package (`packages/node/src/*`). They power
 the human-readable rendering of Orbit notation in the plugin — most visibly the
-`p7t-editable-orbit` editable and the Fate/Decree banners.
+`p7t-editable-schedule` editable (and its orbit bubble) and the Fate/Decree banners.
 
 They are vendored (rather than depended on) because `orbit-scheduler` is a sibling
 repository outside `plaintorch`, is not published, and is not npm-linked into the plugin's

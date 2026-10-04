@@ -317,6 +317,11 @@ export interface EventiveUpdate {
 	startTime?: string | null | undefined
 	endTime?: string | null | undefined
 	resolution?: EventiveResolution | undefined
+	/**
+	 * Reschedules the occurrence whole: its moment, granularity, duration and zone replace its own, validated as a new
+	 * manual eventive's are. It keeps its RECURRENCE-ID. A date or time given beside it applies on top.
+	 */
+	epoch?: EpochPlan | undefined
 }
 
 export interface AttentiveUpdate {
@@ -327,6 +332,8 @@ export interface AttentiveUpdate {
 	resolution?: AttentiveResolution | undefined
 	/** Preferred timeframe (affinity). Omit to keep, an id to set, `null` to clear. */
 	affinityTimeframeId?: number | null | undefined
+	/** Reschedules the occurrence whole, as {@link EventiveUpdate.epoch} does. */
+	epoch?: EpochPlan | undefined
 }
 
 /**

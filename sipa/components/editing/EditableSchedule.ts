@@ -1,4 +1,5 @@
-import { component, css, event, html, nothing, state } from "@a11d/lit"
+import { component, css, event, html, nothing, property, state } from "@a11d/lit"
+import type { OrbitUnit } from "@pleiades/sdk"
 import { ScheduleItem } from "../entities/ScheduleItem"
 import { OrbitBubble, type OrbitBubbleData } from "./OrbitBubble"
 
@@ -9,16 +10,27 @@ import { OrbitBubble, type OrbitBubbleData } from "./OrbitBubble"
 export type ScheduleValue = OrbitBubbleData
 
 /**
- * The editable schedule of a fate, which is orbit-only (PEP111). It **is** a {@link ScheduleItem}: idle it reads exactly
- * like the plain chip — the humanised orbit, with the orbit tooltip — and carries the editability outline on hover.
+ * The editable orbit of whatever schedules by one — a fate (orbit-only, PEP111), a decree, a timeframe. It **is** a
+ * {@link ScheduleItem}: idle it reads exactly like the plain chip — the humanised orbit, with the orbit tooltip — and
+ * carries the editability outline on hover.
  *
  * A click (or Enter/Space) opens an {@link OrbitBubble} beside it to edit the orbit: as notation with its live reading, or
  * as a one-shot moment written as a `Z{…}` literal — the mode it opens in follows the orbit. A second click closes it.
- * Saving sets the orbit and emits `schedulechange` with the {@link ScheduleValue} for the host to persist.
+ * Saving sets the orbit and emits `schedulechange` with the {@link ScheduleValue} for the host to persist. An owner
+ * whose orbit takes less than a fate's narrows the one-shot with {@link oneShotUnits} and {@link oneShotDuration}.
  */
 @component('p7t-editable-schedule')
 export class EditableSchedule extends ScheduleItem {
 	@event() schedulechange!: EventDispatcher<ScheduleValue>
+
+	/**
+	 * The scopes a one-shot may take, for an owner whose orbit takes fewer than a literal can write: a timeframe or a
+	 * reflecting decree only a whole day. Unset, all of them; empty, notation alone.
+	 */
+	@property({ type: Array }) oneShotUnits?: readonly OrbitUnit[]
+
+	/** Whether a one-shot may carry a duration: a decree's or a timeframe's orbit takes no span. */
+	@property({ type: Boolean }) oneShotDuration = true
 
 	/** Whether the orbit bubble is open: the face keeps its accent outline and gives up its tooltip meanwhile. */
 	@state() private editing = false
@@ -69,13 +81,18 @@ export class EditableSchedule extends ScheduleItem {
 	}
 
 	/**
-	 * Opens the orbit bubble on the schedule as it stands, read on the fate's calendar (else the vault's preferred one);
+	 * Opens the orbit bubble on the schedule as it stands, read on the owner's calendar (else the vault's preferred one);
 	 * pressed again while open, it closes it. A save sets the orbit and announces it.
 	 */
 	private async edit(anchor: Event) {
 		this.editing = true
 		try {
-			await OrbitBubble.prompt(anchor, { calendar: this.calendar, run: value => this.apply(value) }, { orbit: this.orbit })
+			await OrbitBubble.prompt(anchor, {
+				calendar: this.calendar,
+				oneShotUnits: this.oneShotUnits,
+				oneShotDuration: this.oneShotDuration,
+				run: value => this.apply(value)
+			}, { orbit: this.orbit })
 		}
 		finally {
 			this.editing = false

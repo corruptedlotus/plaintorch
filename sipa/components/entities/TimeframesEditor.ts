@@ -1,6 +1,6 @@
 import { Component, component, css, html, live, nothing, property, PropertyValues, repeat, state } from '@a11d/lit'
-import { ObjectiveCollege, Timeframe, TimeframeInclusion, TimeframeUpdate } from '@pleiades/sdk'
-import { confirmAction, core, deleteConfirmation, SelectCollegeModal, SelectInclusionModal } from '..'
+import { ObjectiveCollege, OrbitUnit, Timeframe, TimeframeInclusion, TimeframeUpdate } from '@pleiades/sdk'
+import { confirmAction, core, deleteConfirmation, SelectCollegeModal, SelectInclusionModal, type ScheduleValue } from '..'
 import type { EditablePart } from '../editing/EditableDataLink'
 import type { EditableToggle } from '../editing/EditableToggle'
 import { inclusionDescriptorOf } from './inclusionDescriptors'
@@ -226,10 +226,13 @@ export class TimeframesEditor extends Component {
 					</div>
 					<div class='field'>
 						<span class='caption'>Orbit</span>
-						<p7t-editable-orbit
-							.value=${timeframe.orbit}
-							@change=${(e: Event) => this.saveTimeframe(timeframe.id, { orbit: (e.target as EditablePart<string>).value ?? '' })}>
-						</p7t-editable-orbit>
+						<!-- A timeframe's orbit selects days: a one-shot is a whole day with no span, read on the vault's calendar. -->
+						<p7t-editable-schedule
+							.orbit=${live(timeframe.orbit)}
+							.oneShotUnits=${[OrbitUnit.Day]}
+							.oneShotDuration=${false}
+							@schedulechange=${(e: CustomEvent<ScheduleValue>) => this.saveTimeframe(timeframe.id, { orbit: e.detail.orbit ?? '' })}>
+						</p7t-editable-schedule>
 					</div>
 					<div class='field'>
 						<span class='caption'>Exclusive</span>

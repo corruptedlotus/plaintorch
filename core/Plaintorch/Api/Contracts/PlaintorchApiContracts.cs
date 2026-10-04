@@ -514,21 +514,32 @@ public sealed record DecreeUpdate(
 /// Represents a mutable update to an eventive occurrence. Eventives are never Polaris-bound, so their time
 /// specification can always be moved.
 /// </summary>
+/// <param name="Epoch">
+/// The occurrence's whole position in time, replacing its own: moment, granularity, duration and time zone, read and
+/// validated as <see cref="EventivePlan"/> reads one. The occurrence keeps its RECURRENCE-ID. A
+/// <paramref name="Date"/>, <paramref name="StartTime"/> or <paramref name="EndTime"/> given beside it applies on top.
+/// </param>
 public sealed record EventiveUpdate(
 	DateOnly? Date = null,
 	Optional<TimeOnly?> StartTime = default,
 	Optional<TimeOnly?> EndTime = default,
-	EventiveResolution? Resolution = null);
+	EventiveResolution? Resolution = null,
+	Epoch? Epoch = null);
 
 /// <summary>
 /// Represents a mutable update to an attentive occurrence. An attentive is always unbound (PEP111), so
 /// <paramref name="Date"/> reschedules it freely.
 /// </summary>
+/// <param name="Epoch">
+/// The occurrence's whole position in time, replacing its own, as on <see cref="EventiveUpdate.Epoch"/>. A
+/// <paramref name="Date"/> or <paramref name="Time"/> given beside it applies on top.
+/// </param>
 public sealed record AttentiveUpdate(
 	DateOnly? Date = null,
 	Optional<TimeOnly?> Time = default,
 	AttentiveResolution? Resolution = null,
-	Optional<long?> AffinityTimeframeId = default);
+	Optional<long?> AffinityTimeframeId = default,
+	Epoch? Epoch = null);
 
 /// <summary>
 /// Adds a <b>manual</b> eventive to a fate: an occurrence added by hand rather than generated from the fate's orbit,

@@ -2,18 +2,26 @@ import { Component, component, css, html, nothing, property } from "@a11d/lit"
 import {
 	AttentiveResolution,
 	EventiveResolution,
+	OrbitUnit,
 	type Attentive,
 	type AttentiveOccurrenceRef,
 	type AttentiveUpdate,
+	type DeclarativeCalendar,
+	type EpochPlan,
 	type Eventive,
 	type EventiveOccurrenceRef,
 	type EventiveUpdate
 } from "@pleiades/sdk"
 import { core, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, type IconName } from ".."
+import { CalendarRef } from "../data/CalendarRef"
 import type { EditablePart } from "../editing/EditableDataLink"
-import "../editing/EditableDate"
-import "../editing/EditableTime"
-import { zoneCity } from "../editing/TimeZoneSelect"
+import { momentAtGranularity } from "../editing/EditableDateTime"
+import type { GranularitySelect } from "../editing/GranularitySelect"
+import type { TimeZoneSelect } from "../editing/TimeZoneSelect"
+import "../editing/EditableDateTime"
+import "../editing/EditableDuration"
+import "../editing/GranularitySelect"
+import "../editing/TimeZoneSelect"
 import { createChild, ModalBase, toast } from "../../host"
 
 /** The occurrence a single {@link OccurrenceEditor} edits: an attentive of a decree, or an eventive of a fate/objective. */
@@ -146,12 +154,27 @@ export function openOccurrenceModal(target: OccurrenceTarget, changed?: (updated
 
 /**
  * A simple editor for a single occurrence — an attentive or an eventive. It sets the occurrence's resolution,
- * navigates to the decree or fate/objective behind it, and reschedules it (its date and time). It carries no
- * time allocation: allocation lives on the executive (PEP111).
+ * navigates to the decree or fate/objective behind it, and reschedules it. It carries no time allocation: allocation
+ * lives on the executive (PEP111).
+ *
+ * Rescheduling edits the occurrence's whole epoch on the components the eventive creation row adds one with: its
+ * **Scope** (granularity), **When** (the civil moment in segments, on the owner's calendar), **Duration** and
+ * **Time zone**. Each change is saved as it is made, the whole epoch at once; a new scope moves the moment to the
+ * start of its new unit first.
  */
 @component('p7t-occurrence-editor')
 export class OccurrenceEditor extends Component {
 	@property({ type: Object }) target?: OccurrenceTarget
+
+	/** The calendar the moment is read on: the owning fate's or decree's own, else the vault's preferred one. */
+	private readonly calendars = new CalendarRef(this, () => this.ownerCalendar)
+
+	private get ownerCalendar(): DeclarativeCalendar | undefined {
+		const target = this.target
+		const owner = target?.kind === 'attentive' ? target.attentive.decree : target?.eventive.fate
+		// The core sends a calendar the owner does not name as null.
+		return owner?.calendar ?? undefined
+	}
 
 	static override get styles() {
 		return css`
@@ -200,29 +223,38 @@ export class OccurrenceEditor extends Component {
 				gap: .5em;
 			}
 
+			/* The eventive creation row's cells: a caption over each control, the controls aligned on one line. */
 			.reschedule {
-				display: flex;
+				display: grid;
+				grid-template-columns: repeat(4, auto);
+				grid-template-rows: auto auto;
+				justify-content: start;
 				align-items: center;
-				gap: .6ch;
+				column-gap: 1.2em;
+				row-gap: .3em;
+			}
+
+			.cell {
+				display: grid;
+				grid-template-rows: subgrid;
+				grid-row: 1 / -1;
+			}
+
+			.caption {
+				font-size: .6em;
+				font-weight: 600;
+				text-transform: uppercase;
+				letter-spacing: .04em;
+				color: var(--text-muted);
+			}
+
+			p7t-editable-datetime {
+				font-size: 1.1em;
 				font-weight: 300;
 			}
 
 			.open-owner {
 				align-self: flex-start;
-			}
-
-			/* A zoned occurrence is rescheduled on its own zone's clock, which the row names. */
-			.zone {
-				display: inline-flex;
-				align-items: center;
-				gap: .35ch;
-				font-size: .8em;
-				opacity: .7;
-
-				& p7t-icon {
-					width: 1.1em;
-					height: 1.1em;
-				}
 			}
 		`
 	}
@@ -262,19 +294,39 @@ export class OccurrenceEditor extends Component {
 			<div class='field'>
 				<span class='label'>Reschedule</span>
 				<div class='reschedule'>
-					<p7t-editable-date
-						.value=${epoch.date}
-						@change=${(e: Event) => this.commitDate((e.target as EditablePart<string>).value)}>
-					</p7t-editable-date>
-					<p7t-editable-time
-						.value=${epoch.timeOfDay}
-						@change=${(e: Event) => this.commitTime((e.target as EditablePart<string>).value)}>
-					</p7t-editable-time>
-					${!epoch.timeZone || epoch.isAllDay ? nothing : html`
-						<span class='zone' title=${epoch.timeZone}>
-							<p7t-icon icon='lucide:globe'></p7t-icon>${zoneCity(epoch.timeZone)} time
-						</span>
-					`}
+					<div class='cell'>
+						<span class='caption'>Scope</span>
+						<p7t-granularity-select
+							.value=${epoch.granularity}
+							@change=${(e: Event) => this.changeGranularity((e.target as GranularitySelect).value)}>
+						</p7t-granularity-select>
+					</div>
+					<div class='cell'>
+						<span class='caption'>When</span>
+						<p7t-editable-datetime
+							label='When'
+							.calendar=${this.calendars.calendar}
+							.granularity=${epoch.granularity}
+							.value=${epoch.moment}
+							@change=${(e: Event) => this.changeMoment((e.target as EditablePart<string>).value)}>
+						</p7t-editable-datetime>
+					</div>
+					<div class='cell'>
+						<span class='caption'>Duration</span>
+						<p7t-editable-duration
+							nullable
+							.granularity=${epoch.granularity}
+							.value=${epoch.duration ?? undefined}
+							@change=${(e: Event) => this.reschedule({ duration: (e.target as EditablePart<string>).value })}>
+						</p7t-editable-duration>
+					</div>
+					<div class='cell'>
+						<span class='caption'>Time zone</span>
+						<p7t-time-zone-select
+							.value=${epoch.timeZone ?? undefined}
+							@change=${(e: Event) => this.reschedule({ timeZone: (e.target as TimeZoneSelect).value })}>
+						</p7t-time-zone-select>
+					</div>
 				</div>
 			</div>
 		`
@@ -284,15 +336,40 @@ export class OccurrenceEditor extends Component {
 		void this.commit({ resolution: value } as AttentiveUpdate | EventiveUpdate)
 	}
 
-	private commitDate(date: string | undefined) {
-		if (!date) return
-		void this.commit({ date } as AttentiveUpdate | EventiveUpdate)
+	/** The occurrence's epoch as it stands, in the shape a reschedule sends; the core sends an unset member as null. */
+	private get epochPlan(): EpochPlan | undefined {
+		const target = this.target
+		const epoch = target?.kind === 'attentive' ? target.attentive.epoch : target?.eventive.epoch
+		return !epoch ? undefined : {
+			moment: epoch.moment,
+			granularity: epoch.granularity,
+			duration: epoch.duration ?? undefined,
+			timeZone: epoch.timeZone ?? undefined
+		}
 	}
 
-	private commitTime(time: string | undefined) {
-		// An attentive's time field is `time`; an eventive's is `startTime`. Send the one this occurrence uses.
-		const update = this.target?.kind === 'attentive' ? { time: time ?? null } : { startTime: time ?? null }
-		void this.commit(update as AttentiveUpdate | EventiveUpdate)
+	/** A new scope makes a different part of the moment real, so the moment moves to the start of its new unit. */
+	private changeGranularity(granularity: OrbitUnit | undefined) {
+		const current = this.epochPlan
+		if (!current || granularity === undefined || granularity === current.granularity) {
+			return
+		}
+
+		this.reschedule({ granularity, moment: momentAtGranularity(current.moment, granularity, this.calendars.calendar) })
+	}
+
+	private changeMoment(moment: string | undefined) {
+		if (moment && moment !== this.epochPlan?.moment) {
+			this.reschedule({ moment })
+		}
+	}
+
+	/** Saves the epoch with one member changed: an occurrence is rescheduled whole. */
+	private reschedule(change: Partial<EpochPlan>) {
+		const current = this.epochPlan
+		if (current) {
+			void this.commit({ epoch: { ...current, ...change } } as AttentiveUpdate | EventiveUpdate)
+		}
 	}
 
 	private async commit(update: AttentiveUpdate | EventiveUpdate) {

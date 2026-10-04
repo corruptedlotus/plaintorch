@@ -1,7 +1,7 @@
 import { component, css, html, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { DependencyEndpointKind, Eventive, EventiveResolution, Fate, FateStatus, FateUpdate } from '@pleiades/sdk'
-import { core, fateScheduleUpdate, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, fateStatusDescriptors } from ".."
+import { core, declarativeScheduleUpdate, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, fateStatusDescriptors } from ".."
 import { declarativeResolutionStyles, declarativeResolutionTemplate, type DeclarativeResolutionUpdate } from './declarativeResolution'
 import { occurrenceTime } from '../entities/occurrenceTime'
 import type { ScheduleValue } from "../editing/EditableSchedule"
@@ -77,7 +77,7 @@ export class FateBanner extends EntityBanner<Fate> {
 	 */
 	private async onScheduleChange(value: ScheduleValue) {
 		const entity = this.entity!
-		const update: FateUpdate = fateScheduleUpdate(value)
+		const update: FateUpdate = declarativeScheduleUpdate(value)
 
 		this.beginEntityEdit()
 		const saved = await this.commitEntityEdit(async () => await core.declaratives.updateFate(entity.id, update))
@@ -128,10 +128,6 @@ export class FateBanner extends EntityBanner<Fate> {
 				gap: .5em;
 				font-weight: 300;
 				opacity: .85;
-			}
-
-			.schedule p7t-editable-orbit {
-				font-size: 1em;
 			}
 
 			.time {

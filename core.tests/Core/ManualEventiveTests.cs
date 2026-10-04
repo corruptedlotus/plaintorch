@@ -142,6 +142,65 @@ public sealed class ManualEventiveTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task An_eventive_is_rescheduled_whole_and_validated_as_on_creation()
+	{
+		var fate = await CreateFateAsync(new FatePlan("Dentist"));
+		var created = await AddEventiveAsync(Plan(fate.Id, Today.AddDays(1).ToDateTime(TimeOnly.MinValue), OrbitUnit.Day));
+		Task<Eventive> RescheduleAsync(Epoch epoch) => Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>().UpdateEventiveAsync(
+			new EventiveOccurrenceRef(Id: created.Id), new EventiveUpdate(Epoch: epoch), Ct));
+
+		// Moment, granularity, duration and zone move together, and the moment is cut to the start of its new unit.
+		var moved = await RescheduleAsync(new Epoch
+		{
+			Moment = Today.AddDays(4).ToDateTime(new TimeOnly(14, 37, 12)),
+			Granularity = OrbitUnit.Minute,
+			Duration = "45m",
+			TimeZone = "Asia/Tehran",
+		});
+
+		Assert.Equal(created.Id, moved.Id);
+		var persisted = await Vault.QueryAsync(context => context.Eventives.AsNoTracking().SingleAsync(item => item.FateId == fate.Id, Ct));
+		Assert.Null(persisted.RecurrenceId);
+		Assert.Equal(Today.AddDays(4).ToDateTime(new TimeOnly(14, 37)), persisted.Epoch.Moment);
+		Assert.Equal(OrbitUnit.Minute, persisted.Epoch.Granularity);
+		Assert.Equal("45m", persisted.Epoch.Duration);
+		Assert.Equal("Asia/Tehran", persisted.Epoch.TimeZone);
+
+		// Back to a floating whole day, with no duration of its own.
+		await RescheduleAsync(new Epoch { Moment = Today.AddDays(5).ToDateTime(new TimeOnly(8, 0)), Granularity = OrbitUnit.Day });
+		persisted = await Vault.QueryAsync(context => context.Eventives.AsNoTracking().SingleAsync(item => item.FateId == fate.Id, Ct));
+		Assert.Equal(Today.AddDays(5).ToDateTime(TimeOnly.MinValue), persisted.Epoch.Moment);
+		Assert.True(persisted.Epoch.IsAllDay);
+		Assert.Null(persisted.Epoch.Duration);
+		Assert.Null(persisted.Epoch.TimeZone);
+
+		// A malformed duration or an unknown zone is refused, as on creation, and leaves the occurrence where it was.
+		await Assert.ThrowsAsync<ArgumentException>(() => RescheduleAsync(new Epoch { Moment = Today.AddDays(6).ToDateTime(TimeOnly.MinValue), Granularity = OrbitUnit.Day, Duration = "1h 30m" }));
+		await Assert.ThrowsAsync<ArgumentException>(() => RescheduleAsync(new Epoch { Moment = Today.AddDays(6).ToDateTime(TimeOnly.MinValue), Granularity = OrbitUnit.Day, TimeZone = "Mars/Olympus" }));
+		persisted = await Vault.QueryAsync(context => context.Eventives.AsNoTracking().SingleAsync(item => item.FateId == fate.Id, Ct));
+		Assert.Equal(Today.AddDays(5).ToDateTime(TimeOnly.MinValue), persisted.Epoch.Moment);
+	}
+
+	[Fact]
+	public async Task An_attentive_is_rescheduled_whole_and_keeps_its_slot()
+	{
+		var decree = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>().CreateDecreeAsync(new DecreePlan("Stretch", Orbit: "d[h{9}]"), Ct));
+		var slot = Today.AddDays(2).ToDateTime(new TimeOnly(9, 0));
+
+		var moved = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>().UpdateAttentiveAsync(
+			new AttentiveOccurrenceRef(decree.Id, slot),
+			new AttentiveUpdate(Epoch: new Epoch { Moment = Today.AddDays(3).ToDateTime(new TimeOnly(17, 30)), Granularity = OrbitUnit.Minute, Duration = "20m" }),
+			Ct));
+
+		// The slot it was born on is its identity, so it still answers to it after the move.
+		Assert.Equal(slot, moved.RecurrenceId);
+		var persisted = await Vault.QueryAsync(context => context.Attentives.AsNoTracking().SingleAsync(item => item.DecreeId == decree.Id && item.RecurrenceId == slot, Ct));
+		Assert.Equal(Today.AddDays(3).ToDateTime(new TimeOnly(17, 30)), persisted.Epoch.Moment);
+		Assert.Equal(OrbitUnit.Minute, persisted.Epoch.Granularity);
+		Assert.Equal("20m", persisted.Epoch.Duration);
+	}
+
+	[Fact]
 	public async Task An_occurrence_reference_needs_a_row_id_or_an_owner_and_slot()
 	{
 		var fate = await CreateFateAsync(new FatePlan("Dentist"));

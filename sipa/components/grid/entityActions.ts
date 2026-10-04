@@ -1,6 +1,6 @@
 import {
 	DecreeStatus, Directive, DirectiveStatus, FateStatus, LunarDirectiveStatus, Objective, ObjectiveStatus, typeNameOf,
-	type FateUpdate
+	type DecreeUpdate, type FateUpdate
 } from '@pleiades/sdk'
 import {
 	addObjectiveToPolaris, core, ExpandingAction, IconName, isArchivedStatus, isInactiveStatus, PromptTextModal,
@@ -344,19 +344,25 @@ export function isSingleInstanceFate(entity: GridEntity): boolean {
 }
 
 /**
- * The update a schedule chosen through the editable schedule makes to a fate (PEP111): its orbit — empty clears the
- * schedule server-side — and, for a one-shot `Z{…}` literal, the calendar the literal was written on, so the core reads
- * its day on that calendar. A recurring orbit leaves the fate's calendar as it is.
+ * The update a schedule chosen through the editable schedule makes to a declarative, a fate (PEP111) or a decree: its
+ * orbit — empty clears the schedule server-side — and, for a one-shot `Z{…}` literal, the calendar the literal was
+ * written on, so the core reads its day on that calendar. A recurring orbit leaves the declarative's calendar as it is.
  */
-export function fateScheduleUpdate(schedule: ScheduleValue): FateUpdate {
+export function declarativeScheduleUpdate(schedule: ScheduleValue): Pick<FateUpdate & DecreeUpdate, 'orbit' | 'calendar'> {
 	const orbit = schedule.orbit ?? ''
 	return schedule.calendar === undefined ? { orbit } : { orbit, calendar: schedule.calendar }
 }
 
-/** Persists a fate's chosen schedule (see {@link fateScheduleUpdate}). */
+/** Persists a fate's chosen schedule (see {@link declarativeScheduleUpdate}). */
 export async function saveFateSchedule(entity: GridEntity, schedule: ScheduleValue): Promise<boolean> {
 	return !!await core.repos.fates.mutate(entity.id, async () =>
-		await core.declaratives.updateFate(entity.id, fateScheduleUpdate(schedule)))
+		await core.declaratives.updateFate(entity.id, declarativeScheduleUpdate(schedule)))
+}
+
+/** Persists a decree's chosen schedule (see {@link declarativeScheduleUpdate}). */
+export async function saveDecreeSchedule(entity: GridEntity, schedule: ScheduleValue): Promise<boolean> {
+	return !!await core.repos.decrees.mutate(entity.id, async () =>
+		await core.declaratives.updateDecree(entity.id, declarativeScheduleUpdate(schedule)))
 }
 
 /** Opens the note an entity is the authority for, in a new tab. Takes any entity with a PUCK identity. */

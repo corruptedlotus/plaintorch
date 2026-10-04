@@ -1,7 +1,8 @@
-import { component, css, html, state } from "@a11d/lit"
+import { component, css, html, live, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { Decree, DecreeStatus, DecreeUpdate, PolarisCycle } from '@pleiades/sdk'
-import { core, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, decreeStatusDescriptors } from ".."
+import { Decree, DecreeStatus, DecreeUpdate, OrbitUnit, PolarisCycle } from '@pleiades/sdk'
+import { core, declarativeScheduleUpdate, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, decreeStatusDescriptors } from ".."
+import type { ScheduleValue } from "../editing/EditableSchedule"
 import { toast } from '../../host'
 import { declarativeResolutionStyles, declarativeResolutionTemplate, type DeclarativeResolutionUpdate } from './declarativeResolution'
 
@@ -26,10 +27,6 @@ export class DecreeBanner extends EntityBanner<Decree> {
 			switch (keyPath) {
 				case 'status':
 					update.status = entity.status
-					break
-				case 'orbit':
-					// Empty string clears the schedule server-side; undefined would be a no-op.
-					update.orbit = entity.orbit ?? ''
 					break
 				case 'activeCelestron':
 					update.activeCelestron = entity.activeCelestron
@@ -166,13 +163,32 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		`
 	}
 
+	/**
+	 * The decree's orbit, edited in a bubble as notation or as a one-shot `Z{…}` literal. A decree's orbit stays granular,
+	 * its lengths coming from its default length, so a one-shot carries no duration; a reflecting decree's is a whole day.
+	 * `live` puts back an orbit the core refused, which the editable had already shown.
+	 */
 	protected override get info() {
+		const entity = this.entity!
 		return html`
 			<div class='schedule'>
-				<p7t-editable-orbit .calendar=${this.entity?.calendar} ${this.binder.bind('orbit')}></p7t-editable-orbit>
+				<p7t-editable-schedule
+					.calendar=${entity.calendar}
+					.orbit=${live(entity.orbit)}
+					.oneShotUnits=${entity.reflect ? [OrbitUnit.Day] : undefined}
+					.oneShotDuration=${false}
+					@schedulechange=${(e: CustomEvent<ScheduleValue>) => void this.saveSchedule(e.detail)}>
+				</p7t-editable-schedule>
 			</div>
-			${declarativeResolutionTemplate(this.entity!, update => void this.saveResolution(update))}
+			${declarativeResolutionTemplate(entity, update => void this.saveResolution(update))}
 		`
+	}
+
+	/** Persists an orbit chosen in the schedule's bubble, with the calendar a one-shot literal was written on. */
+	private async saveSchedule(value: ScheduleValue) {
+		const entity = this.entity!
+		this.beginEntityEdit()
+		await this.commitEntityEdit(async () => await core.declaratives.updateDecree(entity.id, declarativeScheduleUpdate(value)))
 	}
 
 	/** Persists a calendar or time zone chosen in the resolution row. */
