@@ -9,7 +9,7 @@ import { buildLunarReflection } from './moonlightTree'
 
 /**
  * The decrees taking part in Lunar Reflection, as a grid: each decree's title, the directive that owns it, and its
- * humanised orbit.
+ * humanised orbit. Stellar and top-level decrees that reflect are listed beside the lunar ones.
  *
  * A flat variant of the shared {@link GridBase}, so it carries the same sticky heading row as the backlog and lore —
  * columns that resize, fit, move and hide, remembered per grid — over rows that never nest. Which decrees appear is
@@ -57,9 +57,9 @@ export class LunarReflectionGrid extends GridBase {
 	]
 
 	protected override get observedKinds(): readonly EntityTypeName[] {
-		// Taking part turns on a decree's own flag and state, and on whether its directive sits in a lunar hierarchy —
-		// none of which changes a listing.
-		return ['LunarDirective', 'Decree']
+		// Taking part turns on a decree's own flag and state, and on the states of the lunar directives on its lineage —
+		// none of which changes a listing. That lineage is walked through stellar directives too, so both kinds count.
+		return ['LunarDirective', 'StellarDirective', 'Decree']
 	}
 
 	protected override buildTree(): GridNode[] {

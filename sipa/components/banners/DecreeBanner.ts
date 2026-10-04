@@ -1,4 +1,4 @@
-import { component, css, html, nothing, state } from "@a11d/lit"
+import { component, css, html, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { Decree, DecreeStatus, DecreeUpdate, PolarisCycle } from '@pleiades/sdk'
 import { core, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, decreeStatusDescriptors } from ".."
@@ -8,8 +8,8 @@ import { declarativeResolutionStyles, declarativeResolutionTemplate, type Declar
 /**
  * Banner for a Decree declarative (PEP100). Decrees are enduring routines: the banner shows
  * their Orbit definition above the actions, exposes the two decree-appropriate actions
- * (add to Polaris, and the per-run Celestron reward), and — only inside a Moonlight (lunar)
- * hierarchy — a toggleable Lunar Reflection row.
+ * (add to Polaris, and the per-run Celestron reward), and a toggleable Lunar Reflection row,
+ * which every decree has, lunar, stellar or top-level (PEP104).
  */
 @component('p7t-decree-banner')
 export class DecreeBanner extends EntityBanner<Decree> {
@@ -61,7 +61,7 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		this.activePolaris = await core.polaris.getCurrent()
 	}
 
-	/** A decree participates in Moonlight reflection only when its directive is lunar (PEP100). */
+	/** Whether the decree's directive is lunar, which names it a Moonlight decree rather than a Pleiades one. */
 	protected get isLunarHierarchy() {
 		return this.entity!.directive?.isLunar ?? false
 	}
@@ -148,11 +148,11 @@ export class DecreeBanner extends EntityBanner<Decree> {
 	protected override get secondary() {
 		return html`
 			<p7t-editable-hierarchy .entity=${this.entity}></p7t-editable-hierarchy>
-			${!this.isLunarHierarchy ? nothing : this.reflectionRow}
+			${this.reflectionRow}
 		`
 	}
 
-	/** Editable Lunar Reflection toggle; shown only inside a lunar hierarchy. */
+	/** Editable Lunar Reflection toggle; any decree may reflect, whichever hierarchy it sits in. */
 	protected get reflectionRow() {
 		return html`
 			<p7t-editable-toggle

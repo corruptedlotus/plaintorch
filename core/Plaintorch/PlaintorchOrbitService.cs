@@ -261,44 +261,14 @@ public sealed class PlaintorchOrbitService(
 	}
 
 	/// <summary>
-	/// Determines whether a directive lineage belongs to a Moonlight (lunar) hierarchy — i.e. the directive
-	/// itself or any ancestor is a lunar directive.
+	/// Determines whether lunar reflection is paused for a directive lineage (PEP104): some lunar directive on it, the
+	/// directive itself or an ancestor, is not <see cref="LunarDirectiveStatus.Active"/>. An On Hold or Stale lunar
+	/// directive pauses reflection for its whole subtree. The walk never looks at stellar directives' own states, so a
+	/// lineage with no lunar directive on it, stellar or none at all, is never paused.
 	/// </summary>
-	public async Task<bool> IsInLunarHierarchyAsync(string? directiveId, CancellationToken cancellationToken = default)
+	public async Task<bool> IsReflectionPausedAsync(string? directiveId, CancellationToken cancellationToken = default)
 	{
 		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		var currentId = directiveId;
-		while (!string.IsNullOrWhiteSpace(currentId) && visited.Add(currentId))
-		{
-			var directive = await context.Directives
-				.AsNoTracking()
-				.FirstOrDefaultAsync(item => item.Id == currentId, cancellationToken);
-			if (directive is null)
-			{
-				return false;
-			}
-
-			if (directive is LunarDirective)
-			{
-				return true;
-			}
-
-			currentId = directive.ParentDirectiveId;
-		}
-
-		return false;
-	}
-
-	/// <summary>
-	/// Determines whether lunar reflection is live for a directive lineage (PEP104): the lineage belongs to a Moonlight
-	/// hierarchy (see <see cref="IsInLunarHierarchyAsync"/>) and every lunar directive on it, the directive itself and
-	/// each ancestor, is <see cref="LunarDirectiveStatus.Active"/>. An On Hold or Stale lunar directive pauses reflection
-	/// for its whole subtree; the walk never looks at stellar directives' own states.
-	/// </summary>
-	public async Task<bool> IsLunarHierarchyActiveAsync(string? directiveId, CancellationToken cancellationToken = default)
-	{
-		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		var foundLunar = false;
 		var currentId = directiveId;
 		while (!string.IsNullOrWhiteSpace(currentId) && visited.Add(currentId))
 		{
@@ -310,20 +280,15 @@ public sealed class PlaintorchOrbitService(
 				break;
 			}
 
-			if (directive is LunarDirective lunar)
+			if (directive is LunarDirective { Status: not LunarDirectiveStatus.Active })
 			{
-				if (lunar.Status != LunarDirectiveStatus.Active)
-				{
-					return false;
-				}
-
-				foundLunar = true;
+				return true;
 			}
 
 			currentId = directive.ParentDirectiveId;
 		}
 
-		return foundLunar;
+		return false;
 	}
 
 	/// <summary>

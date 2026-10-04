@@ -128,21 +128,16 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 			AddEventive(eventives, eventiveKeys, eventive);
 		}
 
-		// Orbit decrees materialize unbound attentives; lunar reflect-decrees are cycle-bound (reflectives),
-		// not agenda attentives, so they are skipped here.
+		// Orbit decrees materialize unbound attentives; reflect-decrees are cycle-bound (reflectives), not agenda
+		// attentives, so they are left out here.
 		var orbitDecrees = await context.Decrees
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
 			.Include(decree => decree.Directive)
-			.Where(decree => decree.Status == DecreeStatus.Active && decree.Orbit != null)
+			.Where(decree => decree.Status == DecreeStatus.Active && decree.Orbit != null && !decree.Reflect)
 			.ToListAsync(cancellationToken);
 		foreach (var decree in orbitDecrees)
 		{
-			if (decree.Reflect && await orbitService.IsInLunarHierarchyAsync(decree.DirectiveId, cancellationToken))
-			{
-				continue;
-			}
-
 			foreach (var occurrence in await orbitService.PreviewOccurrencesAsync(decree, decree.Orbit!, startInclusive, endExclusive, cancellationToken))
 			{
 				var attentive = new Attentive

@@ -165,7 +165,7 @@ export class Decree {
 	defaultLength: number | undefined
 	/** Celestron reward granted on each occurrence execution; not overridable per occurrence. */
 	activeCelestron: number = 0
-	/** Whether the decree participates in daily reflective generation (lunar hierarchies only). */
+	/** Whether the decree participates in daily reflective generation (lunar reflection, PEP104), in any hierarchy. */
 	reflect: boolean = false
 	college: ObjectiveCollege = ObjectiveCollege.Unspecified
 	/** The unbound attentive occurrences this decree has materialized (PEP111). */

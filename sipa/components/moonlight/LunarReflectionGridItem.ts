@@ -7,15 +7,15 @@ import { GridItemBase } from '../grid/GridItemBase'
 
 /** The Lunar Reflection grid's columns besides the title, by key. */
 export enum LunarReflectionGridColumn {
-	/** The directive that owns the decree. */
+	/** The directive that owns the decree, lunar or stellar. */
 	Directive = 'directive',
 	/** The decree's orbit, humanised — or "Chaos" when it has none. */
 	Orbit = 'orbit'
 }
 
-/** A Lunar Reflection row as the grid hands it over: the decree's row, with the directive that owns it. */
+/** A Lunar Reflection row as the grid hands it over: the decree's row, with the directive that owns it, if any. */
 export interface LunarReflectionRow extends GridRow {
-	readonly directive: Directive
+	readonly directive: Directive | undefined
 }
 
 /**
@@ -24,7 +24,8 @@ export interface LunarReflectionRow extends GridRow {
  * The shared {@link GridItemBase} draws the lead (the reflective glyph and the editable title), the open-note column,
  * the right-click menu and the canonical-entity watch. This variant fills the directive and orbit columns, puts an
  * "Edit decree" button in the last action column, and writes a title edit through the decree's update. A decree with
- * no orbit reflects without one, and reads "Chaos", accented.
+ * no orbit reflects without one, and reads "Chaos", accented. A decree may reflect from a stellar hierarchy as well as a
+ * lunar one, and the directive column's glyph tells them apart; a top-level decree shows the directive placeholder.
  */
 @component('p7t-lunar-reflection-grid-item')
 export class LunarReflectionGridItem extends GridItemBase {

@@ -61,45 +61,41 @@ export function buildMoonlightTree(source: EntityTreeSource): MoonlightNode[] {
 	return roots.sort(byTitle).map(nodeOf)
 }
 
-/** A decree taking part in Lunar Reflection, beside the directive that owns it. */
+/** A decree taking part in Lunar Reflection, beside the directive that owns it — none for a top-level decree. */
 export interface LunarReflectionEntry {
 	readonly decree: Decree
-	readonly directive: Directive
+	readonly directive: Directive | undefined
 }
 
 /**
- * The decrees that take part in Lunar Reflection, by title: the active ones marked to reflect whose lunar hierarchy is
- * active.
+ * The decrees that take part in Lunar Reflection, by title: the active ones marked to reflect that no lunar directive
+ * pauses.
  *
- * The same test the core applies before it generates a cycle's reflectives (`IsLunarHierarchyActiveAsync`, PEP104): a
- * decree's `reflect` flag only counts inside a lunar hierarchy, and only while every lunar directive on its lineage —
- * its own directive and each ancestor — is Active. An On Hold or Stale one pauses its whole subtree; stellar directives'
- * states are not consulted. The walk remembers where it has been, since a hand-edited vault can loop.
+ * The same test the core applies before it generates a cycle's reflectives (`IsReflectionPausedAsync`, PEP104). Any
+ * decree may reflect, whether it sits in a lunar hierarchy, a stellar one, or none; it is paused while any lunar
+ * directive on its lineage — its own directive or an ancestor — is not Active. An On Hold or Stale one pauses its whole
+ * subtree; stellar directives' states are not consulted, so a stellar or top-level decree is never paused. The walk
+ * remembers where it has been, since a hand-edited vault can loop.
  */
 export function buildLunarReflection(source: Pick<EntityTreeSource, 'directives' | 'decrees'>): LunarReflectionEntry[] {
 	const byId = new Map((source.directives ?? []).map(directive => [directive.id, directive]))
-	const inActiveLunarHierarchy = (directive: Directive) => {
+	const pausedByLunar = (directive: Directive | undefined) => {
 		const seen = new Set<string>()
-		let foundLunar = false
-		for (let current: Directive | undefined = directive; current && !seen.has(current.id); current = byId.get(current.parentDirectiveId ?? '')) {
-			if (current.isLunar) {
-				if (current.status !== LunarDirectiveStatus.Active) {
-					return false
-				}
-
-				foundLunar = true
+		for (let current = directive; current && !seen.has(current.id); current = byId.get(current.parentDirectiveId ?? '')) {
+			if (current.isLunar && current.status !== LunarDirectiveStatus.Active) {
+				return true
 			}
 
 			seen.add(current.id)
 		}
 
-		return foundLunar
+		return false
 	}
 
 	const entries: LunarReflectionEntry[] = []
 	for (const decree of source.decrees ?? []) {
 		const directive = byId.get(decree.directiveId ?? '')
-		if (decree.reflect && decree.status === DecreeStatus.Active && directive && inActiveLunarHierarchy(directive)) {
+		if (decree.reflect && decree.status === DecreeStatus.Active && !pausedByLunar(directive)) {
 			entries.push({ decree, directive })
 		}
 	}

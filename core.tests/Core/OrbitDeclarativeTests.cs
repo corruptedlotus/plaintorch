@@ -128,7 +128,7 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Lunar_reflect_decrees_generate_cycle_bound_reflectives()
+	public async Task Reflect_decrees_generate_cycle_bound_reflectives_in_either_hierarchy()
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -151,21 +151,20 @@ public sealed class OrbitDeclarativeTests : VaultTestBase
 			.GetRequiredService<IPolarisCycleApi>()
 			.StartNewAsync(cancellationToken: cancellationToken));
 
-		// Lunar hierarchy + reflect => a reflective bound to the cycle, carrying decree provenance.
-		var reflective = await Vault.QueryAsync(context => context.Set<Reflective>()
-			.SingleAsync(item => item.DecreeId == lunarDecree.Id, cancellationToken));
-		Assert.Equal(cycle.Id, reflective.PolarisCycleId);
-		Assert.False(reflective.Executed);
+		// Reflect => a reflective bound to the cycle, carrying decree provenance, whichever hierarchy the decree is in.
+		foreach (var decree in new[] { lunarDecree, stellarDecree })
+		{
+			var reflective = await Vault.QueryAsync(context => context.Set<Reflective>()
+				.SingleAsync(item => item.DecreeId == decree.Id, cancellationToken));
+			Assert.Equal(cycle.Id, reflective.PolarisCycleId);
+			Assert.False(reflective.Executed);
+		}
 
-		// Stellar hierarchies cannot participate in moonlight reflection: the decree projects an unbound
-		// attentive into the cycle instead (Strategy 1 — projected, not hardened).
-		var stellarReflectives = await Vault.QueryAsync(context => context.Set<Reflective>()
-			.CountAsync(item => item.DecreeId == stellarDecree.Id, cancellationToken));
-		Assert.Equal(0, stellarReflectives);
+		// A reflect-decree's orbit feeds reflectives only: neither projects an unbound attentive into the cycle.
 		var inclusions = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
 			.GetInclusionsAsync(null, cancellationToken));
-		Assert.Contains(inclusions.Attentives, item => item.DecreeId == stellarDecree.Id);
+		Assert.DoesNotContain(inclusions.Attentives, item => item.DecreeId == lunarDecree.Id || item.DecreeId == stellarDecree.Id);
 	}
 
 	[Fact]

@@ -8,7 +8,7 @@ namespace Pleiades.Plaintorch.Preferences;
 public sealed class ReflectionPreferences
 {
 	/// <summary>
-	/// How many orbit-less lunar reflect-decrees a beginning Polaris cycle draws as reflectives. The draw comes on top
+	/// How many orbit-less reflect-decrees a beginning Polaris cycle draws as reflectives. The draw comes on top
 	/// of every reflect-decree whose orbit resolves onto the cycle's day, which is always taken. Defaults to 3. A
 	/// negative value reads as 0, and a pool smaller than this count is taken whole.
 	/// </summary>

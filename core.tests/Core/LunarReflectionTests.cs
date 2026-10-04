@@ -14,8 +14,9 @@ namespace Pleiades.Tests.Core;
 /// <summary>
 /// Covers lunar reflection's selection and rewards (PEP104). A beginning Polaris cycle takes every live reflect-decree
 /// whose orbit lands on its day, then draws the base number of daily reflectives (a preference, 3 by default) from the
-/// live reflect-decrees without an orbit. A reflect-decree is live only while it is active and every lunar directive
-/// above it is active; an On Hold or Stale lunar directive pauses its whole subtree. Finishing every reflective of a
+/// live reflect-decrees without an orbit. Any decree may reflect, in a lunar hierarchy, a stellar one or none. A
+/// reflect-decree is live only while it is active and every lunar directive above it is active; an On Hold or Stale
+/// lunar directive pauses its whole subtree. Finishing every reflective of a
 /// cycle grants the daily reward (a preference, 4 by default), and each decree-backed reflective also grants its
 /// decree's per-run reward.
 /// </summary>
@@ -51,7 +52,7 @@ public sealed class LunarReflectionTests : VaultTestBase
 		return lunar;
 	}
 
-	private Task<Decree> CreateReflectDecreeAsync(string title, string directiveId, string? orbit = null, int activeCelestron = 0)
+	private Task<Decree> CreateReflectDecreeAsync(string title, string? directiveId, string? orbit = null, int activeCelestron = 0)
 		=> Declaratives(api => api.CreateDecreeAsync(new DecreePlan(title, DirectiveId: directiveId, Orbit: orbit, ActiveCelestron: activeCelestron, Reflect: true), Ct));
 
 	private Task<List<Reflective>> ReflectivesOfAsync(string cycleId)
@@ -101,6 +102,34 @@ public sealed class LunarReflectionTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task Stellar_and_top_level_reflect_decrees_take_part_like_lunar_ones()
+	{
+		var stellar = await Directives(api => api.CreateStandaloneAsync("Star Project", cancellationToken: Ct));
+		var orbiting = await CreateReflectDecreeAsync("Star review", stellar.Id, orbit: "d");
+		var pooled = await CreateReflectDecreeAsync("Star journal", stellar.Id);
+		var loose = await CreateReflectDecreeAsync("Loose thoughts", directiveId: null);
+
+		var cycle = await Polaris(api => api.StartNewAsync(cancellationToken: Ct));
+
+		// No lunar directive stands above them, so nothing pauses them: the orbit match is taken, and the pool of two is
+		// smaller than the base count, so it is taken whole.
+		var reflectives = await ReflectivesOfAsync(cycle.Id);
+		Assert.Equal(
+			new[] { orbiting.Id, pooled.Id, loose.Id }.Order(),
+			reflectives.Select(item => item.DecreeId!).Order());
+
+		// Reflecting outside a Moonlight hierarchy is still reflecting: the orbit feeds reflectives, never attentives,
+		// on the cycle's day or any day after it.
+		var inclusions = await Polaris(api => api.GetInclusionsAsync(null, Ct));
+		Assert.DoesNotContain(inclusions.Attentives, item => item.DecreeId == orbiting.Id);
+		var today = DateOnly.FromDateTime(DateTime.Today);
+		var projection = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<AgendaProjectionService>()
+			.ProjectAsync(today, today.AddDays(7), Ct));
+		Assert.DoesNotContain(projection.Attentives, item => item.DecreeId == orbiting.Id);
+	}
+
+	[Fact]
 	public async Task Reactivating_the_lunar_directive_resumes_generation_on_the_next_cycle()
 	{
 		var lunar = await CreateLunarAsync("Moon Law", LunarDirectiveStatus.OnHold);
@@ -142,14 +171,14 @@ public sealed class LunarReflectionTests : VaultTestBase
 		var lunar = await CreateLunarAsync("Moon Law");
 		var orbiting = await CreateReflectDecreeAsync("Evening reflection", lunar.Id, orbit: "d");
 		var pool = new List<string>();
-		foreach (var title in new[] { "Gratitude", "Dreams", "Fears", "Hopes", "Lessons" })
+		foreach (var title in new[] { "Gratitude", "Dreams", "Fears", "Hopes" })
 		{
 			pool.Add((await CreateReflectDecreeAsync(title, lunar.Id)).Id);
 		}
 
-		// An orbit-less reflect-decree outside any lunar hierarchy never joins the pool.
+		// The pool spans hierarchies: an orbit-less reflect-decree under a stellar directive joins it too.
 		var stellar = await Directives(api => api.CreateStandaloneAsync("Star Project", cancellationToken: Ct));
-		var outsider = await CreateReflectDecreeAsync("Star journal", stellar.Id);
+		pool.Add((await CreateReflectDecreeAsync("Star journal", stellar.Id)).Id);
 
 		var cycle = await Polaris(api => api.StartNewAsync(cancellationToken: Ct));
 
@@ -159,7 +188,6 @@ public sealed class LunarReflectionTests : VaultTestBase
 		var drawn = reflectives.Where(item => item.DecreeId != orbiting.Id).Select(item => item.DecreeId!).ToList();
 		Assert.Equal(3, drawn.Distinct().Count());
 		Assert.All(drawn, decreeId => Assert.Contains(decreeId, pool));
-		Assert.DoesNotContain(reflectives, item => item.DecreeId == outsider.Id);
 
 		// Each drawn reflective reads as its decree, like an orbit match.
 		var titles = await Vault.QueryAsync(context => context.Decrees.IgnoreAutoIncludes()

@@ -91,20 +91,28 @@ public sealed class RollingMaterializationTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Harden_on_time_leaves_reflect_lunar_decrees_for_cycle_begin()
+	public async Task Harden_on_time_leaves_reflect_decrees_for_cycle_begin()
 	{
 		var lunar = await Vault.WithScopeAsync(s => s.GetRequiredService<IDirectiveApi>()
 			.CreateLunarAsync("Moon Law", cancellationToken: Ct));
-		var reflectDecree = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
-			.CreateDecreeAsync(new DecreePlan("Evening reflection", DirectiveId: lunar.Id, Orbit: "d", Reflect: true), Ct));
+		var stellar = await Vault.WithScopeAsync(s => s.GetRequiredService<IDirectiveApi>()
+			.CreateStandaloneAsync("Star Project", cancellationToken: Ct));
+		var reflectDecreeIds = new List<string>();
+		foreach (var directiveId in new[] { lunar.Id, stellar.Id })
+		{
+			var reflectDecree = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
+				.CreateDecreeAsync(new DecreePlan("Evening reflection", DirectiveId: directiveId, Orbit: "d", Reflect: true), Ct));
+			reflectDecreeIds.Add(reflectDecree.Id);
+		}
 
 		await HardenNowAsync();
 
+		// Reflect-decrees in either hierarchy are cycle-bound: the pass hardens no attentive and mints no reflective.
 		var attentiveCount = await Vault.QueryAsync(context => context.Attentives
-			.CountAsync(item => item.DecreeId == reflectDecree.Id, Ct));
+			.CountAsync(item => reflectDecreeIds.Contains(item.DecreeId!), Ct));
 		Assert.Equal(0, attentiveCount);
 		var reflectiveCount = await Vault.QueryAsync(context => context.Set<Reflective>()
-			.CountAsync(item => item.DecreeId == reflectDecree.Id, Ct));
+			.CountAsync(item => reflectDecreeIds.Contains(item.DecreeId!), Ct));
 		Assert.Equal(0, reflectiveCount);
 	}
 

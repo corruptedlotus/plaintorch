@@ -53,10 +53,11 @@ public sealed class Decree : Declarative
 
 	/// <summary>
 	/// Gets or sets a value indicating whether the decree participates in daily reflective generation (lunar
-	/// reflection, PEP100/PEP104). Only meaningful for decrees living inside a Moonlight (lunar) directive hierarchy,
-	/// and only while every lunar directive on that hierarchy is active. With an orbit, the decree yields a reflective
-	/// whenever its orbit resolves onto a beginning Polaris cycle's day; without one, it joins the pool that each cycle
-	/// draws its base number of daily reflectives from.
+	/// reflection, PEP100/PEP104). Any decree may reflect, whether it lives in a Moonlight (lunar) hierarchy, a stellar
+	/// one, or none; reflection pauses while any lunar directive on its lineage is not active. With an orbit, the decree
+	/// yields a reflective whenever its orbit resolves onto a beginning Polaris cycle's day; without one, it joins the
+	/// pool that each cycle draws its base number of daily reflectives from. A reflecting decree never produces
+	/// attentives.
 	/// </summary>
 	[MarkdownField("reflect")]
 	public bool Reflect { get; set; }

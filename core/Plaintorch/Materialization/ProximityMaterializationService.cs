@@ -11,7 +11,7 @@ namespace Pleiades.Plaintorch.Materialization;
 /// <summary>
 /// Hardens declarative occurrences into persisted rows on the two non-interactive triggers (Strategy 1 / soft
 /// agenda, PEP100). <see cref="MaterializeForCycleAsync"/> runs at Polaris cycle begin and generates the
-/// cycle-bound reflectives of lunar reflect-decrees (PEP104). <see cref="MaterializeForNowAsync"/> is the
+/// cycle-bound reflectives of reflect-decrees (lunar reflection, PEP104). <see cref="MaterializeForNowAsync"/> is the
 /// rolling harden-on-time pass: when time is treated as an interaction it advances each schedule's cursor to
 /// <c>now</c> and hardens the occurrences whose time has arrived, so history becomes durable rows while every
 /// still-future occurrence stays a live projection (see <see cref="AgendaProjectionService"/>).
@@ -36,9 +36,9 @@ public sealed class ProximityMaterializationService(
 	/// Generates the cycle-bound reflectives for a beginning cycle (PEP104). Every live reflect-decree whose orbit
 	/// resolves onto the cycle's start day is taken, and <see cref="ReflectionPreferences.BaseDailyReflectives"/> more
 	/// are drawn at random from the live reflect-decrees that have no orbit. A reflect-decree is live when it is active
-	/// and its lunar hierarchy is active (<see cref="PlaintorchOrbitService.IsLunarHierarchyActiveAsync"/>). The cycle's
-	/// other inclusions are projected on read, so nothing else is hardened here. Returns the number of reflectives
-	/// created.
+	/// and no lunar directive on its lineage pauses it (<see cref="PlaintorchOrbitService.IsReflectionPausedAsync"/>),
+	/// whether it sits in a lunar hierarchy, a stellar one, or none. The cycle's other inclusions are projected on read,
+	/// so nothing else is hardened here. Returns the number of reflectives created.
 	/// </summary>
 	/// <remarks>
 	/// A decree gets at most one reflective per cycle, so running this twice for the same cycle creates nothing new:
@@ -67,7 +67,7 @@ public sealed class ProximityMaterializationService(
 		var pool = new List<Decree>();
 		foreach (var decree in reflectDecrees)
 		{
-			if (!await orbitService.IsLunarHierarchyActiveAsync(decree.DirectiveId, cancellationToken))
+			if (await orbitService.IsReflectionPausedAsync(decree.DirectiveId, cancellationToken))
 			{
 				continue;
 			}
@@ -181,18 +181,13 @@ public sealed class ProximityMaterializationService(
 		}
 
 		// Orbit decrees (non-reflect): seek through now, hardening crossed attentives. Reflect-decrees are
-		// cycle-bound; their schedule state is not advanced here.
+		// cycle-bound wherever they sit; their schedule state is not advanced here.
 		var orbitDecrees = await context.Decrees
 			.IgnoreAutoIncludes()
-			.Where(decree => decree.Status == DecreeStatus.Active && decree.Orbit != null)
+			.Where(decree => decree.Status == DecreeStatus.Active && decree.Orbit != null && !decree.Reflect)
 			.ToListAsync(cancellationToken);
 		foreach (var decree in orbitDecrees)
 		{
-			if (decree.Reflect && await orbitService.IsInLunarHierarchyAsync(decree.DirectiveId, cancellationToken))
-			{
-				continue;
-			}
-
 			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(decree, decree.Orbit!, now, cancellationToken))
 			{
 				created += await EnsureDecreeAttentiveAsync(decree, occurrence, cancellationToken) ? 1 : 0;

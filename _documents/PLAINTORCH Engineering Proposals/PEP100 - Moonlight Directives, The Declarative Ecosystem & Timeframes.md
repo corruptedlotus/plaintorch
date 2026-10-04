@@ -43,6 +43,8 @@ Decrees have the following states:
 - Abandoned
 ### Lunar Reflection
 Decrees that live inside a Moonlight directive hierarchy can specify a `reflect` property. Setting it to true opts the decree into daily reflective generation (ref. [[#Reflectives]]). Decrees under Stellar directives cannot participate in Moonlight reflection; the property carries no meaning for them.
+
+> Superseded by [[PEP104 - Reflective Generation Engine]]: the Moonlight-only restriction is lifted, and stellar-hierarchy and top-level decrees may reflect too.
 ## Siblings to Objectives
 Declaratives are siblings to Objectives, they share the same table and the same base class `Incentive`, each with a discriminator to identify them.
 ## Orbit Specification
@@ -90,7 +92,7 @@ synthesis) belongs to [[PEP104 - Reflective Generation Engine]].
 
 Reflectives are a special kind: they do not respect the reward of the decree that sets them. Instead, when all reflectives of a single Polaris cycle are done, that entire collection rewards the user with a fixed amount of Celestron.
 
-> Refined by [[PEP104 - Reflective Generation Engine]]. Generation pauses under an inactive lunar hierarchy. A cycle also draws a base number of orbit-less reflect-decrees. The collection reward is a preference. Decree-backed reflectives now grant their decree's per-run reward as well.
+> Refined by [[PEP104 - Reflective Generation Engine]]. Any decree may now reflect, not only a lunar-hierarchy one. Generation pauses under an inactive lunar hierarchy. A cycle also draws a base number of orbit-less reflect-decrees. The collection reward is a preference. Decree-backed reflectives now grant their decree's per-run reward as well.
 ## Inclusion of Unbound Items
 A Polaris cycle still includes unbound (no-Polaris) items when they fall within 24h of its beginning. This inclusion is not structural: the cycle presents them alongside its own backlog, but does not relationally own them, and they stay unbound.
 # Timeframes

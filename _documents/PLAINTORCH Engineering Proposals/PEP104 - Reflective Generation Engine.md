@@ -5,7 +5,7 @@ phase: 3a
 ---
 # Reflective Generation Engine
 
-Reflectives are the reflection prompts of a Polaris cycle. They come from **Lunar Reflection**, introduced in [[PEP100 - Moonlight Directives, The Declarative Ecosystem & Timeframes]]: decrees inside a Moonlight hierarchy that opt in with `reflect: true`. This PEP gathers what PEP100 built and adds three rules:
+Reflectives are the reflection prompts of a Polaris cycle. They come from **Lunar Reflection**, introduced in [[PEP100 - Moonlight Directives, The Declarative Ecosystem & Timeframes]]: decrees that opt in with `reflect: true`. PEP100 confined it to decrees inside a Moonlight hierarchy; that restriction is lifted (see *Any hierarchy* below). This PEP gathers what PEP100 built and adds three rules:
 - when generation pauses;
 - how a cycle chooses its reflectives;
 - what finishing them is worth.
@@ -16,9 +16,14 @@ Reflectives are the reflection prompts of a Polaris cycle. They come from **Luna
 
 # Lunar Reflection (from PEP100)
 ## Reflect-decrees
-- A decree carries a `reflect` flag (markdown field `reflect`). It means something only when the decree sits in a **Moonlight hierarchy**, meaning a lunar directive is the decree's own directive or one of its ancestors. Under a purely stellar lineage the flag does nothing, and the decree behaves like any other decree.
+- A decree carries a `reflect` flag (markdown field `reflect`). Any decree may set it, whichever hierarchy it sits in: a **Moonlight hierarchy** (a lunar directive is the decree's own directive or one of its ancestors), a stellar one, or none at all for a top-level decree.
 - With `reflect` on, the decree's orbit must have strict **day granularity**. Nothing finer than a day and no span format is allowed. This is checked on create and on every update that touches the orbit or the flag.
-- Reflect-decrees in a Moonlight hierarchy never produce attentives. The rolling harden-on-time pass and the agenda projection both skip them, so a reflect-decree's orbit only ever feeds reflectives.
+- Reflect-decrees never produce attentives. The rolling harden-on-time pass and the agenda projection both skip them, so a reflect-decree's orbit only ever feeds reflectives.
+
+## Any hierarchy
+PEP100 limited Lunar Reflection to Moonlight hierarchies, and the flag did nothing under a purely stellar lineage. That restriction is **lifted**: a stellar-hierarchy or top-level decree with `reflect` on is a reflect-decree like a lunar one. It is selected the same way, rewards the same way, and stops producing attentives. Only pausing still depends on the hierarchy, since only lunar directives can pause reflection (see *Pausing*), so a decree with no lunar directive on its lineage is never paused by one.
+
+A decree that already carried `reflect: true` outside a Moonlight hierarchy, set by hand in its note or kept when it moved out of one, is a reflect-decree from the next cycle begin on. Attentives it hardened before then are kept.
 
 ## Reflectives
 - A reflective is **cycle-bound**. It belongs to one Polaris cycle and has these fields:
@@ -32,13 +37,14 @@ Reflectives are the reflection prompts of a Polaris cycle. They come from **Luna
 - Cycle begin is the **only** way a reflective comes into existence, because reflectives belong to Polaris cycles alone. The manual draw (`POST /api/polaris/{id|current}/reflectives/draw`) is **retired**. It dated from the genesis scaffold of the "Draw Reflectives" action and minted decree-less placeholder prompts ("Reflective prompt N for …"). Every reflective therefore starts out with a decree. The reference is cleared only when that decree is deleted after the cycle has ended.
 
 ## Surfaces
-- **Decree banner:** inside a Moonlight hierarchy the pre-heading reads "Moonlight Decree", and a *Lunar Reflection* toggle (`p7t-editable-toggle`) edits `reflect`. Outside one, the heading reads "Pleiades Decree" and there is no toggle.
+- **Decree banner:** every decree banner has the *Lunar Reflection* toggle (`p7t-editable-toggle`) that edits `reflect`. The pre-heading still names the hierarchy: "Moonlight Decree" when the decree's directive is lunar, "Pleiades Decree" otherwise.
+- **Moonlight page:** the *Lunar Reflection* grid lists every live reflect-decree, stellar and top-level ones beside the lunar ones. Its directive column's glyph tells the hierarchies apart.
 - **Briefing:** the Polaris card shows the cycle's reflectives as the "Daily Reflectives" group from the sketch. Each row can be checked off, and the count updates as reflectives are done.
 
 # Pausing
 A reflect-decree is **live**, and so can generate, only when:
 - the decree itself is **Active**. An Abandoned decree never generates.
-- every **lunar directive** on its lineage is **Active**. That means the decree's own lunar directive and every lunar ancestor above it, so an **On Hold** or **Stale** lunar directive pauses its whole subtree. Stellar directives' own states are not consulted.
+- every **lunar directive** on its lineage is **Active**. That means the decree's own lunar directive and every lunar ancestor above it, so an **On Hold** or **Stale** lunar directive pauses its whole subtree. Stellar directives' own states are not consulted, so a decree with no lunar directive on its lineage, stellar or top-level, is paused only by being Abandoned.
 
 A paused reflect-decree creates no reflectives and does not fall back to attentives. Its orbit cursor stands still, and the days it missed are never back-filled. Generation resumes at the first cycle that begins after the hierarchy is active again.
 
@@ -52,7 +58,7 @@ When a Polaris cycle begins, its reflectives are chosen in two steps:
 Some consequences of these two steps:
 - **The steps add up.** The base number never counts the orbit matches, so a cycle holds every orbit match plus up to the base number of drawn reflectives.
 - **One reflective per decree per cycle.** Running the generation again for a cycle it already ran on adds nothing. Pool decrees already reflected in the cycle count toward the draw, so raising the base number tops the draw up only by the difference.
-- **The pool is Moonlight-only.** An orbit-less reflect-decree outside a Moonlight hierarchy never joins the pool.
+- **The pool spans hierarchies.** Every live orbit-less reflect-decree joins it, lunar, stellar or top-level, and the draw does not weigh them apart.
 
 # Rewards
 Two rewards apply, and both follow execution:
@@ -73,9 +79,9 @@ A changed base number applies from the next cycle begin. A changed daily reward 
 
 # Implementation
 - `core/Plaintorch/Materialization/ProximityMaterializationService.cs`: `MaterializeForCycleAsync` handles liveness, orbit matches, the pool draw, and the one-per-decree guard.
-- `core/Plaintorch/PlaintorchOrbitService.cs`:
-  - `IsInLunarHierarchyAsync` answers whether a decree is a Moonlight reflect-decree at all, and is used to keep it out of the attentive paths.
-  - `IsLunarHierarchyActiveAsync` answers whether reflection is live: every lunar directive on the lineage is Active.
+- `core/Plaintorch/PlaintorchOrbitService.cs`: `IsReflectionPausedAsync` answers whether a lunar directive on the lineage pauses reflection. A lineage with no lunar directive on it is never paused.
+- The attentive paths (the rolling pass in `ProximityMaterializationService.MaterializeForNowAsync` and `AgendaProjectionService`) leave out every reflect-decree in their query, with no lineage walk.
+- SIPA mirrors the selection's liveness in `buildLunarReflection` (`sipa/components/moonlight/moonlightTree.ts`), which feeds the Moonlight page's Lunar Reflection grid.
 - `core/Plaintorch/State/PlaintorchStatePolicyProcessor.cs`: `ApplyReflectiveDecreeRewardRulesAsync` grants the per-run reward, and `ApplyReflectiveCollectionRewardRulesAsync` grants the daily reward. The former placeholder constant (10) is gone.
 - `core/Plaintorch/Preferences/ReflectionPreferences.cs` holds the preferences, with their `PreferenceKeys` constants, `PreferenceCatalog` entries and Options binding.
 - Retired: both `reflectives/draw` endpoints, `IPolarisCycleApi.DrawReflectivesAsync`, the `ReflectiveDrawRequest` contract, and the SDK's `drawReflectives`/`drawReflectivesForCycle`.
@@ -84,9 +90,10 @@ A changed base number applies from the next cycle begin. A changed daily reward 
 `core.tests/Core/LunarReflectionTests.cs` covers:
 - pausing under an On Hold or Stale lunar directive, and under an inactive lunar ancestor above an active lunar child;
 - stellar levels being ignored;
+- stellar-hierarchy and top-level reflect-decrees generating like lunar ones, and projecting no attentives;
 - resuming without back-fill;
 - abandoned decrees generating nothing;
-- orbit matches plus the pool draw, including non-Moonlight decrees staying out of the pool;
+- orbit matches plus the pool draw, with a stellar decree in the pool;
 - the base number preference (0, 1, negative, larger than the pool);
 - repeated generation adding nothing, and topping up after the base number is raised;
 - both rewards, together and revoked;
