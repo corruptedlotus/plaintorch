@@ -212,6 +212,11 @@ export class FullBanner extends Component {
 		return (this.entity as { timeZone?: string | null } | undefined)?.timeZone ?? undefined
 	}
 
+	/** A lore page's beginning, when the resolved entity is one that has begun; a page without one has no period. */
+	private get loreBeginning(): string | undefined {
+		return (this.entity as { beginning?: string | null } | undefined)?.beginning ?? undefined
+	}
+
 	/** The special in-place editors an entity carries beneath its banner, handed the owner's PUCK (and a declarative its calendar). */
 	private renderEditors(kind: string) {
 		switch (kind) {
@@ -219,6 +224,7 @@ export class FullBanner extends Component {
 			case 'onrush-sprint': return html`<p7t-onrush-orders class='editor' .onrushId=${this.puck}></p7t-onrush-orders>`
 			case 'fate': return html`<p7t-declarative-agenda class='editor' .fateId=${this.puck} .calendar=${this.declarativeCalendar} .timeZone=${this.declarativeTimeZone}></p7t-declarative-agenda>`
 			case 'decree': return html`<p7t-declarative-agenda class='editor' .decreeId=${this.puck} .calendar=${this.declarativeCalendar} .timeZone=${this.declarativeTimeZone}></p7t-declarative-agenda>`
+			case 'lore-page': return !this.loreBeginning ? nothing : html`<p7t-lore-cycles class='editor' .lorePuck=${this.puck}></p7t-lore-cycles>`
 			default: return nothing
 		}
 	}

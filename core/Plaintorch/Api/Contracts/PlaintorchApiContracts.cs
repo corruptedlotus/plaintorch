@@ -296,6 +296,22 @@ public sealed record PolarisCycleUpdate(
 	string? Title = null);
 
 /// <summary>
+/// The Polaris cycles of a lore page's active period (<see cref="LorePage.ResolveActivePeriod"/>), in day order. A page
+/// with no beginning has no period: its dates are <see langword="null"/> and it lists no cycle.
+/// </summary>
+/// <param name="Beginning">The page's beginning, the first day of the period.</param>
+/// <param name="EndingExclusive">The day the period ends, exclusive, or <see langword="null"/> while it is still running.</param>
+/// <param name="Through">The last day listed: the day before the period ends, or today while it runs. Before
+/// <paramref name="Beginning"/> for a running page that has not begun yet.</param>
+/// <param name="Cycles">The cycles of the days from the beginning through <paramref name="Through"/>, as
+/// <see cref="Abstractions.IPolarisCycleApi.ListByDayAsync"/> serves them.</param>
+public sealed record LorePolarisCycles(
+	DateOnly? Beginning,
+	DateOnly? EndingExclusive,
+	DateOnly? Through,
+	IReadOnlyList<PolarisCycle> Cycles);
+
+/// <summary>
 /// Represents the mutable fields of an onrush sprint for generic update actions.
 /// </summary>
 public sealed record OnrushSprintUpdate(

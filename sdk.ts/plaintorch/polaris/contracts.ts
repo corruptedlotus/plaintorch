@@ -1,6 +1,7 @@
 export type {
 	Executive,
 	ExecutiveUpdate,
+	LorePolarisCycles,
 	PolarisAgenda,
 	PolarisDecreeAdd,
 	PolarisCycle,

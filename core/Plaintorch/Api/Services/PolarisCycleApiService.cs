@@ -7,6 +7,7 @@ using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.State;
+using Pleiades.Saga;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Media;
 
@@ -272,6 +273,28 @@ public sealed class PolarisCycleApiService(
 			.ToListAsync(cancellationToken);
 
 		return cycles.OrderBy(cycle => cycle.Day).ToList();
+	}
+
+	/// <inheritdoc />
+	public async Task<LorePolarisCycles?> ListForLoreAsync(string lorePuck, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(lorePuck);
+		var pages = await context.LorePages.AsNoTracking().ToListAsync(cancellationToken);
+		var page = pages.FirstOrDefault(item => item.Id == lorePuck);
+		if (page is null)
+		{
+			return null;
+		}
+
+		if (LorePage.ResolveActivePeriod(page, pages) is not { } period)
+		{
+			return new LorePolarisCycles(null, null, null, []);
+		}
+
+		// Cycle days are this host's local days, so a running period reaches the local today.
+		var through = period.Through(DateOnly.FromDateTime(DateTime.Today));
+		IReadOnlyList<PolarisCycle> cycles = through < period.Beginning ? [] : await ListByDayAsync(period.Beginning, through, cancellationToken);
+		return new LorePolarisCycles(period.Beginning, period.EndingExclusive, through, cycles);
 	}
 
 	/// <inheritdoc />

@@ -3,7 +3,7 @@ import type { Objective } from "../objectives/models"
 import type { Directive, DirectiveTimeframeRecord } from "../directives/models"
 import type { Decree, Fate } from "../declaratives/models"
 import type { ExecutiveOrder, OnrushSprint } from "../onrush/models"
-import type { PolarisAgenda, PolarisCycle } from "../polaris/models"
+import type { LorePolarisCycles, PolarisAgenda, PolarisCycle } from "../polaris/models"
 import type { LorePage } from "../lore/models"
 import type { Checkpoint, Dependency } from "../dependencies/models"
 import type { EntityExistence, SystemBriefing } from "../system/models"
@@ -125,6 +125,15 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	public readonly polarisDays: DerivedRepository<PolarisCycle[]>
 
 	/**
+	 * The Polaris cycles of a lore page's active period, keyed by the page's PUCK (`Era1/Cha2`).
+	 *
+	 * A derived record because the period is the core's call: it turns on the page's beginning, its siblings' and its
+	 * ancestors', and on today. A write revalidates it while observed, like every record, so a beginning edited beside it
+	 * re-reads the period. The cycles inside are canonical.
+	 */
+	public readonly lorePolaris: DerivedRepository<LorePolarisCycles>
+
+	/**
 	 * The timeframes active right now (PEP100 patch 2), cached under {@link briefingRecordKey}.
 	 *
 	 * A derived record like {@link agenda}: which timeframes are active is a question about the clock and the
@@ -202,6 +211,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		this.onrushPlanning = new DerivedRepository(async () => await client.onrush.getPlanning())
 		this.agenda = new DerivedRepository(async () => await client.polaris.getAgenda())
 		this.polarisDays = new DerivedRepository(async (from) => await client.polaris.listByDay(from))
+		this.lorePolaris = new DerivedRepository(async (lorePuck) => await client.polaris.listForLore(lorePuck))
 		this.activeTimeframes = new DerivedRepository(async () => await client.directives.listActiveTimeframes())
 		this.preferences = new DerivedRepository(async () => await client.preferences.list())
 
@@ -251,6 +261,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 			this.onrushPlanning as DerivedRepository<unknown>,
 			this.agenda as DerivedRepository<unknown>,
 			this.polarisDays as DerivedRepository<unknown>,
+			this.lorePolaris as DerivedRepository<unknown>,
 			this.activeTimeframes as DerivedRepository<unknown>,
 			this.preferences as DerivedRepository<unknown>
 		]

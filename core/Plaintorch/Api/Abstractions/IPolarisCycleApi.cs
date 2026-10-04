@@ -24,6 +24,14 @@ public interface IPolarisCycleApi
 	Task<IReadOnlyList<PolarisCycle>> ListByDayAsync(DateOnly from, DateOnly? to = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Lists the Polaris cycles that fall in a lore page's active period (<see cref="Saga.LorePage.ResolveActivePeriod"/>):
+	/// from its beginning until its next sibling begins, capped by its ancestors' periods, or through today while nothing
+	/// has ended it. Returns <see langword="null"/> when no lore page has the PUCK, and an empty, undated listing for a
+	/// page with no beginning.
+	/// </summary>
+	Task<LorePolarisCycles?> ListForLoreAsync(string lorePuck, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Deletes a Polaris cycle that has not begun — a forecast — together with its plan: its executives and reflectives.
 	/// The objectives and decrees behind them stay, in whatever state they have. A begun cycle, active or ended, is the
 	/// record of a worked day and is never deleted.

@@ -81,6 +81,26 @@ export interface PolarisCycleInclusions {
 }
 
 /**
+ * The Polaris cycles of a lore page's active period, in day order: from its beginning until its next sibling begins,
+ * never past the end of an ancestor's period, and through today while nothing has ended it. The core resolves the
+ * period, as it does which lore is active. A page with no beginning has no period: its dates are unset (`null` on the
+ * wire) and it lists no cycle.
+ */
+export interface LorePolarisCycles {
+	/** The page's beginning (ISO date), the period's first day. */
+	beginning: string | undefined
+	/** The day the period ends, exclusive (ISO date), or unset while it is still running. */
+	endingExclusive: string | undefined
+	/**
+	 * The last day listed (ISO date): the day before the period ends, or today while it runs. Earlier than
+	 * {@link beginning} for a page that has not begun yet.
+	 */
+	through: string | undefined
+	/** The cycles of the period's days, canonical and shaped as the day listing serves them. */
+	cycles: PolarisCycle[]
+}
+
+/**
  * The day-level agenda relative to today: unbound attentives requiring attention (same-day/24h and
  * previous unattended) and upcoming eventives within a short horizon (PEP100).
  */

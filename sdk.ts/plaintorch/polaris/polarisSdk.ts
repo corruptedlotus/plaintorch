@@ -2,6 +2,7 @@ import type { PlaintorchCoreClient } from "../coreClient"
 import type {
 	Executive,
 	ExecutiveUpdate,
+	LorePolarisCycles,
 	PolarisAgenda,
 	PolarisDecreeAdd,
 	PolarisCycle,
@@ -37,6 +38,15 @@ export class PlaintorchPolarisSdk {
 	public async listByDay(from: string, to?: string): Promise<PolarisCycle[] | undefined> {
 		const query = new URLSearchParams({ from, ...(to ? { to } : {}) })
 		return await this.client.getJson<PolarisCycle[]>(`/api/polaris/days?${query}`)
+	}
+
+	/**
+	 * The cycles of a lore page's active period, named by the page's PUCK (`Era1/Cha2`). Resolves to `undefined` when
+	 * the core could not answer or knows no such page.
+	 */
+	public async listForLore(lorePuck: string): Promise<LorePolarisCycles | undefined> {
+		const query = new URLSearchParams({ puck: lorePuck })
+		return await this.client.getJson<LorePolarisCycles>(`/api/polaris/lore?${query}`)
 	}
 
 	/**
