@@ -1,4 +1,4 @@
-import { Component, component, css, html, nothing, property, state } from "@a11d/lit"
+import { Component, component, css, html, nothing, property, query, state } from "@a11d/lit"
 import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, isDecreeIncentive, isObjectiveIncentive, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
 import { core, objectiveStatusDescriptors, openEntityEditor, SelectStatusModal, SelectTimeframeModal } from ".."
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
@@ -34,6 +34,18 @@ export class ExecutiveEditor extends Component {
 	}) executive?: Executive
 
 	@state() private draft: Record<Allocation, number | undefined> = { elapsed: 0, estimation: undefined, minimum: undefined, maximum: undefined }
+
+	@query('.tracked p7t-editable-time-unit') private readonly trackedField?: EditableTimeUnit
+
+	/**
+	 * Starts editing the tracked time, so it can be typed the moment the editor shows. Once drawn, and a task later: an
+	 * editable hears its focus only a few microtasks after it connects, and a dialog opening around the editor in the
+	 * meantime moves the focus to a control of its own.
+	 */
+	async editTracked() {
+		await this.updateComplete
+		setTimeout(() => this.trackedField?.startEditing())
+	}
 
 	static override get styles() {
 		return css`
@@ -398,7 +410,8 @@ export class ExecutiveEditor extends Component {
 }
 
 /**
- * Hosts {@link ExecutiveEditor} in a modal, relaying every persisted change to the opener.
+ * Hosts {@link ExecutiveEditor} in a modal, relaying every persisted change to the opener. It opens on the tracked time
+ * already editing: digits, the arrows or a step land there at once.
  */
 export class ExecutiveModal extends ModalBase {
 	constructor(
@@ -412,6 +425,7 @@ export class ExecutiveModal extends ModalBase {
 		const editor = createChild(this.contentEl, 'p7t-executive-editor')
 		editor.executive = this.executive
 		editor.addEventListener('executivechange', e => this.onChange?.((e as CustomEvent<Executive>).detail))
+		void editor.editTracked()
 	}
 }
 

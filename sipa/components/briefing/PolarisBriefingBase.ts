@@ -2,8 +2,8 @@ import { css, eventListener, html, nothing, state, type HTMLTemplateResult } fro
 import type { PolarisCycle } from "@pleiades/sdk"
 import { BriefingCard } from "./BriefingCard"
 import {
-	polarisActivityKind, polarisActivityKinds, removePolarisActivity, revalidatePolarisCycles, TransferController,
-	type CreationRowCreated, type PolarisActivity, type PolarisActivityCreated
+	offerEstimation, polarisActivityKind, polarisActivityKinds, removePolarisActivity, revalidatePolarisCycles,
+	TransferController, type CreationRowCreated, type PolarisActivity, type PolarisActivityCreated
 } from ".."
 
 /**
@@ -174,6 +174,32 @@ export abstract class PolarisBriefingBase extends BriefingCard<PolarisCycle> {
 				<span>Drop here to remove from this cycle</span>
 			</div>
 		`
+	}
+
+	/**
+	 * Asks for the estimate of an executive just added to the cycle — by a drop, say — at its row's notch once the row
+	 * is drawn, scrolled into view; at the card itself when the row does not show (a collapsed card).
+	 */
+	protected async offerEstimation(executive: PolarisActivity) {
+		const row = await this.rowOf(executive)
+		if (!row?.getClientRects().length) {
+			await offerEstimation(executive, this)
+			return
+		}
+
+		row.scrollIntoView({ block: 'nearest' })
+		await row.promptEstimation()
+	}
+
+	/** The row drawing an executive, once drawn. The cycle re-reads itself first when its copy does not hold it yet. */
+	private async rowOf(executive: PolarisActivity) {
+		if (!this.data?.executives.some(held => held.id === executive.id)) {
+			await revalidatePolarisCycles()
+		}
+
+		await this.updateComplete
+		return Array.from(this.renderRoot.querySelectorAll('p7t-incentive-item-exec'))
+			.find(row => row.executive?.id === executive.id)
 	}
 
 	/** Opens the inline creation row at the foot of the list, in place of the picker modal it replaced. */

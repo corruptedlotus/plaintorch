@@ -3,7 +3,7 @@ import { EntityBanner } from './EntityBanner'
 import { DependencyEndpointKind, Objective, ObjectiveUpdate, PolarisCycle } from '@pleiades/sdk'
 import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
 import { OnrushSprint } from "@pleiades/sdk"
-import { addObjectiveToPolaris, confirmAction, core, IconItem, IconName, isObjectiveInCycle, followRenamedNote, objectiveStatusDescriptors, removeConfirmation, SelectCollegeModal, SelectStatusModal } from ".."
+import { addObjectiveToPolaris, confirmAction, core, IconItem, IconName, isObjectiveInCycle, followRenamedNote, objectiveStatusDescriptors, offerEstimation, removeConfirmation, SelectCollegeModal, SelectStatusModal } from ".."
 import { createChild, SuggestModalBase, toast } from '../../host'
 
 @component('p7t-objective-banner')
@@ -43,10 +43,15 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 		new AddToOnrushModal(this, button).open()
 	}
 
-	addToPolaris = async () => {
+	/** Plans the objective into the active Polaris cycle, then asks for its estimate beside `button`, where it was added. */
+	addToPolaris = async (button?: HTMLElement) => {
 		if (!this.entity || this.isInActivePolaris) return
-		if (await addObjectiveToPolaris(this.entity)) {
+		const executive = await addObjectiveToPolaris(this.entity)
+		if (executive) {
 			this.activePolaris = await core.polaris.getCurrent()
+			// The cycle comes back as the canonical instance, merged in place: the same object, so assigning it redraws nothing.
+			this.requestUpdate()
+			void offerEstimation(executive, button ?? this)
 		}
 	}
 
@@ -151,7 +156,7 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 					<span class='switcher'>Reassign</span>
 				`}
 			</p7t-button>
-			<p7t-button ?disabled=${inPolaris} large icon='polaris' @click=${() => this.addToPolaris()}>
+			<p7t-button ?disabled=${inPolaris} large icon='polaris' @click=${(e: Event) => this.addToPolaris(e.currentTarget as HTMLElement)}>
 				${!inPolaris ? html`<span>Add to Polaris</span>` : html`
 					<p7t-icon class='marker-icon' icon='lucide:check'></p7t-icon>
 				`}

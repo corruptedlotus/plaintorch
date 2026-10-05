@@ -8,8 +8,9 @@ const digitEntryWindow = 900
  * Base for keyboard-driven numeric editables (time-unit, starfire).
  *
  * The field is focusable rather than contenteditable: **Arrow up/right and down/left step** the value,
- * typed digits accumulate into an entry, Enter finishes, Escape reverts, and Backspace/Delete clears to the
- * floor. Every change raises `preview` for live surfaces; the committed value is published through the
+ * typed digits accumulate into an entry, Enter finishes, Escape reverts (an Escape with nothing to revert is left
+ * to whatever surrounds the field, a dialog say), and Backspace/Delete clears to the floor. Every change raises
+ * `preview` for live surfaces; the committed value is published through the
  * inherited `edit`/`change` once editing ends. Steppers on the side mirror the arrow keys; they are affordances
  * of the base, so a subclass template draws only the value.
  *
@@ -138,9 +139,11 @@ export abstract class EditableNumericPart extends EditablePart<number> {
 				this.blur()
 				return
 			case 'Escape':
-				e.preventDefault()
 				this.flushEntry()
+				// Spent on reverting an edit; with none to revert it only leaves the field and carries on to what
+				// surrounds it, so a dialog opened with the field already editing still closes on the first Escape.
 				if (this.value !== this.valueAtFocus) {
+					e.preventDefault()
 					this.value = this.valueAtFocus
 					this.dispatchEvent(new CustomEvent<number>('preview', { detail: this.value ?? this.min }))
 				}

@@ -1,8 +1,8 @@
 import { component, css, html, property } from "@a11d/lit"
 import { Executive, ExecutiveIncentive, isDecreeIncentive } from "@pleiades/sdk"
 import { EntityItem } from "./EntityItem"
-import { ActiveTimeframesRef, ExecutiveModal, tooltip, type ContextMenuSpec, type EditableTimeUnit } from ".."
-import { polarisActivityMenu, setPolarisActivityEstimation } from "./polarisActivity"
+import { ActiveTimeframesRef, tooltip, type ContextMenuSpec, type EditableTimeUnit } from ".."
+import { offerEstimation, openPolarisActivityAllocation, polarisActivityMenu, promptTrackedTime, setPolarisActivityEstimation } from "./polarisActivity"
 
 /**
  * A Polaris executive as a list row — the single successor to the former ObjectiveItemExecutive and
@@ -12,8 +12,10 @@ import { polarisActivityMenu, setPolarisActivityEstimation } from "./polarisActi
  * so the two kinds still read apart. While its affinity timeframe is active the row wears the item flare, a side
  * glass glow in the flare accent (PEP100 patch 3).
  *
- * With {@link planning} on, the notch is the executive's estimate instead, edited in place — for surfaces that plan
- * days rather than work them.
+ * The row works on the executive, not the incentive behind it: a press on the title opens the allocation modal, and one
+ * on the notch the tracked time in a bubble beside it. With {@link planning} on, the notch is the executive's estimate
+ * instead, edited in place — for surfaces that plan days rather than work them. A row that is not interactive (an
+ * ended day's record) does neither.
  *
  * A committed change is announced upward with a bubbling `updateRequest` event so the hosting cycle reconciles.
  */
@@ -30,7 +32,7 @@ export class IncentiveItemExecutive extends EntityItem<ExecutiveIncentive> {
 	/**
 	 * Planning mode: the notch stops reading out the allocation's state and becomes the executive's estimate — its
 	 * total planned time — edited in place, since planning a day is setting how long each thing gets. The full
-	 * allocation (minimum, maximum, tracked time) stays one right-click away, under Time Management.
+	 * allocation (minimum, maximum, tracked time) stays a press on the title away, or Time Management in its menu.
 	 */
 	@property({ type: Boolean, reflect: true }) planning = false
 
@@ -89,10 +91,13 @@ export class IncentiveItemExecutive extends EntityItem<ExecutiveIncentive> {
 			return super.contextMenuSpec()
 		}
 
-		return polarisActivityMenu(this.executive, updated => {
-			this.executive = updated
-			this.dispatchEvent(new CustomEvent<void>('updateRequest', { bubbles: true, composed: true }))
-		})
+		return polarisActivityMenu(this.executive, updated => this.changed(updated))
+	}
+
+	/** The title opens the executive's allocation modal — its times, its affinity, its done flag — not the incentive's editor. */
+	protected override async titleAction() {
+		if (!this.interactive || !this.executive) return
+		openPolarisActivityAllocation(this.executive, updated => this.changed(updated))
 	}
 
 	protected override get preTitle() {
@@ -114,13 +119,44 @@ export class IncentiveItemExecutive extends EntityItem<ExecutiveIncentive> {
 		return html`<p7t-timeframe-item affinity small mode='icon' .timeframe=${this.executive?.affinityTimeframe}></p7t-timeframe-item>`
 	}
 
+	/**
+	 * The notch edits the tracked time in a bubble beside it; a second press closes it. In planning mode the notch is
+	 * an editor of its own, so a press there edits the estimate, nothing more.
+	 */
 	protected override async notchAction() {
-		// In planning mode the notch is an editor of its own; a press there edits the estimate, nothing more.
-		if (!this.executive || this.planning) return
-		new ExecutiveModal(this.executive, executive => {
-			this.executive = executive
-			this.dispatchEvent(new CustomEvent<void>('updateRequest', { bubbles: true, composed: true }))
-		}).open()
+		const executive = this.executive
+		if (!this.interactive || !executive || this.planning) return
+
+		const updated = await promptTrackedTime(executive, this.notchElement)
+		if (updated) {
+			this.changed(updated)
+		}
+	}
+
+	/**
+	 * Asks for the executive's estimate in a "Set estimation" bubble at the notch, as a row just added to its cycle does
+	 * (see {@link offerEstimation}). A changed estimate is written, and the row draws it at once.
+	 */
+	async promptEstimation() {
+		const executive = this.executive
+		if (!executive) return
+
+		await this.updateComplete
+		const updated = await offerEstimation(executive, this.notchElement)
+		if (updated) {
+			this.changed(updated)
+		}
+	}
+
+	/** Where the row's bubbles point: the notch, or the row while it has not drawn one. */
+	private get notchElement(): HTMLElement {
+		return this.renderRoot.querySelector<HTMLElement>('.notch') ?? this
+	}
+
+	/** Draws a committed change at once, and tells the hosting cycle to re-read itself. */
+	private changed(updated: Executive) {
+		this.executive = updated
+		this.dispatchEvent(new CustomEvent<void>('updateRequest', { bubbles: true, composed: true }))
 	}
 
 	/** Commits an estimate edited in the planning notch. An unchanged value writes nothing. */
@@ -136,8 +172,7 @@ export class IncentiveItemExecutive extends EntityItem<ExecutiveIncentive> {
 			return
 		}
 
-		this.executive = updated
-		this.dispatchEvent(new CustomEvent<void>('updateRequest', { bubbles: true, composed: true }))
+		this.changed(updated)
 	}
 
 	protected override get notchTemplate() {

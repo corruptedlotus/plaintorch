@@ -1,4 +1,4 @@
-import type { Objective, PolarisCycle } from '@pleiades/sdk'
+import { PolarisExecutivePlanningMode, type Executive, type Objective, type PolarisCycle } from '@pleiades/sdk'
 import { core } from '..'
 import { toast } from '../../host'
 
@@ -31,23 +31,23 @@ export async function currentPolarisCycle(): Promise<PolarisCycle | undefined> {
  *
  * Refuses locally when the objective is already in the cycle (the core would refuse too, but this way the
  * reason is said rather than swallowed as a failed write). The objective and briefing ride on the mutate; only
- * the owning cycle needs a nudge afterwards. Resolves to whether the objective was added.
+ * the owning cycle needs a nudge afterwards. Resolves to the executive the objective is planned as — what a surface
+ * then asks the estimate of (see `offerEstimation`) — or `undefined` when it was not added.
  */
-export async function addObjectiveToPolaris(objective: Pick<Objective, 'id' | 'title'>): Promise<boolean> {
+export async function addObjectiveToPolaris(objective: Pick<Objective, 'id' | 'title'>): Promise<Executive | undefined> {
 	if (isObjectiveInCycle(objective.id, await currentPolarisCycle())) {
 		toast(`${objective.title} is already in the active Polaris cycle.`, 'info')
-		return false
+		return undefined
 	}
 
-	const added = await core.repos.objectives.mutate(objective.id, async () =>
-		await core.polaris.addObjectiveToCurrent(objective.id))
-	if (added) {
-		await core.repos.polaris.revalidateObserved()
-		toast(`Added ${objective.title} to the active Polaris cycle.`, 'success')
-	}
-	else {
+	const planned = await core.repos.objectives.mutate(objective.id, async () =>
+		await core.polaris.planExecutive({ mode: PolarisExecutivePlanningMode.FromObjective, objectiveId: objective.id }))
+	if (!planned) {
 		toast(`PLAINTORCH could not add ${objective.title} to Polaris.`, 'error')
+		return undefined
 	}
 
-	return added
+	await core.repos.polaris.revalidateObserved()
+	toast(`Added ${objective.title} to the active Polaris cycle.`, 'success')
+	return { ...planned.executive, incentive: planned.executive.incentive ?? planned.objective }
 }

@@ -1,7 +1,7 @@
 import { component, css, html, live, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { Decree, DecreeStatus, DecreeUpdate, OrbitUnit, PolarisCycle } from '@pleiades/sdk'
-import { core, declarativeScheduleUpdate, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, decreeStatusDescriptors } from ".."
+import { core, declarativeScheduleUpdate, IconName, followRenamedNote, offerEstimation, ReactiveBinder, SelectStatusModal, decreeStatusDescriptors } from ".."
 import type { ScheduleValue } from "../editing/EditableSchedule"
 import { toast } from '../../host'
 import { declarativeResolutionStyles, declarativeResolutionTemplate, type DeclarativeResolutionUpdate } from './declarativeResolution'
@@ -69,14 +69,21 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		return this.activePolaris.executives.some(executive => executive.incentiveId === this.entity!.id)
 	}
 
-	addToPolaris = async () => {
+	/**
+	 * Adds the decree to the active Polaris cycle, then asks for its estimate beside `button`, where it was added —
+	 * starting from the decree's default length, which the core seeds.
+	 */
+	addToPolaris = async (button?: HTMLElement) => {
 		if (this.isInActivePolaris) return
-		const decreeId = this.entity!.id
-		const executive = await core.repos.decrees.mutate(decreeId, async () =>
-			await core.polaris.addDecreeExecutive({ decreeId }))
+		const decree = this.entity!
+		const executive = await core.repos.decrees.mutate(decree.id, async () =>
+			await core.polaris.addDecreeExecutive({ decreeId: decree.id }))
 		if (executive) {
 			toast('Added to active Polaris cycle.', 'success')
 			this.activePolaris = await core.polaris.getCurrent()
+			// The cycle comes back as the canonical instance, merged in place: the same object, so assigning it redraws nothing.
+			this.requestUpdate()
+			void offerEstimation({ ...executive, incentive: executive.incentive ?? decree }, button ?? this)
 		}
 	}
 
@@ -205,7 +212,7 @@ export class DecreeBanner extends EntityBanner<Decree> {
 				<p7t-editable-starfire ${this.binder.bind('activeCelestron')}></p7t-editable-starfire>
 				<span class='switcher'>per run</span>
 			</div>
-			<p7t-button ?disabled=${inPolaris} large icon='polaris' @click=${() => this.addToPolaris()}>
+			<p7t-button ?disabled=${inPolaris} large icon='polaris' @click=${(e: Event) => this.addToPolaris(e.currentTarget as HTMLElement)}>
 				${!inPolaris ? html`<span>Add to Polaris</span>` : html`
 					<p7t-icon class='marker-icon' icon='lucide:check'></p7t-icon>
 				`}

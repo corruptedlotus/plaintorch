@@ -10,7 +10,11 @@ export interface ExpandingAction {
 	readonly key: string
 	readonly icon: IconName
 	readonly label: string
-	readonly run: () => void | Promise<void>
+	/**
+	 * Runs once chosen, with the trigger the panel opened from: where a follow-up question is asked once the panel has
+	 * closed.
+	 */
+	readonly run: (origin: HTMLElement) => void | Promise<void>
 	/** Asks before running — a confirmation bubble beside the choice, the panel staying open until it is answered. */
 	readonly confirm?: ConfirmationOptions
 }
@@ -185,7 +189,7 @@ export class ExpandingActions extends Component {
 			this.panelElement.hidePopover()
 		}
 
-		await action.run()
+		await action.run(this.triggerElement)
 	}
 
 	/**

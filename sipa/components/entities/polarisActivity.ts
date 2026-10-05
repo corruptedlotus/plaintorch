@@ -1,7 +1,8 @@
-import { isObjectiveIncentive, ObjectiveStatus, type Executive, type Objective, type PolarisCycle } from '@pleiades/sdk'
+import { isObjectiveIncentive, ObjectiveStatus, type Executive, type ExecutiveUpdate, type Objective, type PolarisCycle } from '@pleiades/sdk'
 import { confirmAction, core, isIncentiveInCycle, removeConfirmation, type ContextMenuEntry, type ContextMenuSpec, type InteractionBubbleAnchor } from '..'
 import { ExecutiveModal } from './ExecutiveModal'
 import { entityMenuEntries } from './entityMenu'
+import { TimeUnitBubble } from '../editing/TimeUnitBubble'
 import { toast } from '../../host'
 
 /**
@@ -122,6 +123,41 @@ export async function offerObjectiveDone(activity: PolarisActivity, anchor: Inte
 	return updated
 }
 
+/**
+ * Having just added an activity to a cycle, asks beside `anchor` for its estimate, in a "Set estimation" bubble already
+ * editing — so planning something in is one gesture and a typed number. It starts from whatever estimate the core
+ * seeded (a decree's default length, say); a changed one is written. Resolves to the activity as updated, or
+ * `undefined` when skipped, left unchanged, or refused.
+ */
+export async function offerEstimation(activity: PolarisActivity, anchor: InteractionBubbleAnchor): Promise<PolarisActivity | undefined> {
+	const estimation = await TimeUnitBubble.prompt(anchor, {
+		heading: 'Set estimation',
+		action: 'Set',
+		cancel: 'Skip',
+		nullable: true,
+	}, activity.estimation ?? undefined)
+	if (estimation === (activity.estimation ?? undefined)) {
+		return undefined
+	}
+
+	return await setPolarisActivityEstimation(activity, estimation)
+}
+
+/**
+ * Asks beside `anchor` for an activity's tracked time, in a bubble already editing: the quick correction of a tally,
+ * without the whole allocation modal. A changed time is written. Resolves to the activity as updated, or `undefined`
+ * when dismissed, left unchanged, or refused.
+ */
+export async function promptTrackedTime(activity: PolarisActivity, anchor: InteractionBubbleAnchor): Promise<PolarisActivity | undefined> {
+	const tracked = activity.elapsed ?? 0
+	const elapsed = await TimeUnitBubble.prompt(anchor, { heading: 'Tracked time', action: 'Set' }, tracked)
+	if (elapsed === undefined || elapsed === tracked) {
+		return undefined
+	}
+
+	return await setPolarisActivityTracked(activity, elapsed)
+}
+
 /** Opens the activity's allocation modal — its time, its affinity, its done flag. */
 export function openPolarisActivityAllocation(activity: PolarisActivity, changed?: (updated: PolarisActivity) => void) {
 	new ExecutiveModal(activity, executive => changed?.(executive)).open()
@@ -148,9 +184,22 @@ export async function setPolarisActivityDone(activity: PolarisActivity, done: bo
  * `undefined` when the core refused.
  */
 export async function setPolarisActivityEstimation(activity: PolarisActivity, estimation: number | undefined): Promise<PolarisActivity | undefined> {
-	const executive = await core.polaris.updateExecutive(activity.id, { estimation: estimation ?? null })
+	return await updatePolarisActivityTime(activity, { estimation: estimation ?? null }, 'estimate')
+}
+
+/**
+ * Sets an activity's tracked time — the tally of minutes worked on it — outright, as a correction. Resolves to the
+ * updated activity, or `undefined` when the core refused.
+ */
+export async function setPolarisActivityTracked(activity: PolarisActivity, elapsed: number): Promise<PolarisActivity | undefined> {
+	return await updatePolarisActivityTime(activity, { elapsed }, 'tracked time')
+}
+
+/** Writes one of an activity's times, saying which one when the core refuses it, and folds the answer back in. */
+async function updatePolarisActivityTime(activity: PolarisActivity, update: ExecutiveUpdate, what: string): Promise<PolarisActivity | undefined> {
+	const executive = await core.polaris.updateExecutive(activity.id, update)
 	if (!executive) {
-		toast(`PLAINTORCH could not update the estimate of ${polarisActivityTitle(activity)}.`, 'error')
+		toast(`PLAINTORCH could not update the ${what} of ${polarisActivityTitle(activity)}.`, 'error')
 		return undefined
 	}
 

@@ -33,13 +33,22 @@ export class BriefingCardPolaris extends PolarisBriefingBase {
 	 * one add-to-polaris path every surface shares, so the repository — not this card — owns what the cycle
 	 * then shows. Candidacy is decided at drag start: a cycle must be running, and the objective must be live
 	 * and not already in it (a cycle holds one instance of an objective).
+	 *
+	 * Once taken, the new row asks for its estimate. The drop settles without waiting for the answer.
 	 */
 	protected readonly transfer = new TransferController<Objective>(this, {
 		accepts: ['Objective'],
 		canAccept: objective => !!this.data
 			&& objective.status < ObjectiveStatus.Archived
 			&& !isObjectiveInCycle(objective.id, this.data),
-		accept: objective => addObjectiveToPolaris(objective),
+		accept: async objective => {
+			const executive = await addObjectiveToPolaris(objective)
+			if (executive) {
+				void this.offerEstimation(executive)
+			}
+
+			return !!executive
+		},
 	})
 
 	static override get styles() {

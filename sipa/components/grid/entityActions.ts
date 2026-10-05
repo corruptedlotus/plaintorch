@@ -3,8 +3,8 @@ import {
 	type DecreeUpdate, type FateUpdate
 } from '@pleiades/sdk'
 import {
-	addObjectiveToPolaris, core, ExpandingAction, IconName, isArchivedStatus, isInactiveStatus, PromptTextModal,
-	SelectDirectiveModal, type DirectiveChoice, type ScheduleValue, type Status
+	addObjectiveToPolaris, core, ExpandingAction, IconName, isArchivedStatus, isInactiveStatus, offerEstimation,
+	PromptTextModal, SelectDirectiveModal, type DirectiveChoice, type ScheduleValue, type Status
 } from '..'
 import { host, toast } from '../../host'
 import type { GridEntity } from './entityTree'
@@ -478,8 +478,11 @@ export function objectiveActions(objective: Objective): ExpandingAction[] {
 			key: 'polaris',
 			icon: 'polaris',
 			label: 'Add to Polaris',
-			run: async () => {
-				await addObjectiveToPolaris(objective)
+			run: async origin => {
+				const executive = await addObjectiveToPolaris(objective)
+				if (executive) {
+					void offerEstimation(executive, origin)
+				}
 			}
 		},
 		{
