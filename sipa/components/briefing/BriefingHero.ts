@@ -64,7 +64,7 @@ export class BriefingHero extends CardComponent {
 				font-size: .9em;
 				font-weight: 400;
 				font-family: var(--font-text);
-				background-color: color-mix(in srgb, var(--text-normal) 15%, transparent);
+				background-color: color-mix(in srgb, var(--text-accent) 6%, transparent);
 				border-radius: 8px;
 				padding-inline: .6em .4em;
 				padding-block: .2em;

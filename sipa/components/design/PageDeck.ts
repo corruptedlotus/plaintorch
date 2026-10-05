@@ -103,6 +103,8 @@ export class PageDeck extends Component {
 			.page {
 				grid-area: 1 / 1;
 				min-width: 0;
+				display: flex;
+				flex-direction: column;
 			}
 
 			.page[dormant] {

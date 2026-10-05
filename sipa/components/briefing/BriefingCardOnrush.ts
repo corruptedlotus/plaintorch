@@ -67,12 +67,18 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 				}
 			}
 
+			.dependency-group {
+				margin-block: 0 .5em;
+				margin-inline: 1em;
+			}
+
 			.dependency-group-heading {
 				display: flex;
 				align-items: center;
 				gap: .6ch;
-				margin-block: .8em .3em;
+				margin-block: 0 .1em;
 				padding-inline: 1.2em;
+				padding-block: .3em;
 				font-size: .82em;
 				opacity: .65;
 				border-inline-start: 2px solid color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 50%, transparent);
@@ -96,6 +102,11 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 				cursor: help;
 				text-decoration: underline dotted;
 				text-underline-offset: 2px;
+			}
+
+			hr {
+				width: calc(100% - 4em);
+				opacity: .16;
 			}
 		`
 	}
@@ -129,10 +140,11 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 
 				return html`
 					<p7t-objective-item interactive .currentOnrush=${this.data} .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
-					${group ? this.dependencyGroupTemplate(group) : nothing}
+					${group ? this.dependencyGroupTemplate(group, true) : nothing}
 				`
 			})}
 			<!--<p7t-button @click=${() => this.addObjective()} icon='lucide:plus' class='add-button'>Add Objective</p7t-button>-->
+			${groups.some(group => !placed.has(group.key)) ? html`<hr />` : nothing}
 			${groups.filter(group => !placed.has(group.key)).map(group => this.dependencyGroupTemplate(group))}
 		`
 	}
@@ -148,13 +160,13 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 	 * not holding the member's next transition back right now — one reached only through a gate on a later transition,
 	 * or on one already made — is drawn faint.
 	 */
-	private dependencyGroupTemplate(group: DependencyGroup) {
+	private dependencyGroupTemplate(group: DependencyGroup, parentPresent = false) {
 		const expanded = this.expandedGroups.has(group.key)
 		return html`
 			<div class='dependency-group' ?data-expanded=${expanded}>
 				<div class='dependency-group-heading' role='button' aria-expanded=${expanded} @click=${() => this.toggleGroup(group.key)}>
 					<p7t-icon class='dependency-group-chevron' icon=${expanded ? 'lucide:chevron-down' : 'lucide:chevron-right'}></p7t-icon>
-					<p7t-icon-item small icon='lucide:route-off' class='dependency-group-title'>${group.title}</p7t-icon-item>
+					<p7t-icon-item small icon='lucide:route-off' class='dependency-group-title'>${!parentPresent ? group.title : 'Depends on'}</p7t-icon-item>
 					<span
 						class='dependency-count'
 						?data-detail=${group.nonObjectiveCount > 0}
@@ -170,7 +182,7 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 				</div>
 				${!expanded ? nothing : html`
 					<div class='dependency-group-objectives'>
-						${group.objectives.map(objective => html`
+						${group.objectives.map(objective => objective.onrushSprintId === this.data?.id ? nothing : html`
 							<p7t-objective-item interactive .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
 						`)}
 					</div>

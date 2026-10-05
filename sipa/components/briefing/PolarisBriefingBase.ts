@@ -54,7 +54,11 @@ export abstract class PolarisBriefingBase extends BriefingCard<PolarisCycle> {
 
 	/** The planned time of the whole cycle: its executives' estimates, summed. */
 	protected get totalEstimation() {
-		return this.data?.executives.reduce((total, executive) => total + (executive.estimation ?? 0), 0) ?? 0
+		return this.data?.executives.reduce((total, executive) => total + (Math.max(executive.estimation ?? 0, executive.elapsed)), 0) ?? 0
+	}
+
+	protected get totalEstimationHasUnknown() {
+		return this.data?.executives.some(e => e.estimation === undefined)
 	}
 
 	/** The time worked in the cycle so far: its executives' tracked minutes, summed. */

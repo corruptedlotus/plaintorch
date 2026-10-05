@@ -50,7 +50,7 @@ export class BriefingCard<T> extends CardComponent {
 				inset-inline: 1%;
 				top: 0;
 				width: 98%;
-				height: min(100% + 2em, 10em + 20%);
+				height: min(100% + 1.6em, 10em + 20%);
 				color: var(--background-primary);
 				overflow: clip;
 				pointer-events: none;

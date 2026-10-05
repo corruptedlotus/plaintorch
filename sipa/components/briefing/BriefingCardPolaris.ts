@@ -178,7 +178,7 @@ export class BriefingCardPolaris extends PolarisBriefingBase {
 		return html`
 			<p7t-value-progress icon='state-polaris' value=${this.totalElapsed} max=${this.totalEstimation}
 				.valueTemplate=${(value: number) => html`<p7t-time-unit .value=${value}></p7t-time-unit>`}
-				.maxTemplate=${(max: number) => html`<p7t-time-unit .value=${max}></p7t-time-unit>`}
+				.maxTemplate=${(max: number) => html`<p7t-time-unit .value=${max}></p7t-time-unit>${this.totalEstimationHasUnknown ? html`<span>+</span>` : nothing}`}
 			></p7t-value-progress>
 			${this.begun
 				? html`<p7t-button @click=${(e: Event) => this.conclude(e)}>Conclude</p7t-button>`

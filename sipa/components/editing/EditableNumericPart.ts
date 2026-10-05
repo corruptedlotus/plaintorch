@@ -50,8 +50,7 @@ export abstract class EditableNumericPart extends EditablePart<number> {
 				position-anchor: --editable-anchor;
 				anchor-try: normal flip-inline;
 				inset-inline-start: anchor(end);
-				top: anchor(top);
-				bottom: anchor(bottom);
+				position-area: inline-end;
 				display: flex;
 				flex-direction: column;
 				justify-content: space-between;

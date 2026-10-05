@@ -1,6 +1,8 @@
 import { Component, component, css, html, nothing, property } from "@a11d/lit"
 import type { PlaintorchBridge, WindowFrameState } from "../shared/contracts"
 import mark from "../../assets/plaintorch-mono-dark.png"
+import { isDevelopmentBuild } from "../main/flavor"
+import { tooltip } from "@pleiades/sipa"
 
 declare global {
 	interface Window {
@@ -170,6 +172,12 @@ export class WindowFrame extends Component {
 				min-height: 0;
 				overflow: auto;
 			}
+
+			.dev-indic {
+				color: var(--text-error);
+				font-size: 1em;
+				pointer-events: all;
+			}
 		`
 	}
 
@@ -215,6 +223,7 @@ export class WindowFrame extends Component {
 			<header part="title-bar">
 				<img class="icon" part="icon" src=${mark} alt="">
 				<div class="heading">
+					${!isDevelopmentBuild ? nothing : html`<p7t-icon class='dev-indic' icon='lucide:bug-play' ${tooltip('Development Build')}></p7t-icon>`}
 					<span class="title" part="title">${this.heading ?? document.title}</span>
 					<slot name="title-bar"></slot>
 				</div>

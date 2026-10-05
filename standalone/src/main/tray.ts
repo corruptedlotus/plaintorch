@@ -1,7 +1,7 @@
 import path from "node:path"
 import { Menu, Tray, nativeImage, nativeTheme, type MenuItemConstructorOptions } from "electron"
 import type { ShellStatus } from "../shared/contracts"
-import { hostsCore } from "./flavor"
+import { hostsCore, isDevelopmentBuild } from "./flavor"
 
 export interface TrayActions {
 	openBriefing(): void
@@ -71,7 +71,7 @@ export class ShellTray {
 			return
 		}
 
-		this.tray.setToolTip(`PLAINTORCH: ${describe(status)}`)
+		this.tray.setToolTip(`PLAINTORCH${isDevelopmentBuild ? '-DEV' : ''}: ${describe(status)}`)
 		this.tray.setContextMenu(Menu.buildFromTemplate(this.template(status)))
 	}
 

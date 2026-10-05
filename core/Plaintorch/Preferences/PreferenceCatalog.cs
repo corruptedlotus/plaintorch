@@ -25,27 +25,27 @@ public sealed class PreferenceCatalog
 			new PreferenceDescriptor
 			{
 				Key = PreferenceKeys.NoteQueueTimeout,
-				Label = "Note queue timeout (ms)",
+				Label = "Note Queue Timeout (ms)",
 				Group = "Watcher",
-				Description = "How long a note may wait in the watcher's write queue before it is drained.",
+				Description = "How long to wait for a new note before giving up.",
 				Kind = PreferenceKind.Integer,
 				DefaultRaw = UserPreferenceSerializer.Serialize(watcher.NoteQueueTimeout),
 			},
 			new PreferenceDescriptor
 			{
 				Key = PreferenceKeys.AutoMaterialiseOptOut,
-				Label = "Auto-materialise opted-out occurrences",
+				Label = "Auto-materialise Opted-out Occurrences",
 				Group = "Agenda",
-				Description = "Materialise an opted-out eventive as time passes, instead of only when it is opted back in.",
+				Description = "Materialise an opted-out eventive as time passes, instead of only when it's opted back in.",
 				Kind = PreferenceKind.Boolean,
 				DefaultRaw = UserPreferenceSerializer.Serialize(agenda.AutoMaterialiseOptOut),
 			},
 			new PreferenceDescriptor
 			{
 				Key = PreferenceKeys.DefaultCalendar,
-				Label = "Default resolution calendar",
+				Label = "Default Calendar",
 				Group = "Agenda",
-				Description = "The calendar an orbit resolves against when its declarative names none of its own — the single vault-wide default (no fate-vs-decree split).",
+				Description = "The default calendar used by Orbit calculation and date display. (This can be overriden by some items)",
 				Kind = PreferenceKind.Enum,
 				DefaultRaw = UserPreferenceSerializer.Serialize(agenda.DefaultCalendar),
 				Options = Enum.GetNames<DeclarativeCalendar>(),
@@ -53,16 +53,16 @@ public sealed class PreferenceCatalog
 			new PreferenceDescriptor
 			{
 				Key = PreferenceKeys.BaseDailyReflectives,
-				Label = "Base daily reflectives",
+				Label = "Daily Chaos Reflectives",
 				Group = "Lunar Reflection",
-				Description = "How many orbit-less reflect-decrees each Polaris cycle draws, on top of every reflect-decree whose orbit lands on its day.",
+				Description = "How many chaos reflection each Polaris cycle draws at random.",
 				Kind = PreferenceKind.Integer,
 				DefaultRaw = UserPreferenceSerializer.Serialize(reflection.BaseDailyReflectives),
 			},
 			new PreferenceDescriptor
 			{
 				Key = PreferenceKeys.ReflectionDailyReward,
-				Label = "Daily reflection reward (Celestron)",
+				Label = "Daily Reflection Reward (Celestron)",
 				Group = "Lunar Reflection",
 				Description = "The Celestron granted once every reflective of a Polaris cycle is done.",
 				Kind = PreferenceKind.Integer,
@@ -71,7 +71,7 @@ public sealed class PreferenceCatalog
 			new PreferenceDescriptor
 			{
 				Key = PreferenceKeys.CalDavFloatingRender,
-				Label = "CalDAV floating-window rendering",
+				Label = "CalDAV Floating-window Rendering",
 				Group = "CalDAV",
 				Description = "How a floating occurrence is exported to CalDAV, which cannot represent an unslotted intraday window.",
 				Kind = PreferenceKind.Enum,

@@ -34,7 +34,7 @@ export class LoreView extends Component {
 
 	protected override get template() {
 		return html`
-			<p7t-page-hero compact heading='Lore' icon='lorepage'></p7t-page-hero>
+			<p7t-page-hero compact heading='Lore & Saga' icon='lorepage'></p7t-page-hero>
 			<div class='active'>
 				<p7t-active-lore centred emptyLabel='No lore is active yet' .pages=${this.briefing.value?.activeLorePages}></p7t-active-lore>
 			</div>

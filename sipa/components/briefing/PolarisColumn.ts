@@ -82,6 +82,7 @@ export class PolarisColumn extends PolarisBriefingBase {
 				border-radius: 12px;
 				gap: .3rem;
 				font-size: .9em;
+				background: color-mix(in srgb, var(--p7t-flare-accent) 7%, var(--background-primary));
 			}
 
 			:host::part(header) {
