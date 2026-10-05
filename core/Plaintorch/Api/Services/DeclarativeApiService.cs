@@ -104,7 +104,7 @@ public sealed class DeclarativeApiService(
 
 		if (update.Status is not null && update.Status.Value != fate.Status)
 		{
-			await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Fate, fate.Id), update.Status.Value, cancellationToken);
+			await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Fate, fate.Id), fate.Status, update.Status.Value, cancellationToken);
 			fate.Status = update.Status.Value;
 		}
 

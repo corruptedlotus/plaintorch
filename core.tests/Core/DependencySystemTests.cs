@@ -439,10 +439,16 @@ public sealed class DependencySystemTests : VaultTestBase
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Directive(api =>
 			api.ShiftStellarWorkflowAsync(target.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Active), Ct)));
 
-		// Move the occurrence (its current date changes) then resolve it: the reference still matches by slot.
+		// Move the occurrence (its current date changes): the reference still matches by slot. Missing it sets it aside, which
+		// satisfies nothing (PEP103), so the target stays gated.
 		var eventiveRef = new EventiveOccurrenceRef(eventive.RecurrenceOwnerUid, eventive.RecurrenceId);
 		await Declarative(api => api.UpdateEventiveAsync(eventiveRef, new EventiveUpdate(Date: slot.AddDays(10)), Ct));
 		await Declarative(api => api.UpdateEventiveAsync(eventiveRef, new EventiveUpdate(Resolution: EventiveResolution.Missed), Ct));
+		Assert.True((await Deps(api => api.GetLockAsync(target.Id, Ct))).BlockedBegin);
+
+		// Taken back to pending and moved into the past, it has taken place, so it has finished and releases the target.
+		var past = DateOnly.FromDateTime(DateTime.Today).AddDays(-2);
+		await Declarative(api => api.UpdateEventiveAsync(eventiveRef, new EventiveUpdate(Date: past, Resolution: EventiveResolution.Pending), Ct));
 
 		var openView = await Deps(api => api.GetLockAsync(target.Id, Ct));
 		Assert.False(openView.BlockedBegin);

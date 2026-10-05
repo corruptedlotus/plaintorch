@@ -49,13 +49,13 @@ public sealed class DependencyReconciler(EntityLifecycleResolver lifecycleResolv
 
 		// Non-checkpoint sources have a fixed satisfaction for this save (their state does not change within the pass),
 		// resolved together — one query per endpoint kind — rather than one at a time. A source with no entity behind
-		// it (an occurrence still projected, an id naming nothing) satisfies nothing; a failed one neither.
+		// it (an occurrence still projected, an id naming nothing) satisfies nothing; a deferred one neither.
 		var sourced = dependencies.Where(dependency => dependency.SourceKind != DependencyEndpointKind.Checkpoint).ToList();
 		var lifecycles = await DependencyEndpoints.ResolveLifecyclesAsync(context, lifecycleResolver, sourced.Select(dependency => dependency.Source), cancellationToken);
 		foreach (var dependency in sourced)
 		{
 			var satisfied = lifecycles.TryGetValue(dependency.Source, out var lifecycle)
-				&& ((dependency.Trigger ?? DependencyTrigger.OnFinish) == DependencyTrigger.OnFinish ? lifecycle.Finished : lifecycle.Begun);
+				&& ((dependency.Trigger ?? DependencyTrigger.OnFinish) == DependencyTrigger.OnFinish ? lifecycle.Finished : lifecycle.Started);
 			SetSatisfied(context, dependency, satisfied);
 		}
 

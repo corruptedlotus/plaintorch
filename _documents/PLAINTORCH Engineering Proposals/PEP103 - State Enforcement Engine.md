@@ -1,8 +1,122 @@
 ---
 status: accepted
+patches:
+  - Patch103.1 - Lifecycle States and Enforcement Levels
 assignee: Copilot 🤖
 phase: 3a
 ---
+
+# Patches
+## Patch103.1 - Lifecycle States and Enforcement Levels
+State enforcement is being rewritten from scratch, and this first patch lays the base declarations the engine stands on: the lifecycle every backlog kind is read in, the one place that reads it, the schedules that place it in time, and the policy that decides what happens when a change would break a lifecycle rule. Nothing new is enforced yet. The old rules still run, re-expressed in the new states, until the engine replaces them.
+
+### Four lifecycle states
+`LifecycleState` has four values: Deferred (−1) → Open (0) → Started (1) → Finished (2).
+- **The main line** runs Open → Started → Finished. The values are ordered along it, so a later state compares greater.
+- **Deferred** sits below Open as the side exit for an item set aside. A deferred item has neither started nor finished and satisfies no dependency it is the source of. It keeps its place on the main line until it resumes.
+- **Every status member declares its state** (`[LifecycleState]`), so no rule names a status to learn what it means.
+- **Two kinds have no plain status**, so they supply their state through a source:
+  - an eventive: a resolution that sets it aside defers it; otherwise its time window opens, starts and finishes it
+  - a checkpoint: finished once unlocked, deferred when still locked past its due
+
+| Kind | Deferred | Open | Started | Finished |
+|---|---|---|---|---|
+| Objective | **Failed** | **Standby**, Blocked, Onrush | **Polaris** | **Done**, Archived |
+| Stellar directive | **Failed** | **Planned**, Committed | **Active** | **Fulfilled**, Over |
+| Fate | **OptOut**, Cancelled | — | **Active** | — |
+| Decree | **Abandoned** | — | **Active** | — |
+| Lunar directive | **OnHold**, Stale | — | **Active** | — |
+| Attentive | **Skipped** | **Pending** | — | **Done** |
+| Eventive | **Missed**, Cancelled, OptOut | **Pending**, before its start | Pending, after its start | Pending, after its end |
+| Checkpoint | locked once its due has passed | locked | — | unlocked |
+
+The status in bold is the state's default. It is the member with the lowest value among those that declare the state, and the core sets it when it moves an item to that state of its own accord.
+
+The user ruled on the following:
+- Set-aside outcomes are Deferred. Blocked stays Open, since a blocked objective is meant to go on.
+- Decrees, lunar directives and attentives gained a lifecycle in this patch.
+- Fates, decrees and lunar directives never finish.
+- A checkpoint can finish or be deferred, but never starts. It fails one way only: its due passes before it is finished (satisfied, toll paid, condition met). Paying the toll it then owes still finishes it late.
+
+### Reading a lifecycle
+`EntityLifecycleResolver` is the one place the core reads a lifecycle:
+- `StateOf` gives the current state of an entity or a status. `StatesOf` gives the states a kind passes through.
+- `NextState` gives the next state up the order. `NextGatedState` gives the next of Started and Finished that a dependency can hold back; a deferred item counts as before Open.
+- `Transition` reads a move as a `LifecycleTransition`:
+  - the progress states the move enters: a jump from Open to Finished enters Started and Finished
+  - the progress states it leaves going back
+  - whether it defers or resumes
+
+  A shift between two statuses of one state is no transition, and a deferral enters and leaves nothing on the main line.
+- `DefaultStatus` translates a state to a status, as above.
+
+`LifecycleDeclarations` reads the enums. Activation validates every declaration:
+- each lifecycle status enum is complete and has a main-line state
+- the status enum of a state source declares only states that source passes through
+- no kind has both a status property and a source
+
+### Schedules
+Plans place Started or Finished, and only a state the owner's kind reaches. A checkpoint has no start to plan, and a fate, a decree or a lunar directive has no finish.
+
+Records track every state but Open (user ruling):
+- Reaching Started or Finished records it.
+- Pulling the item back along the main line withdraws the records of the states it leaves.
+- Deferring keeps the Started and Finished records, so failing a started objective keeps its start, and adds a Deferred record.
+- Resuming withdraws the Deferred record. The move is read from the place the kept records show, so resuming to where the item was changes nothing else.
+
+The `LifecycleStates` migration made three changes to stored schedules:
+- It renamed the stored states: Begin became Started, and Finish became Finished.
+- It turned a cancelled fate's finish records into deferred records.
+- It dropped fates' finish plans.
+
+Nothing is backfilled. Records the old failing rule withdrew are gone. Items already set aside, as well as decrees and lunar directives, start recording at their next change.
+
+### Dependencies and the gate
+Dependencies attach to Started and Finished as before (`OnBegin`/`OnFinish`, `ToBegin`/`ToFinish`). The gate now judges every state a shift enters:
+- A jump straight to a finish meets the start gate as well as the finish gate.
+- A move back is not gated, so reopening a finished objective into Polaris no longer re-checks its start.
+- A shift from one finished status to another (Fulfilled → Over) still re-checks the finish gate, as it always has, because Over is the finish that tolerates no open child.
+
+The mapping changes what satisfies an edge:
+- Missed, cancelled and opted-out occurrences no longer satisfy finish edges, and neither does a cancelled fate.
+- A fate never finishes, so an edge from a fate can no longer be satisfied at all (I-191).
+
+### Backlog state enforcement level
+The `backlog.state-enforcement` preference (BSEL) decides what happens when a change would break a lifecycle rule:
+
+| Level | What happens |
+|---|---|
+| Ignore | The change goes through. |
+| Auto | The core compensates by moving the other items the requested state needs. |
+| Warn (default) | The user is asked: they cancel the change or force the compensations. |
+| Block | The change is refused. |
+
+A systemic conflict, one no state change could resolve, is refused at every level.
+
+`StateDecisionService` is the one place the level is applied.
+- **What goes in:** the conflicts a change causes, each with the compensations that would resolve it. The engine will find these; nothing calls the service yet.
+- **What comes out:** proceed, compensate, wait for confirmation, or refuse.
+- **When it refuses under Auto and Warn alike:** a conflict that offers no compensation, or compensations that would move one item to two different states.
+
+Warn relies on a request-wide API flag:
+- When a decision stops a change, the API answers 409 Conflict with the decision (`StateEnforcementProblem`).
+- The client then cancels, or repeats the call with `X-Plaintorch-Enforcement: auto` to force the compensations.
+- Any other value of that header is refused with 400.
+- A change nobody can be asked about, from a note edit or a background pass, is refused under Warn.
+
+### Ledger
+- **Struck:** I-019, I-020, I-025, I-030.
+- **Trimmed to what still holds:** I-029, I-057, I-070, I-073, I-188.
+- **Added:** I-191, which this patch's states create, and I-192, which this patch's Warn flow runs into.
+
+### Open edges
+- **Warn with nobody to ask.** A note edit or background pass that meets a Warn conflict is refused, which matches the watcher's "revert the note and raise an issue". The alternative is to compensate there as under Auto. Decide before the watcher pathway joins the engine.
+- **Over's rule lives in the gate.** It is a re-check on finished-to-finished shifts, not an invariant declared on Over itself ("Over has no open child").
+- **Edge sides ignore the kind's states.** An edge's trigger and constraint are not checked against the states its endpoints reach, and a null trigger means OnFinish even for a fate, which never finishes (I-191). Open: what a fate's default trigger should be, or whether finish edges from fates are refused.
+- **Clashing compensations.** Two compensations that would move one item to different states are refused rather than reconciled.
+- **Checkpoint deferral goes unrecorded.** A checkpoint becomes deferred by time alone, so its deferral is not recorded until the engine has a clock (I-070).
+- **The client can't prompt yet.** The SDK drops every non-OK response, so a client cannot build the Warn prompt (I-192). This must land with the first engine rule that can return Warn.
+- **On Hold's reach.** What On Hold should suspend beyond reflection is still undecided (I-024).
 
 # Inventory: state enforcement in the core
 Every piece of core logic that changes state the caller did not directly ask to change (**auto-mutation**), or that refuses, skips or silently drops an operation because of a state rule (**rejection**). Taken on 2026-10-02, and brought up to date on 2026-10-04 at `b1697b9`: the PEP101 state polish and the intrinsic dependencies, rebased onto `dev/phase3a`. Line numbers refer to that commit. Rules that dev/phase3a added are marked *(dev/phase3a)*. IDs are stable: a new rule takes the next free number in its prefix, wherever its row sits.
@@ -113,7 +227,7 @@ These are readings and checks that other rules call (`core/Plaintorch/State`, `c
 | LC-06 | Intrinsic edges: finishing a stellar directive depends on finishing each direct child, stellar or objective. The edge is switched off when either end has failed. Edges are derived on read and never stored (`Id` 0). | M | everywhere | `IntrinsicDependencyRules.cs:29-164`; `Dependency.cs:113-128` |
 | LC-07 | An endpoint counts only when a live entity backs it. A directive endpoint resolves to stellar directives only; an eventive endpoint to the exact owner and slot. | R | everywhere | `DependencyEndpoints.cs:47-149` |
 | LC-08 | Default sides: a null trigger reads as OnFinish, a null constraint as ToBegin, and a checkpoint's sides are empty. The same defaults are restated in five places. | — | everywhere | `DependencyRules.cs:62-88`; copies in `DependencyReconciler.cs:58`, `DependencyGateService.cs:64-67,121-123`, `DependencyApiService.cs:175-176`, `DependencyOrdering.cs:249-262` |
-| LC-09 | **Gate.** A shift into a begin status is refused while an unmet ToBegin (or null) edge targets the item. A shift into a finish status is refused while an unmet ToFinish edge does: "…is blocked by unmet dependencies and cannot begin\|finish…". The status is classified raw, so a jump from un-begun to a finish skips the begin edges (I-030). | R | API | `DependencyGateService.cs:20-75` (called from `ObjectiveApiService.cs:146`, `DirectiveApiService.cs:285`, `DeclarativeApiService.cs:107`) |
+| LC-09 | **Gate.** A shift into a begin status is refused while an unmet ToBegin (or null) edge targets the item. A shift into a finish status is refused while an unmet ToFinish edge does: "…is blocked by unmet dependencies and cannot begin\|finish…". The status is classified raw, so a jump from un-begun to a finish skips the begin edges (I-030, since resolved). | R | API | `DependencyGateService.cs:20-75` (called from `ObjectiveApiService.cs:146`, `DirectiveApiService.cs:285`, `DeclarativeApiService.cs:107`) |
 | LC-10 | **Gate.** A stellar directive cannot shift into a finish while an intrinsic child edge is unmet: "…still has open children…". | R | API | `DependencyGateService.cs:37-41`, `:82-91` |
 | LC-11 | **Freeze.** A fate with an unmet begin edge on itself, or on an occurrence's slot, does not materialise that occurrence. The rolling pass skips it, an owner-and-slot interaction is refused, and a manual eventive is refused on a whole-fate lock. An interaction that names a hardened eventive by row id skips the check. | R | Background, API | `DependencyGateService.cs:168-182` (called from `ProximityMaterializationService.cs:282`, `OccurrenceHardeningService.cs:160`, `DeclarativeApiService.cs:386`) |
 | LC-12 | `GatesNextTransition` is stamped on every edge the API serves: whether this unmet edge holds the target's next transition. | M | API | `DependencyGateService.cs:99-152` |
@@ -595,7 +709,7 @@ Identity covers PUCK issuance, formats, gating and resolution, and the Pleiadean
 
 # Issues as of Development Phase 3A
 Every problem the audit found in the core, as of `b1697b9`. `dev/phase3a` has since moved to `6e525f2`; its one core change widens a search and touches no rule. This is PEP103's backlog:
-- Each time a part of the engine is strapped in, the entries it satisfies are deleted.
+- Each time a part of the engine is strapped in, the entries it satisfies are deleted. Its patch lists them under *Ledger*.
 - Numbers are never reused or shifted, so references stay valid.
 - Whatever is left once the engine is complete is systematic and needs work of its own.
 
@@ -711,14 +825,6 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
 
   *Engine 1: one declared reading of the current cycle.*
   Rows: LC-13, DI-12, PO-02, PO-04, PO-05. Where: `PlaintorchStateService.cs:58-77`; `PolarisCycleApiService.cs:130-153`, `838-854`; `DirectiveApiService.cs:579-591`.
-- **I-019 · "Begun" has two readings.** The gate classifies the target status raw, so it re-gates a shift between two begin statuses (fate Active↔OptOut). The next-transition stamp, the records and endpoint lifecycles use the implied `HasBegun`. *Engine 1: one phase reading.*
-  Rows: SH-25, LC-09, LC-12. Where: `DependencyGateService.cs:20-25`; `EntityLifecycleResolver.cs:103-131`; `DependencyEndpoints.cs:148-149`; `BacklogScheduleRecorder.cs:95-96`.
-- **I-020 · Failed and Cancelled mean opposite things.** The two readings:
-  - A Failed objective or directive is open and not begun and satisfies no edge, yet it settles.
-  - A Cancelled fate is a finish. A Missed, Cancelled or OptOut eventive counts as finished and releases OnFinish dependants; an opted-out fate's referenced occurrence hardens as OptOut and satisfies at once.
-
-  Due hardening also treats Failed as closed. *Engine 1: one declared meaning per phase.*
-  Rows: SH-12, SH-17, SH-21, LC-01, LC-02. Where: `EntityLifecycleResolver.cs:103-120`; `FateStatus.cs:23-24`; `EventiveLifecyclePhaseSource.cs:30-39`; `OccurrenceHardeningService.cs:176`; `DependencyReconciler.cs:53-60`; `PlaintorchStatePolicyProcessor.cs:1105-1108`; `ProximityMaterializationService.cs:215-217`.
 - **I-021 · Ended sprints and cycles keep accepting work.** Ended sprints take orders, joins, assign-all and new checkpoints. Ended cycles accept new executives by explicit id, and their executives and reflectives stay executable, movable and removable, re-settling rewards after the fact. *Engine 1: phase-dependent legality declared on cycles and sprints.*
   Rows: OB-04, DI-08, ON-09, ON-10, PO-05, PO-11, PO-12, PO-13, PO-16. Where: `OnrushSprintApiService.cs:370-388`, `407-412`; `ObjectiveApiService.cs:165-172`; `DirectiveApiService.cs:306-311`; `DependencyApiService.cs:189-193`; `PolarisCycleApiService.cs:425-511`, `514-549`, `595-612`, `801-831`, `860-866`.
 - **I-022 · "Active" ignores the calendar.** A sprint or cycle is active as soon as it has a start and no end. So a future start already blocks other sprints and doubles settlements, and a future end date ends a sprint at once. *Engine 1 and 5: window rules re-evaluated on a clock.*
@@ -727,8 +833,6 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: LC-01, DM-01. Where: `Fate.cs:33`; `Decree.cs:31`; `LunarDirective.cs:32`; `StellarDirective.cs:31`; `Objective.cs:55`.
 - **I-024 · Lunar status means more on paper than in code.** *(changed by dev/phase3a: reflection pause added)* On Hold is documented as "not currently enforced", but only reflection reads it. The directive's timeframes and availability, its non-reflect decrees' attentives and a paused reflect-decree's cached next occurrence (SH-07) carry on, and nothing governs its transitions. What On Hold should suspend is a spec decision. *Engine 1: the engine declares once what On Hold suspends, once the spec decides.*
   Rows: SH-07, DI-04, DM-03. Where: `LunarDirectiveStatus.cs:8-19`; `PlaintorchOrbitService.cs:298-327`; `PlaintorchStatePolicyProcessor.cs:560-563`; `DirectiveApiService.cs:496-518`; `VaultWatcherSyncService.cs:269`.
-- **I-025 · Lifecycle phase sources are not validated.** Activation validates status-enum declarations only; the eventive and checkpoint phase sources are trusted. *Engine 1: the engine validates every lifecycle declaration it owns.*
-  Rows: LC-05. Where: `EntityLifecycleResolver.cs:170-191`.
 
 ### Schedules and occurrences
 - **I-026 · Resuming with a new orbit inserts two schedule states.** Take a paused fate or decree with no stored state, resumed and given an orbit in one update. The fast-forward adds a state. SH-05's reset then adds a second, because it queries only stored rows (the timeframe variant also sweeps `.Local`). The unique index fails the save with a raw 500. *Engine 1 and 3: both are cursor reactions, evaluated in one phase.*
@@ -737,12 +841,10 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: SH-05, SH-07, DE-16. Where: `DeclarativeApiService.cs:140-143`, `285-288`; `PlaintorchStatePolicyProcessor.cs:567-577`; `PlaintorchOrbitService.cs:60-68`, `166-176`.
 - **I-028 · Occurrence refusals depend on the address.** *(changed by dev/phase3a)* By owner and slot, a cancelled or frozen fate's already-hardened eventive cannot be edited, because the refusals run before the existing-row lookup. By row id it can, and a manual eventive always can. Abandoning a decree freezes its existing attentives, so they cannot be resolved late. *Engine 1: refusals declared on occurrence state, not on the call.*
   Rows: LC-11, DE-09, DE-10, DE-13. Where: `DeclarativeApiService.cs:612-626`; `OccurrenceHardeningService.cs:65-86`, `146-169`.
-- **I-029 · Resolutions have no transition rules.** Attentive and eventive resolutions take any value from any value, through the API only, and a fate's status change never restamps the eventives it already has. OptOut's meaning for edges is part of I-020. *Engine 1: transition legality for resolutions.*
+- **I-029 · Resolutions have no transition rules.** Attentive and eventive resolutions take any value from any value, through the API only, and a fate's status change never restamps the eventives it already has. *Engine 1: transition legality for resolutions.*
   Rows: SH-21, LC-02, DM-04, DM-05. Where: `AttentiveResolution.cs:6-20`; `EventiveResolution.cs:7-28`; `DeclarativeApiService.cs:437-440`, `480-483`; `EventiveLifecyclePhaseSource.cs:30-39`.
 
 ### Gates and dependencies
-- **I-030 · A jump to a finish skips the begin gate.** The gate classifies the target status raw, so Standby→Done or Planned→Fulfilled is checked only against ToFinish edges. An unmet ToBegin (or null-constraint) edge is ignored, yet SH-25 then records both a begin and a finish. *Engine 1: the engine gates transitions on the implied phases it declares once.*
-  Rows: SH-25, LC-09. Where: `DependencyGateService.cs:20-35`; `EntityLifecycleResolver.cs:126-131`; `BacklogScheduleRecorder.cs:76-83`.
 - **I-031 · Fulfilled with open children is both refused and created.** The gate refuses entering Fulfilled while a child is open. Yet SH-20's bump creates exactly that state, and a child created or moved under a Fulfilled parent is accepted with neither bump nor refusal. *Engine 1: one declared invariant for Fulfilled.*
   Rows: SH-20, LC-10. Where: `DependencyGateService.cs:37-41`, `82-91`; `PlaintorchStatePolicyProcessor.cs:194-199`, `244`, `274-277`.
 - **I-032 · An un-failed child does not reopen an Over parent.** `ArrivedOpen` counts a status change only when it leaves a finish. A child moved from Failed to an open status switches its intrinsic edge back on with no bump, so the Over parent stays finished with an unmet child edge. *Engine 1: a reaction declared on "open child under a finished parent" fires on every way in.*
@@ -770,6 +872,8 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: LC-08, LC-12, DP-05. Where: `DependencyApiService.cs:163-178`.
 - **I-039 · Edge release on delete is split by endpoint kind.** The hook releases the edges of deleted directives, objectives and fates; checkpoint edges are released only by the checkpoint delete endpoint, and endpoints have no foreign key. Any other checkpoint delete, and any delete by a sync save or raw SQL, leaves dangling edges that the reconciler reads as unsatisfied forever. The sprint delete is one: it removes the milestone checkpoint but not its edges, so the milestone's dependants stay gated. *Engine 1 and 2: one release reaction for every endpoint kind, on every pathway.*
   Rows: SH-18, ON-08, DP-12, DB-01. Where: `OnrushSprintApiService.cs:207-216`; `PlaintorchStatePolicyProcessor.cs:73-103`; `DependencyReconciler.cs:87-91`; `DependencyApiService.cs:285-292`; `PlainfraContextModelSnapshot.cs:149-196`.
+- **I-191 · An edge can hang off a state its kind never reaches.** *(new in Patch103.1)* Since fates stopped finishing, an edge from a fate is never satisfied: a null trigger means OnFinish, and nothing checks an edge's trigger or constraint against the states its endpoints pass through, neither when it is created nor for the edges already stored. Its target stays gated for good. *Engine 1: edge sides declared against the states each kind passes through, with defaults that fit the kind.*
+  Rows: LC-08, DP-05. Where: `DependencyApiService.cs:33-62`; `DependencyRules.cs:43-51`, `62-74`; `FateStatus.cs:9-27`.
 
 ### Rewards and settlements
 - **I-040 · Failed still settles.** `IsSettlementStatus` includes Failed. Failing an objective therefore books its Celestron value (doubled in the active onrush), though the lifecycle declares Failed neither begun nor finished. *Engine 1: a settlement reaction declared on the finish phase.*
@@ -851,10 +955,10 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: SH-01, SH-02, SH-09, SH-10, SH-11, LC-13, DI-12, PO-02, PO-17. Where: `PlaintorchStatePolicyProcessor.cs:311`, `328`, `521`, `649-652`, `684-686`, `700`, `1089`, `1095-1103`; `PlaintorchStateService.cs:33-35`, `62`, `73-76`; `PolarisCycleApiService.cs:79`, `109`, `135`, `141-153`, `237`, `288`, `846`, `852-853`; `OnrushSprintApiService.cs:88`; `DirectiveApiService.cs:585`; `PlaintorchEngine.cs:90`; `ProximityMaterializationService.cs:50`.
 - **I-057 · Status knowledge is hardcoded past the lifecycle.** *(made worse by dev/phase3a)* These rules name statuses directly instead of reading the lifecycle declarations:
   - the objective "closed" set (Done, Archived, Failed), for settlement and again for due hardening
-  - the generating statuses (fate Active and, by preference, OptOut; decree Active; objectives not closed; lunar Active up the lineage), written into `NextOccurrence`, resume, hardening, the rolling pass, the projection, reflective selection, decree executives and manual eventives. Decrees and lunar directives declare no lifecycle to read, and a non-reflect decree under an On Hold lunar directive keeps generating attentives (unverified whether intended)
+  - the generating statuses (fate Active and, by preference, OptOut; decree Active; objectives not closed; lunar Active up the lineage), written into `NextOccurrence`, resume, hardening, the rolling pass, the projection, reflective selection, decree executives and manual eventives. A non-reflect decree under an On Hold lunar directive keeps generating attentives (unverified whether intended)
   - Over and Fulfilled in the bump (SH-20)
   - Standby and Blocked for onrush promotion, and Onrush for assign-all
-  - attentive Done, since attentives declare no lifecycle
+  - attentive Done
   - the unlock formula: incoming edges, toll or due, and the external condition, combined by hand
 
   *Engine 1: declared phases, read once.*
@@ -902,13 +1006,13 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: DB-04, DB-15, MG-21, DM-15. Where: `PlainfraContextModelSnapshot.cs:43-49`, `266-272`; `20260930141546_ManualEventives.cs:35-38`; `Occurrence.cs:34-47`; `ProximityMaterializationService.cs:211-218`, `253-260`, `287-293`; `OccurrenceHardeningService.cs:78-86`, `182-198`, `226-241`; `PlainfraContext.cs:414-452`.
 - **I-069 · Store cascades and set-nulls go unseen.** *(changed by dev/phase3a)* For rows the context has not loaded, these all happen inside SQLite: eventive, attentive, schedule and orbit-state cascades, a cycle's executives and reflectives, a lunar directive's timeframes, and timeframe affinity clears. The change feed, the graveyard, the audit and the backlog records never see them; only availability is cleared first (SH-04). A begun cycle deleted outside the API would take its worked executives with it; since dev/phase3a, the API refuses that delete (PO-17). *Engine 1 and 3: declared reactions turn store cascades into tracked removals and releases, with their effects.*
   Rows: DB-02, DB-04, DB-05, DB-06, DB-07. Where: `PlainfraContext.cs:444-478`; `PlainfraContextModelSnapshot.cs:1118-1122`, `1286-1290`, `1365-1369`, `1380-1384`.
-- **I-070 · Time-driven state waits for an unrelated save.** Eventive phases, checkpoint dues and re-locks, and the `NextOccurrence` of declaratives the hourly pass skips are persisted only by the next save of anything, a diagnostics flush included. The gate reads persisted `Satisfied` flags while deriving intrinsic edges live. Records carry the time of whichever save noticed the change. *Engine 5: time-dependent rules re-evaluated on a clock.*
+- **I-070 · Time-driven state waits for an unrelated save.** Eventive phases, checkpoint dues and re-locks, and the `NextOccurrence` of declaratives the hourly pass skips are persisted only by the next save of anything, a diagnostics flush included. The gate reads persisted `Satisfied` flags while deriving intrinsic edges live. Records carry the time of whichever save noticed the change. A checkpoint whose due passes is Deferred (Patch103.1), yet no save records it: the recorder compares the stored and the current state read at the same moment, so a change made by time alone is never seen. *Engine 5: time-dependent rules re-evaluated on a clock.*
   Rows: SH-07, SH-21, SH-22, SH-25, LC-02, LC-09, LC-11, LC-12. Where: `DependencyReconciler.cs:22-97`; `DependencyGateService.cs:56-75`, `82-91`, `99-127`; `EventiveLifecyclePhaseSource.cs:23-39`; `RollingMaterializationService.cs:19`; `BacklogScheduleRecorder.cs:47`.
 - **I-071 · Post-commit work escapes the transaction.** SH-23 and SH-24 run in `SavedChangesAsync`, on async saves only. A failure there throws for a save that already committed; for example, an IO error deleting a forecast aborts the begin before reflectives are created. Forecasts are handled first, so such a throw also skips the directive drains. *Engine 3 and 7: effects and note intents inside the transaction.*
   Rows: SH-23, SH-24. Where: `PlaintorchStatePolicyInterceptor.cs:33-54`; `PlaintorchStatePolicyFileSyncService.cs:20-55`; `PolarisCycleApiService.cs:87-88`.
 - **I-072 · Hook refusals on the watcher are retried forever.** A frontmatter edit the hook refuses (SH-08 to SH-10, or an orbit that fails to build in SH-05) becomes a Critical `sync-failed`, re-run every ≤ 60 s for good. The note keeps the refused value and the row the old one, no domain issue says why, and each retry adds a `watcher/candidate-discovered` audit row. *Engine 4: the note is reverted and a typed issue raised.*
   Rows: SH-05, SH-08, SH-09, SH-10, WA-10, WA-14. Where: `VaultWatcherReconciler.cs:242-258`; `VaultWatcherSyncService.cs:53-60`; `WatcherStatusReporter.cs:309-339`; `WatcherRetryScheduler.cs:36-46`, `95-108`; `VaultMarkdownDiscoveryService.cs:445-460`.
-- **I-073 · Rule refusals reach clients as bodiless 500s.** No exception handler maps the hook's or the services' refusals, and the host runs as Production. Every rule message stays in the server log. *Engine 4: typed violations mapped to 409 and 422.*
+- **I-073 · Rule refusals reach clients as bodiless 500s.** No exception handler maps the hook's or the services' refusals, and the host runs as Production. Every rule message stays in the server log. Since Patch103.1 a `StateEnforcementException` is answered with 409 and its decision, but no rule throws one yet. *Engine 4: typed violations mapped to 409 and 422.*
   Rows: EP-01. Where: `PlaintorchHostFactory.cs:70-73`.
 
 ### Notes written outside the outbox
@@ -1212,6 +1316,8 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: OB-02, DI-02, DI-09, DI-10, ON-11. Where: `ObjectiveApiService.cs:101`; `DirectiveApiService.cs:134`, `139-142`, `235`, `240-243`, `485`, `545`, `678`, `707-721`, `765`; `OnrushSprintApiService.cs:336`, `419`, `460`, `465-468`; `PolarisCycleApiService.cs:176`; `DeclarativeApiService.cs:100`, `242`; `DependencyApiService.cs:225`; `LorePageApiService.cs:120`.
 - **I-185 · The lunar/stellar refusal has six wordings.** *Systematic: API routing by family.*
   Rows: DI-01. Where: `DirectiveApiService.cs:128-131`, `229-232`, `280-283`, `336-339`, `503-506`, `530-533`.
+- **I-192 · The SDK drops every refusal.** *(found in Patch103.1)* A response that is not OK is skipped as though no transport had answered: the call resolves to `undefined` or `false`, and the body is discarded. A client can therefore show neither a refusal's message nor a 409's compensations, and cannot offer the confirm-and-retry that Warn needs. *Systematic: the SDK's transport; it must land with the first engine rule that can return Warn.*
+  Where: `sdk.ts/plaintorch/coreClient.ts:205-223`, `242-250`.
 
 ## Documentation and dead code
 - **I-186 · Stale docs on the state rules.** *(changed by dev/phase3a: one remark now contradicts dev/phase3a's `Epoch`)* These say something the code no longer does:
@@ -1241,7 +1347,6 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: WA-14, WA-16, WA-27, WA-33, SM-07, SM-21, DB-17.
 - **I-188 · Stale identity and domain docs.** *(changed by dev/phase3a: it fixed `Declarative.cs`'s calendar doc and added the zone and day docs)* These say something the code no longer does:
   - `Decree.Orbit` says a decree's orbit always resolves to day granularity; any granularity is allowed unless the decree reflects (`Decree.cs:34-35`).
-  - `FateStatus.OptOut` says it no longer materialises eventives, and `EventiveResolution.OptOut` that it is not hardened by time passage; it is, with auto-materialise-optout (`FateStatus.cs:16`; `EventiveResolution.cs:22-26`).
   - The kind default calendar (decrees Pleiadean, fates Gregorian) is still described where the fallback is the vault default (`PlainfraContext.cs:306`; `OrbitDays.cs:46-55`; `OrbitPleiadeanCalendar.cs:10-11`; `OccurrenceHardeningService.cs:76`), and the projection still says "(Gregorian calendar)" (`AgendaProjectionService.cs:79`).
   - The placeholder is said to take a "final date-based identity" (`OnrushSprint.cs:21-22`) and to be "minted as `x0000`" (`OnrushPlanningPlaceholderRenameMigration.cs:16`).
   - `Puck/.GENESIS.md:22`, `34` recommend the `(x){I:4}` boundary syntax the parser now refuses and list `A{S:6}` as canonical, and `Puck/.GENESIS.md:26` says recorded ids enforce uniqueness.
@@ -1253,7 +1358,7 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   - `Calendar/.GENESIS.md:9` names format tokens `Y`, `M`, `D`; the code reads `y`, `M`, `d`.
 
   *Systematic: documentation.*
-  Rows: DP-02, ID-01, ID-09, ID-10, ID-15, DM-05, DM-08, DM-19, DM-21, DM-23, DM-26.
+  Rows: DP-02, ID-01, ID-09, ID-10, ID-15, DM-08, DM-19, DM-21, DM-23, DM-26.
 - **I-189 · Cycle-day parsing is duplicated.** *(new in dev/phase3a)* `PolarisCycle.TryParseDay` and the processor's `TryParseCycleDate` are identical copies, and the forecast predicate is restated twice beside `IsForecast`. `PlaintorchDefaultTitleFactory.TryResolvePolarisDate` has no caller and a narrower catch, so a month-7 id would throw out of a "Try" method. *Systematic: duplication and dead code; the engine would drop the processor's copy.*
   Rows: SH-11, ID-09, DM-06. Where: `PolarisCycle.cs:42`, `58-74`; `PlaintorchStatePolicyProcessor.cs:700`, `1110-1124`; `PlaintorchDefaultTitleFactory.cs:39-60`; `PolarisCycleApiService.cs:237`.
 - **I-190 · Dead code.** *(changed by dev/phase3a: the `FixedLiteralDate(string)` overload became test-only)* Nothing calls these:

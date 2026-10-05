@@ -143,7 +143,7 @@ public sealed class ObjectiveApiService(
 		var objective = await context.Objectives.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
 			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
 
-		await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Objective, objective.Id), shift.Status, cancellationToken);
+		await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Objective, objective.Id), objective.Status, shift.Status, cancellationToken);
 
 		var previous = Clone(objective);
 

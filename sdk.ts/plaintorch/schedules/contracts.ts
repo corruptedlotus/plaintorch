@@ -1,6 +1,6 @@
 export type {
 	BacklogSchedule,
 	BacklogScheduleType,
-	LifecyclePhase,
+	LifecycleState,
 	AddBacklogScheduleRequest
 } from "./models"

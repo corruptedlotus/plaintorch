@@ -14,30 +14,37 @@ namespace Pleiades.Plaintorch.State;
 public sealed class DependencyGateService(PlainfraContext context, EntityLifecycleResolver lifecycleResolver, DependencyGraphService graphService)
 {
 	/// <summary>
-	/// Throws when a workflow shift to <paramref name="newStatus"/> would move <paramref name="target"/> through
-	/// a transition still gated by unmet dependencies. A shift into a non-begin/non-finish status is never gated.
+	/// Throws when a workflow shift from <paramref name="currentStatus"/> to <paramref name="newStatus"/> would move
+	/// <paramref name="target"/> into a state still gated by unmet dependencies. Every state the move enters is judged
+	/// (<see cref="LifecycleTransition.Entered"/>): a jump from an unstarted status straight to a finished one passes the
+	/// start gate as well as the finish gate, while a deferral or a move back enters nothing and is never gated. A shift
+	/// from one finished status to another (Fulfilled → Over, Done → Archived) enters no state, yet re-checks the finish
+	/// gate, as it always has: Over is the finish that tolerates no open child, a rule not yet declared on Over itself.
 	/// </summary>
-	public async Task EnsureCanTransitionAsync(EndpointRef target, Enum newStatus, CancellationToken cancellationToken)
+	public async Task EnsureCanTransitionAsync(EndpointRef target, Enum currentStatus, Enum newStatus, CancellationToken cancellationToken)
 	{
-		var (begin, finish) = lifecycleResolver.ClassifyStatus(newStatus);
-		DependencyConstraint? gatedPhase = finish
-			? DependencyConstraint.ToFinish
-			: begin ? DependencyConstraint.ToBegin : null;
-		if (gatedPhase is null)
+		var transition = lifecycleResolver.Transition(currentStatus, newStatus);
+		var gated = transition.Entered.ToList();
+		if (gated.Count == 0 && transition.To == LifecycleState.Finished && !Equals(currentStatus, newStatus))
 		{
-			return;
+			gated.Add(LifecycleState.Finished);
 		}
 
-		if (await IsExplicitlyLockedAsync(target, gatedPhase.Value, cancellationToken))
+		foreach (var state in gated)
 		{
-			throw new InvalidOperationException(
-				$"{Describe(target)} is blocked by unmet dependencies and cannot {(finish ? "finish" : "begin")} until they are satisfied.");
-		}
+			var finish = state == LifecycleState.Finished;
+			var gate = finish ? DependencyConstraint.ToFinish : DependencyConstraint.ToBegin;
+			if (await IsExplicitlyLockedAsync(target, gate, cancellationToken))
+			{
+				throw new InvalidOperationException(
+					$"{Describe(target)} is blocked by unmet dependencies and cannot {(finish ? "finish" : "begin")} until they are satisfied.");
+			}
 
-		if (await IsIntrinsicallyLockedAsync(target, gatedPhase.Value, cancellationToken))
-		{
-			throw new InvalidOperationException(
-				$"{Describe(target)} still has open children and cannot finish until each of them has finished.");
+			if (await IsIntrinsicallyLockedAsync(target, gate, cancellationToken))
+			{
+				throw new InvalidOperationException(
+					$"{Describe(target)} still has open children and cannot finish until each of them has finished.");
+			}
 		}
 	}
 
@@ -77,7 +84,7 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 	/// <summary>
 	/// Determines whether an intrinsic edge gates the target's given phase (PEP102 patch 9). Intrinsic edges only ever
 	/// gate a finish, so a begin is never held. The target's own state is not consulted: the transition being judged
-	/// is the one that leaves it, so its incoming edges are read as live even while it stands failed.
+	/// is the one that leaves it, so its incoming edges are read as live even while it stands deferred.
 	/// </summary>
 	private async Task<bool> IsIntrinsicallyLockedAsync(EndpointRef target, DependencyConstraint phase, CancellationToken cancellationToken)
 	{
@@ -127,9 +134,10 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 	}
 
 	/// <summary>
-	/// The transition a target has to make next. A checkpoint is one-shot — it never begins — so its next transition is
-	/// its unlock (its finish), which every incoming dependency gates. An endpoint with no entity behind it — an
-	/// occurrence still projected from its schedule — has not begun, and neither has a failed one.
+	/// The transition a target has to make next, read off its lifecycle (<see cref="EntityLifecycleResolver.NextGatedState"/>).
+	/// A checkpoint never starts, so its next transition is its unlock (its finish), which every incoming dependency gates.
+	/// An endpoint with no entity behind it — an occurrence still projected from its schedule — has not started, and neither
+	/// has a deferred one.
 	/// </summary>
 	private static NextTransition ResolveNextTransition(EndpointRef target, IReadOnlyDictionary<EndpointRef, EndpointLifecycle> lifecycles)
 	{
@@ -143,12 +151,12 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 			return NextTransition.Begin;
 		}
 
-		if (lifecycle.Finished)
+		return lifecycle.NextGated switch
 		{
-			return NextTransition.None;
-		}
-
-		return lifecycle.Begun ? NextTransition.Finish : NextTransition.Begin;
+			LifecycleState.Started => NextTransition.Begin,
+			LifecycleState.Finished => NextTransition.Finish,
+			_ => NextTransition.None,
+		};
 	}
 
 	/// <summary>The lifecycle transition a dependency target has to make next.</summary>

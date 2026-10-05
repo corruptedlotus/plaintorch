@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using Pleiades.Puck;
 using Pleiades.Vault;
 using Pleiades.Vault.Markdown;
+using Pleiades.Orchestration.Lifecycle;
 
 namespace Pleiades.Orchestration;
 
@@ -28,6 +29,7 @@ public sealed class Decree : Declarative
 	/// Gets or sets the current decree state.
 	/// </summary>
 	[MarkdownField("status")]
+	[LifecycleStatus]
 	public DecreeStatus Status { get; set; } = DecreeStatus.Active;
 
 	/// <summary>

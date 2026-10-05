@@ -282,7 +282,7 @@ public sealed class DirectiveApiService(
 			throw new InvalidOperationException($"Directive '{directiveId}' is a lunar directive; shift its moonlight state through the lunar workflow instead.");
 		}
 
-		await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Directive, stellar.Id), shift.Status, cancellationToken);
+		await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Directive, stellar.Id), stellar.Status, shift.Status, cancellationToken);
 
 		var previousStatus = stellar.Status;
 		stellar.Status = shift.Status;

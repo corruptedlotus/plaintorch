@@ -8,12 +8,30 @@ using Pleiades.Vault.Database;
 namespace Pleiades.Plaintorch.State;
 
 /// <summary>
-/// The lifecycle state of one dependency endpoint's entity (PEP101).
+/// The lifecycle of one dependency endpoint's entity (PEP101, PEP103).
 /// </summary>
-/// <param name="Begun">Whether the entity has begun.</param>
-/// <param name="Finished">Whether the entity has finished.</param>
-/// <param name="Failed">Whether the entity has failed (PEP102 patch 9).</param>
-public readonly record struct EndpointLifecycle(bool Begun, bool Finished, bool Failed);
+/// <param name="State">The entity's lifecycle state.</param>
+/// <param name="NextGated">
+/// The next of Started and Finished its kind reaches above its state — the transition a dependency into it can hold back
+/// now — or <see langword="null"/> when none is left.
+/// </param>
+public readonly record struct EndpointLifecycle(LifecycleState State, LifecycleState? NextGated)
+{
+	/// <summary>
+	/// Gets whether the entity has started: it is Started or Finished. A deferred entity has not.
+	/// </summary>
+	public bool Started => State >= LifecycleState.Started;
+
+	/// <summary>
+	/// Gets whether the entity has finished.
+	/// </summary>
+	public bool Finished => State == LifecycleState.Finished;
+
+	/// <summary>
+	/// Gets whether the entity is set aside (PEP102 patch 9's "failed").
+	/// </summary>
+	public bool Deferred => State == LifecycleState.Deferred;
+}
 
 /// <summary>
 /// Resolves loosely-referenced dependency <see cref="EndpointRef"/>s to their live entities (PEP101). Lookups are
@@ -146,7 +164,10 @@ public static class DependencyEndpoints
 	}
 
 	private static EndpointLifecycle Of(EntityLifecycleResolver lifecycleResolver, object entity)
-		=> new(lifecycleResolver.HasBegun(entity), lifecycleResolver.HasFinished(entity), lifecycleResolver.HasFailed(entity));
+	{
+		var state = lifecycleResolver.StateOf(entity);
+		return new EndpointLifecycle(state, lifecycleResolver.NextGatedState(entity.GetType(), state));
+	}
 
 	private static async Task<object?> FindPuckAsync<TEntity>(PlainfraContext context, string id, CancellationToken cancellationToken)
 		where TEntity : class, IPuckNamedEntity

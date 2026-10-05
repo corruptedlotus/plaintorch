@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using Pleiades.Orchestration.Lifecycle;
 
 namespace Pleiades.Orchestration;
 
@@ -34,6 +35,7 @@ public sealed class Attentive : Occurrence
 	/// <summary>
 	/// Gets or sets how the attentive was resolved.
 	/// </summary>
+	[LifecycleStatus]
 	public AttentiveResolution Resolution { get; set; } = AttentiveResolution.Pending;
 
 	/// <summary>

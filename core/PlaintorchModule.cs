@@ -5,8 +5,10 @@ using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Saga;
 using Pleiades.Diagnostics;
+using Pleiades.Plaintorch.Api;
 using Pleiades.Plaintorch.Api.Changes;
 using Pleiades.Plaintorch.Diagnostics;
+using Pleiades.Plaintorch.Enforcement;
 using Pleiades.Plaintorch.Hosting;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.Media;
@@ -92,8 +94,8 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<PuckNotationParser>();
 		services.AddSingleton<PuckRuntimeCompilationCatalog>();
 		services.AddSingleton<VaultEntityModelCatalog>();
-		services.AddSingleton<ILifecyclePhaseSource, EventiveLifecyclePhaseSource>();
-		services.AddSingleton<ILifecyclePhaseSource, CheckpointLifecyclePhaseSource>();
+		services.AddSingleton<ILifecycleStateSource, EventiveLifecycleStateSource>();
+		services.AddSingleton<ILifecycleStateSource, CheckpointLifecycleStateSource>();
 		services.AddSingleton<EntityLifecycleResolver>();
 		services.AddScoped<VaultEntityGateway>();
 		services.AddScoped<Pleiades.Plaintorch.Api.Services.VaultEntityLifecycleService>();
@@ -142,6 +144,14 @@ public sealed class PlaintorchModule : Module
 		{
 			preferences.FloatingRender = store.Get(PreferenceKeys.CalDavFloatingRender, preferences.FloatingRender);
 		});
+		services.AddOptions<BacklogPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
+		{
+			preferences.StateEnforcement = store.Get(PreferenceKeys.BacklogStateEnforcement, preferences.StateEnforcement);
+		});
+		// PEP103 state enforcement: the request-wide API flags (set by the API, defaulted elsewhere) and the one place a
+		// requested change is judged against the backlog state enforcement level.
+		services.AddScoped<PlaintorchRequestFlags>();
+		services.AddScoped<StateDecisionService>();
 		services.AddSingleton<WatcherStatusReporter>();
 		services.AddSingleton<WatcherRetryScheduler>();
 		services.AddSingleton<VaultStorageTopologyValidator>();

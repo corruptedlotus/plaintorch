@@ -29,7 +29,7 @@ public sealed class DirectiveStartEndRetirementMigrationTests : VaultTestBase
 
 		// The state the database migration leaves behind: the dates live on as plans.
 		await Vault.WithScopeAsync(services => services.GetRequiredService<IBacklogScheduleApi>()
-			.AddAsync(carrying.Id, BacklogScheduleType.Plan, LifecyclePhase.Begin, new DateTime(2026, 7, 1), ct));
+			.AddAsync(carrying.Id, BacklogScheduleType.Plan, LifecycleState.Started, new DateTime(2026, 7, 1), ct));
 
 		// The note a v4 vault holds on disk: the retired keys beside a custom one, and an authored body.
 		var current = Vault.ReadVaultFile(CarryingNote);

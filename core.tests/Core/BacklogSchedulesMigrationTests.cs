@@ -36,26 +36,21 @@ public sealed class BacklogSchedulesMigrationTests : IDisposable
 
 		await using var context = CreateContext();
 
-		// Equality lookups find the migrated rows: the backfilled text is exactly the form EF writes and binds.
-		var begin = await context.BacklogSchedules.SingleAsync(item => item.DirectiveId == "A00000001" && item.Time == new DateTime(2026, 7, 1), Ct);
-		Assert.Equal(BacklogScheduleType.Plan, begin.Type);
-		Assert.Equal(LifecyclePhase.Begin, begin.State);
-		var finish = await context.BacklogSchedules.SingleAsync(item => item.DirectiveId == "A00000001" && item.State == LifecyclePhase.Finish, Ct);
-		Assert.Equal(BacklogScheduleType.Plan, finish.Type);
-		Assert.Equal(new DateTime(2026, 9, 1), finish.Time);
-
-		// Only the dates a directive had become plans; nothing is recorded, and no other owner gains a schedule.
-		var endOnly = await context.BacklogSchedules.SingleAsync(item => item.DirectiveId == "A00000002", Ct);
-		Assert.Equal(LifecyclePhase.Finish, endOnly.State);
-		Assert.Equal(new DateTime(2026, 9, 15), endOnly.Time);
-		Assert.Equal(3, await context.BacklogSchedules.CountAsync(Ct));
-		Assert.False(await context.BacklogSchedules.AnyAsync(item => item.Type == BacklogScheduleType.Record, Ct));
-
-		// The directives survive the table rebuild whole, and the dropped columns are gone. Read through SQL rather than
-		// the entity: the database sits at this migration, and later migrations have since added directive columns the
-		// current model would select.
+		// Read through SQL rather than the entities: the database sits at this migration, whose states (Begin, Finish) a
+		// later migration renames, and later migrations have since added directive columns the current model would select.
 		var connection = context.Database.GetDbConnection();
 		await connection.OpenAsync(Ct);
+
+		// The backfilled times are exactly the text EF writes and binds, so equality lookups find them.
+		Assert.Equal(
+			"Plan|Begin|2026-07-01 00:00:00;Plan|Finish|2026-09-01 00:00:00",
+			await ScalarAsync(connection, "SELECT group_concat(Type || '|' || State || '|' || Time, ';') FROM (SELECT * FROM BacklogSchedules WHERE DirectiveId = 'A00000001' ORDER BY Time)"));
+
+		// Only the dates a directive had become plans; nothing is recorded, and no other owner gains a schedule.
+		Assert.Equal("Plan|Finish|2026-09-15 00:00:00", await ScalarAsync(connection, "SELECT Type || '|' || State || '|' || Time FROM BacklogSchedules WHERE DirectiveId = 'A00000002'"));
+		Assert.Equal("3|0", await ScalarAsync(connection, "SELECT COUNT(*) || '|' || SUM(Type = 'Record') FROM BacklogSchedules"));
+
+		// The directives survive the table rebuild whole, and the dropped columns are gone.
 		Assert.Equal("A00000001;A00000002;A00000003;LUNA001", await ScalarAsync(connection, "SELECT group_concat(Id, ';') FROM (SELECT Id FROM Directives ORDER BY Id)"));
 		Assert.Equal("StellarDirective|Active", await ScalarAsync(connection, "SELECT Discriminator || '|' || Status FROM Directives WHERE Id = 'A00000001'"));
 		Assert.Equal("0", await ScalarAsync(connection, "SELECT COUNT(*) FROM pragma_table_info('Directives') WHERE name IN ('StartDate', 'EndDate')"));
@@ -85,8 +80,9 @@ public sealed class BacklogSchedulesMigrationTests : IDisposable
 		await using var migrated = CreateContext();
 		Assert.Empty(await migrated.Database.GetPendingMigrationsAsync(Ct));
 		Assert.Equal(3, await migrated.BacklogSchedules.CountAsync(item => item.DirectiveId != null, Ct));
+		// The begin record reads as the start it became (LifecycleStates).
 		var record = await migrated.BacklogSchedules.SingleAsync(item => item.IncentiveId == "QUEST01", Ct);
-		Assert.Equal((BacklogScheduleType.Record, LifecyclePhase.Begin, new DateTime(2026, 9, 30, 10, 0, 0)), (record.Type, record.State, record.Time));
+		Assert.Equal((BacklogScheduleType.Record, LifecycleState.Started, new DateTime(2026, 9, 30, 10, 0, 0)), (record.Type, record.State, record.Time));
 
 		// Every row came through, and the directives carry the later shape without the old dates.
 		var connection = migrated.Database.GetDbConnection();

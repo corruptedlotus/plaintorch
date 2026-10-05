@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { PlaintorchCoreClient } from "../coreClient"
 import type { PlaintorchCoreRequest, PlaintorchCoreResponse, PlaintorchCoreTransport } from "../internal/transport"
-import { BacklogSchedule, BacklogScheduleType, LifecyclePhase } from "./models"
+import { BacklogSchedule, BacklogScheduleType, LifecycleState } from "./models"
 
 interface WireRequest {
 	method: PlaintorchCoreRequest["method"]
@@ -40,7 +40,7 @@ const servedSchedule = {
 	"@type": "BacklogSchedule",
 	id: 12,
 	type: 1,
-	state: 0,
+	state: 1,
 	time: "2026-10-05T09:30:00",
 	incentiveId: "j00000001",
 	incentive: null,
@@ -55,8 +55,10 @@ describe("backlog schedules (PEP101)", () => {
 	it("the enums match the core's numeric wire form", () => {
 		expect(BacklogScheduleType.Plan).toBe(0)
 		expect(BacklogScheduleType.Record).toBe(1)
-		expect(LifecyclePhase.Begin).toBe(0)
-		expect(LifecyclePhase.Finish).toBe(1)
+		expect(LifecycleState.Deferred).toBe(-1)
+		expect(LifecycleState.Open).toBe(0)
+		expect(LifecycleState.Started).toBe(1)
+		expect(LifecycleState.Finished).toBe(2)
 	})
 
 	it("list reads every schedule, or one owner's", async () => {
@@ -72,7 +74,7 @@ describe("backlog schedules (PEP101)", () => {
 		const schedule = all[0]!
 		expect(schedule).toBeInstanceOf(BacklogSchedule)
 		expect(schedule.type).toBe(BacklogScheduleType.Record)
-		expect(schedule.state).toBe(LifecyclePhase.Begin)
+		expect(schedule.state).toBe(LifecycleState.Started)
 		expect(schedule.time).toBe("2026-10-05T09:30:00")
 		expect(schedule.ownerId).toBe("j00000001")
 	})
@@ -80,11 +82,11 @@ describe("backlog schedules (PEP101)", () => {
 	it("add posts the owner, the numeric type and state, and the civil time", async () => {
 		const { client, requests } = recordingClient(JSON.stringify(servedSchedule))
 
-		await client.schedules.add({ entityId: "A00000001", type: BacklogScheduleType.Plan, state: LifecyclePhase.Finish, time: "2026-12-01T00:00:00" })
+		await client.schedules.add({ entityId: "A00000001", type: BacklogScheduleType.Plan, state: LifecycleState.Finished, time: "2026-12-01T00:00:00" })
 
 		expect(requests[0]?.method).toBe("POST")
 		expect(requests[0]?.path).toBe("/api/schedules")
-		expect(requests[0]?.body).toEqual({ entityId: "A00000001", type: 0, state: 1, time: "2026-12-01T00:00:00" })
+		expect(requests[0]?.body).toEqual({ entityId: "A00000001", type: 0, state: 2, time: "2026-12-01T00:00:00" })
 	})
 
 	it("delete addresses the schedule by id", async () => {

@@ -10,7 +10,7 @@ namespace Pleiades.Plaintorch.Api.Transport;
 public sealed record AddBacklogScheduleRequest(
 	string EntityId,
 	BacklogScheduleType Type,
-	LifecyclePhase State,
+	LifecycleState State,
 	DateTime Time);
 
 /// <summary>

@@ -5,8 +5,8 @@ using Pleiades.Orchestration.Lifecycle;
 namespace Pleiades.Orchestration;
 
 /// <summary>
-/// One point in a backlog item's schedule (PEP101): when an incentive, a directive or a checkpoint begins or
-/// finishes (<see cref="State"/>), either as the user plans it or as it actually turned out (<see cref="Type"/>).
+/// One point in a backlog item's schedule (PEP101, PEP103): when an incentive, a directive or a checkpoint reaches a
+/// lifecycle state (<see cref="State"/>), either as the user plans it or as it actually turned out (<see cref="Type"/>).
 /// It replaces the directive's former start and end dates as the scheduling vocabulary of the backlog.
 /// </summary>
 /// <remarks>
@@ -21,12 +21,16 @@ namespace Pleiades.Orchestration;
 /// the write pathway, and a unique index per owner column is the database backstop.
 /// </para>
 /// <para>
-/// <see cref="BacklogScheduleType.Record"/> schedules are written by the core, never by hand: whenever an item enters
-/// a begun state from one that is not, a record of <see cref="LifecyclePhase.Begin"/> is added at that moment, and
-/// likewise <see cref="LifecyclePhase.Finish"/> on entering a finished state. Pulling the status back out of the phase
-/// withdraws its record, so a record stands exactly while its phase does. Only the phases an owner's kind passes
-/// through are recorded: a checkpoint is one-shot — it cannot be started, only finished, by unlocking — so it only ever
-/// holds a finish record.
+/// <see cref="BacklogScheduleType.Record"/> schedules are written by the core, never by hand, and track the states other
+/// than <see cref="LifecycleState.Open"/>: <see cref="LifecycleState.Started"/>, <see cref="LifecycleState.Finished"/> and
+/// <see cref="LifecycleState.Deferred"/>. Reaching Started or Finished adds its record at that moment, and pulling the item
+/// back along the main line withdraws the records of the states it leaves. Deferring keeps them, since the item keeps its
+/// place on the main line, and adds a Deferred record that stands while it stays deferred. Only the states an owner's kind
+/// passes through are recorded: a checkpoint never starts, so it has no Started record.
+/// </para>
+/// <para>
+/// <see cref="BacklogScheduleType.Plan"/> schedules place a Started or a Finished state the owner's kind passes through.
+/// Deferral is not planned.
 /// </para>
 /// </remarks>
 public sealed class BacklogSchedule
@@ -43,9 +47,10 @@ public sealed class BacklogSchedule
 	public BacklogScheduleType Type { get; set; }
 
 	/// <summary>
-	/// Gets or sets the lifecycle phase the schedule places in time: the owner's begin or its finish.
+	/// Gets or sets the lifecycle state the schedule places in time: the owner's start or finish, or for a record also its
+	/// deferral. Never <see cref="LifecycleState.Open"/>.
 	/// </summary>
-	public LifecyclePhase State { get; set; }
+	public LifecycleState State { get; set; }
 
 	/// <summary>
 	/// Gets or sets the moment of the phase: a civil (wall-clock) moment, like <see cref="Due.Moment"/>, never an
@@ -103,7 +108,7 @@ public sealed class BacklogSchedule
 	/// Builds a schedule for <paramref name="owner"/>, naming it through the foreign key of its kind.
 	/// </summary>
 	/// <exception cref="ArgumentException"><paramref name="owner"/> is not an incentive, a directive or a checkpoint.</exception>
-	public static BacklogSchedule For(object owner, BacklogScheduleType type, LifecyclePhase state, DateTime time)
+	public static BacklogSchedule For(object owner, BacklogScheduleType type, LifecycleState state, DateTime time)
 	{
 		ArgumentNullException.ThrowIfNull(owner);
 		var schedule = new BacklogSchedule { Type = type, State = state, Time = time };

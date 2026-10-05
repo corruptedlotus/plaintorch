@@ -59,7 +59,7 @@ export class PlaintorchCoreClient {
 	public readonly activities: PlaintorchActivitiesSdk
 	public readonly lore: PlaintorchLoreSdk
 	public readonly dependencies: PlaintorchDependenciesSdk
-	/** Planned and recorded begins and finishes of backlog items (PEP101). */
+	/** Planned starts and finishes of backlog items, and the recorded states they reached (PEP101, PEP103). */
 	public readonly schedules: PlaintorchSchedulesSdk
 	/** Vault-bound user preferences (PEP116). */
 	public readonly preferences: PlaintorchPreferencesSdk

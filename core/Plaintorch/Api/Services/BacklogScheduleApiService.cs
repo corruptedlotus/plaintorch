@@ -36,7 +36,7 @@ public sealed class BacklogScheduleApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<BacklogSchedule> AddAsync(string entityId, BacklogScheduleType type, LifecyclePhase state, DateTime time, CancellationToken cancellationToken = default)
+	public async Task<BacklogSchedule> AddAsync(string entityId, BacklogScheduleType type, LifecycleState state, DateTime time, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(entityId);
 		if (!Enum.IsDefined(type))
@@ -44,11 +44,11 @@ public sealed class BacklogScheduleApiService(
 			throw new InvalidOperationException($"'{type}' is not a backlog schedule type.");
 		}
 
-		// A schedule places a phase its owner enters. Failed is not one: a failed item has not begun (PEP102 patch 9), so
-		// failing leaves the begin phase rather than entering a phase of its own.
-		if (state is not (LifecyclePhase.Begin or LifecyclePhase.Finish))
+		// A plan places the start or the finish an item is meant to reach (PEP103). Every item is open until it starts, and
+		// setting one aside is not planned.
+		if (state is not (LifecycleState.Started or LifecycleState.Finished))
 		{
-			throw new InvalidOperationException($"'{state}' is not a phase a schedule places: a schedule places a begin or a finish.");
+			throw new InvalidOperationException($"'{state}' is not a state a plan places: a plan places a start or a finish.");
 		}
 
 		if (type == BacklogScheduleType.Record)
@@ -57,12 +57,12 @@ public sealed class BacklogScheduleApiService(
 		}
 
 		var owner = await ResolveOwnerAsync(entityId, cancellationToken);
-		// Only what a kind declares it never passes through is refused: a one-shot kind (a checkpoint) cannot be started,
-		// so it has no begin to plan. A kind with no declared lifecycle at all (a decree, a lunar directive) takes either.
-		var phases = lifecycleResolver.GetPhases(owner.GetType());
-		if (phases.Count > 0 && !phases.Contains(state))
+		// Only a state the owner's kind passes through can be planned: a checkpoint never starts, and a fate, a decree or a
+		// lunar directive never finishes.
+		if (!lifecycleResolver.StatesOf(owner.GetType()).Contains(state))
 		{
-			throw new InvalidOperationException($"A {owner.GetType().Name} never passes through {state}, so '{entityId}' has no {state.ToString().ToLowerInvariant()} to plan.");
+			var milestone = state == LifecycleState.Started ? "start" : "finish";
+			throw new InvalidOperationException($"A {owner.GetType().Name} never reaches {state}, so '{entityId}' has no {milestone} to plan.");
 		}
 
 		var schedule = BacklogSchedule.For(owner, type, state, ToCivil(time));
@@ -85,7 +85,7 @@ public sealed class BacklogScheduleApiService(
 			?? throw new InvalidOperationException($"Backlog schedule '{scheduleId}' was not found.");
 		if (schedule.Type == BacklogScheduleType.Record)
 		{
-			throw new InvalidOperationException($"Backlog schedule '{scheduleId}' is a record of how things turned out; it goes when its owner leaves that phase, or with its owner.");
+			throw new InvalidOperationException($"Backlog schedule '{scheduleId}' is a record of how things turned out; it goes when its owner leaves that state, or with its owner.");
 		}
 
 		context.BacklogSchedules.Remove(schedule);

@@ -22,8 +22,8 @@ public interface IIntrinsicDependencyRule
 /// <summary>
 /// The first intrinsic rule: finishing a stellar directive depends on finishing each of its direct children — its
 /// stellar subdirectives and its objectives (PEP102 patch 9). One <c>child.finish → parent.finish</c> edge per child,
-/// satisfied once the child has finished. A failed end switches the edge off: a failed child neither holds its parent
-/// back nor counts as done, and a failed parent is held back by nothing. Only stellar directives take part — a lunar
+/// satisfied once the child has finished. A deferred end switches the edge off: a deferred (failed) child neither holds
+/// its parent back nor counts as done, and a deferred parent is held back by nothing. Only stellar directives take part — a lunar
 /// directive has no finish, so nothing hangs off one, and fates and decrees are never a directive's work.
 /// </summary>
 public sealed class DirectiveChildrenIntrinsicRule(EntityLifecycleResolver lifecycleResolver) : IIntrinsicDependencyRule
@@ -91,7 +91,7 @@ public sealed class DirectiveChildrenIntrinsicRule(EntityLifecycleResolver lifec
 	{
 		// The parent must be a stellar directive: an objective under a lunar directive, or a hand-edited parent that
 		// points nowhere, implies nothing.
-		if (child.ParentId is null || !directives.TryGetValue(child.ParentId, out var parent) || child.Failed || parent.Failed)
+		if (child.ParentId is null || !directives.TryGetValue(child.ParentId, out var parent) || child.Deferred || parent.Deferred)
 		{
 			return;
 		}
@@ -101,11 +101,11 @@ public sealed class DirectiveChildrenIntrinsicRule(EntityLifecycleResolver lifec
 
 	private Child Describe(string? parentId, Enum status)
 	{
-		var (_, finish) = lifecycleResolver.ClassifyStatus(status);
-		return new Child(parentId, finish, lifecycleResolver.IsFailedStatus(status));
+		var state = lifecycleResolver.StateOf(status);
+		return new Child(parentId, state == LifecycleState.Finished, state == LifecycleState.Deferred);
 	}
 
-	private readonly record struct Child(string? ParentId, bool Finished, bool Failed);
+	private readonly record struct Child(string? ParentId, bool Finished, bool Deferred);
 }
 
 /// <summary>

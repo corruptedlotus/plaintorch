@@ -16,11 +16,12 @@ using Xunit;
 namespace Pleiades.Tests.Core;
 
 /// <summary>
-/// PEP101 backlog schedules: an incentive, a directive or a checkpoint holds planned and recorded begins and finishes.
-/// Records are written by the save hook whenever a lifecycle begins or finishes — an objective begins when it is set to
-/// Polaris, not when it joins an onrush; a checkpoint, one-shot, only finishes, by unlocking — and withdrawn when the
-/// status is pulled back out of the phase. A schedule added to an occupied slot (the same owner, type and state) replaces
-/// the one there, whatever the write pathway. Only plans are set or removed by hand, and schedules go with their owner.
+/// PEP101 backlog schedules, on PEP103's lifecycle states: an incentive, a directive or a checkpoint holds planned starts and
+/// finishes, and records of the states it reached. Records are written by the save hook for every state but Open — an
+/// objective starts when it is set to Polaris, not when it joins an onrush; a checkpoint never starts and finishes by
+/// unlocking — and withdrawn when the item is pulled back along the main line. Setting an item aside keeps them and adds a
+/// Deferred record. A schedule added to an occupied slot (the same owner, type and state) replaces the one there, whatever
+/// the write pathway. Only plans are set or removed by hand, and schedules go with their owner.
 /// </summary>
 public sealed class BacklogScheduleTests : VaultTestBase
 {
@@ -47,10 +48,10 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		.OrderBy(schedule => schedule.Id)
 		.ToListAsync(Ct));
 
-	private static BacklogSchedule? Slot(IEnumerable<BacklogSchedule> schedules, BacklogScheduleType type, LifecyclePhase state)
+	private static BacklogSchedule? Slot(IEnumerable<BacklogSchedule> schedules, BacklogScheduleType type, LifecycleState state)
 		=> schedules.SingleOrDefault(schedule => schedule.Type == type && schedule.State == state);
 
-	private static BacklogSchedule Record(IEnumerable<BacklogSchedule> schedules, LifecyclePhase state)
+	private static BacklogSchedule Record(IEnumerable<BacklogSchedule> schedules, LifecycleState state)
 		=> Assert.Single(schedules, schedule => schedule.Type == BacklogScheduleType.Record && schedule.State == state);
 
 	private static EndpointRef DirectiveRef(string id) => new(DependencyEndpointKind.Directive, id);
@@ -73,7 +74,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		await ShiftAsync(objective.Id, ObjectiveStatus.Polaris);
 		var after = DateTime.Now;
 
-		var begin = Record(await StoredAsync(objective.Id), LifecyclePhase.Begin);
+		var begin = Record(await StoredAsync(objective.Id), LifecycleState.Started);
 		Assert.Equal(objective.Id, begin.IncentiveId);
 		Assert.Null(begin.DirectiveId);
 		Assert.Null(begin.CheckpointId);
@@ -101,12 +102,12 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		var fromObjective = await Polaris(api => api.PlanExecutiveAsync(
 			new PolarisExecutivePlan(PolarisExecutivePlanningMode.FromObjective, ObjectiveId: objective.Id), cancellationToken: Ct));
 		Assert.Equal(ObjectiveStatus.Polaris, fromObjective.Objective!.Status);
-		Record(await StoredAsync(objective.Id), LifecyclePhase.Begin);
+		Record(await StoredAsync(objective.Id), LifecycleState.Started);
 
 		// An objective created straight into the cycle is created begun, which counts as beginning.
 		var standalone = await Polaris(api => api.PlanExecutiveAsync(
 			new PolarisExecutivePlan(PolarisExecutivePlanningMode.Standalone, Title: "Fresh work"), cancellationToken: Ct));
-		Record(await StoredAsync(standalone.Objective!.Id), LifecyclePhase.Begin);
+		Record(await StoredAsync(standalone.Objective!.Id), LifecycleState.Started);
 	}
 
 	[Fact]
@@ -118,7 +119,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 
 		var workedSchedules = await StoredAsync(worked.Id);
 		Assert.Equal(2, workedSchedules.Count);
-		Assert.True(Record(workedSchedules, LifecyclePhase.Begin).Time <= Record(workedSchedules, LifecyclePhase.Finish).Time);
+		Assert.True(Record(workedSchedules, LifecycleState.Started).Time <= Record(workedSchedules, LifecycleState.Finished).Time);
 
 		// A finish implies a begin (the reading the dependency system gates on), so skipping Polaris records both, at the
 		// same moment.
@@ -127,12 +128,12 @@ public sealed class BacklogScheduleTests : VaultTestBase
 
 		var skippedSchedules = await StoredAsync(skipped.Id);
 		Assert.Equal(2, skippedSchedules.Count);
-		Assert.Equal(Record(skippedSchedules, LifecyclePhase.Begin).Time, Record(skippedSchedules, LifecyclePhase.Finish).Time);
+		Assert.Equal(Record(skippedSchedules, LifecycleState.Started).Time, Record(skippedSchedules, LifecycleState.Finished).Time);
 
 		// Moving between finished statuses is no new finish.
-		var finish = Record(skippedSchedules, LifecyclePhase.Finish);
+		var finish = Record(skippedSchedules, LifecycleState.Finished);
 		await ShiftAsync(skipped.Id, ObjectiveStatus.Archived);
-		Assert.Equal(finish.Id, Record(await StoredAsync(skipped.Id), LifecyclePhase.Finish).Id);
+		Assert.Equal(finish.Id, Record(await StoredAsync(skipped.Id), LifecycleState.Finished).Id);
 	}
 
 	[Fact]
@@ -140,7 +141,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 	{
 		var objective = await Objective(api => api.CreateStandaloneAsync("Round trip", cancellationToken: Ct));
 		await ShiftAsync(objective.Id, ObjectiveStatus.Polaris);
-		var firstBegin = Record(await StoredAsync(objective.Id), LifecyclePhase.Begin);
+		var firstBegin = Record(await StoredAsync(objective.Id), LifecycleState.Started);
 
 		// Un-beginning withdraws the begin record.
 		await ShiftAsync(objective.Id, ObjectiveStatus.Standby);
@@ -148,14 +149,14 @@ public sealed class BacklogScheduleTests : VaultTestBase
 
 		// Beginning again records afresh.
 		await ShiftAsync(objective.Id, ObjectiveStatus.Polaris);
-		var secondBegin = Record(await StoredAsync(objective.Id), LifecyclePhase.Begin);
+		var secondBegin = Record(await StoredAsync(objective.Id), LifecycleState.Started);
 		Assert.NotEqual(firstBegin.Id, secondBegin.Id);
 		Assert.True(secondBegin.Time >= firstBegin.Time);
 
 		// Un-finishing withdraws only the finish record: reopened into Polaris, the objective is still begun, and its begin
 		// record stands as it was.
 		await ShiftAsync(objective.Id, ObjectiveStatus.Done);
-		Record(await StoredAsync(objective.Id), LifecyclePhase.Finish);
+		Record(await StoredAsync(objective.Id), LifecycleState.Finished);
 		await ShiftAsync(objective.Id, ObjectiveStatus.Polaris);
 		Assert.Equal(secondBegin.Id, Assert.Single(await StoredAsync(objective.Id)).Id);
 
@@ -169,30 +170,42 @@ public sealed class BacklogScheduleTests : VaultTestBase
 	[Fact]
 	public async Task Blocking_a_begun_objective_un_begins_it()
 	{
-		// Blocked declares no lifecycle phase, so a blocked objective has not begun: the gates read it that way, and so
-		// does its record.
+		// Blocked is Open: a blocked objective is meant to go on, but it is not under way. The gates read it that way, and
+		// so does its record.
 		var objective = await Objective(api => api.CreateStandaloneAsync("Stalled", cancellationToken: Ct));
 		await ShiftAsync(objective.Id, ObjectiveStatus.Polaris);
-		Record(await StoredAsync(objective.Id), LifecyclePhase.Begin);
+		Record(await StoredAsync(objective.Id), LifecycleState.Started);
 
 		await ShiftAsync(objective.Id, ObjectiveStatus.Blocked);
 		Assert.Empty(await StoredAsync(objective.Id));
 	}
 
 	[Fact]
-	public async Task Failing_un_begins_and_un_finishes()
+	public async Task Failing_sets_an_item_aside_and_keeps_the_records_of_how_far_it_got()
 	{
-		// Failed is open and not begun (PEP102 patch 9), not a finish: a failed prerequisite keeps blocking what it gates,
-		// and a failed item holds neither record.
+		// Failed is Deferred: off the main line, neither started nor finished, so a failed prerequisite keeps blocking what
+		// it gates. Its place on the main line is kept, and with it the records of how far it got.
 		var objective = await Objective(api => api.CreateStandaloneAsync("Lost cause", cancellationToken: Ct));
 		await ShiftAsync(objective.Id, ObjectiveStatus.Polaris);
-		Record(await StoredAsync(objective.Id), LifecyclePhase.Begin);
-		await ShiftAsync(objective.Id, ObjectiveStatus.Failed);
-		Assert.Empty(await StoredAsync(objective.Id));
+		var started = Record(await StoredAsync(objective.Id), LifecycleState.Started);
 
-		await ShiftAsync(objective.Id, ObjectiveStatus.Done);
-		Assert.Equal(2, (await StoredAsync(objective.Id)).Count);
 		await ShiftAsync(objective.Id, ObjectiveStatus.Failed);
+		var failed = await StoredAsync(objective.Id);
+		Assert.Equal(2, failed.Count);
+		Assert.Equal(started.Id, Record(failed, LifecycleState.Started).Id);
+		Record(failed, LifecycleState.Deferred);
+
+		// Coming back to Done withdraws the Deferred record and records only the finish: the start it made stands.
+		await ShiftAsync(objective.Id, ObjectiveStatus.Done);
+		var done = await StoredAsync(objective.Id);
+		Assert.Equal(2, done.Count);
+		Assert.Equal(started.Id, Record(done, LifecycleState.Started).Id);
+		Record(done, LifecycleState.Finished);
+
+		// Failing a finished item keeps both; pulling it back to Standby from there withdraws all three.
+		await ShiftAsync(objective.Id, ObjectiveStatus.Failed);
+		Assert.Equal([LifecycleState.Deferred, LifecycleState.Started, LifecycleState.Finished], (await StoredAsync(objective.Id)).Select(schedule => schedule.State).Order());
+		await ShiftAsync(objective.Id, ObjectiveStatus.Standby);
 		Assert.Empty(await StoredAsync(objective.Id));
 	}
 
@@ -211,7 +224,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 
 		var synced = await Objective(api => api.GetAsync(objective.Id, Ct));
 		Assert.Equal(ObjectiveStatus.Polaris, synced!.Status);
-		Record(await StoredAsync(objective.Id), LifecyclePhase.Begin);
+		Record(await StoredAsync(objective.Id), LifecycleState.Started);
 	}
 
 	// --- recording: one interceptor, every save ---
@@ -225,16 +238,16 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		{
 			var context = services.GetRequiredService<PlainfraContext>();
 			context.Objectives.Single(item => item.Id == objective.Id).Status = ObjectiveStatus.Polaris;
-			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecyclePhase.Finish, Time = new DateTime(2026, 10, 1) });
+			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecycleState.Finished, Time = new DateTime(2026, 10, 1) });
 			context.SaveChanges();
-			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecyclePhase.Finish, Time = new DateTime(2026, 10, 2) });
+			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecycleState.Finished, Time = new DateTime(2026, 10, 2) });
 			context.SaveChanges();
 			return Task.CompletedTask;
 		});
 
 		var schedules = await StoredAsync(objective.Id);
-		Record(schedules, LifecyclePhase.Begin);
-		Assert.Equal(new DateTime(2026, 10, 2), Slot(schedules, BacklogScheduleType.Plan, LifecyclePhase.Finish)!.Time);
+		Record(schedules, LifecycleState.Started);
+		Assert.Equal(new DateTime(2026, 10, 2), Slot(schedules, BacklogScheduleType.Plan, LifecycleState.Finished)!.Time);
 		Assert.Equal(2, schedules.Count);
 	}
 
@@ -256,7 +269,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 			await context.SaveChangesAsync(Ct);
 		});
 
-		Record(await StoredAsync(objective.Id), LifecyclePhase.Begin);
+		Record(await StoredAsync(objective.Id), LifecycleState.Started);
 	}
 
 	[Fact]
@@ -274,7 +287,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		});
 
 		var schedules = await StoredAsync(objective.Id);
-		Assert.Equal(Record(schedules, LifecyclePhase.Begin).Time, Record(schedules, LifecyclePhase.Finish).Time);
+		Assert.Equal(Record(schedules, LifecycleState.Started).Time, Record(schedules, LifecycleState.Finished).Time);
 	}
 
 	// --- recording: the other kinds ---
@@ -287,49 +300,60 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		Assert.Empty(await StoredAsync(directive.Id));
 
 		await Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Active), Ct));
-		Assert.Equal(directive.Id, Record(await StoredAsync(directive.Id), LifecyclePhase.Begin).DirectiveId);
+		Assert.Equal(directive.Id, Record(await StoredAsync(directive.Id), LifecycleState.Started).DirectiveId);
 
 		await Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
 		var schedules = await StoredAsync(directive.Id);
 		Assert.Equal(2, schedules.Count);
-		Assert.Equal(directive.Id, Record(schedules, LifecyclePhase.Finish).DirectiveId);
+		Assert.Equal(directive.Id, Record(schedules, LifecycleState.Finished).DirectiveId);
 
 		// Reactivated, it is no longer finished; back to planned, no longer begun.
 		await Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Active), Ct));
 		var active = Assert.Single(await StoredAsync(directive.Id));
-		Assert.Equal((BacklogScheduleType.Record, LifecyclePhase.Begin), (active.Type, active.State));
+		Assert.Equal((BacklogScheduleType.Record, LifecycleState.Started), (active.Type, active.State));
 		await Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Planned), Ct));
 		Assert.Empty(await StoredAsync(directive.Id));
 	}
 
 	[Fact]
-	public async Task A_fate_counts_as_begun_while_active_and_finished_while_cancelled()
+	public async Task A_fate_is_started_while_active_and_set_aside_while_cancelled()
 	{
-		// A fate's declared phases make an active fate begun, so it is recorded as beginning when it is created active.
+		// An active fate is Started, so it is recorded as starting when it is created active.
 		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Solstice", Date: new DateOnly(2026, 12, 21)), Ct));
-		Record(await StoredAsync(fate.Id), LifecyclePhase.Begin);
+		var started = Record(await StoredAsync(fate.Id), LifecycleState.Started);
 
+		// Cancelled is Deferred, not a finish: a fate never finishes. The start stands beside the deferral.
 		await Declarative(api => api.UpdateFateAsync(fate.Id, new FateUpdate(Status: FateStatus.Cancelled), Ct));
-		Record(await StoredAsync(fate.Id), LifecyclePhase.Finish);
+		var cancelled = await StoredAsync(fate.Id);
+		Assert.Equal(2, cancelled.Count);
+		Record(cancelled, LifecycleState.Deferred);
 
-		// Restored, it is no longer finished.
+		// Restored, it is no longer set aside, and its first start still stands.
 		await Declarative(api => api.UpdateFateAsync(fate.Id, new FateUpdate(Status: FateStatus.Active), Ct));
-		var restored = Assert.Single(await StoredAsync(fate.Id));
-		Assert.Equal((BacklogScheduleType.Record, LifecyclePhase.Begin), (restored.Type, restored.State));
+		Assert.Equal(started.Id, Assert.Single(await StoredAsync(fate.Id)).Id);
 	}
 
 	[Fact]
-	public async Task Kinds_without_a_lifecycle_are_never_recorded()
+	public async Task Decrees_and_lunar_directives_record_their_starts_and_deferrals()
 	{
+		// A lunar directive is created On Hold, which sets it aside from the outset.
 		var lunar = await Directive(api => api.CreateLunarAsync("Moon law", cancellationToken: Ct));
+		Record(await StoredAsync(lunar.Id), LifecycleState.Deferred);
+
 		await Directive(api => api.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Active), Ct));
+		var started = Assert.Single(await StoredAsync(lunar.Id));
+		Assert.Equal((BacklogScheduleType.Record, LifecycleState.Started), (started.Type, started.State));
+
 		await Directive(api => api.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Stale), Ct));
+		var stale = await StoredAsync(lunar.Id);
+		Assert.Equal(started.Id, Record(stale, LifecycleState.Started).Id);
+		Record(stale, LifecycleState.Deferred);
 
+		// A decree is created Active, so Started; abandoning it adds the deferral beside the start.
 		var decree = await Declarative(api => api.CreateDecreeAsync(new DecreePlan("Routine"), Ct));
+		Record(await StoredAsync(decree.Id), LifecycleState.Started);
 		await Declarative(api => api.UpdateDecreeAsync(decree.Id, new DecreeUpdate(Status: DecreeStatus.Abandoned), Ct));
-
-		Assert.Empty(await StoredAsync(lunar.Id));
-		Assert.Empty(await StoredAsync(decree.Id));
+		Assert.Equal([LifecycleState.Deferred, LifecycleState.Started], (await StoredAsync(decree.Id)).Select(schedule => schedule.State).Order());
 	}
 
 	// --- recording: the one-shot checkpoint ---
@@ -340,7 +364,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		// With nothing to wait for, a new checkpoint is unlocked, and so finished, the moment it exists.
 		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Gate", cancellationToken: Ct));
 		Assert.True(checkpoint.Unlocked);
-		var onCreation = Record(await StoredAsync(checkpoint.Id), LifecyclePhase.Finish);
+		var onCreation = Record(await StoredAsync(checkpoint.Id), LifecycleState.Finished);
 		Assert.Equal(checkpoint.Id, onCreation.CheckpointId);
 
 		// A gate into it re-locks it, which withdraws the finish.
@@ -353,7 +377,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		await Directive(api => api.ShiftStellarWorkflowAsync(first.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
 		var unlocked = Assert.Single(await StoredAsync(checkpoint.Id));
 		Assert.Equal(BacklogScheduleType.Record, unlocked.Type);
-		Assert.Equal(LifecyclePhase.Finish, unlocked.State);
+		Assert.Equal(LifecycleState.Finished, unlocked.State);
 		Assert.NotEqual(onCreation.Id, unlocked.Id);
 
 		// Another unmet gate re-locks it; meeting that one too finishes it once more.
@@ -361,7 +385,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		await Deps(api => api.CreateAsync(DirectiveRef(second.Id), CheckpointRef(checkpoint.Id), cancellationToken: Ct));
 		Assert.Empty(await StoredAsync(checkpoint.Id));
 		await Directive(api => api.ShiftStellarWorkflowAsync(second.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct));
-		Record(await StoredAsync(checkpoint.Id), LifecyclePhase.Finish);
+		Record(await StoredAsync(checkpoint.Id), LifecycleState.Finished);
 	}
 
 	[Fact]
@@ -375,32 +399,84 @@ public sealed class BacklogScheduleTests : VaultTestBase
 
 		await Deps(api => api.SetExternalConditionAsync(checkpoint.Id, true, Ct));
 		Assert.True((await Deps(api => api.GetCheckpointAsync(checkpoint.Id, Ct)))!.Unlocked);
-		Record(await StoredAsync(checkpoint.Id), LifecyclePhase.Finish);
+		Record(await StoredAsync(checkpoint.Id), LifecycleState.Finished);
 
 		await Deps(api => api.SetExternalConditionAsync(checkpoint.Id, false, Ct));
 		Assert.Empty(await StoredAsync(checkpoint.Id));
 	}
 
 	[Fact]
-	public void Each_kind_declares_the_phases_it_passes_through()
+	public void Each_kind_declares_the_states_it_passes_through()
+	{
+		var resolver = Vault.GetSingleton<EntityLifecycleResolver>();
+		LifecycleState[] all = [LifecycleState.Deferred, LifecycleState.Open, LifecycleState.Started, LifecycleState.Finished];
+
+		Assert.Equal(all, resolver.StatesOf(typeof(Objective)).Order());
+		Assert.Equal(all, resolver.StatesOf(typeof(StellarDirective)).Order());
+		Assert.Equal(all, resolver.StatesOf(typeof(Eventive)).Order());
+		Assert.Equal([LifecycleState.Deferred, LifecycleState.Started], resolver.StatesOf(typeof(Fate)).Order());
+		Assert.Equal([LifecycleState.Deferred, LifecycleState.Started], resolver.StatesOf(typeof(Decree)).Order());
+		Assert.Equal([LifecycleState.Deferred, LifecycleState.Started], resolver.StatesOf(typeof(LunarDirective)).Order());
+		Assert.Equal([LifecycleState.Deferred, LifecycleState.Open, LifecycleState.Finished], resolver.StatesOf(typeof(Checkpoint)).Order());
+		Assert.Equal([LifecycleState.Deferred, LifecycleState.Open, LifecycleState.Finished], resolver.StatesOf(typeof(Attentive)).Order());
+		Assert.False(resolver.IsLifecycleKind(typeof(PolarisCycle)));
+
+		// A checkpoint finishes by unlocking, and is deferred once its due passes while it is still locked.
+		var locked = new Checkpoint { Id = "c0001", Title = "Locked" };
+		var unlocked = new Checkpoint { Id = "c0002", Title = "Unlocked", Unlocked = true };
+		var overdue = new Checkpoint { Id = "c0003", Title = "Overdue", Due = new Due { Moment = DateTime.Now.AddDays(-1) } };
+		Assert.Equal(LifecycleState.Open, resolver.StateOf(locked));
+		Assert.Equal(LifecycleState.Finished, resolver.StateOf(unlocked));
+		Assert.Equal(LifecycleState.Deferred, resolver.StateOf(overdue));
+	}
+
+	[Fact]
+	public void The_default_status_of_a_state_is_its_lowest_valued_member()
 	{
 		var resolver = Vault.GetSingleton<EntityLifecycleResolver>();
 
-		Assert.Equal([LifecyclePhase.Begin, LifecyclePhase.Finish], resolver.GetPhases(typeof(Objective)).Order());
-		Assert.Equal([LifecyclePhase.Begin, LifecyclePhase.Finish], resolver.GetPhases(typeof(StellarDirective)).Order());
-		Assert.Equal([LifecyclePhase.Begin, LifecyclePhase.Finish], resolver.GetPhases(typeof(Fate)).Order());
-		Assert.Equal([LifecyclePhase.Finish], resolver.GetPhases(typeof(Checkpoint)));
-		Assert.Empty(resolver.GetPhases(typeof(Decree)));
-		Assert.Empty(resolver.GetPhases(typeof(LunarDirective)));
+		Assert.Equal(ObjectiveStatus.Failed, resolver.DefaultStatus(typeof(Objective), LifecycleState.Deferred));
+		Assert.Equal(ObjectiveStatus.Standby, resolver.DefaultStatus(typeof(Objective), LifecycleState.Open));
+		Assert.Equal(ObjectiveStatus.Polaris, resolver.DefaultStatus(typeof(Objective), LifecycleState.Started));
+		Assert.Equal(ObjectiveStatus.Done, resolver.DefaultStatus(typeof(Objective), LifecycleState.Finished));
+		Assert.Equal(DirectiveStatus.Planned, resolver.DefaultStatus(typeof(StellarDirective), LifecycleState.Open));
+		Assert.Equal(DirectiveStatus.Fulfilled, resolver.DefaultStatus(typeof(StellarDirective), LifecycleState.Finished));
+		Assert.Equal(FateStatus.OptOut, resolver.DefaultStatus(typeof(Fate), LifecycleState.Deferred));
+		Assert.Equal(LunarDirectiveStatus.OnHold, resolver.DefaultStatus(typeof(LunarDirective), LifecycleState.Deferred));
+		Assert.Equal(EventiveResolution.Missed, resolver.DefaultStatus(typeof(Eventive), LifecycleState.Deferred));
 
-		// A checkpoint's finish is its unlock, and a one-shot has begun exactly when it has finished.
-		var locked = new Checkpoint { Id = "c0001", Title = "Locked" };
-		var unlocked = new Checkpoint { Id = "c0002", Title = "Unlocked", Unlocked = true };
-		Assert.True(resolver.IsLifecycleKind(typeof(Checkpoint)));
-		Assert.False(resolver.HasFinished(locked));
-		Assert.False(resolver.HasBegun(locked));
-		Assert.True(resolver.HasFinished(unlocked));
-		Assert.True(resolver.HasBegun(unlocked));
+		// A state a kind never passes through, or reaches without a status of its own, has no default.
+		Assert.Null(resolver.DefaultStatus(typeof(Fate), LifecycleState.Finished));
+		Assert.Null(resolver.DefaultStatus(typeof(Eventive), LifecycleState.Started));
+		Assert.Null(resolver.DefaultStatus(typeof(Checkpoint), LifecycleState.Finished));
+		Assert.Equal(AttentiveResolution.Done, LifecycleDeclarations.DefaultStatus<AttentiveResolution>(LifecycleState.Finished));
+	}
+
+	[Fact]
+	public void Next_states_and_transitions_are_read_one_way()
+	{
+		var resolver = Vault.GetSingleton<EntityLifecycleResolver>();
+
+		// The next state up the order, and the next one a dependency can hold back.
+		Assert.Equal(LifecycleState.Open, resolver.NextState(typeof(Objective), LifecycleState.Deferred));
+		Assert.Equal(LifecycleState.Started, resolver.NextGatedState(typeof(Objective), LifecycleState.Deferred));
+		Assert.Equal(LifecycleState.Finished, resolver.NextGatedState(typeof(Objective), LifecycleState.Started));
+		Assert.Null(resolver.NextState(typeof(Objective), LifecycleState.Finished));
+		Assert.Equal(LifecycleState.Started, resolver.NextState(typeof(Fate), LifecycleState.Deferred));
+		Assert.Null(resolver.NextGatedState(typeof(Fate), LifecycleState.Started));
+		Assert.Equal(LifecycleState.Finished, resolver.NextGatedState(typeof(Checkpoint), LifecycleState.Deferred));
+
+		// A jump enters every progress state on the way; a move back leaves them, latest first; a shift within one state,
+		// a deferral or a resume's way back is no move along the main line.
+		Assert.Equal([LifecycleState.Started, LifecycleState.Finished], resolver.Transition(ObjectiveStatus.Standby, ObjectiveStatus.Done).Entered);
+		Assert.Equal([LifecycleState.Started, LifecycleState.Finished], resolver.Transition(ObjectiveStatus.Failed, ObjectiveStatus.Archived).Entered);
+		Assert.Equal([LifecycleState.Finished, LifecycleState.Started], resolver.Transition(ObjectiveStatus.Done, ObjectiveStatus.Blocked).Left);
+		Assert.False(resolver.Transition(ObjectiveStatus.Standby, ObjectiveStatus.Onrush).IsChange);
+		var deferral = resolver.Transition(ObjectiveStatus.Polaris, ObjectiveStatus.Failed);
+		Assert.True(deferral.Defers);
+		Assert.Empty(deferral.Entered);
+		Assert.Empty(deferral.Left);
+		Assert.Equal([LifecycleState.Finished], resolver.Transition(typeof(Checkpoint), LifecycleState.Open, LifecycleState.Finished).Entered);
 	}
 
 	// --- plans and replacement ---
@@ -409,23 +485,23 @@ public sealed class BacklogScheduleTests : VaultTestBase
 	public async Task Adding_a_plan_to_an_occupied_slot_replaces_it()
 	{
 		var objective = await Objective(api => api.CreateStandaloneAsync("Plotted", cancellationToken: Ct));
-		var first = await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecyclePhase.Begin, new DateTime(2026, 10, 5), Ct));
-		var second = await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecyclePhase.Begin, new DateTime(2026, 10, 7, 9, 30, 0), Ct));
-		var finish = await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecyclePhase.Finish, new DateTime(2026, 10, 20), Ct));
+		var first = await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecycleState.Started, new DateTime(2026, 10, 5), Ct));
+		var second = await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecycleState.Started, new DateTime(2026, 10, 7, 9, 30, 0), Ct));
+		var finish = await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 10, 20), Ct));
 
 		var schedules = await StoredAsync(objective.Id);
-		var begin = Assert.Single(schedules, schedule => schedule.Type == BacklogScheduleType.Plan && schedule.State == LifecyclePhase.Begin);
+		var begin = Assert.Single(schedules, schedule => schedule.Type == BacklogScheduleType.Plan && schedule.State == LifecycleState.Started);
 		Assert.Equal(second.Id, begin.Id);
 		Assert.NotEqual(first.Id, begin.Id);
 		Assert.Equal(new DateTime(2026, 10, 7, 9, 30, 0), begin.Time);
-		Assert.Equal(finish.Id, Slot(schedules, BacklogScheduleType.Plan, LifecyclePhase.Finish)!.Id);
+		Assert.Equal(finish.Id, Slot(schedules, BacklogScheduleType.Plan, LifecycleState.Finished)!.Id);
 
 		// A record is its own slot: beginning the objective keeps the plan beside it.
 		await ShiftAsync(objective.Id, ObjectiveStatus.Polaris);
 		var withRecord = await StoredAsync(objective.Id);
 		Assert.Equal(3, withRecord.Count);
-		Assert.Equal(second.Id, Slot(withRecord, BacklogScheduleType.Plan, LifecyclePhase.Begin)!.Id);
-		Record(withRecord, LifecyclePhase.Begin);
+		Assert.Equal(second.Id, Slot(withRecord, BacklogScheduleType.Plan, LifecycleState.Started)!.Id);
+		Record(withRecord, LifecycleState.Started);
 	}
 
 	[Fact]
@@ -435,22 +511,23 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		var lunar = await Directive(api => api.CreateLunarAsync("Moon law", cancellationToken: Ct));
 		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Gate", cancellationToken: Ct));
 
-		await Schedules(api => api.AddAsync(directive.Id, BacklogScheduleType.Plan, LifecyclePhase.Finish, new DateTime(2026, 12, 1), Ct));
-		await Schedules(api => api.AddAsync(directive.Id, BacklogScheduleType.Plan, LifecyclePhase.Finish, new DateTime(2026, 12, 15), Ct));
-		await Schedules(api => api.AddAsync(lunar.Id, BacklogScheduleType.Plan, LifecyclePhase.Begin, new DateTime(2026, 11, 1), Ct));
-		await Schedules(api => api.AddAsync(checkpoint.Id, BacklogScheduleType.Plan, LifecyclePhase.Finish, new DateTime(2026, 11, 30), Ct));
-		await Schedules(api => api.AddAsync(checkpoint.Id, BacklogScheduleType.Plan, LifecyclePhase.Finish, new DateTime(2026, 11, 29), Ct));
+		await Schedules(api => api.AddAsync(directive.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 12, 1), Ct));
+		await Schedules(api => api.AddAsync(directive.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 12, 15), Ct));
+		await Schedules(api => api.AddAsync(lunar.Id, BacklogScheduleType.Plan, LifecycleState.Started, new DateTime(2026, 11, 1), Ct));
+		await Schedules(api => api.AddAsync(checkpoint.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 11, 30), Ct));
+		await Schedules(api => api.AddAsync(checkpoint.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 11, 29), Ct));
 
 		Assert.Equal(new DateTime(2026, 12, 15), Assert.Single(await StoredAsync(directive.Id)).Time);
-		// A lunar directive declares no lifecycle, so nothing rules a phase out: it takes a plan of either.
-		Assert.Equal(lunar.Id, Assert.Single(await StoredAsync(lunar.Id)).DirectiveId);
-		var checkpointPlan = Slot(await StoredAsync(checkpoint.Id), BacklogScheduleType.Plan, LifecyclePhase.Finish)!;
+		// A lunar directive starts, so it takes a start plan, beside the Deferred record it was created with (On Hold).
+		Assert.Equal(lunar.Id, Slot(await StoredAsync(lunar.Id), BacklogScheduleType.Plan, LifecycleState.Started)!.DirectiveId);
+		var checkpointPlan = Slot(await StoredAsync(checkpoint.Id), BacklogScheduleType.Plan, LifecycleState.Finished)!;
 		Assert.Equal(checkpoint.Id, checkpointPlan.CheckpointId);
 		Assert.Equal(new DateTime(2026, 11, 29), checkpointPlan.Time);
 
-		// A checkpoint is one-shot: it cannot be started, so there is no begin of it to plan.
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(checkpoint.Id, BacklogScheduleType.Plan, LifecyclePhase.Begin, new DateTime(2026, 11, 1), Ct)));
-		Assert.Null(Slot(await StoredAsync(checkpoint.Id), BacklogScheduleType.Plan, LifecyclePhase.Begin));
+		// A checkpoint never starts, so there is no start of it to plan; a lunar directive never finishes.
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(checkpoint.Id, BacklogScheduleType.Plan, LifecycleState.Started, new DateTime(2026, 11, 1), Ct)));
+		Assert.Null(Slot(await StoredAsync(checkpoint.Id), BacklogScheduleType.Plan, LifecycleState.Started));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(lunar.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 11, 1), Ct)));
 	}
 
 	[Fact]
@@ -462,13 +539,13 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		await Vault.WithScopeAsync(async services =>
 		{
 			var context = services.GetRequiredService<PlainfraContext>();
-			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecyclePhase.Begin, Time = new DateTime(2026, 10, 1) });
+			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecycleState.Started, Time = new DateTime(2026, 10, 1) });
 			await context.SaveChangesAsync(Ct);
 		});
 		await Vault.WithScopeAsync(async services =>
 		{
 			var context = services.GetRequiredService<PlainfraContext>();
-			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecyclePhase.Begin, Time = new DateTime(2026, 10, 2) });
+			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecycleState.Started, Time = new DateTime(2026, 10, 2) });
 			await context.SaveChangesAsync(Ct);
 		});
 		Assert.Equal(new DateTime(2026, 10, 2), Assert.Single(await StoredAsync(objective.Id)).Time);
@@ -477,8 +554,8 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		await Vault.WithScopeAsync(async services =>
 		{
 			var context = services.GetRequiredService<PlainfraContext>();
-			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecyclePhase.Begin, Time = new DateTime(2026, 10, 3) });
-			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecyclePhase.Begin, Time = new DateTime(2026, 10, 4) });
+			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecycleState.Started, Time = new DateTime(2026, 10, 3) });
+			context.BacklogSchedules.Add(new BacklogSchedule { IncentiveId = objective.Id, Type = BacklogScheduleType.Plan, State = LifecycleState.Started, Time = new DateTime(2026, 10, 4) });
 			await context.SaveChangesAsync(Ct);
 		});
 		Assert.Equal(new DateTime(2026, 10, 4), Assert.Single(await StoredAsync(objective.Id)).Time);
@@ -497,9 +574,9 @@ public sealed class BacklogScheduleTests : VaultTestBase
 			await context.SaveChangesAsync(Ct);
 		});
 
-		await Assert.ThrowsAsync<DbUpdateException>(() => SaveAsync(new BacklogSchedule { Type = BacklogScheduleType.Plan, State = LifecyclePhase.Begin, Time = new DateTime(2026, 10, 1) }));
-		await Assert.ThrowsAsync<DbUpdateException>(() => SaveAsync(new BacklogSchedule { IncentiveId = objective.Id, DirectiveId = directive.Id, Type = BacklogScheduleType.Plan, State = LifecyclePhase.Begin, Time = new DateTime(2026, 10, 1) }));
-		Assert.Throws<ArgumentException>(() => BacklogSchedule.For(new PolarisCycle { Id = "x", Title = "x" }, BacklogScheduleType.Plan, LifecyclePhase.Begin, DateTime.Today));
+		await Assert.ThrowsAsync<DbUpdateException>(() => SaveAsync(new BacklogSchedule { Type = BacklogScheduleType.Plan, State = LifecycleState.Started, Time = new DateTime(2026, 10, 1) }));
+		await Assert.ThrowsAsync<DbUpdateException>(() => SaveAsync(new BacklogSchedule { IncentiveId = objective.Id, DirectiveId = directive.Id, Type = BacklogScheduleType.Plan, State = LifecycleState.Started, Time = new DateTime(2026, 10, 1) }));
+		Assert.Throws<ArgumentException>(() => BacklogSchedule.For(new PolarisCycle { Id = "x", Title = "x" }, BacklogScheduleType.Plan, LifecycleState.Started, DateTime.Today));
 	}
 
 	// --- the API surface ---
@@ -509,20 +586,22 @@ public sealed class BacklogScheduleTests : VaultTestBase
 	{
 		var objective = await Objective(api => api.CreateStandaloneAsync("Hands off", cancellationToken: Ct));
 		await ShiftAsync(objective.Id, ObjectiveStatus.Polaris);
-		var record = Record(await StoredAsync(objective.Id), LifecyclePhase.Begin);
+		var record = Record(await StoredAsync(objective.Id), LifecycleState.Started);
 
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Record, LifecyclePhase.Finish, DateTime.Today, Ct)));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Record, LifecycleState.Finished, DateTime.Today, Ct)));
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.DeleteAsync(record.Id, Ct)));
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync("j99999999", BacklogScheduleType.Plan, LifecyclePhase.Begin, DateTime.Today, Ct)));
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(objective.Id, (BacklogScheduleType)42, LifecyclePhase.Begin, DateTime.Today, Ct)));
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, (LifecyclePhase)42, DateTime.Today, Ct)));
-		// Failed is a lifecycle phase but not one an item enters, so not even a kind with no declared lifecycle plans it.
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync("j99999999", BacklogScheduleType.Plan, LifecycleState.Started, DateTime.Today, Ct)));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(objective.Id, (BacklogScheduleType)42, LifecycleState.Started, DateTime.Today, Ct)));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, (LifecycleState)42, DateTime.Today, Ct)));
+		// Plans place a start or a finish: neither Open, where every item stands before it starts, nor a deferral is planned,
+		// even for a kind that passes through it.
 		var lunar = await Directive(api => api.CreateLunarAsync("Moon law", cancellationToken: Ct));
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecyclePhase.Failed, DateTime.Today, Ct)));
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(lunar.Id, BacklogScheduleType.Plan, LifecyclePhase.Failed, DateTime.Today, Ct)));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecycleState.Open, DateTime.Today, Ct)));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecycleState.Deferred, DateTime.Today, Ct)));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(lunar.Id, BacklogScheduleType.Plan, LifecycleState.Deferred, DateTime.Today, Ct)));
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.DeleteAsync(987654, Ct)));
 
-		var plan = await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecyclePhase.Finish, new DateTime(2026, 10, 31), Ct));
+		var plan = await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 10, 31), Ct));
 		await Schedules(api => api.DeleteAsync(plan.Id, Ct));
 		Assert.Equal(record.Id, Assert.Single(await StoredAsync(objective.Id)).Id);
 	}
@@ -532,12 +611,12 @@ public sealed class BacklogScheduleTests : VaultTestBase
 	{
 		var objective = await Objective(api => api.CreateStandaloneAsync("Listed", cancellationToken: Ct));
 		var directive = await Directive(api => api.CreateStandaloneAsync("Also listed", cancellationToken: Ct));
-		await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecyclePhase.Finish, new DateTime(2026, 11, 1), Ct));
-		await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecyclePhase.Begin, new DateTime(2026, 10, 1), Ct));
-		await Schedules(api => api.AddAsync(directive.Id, BacklogScheduleType.Plan, LifecyclePhase.Begin, new DateTime(2026, 9, 1), Ct));
+		await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 11, 1), Ct));
+		await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecycleState.Started, new DateTime(2026, 10, 1), Ct));
+		await Schedules(api => api.AddAsync(directive.Id, BacklogScheduleType.Plan, LifecycleState.Started, new DateTime(2026, 9, 1), Ct));
 
 		var owned = await Schedules(api => api.ListAsync(objective.Id, Ct));
-		Assert.Equal([LifecyclePhase.Begin, LifecyclePhase.Finish], owned.Select(schedule => schedule.State));
+		Assert.Equal([LifecycleState.Started, LifecycleState.Finished], owned.Select(schedule => schedule.State));
 		Assert.All(owned, schedule => Assert.Equal(objective.Id, schedule.OwnerId));
 
 		var all = await Schedules(api => api.ListAsync(cancellationToken: Ct));
@@ -550,7 +629,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		var objective = await Objective(api => api.CreateStandaloneAsync("Timed", cancellationToken: Ct));
 		var instant = new DateTime(2026, 10, 5, 12, 0, 0, DateTimeKind.Utc);
 
-		var plan = await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecyclePhase.Begin, instant, Ct));
+		var plan = await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecycleState.Started, instant, Ct));
 
 		var expected = DateTime.SpecifyKind(instant.ToLocalTime(), DateTimeKind.Unspecified);
 		Assert.Equal(expected, plan.Time);
@@ -565,9 +644,9 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		var directive = await Directive(api => api.CreateStandaloneAsync("Doomed directive", cancellationToken: Ct));
 		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Doomed gate", cancellationToken: Ct));
 		await ShiftAsync(objective.Id, ObjectiveStatus.Done);
-		await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecyclePhase.Finish, new DateTime(2026, 10, 1), Ct));
-		await Schedules(api => api.AddAsync(directive.Id, BacklogScheduleType.Plan, LifecyclePhase.Begin, new DateTime(2026, 10, 1), Ct));
-		await Schedules(api => api.AddAsync(checkpoint.Id, BacklogScheduleType.Plan, LifecyclePhase.Finish, new DateTime(2026, 10, 1), Ct));
+		await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 10, 1), Ct));
+		await Schedules(api => api.AddAsync(directive.Id, BacklogScheduleType.Plan, LifecycleState.Started, new DateTime(2026, 10, 1), Ct));
+		await Schedules(api => api.AddAsync(checkpoint.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 10, 1), Ct));
 		Assert.Equal(3, (await StoredAsync(objective.Id)).Count);
 
 		// A cascading key never refuses a delete, and takes the schedules along.
@@ -585,7 +664,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		var broker = Vault.GetSingleton<PlaintorchChangeBroker>();
 		using var subscription = broker.Subscribe();
 
-		await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecyclePhase.Begin, new DateTime(2026, 10, 1), Ct));
+		await Schedules(api => api.AddAsync(objective.Id, BacklogScheduleType.Plan, LifecycleState.Started, new DateTime(2026, 10, 1), Ct));
 
 		var changes = new List<EntityChange>();
 		while (subscription.Reader.TryRead(out var change))
@@ -629,7 +708,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		var schedule = BacklogSchedule.For(
 			new StellarDirective { Id = "A12345678", Title = "Campaign" },
 			BacklogScheduleType.Record,
-			LifecyclePhase.Finish,
+			LifecycleState.Finished,
 			new DateTime(2026, 10, 5, 9, 30, 0));
 		schedule.Id = 12;
 
@@ -638,7 +717,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		Assert.Equal("BacklogSchedule", json["@type"]!.GetValue<string>());
 		Assert.Equal(12, json["id"]!.GetValue<long>());
 		Assert.Equal(1, json["type"]!.GetValue<int>());
-		Assert.Equal(1, json["state"]!.GetValue<int>());
+		Assert.Equal(2, json["state"]!.GetValue<int>());
 		Assert.Equal("2026-10-05T09:30:00", json["time"]!.GetValue<string>());
 		Assert.Equal("A12345678", json["directiveId"]!.GetValue<string>());
 		Assert.Equal("A12345678", json["ownerId"]!.GetValue<string>());

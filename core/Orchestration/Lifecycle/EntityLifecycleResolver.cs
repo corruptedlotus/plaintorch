@@ -4,133 +4,188 @@ using System.Reflection;
 namespace Pleiades.Orchestration.Lifecycle;
 
 /// <summary>
-/// Resolves whether an entity has begun or finished (PEP101) without hardcoding per-entity status knowledge.
-/// A registered <see cref="ILifecyclePhaseSource"/> is consulted first (for kinds whose phases are not a plain
-/// status value, such as eventives and checkpoints); otherwise the entity's <see cref="LifecycleStatusAttribute"/>
-/// property is read and its current value's <see cref="LifecyclePhaseAttribute"/> phases are applied.
+/// The one place the core reads an entity's lifecycle (PEP103): its current <see cref="LifecycleState"/>, the states its
+/// kind passes through, the state it moves to next, how a move between two states reads, and which status stands for a
+/// state when the core sets one of its own accord.
 /// </summary>
+/// <remarks>
+/// A registered <see cref="ILifecycleStateSource"/> answers for the kinds whose state is not a plain status value (eventives
+/// and checkpoints). Every other lifecycle kind marks its status property with <see cref="LifecycleStatusAttribute"/>, and
+/// the members of that enum declare their states with <see cref="LifecycleStateAttribute"/>
+/// (<see cref="LifecycleDeclarations"/>). A kind with neither has no lifecycle.
+/// </remarks>
 public sealed class EntityLifecycleResolver
 {
-	private static readonly IReadOnlySet<LifecyclePhase> NoPhases = new HashSet<LifecyclePhase>();
+	private static readonly IReadOnlySet<LifecycleState> NoStates = new HashSet<LifecycleState>();
+	private static readonly LifecycleState[] Gated = [LifecycleState.Started, LifecycleState.Finished];
 
-	private readonly IReadOnlyList<ILifecyclePhaseSource> _sources;
-	private readonly ConcurrentDictionary<Type, PropertyInfo?> _statusProperties = new();
-	private readonly ConcurrentDictionary<Type, IReadOnlyDictionary<string, PhaseMembership>> _enumPhases = new();
-	private readonly ConcurrentDictionary<Type, IReadOnlySet<LifecyclePhase>> _kindPhases = new();
+	private readonly IReadOnlyList<ILifecycleStateSource> _sources;
+	private readonly ConcurrentDictionary<Type, KindLifecycle?> _kinds = new();
 
 	/// <summary>
-	/// Initializes the resolver with the registered non-status phase sources.
+	/// Initializes the resolver with the registered state sources.
 	/// </summary>
-	public EntityLifecycleResolver(IEnumerable<ILifecyclePhaseSource> sources)
+	public EntityLifecycleResolver(IEnumerable<ILifecycleStateSource> sources)
 	{
 		ArgumentNullException.ThrowIfNull(sources);
 		_sources = sources.ToList();
 	}
 
 	/// <summary>
-	/// Determines whether the entity has begun (its status is a begin-or-finish phase, or a source says so).
+	/// Determines whether the entity kind takes part in the lifecycle: it has a lifecycle status property or a state source.
 	/// </summary>
-	public bool HasBegun(object entity) => Resolve(entity).Begun;
+	public bool IsLifecycleKind(Type entityType) => Kind(entityType) is not null;
 
 	/// <summary>
-	/// Determines whether the entity has finished (its status is a finish phase, or a source says so).
+	/// Gets the states an entity kind passes through, or none for a kind with no lifecycle.
 	/// </summary>
-	public bool HasFinished(object entity) => Resolve(entity).Finished;
+	public IReadOnlySet<LifecycleState> StatesOf(Type entityType) => Kind(entityType)?.States ?? NoStates;
 
 	/// <summary>
-	/// Determines whether the entity has failed (its status is a <see cref="LifecyclePhase.Failed"/> member). A phase
-	/// source never reports failure: an eventive's passing is temporal and has no failed state.
+	/// Gets an entity's current lifecycle state.
 	/// </summary>
-	public bool HasFailed(object entity) => Resolve(entity).Failed;
-
-	/// <summary>
-	/// Determines whether a status value is a <see cref="LifecyclePhase.Failed"/> member.
-	/// </summary>
-	public bool IsFailedStatus(Enum statusValue)
-	{
-		ArgumentNullException.ThrowIfNull(statusValue);
-		return GetEnumPhases(statusValue.GetType()).GetValueOrDefault(statusValue.ToString(), PhaseMembership.None).Failed;
-	}
-
-	/// <summary>
-	/// Determines whether the entity kind participates in lifecycle evaluation at all (has a status property or
-	/// a phase source). Lunar directives, decrees and other kinds with no lifecycle return <see langword="false"/>.
-	/// </summary>
-	public bool IsLifecycleKind(Type entityType)
-	{
-		ArgumentNullException.ThrowIfNull(entityType);
-		return FindSource(entityType) is not null || _statusProperties.GetOrAdd(entityType, FindStatusProperty) is not null;
-	}
-
-	/// <summary>
-	/// Gets the lifecycle phases an entity kind passes through: begin and finish for a kind that spans time,
-	/// <see cref="LifecyclePhase.Finish"/> alone for a one-shot kind that cannot be started (a checkpoint), and none for
-	/// a kind with no lifecycle. A status-driven kind passes through the phases its status members declare; a kind with
-	/// a phase source, through those its source declares. <see cref="LifecyclePhase.Failed"/> is never among them: a
-	/// failed entity has not begun, so failing is leaving the begin phase, not entering one of its own.
-	/// </summary>
-	public IReadOnlySet<LifecyclePhase> GetPhases(Type entityType)
-	{
-		ArgumentNullException.ThrowIfNull(entityType);
-		return _kindPhases.GetOrAdd(entityType, type =>
-		{
-			if (FindSource(type) is { } source)
-			{
-				return source.Phases;
-			}
-
-			if (_statusProperties.GetOrAdd(type, FindStatusProperty) is not { } property)
-			{
-				return NoPhases;
-			}
-
-			var memberships = GetEnumPhases(property.PropertyType).Values.ToList();
-			var phases = new HashSet<LifecyclePhase>();
-			if (memberships.Any(membership => membership.Begin))
-			{
-				phases.Add(LifecyclePhase.Begin);
-			}
-
-			if (memberships.Any(membership => membership.Finish))
-			{
-				phases.Add(LifecyclePhase.Finish);
-			}
-
-			return phases;
-		});
-	}
-
-	private (bool Begun, bool Finished, bool Failed) Resolve(object entity)
+	/// <exception cref="InvalidOperationException">The entity's kind has no lifecycle.</exception>
+	public LifecycleState StateOf(object entity)
 	{
 		ArgumentNullException.ThrowIfNull(entity);
 		var type = entity.GetType();
-
-		var source = FindSource(type);
-		if (source is not null)
+		var kind = Kind(type)
+			?? throw new InvalidOperationException($"Type '{type.Name}' declares no [LifecycleStatus] property and no lifecycle state source handles it.");
+		if (kind.Source is { } source)
 		{
-			return (source.HasBegun(entity), source.HasFinished(entity), false);
+			return source.StateOf(entity);
 		}
 
-		var property = _statusProperties.GetOrAdd(type, FindStatusProperty)
-			?? throw new InvalidOperationException($"Type '{type.Name}' declares no [LifecycleStatus] property and no lifecycle phase source handles it.");
-		var value = property.GetValue(entity)
+		var status = kind.StatusProperty!.GetValue(entity) as Enum
 			?? throw new InvalidOperationException($"Lifecycle status of '{type.Name}' is null.");
-		var membership = GetEnumPhases(property.PropertyType).GetValueOrDefault(value.ToString()!, PhaseMembership.None);
-		return (membership.Begin || membership.Finish, membership.Finish, membership.Failed);
+		return LifecycleDeclarations.StateOf(status);
 	}
 
 	/// <summary>
-	/// Classifies a status enum value into its declared lifecycle phases, used to decide whether a workflow
-	/// shift is a begin or finish transition.
+	/// Gets the state a status value stands for.
 	/// </summary>
-	public (bool Begin, bool Finish) ClassifyStatus(Enum statusValue)
+	public LifecycleState StateOf(Enum status) => LifecycleDeclarations.StateOf(status);
+
+	/// <summary>
+	/// Gets the state an item of the kind reaches next going up the order from <paramref name="current"/> — Open for a
+	/// deferred kind that has an Open state, then Started, then Finished, skipping any the kind does not pass through — or
+	/// <see langword="null"/> when nothing lies ahead.
+	/// </summary>
+	public LifecycleState? NextState(Type entityType, LifecycleState current)
 	{
-		ArgumentNullException.ThrowIfNull(statusValue);
-		var membership = GetEnumPhases(statusValue.GetType()).GetValueOrDefault(statusValue.ToString(), PhaseMembership.None);
-		return (membership.Begin, membership.Finish);
+		var states = StatesOf(entityType);
+		return states.Any(state => state > current) ? states.Where(state => state > current).Min() : null;
 	}
 
-	private ILifecyclePhaseSource? FindSource(Type type) => _sources.FirstOrDefault(source => source.Handles(type));
+	/// <summary>
+	/// Gets the next state ahead of <paramref name="current"/> that a dependency can hold back — the first of Started and
+	/// Finished the kind passes through above it (a deferred item counts as before Open) — or <see langword="null"/> when
+	/// none is left. A checkpoint, which never starts, always has its finish ahead until it unlocks.
+	/// </summary>
+	public LifecycleState? NextGatedState(Type entityType, LifecycleState current)
+	{
+		var states = StatesOf(entityType);
+		foreach (var state in Gated)
+		{
+			if (states.Contains(state) && state > current)
+			{
+				return state;
+			}
+		}
+
+		return null;
+	}
+
+	/// <summary>
+	/// Reads a move between two states of an entity kind.
+	/// </summary>
+	public LifecycleTransition Transition(Type entityType, LifecycleState from, LifecycleState to) => new(from, to, StatesOf(entityType));
+
+	/// <summary>
+	/// Reads a move between two statuses of one lifecycle status enum. The kind passes through the states the enum declares.
+	/// </summary>
+	public LifecycleTransition Transition(Enum from, Enum to)
+	{
+		ArgumentNullException.ThrowIfNull(from);
+		ArgumentNullException.ThrowIfNull(to);
+		if (from.GetType() != to.GetType())
+		{
+			throw new ArgumentException($"A transition is read between two statuses of one enum, not '{from.GetType().Name}' and '{to.GetType().Name}'.", nameof(to));
+		}
+
+		return new LifecycleTransition(StateOf(from), StateOf(to), LifecycleDeclarations.StatesOf(from.GetType()));
+	}
+
+	/// <summary>
+	/// Gets the status the core sets when it moves an entity of the kind to <paramref name="state"/> of its own accord: the
+	/// lowest-valued status of the kind that declares the state. Returns <see langword="null"/> when the kind has no status for
+	/// the state — it does not pass through it, or reaches it by time or by unlocking rather than by a status.
+	/// </summary>
+	public Enum? DefaultStatus(Type entityType, LifecycleState state)
+		=> Kind(entityType)?.StatusType is { } statusType ? LifecycleDeclarations.DefaultStatus(statusType, state) : null;
+
+	/// <summary>
+	/// Validates, at vault activation, that every lifecycle declaration is coherent:
+	/// <list type="bullet">
+	/// <item><description>every member of a lifecycle status enum declares its state, and the enum has a main-line state;</description></item>
+	/// <item><description>every state source passes through a main-line state, and the status enum it sets declares only states the source passes through;</description></item>
+	/// <item><description>no kind has both a lifecycle status property and a state source.</description></item>
+	/// </list>
+	/// </summary>
+	/// <exception cref="InvalidOperationException">A declaration is incoherent.</exception>
+	public void Validate()
+	{
+		foreach (var source in _sources)
+		{
+			if (!source.States.Any(state => state != LifecycleState.Deferred))
+			{
+				throw new InvalidOperationException($"Lifecycle state source '{source.GetType().Name}' passes through no {nameof(LifecycleState.Open)}, {nameof(LifecycleState.Started)} or {nameof(LifecycleState.Finished)} state.");
+			}
+
+			if (source.StatusType is { } statusType)
+			{
+				LifecycleDeclarations.Validate(statusType);
+				var stray = LifecycleDeclarations.StatesOf(statusType).Except(source.States).ToList();
+				if (stray.Count > 0)
+				{
+					throw new InvalidOperationException($"Status '{statusType.Name}' of '{source.GetType().Name}' declares {string.Join(", ", stray)}, which the source never passes through.");
+				}
+			}
+		}
+
+		foreach (var type in typeof(EntityLifecycleResolver).Assembly.GetTypes())
+		{
+			if (FindStatusProperty(type) is not { } property)
+			{
+				continue;
+			}
+
+			if (FindSource(type) is { } source)
+			{
+				throw new InvalidOperationException($"'{type.Name}' has both a lifecycle status property and the state source '{source.GetType().Name}'; its lifecycle must have one origin.");
+			}
+
+			LifecycleDeclarations.Validate(property.PropertyType);
+		}
+	}
+
+	private KindLifecycle? Kind(Type entityType)
+	{
+		ArgumentNullException.ThrowIfNull(entityType);
+		return _kinds.GetOrAdd(entityType, type =>
+		{
+			if (FindSource(type) is { } source)
+			{
+				return new KindLifecycle(null, source, source.States, source.StatusType);
+			}
+
+			return FindStatusProperty(type) is { } property
+				? new KindLifecycle(property, null, LifecycleDeclarations.StatesOf(property.PropertyType), property.PropertyType)
+				: null;
+		});
+	}
+
+	private ILifecycleStateSource? FindSource(Type type) => _sources.FirstOrDefault(source => source.Handles(type));
 
 	private static PropertyInfo? FindStatusProperty(Type type)
 	{
@@ -138,60 +193,8 @@ public sealed class EntityLifecycleResolver
 			.FirstOrDefault(property => property.GetCustomAttribute<LifecycleStatusAttribute>() is not null);
 	}
 
-	private IReadOnlyDictionary<string, PhaseMembership> GetEnumPhases(Type enumType) => _enumPhases.GetOrAdd(enumType, BuildEnumPhases);
-
-	private static IReadOnlyDictionary<string, PhaseMembership> BuildEnumPhases(Type enumType)
-	{
-		if (!enumType.IsEnum)
-		{
-			throw new InvalidOperationException($"Lifecycle status type '{enumType.Name}' must be an enum.");
-		}
-
-		var map = new Dictionary<string, PhaseMembership>(StringComparer.Ordinal);
-		foreach (var field in enumType.GetFields(BindingFlags.Public | BindingFlags.Static))
-		{
-			var phases = field.GetCustomAttributes<LifecyclePhaseAttribute>().Select(attribute => attribute.Phase).ToArray();
-			if (phases.Contains(LifecyclePhase.Failed) && (phases.Contains(LifecyclePhase.Begin) || phases.Contains(LifecyclePhase.Finish)))
-			{
-				throw new InvalidOperationException($"Lifecycle status member '{enumType.Name}.{field.Name}' cannot be both failed and begun or finished.");
-			}
-
-			map[field.Name] = new PhaseMembership(phases.Contains(LifecyclePhase.Begin), phases.Contains(LifecyclePhase.Finish), phases.Contains(LifecyclePhase.Failed));
-		}
-
-		return map;
-	}
-
 	/// <summary>
-	/// Validates, at vault activation, that every status-driven participant declares a coherent lifecycle: its
-	/// <see cref="LifecycleStatusAttribute"/> enum carries at least one <see cref="LifecyclePhase.Finish"/>
-	/// member, and at least one <see cref="LifecyclePhase.Begin"/> member unless a phase source supplies begin.
+	/// How one kind's lifecycle is read: from its status property or from its state source.
 	/// </summary>
-	public void Validate()
-	{
-		foreach (var type in typeof(EntityLifecycleResolver).Assembly.GetTypes())
-		{
-			var property = FindStatusProperty(type);
-			if (property is null)
-			{
-				continue;
-			}
-
-			var phases = GetEnumPhases(property.PropertyType);
-			if (!phases.Values.Any(membership => membership.Finish))
-			{
-				throw new InvalidOperationException($"Lifecycle status '{property.PropertyType.Name}' on '{type.Name}' declares no {nameof(LifecyclePhase)}.{nameof(LifecyclePhase.Finish)} member.");
-			}
-
-			if (!phases.Values.Any(membership => membership.Begin) && FindSource(type) is null)
-			{
-				throw new InvalidOperationException($"Lifecycle status '{property.PropertyType.Name}' on '{type.Name}' declares no {nameof(LifecyclePhase)}.{nameof(LifecyclePhase.Begin)} member and no phase source supplies begin.");
-			}
-		}
-	}
-
-	private readonly record struct PhaseMembership(bool Begin, bool Finish, bool Failed)
-	{
-		public static readonly PhaseMembership None = new(false, false, false);
-	}
+	private sealed record KindLifecycle(PropertyInfo? StatusProperty, ILifecycleStateSource? Source, IReadOnlySet<LifecycleState> States, Type? StatusType);
 }

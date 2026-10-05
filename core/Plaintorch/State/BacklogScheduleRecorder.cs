@@ -14,20 +14,25 @@ namespace Pleiades.Plaintorch.State;
 /// Two rules, applied in order:
 /// <list type="number">
 /// <item><description>
-/// <b>Recording.</b> For every incentive, directive or checkpoint the save touches, each lifecycle phase its kind passes
-/// through (<see cref="EntityLifecycleResolver.GetPhases"/>) is compared between what is stored and what the save is
-/// about to store. Entering the phase adds a <see cref="BacklogScheduleType.Record"/> of it, stamped with the save's
-/// moment; leaving it — pulling the status back — withdraws that record. So a record stands exactly while its phase does:
-/// un-finishing drops the finish record, un-beginning the begin record. Begun and finished are the resolver's reading, the
-/// same one the dependency system gates on: a finish implies a begin, so a jump from an unbegun status straight to a
-/// finished one records both at the same moment, and a status that declares no phase (an objective's Blocked) is not
-/// begun. An entity created begun or finished counts as entering it. A one-shot kind (a checkpoint, which finishes by
-/// unlocking) only ever gets a finish record, and kinds with no lifecycle (lunar directives, decrees) are never recorded,
-/// though every kind can hold plans.
+/// <b>Recording.</b> For every incentive, directive or checkpoint the save touches, its lifecycle state as stored is
+/// compared with the state the save is about to store (<see cref="EntityLifecycleResolver.StateOf(object)"/>), and records
+/// track every state other than Open (PEP103):
+/// <list type="bullet">
+/// <item><description>Moving up the main line adds a <see cref="BacklogScheduleType.Record"/> of each state it reaches,
+/// stamped with the save's moment: a jump from Open straight to Finished records Started and Finished at the same moment.
+/// Moving back down withdraws the records of the states it leaves, so reopening drops the Finished record.</description></item>
+/// <item><description>Deferring adds a Deferred record and keeps the Started and Finished records: a deferred item keeps its
+/// place on the main line. Coming back withdraws the Deferred record, and the move is read from that kept place, which the
+/// records themselves show, so resuming to where the item was changes nothing else.</description></item>
+/// </list>
+/// An entity created in a state counts as entering it. Only the states an owner's kind passes through are recorded: a
+/// checkpoint never starts, and a fate, a decree or a lunar directive never finishes. A state that changes with time alone
+/// (a checkpoint whose due passes) reads the same stored and current, so it is recorded only once the engine's clock
+/// re-evaluates it.
 /// </description></item>
 /// <item><description>
 /// <b>Replacement.</b> Every schedule added in the save replaces the other schedules of its slot — the same owner,
-/// type and phase — whether they are stored or tracked. Two additions to one slot in a single save keep the later
+/// type and state — whether they are stored or tracked. Two additions to one slot in a single save keep the later
 /// one.
 /// </description></item>
 /// </list>
@@ -43,14 +48,14 @@ public sealed class BacklogScheduleRecorder(EntityLifecycleResolver lifecycleRes
 		ArgumentNullException.ThrowIfNull(context);
 		// A record is a civil wall-clock moment, like every schedule time: the local time with no kind, which would
 		// otherwise serialize with the machine's offset. One moment for the whole save, so a jump straight to a finished
-		// status records its begin and its finish at the same instant.
+		// status records its start and its finish at the same instant.
 		var withdrawn = await RecordLifecycleTransitionsAsync(context, DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified), cancellationToken);
 		await SettleSlotsAsync(context, withdrawn, cancellationToken);
 	}
 
 	/// <summary>
-	/// Adds a record for every phase an owner enters in this save, and returns the slots of the records to withdraw for
-	/// every phase an owner leaves.
+	/// Adds a record for every state an owner enters in this save, and returns the slots of the records to withdraw for
+	/// every state an owner leaves.
 	/// </summary>
 	private async Task<List<BacklogSchedule>> RecordLifecycleTransitionsAsync(PlainfraContext context, DateTime now, CancellationToken cancellationToken)
 	{
@@ -62,8 +67,9 @@ public sealed class BacklogScheduleRecorder(EntityLifecycleResolver lifecycleRes
 			.ToList();
 		foreach (var entry in owners)
 		{
-			var phases = lifecycleResolver.GetPhases(entry.Entity.GetType());
-			if (phases.Count == 0)
+			var kind = entry.Entity.GetType();
+			var states = lifecycleResolver.StatesOf(kind);
+			if (states.Count == 0)
 			{
 				continue;
 			}
@@ -72,28 +78,60 @@ public sealed class BacklogScheduleRecorder(EntityLifecycleResolver lifecycleRes
 			// row, not the tracked original values, is the reference: an entity attached rather than loaded (whose original
 			// values are only its current ones) is compared correctly all the same. An added entity has nothing stored.
 			var stored = entry.State == EntityState.Added ? null : await entry.GetDatabaseValuesAsync(cancellationToken);
-			var before = stored?.ToObject();
-			foreach (var phase in phases)
+			LifecycleState? before = stored is null ? null : lifecycleResolver.StateOf(stored.ToObject());
+			var after = lifecycleResolver.StateOf(entry.Entity);
+			if (before == after)
 			{
-				var was = before is not null && HasReached(before, phase);
-				var @is = HasReached(entry.Entity, phase);
-				if (@is && !was)
-				{
-					entered.Add(BacklogSchedule.For(entry.Entity, BacklogScheduleType.Record, phase, now));
-				}
-				else if (was && !@is)
-				{
-					withdrawn.Add(BacklogSchedule.For(entry.Entity, BacklogScheduleType.Record, phase, now));
-				}
+				continue;
 			}
+
+			if (after == LifecycleState.Deferred)
+			{
+				// Setting the item aside keeps its place on the main line, and with it the records of how far it got.
+				if (states.Contains(LifecycleState.Deferred))
+				{
+					entered.Add(Record(entry.Entity, LifecycleState.Deferred, now));
+				}
+
+				continue;
+			}
+
+			var from = before ?? LifecycleState.Open;
+			if (from == LifecycleState.Deferred)
+			{
+				withdrawn.Add(Record(entry.Entity, LifecycleState.Deferred, now));
+				from = await MainLinePositionAsync(context, entry.Entity, cancellationToken);
+			}
+
+			var transition = lifecycleResolver.Transition(kind, from, after);
+			entered.AddRange(transition.Entered.Select(state => Record(entry.Entity, state, now)));
+			withdrawn.AddRange(transition.Left.Select(state => Record(entry.Entity, state, now)));
 		}
 
 		context.BacklogSchedules.AddRange(entered);
 		return withdrawn;
 	}
 
-	private bool HasReached(object entity, LifecyclePhase phase)
-		=> phase == LifecyclePhase.Begin ? lifecycleResolver.HasBegun(entity) : lifecycleResolver.HasFinished(entity);
+	/// <summary>
+	/// Reads where a deferred owner stood on the main line before it was set aside, from the records it kept: Finished with a
+	/// Finished record, Started with only a Started one, and Open with neither.
+	/// </summary>
+	private static async Task<LifecycleState> MainLinePositionAsync(PlainfraContext context, object owner, CancellationToken cancellationToken)
+	{
+		var ownerId = Record(owner, LifecycleState.Deferred, default).OwnerId;
+		var recorded = await context.BacklogSchedules
+			.AsNoTracking()
+			.Where(schedule => schedule.Type == BacklogScheduleType.Record
+				&& (schedule.IncentiveId == ownerId || schedule.DirectiveId == ownerId || schedule.CheckpointId == ownerId))
+			.Select(schedule => schedule.State)
+			.ToListAsync(cancellationToken);
+		return recorded.Contains(LifecycleState.Finished) ? LifecycleState.Finished
+			: recorded.Contains(LifecycleState.Started) ? LifecycleState.Started
+			: LifecycleState.Open;
+	}
+
+	private static BacklogSchedule Record(object owner, LifecycleState state, DateTime now)
+		=> BacklogSchedule.For(owner, BacklogScheduleType.Record, state, now);
 
 	/// <summary>
 	/// Replaces every slot an addition lands in and empties every withdrawn slot, over stored and tracked schedules alike.
@@ -137,7 +175,7 @@ public sealed class BacklogScheduleRecorder(EntityLifecycleResolver lifecycleRes
 			}
 
 			var schedule = entry.Entity;
-			// A withdrawn slot empties whatever stands in it: a record never outlives its phase.
+			// A withdrawn slot empties whatever stands in it: a record never outlives its state.
 			var inWithdrawnSlot = withdrawn.Any(slot => slot.SharesSlotWith(schedule));
 			var replaced = !winners.Contains(schedule) && winners.Any(winner => winner.SharesSlotWith(schedule));
 			if (inWithdrawnSlot || replaced)

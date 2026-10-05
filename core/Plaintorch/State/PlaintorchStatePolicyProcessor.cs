@@ -255,7 +255,7 @@ public sealed class PlaintorchStatePolicyProcessor(
 
 	/// <summary>
 	/// Whether an entry is open work that newly arrived under its parent in this unit of work: created there, moved
-	/// there, or reopened there from a finish. Failed is not open — it neither counts as done nor as work.
+	/// there, or reopened there from a finish. A deferred (failed) item is not open — it neither counts as done nor as work.
 	/// </summary>
 	private static bool ArrivedOpen(EntityEntry entry, EntityLifecycleResolver lifecycle, string parentProperty, string statusProperty)
 	{
@@ -264,9 +264,8 @@ public sealed class PlaintorchStatePolicyProcessor(
 			return false;
 		}
 
-		var status = (Enum)entry.Property(statusProperty).CurrentValue!;
-		var (_, finished) = lifecycle.ClassifyStatus(status);
-		if (finished || lifecycle.IsFailedStatus(status))
+		var state = lifecycle.StateOf((Enum)entry.Property(statusProperty).CurrentValue!);
+		if (state is LifecycleState.Finished or LifecycleState.Deferred)
 		{
 			return false;
 		}
@@ -279,7 +278,7 @@ public sealed class PlaintorchStatePolicyProcessor(
 		var statusProperty2 = entry.Property(statusProperty);
 		return statusProperty2.IsModified
 			&& statusProperty2.OriginalValue is Enum previous
-			&& lifecycle.ClassifyStatus(previous).Finish;
+			&& lifecycle.StateOf(previous) == LifecycleState.Finished;
 	}
 
 	/// <summary>

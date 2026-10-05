@@ -4,13 +4,13 @@ using Pleiades.Orchestration.Lifecycle;
 namespace Pleiades.Plaintorch.Api.Abstractions;
 
 /// <summary>
-/// Defines the backlog-schedule application actions exposed by PLAINTORCH (PEP101): when an incentive, a directive or
-/// a checkpoint is planned to begin or finish, and when it actually did.
+/// Defines the backlog-schedule application actions exposed by PLAINTORCH (PEP101, PEP103): when an incentive, a directive
+/// or a checkpoint is planned to start or finish, and when it actually started, finished or was set aside.
 /// </summary>
 /// <remarks>
 /// Only plans are written through this surface. Records are the core's account of how things turned out: it adds one
-/// whenever an item's lifecycle begins or finishes, and withdraws it when the item's status is pulled back out of that
-/// phase.
+/// whenever an item reaches a state other than Open, and withdraws it when the item is pulled back along the main line out
+/// of that state. Deferring keeps the records of how far the item got.
 /// </remarks>
 public interface IBacklogScheduleApi
 {
@@ -26,11 +26,11 @@ public interface IBacklogScheduleApi
 	/// offset or a UTC marker is converted to local wall-clock time.
 	/// </summary>
 	/// <exception cref="InvalidOperationException">
-	/// No incentive, directive or checkpoint has the id; the type or state is unknown; the type is
-	/// <see cref="BacklogScheduleType.Record"/>, which only the core writes; or the owner's kind never passes through the
-	/// state — a checkpoint is one-shot, so it has no begin to plan.
+	/// No incentive, directive or checkpoint has the id; the type is unknown; the state is not Started or Finished; the type
+	/// is <see cref="BacklogScheduleType.Record"/>, which only the core writes; or the owner's kind never reaches the state —
+	/// a checkpoint never starts, and a fate, a decree or a lunar directive never finishes.
 	/// </exception>
-	Task<BacklogSchedule> AddAsync(string entityId, BacklogScheduleType type, LifecyclePhase state, DateTime time, CancellationToken cancellationToken = default);
+	Task<BacklogSchedule> AddAsync(string entityId, BacklogScheduleType type, LifecycleState state, DateTime time, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Deletes a planned schedule.

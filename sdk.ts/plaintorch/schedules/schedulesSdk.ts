@@ -1,7 +1,7 @@
 import type { PlaintorchCoreClient } from "../coreClient"
 import type { AddBacklogScheduleRequest, BacklogSchedule } from "./contracts"
 
-/** The backlog-schedule surface (PEP101): planned and recorded begins and finishes of backlog items. */
+/** The backlog-schedule surface (PEP101, PEP103): planned starts and finishes of backlog items, and the recorded states they reached. */
 export class PlaintorchSchedulesSdk {
 	public constructor(private readonly client: PlaintorchCoreClient) { }
 
