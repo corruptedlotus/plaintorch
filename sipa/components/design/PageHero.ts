@@ -1,9 +1,11 @@
 import { Component, component, css, html, nothing, property } from '@a11d/lit'
+import { SlotController } from '@3mo/slot-controller'
 import type { IconName } from '../PleiadesIcon'
 
 /**
  * The hero a briefing page opens on: its title, big and centred, with the page's glyph beside it — over a banner that
- * fades out downward, where the page has one.
+ * fades out downward, where the page has one. The banner is an image ({@link banner}), or an element slotted as
+ * `banner` (an animation, say), which fills the banner's frame.
  *
  * The banner bleeds out to the briefing's page frame (past the page's own padding and into its rounded top corners) and
  * lightens what lies beneath it, so its dark sky gives way to the frame's own surface and only its light shows. That
@@ -18,10 +20,12 @@ export class PageHero extends Component {
 	@property() heading = ''
 	/** The page's glyph, drawn before the title. */
 	@property() icon?: IconName
-	/** The banner image's URL. Without one the title stands on the page's own surface. */
+	/** The banner image's URL. Without one, or an element slotted as `banner`, the title stands on the page's own surface. */
 	@property() banner?: string
 	/** A shorter hero, for a page whose title stands without a banner. */
 	@property({ type: Boolean, reflect: true }) compact = false
+
+	private readonly slotController = new SlotController(this)
 
 	static override get styles() {
 		return css`
@@ -51,6 +55,12 @@ export class PageHero extends Component {
 				pointer-events: none;
 			}
 
+			slot[name='banner']::slotted(*) {
+				position: absolute;
+				inset: 0;
+				border-radius: inherit;
+			}
+
 			h1 {
 				position: relative;
 				display: flex;
@@ -78,7 +88,9 @@ export class PageHero extends Component {
 
 	protected override get template() {
 		return html`
-			${!this.banner ? nothing : html`<div class='banner' style=${`--p7t-page-hero-banner: url("${this.banner}")`}></div>`}
+			${this.banner ? html`<div class='banner' style=${`--p7t-page-hero-banner: url("${this.banner}")`}></div>`
+				: this.slotController.hasAssignedElements('banner') ? html`<div class='banner'><slot name='banner'></slot></div>`
+				: nothing}
 			<h1>
 				${!this.icon ? nothing : html`<p7t-icon icon=${this.icon}></p7t-icon>`}
 				${this.heading}

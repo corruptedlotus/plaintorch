@@ -1,7 +1,6 @@
 import { Component, component, css, html, repeat } from '@a11d/lit'
 import type { EntitySubscription } from '@pleiades/sdk'
 import { core, DerivedRef, tooltip } from '..'
-import { 'project-everglow-banner-webp' as EverglowBanner } from '../../assets/design'
 import { createEntity } from '../grid/entityActions'
 import { buildLunarReflection, buildMoonlightTree } from './moonlightTree'
 
@@ -9,8 +8,8 @@ import { buildLunarReflection, buildMoonlightTree } from './moonlightTree'
  * The briefing's Moonlight page: Project Moonlight's lunar directives, one card per top-level directive, and the
  * decrees taking part in Lunar Reflection.
  *
- * The page opens on its title, big and centred over the Project Everglow banner, which fades out downward into the
- * page. The cards follow in a grid that fits as many to a row as the width allows — at least one, with no upper bound —
+ * The page opens on its title, big and centred over the moon waxing across to the centre of the banner
+ * (`p7t-moonlight-banner`), which fades out downward into the page. The cards follow in a grid that fits as many to a row as the width allows — at least one, with no upper bound —
  * with a last tile after them that adds a new top-level directive; the Lunar Reflection grid closes the page. It draws
  * from the same directive and incentive listings as the backlog grid, which leaves the lunar hierarchy to this page.
  */
@@ -147,7 +146,9 @@ export class MoonlightView extends Component {
 
 	protected override get template() {
 		return html`
-			<p7t-page-hero heading='Project Moonlight' icon='project-moonlight' .banner=${EverglowBanner}></p7t-page-hero>
+			<p7t-page-hero heading='Project Moonlight' icon='project-moonlight'>
+				<p7t-moonlight-banner slot='banner'></p7t-moonlight-banner>
+			</p7t-page-hero>
 			${!this.directives.value ? html`<div class='notice'>Loading…</div>` : html`
 				${this.cardsTemplate}
 				${this.reflectionTemplate}
