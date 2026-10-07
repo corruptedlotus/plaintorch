@@ -16,6 +16,7 @@ import { toast } from "../../host"
 @component('p7t-briefing-polaris')
 export class BriefingCardPolaris extends PolarisBriefingBase {
 	override readonly icon = 'polaris'
+	override readonly risingStars = true
 
 	// The self-watch now lives on BriefingCard, so every card re-renders on an in-place edit — this one no
 	// longer needs its own.

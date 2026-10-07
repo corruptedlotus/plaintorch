@@ -1,8 +1,7 @@
-import { component, css, html, nothing, property, unsafeCSS } from '@a11d/lit'
+import { component, css, html, nothing, property } from '@a11d/lit'
 import { EntityWatch, IconName, navigateToEntity } from '..'
 import { CardComponent } from '../design'
 import { 'everglow-banner' as EverglowBanner } from '../../assets/design'
-import { 'grunge-1-png' as GrungeNoise } from '../../assets/design'
 
 @component('p7t-briefing-card')
 export class BriefingCard<T> extends CardComponent {
@@ -18,21 +17,14 @@ export class BriefingCard<T> extends CardComponent {
 
 	protected readonly icon?: IconName
 
+	/** Whether rising stars (`p7t-rising-stars`) play at the back of the card, blurred, in its flare accent. */
+	protected readonly risingStars?: boolean
+
 	static override get styles() {
 		return css`
 			${super.styles}
 
 			:host {
-				background:
-					/*url('${unsafeCSS(GrungeNoise)}'),*/
-					radial-gradient(
-						var(--background-primary-alt) 38%,
-						color-mix(in srgb, var(--p7t-flare-accent) 20%, black) 70%,
-						transparent 94%);
-				background-size: /*contain,*/ 95vw 95vw;
-				background-blend-mode: soft-light;
-				background-position: /*bottom,*/ 40% 84%;
-
 				& > * {
 					position: relative;
 					z-index: 1;
@@ -42,6 +34,18 @@ export class BriefingCard<T> extends CardComponent {
 			:host::part(header) {
 				position: relative;
 				z-index: 1;
+			}
+
+			/* Rising stars at the back of the card, over the crest but behind the content, softened into glows. */
+			.backdrop {
+				position: absolute;
+				z-index: 0;
+				inset: 0;
+				border-radius: inherit;
+
+				&::part(stage) {
+					filter: blur(5px);
+				}
 			}
 
 			.mask {
@@ -139,6 +143,7 @@ export class BriefingCard<T> extends CardComponent {
 	protected override get template() {
 		return this.data ? html`
 			${!this.icon ? nothing : html`<p7t-icon icon='${this.icon}' class='mask'></p7t-icon>`}
+			${!this.risingStars ? nothing : html`<p7t-rising-stars class='backdrop'></p7t-rising-stars>`}
 			${super.template}
 		` : html`
 			<style>

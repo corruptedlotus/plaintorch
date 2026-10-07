@@ -27,14 +27,13 @@ export class MoonlightCard extends BriefingCard<MoonlightNode> {
 		return css`
 			${super.styles}
 
-			/* A flat cell of the page's card grid: no radial wash, no margins between cards, no gap between the parts. */
+			/* A flat cell of the page's card grid: no margins between cards, no gap between the parts. */
 			:host {
 				min-width: 0;
 				margin: 0;
 				gap: 0;
 				padding: .9em .9em .5em;
 				background: var(--background-primary-alt);
-				background-blend-mode: normal;
 				overflow: clip;
 			}
 

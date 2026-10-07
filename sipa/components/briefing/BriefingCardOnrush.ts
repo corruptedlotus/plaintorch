@@ -9,6 +9,7 @@ import { createChild, SuggestModalBase } from "../../host"
 @component('p7t-briefing-onrush')
 export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 	override readonly icon = 'onrush'
+	override readonly risingStars = true
 	override readonly preHeading = 'Active Onrush'
 
 	/**
