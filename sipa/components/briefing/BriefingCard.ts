@@ -17,8 +17,11 @@ export class BriefingCard<T> extends CardComponent {
 
 	protected readonly icon?: IconName
 
-	/** Whether rising stars (`p7t-rising-stars`) play at the back of the card, blurred, in its flare accent. */
-	protected readonly risingStars?: boolean
+	/**
+	 * What plays at the back of the card, blurred, in its flare accent: rising stars (`p7t-rising-stars`) or rising
+	 * embers (`p7t-rising-embers`). Nothing by default.
+	 */
+	protected readonly backdrop?: 'rising-stars' | 'rising-embers'
 
 	static override get styles() {
 		return css`
@@ -36,7 +39,7 @@ export class BriefingCard<T> extends CardComponent {
 				z-index: 1;
 			}
 
-			/* Rising stars at the back of the card, over the crest but behind the content, softened into glows. */
+			/* The backdrop at the back of the card, over the crest but behind the content, softened into glows. */
 			.backdrop {
 				position: absolute;
 				z-index: 0;
@@ -46,6 +49,11 @@ export class BriefingCard<T> extends CardComponent {
 				&::part(stage) {
 					filter: blur(5px);
 				}
+			}
+
+			/* Embers are small flakes with a halo of their own, which the stars' blur would wash out. */
+			p7t-rising-embers.backdrop::part(stage) {
+				filter: blur(1.5px);
 			}
 
 			.mask {
@@ -143,7 +151,7 @@ export class BriefingCard<T> extends CardComponent {
 	protected override get template() {
 		return this.data ? html`
 			${!this.icon ? nothing : html`<p7t-icon icon='${this.icon}' class='mask'></p7t-icon>`}
-			${!this.risingStars ? nothing : html`<p7t-rising-stars class='backdrop'></p7t-rising-stars>`}
+			${this.backdropTemplate}
 			${super.template}
 		` : html`
 			<style>
@@ -160,6 +168,17 @@ export class BriefingCard<T> extends CardComponent {
 			</style>
 			${this.offlineTemplate}
 		`
+	}
+
+	private get backdropTemplate() {
+		switch (this.backdrop) {
+			case 'rising-stars':
+				return html`<p7t-rising-stars class='backdrop'></p7t-rising-stars>`
+			case 'rising-embers':
+				return html`<p7t-rising-embers class='backdrop'></p7t-rising-embers>`
+			default:
+				return nothing
+		}
 	}
 
 	protected override get preHeadingTemplate() {

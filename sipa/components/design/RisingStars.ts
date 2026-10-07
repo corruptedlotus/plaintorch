@@ -1,17 +1,12 @@
-import { Component, component, css, html, property, query } from '@a11d/lit'
-import { subscribeElementTick } from '../system/globalTick'
+import { component, css, property, query, svg } from '@a11d/lit'
+import { ParticleStageBase, random, setting, svgElement, translate } from './ParticleStageBase'
 
-const svgNamespace = 'http://www.w3.org/2000/svg'
 /** How long a star takes to fade in once its bubble bursts, in milliseconds. */
 const starFadeIn = 100
 /** How long a star takes to fade out, from the moment its ring is gone, in milliseconds. */
 const starFadeOut = 450
 /** The most bubbles and bursts in flight at once; a spawn beyond it is dropped. */
 const maximumParticles = 300
-/** The longest frame step, in milliseconds, so a stalled frame never throws a particle across its whole path. */
-const maximumStep = 50
-
-const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
 /** One bubble on its way up, or the ring and star it burst into. */
 interface Particle {
@@ -39,24 +34,16 @@ interface Particle {
 }
 
 /**
- * Rising stars: small circles rise from the bottom edge, shrinking as they climb and slowing near the top, then each
- * bursts into a hollow ring that races outward as it fades and a four-pointed star that tilts as it pops. Most bursts
- * stay small; now and then one blooms large. Ported from the "Rising Stars" design artefact; the attributes are its
- * settings, under the same names.
+ * Rising stars: small circles rise from the bottom edge, shrinking as they climb and slowing near the top. Some burst
+ * there into a hollow ring that races outward as it fades and a four-pointed star that tilts as it pops; the rest
+ * simply shrink away. Most bursts stay small; now and then one blooms large. Ported from the "Rising Stars" design
+ * artefact; the attributes are its settings, under the same names, plus the chance that a bubble bursts at all.
  *
- * Purely decorative — hidden from assistive technology and blind to the pointer — and drawn in the flare accent
- * (`--p7t-flare-accent`, falling back to the interactive accent), so it takes the colour of whatever it is placed in.
- * It has no size of its own (it is fully contained), so it fills whatever box it is given — a backdrop laid over its
- * container with `position: absolute; inset: 0`, say. The host clips everything drawn to that box, rounded corners
- * included, which lets a consumer soften the drawing through the `stage` part (a blur, say) without the softening
- * spilling past the edges.
- *
- * It only animates while it can be seen: scrolled out of view, or inside a `display: none` or
- * `content-visibility: hidden` subtree (a dormant page of a `p7t-page-deck`), it sleeps with its particles where they
- * were, and picks up from there once shown again. With reduced motion preferred, a third as many bubbles rise.
+ * Drawn in the flare accent (`--p7t-flare-accent`, falling back to the interactive accent), so it takes the colour of
+ * whatever it is placed in. The stage, its clipping and its sleeping are {@link ParticleStageBase}'s.
  */
 @component('p7t-rising-stars')
-export class RisingStars extends Component {
+export class RisingStars extends ParticleStageBase {
 	/** Bubbles per second for every 100 px of spawn width. */
 	@property({ type: Number }) density = 1.2
 	/** The bubbles' starting diameter in px. Each one varies randomly from 50% to 150% of it. */
@@ -65,26 +52,14 @@ export class RisingStars extends Component {
 	@property({ type: Number, attribute: 'max-width' }) maxWidth = 100
 	/** The highest a bubble rises from the bottom, in % of the element's height. Each stops between 40% and 100% of it. */
 	@property({ type: Number, attribute: 'max-height' }) maxHeight = 80
+	/** The share of bubbles, from 0 to 1, that burst into stars at the top of their rise. The rest shrink away there. */
+	@property({ type: Number, attribute: 'pop-chance' }) popChance = .5
 	/** The diameter of the largest ring, relative to the element (the geometric mean of its sides). Most pops stay small. */
 	@property({ type: Number, attribute: 'pop-max' }) popMax = .5
 
 	static override get styles() {
 		return css`
-			:host {
-				display: block;
-				position: relative;
-				overflow: clip;
-				pointer-events: none;
-				contain: strict;
-			}
-
-			svg {
-				position: absolute;
-				inset: 0;
-				width: 100%;
-				height: 100%;
-				overflow: visible;
-			}
+			${super.styles}
 
 			.dot, .star {
 				fill: var(--p7t-flare-accent, var(--interactive-accent));
@@ -98,133 +73,46 @@ export class RisingStars extends Component {
 	}
 
 	@query('.layer') private readonly layer?: SVGGElement
-	@query('svg') private readonly stage?: SVGSVGElement
 
 	private particles = new Array<Particle>()
-	/** Spawns owed but not yet made; a whole one spawns each time it reaches 1. */
-	private owed = 0
-	/** The timestamp of the last frame, or 0 when the next frame starts the clock afresh. */
-	private lastFrame = 0
-	private frame?: number
 
-	private width = 0
-	private height = 0
-	/** Scales speeds, strokes and star sizes with the element, so a small stage gets a gentler show. */
-	private scale = 1
-	private rtl = false
-	/** Whether any of the element is inside the viewport. */
-	private onScreen = false
-	/** While asleep in a hidden subtree: the subscription that wakes the animation once the element shows again. */
-	private wake?: () => void
-
-	private readonly resizeObserver = new ResizeObserver(() => this.measure())
-	private readonly intersectionObserver = new IntersectionObserver(([entry]) => {
-		this.onScreen = !!entry?.isIntersecting
-		this.resume()
-	})
-
-	protected override get template() {
-		return html`<svg part='stage' aria-hidden='true'><g class='layer'></g></svg>`
+	protected override get layers() {
+		return svg`<g class='layer'></g>`
 	}
 
-	protected override connected() {
-		void this.updateComplete.then(() => {
-			if (this.isConnected) {
-				this.measure()
-				this.resizeObserver.observe(this)
-				this.intersectionObserver.observe(this)
-			}
-		})
+	protected override advance(delta: number) {
+		const spawnWidth = this.width * setting(this.maxWidth, 100, 0, 100) / 100
+		const count = this.spawns(setting(this.density, 1.2, 0, Infinity) * spawnWidth / 100, delta)
+		for (let index = 0; index < count; index++) {
+			this.spawn(spawnWidth)
+		}
+
+		this.particles = this.particles.filter(particle => this.advanceParticle(particle, delta))
 	}
 
-	protected override disconnected() {
-		this.resizeObserver.disconnect()
-		this.intersectionObserver.disconnect()
-		this.halt()
+	protected override clear() {
 		for (const particle of this.particles) {
 			particle.group.remove()
 		}
 
 		this.particles = []
-		this.owed = 0
-	}
-
-	private measure() {
-		const bounds = this.getBoundingClientRect()
-		this.width = Math.max(1, bounds.width)
-		this.height = Math.max(1, bounds.height)
-		this.scale = Math.min(1.4, Math.max(.7, Math.min(this.width, this.height) / 600))
-		this.rtl = getComputedStyle(this).direction === 'rtl'
-		this.stage?.setAttribute('viewBox', `0 0 ${this.width} ${this.height}`)
-	}
-
-	/** Starts the frame loop, unless it already runs or the element is off screen. */
-	private resume() {
-		if (this.frame === undefined && this.onScreen && this.isConnected) {
-			this.lastFrame = 0
-			this.frame = requestAnimationFrame(now => this.step(now))
-		}
-	}
-
-	private halt() {
-		if (this.frame !== undefined) {
-			cancelAnimationFrame(this.frame)
-			this.frame = undefined
-		}
-
-		this.wake?.()
-		this.wake = undefined
-	}
-
-	private step(now: number) {
-		this.frame = undefined
-		// Off screen, the intersection observer resumes it. Hidden (a dormant page), no observer reports the reveal; the
-		// app's shared tick does, as it only ticks an element that shows.
-		if (!this.onScreen) {
-			return
-		}
-
-		if (!this.checkVisibility()) {
-			this.wake ??= subscribeElementTick(this, () => {
-				this.wake?.()
-				this.wake = undefined
-				this.resume()
-			})
-			return
-		}
-
-		const delta = this.lastFrame ? Math.min(maximumStep, now - this.lastFrame) : 16
-		this.lastFrame = now
-
-		const spawnWidth = this.width * percentage(this.maxWidth, 100)
-		const rate = nonNegative(this.density, 1.2) * spawnWidth / 100 * (reducedMotion.matches ? .3 : 1)
-		this.owed += delta / 1000 * rate * random(.4, 1.6)
-		while (this.owed >= 1) {
-			this.spawn(spawnWidth)
-			this.owed--
-		}
-
-		this.particles = this.particles.filter(particle => this.advance(particle, delta))
-		this.frame = requestAnimationFrame(now => this.step(now))
 	}
 
 	private spawn(spawnWidth: number) {
-		const riseHeight = this.height * percentage(this.maxHeight, 80)
+		const riseHeight = this.height * setting(this.maxHeight, 80, 0, 100) / 100
 		if (!this.layer || this.particles.length >= maximumParticles || riseHeight <= 0 || spawnWidth <= 0) {
 			return
 		}
 
-		const radius = Math.max(1, nonNegative(this.bubbleSize, 12)) * random(.5, 1.5) / 2
+		const radius = setting(this.bubbleSize, 12, 1, Infinity) * random(.5, 1.5) / 2
 		const band = Math.max(2 * radius, spawnWidth)
 		const offset = random(radius, band - radius)
 		const x = this.rtl ? this.width - offset : offset
 		const startY = this.height + radius
 		const endY = this.height - riseHeight * random(.4, 1)
 		const speed = random(110, 210) * this.scale
-		const group = svg('g', { transform: translate(x, startY) })
-		const circle = svg('circle', { class: 'dot', cx: 0, cy: 0, r: radius })
-		group.append(circle)
-		this.layer.append(group)
+		const group = svgElement('g', { transform: translate(x, startY) }, this.layer)
+		const circle = svgElement('circle', { class: 'dot', cx: 0, cy: 0, r: radius }, group)
 		this.particles.push({
 			group, circle, burst: false, elapsed: 0,
 			x, startY, endY, radius,
@@ -239,7 +127,7 @@ export class RisingStars extends Component {
 		// u⁴ skews the pop size toward small, with the occasional huge one.
 		const u = Math.pow(Math.random(), 4)
 		const smallest = 12 * this.scale + particle.radius * 2
-		const largest = Math.max(smallest, nonNegative(this.popMax, .5) * Math.sqrt(this.width * this.height) / 2)
+		const largest = Math.max(smallest, setting(this.popMax, .5, 0, Infinity) * Math.sqrt(this.width * this.height) / 2)
 		particle.ringRadius = smallest + (largest - smallest) * u
 		particle.ringDuration = 380 + 420 * u
 		particle.ringStroke = (2.5 + 4 * u) * this.scale
@@ -247,23 +135,29 @@ export class RisingStars extends Component {
 		particle.circle.setAttribute('class', 'ring')
 		particle.circle.setAttribute('r', '0')
 		particle.circle.setAttribute('stroke-width', particle.ringStroke.toFixed(2))
-		particle.star = svg('path', { class: 'star', d: sparkle(particle.radius * 1.4 + (6 + 10 * u) * this.scale), opacity: 0 })
-		particle.group.append(particle.star)
+		particle.star = svgElement('path', { class: 'star', d: sparkle(particle.radius * 1.4 + (6 + 10 * u) * this.scale), opacity: 0 }, particle.group)
 	}
 
 	/** Moves a particle on by a frame; false once it is spent and removed. */
-	private advance(particle: Particle, delta: number) {
+	private advanceParticle(particle: Particle, delta: number) {
 		particle.elapsed += delta
 		if (!particle.burst) {
 			const progress = Math.min(1, particle.elapsed / particle.duration)
 			const eased = 1 - Math.pow(1 - progress, 1.6)
 			particle.group.setAttribute('transform', translate(particle.x, particle.startY + (particle.endY - particle.startY) * eased))
 			particle.circle.setAttribute('r', Math.max(0, particle.radius * (1 - progress)).toFixed(2))
-			if (progress >= 1) {
-				this.burst(particle)
+			if (progress < 1) {
+				return true
 			}
 
-			return true
+			// At the top the bubble has shrunk to nothing: it bursts, or it is simply gone.
+			if (Math.random() < setting(this.popChance, .5, 0, 1)) {
+				this.burst(particle)
+				return true
+			}
+
+			particle.group.remove()
+			return false
 		}
 
 		const elapsed = particle.elapsed
@@ -298,33 +192,6 @@ export class RisingStars extends Component {
 
 		return true
 	}
-}
-
-function svg<K extends keyof SVGElementTagNameMap>(name: K, attributes: Record<string, string | number>) {
-	const element = document.createElementNS(svgNamespace, name)
-	for (const [key, value] of Object.entries(attributes)) {
-		element.setAttribute(key, String(value))
-	}
-
-	return element
-}
-
-function translate(x: number, y: number) {
-	return `translate(${x.toFixed(2)},${y.toFixed(2)})`
-}
-
-function random(from: number, to: number) {
-	return from + Math.random() * (to - from)
-}
-
-/** The value, or the fallback when it is not a finite number at or above zero. */
-function nonNegative(value: number, fallback: number) {
-	return Number.isFinite(value) && value >= 0 ? value : fallback
-}
-
-/** A percentage as a fraction, capped at 100%. */
-function percentage(value: number, fallback: number) {
-	return Math.min(100, nonNegative(value, fallback)) / 100
 }
 
 /** A four-pointed star with concave sides, centred on the origin, reaching `radius` at each point. */
