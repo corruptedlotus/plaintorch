@@ -141,8 +141,6 @@ export class RisingEmbers extends ParticleStageBase {
 
 	private embers = new Array<Ember>()
 	private sparks = new Array<Spark>()
-	/** Seconds of animation so far, which the wind's gusts and the fire's pulse run on. */
-	private clock = 0
 	/** The halo's blur as last applied, so it is only written when it changes. */
 	private haloDeviation = -1
 
@@ -170,7 +168,6 @@ export class RisingEmbers extends ParticleStageBase {
 	}
 
 	protected override advance(delta: number) {
-		this.clock += delta / 1000
 		this.applyHalo()
 		this.advanceFire()
 
@@ -191,11 +188,6 @@ export class RisingEmbers extends ParticleStageBase {
 
 		this.embers = []
 		this.sparks = []
-	}
-
-	/** The wind's strength right now, as a factor around 1: a slow swell with a quicker flutter on top. */
-	private get gust() {
-		return .75 + .25 * Math.sin(this.clock * .37) + .15 * Math.sin(this.clock * 1.13 + 2)
 	}
 
 	private applyHalo() {
@@ -269,9 +261,8 @@ export class RisingEmbers extends ParticleStageBase {
 		const [flickerA, flickerB, flickerPhase] = ember.flickerWaves
 		const flicker = this.reducedMotion ? .85 : .78 + .22 * Math.sin(flickerA * age + flickerPhase) * Math.sin(flickerB * age)
 		const progress = ember.phase === 'rising' ? Math.min(1, ember.elapsed / ember.duration) : 1
-		// Sideways: the ember's own sway, plus the shared, gusting wind, which takes it harder the higher it gets.
-		const wind = setting(this.wind, .2, -1, 1) * (this.rtl ? -1 : 1)
-		ember.drift += wind * 45 * this.scale * ember.windFactor * this.gust * (.4 + progress) * seconds
+		// Sideways: the ember's own sway, plus the shared, gusting wind.
+		ember.drift += this.windDrift(setting(this.wind, .2, -1, 1), ember.windFactor, progress, delta)
 		const [swayA, swayB, swayPhaseA, swayPhaseB] = ember.swayWaves
 		const sway = setting(this.turbulence, 1, 0, 5) * ember.sway * (.6 * Math.sin(swayA * age + swayPhaseA) + .4 * Math.sin(swayB * age + swayPhaseB))
 

@@ -20,6 +20,10 @@ interface Particle {
 	readonly x: number
 	readonly startY: number
 	readonly endY: number
+	/** How far the wind has carried the bubble, and then its burst, sideways, in px. */
+	drift: number
+	/** How strongly the wind takes this bubble, as a factor. */
+	readonly windFactor: number
 	/** The bubble's starting radius. */
 	readonly radius: number
 	/** How long the rise takes, in milliseconds. */
@@ -36,9 +40,9 @@ interface Particle {
 /**
  * Rising stars: small circles rise from the bottom edge, shrinking as they climb and slowing near the top. Some burst
  * there into a hollow ring that races outward as it fades and a four-pointed star (the briefing hero's) that tilts as
- * it pops; the rest simply shrink away. Most bursts stay small; now and then one blooms large. Ported from the "Rising
- * Stars" design artefact; the attributes are its settings, under the same names, plus the chance that a bubble bursts
- * at all.
+ * it pops; the rest simply shrink away. Most bursts stay small; now and then one blooms large. A gusting wind carries
+ * them sideways, each bubble to its own degree. Ported from the "Rising Stars" design artefact; the attributes are its
+ * settings, under the same names, plus the chance that a bubble bursts at all and the wind (the embers' own).
  *
  * Drawn in the flare accent (`--p7t-flare-accent`, falling back to the interactive accent), so it takes the colour of
  * whatever it is placed in. The stage, its clipping and its sleeping are {@link ParticleStageBase}'s.
@@ -57,6 +61,11 @@ export class RisingStars extends ParticleStageBase {
 	@property({ type: Number, attribute: 'pop-chance' }) popChance = .5
 	/** The diameter of the largest ring, relative to the element (the geometric mean of its sides). Most pops stay small. */
 	@property({ type: Number, attribute: 'pop-max' }) popMax = .5
+	/**
+	 * A steady, gusting drift, from -1 to 1, that carries the bubbles and then their bursts. Positive blows toward the
+	 * inline-end edge; 0 rises straight up.
+	 */
+	@property({ type: Number }) wind = .2
 
 	static override get styles() {
 		return css`
@@ -117,6 +126,7 @@ export class RisingStars extends ParticleStageBase {
 		this.particles.push({
 			group, circle, burst: false, elapsed: 0,
 			x, startY, endY, radius,
+			drift: 0, windFactor: random(.6, 1.4),
 			duration: Math.max(900, (startY - endY) / speed * 1000),
 			ringRadius: 0, ringStroke: 0, ringDuration: 0, tilt: 0,
 		})
@@ -142,10 +152,11 @@ export class RisingStars extends ParticleStageBase {
 	/** Moves a particle on by a frame; false once it is spent and removed. */
 	private advanceParticle(particle: Particle, delta: number) {
 		particle.elapsed += delta
+		const progress = particle.burst ? 1 : Math.min(1, particle.elapsed / particle.duration)
+		particle.drift += this.windDrift(setting(this.wind, .2, -1, 1), particle.windFactor, progress, delta)
+		const eased = 1 - Math.pow(1 - progress, 1.6)
+		particle.group.setAttribute('transform', translate(particle.x + particle.drift, particle.startY + (particle.endY - particle.startY) * eased))
 		if (!particle.burst) {
-			const progress = Math.min(1, particle.elapsed / particle.duration)
-			const eased = 1 - Math.pow(1 - progress, 1.6)
-			particle.group.setAttribute('transform', translate(particle.x, particle.startY + (particle.endY - particle.startY) * eased))
 			particle.circle.setAttribute('r', Math.max(0, particle.radius * (1 - progress)).toFixed(2))
 			if (progress < 1) {
 				return true

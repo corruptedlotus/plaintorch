@@ -8,8 +8,8 @@ const maximumStep = 50
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
 /**
- * An ambient particle animation, drawn on an SVG stage that fills the element: the frame loop, the stage's geometry and
- * the spawn clock shared by the briefing's backdrops ({@link RisingStars}, {@link RisingEmbers}).
+ * An ambient particle animation, drawn on an SVG stage that fills the element: the frame loop, the stage's geometry, the
+ * spawn clock and the gusting wind shared by the briefing's backdrops ({@link RisingStars}, {@link RisingEmbers}).
  *
  * Purely decorative — hidden from assistive technology and blind to the pointer. It has no size of its own (it is
  * fully contained), so it fills whatever box it is given: a backdrop laid over its container with
@@ -55,6 +55,8 @@ export abstract class ParticleStageBase extends Component {
 	protected scale = 1
 	/** Whether the stage runs right to left, which puts its inline-start edge on the right. */
 	protected rtl = false
+	/** Seconds of animation so far, which slow swells (the wind's gusts, say) run on. It stands still while asleep. */
+	protected clock = 0
 
 	/** Spawns owed but not yet made; a whole one is made each time it reaches 1. */
 	private owed = 0
@@ -100,6 +102,21 @@ export abstract class ParticleStageBase extends Component {
 		const count = Math.floor(this.owed)
 		this.owed -= count
 		return count
+	}
+
+	/** The wind's strength right now, as a factor around 1: a slow swell with a quicker flutter on top. */
+	protected get gust() {
+		return .75 + .25 * Math.sin(this.clock * .37) + .15 * Math.sin(this.clock * 1.13 + 2)
+	}
+
+	/**
+	 * How far the wind carries a particle sideways over `delta` milliseconds, in px. `wind` runs from -1 to 1, positive
+	 * toward the inline-end edge; `factor` is how strongly the wind takes this particle; and `progress` is how far through
+	 * its rise it is, as the wind takes a particle harder the higher it gets. The drift swells and eases with the
+	 * {@link gust}.
+	 */
+	protected windDrift(wind: number, factor: number, progress: number, delta: number) {
+		return wind * (this.rtl ? -1 : 1) * 45 * this.scale * factor * this.gust * (.4 + progress) * delta / 1000
 	}
 
 	protected override connected() {
@@ -166,6 +183,7 @@ export abstract class ParticleStageBase extends Component {
 
 		const delta = this.lastFrame ? Math.min(maximumStep, now - this.lastFrame) : 16
 		this.lastFrame = now
+		this.clock += delta / 1000
 		this.advance(delta)
 		this.frame = requestAnimationFrame(now => this.step(now))
 	}
