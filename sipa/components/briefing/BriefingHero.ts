@@ -191,6 +191,30 @@ export class BriefingHero extends CardComponent {
 					transition-property: opacity, visibility;
 				}
 			}
+
+			.mtick {
+				transform-origin: 50% 43.6%;
+				stroke: #82fff9;
+				opacity: .6;
+				stroke-width: 1px;
+			}
+
+			.xtick {
+				transform-origin: 50% 43.6%;
+				stroke: #21d3ca;
+				stroke-width: 2px;
+			}
+
+			@keyframes stars-align {
+				0% { transform: rotate(12deg); }
+				10% { transform: rotate(0deg); }
+				100% { transform: rotate(12deg); }
+			}
+
+			@keyframes stars-orbit {
+				0% { transform: rotate(0deg); }
+				100% { transform: rotate(360deg); }
+			}
 		`
 	}
 
@@ -219,7 +243,43 @@ export class BriefingHero extends CardComponent {
 				<path
 					d="M145.94,82.05,156,86.61a.83.83,0,0,1,0,1.51l-10.09,4.55A5.87,5.87,0,0,0,143,95.59l-4.55,10.08a.83.83,0,0,1-1.51,0l-4.56-10.08a5.83,5.83,0,0,0-2.91-2.92l-10.09-4.55a.83.83,0,0,1,0-1.51l10.09-4.56a5.77,5.77,0,0,0,2.91-2.91L137,69.05a.83.83,0,0,1,1.51,0L143,79.14A5.81,5.81,0,0,0,145.94,82.05Z"
 					style="fill:#82fff9; filter: blur(20px)" />
-			</svg>
+				<!--<g style='animation: 2s linear stars-align infinite; transform-origin: 50% 43.6%; opacity: .6'>
+					<g style='animation: stars-orbit 60s steps(30, end) infinite; transform-origin: 50% 43.6%;filter: blur(4px)'>
+						<line class='xtick' x1='50%' x2='50%' y1='15%' y2='25%' style='transform: rotate(0deg);'></line>
+						<line class='xtick' x1='50%' x2='50%' y1='15%' y2='25%' style='transform: rotate(180deg);'></line>
+					</g>
+					<line class='mtick' id='mtick' x1='50%' x2='50%' y1='15%' y2='19%'></line>
+					<use class='mtick' href='#mtick' style='transform: rotate(12deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(24deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(36deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(48deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(60deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(72deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(84deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(96deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(108deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(120deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(132deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(144deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(156deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(168deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(180deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(192deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(204deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(216deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(228deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(240deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(252deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(264deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(276deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(288deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(300deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(312deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(324deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(336deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(348deg);' />
+				</g>
+			</svg>-->
 			<div class='grid'>
 				${this.headerTemplate}
 				<p7t-active-lore class='lore' glyph .pages=${this.briefing?.activeLorePages}></p7t-active-lore>

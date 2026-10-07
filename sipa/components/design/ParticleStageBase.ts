@@ -106,7 +106,7 @@ export abstract class ParticleStageBase extends Component {
 
 	/** The wind's strength right now, as a factor around 1: a slow swell with a quicker flutter on top. */
 	protected get gust() {
-		return .75 + .25 * Math.sin(this.clock * .37) + .15 * Math.sin(this.clock * 1.13 + 2)
+		return .75 + .25 * Math.sin(this.clock * .68) + .15 * Math.sin(this.clock * 1.13 + 2)
 	}
 
 	/**

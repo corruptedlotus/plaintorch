@@ -107,7 +107,7 @@ export class ObjectiveItem extends EntityItem<Objective> {
 			return html`
 				<p7t-icon class='blocker'
 					icon=${blocker === 'start' ? 'state-blocked' : 'state-raced'}
-					${tooltip(blocker === 'start' ? 'Blocked from starting by an unmet dependency' : 'Raced: an unmet dependency holds its finish')}>
+					${tooltip(blocker === 'start' ? 'Blocked by Dependencies' : 'Progress Blocked')}>
 				</p7t-icon>
 			`
 		}

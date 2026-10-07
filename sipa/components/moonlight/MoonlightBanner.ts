@@ -107,8 +107,8 @@ export class MoonlightBanner extends Component {
 				--p7t-moon-size: 8.6em;
 				--p7t-moon-top: 42%;
 				--spacing: 11%;
-				--cycle: 7.5s;
-				--interval: .7s;
+				--cycle: 3s;
+				--interval: .2s;
 
 				display: block;
 				position: relative;
@@ -147,7 +147,7 @@ export class MoonlightBanner extends Component {
 
 			/* A grey, flatly lit mosaic: brightened into moonlight, the shading at the limb giving it its roundness. */
 			.surface {
-				filter: brightness(2.3) contrast(1.1);
+				filter: brightness(4) contrast(.7);
 			}
 
 			.earthshine {
@@ -171,9 +171,15 @@ export class MoonlightBanner extends Component {
 				opacity: 0;
 			}
 
+			#disk-overlay {
+				transform: scale(3.6);
+				mix-blend-mode: difference;
+				opacity: 0.7;
+			}
+			
 			.emblem-shape {
-				fill: var(--p7t-flare-accent, var(--interactive-accent));
-				fill-opacity: .6;
+				fill: color-mix(in srgb, var(--interactive-accent) 25%, var(--text-normal));
+				fill-opacity: 1;
 			}
 
 			/* Once the full moon has arrived, the phases carry on faintly either side of it. */
@@ -241,17 +247,17 @@ export class MoonlightBanner extends Component {
 			}
 
 			@keyframes radiate {
-				0% { opacity: 0; scale: 1.02; rotate: 0deg; animation-timing-function: cubic-bezier(.15, .6, .3, 1); }
+				0% { opacity: 0; scale: .8; rotate: 0deg; animation-timing-function: cubic-bezier(.15, .6, .3, 1); }
 				3% { opacity: .85; animation-timing-function: ease-in; }
-				28% { opacity: 0; scale: 2.8; rotate: 26deg; }
-				100% { opacity: 0; scale: 2.8; rotate: 26deg; }
+				28% { opacity: 0; scale: 4.8; rotate: 26deg; }
+				100% { opacity: 0; scale: 20; rotate: -1800deg; }
 			}
 
 			@keyframes emblem {
 				0% { opacity: 0; animation-timing-function: ease-in-out; }
 				4% { opacity: 1; }
-				33.33% { opacity: 1; animation-timing-function: ease-in-out; }
-				37.33% { opacity: 0; }
+				20% { opacity: 1; animation-timing-function: ease-in-out; }
+				30% { opacity: 0; }
 				100% { opacity: 0; }
 			}
 		`
@@ -284,7 +290,7 @@ export class MoonlightBanner extends Component {
 			</div>
 			<div class='moon main'>
 				${this.moonTemplate(undefined, svg`
-					<g clip-path='url(#disc)' filter='url(#shadow)'>
+					<g id='disk-overlay' clip-path='url(#disc)' filter='url(#shadow)'>
 						${emblems.map(({ name, centre, shapes }, index) => svg`
 							<g class='emblem ${name}' style='--emblem: ${index}' transform='scale(${1 / centre}) translate(${-centre},${-centre})'>
 								<g class='emblem-shape'>${shapes}</g>
@@ -320,7 +326,7 @@ export class MoonlightBanner extends Component {
 						<feGaussianBlur stdDeviation='.04' />
 					</filter>
 					<filter id='shadow' filterUnits='userSpaceOnUse' x='-1.5' y='-1.5' width='3' height='3'>
-						<feGaussianBlur stdDeviation='.006' />
+						<feGaussianBlur stdDeviation='.018' />
 					</filter>
 					${phases.map((lit, index) => svg`
 						<mask id='waxing-${index}' maskUnits='userSpaceOnUse' x='-1.5' y='-1.5' width='3' height='3'>
