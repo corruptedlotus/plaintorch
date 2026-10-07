@@ -35,9 +35,10 @@ interface Particle {
 
 /**
  * Rising stars: small circles rise from the bottom edge, shrinking as they climb and slowing near the top. Some burst
- * there into a hollow ring that races outward as it fades and a four-pointed star that tilts as it pops; the rest
- * simply shrink away. Most bursts stay small; now and then one blooms large. Ported from the "Rising Stars" design
- * artefact; the attributes are its settings, under the same names, plus the chance that a bubble bursts at all.
+ * there into a hollow ring that races outward as it fades and a four-pointed star (the briefing hero's) that tilts as
+ * it pops; the rest simply shrink away. Most bursts stay small; now and then one blooms large. Ported from the "Rising
+ * Stars" design artefact; the attributes are its settings, under the same names, plus the chance that a bubble bursts
+ * at all.
  *
  * Drawn in the flare accent (`--p7t-flare-accent`, falling back to the interactive accent), so it takes the colour of
  * whatever it is placed in. The stage, its clipping and its sleeping are {@link ParticleStageBase}'s.
@@ -135,7 +136,7 @@ export class RisingStars extends ParticleStageBase {
 		particle.circle.setAttribute('class', 'ring')
 		particle.circle.setAttribute('r', '0')
 		particle.circle.setAttribute('stroke-width', particle.ringStroke.toFixed(2))
-		particle.star = svgElement('path', { class: 'star', d: sparkle(particle.radius * 1.4 + (6 + 10 * u) * this.scale), opacity: 0 }, particle.group)
+		particle.star = svgElement('path', { class: 'star', d: star(particle.radius * 1.4 + (6 + 10 * u) * this.scale), opacity: 0 }, particle.group)
 	}
 
 	/** Moves a particle on by a frame; false once it is spent and removed. */
@@ -194,11 +195,34 @@ export class RisingStars extends ParticleStageBase {
 	}
 }
 
-/** A four-pointed star with concave sides, centred on the origin, reaching `radius` at each point. */
-function sparkle(radius: number) {
-	const r = radius.toFixed(2)
-	const c = (radius * .14).toFixed(2)
-	return `M0,-${r} Q${c},-${c} ${r},0 Q${c},${c} 0,${r} Q-${c},${c} -${r},0 Q-${c},-${c} 0,-${r}Z`
+/**
+ * The briefing hero's four-pointed star, centred on the origin and reaching `radius` at each point: straight arms that
+ * taper to slightly rounded points, with rounded valleys between them. Its proportions are the hero's outline, measured
+ * against its points' radius.
+ */
+function star(radius: number) {
+	const tip = (.0396 * radius).toFixed(2)
+	const valley = (.3086 * radius).toFixed(2)
+	// The right-hand arm's quarter of the outline, from where its upper edge leaves the valley above it: out to where its
+	// point rounds, round it, back along its lower edge, and round the valley below it to where the next arm's edge begins.
+	// The other arms are the same quarter turned.
+	const quarter = [[.9767, -.0361], [.9767, .0361], [.4349, .281], [.281, .4349]] as const
+	let path = `M${(.4349 * radius).toFixed(2)},${(-.281 * radius).toFixed(2)}`
+	for (let turns = 0; turns < 4; turns++) {
+		const [pointStart, pointEnd, valleyStart, next] = quarter.map(([x, y]) => turned(x * radius, y * radius, turns))
+		path += `L${pointStart}A${tip},${tip},0,0,1,${pointEnd}L${valleyStart}A${valley},${valley},0,0,0,${next}`
+	}
+
+	return `${path}Z`
+}
+
+/** A point turned clockwise about the origin by whole quarter turns, as path coordinates. */
+function turned(x: number, y: number, turns: number) {
+	for (let turn = 0; turn < turns; turn++) {
+		[x, y] = [-y, x]
+	}
+
+	return `${x.toFixed(2)},${y.toFixed(2)}`
 }
 
 declare global {

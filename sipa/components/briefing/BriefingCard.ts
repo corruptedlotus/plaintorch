@@ -39,7 +39,8 @@ export class BriefingCard<T> extends CardComponent {
 				z-index: 1;
 			}
 
-			/* The backdrop at the back of the card, over the crest but behind the content, softened into glows. */
+			/* The backdrop at the back of the card, over the crest but behind the content, softened into glows — no more
+			   than keeps a popped star's four points readable. */
 			.backdrop {
 				position: absolute;
 				z-index: 0;
@@ -47,7 +48,7 @@ export class BriefingCard<T> extends CardComponent {
 				border-radius: inherit;
 
 				&::part(stage) {
-					filter: blur(5px);
+					filter: blur(3px);
 				}
 			}
 
