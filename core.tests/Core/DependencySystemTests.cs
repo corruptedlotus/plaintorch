@@ -1,8 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Pleiades.Orchestration;
+using Pleiades.Plaintorch.Api;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
+using Pleiades.Plaintorch.Enforcement;
+using Pleiades.Plaintorch.Preferences;
 using Pleiades.Plaintorch.State;
 using Pleiades.Tests.Harness;
 using Xunit;
@@ -25,6 +28,18 @@ public sealed class DependencySystemTests : VaultTestBase
 	private Task Deps(Func<IDependencyApi, Task> action) => Vault.WithScopeAsync(services => action(services.GetRequiredService<IDependencyApi>()));
 	private Task<T> Onrush<T>(Func<IOnrushSprintApi, Task<T>> action) => Vault.WithScopeAsync(services => action(services.GetRequiredService<IOnrushSprintApi>()));
 	private Task Onrush(Func<IOnrushSprintApi, Task> action) => Vault.WithScopeAsync(services => action(services.GetRequiredService<IOnrushSprintApi>()));
+
+	/// <summary>Runs as an API request would: someone can be asked, and with <paramref name="force"/> they confirmed.</summary>
+	private Task<T> Interactive<T>(Func<IServiceProvider, Task<T>> action, bool force = false) => Vault.WithScopeAsync(services =>
+	{
+		var flags = services.GetRequiredService<PlaintorchRequestFlags>();
+		flags.Interactive = true;
+		flags.ForceCompensation = force;
+		return action(services);
+	});
+
+	private Task SetEnforcementAsync(BacklogStateEnforcementLevel level)
+		=> Vault.WithScopeAsync(services => services.GetRequiredService<UserPreferenceService>().SetAsync(PreferenceKeys.BacklogStateEnforcement, level, Ct));
 
 	private static EndpointRef DirectiveRef(string id) => new(DependencyEndpointKind.Directive, id);
 	private static EndpointRef CheckpointRef(string id) => new(DependencyEndpointKind.Checkpoint, id);
@@ -58,9 +73,13 @@ public sealed class DependencySystemTests : VaultTestBase
 
 		await Deps(api => api.CreateAsync(DirectiveRef(source.Id), DirectiveRef(target.Id), cancellationToken: Ct));
 
-		// Target cannot begin while the source is unfinished; the lock is emitted but the status is untouched.
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Directive(api =>
+		// Target cannot begin while the source is unfinished; the lock is emitted but the status is untouched. Nobody can be
+		// asked here, so under Warn the shift is refused, and it says what blocks it rather than which item does (PEP103).
+		var refused = await Assert.ThrowsAsync<StateEnforcementException>(() => Directive(api =>
 			api.ShiftStellarWorkflowAsync(target.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Active), Ct)));
+		Assert.Equal(StateDecisionOutcome.Refuse, refused.Decision.Outcome);
+		Assert.Contains("cannot start: it is blocked by 1 dependency", refused.Message);
+		Assert.DoesNotContain(source.Id, refused.Message);
 		var lockedView = await Deps(api => api.GetLockAsync(target.Id, Ct));
 		Assert.True(lockedView.BlockedBegin);
 		var stillPlanned = await Directive(api => api.GetAsync(target.Id, Ct));
@@ -83,7 +102,7 @@ public sealed class DependencySystemTests : VaultTestBase
 		await Deps(api => api.CreateAsync(DirectiveRef(source.Id), new EndpointRef(DependencyEndpointKind.Objective, objective.Id), cancellationToken: Ct));
 
 		// An objective begins when it is set to Polaris (PEP101), so that is the shift the begin gate refuses.
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Objective(api =>
+		await Assert.ThrowsAsync<StateEnforcementException>(() => Objective(api =>
 			api.ShiftWorkflowAsync(objective.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Polaris), Ct)));
 
 		await Directive(api => api.ShiftStellarWorkflowAsync(source.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct));
@@ -98,10 +117,10 @@ public sealed class DependencySystemTests : VaultTestBase
 		var objective = await Objective(api => api.CreateStandaloneAsync("Sprint work", cancellationToken: Ct));
 		var gate = await Deps(api => api.CreateAsync(DirectiveRef(source.Id), ObjectiveRef(objective.Id), cancellationToken: Ct));
 
-		// Onrush is not a begin phase, so its begin gate does not stand in the way, and the gate still concerns the next
+		// Onboard is not a begin phase, so its begin gate does not stand in the way, and the gate still concerns the next
 		// transition the objective has to make.
-		var onrush = await Objective(api => api.ShiftWorkflowAsync(objective.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Onrush), Ct));
-		Assert.Equal(ObjectiveStatus.Onrush, onrush.Status);
+		var onrush = await Objective(api => api.ShiftWorkflowAsync(objective.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Onboard), Ct));
+		Assert.Equal(ObjectiveStatus.Onboard, onrush.Status);
 		Assert.True((await Deps(api => api.ListAsync(objective.Id, Ct))).Single(dependency => dependency.Id == gate.Id).GatesNextTransition);
 		Assert.True((await Deps(api => api.GetLockAsync(objective.Id, Ct))).BlockedBegin);
 
@@ -435,8 +454,9 @@ public sealed class DependencySystemTests : VaultTestBase
 			DirectiveRef(target.Id),
 			cancellationToken: Ct));
 
-		// The future, still-pending occurrence has not finished, so the target is gated.
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Directive(api =>
+		// The future, still-pending occurrence has not finished, so the target is gated; time moves an occurrence, so
+		// nothing the core could move would resolve it.
+		await Assert.ThrowsAsync<StateEnforcementException>(() => Directive(api =>
 			api.ShiftStellarWorkflowAsync(target.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Active), Ct)));
 
 		// Move the occurrence (its current date changes): the reference still matches by slot. Missing it sets it aside, which
@@ -552,16 +572,16 @@ public sealed class DependencySystemTests : VaultTestBase
 
 		// The parent cannot finish while a child is open — whichever pathway asks.
 		await Directive(api => api.ShiftStellarWorkflowAsync(parent.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Active), Ct));
-		var refused = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+		var refused = await Assert.ThrowsAsync<StateEnforcementException>(() =>
 			Directive(api => api.ShiftStellarWorkflowAsync(parent.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct)));
-		Assert.Contains("open children", refused.Message);
+		Assert.Contains("cannot finish: it still has 2 open children", refused.Message);
 		Assert.All(await Deps(api => api.ListAsync(parent.Id, Ct)), dependency => Assert.True(dependency.GatesNextTransition));
 
 		// Archived is the finalised Done: it finishes the objective. The subdirective is held by its own child in turn —
 		// the grandchild is the subdirective's edge, not the parent's — and finishes once that one is done.
 		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Archived), Ct));
 		Assert.DoesNotContain(await Deps(api => api.ListAsync(parent.Id, Ct)), dependency => dependency.SourceId == sortie.Id);
-		await Assert.ThrowsAsync<InvalidOperationException>(() =>
+		await Assert.ThrowsAsync<StateEnforcementException>(() =>
 			Directive(api => api.ShiftStellarWorkflowAsync(child.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct)));
 		await Objective(api => api.ShiftWorkflowAsync(sortie.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Done), Ct));
 		await Directive(api => api.ShiftStellarWorkflowAsync(child.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
@@ -583,8 +603,11 @@ public sealed class DependencySystemTests : VaultTestBase
 		var served = await Deps(api => api.ListAsync(quest.Id, Ct));
 		var stored = Assert.Single(served, dependency => dependency.Id == explicitEdge.Id);
 		Assert.False(stored.Satisfied);
-		await Assert.ThrowsAsync<InvalidOperationException>(() =>
-			Objective(api => api.ShiftWorkflowAsync(dependant.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Polaris), Ct)));
+		var held = await Assert.ThrowsAsync<StateEnforcementException>(() =>
+			Interactive(services => services.GetRequiredService<IObjectiveApi>().ShiftWorkflowAsync(dependant.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Polaris), Ct), force: true));
+		// Taking a set-aside item up again is the user's call, so even a confirmed shift cannot move it.
+		Assert.Equal(StateDecisionOutcome.Refuse, held.Decision.Outcome);
+		Assert.False(Assert.Single(held.Decision.Conflicts).IsCompensable);
 
 		// But the intrinsic edge is gone: a failed child neither holds its parent back nor counts as done.
 		Assert.DoesNotContain(served, dependency => dependency.Origin == DependencyOrigin.Intrinsic);
@@ -647,31 +670,54 @@ public sealed class DependencySystemTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Over_means_over_until_open_work_arrives(/* PEP102.9 */)
+	public async Task Over_means_over_until_open_work_arrives(/* PEP102.9, PEP103 */)
 	{
 		var directive = await Directive(api => api.CreateStandaloneAsync("Campaign", cancellationToken: Ct));
 		await Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
 		await Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct));
 		Assert.Contains("status: Over", Vault.ReadVaultFile("Directives/Campaign/Campaign.md"));
 
-		// A new child bumps it back to Fulfilled — row and note alike.
-		var quest = await Objective(api => api.CreateFromDirectiveAsync(directive.Id, "Quest", cancellationToken: Ct));
+		// New work under it would reopen it to Fulfilled, which is a compensation: under Warn, with nobody to ask, it is refused.
+		var refused = await Assert.ThrowsAsync<StateEnforcementException>(() =>
+			Objective(api => api.CreateFromDirectiveAsync(directive.Id, "Quest", cancellationToken: Ct)));
+		Assert.Equal(StateDecisionOutcome.Refuse, refused.Decision.Outcome);
+		Assert.Contains("its directive is Over", refused.Message);
+		Assert.Equal(DirectiveStatus.Over, await StatusOfAsync(directive.Id));
+
+		// A client is asked first, and told which item going ahead reopens; confirming creates the work and reopens it —
+		// row and note alike.
+		var held = await Assert.ThrowsAsync<StateEnforcementException>(() =>
+			Interactive(services => services.GetRequiredService<IObjectiveApi>().CreateFromDirectiveAsync(directive.Id, "Quest", cancellationToken: Ct)));
+		Assert.Equal(StateDecisionOutcome.Confirm, held.Decision.Outcome);
+		var reopen = Assert.Single(held.Decision.Compensations);
+		Assert.Equal(directive.Id, reopen.Subject.Id);
+		Assert.Equal(nameof(DirectiveStatus.Fulfilled), reopen.Status);
+		Assert.Contains("reopen 1 item", held.Message);
+		var quest = await Interactive(services => services.GetRequiredService<IObjectiveApi>().CreateFromDirectiveAsync(directive.Id, "Quest", cancellationToken: Ct), force: true);
 		Assert.Equal(DirectiveStatus.Fulfilled, await StatusOfAsync(directive.Id));
 		Assert.Contains("status: Fulfilled", Vault.ReadVaultFile("Directives/Campaign/Campaign.md"));
 
-		// Fulfilled tolerates the open child, but going Over again is a finish the child gates.
-		await Assert.ThrowsAsync<InvalidOperationException>(() =>
+		// Fulfilled tolerates the open child, but being Over again needs it finished.
+		var stillOpen = await Assert.ThrowsAsync<StateEnforcementException>(() =>
 			Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct)));
+		Assert.Contains("cannot be Over: it still has 1 open child", stillOpen.Message);
 		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Done), Ct));
 		await Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct));
 
-		// Reopening a finished child bumps it too; a child failing does not (failed is not open work).
+		// Under Auto the core reopens it on its own, however open work arrives: a finished child reopened…
+		await SetEnforcementAsync(BacklogStateEnforcementLevel.Auto);
 		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Standby), Ct));
 		Assert.Equal(DirectiveStatus.Fulfilled, await StatusOfAsync(directive.Id));
 		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Done), Ct));
 		await Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct));
+
+		// …but not a child set aside, which is not open work; taking it up again is (I-032).
 		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Failed), Ct));
 		Assert.Equal(DirectiveStatus.Over, await StatusOfAsync(directive.Id));
+		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Standby), Ct));
+		Assert.Equal(DirectiveStatus.Fulfilled, await StatusOfAsync(directive.Id));
+		await Objective(api => api.ShiftWorkflowAsync(quest.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Done), Ct));
+		await Directive(api => api.ShiftStellarWorkflowAsync(directive.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct));
 
 		// And an open child moved in from elsewhere.
 		var stray = await Objective(api => api.CreateStandaloneAsync("Stray", cancellationToken: Ct));

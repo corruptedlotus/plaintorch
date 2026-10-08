@@ -67,6 +67,10 @@ public interface IPolarisCycleApi
 	/// nearest directive availability, else its college; none for a one-shot), <see langword="null"/> is none, and an
 	/// id is used as given. The returned executive carries the resolved <see cref="Executive.AffinityTimeframe"/>.
 	/// </summary>
+	/// <remarks>
+	/// The plan sets no status. An objective joining the active cycle moves to Polaris where nothing blocks it and keeps its
+	/// status where something does; one planned into a forecast moves once the forecast begins (Patch103.3).
+	/// </remarks>
 	/// <exception cref="InvalidOperationException">An explicit affinity names a timeframe that does not exist.</exception>
 	Task<PolarisExecutivePlanResult> PlanExecutiveAsync(PolarisExecutivePlan plan, string? polarisCycleId = null, CancellationToken cancellationToken = default);
 

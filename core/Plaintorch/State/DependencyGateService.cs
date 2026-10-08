@@ -6,48 +6,15 @@ using Pleiades.Vault.Database;
 namespace Pleiades.Plaintorch.State;
 
 /// <summary>
-/// Answers whether a target (blocked/dependant) is currently gated by unmet dependencies (PEP101). Stored edges are
-/// read through their persisted <see cref="Dependency.Satisfied"/> flag, maintained by <see cref="DependencyReconciler"/>,
-/// so they reflect the last reconciled state; intrinsic edges are derived on the spot (PEP102 patch 9). The emitted
-/// lock is separate from any status field.
+/// Reads whether a target (blocked/dependant) is currently gated by unmet dependencies (PEP101), for what the API serves —
+/// the lock view and each edge's <see cref="Dependency.GatesNextTransition"/> — and for whether an occurrence materialises.
+/// Stored edges are read through their persisted <see cref="Dependency.Satisfied"/> flag, maintained by
+/// <c>DependencyReconciler</c>, so they reflect the last reconciled state; intrinsic edges are derived on the spot (PEP102
+/// patch 9). The emitted lock is separate from any status field. Holding a transition back is not this service's: the
+/// state engine judges every save against the gates (<c>StateJudge</c>, PEP103).
 /// </summary>
 public sealed class DependencyGateService(PlainfraContext context, EntityLifecycleResolver lifecycleResolver, DependencyGraphService graphService)
 {
-	/// <summary>
-	/// Throws when a workflow shift from <paramref name="currentStatus"/> to <paramref name="newStatus"/> would move
-	/// <paramref name="target"/> into a state still gated by unmet dependencies. Every state the move enters is judged
-	/// (<see cref="LifecycleTransition.Entered"/>): a jump from an unstarted status straight to a finished one passes the
-	/// start gate as well as the finish gate, while a deferral or a move back enters nothing and is never gated. A shift
-	/// from one finished status to another (Fulfilled → Over, Done → Archived) enters no state, yet re-checks the finish
-	/// gate, as it always has: Over is the finish that tolerates no open child, a rule not yet declared on Over itself.
-	/// </summary>
-	public async Task EnsureCanTransitionAsync(EndpointRef target, Enum currentStatus, Enum newStatus, CancellationToken cancellationToken)
-	{
-		var transition = lifecycleResolver.Transition(currentStatus, newStatus);
-		var gated = transition.Entered.ToList();
-		if (gated.Count == 0 && transition.To == LifecycleState.Finished && !Equals(currentStatus, newStatus))
-		{
-			gated.Add(LifecycleState.Finished);
-		}
-
-		foreach (var state in gated)
-		{
-			var finish = state == LifecycleState.Finished;
-			var gate = finish ? DependencyConstraint.ToFinish : DependencyConstraint.ToBegin;
-			if (await IsExplicitlyLockedAsync(target, gate, cancellationToken))
-			{
-				throw new InvalidOperationException(
-					$"{Describe(target)} is blocked by unmet dependencies and cannot {(finish ? "finish" : "begin")} until they are satisfied.");
-			}
-
-			if (await IsIntrinsicallyLockedAsync(target, gate, cancellationToken))
-			{
-				throw new InvalidOperationException(
-					$"{Describe(target)} still has open children and cannot finish until each of them has finished.");
-			}
-		}
-	}
-
 	/// <summary>
 	/// Determines whether the target has any unsatisfied dependency, stored or intrinsic, gating the given constraint phase.
 	/// </summary>
@@ -187,14 +154,5 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 		}
 
 		return await IsLockedAsync(new EndpointRef(DependencyEndpointKind.Eventive, fateId, recurrenceId), DependencyConstraint.ToBegin, cancellationToken);
-	}
-
-	private static string Describe(EndpointRef target)
-	{
-		return target.Kind switch
-		{
-			DependencyEndpointKind.Eventive => $"Occurrence {target.RecurrenceId:yyyy-MM-dd} of '{target.Id}'",
-			_ => $"{target.Kind} '{target.Id}'",
-		};
 	}
 }

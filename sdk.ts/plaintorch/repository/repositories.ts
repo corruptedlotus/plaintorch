@@ -8,6 +8,7 @@ import type { LorePage } from "../lore/models"
 import type { Checkpoint, Dependency } from "../dependencies/models"
 import type { EntityExistence, SystemBriefing } from "../system/models"
 import type { PreferenceView } from "../preferences/contracts"
+import type { LifecycleKind } from "../lifecycle/models"
 import { EntityRepository, type EntityFetcher } from "./entityRepository"
 import { DerivedRepository } from "./derivedRepository"
 import { InvalidationScheduler, type InvalidationTarget } from "./invalidation"
@@ -143,6 +144,8 @@ export class PlaintorchRepositories implements InvalidationTarget {
 	 * preference write on the change feed, which revalidates this while observed like every record.
 	 */
 	public readonly preferences: DerivedRepository<PreferenceView[]>
+	/** How each kind's lifecycle reads (PEP103), the core's declarations as served. They never change while it runs. */
+	public readonly lifecycles: DerivedRepository<LifecycleKind[]>
 
 	/** The system briefing, cached under {@link briefingRecordKey}. */
 	public readonly briefing: DerivedRepository<SystemBriefing>
@@ -204,6 +207,7 @@ export class PlaintorchRepositories implements InvalidationTarget {
 		this.polarisDays = new DerivedRepository(async (from) => await client.polaris.listByDay(from))
 		this.activeTimeframes = new DerivedRepository(async () => await client.directives.listActiveTimeframes())
 		this.preferences = new DerivedRepository(async () => await client.preferences.list())
+		this.lifecycles = new DerivedRepository(async () => await client.system.getLifecycles())
 
 		const resolution = { freshnessMs: options.resolutionFreshnessMs }
 		this.briefing = new DerivedRepository(async () => await client.system.getBriefing())

@@ -445,7 +445,8 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 
 			if (propertyType.IsEnum)
 			{
-				if (!Enum.TryParse(propertyType, normalizedValue, true, out var enumValue) || !Enum.IsDefined(propertyType, enumValue!))
+				if ((!Enum.TryParse(propertyType, normalizedValue, true, out var enumValue) || !Enum.IsDefined(propertyType, enumValue!))
+					&& !TryParseEnumAlias(propertyType, normalizedValue, out enumValue))
 				{
 					convertedValue = null;
 					issue = new MarkdownValidationIssue(
@@ -501,6 +502,24 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		{
 			issues.Add(new MarkdownValidationIssue(fieldPath, MarkdownMessages.RelatedPuckInvalid(relationalId, relatedEntityType.Name, exception.Message), relationalId));
 		}
+	}
+
+	/// <summary>
+	/// Reads a name an enum member went by before it was renamed (<see cref="MarkdownEnumAliasAttribute"/>), ignoring case.
+	/// </summary>
+	private static bool TryParseEnumAlias(Type enumType, string value, out object? member)
+	{
+		foreach (var field in enumType.GetFields(BindingFlags.Public | BindingFlags.Static))
+		{
+			if (field.GetCustomAttributes<MarkdownEnumAliasAttribute>().Any(alias => string.Equals(alias.Name, value, StringComparison.OrdinalIgnoreCase)))
+			{
+				member = field.GetValue(null);
+				return true;
+			}
+		}
+
+		member = null;
+		return false;
 	}
 
 	private static bool TryConvertSimpleValue(Type propertyType, string normalizedValue, out object? convertedValue)

@@ -3,12 +3,13 @@ using Pleiades.Orchestration;
 using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Vault.Database;
 
-namespace Pleiades.Plaintorch.State;
+namespace Pleiades.Plaintorch.Enforcement;
 
 /// <summary>
-/// Keeps the backlog schedules of a unit of work coherent (PEP101). Run on every save by
-/// <see cref="BacklogScheduleInterceptor"/>, so every write pathway — the API, the markdown watcher, the CLI, a bare context
-/// save, synchronous or not — records lifecycle transitions and replaces occupied slots the same way.
+/// Keeps the backlog schedules of a unit of work coherent (PEP101). The last phase of the <see cref="StateEngine"/>, which
+/// <see cref="StateInterceptor"/> runs on every save, so every write pathway — the API, the markdown watcher, the CLI, a
+/// background pass, synchronous or not — records lifecycle transitions and replaces occupied slots the same way. It reads the
+/// statuses the save leaves behind: the compensations the engine made and the checkpoints it unlocked included.
 /// </summary>
 /// <remarks>
 /// Two rules, applied in order:

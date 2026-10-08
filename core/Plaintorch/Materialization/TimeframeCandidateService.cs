@@ -85,7 +85,7 @@ public sealed class TimeframeCandidateService(
 			catch (DbUpdateException exception)
 			{
 				// A concurrent write won the race: the timeframe was deleted (foreign key) or its orbit was edited and the
-				// state-policy reset inserted a fresh state first (unique timeframe index). The candidates computed here
+				// state engine's reset inserted a fresh state first (unique timeframe index). The candidates computed here
 				// are still right for this read, and the next computation reads whichever state is stored by then.
 				foreach (var entry in lazyStates)
 				{

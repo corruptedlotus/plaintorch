@@ -1,7 +1,7 @@
 import { component, css, html } from "@a11d/lit"
 import { DirectiveBanner } from './DirectiveBanner'
 import { Directive, LunarDirectiveStatus, LunarDirectiveUpdate } from '@pleiades/sdk'
-import { core, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, lunarDirectiveStatusDescriptors } from ".."
+import { core, editState, IconName, followRenamedNote, ReactiveBinder } from ".."
 
 /**
  * Banner for a Moonlight (lunar) directive (PEP100). Lunar directives are everglow: they
@@ -27,15 +27,12 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
-			if (keyPath !== 'status' && keyPath !== 'title' && keyPath !== 'codename') {
+			// The status is not bound: the state bubble saves a shift itself (editState).
+			if (keyPath !== 'title' && keyPath !== 'codename') {
 				return
 			}
 
 			const saved = await this.commitEntityEdit(async () => {
-				if (keyPath === 'status') {
-					return await core.directives.shiftLunarWorkflow(entity.id, { status: entity.status as LunarDirectiveStatus })
-				}
-
 				// Codename is nullable: a cleared field commits as null (a clear), not undefined (a no-op).
 				const update: LunarDirectiveUpdate = {}
 				if (keyPath === 'title') update.title = entity.title
@@ -111,7 +108,7 @@ export class LunarDirectiveBanner extends DirectiveBanner {
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${() => SelectStatusModal.prompt(lunarDirectiveStatusDescriptors)} ${this.binder.bind('status')}>
+			<p7t-editable .value=${this.entity!.status} .doEdit=${(_: unknown, field: HTMLElement) => editState(field, this.entity)}>
 				<p7t-status-item
 					.status=${LunarDirectiveStatus[this.entity!.status as LunarDirectiveStatus] as keyof typeof LunarDirectiveStatus}>
 				</p7t-status-item>

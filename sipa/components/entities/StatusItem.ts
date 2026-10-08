@@ -32,7 +32,7 @@ export const statusDescriptors: Record<Status, StatusDescriptor> = {
 	Committed: { icon: 'state-commit', label: 'Committed' },
 
 	Active: { icon: 'state-active', label: 'Active' },
-	Onrush: { icon: 'state-onrush', label: 'Onrush' },
+	Onboard: { icon: 'state-onrush', label: 'Onboard' },
 	Polaris: { icon: 'state-polaris', label: 'Polaris' },
 
 	Done: { icon: 'state-done', label: 'Done', terminal: 'finished' },

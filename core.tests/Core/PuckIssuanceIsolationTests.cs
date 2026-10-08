@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Api.Abstractions;
+using Pleiades.Plaintorch.Enforcement;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Puck;
 using Pleiades.Tests.Harness;
@@ -65,9 +66,11 @@ public sealed class PuckIssuanceIsolationTests : VaultTestBase
 		var planned = await Vault.WithScopeAsync(services => services.GetRequiredService<IOnrushSprintApi>().PlanAsync(new OnrushSprintPlan("First plan"), Ct));
 		Assert.False(string.IsNullOrWhiteSpace(planned.MilestoneCheckpointId));
 
-		var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => Vault.WithScopeAsync(services =>
+		var refused = await Assert.ThrowsAsync<StateEnforcementException>(() => Vault.WithScopeAsync(services =>
 			services.GetRequiredService<IOnrushSprintApi>().PlanAsync(new OnrushSprintPlan("Second plan"), Ct)));
 		Assert.Contains("planning onrush sprint already exists", refused.Message, StringComparison.OrdinalIgnoreCase);
+		// A structure the model cannot hold is systemic: refused at every enforcement level (PEP103).
+		Assert.Equal(StateConflictKind.Systemic, Assert.Single(refused.Decision.Conflicts).Kind);
 
 		// The first plan and its milestone are untouched.
 		var stored = await Vault.QueryAsync(context => context.OnrushSprints.AsNoTracking().SingleAsync(item => item.Id == OnrushSprint.PlanningPlaceholderId, Ct));

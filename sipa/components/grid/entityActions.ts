@@ -67,7 +67,7 @@ export function entityKindLabel(kind: EntityKind): string {
  * The descriptor name of an entity's workflow state.
  *
  * Every kind numbers its own state enum from zero, so the value alone is ambiguous — a directive's `2` is Active while
- * an objective's is Onrush. The kind has to pick the enum.
+ * an objective's is Onboard. The kind has to pick the enum.
  */
 export function entityStatusName(entity: GridEntity): Status {
 	const status = (entity as { status?: number }).status ?? 0

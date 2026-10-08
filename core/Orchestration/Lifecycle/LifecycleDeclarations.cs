@@ -31,6 +31,12 @@ public static class LifecycleDeclarations
 	public static IReadOnlySet<LifecycleState> StatesOf(Type statusType) => Of(statusType).Covered;
 
 	/// <summary>
+	/// Gets every member of a status enum that declares a state, in value order, with the state it declares — what a client
+	/// is served so it reads a status as the core does (PEP103).
+	/// </summary>
+	public static IReadOnlyList<(Enum Status, LifecycleState State)> MembersOf(Type statusType) => Of(statusType).Members;
+
+	/// <summary>
 	/// Gets the status the core sets when it moves an item to <paramref name="state"/> of its own accord: the member with the
 	/// lowest value among those that declare the state, which for these enums is the first one declared. Returns
 	/// <see langword="null"/> when no member declares the state.
@@ -78,6 +84,7 @@ public static class LifecycleDeclarations
 
 		var states = new Dictionary<string, LifecycleState>(StringComparer.Ordinal);
 		var defaults = new Dictionary<LifecycleState, Enum>();
+		var members = new List<(Enum Status, LifecycleState State)>();
 		var undeclared = new List<string>();
 		// Read in value order, so the first member met for a state is its default.
 		var fields = enumType.GetFields(BindingFlags.Public | BindingFlags.Static)
@@ -91,15 +98,17 @@ public static class LifecycleDeclarations
 			}
 
 			states[field.Name] = declaration.State;
+			members.Add(((Enum)field.GetValue(null)!, declaration.State));
 			defaults.TryAdd(declaration.State, (Enum)field.GetValue(null)!);
 		}
 
-		return new EnumLifecycle(states, states.Values.ToHashSet(), defaults, undeclared);
+		return new EnumLifecycle(states, states.Values.ToHashSet(), defaults, members, undeclared);
 	}
 
 	private sealed record EnumLifecycle(
 		IReadOnlyDictionary<string, LifecycleState> States,
 		IReadOnlySet<LifecycleState> Covered,
 		IReadOnlyDictionary<LifecycleState, Enum> Defaults,
+		IReadOnlyList<(Enum Status, LifecycleState State)> Members,
 		IReadOnlyList<string> Undeclared);
 }

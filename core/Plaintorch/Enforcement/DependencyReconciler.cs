@@ -2,19 +2,32 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Pleiades.Orchestration;
 using Pleiades.Orchestration.Lifecycle;
+using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 
-namespace Pleiades.Plaintorch.State;
+namespace Pleiades.Plaintorch.Enforcement;
 
 /// <summary>
-/// Recomputes dependency satisfaction and checkpoint unlock state on every save (PEP101). Runs inside the
-/// state-policy pass (and therefore the save interceptor), mirroring the reflective-collection reward rule:
-/// it reads current tracked/stored state and flips persisted effects, propagating checkpoint unlocks to a
-/// fixpoint so a chain of checkpoints resolves in one pass.
+/// Recomputes dependency satisfaction and checkpoint unlock state on every save (PEP101). Part of the
+/// <see cref="StateEngine"/>'s reactions on the final state, so it sees the statuses the save leaves behind, compensations
+/// included: it reads current tracked/stored state and flips persisted effects, propagating checkpoint unlocks to a fixpoint
+/// so a chain of checkpoints resolves in one pass.
 /// </summary>
 public sealed class DependencyReconciler(EntityLifecycleResolver lifecycleResolver)
 {
 	private const int MaxIterations = 256;
+
+	/// <summary>
+	/// Whether a checkpoint's toll stands out of its way at <paramref name="now"/>: it has none, it is paid, or its due has
+	/// not arrived (PEP111) — while there is still time, a checkpoint can unlock without paying.
+	/// </summary>
+	internal static bool TollMet(Checkpoint checkpoint, DateTime now)
+		=> checkpoint.CelestronToll is null || checkpoint.TollPaid || (checkpoint.Due is { } due && now < due.Moment);
+
+	/// <summary>
+	/// Whether a checkpoint's external condition stands out of its way: it has none, or it holds.
+	/// </summary>
+	internal static bool ConditionMet(Checkpoint checkpoint) => checkpoint.ExternalCondition != false;
 
 	/// <summary>
 	/// Reconciles all dependency edges and checkpoints in the current unit of work.
@@ -76,12 +89,7 @@ public sealed class DependencyReconciler(EntityLifecycleResolver lifecycleResolv
 			{
 				var incoming = incomingByCheckpoint.GetValueOrDefault(checkpoint.Id) ?? [];
 				var dependenciesMet = incoming.All(dependency => dependency.Satisfied);
-				// The toll is suppressed until the due arrives (PEP111): while there is still time, the checkpoint can
-				// unlock without paying; once the due moment has passed, the toll is owed as usual.
-				var beforeDue = checkpoint.Due is { } due && now < due.Moment;
-				var tollMet = checkpoint.CelestronToll is null || checkpoint.TollPaid || beforeDue;
-				var conditionMet = checkpoint.ExternalCondition != false;
-				changed |= SetUnlocked(context, checkpoint, dependenciesMet && tollMet && conditionMet);
+				changed |= SetUnlocked(context, checkpoint, dependenciesMet && TollMet(checkpoint, now) && ConditionMet(checkpoint));
 			}
 
 			foreach (var dependency in checkpointSourced)

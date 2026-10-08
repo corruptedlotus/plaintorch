@@ -10,7 +10,7 @@ namespace Pleiades.Plaintorch.Api.Services;
 
 /// <summary>
 /// Implements the backlog-schedule application API (PEP101). Adding a schedule only inserts it: replacing the slot's
-/// previous schedule, like writing records, is a state-policy rule (<see cref="BacklogScheduleRecorder"/>), so it holds
+/// previous schedule, like writing records, is a rule of the state engine (<see cref="Enforcement.BacklogScheduleRecorder"/>), so it holds
 /// for every write pathway rather than for this service alone.
 /// </summary>
 public sealed class BacklogScheduleApiService(

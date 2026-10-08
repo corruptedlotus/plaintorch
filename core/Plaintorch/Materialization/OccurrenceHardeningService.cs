@@ -15,7 +15,7 @@ namespace Pleiades.Plaintorch.Materialization;
 /// <remarks>
 /// Every entry point is SAVE-FREE: it finds the already-hardened row or builds a new one and tracks it into the
 /// caller's <see cref="PlainfraContext"/>, and the single <see cref="PlainfraContext.SaveChanges()"/> is left to
-/// the caller — an interaction endpoint, or the state-policy save pass that guarantees a referenced occurrence
+/// the caller — an interaction endpoint, or the state engine's save pass that guarantees a referenced occurrence
 /// hardens. Materialization is thus never a standalone verb; it is the guaranteed consequence of touching an
 /// occurrence, enforced centrally on the save.
 /// <para>

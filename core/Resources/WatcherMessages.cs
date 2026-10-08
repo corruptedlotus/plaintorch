@@ -42,6 +42,7 @@ public static class WatcherMessages
 		public static string VaultInaccessible => Get();
 		public static string DuplicateIdentity => Get();
 		public static string DeleteBlocked => Get();
+		public static string StateRefused => Get();
 	}
 
 	/// <summary>Parameterised detail lines the reporter appends to a reason message.</summary>

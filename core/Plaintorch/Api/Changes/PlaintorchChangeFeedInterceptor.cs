@@ -16,7 +16,7 @@ namespace Pleiades.Plaintorch.Api.Changes;
 /// </summary>
 /// <remarks>
 /// Sits on the EF save hook rather than on the API endpoints, following the same reasoning as
-/// <c>PlaintorchStatePolicyInterceptor</c>: it is the one place every write pathway passes through, so the
+/// <c>StateInterceptor</c>: it is the one place every write pathway passes through, so the
 /// watcher syncing a markdown edit, the CLI and the scheduler are covered alongside the API. Publishing per
 /// endpoint would catch only the writes a client already knows it made.
 /// </remarks>

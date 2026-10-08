@@ -42,17 +42,23 @@ public sealed class PlaintorchModule : Module
 			serviceProvider.GetService<VaultOptions>() is { } vaultOptions
 				? new VaultLayout(vaultOptions)
 				: new VaultLayout());
-		services.AddScoped<DependencyReconciler>();
-		services.AddScoped<BacklogScheduleRecorder>();
 		services.AddScoped<DependencyGateService>();
 		// The one reading of the dependency graph — stored edges plus the intrinsic edges each rule derives (PEP102
-		// patch 9) — shared by the gate, the reconciler, the API and the purge.
+		// patch 9) — shared by the lock readings, the API and the purge. The judge derives the same intrinsic edges, and
+		// the reconciler reads only the stored ones.
 		services.AddScoped<DependencyGraphService>();
 		services.AddScoped<IIntrinsicDependencyRule, DirectiveChildrenIntrinsicRule>();
-		services.AddScoped<PlaintorchStatePolicyProcessor>();
-		services.AddScoped<PlaintorchStatePolicyFileSyncService>();
-		services.AddScoped<PlaintorchStatePolicyInterceptor>();
-		services.AddScoped<BacklogScheduleInterceptor>();
+		// PEP103: the state enforcement engine, its four phases, and the one save interceptor that runs it on every save.
+		services.AddScoped<StructureReactions>();
+		services.AddScoped<MembershipReactions>();
+		services.AddScoped<StateJudge>();
+		services.AddScoped<StateCompensator>();
+		services.AddScoped<DependencyReconciler>();
+		services.AddScoped<OutcomeReactions>();
+		services.AddScoped<BacklogScheduleRecorder>();
+		services.AddScoped<StateEngine>();
+		services.AddScoped<StateNoteSyncService>();
+		services.AddScoped<StateInterceptor>();
 		services.AddSingleton<PlaintorchChangeBroker>();
 		services.AddScoped<PlaintorchChangeFeedInterceptor>();
 		// The active lore spine, cached once per vault session and stamped onto responses by a filter rather
@@ -68,12 +74,11 @@ public sealed class PlaintorchModule : Module
 			// The store, with WAL and a busy timeout on every connection so the concurrent reads a client fires around a
 			// write do not meet a whole-file lock with no timeout — shared with the bare contexts PUCK issuance uses.
 			PlainfraStoreContextFactory.ConfigureStore(options, serviceProvider.GetRequiredService<VaultLayout>());
-			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchStatePolicyInterceptor>());
-			// The one place backlog records are inferred (PEP101), on synchronous and asynchronous saves alike. After the
-			// state policy, so it records the statuses policy left behind (a checkpoint just unlocked included).
-			options.AddInterceptors(serviceProvider.GetRequiredService<BacklogScheduleInterceptor>());
-			// Registered after the state policy and the schedule records, so the changes it announces are the ones they
-			// left behind rather than what the caller originally asked for.
+			// The one place the backlog's state is enforced (PEP103), on synchronous and asynchronous saves alike: structure,
+			// judgement through the enforcement level, outcomes and records, in one pass before anything is written.
+			options.AddInterceptors(serviceProvider.GetRequiredService<StateInterceptor>());
+			// Registered after the state interceptor, so the changes it announces are the ones the engine left behind rather
+			// than what the caller originally asked for.
 			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchChangeFeedInterceptor>());
 			options.AddInterceptors(serviceProvider.GetRequiredService<LoreActiveCacheInterceptor>());
 			options.AddInterceptors(serviceProvider.GetRequiredService<TimeframeCandidateCacheInterceptor>());
@@ -179,6 +184,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<IVaultMigration, FateOrbitOnlyMigration>();
 		services.AddScoped<IVaultMigration, DirectiveStartEndRetirementMigration>();
 		services.AddScoped<IVaultMigration, IntrinsicDependencyPurgeMigration>();
+		services.AddScoped<IVaultMigration, ObjectiveOnboardStatusMigration>();
 		services.AddScoped<PlaintorchEngine>();
 		services.AddScoped<TimeframeAffinityResolver>();
 		services.AddScoped<TimeframeCandidateService>();

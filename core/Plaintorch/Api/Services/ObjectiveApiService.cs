@@ -5,7 +5,6 @@ using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Plaintorch.Materialization;
-using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch.Api.Services;
@@ -18,7 +17,6 @@ public sealed class ObjectiveApiService(
 	PuckCreationService puckCreationService,
 	VaultWriteQueue writeQueue,
 	VaultTemporalDataService temporalDataService,
-	DependencyGateService dependencyGate,
 	VaultEntityLifecycleService lifecycleService,
 	VaultAuditLogService auditLogService) : IObjectiveApi
 {
@@ -143,8 +141,6 @@ public sealed class ObjectiveApiService(
 		var objective = await context.Objectives.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
 			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
 
-		await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Objective, objective.Id), objective.Status, shift.Status, cancellationToken);
-
 		var previous = Clone(objective);
 
 		objective.Status = shift.Status;
@@ -168,8 +164,9 @@ public sealed class ObjectiveApiService(
 			throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
 		}
 
+		// Coming on board the active sprint makes the objective Onboard where nothing blocks it; the state engine does it, on
+		// every pathway (Patch103.3). Joining the planning sprint moves nothing until it begins.
 		objective.OnrushSprintId = onrushSprintId;
-		objective.Status = IsAutoPromotableToOnrush(objective.Status) ? ObjectiveStatus.Onrush : objective.Status;
 		await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.add-to-onrush", subject: objective, cancellationToken: cancellationToken);
 		return objective;
@@ -186,11 +183,6 @@ public sealed class ObjectiveApiService(
 		await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.remove-from-onrush", subject: objective, cancellationToken: cancellationToken);
 		return objective;
-	}
-
-	private static bool IsAutoPromotableToOnrush(ObjectiveStatus status)
-	{
-		return status is ObjectiveStatus.Standby or ObjectiveStatus.Blocked;
 	}
 
 	/// <inheritdoc />

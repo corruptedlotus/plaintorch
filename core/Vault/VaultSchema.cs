@@ -23,7 +23,8 @@ public static class VaultSchema
 	/// Version 4 folds a fate's legacy one-off date frontmatter into its orbit-only shape (PEP111). Version 5 drops the
 	/// retired <c>startDate</c>/<c>endDate</c> keys from stellar directive notes, whose dates became backlog schedules
 	/// (PEP101). Version 6 purges the stored dependencies the intrinsic directive-children edges contradict or make
-	/// redundant (PEP102 patch 9).
+	/// redundant (PEP102 patch 9). Version 7 renames the objective status <c>Onrush</c> to <c>Onboard</c> in objective notes
+	/// (PEP103 patch 3).
 	/// </summary>
-	public const int CurrentVersion = 6;
+	public const int CurrentVersion = 7;
 }

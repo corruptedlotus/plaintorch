@@ -5,7 +5,7 @@ import type { Executive } from "../polaris"
 export enum ObjectiveStatus {
 	'Standby' = 0,
 	'Blocked' = 1,
-	'Onrush' = 2,
+	'Onboard' = 2,
 	'Polaris' = 3,
 	'Done' = 4,
 	'Archived' = 5,

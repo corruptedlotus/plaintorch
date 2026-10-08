@@ -123,9 +123,13 @@ public sealed class PlaintorchOrbitService(
 	public async Task ResetStateAsync(Incentive incentive, string? orbit, DateOnly epoch, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
+		// A state added earlier in this unit of work is not in the database yet, so the tracked ones are swept too: a resume
+		// and an orbit change in one save would otherwise leave two states for one declarative.
 		var existing = await context.IncentiveOrbitScheduleStates
 			.Where(state => state.IncentiveId == incentive.Id)
 			.ToListAsync(cancellationToken);
+		existing.AddRange(context.IncentiveOrbitScheduleStates.Local
+			.Where(state => state.IncentiveId == incentive.Id && !existing.Contains(state)));
 		if (existing.Count > 0)
 		{
 			context.IncentiveOrbitScheduleStates.RemoveRange(existing);
@@ -333,9 +337,11 @@ public sealed class PlaintorchOrbitService(
 	/// </summary>
 	private async Task<IncentiveOrbitScheduleState> GetOrCreateStateAsync(Incentive incentive, string orbit, DateOnly fallbackEpoch, CancellationToken cancellationToken)
 	{
-		var state = await context.IncentiveOrbitScheduleStates
-			.FirstOrDefaultAsync(item => item.IncentiveId == incentive.Id, cancellationToken);
-		if (state is not null)
+		// A state this unit of work already added (a reset just before) is the one to advance; a query would not see it.
+		var state = context.IncentiveOrbitScheduleStates.Local.FirstOrDefault(item => item.IncentiveId == incentive.Id)
+			?? await context.IncentiveOrbitScheduleStates
+				.FirstOrDefaultAsync(item => item.IncentiveId == incentive.Id, cancellationToken);
+		if (state is not null && context.Entry(state).State != EntityState.Deleted)
 		{
 			return state;
 		}

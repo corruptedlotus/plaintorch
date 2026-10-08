@@ -13,7 +13,7 @@ namespace Pleiades.Plaintorch.Api.Services;
 /// <see cref="DependencyRules"/> and the temporal cycle rule by <see cref="DependencyOrdering"/>, both over the whole
 /// graph — the stored edges and the intrinsic ones the structure implies (PEP102 patch 9), read through
 /// <see cref="DependencyGraphService"/>; endpoint existence and kind are validated here (they require resolving loose
-/// references). Satisfaction and checkpoint unlock are computed by <see cref="DependencyReconciler"/> on save; whether
+/// references). Satisfaction and checkpoint unlock are computed by <see cref="Enforcement.DependencyReconciler"/> on save; whether
 /// an unsatisfied edge gates its target's next transition is stamped by <see cref="DependencyGateService"/> as it is served.
 /// </summary>
 public sealed class DependencyApiService(
@@ -282,12 +282,12 @@ public sealed class DependencyApiService(
 			throw new InvalidOperationException("A sprint's milestone checkpoint cannot be deleted on its own.");
 		}
 
-		var edges = await context.Dependencies
-			.Where(dependency =>
+		// Its edges go with it: the state engine releases the edges of a deleted endpoint, on every pathway.
+		var removedEdges = await context.Dependencies
+			.CountAsync(dependency =>
 				(dependency.SourceKind == DependencyEndpointKind.Checkpoint && dependency.SourceId == checkpointId)
-				|| (dependency.TargetKind == DependencyEndpointKind.Checkpoint && dependency.TargetId == checkpointId))
-			.ToListAsync(cancellationToken);
-		context.Dependencies.RemoveRange(edges);
+				|| (dependency.TargetKind == DependencyEndpointKind.Checkpoint && dependency.TargetId == checkpointId),
+				cancellationToken);
 		context.Checkpoints.Remove(checkpoint);
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(
@@ -296,7 +296,7 @@ public sealed class DependencyApiService(
 			subjectType: nameof(Checkpoint),
 			subjectId: checkpointId,
 			subjectTitle: checkpoint.Title,
-			details: new { removedEdges = edges.Count },
+			details: new { removedEdges },
 			cancellationToken: cancellationToken);
 	}
 

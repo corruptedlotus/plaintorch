@@ -1,4 +1,5 @@
 import type { PlaintorchCoreClient } from '@pleiades/sdk/plaintorch'
+import { stateEnforcementPrompt } from '../system/StateEnforcementModal'
 
 let current: PlaintorchCoreClient | undefined
 
@@ -10,8 +11,12 @@ let current: PlaintorchCoreClient | undefined
  *
  * Provide it once. Replacing the client later would leave mounted views on the old one's repositories — reconnection
  * is the transport's and the change feed's business, not a reason to swap clients.
+ *
+ * Unless the application installed its own, the client is given the UI's answer to the core's state enforcement
+ * (PEP103): a change the core holds back is put to the user, and a refusal is shown, in every host alike.
  */
 export function provideCore(client: PlaintorchCoreClient): void {
+	client.stateEnforcement ??= stateEnforcementPrompt
 	current = client
 }
 

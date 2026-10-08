@@ -17,7 +17,7 @@ namespace Pleiades.Orchestration;
 /// </para>
 /// <para>
 /// An owner holds at most one schedule per <see cref="Type"/> and <see cref="State"/> (its slot). Adding a schedule to
-/// an occupied slot replaces the one there: the state-policy save hook removes the old row in the same save, whatever
+/// an occupied slot replaces the one there: the state interceptor removes the old row in the same save, whatever
 /// the write pathway, and a unique index per owner column is the database backstop.
 /// </para>
 /// <para>

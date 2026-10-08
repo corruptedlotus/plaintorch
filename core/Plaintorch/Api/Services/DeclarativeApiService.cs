@@ -102,9 +102,8 @@ public sealed class DeclarativeApiService(
 			fate.Title = update.Title;
 		}
 
-		if (update.Status is not null && update.Status.Value != fate.Status)
+		if (update.Status is not null)
 		{
-			await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Fate, fate.Id), fate.Status, update.Status.Value, cancellationToken);
 			fate.Status = update.Status.Value;
 		}
 
@@ -140,13 +139,6 @@ public sealed class DeclarativeApiService(
 		if (update.TimeZone.IsSet)
 		{
 			fate.TimeZone = ValidTimeZone(update.TimeZone.Value, nameof(update));
-		}
-
-		// Resuming a paused fate (cancelled or opted out → active) seeks its cursor to now, so generation picks up
-		// from now with no backfill of the occurrences that elapsed while it was paused (PEP100/PEP111).
-		if (previous.Status != FateStatus.Active && fate.Status == FateStatus.Active && !string.IsNullOrWhiteSpace(fate.Orbit))
-		{
-			await orbitService.FastForwardToNowAsync(fate, fate.Orbit!, DateTimeOffset.Now, cancellationToken);
 		}
 
 		// A fate is orbit-only (PEP111), so there is no fixed-date shape to reconcile here — the update above
@@ -289,13 +281,6 @@ public sealed class DeclarativeApiService(
 
 		// Validate the resulting combination: reflecting decrees demand day-granularity orbits.
 		PlaintorchOrbitService.ValidateDecreeOrbit(decree.Orbit, decree.Reflect);
-
-		// Resuming an abandoned decree (→ active) seeks its cursor to now, so generation picks up from now with no
-		// backfill of the occurrences that elapsed while it was abandoned (PEP100/PEP111).
-		if (previous.Status != DecreeStatus.Active && decree.Status == DecreeStatus.Active && !string.IsNullOrWhiteSpace(decree.Orbit))
-		{
-			await orbitService.FastForwardToNowAsync(decree, decree.Orbit!, DateTimeOffset.Now, cancellationToken);
-		}
 
 		await writeQueue.WriteAsync(decree, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "decree.update", subject: decree, cancellationToken: cancellationToken);
@@ -458,7 +443,7 @@ public sealed class DeclarativeApiService(
 
 		// An attentive is always an unbound occurrence, addressed by its decree + recurrence-id. Resolve it into the
 		// current unit of work without a save of its own; the single SaveChanges below persists the materialization
-		// together with this interaction, and the state-policy pass runs over it centrally.
+		// together with this interaction, and the state engine runs over it centrally.
 		if (string.IsNullOrWhiteSpace(occurrence.DecreeId) || occurrence.RecurrenceId is not DateTime recurrenceId)
 		{
 			throw new ArgumentException("An attentive occurrence must be addressed by decree and recurrence-id.", nameof(occurrence));
@@ -606,8 +591,8 @@ public sealed class DeclarativeApiService(
 	/// own. A row id names a hardened row directly — the only address a manual eventive has. Otherwise the owner and
 	/// recurrence-id resolve it through the hardening service (evaluate the orbit, find the hardened twin, or build
 	/// the projected row), which addresses a projected occurrence and its hardened twin identically; the caller's
-	/// single SaveChanges then persists the materialization together with the interaction, and the state-policy pass
-	/// runs over it centrally.
+	/// single SaveChanges then persists the materialization together with the interaction, and the state engine runs over
+	/// it centrally.
 	/// </summary>
 	private async Task<Eventive> ResolveEventiveAsync(EventiveOccurrenceRef occurrence, CancellationToken cancellationToken)
 	{

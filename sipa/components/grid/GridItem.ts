@@ -1,9 +1,6 @@
 import { component, css, html, HTMLTemplateResult, nothing, property, PropertyValues } from '@a11d/lit'
 import { Directive, Objective, typeNameOf, type DeclarativeCalendar } from '@pleiades/sdk'
-import {
-	IconName, type AnyStatus, type ScheduleValue,
-	SelectStatusModal, objectiveStatusDescriptors, directiveStatusDescriptors, lunarDirectiveStatusDescriptors
-} from '..'
+import { editState, IconName, type ScheduleValue, type StatefulEntity } from '..'
 import {
 	directiveActions, entityIcon, entityKindLabel, entityKindOf, entityStatusName, isDirectiveKind, isInactiveEntity,
 	objectiveActions, reparentEntity, reparentRefusal, saveEntityField, saveFateSchedule, type EditableField
@@ -196,14 +193,14 @@ export class GridItem extends GridItemBase {
 	protected get statusCell(): HTMLTemplateResult | typeof nothing {
 		const entity = this.row!.entity as GridEntity
 		const kind = entityKindOf(entity)
-		const descriptors = kind === 'objective' ? objectiveStatusDescriptors
-			: kind === 'stellar-directive' ? directiveStatusDescriptors
-			: kind === 'lunar-directive' ? lunarDirectiveStatusDescriptors
-			: undefined
-		const prompt = descriptors && (() => SelectStatusModal.prompt<AnyStatus>(descriptors))
+		if (kind !== 'objective' && kind !== 'stellar-directive' && kind !== 'lunar-directive') {
+			return nothing
+		}
 
-		return !prompt ? nothing : html`
-			<p7t-editable .doEdit=${prompt} ${this.binder.bind('status')}>
+		// Not bound: the state bubble saves a shift itself, and the row moves only once the core has accepted it.
+		const stateful = entity as unknown as StatefulEntity
+		return html`
+			<p7t-editable .value=${stateful.status} .doEdit=${(_: unknown, field: HTMLElement) => editState(field, stateful)}>
 				<p7t-status-item .status=${this.statusName}></p7t-status-item>
 			</p7t-editable>
 		`

@@ -91,7 +91,7 @@ public interface IDeclarativeApi
 	/// <summary>
 	/// Applies a mutable update to an eventive occurrence addressed by its owner and RECURRENCE-ID. A
 	/// still-projected occurrence is resolved into the same save, so the materialization and the interaction
-	/// persist together and the state-policy pass enforces hardening centrally. A hardened row — the only kind a
+	/// persist together and the state engine enforces hardening centrally. A hardened row — the only kind a
 	/// manual eventive ever is — may instead be addressed by its row id.
 	/// </summary>
 	Task<Eventive> UpdateEventiveAsync(EventiveOccurrenceRef occurrence, EventiveUpdate update, CancellationToken cancellationToken = default);

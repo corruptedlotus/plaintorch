@@ -19,7 +19,7 @@ public sealed class SerializerRoundTripTests : VaultTestBase
 			Id = "j12345678",
 			Title = "Ship it",
 			College = ObjectiveCollege.Lore,
-			Status = ObjectiveStatus.Onrush,
+			Status = ObjectiveStatus.Onboard,
 			CelestronValue = 7,
 		};
 
@@ -34,7 +34,7 @@ public sealed class SerializerRoundTripTests : VaultTestBase
 		Assert.Empty(result.Issues);
 		Assert.Equal("j12345678", result.Model.Id);
 		Assert.Equal(ObjectiveCollege.Lore, result.Model.College);
-		Assert.Equal(ObjectiveStatus.Onrush, result.Model.Status);
+		Assert.Equal(ObjectiveStatus.Onboard, result.Model.Status);
 		Assert.Equal(7, result.Model.CelestronValue);
 	}
 

@@ -6,6 +6,7 @@ using Pleiades.Calendar;
 using Pleiades.Diagnostics;
 using Pleiades.Plaintorch.Diagnostics;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Saga;
 using Pleiades.Vault;
@@ -28,8 +29,40 @@ public sealed class SystemApiService(
 	OperationStatusDismissalService dismissalService,
 	PuckEntityResolutionService puckEntityResolutionService,
 	MarkdownFrontMatterSerializer markdownSerializer,
+	EntityLifecycleResolver lifecycleResolver,
 	ILogger<SystemApiService> logger) : ISystemApi
 {
+	/// <summary>The kinds whose lifecycle a client is served, each under its runtime type name.</summary>
+	private static readonly Type[] LifecycleKinds =
+	[
+		typeof(Objective),
+		typeof(StellarDirective),
+		typeof(LunarDirective),
+		typeof(Fate),
+		typeof(Decree),
+		typeof(Attentive),
+		typeof(Eventive),
+		typeof(Checkpoint),
+	];
+
+	/// <inheritdoc />
+	public IReadOnlyList<LifecycleKindDescription> GetLifecycles()
+		=> LifecycleKinds.Select(Describe).ToList();
+
+	private LifecycleKindDescription Describe(Type kind)
+	{
+		var statuses = lifecycleResolver.StatusTypeOf(kind) is { } statusType
+			? LifecycleDeclarations.MembersOf(statusType)
+				.Select(member => new LifecycleStatusDescription(
+					Convert.ToInt32(member.Status, System.Globalization.CultureInfo.InvariantCulture),
+					member.Status.ToString(),
+					member.State,
+					Equals(LifecycleDeclarations.DefaultStatus(statusType, member.State), member.Status)))
+				.ToList()
+			: [];
+		return new LifecycleKindDescription(kind.Name, lifecycleResolver.StatesOf(kind).Order().ToList(), statuses);
+	}
+
 	/// <inheritdoc />
 	public async Task<SystemBriefing> GetBriefingAsync(CancellationToken cancellationToken = default)
 	{

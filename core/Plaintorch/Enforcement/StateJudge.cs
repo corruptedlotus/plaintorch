@@ -1,0 +1,825 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
+using Pleiades.Plaintorch.State;
+using Pleiades.Puck;
+using Pleiades.Vault.Database;
+
+namespace Pleiades.Plaintorch.Enforcement;
+
+/// <summary>
+/// Finds every rule a save would break (PEP103): the conflicts <see cref="StateDecisionService"/> weighs against the backlog
+/// state enforcement level, each with the compensations that would resolve it. The save is judged as it stands once its
+/// structural reactions have run (<see cref="StructureReactions"/>), so every pathway — an API call, a note edit, an
+/// activation or a background pass — meets the same rules.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Systemic rules</b>, which no state change resolves and every level refuses: at most one planning placeholder sprint,
+/// one active onrush sprint and one active Polaris cycle.
+/// </para>
+/// <para>
+/// <b>Lifecycle rules</b>, judged on every lifecycle state a save moves an objective, a stellar directive or a fate into
+/// (<see cref="LifecycleTransition.Entered"/>), so a jump meets every gate it passes:
+/// <list type="bullet">
+/// <item><description><c>dependency.start-gate</c>: entering Started needs every stored dependency constrained to the start
+/// (<see cref="DependencyConstraint.ToBegin"/>, the default) satisfied.</description></item>
+/// <item><description><c>dependency.finish-gate</c>: entering Finished needs every stored dependency constrained to the
+/// finish satisfied.</description></item>
+/// <item><description><c>directive.open-children</c>: a stellar directive entering Finished, or becoming
+/// <see cref="DirectiveStatus.Over"/>, needs every direct child finished or set aside (its intrinsic edges).</description></item>
+/// <item><description><c>directive.over-open-work</c>: open work cannot arrive under a directive that is Over — an item created
+/// there, moved there, or brought back there from a finish or a deferral.</description></item>
+/// </list>
+/// A move back down the main line and a deferral enter nothing, so they are never gated.
+/// </para>
+/// <para>
+/// <b>Compensations.</b> Each lifecycle conflict carries the moves that would resolve it: a dependency's source moved to the
+/// state its trigger needs, an open child finished, an Over parent reopened to the finish that tolerates open work. Each item
+/// moves to the default status of its new state (<see cref="EntityLifecycleResolver.DefaultStatus"/>). A move is judged in
+/// turn, as a requested one is, so a source that is gated itself brings the moves its own gates need, until nothing more is
+/// needed. A locked checkpoint is passed through to the dependencies holding it, when its toll and condition do not. A
+/// conflict nothing could resolve carries no compensation: a source that is set aside (taking it up again is the user's
+/// call), an occurrence (time moves it), a fate asked to finish (a fate never does), a checkpoint held by its toll or its
+/// condition, or an endpoint with nothing behind it.
+/// </para>
+/// <para>
+/// Messages say what blocks a change, not which items or edges do: "… cannot finish: it is blocked by 2 dependencies." The
+/// compensations name the items a confirmation would move.
+/// </para>
+/// </remarks>
+public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnumerable<IIntrinsicDependencyRule> intrinsicRules)
+{
+	/// <summary>
+	/// The rule stopping a second planning placeholder sprint.
+	/// </summary>
+	public const string SinglePlanningOnrushRule = "onrush.single-planning";
+
+	/// <summary>
+	/// The rule stopping a second active onrush sprint.
+	/// </summary>
+	public const string SingleActiveOnrushRule = "onrush.single-active";
+
+	/// <summary>
+	/// The rule stopping a second active Polaris cycle.
+	/// </summary>
+	public const string SingleActivePolarisRule = "polaris.single-active";
+
+	/// <summary>
+	/// The rule holding a start back until the dependencies constrained to it are satisfied.
+	/// </summary>
+	public const string StartGateRule = "dependency.start-gate";
+
+	/// <summary>
+	/// The rule holding a finish back until the dependencies constrained to it are satisfied.
+	/// </summary>
+	public const string FinishGateRule = "dependency.finish-gate";
+
+	/// <summary>
+	/// The rule holding a directive's finish, or its Over, back until its direct children are finished or set aside.
+	/// </summary>
+	public const string OpenChildrenRule = "directive.open-children";
+
+	/// <summary>
+	/// The rule keeping open work from arriving under a directive that is Over.
+	/// </summary>
+	public const string OverOpenWorkRule = "directive.over-open-work";
+
+	private static readonly IReadOnlyDictionary<Type, EndpointShape> Shapes = new Dictionary<Type, EndpointShape>
+	{
+		[typeof(Objective)] = new(DependencyEndpointKind.Objective, nameof(Objective.DirectiveId)),
+		[typeof(StellarDirective)] = new(DependencyEndpointKind.Directive, nameof(StellarDirective.ParentDirectiveId)),
+		[typeof(Fate)] = new(DependencyEndpointKind.Fate, null),
+	};
+
+	private readonly EntityLifecycleResolver _lifecycle = lifecycleResolver;
+	private readonly IReadOnlyList<IIntrinsicDependencyRule> _intrinsicRules = intrinsicRules.ToList();
+
+	/// <summary>
+	/// Judges the save pending on <paramref name="context"/>.
+	/// </summary>
+	public async Task<StateJudgement> JudgeAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(context);
+		var judgement = new StateJudgement();
+		await JudgeOnrushAsync(context, judgement, cancellationToken);
+		await JudgePolarisAsync(context, judgement, cancellationToken);
+
+		var changes = await ReadChangesAsync(context, cancellationToken);
+		if (changes.Count > 0)
+		{
+			await new LifecycleRuling(this, context, judgement, cancellationToken).RuleAsync(changes);
+		}
+
+		return judgement;
+	}
+
+	/// <summary>
+	/// At most one planning placeholder sprint, and at most one active sprint: started, not ended, not the placeholder.
+	/// </summary>
+	private static async Task JudgeOnrushAsync(PlainfraContext context, StateJudgement judgement, CancellationToken cancellationToken)
+	{
+		var tracked = context.ChangeTracker.Entries<OnrushSprint>().ToList();
+		var candidates = tracked.Where(entry => entry.State is EntityState.Added or EntityState.Modified).ToList();
+		if (candidates.Count == 0)
+		{
+			return;
+		}
+
+		var planning = candidates
+			.Where(entry => string.Equals(entry.Entity.Id, OnrushSprint.PlanningPlaceholderId, StringComparison.OrdinalIgnoreCase))
+			.ToList();
+		if (planning.Count > 1)
+		{
+			judgement.Refuse(SinglePlanningOnrushRule, SubjectOf(planning[0].Entity), "Only one planning onrush sprint may exist at a time.");
+		}
+		else if (planning is [{ State: EntityState.Added } added]
+			&& await context.OnrushSprints.AsNoTracking().AnyAsync(sprint => sprint.Id == OnrushSprint.PlanningPlaceholderId, cancellationToken))
+		{
+			judgement.Refuse(SinglePlanningOnrushRule, SubjectOf(added.Entity), "A planning onrush sprint already exists.");
+		}
+
+		var active = candidates.Where(entry => IsActiveOnrush(entry.Entity)).ToList();
+		if (active.Count > 1)
+		{
+			judgement.Refuse(SingleActiveOnrushRule, SubjectOf(active[1].Entity), "Only one onrush sprint may be active at a time.");
+			return;
+		}
+
+		if (active.Count == 0)
+		{
+			return;
+		}
+
+		// A tracked sprint is read as the save leaves it, so ending one sprint and starting another in one save is no clash.
+		var trackedIds = tracked.Select(entry => entry.Entity.Id).ToList();
+		if (await context.OnrushSprints
+			.AsNoTracking()
+			.AnyAsync(sprint => sprint.Id != OnrushSprint.PlanningPlaceholderId
+				&& !trackedIds.Contains(sprint.Id)
+				&& sprint.StartDate != null
+				&& sprint.EndDate == null,
+				cancellationToken))
+		{
+			judgement.Refuse(SingleActiveOnrushRule, SubjectOf(active[0].Entity), "Another onrush sprint is already active.");
+		}
+	}
+
+	/// <summary>
+	/// At most one active Polaris cycle: started and not ended.
+	/// </summary>
+	private static async Task JudgePolarisAsync(PlainfraContext context, StateJudgement judgement, CancellationToken cancellationToken)
+	{
+		var tracked = context.ChangeTracker.Entries<PolarisCycle>().ToList();
+		var active = tracked
+			.Where(entry => entry.State is EntityState.Added or EntityState.Modified && IsActivePolaris(entry.Entity))
+			.ToList();
+		if (active.Count > 1)
+		{
+			judgement.Refuse(SingleActivePolarisRule, SubjectOf(active[1].Entity), "Only one Polaris cycle may be active at a time.");
+			return;
+		}
+
+		if (active.Count == 0)
+		{
+			return;
+		}
+
+		var trackedIds = tracked.Select(entry => entry.Entity.Id).ToList();
+		if (await context.PolarisCycles
+			.AsNoTracking()
+			.AnyAsync(cycle => !trackedIds.Contains(cycle.Id) && cycle.StartTime != null && cycle.EndTime == null, cancellationToken))
+		{
+			judgement.Refuse(SingleActivePolarisRule, SubjectOf(active[0].Entity), "Another Polaris cycle is already active.");
+		}
+	}
+
+	/// <summary>
+	/// Whether the lifecycle rules would let the save move <paramref name="entity"/> to <paramref name="status"/>, judged on the
+	/// save as it stands: the move meets no rule the item does not meet already where the save leaves it. A held gate of a
+	/// state the move enters blocks it, and so does bringing open work back under a directive that is Over; a conflict the
+	/// save has anyway (open work created under such a directive) does not, and is weighed as usual. Nothing is proposed to
+	/// unblock a move, whatever the level. The engine makes its own moves only where this holds
+	/// (<see cref="MembershipReactions"/>).
+	/// </summary>
+	/// <param name="context">The unit of work being saved.</param>
+	/// <param name="entity">A tracked objective, stellar directive or fate.</param>
+	/// <param name="status">The status the move would set, read from where the item is stored.</param>
+	/// <param name="cancellationToken">A token to cancel the reads.</param>
+	public async Task<bool> AllowsAsync(PlainfraContext context, object entity, Enum status, CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(context);
+		ArgumentNullException.ThrowIfNull(entity);
+		ArgumentNullException.ThrowIfNull(status);
+		if (!Shapes.ContainsKey(entity.GetType()))
+		{
+			throw new ArgumentException($"A {entity.GetType().Name} has no lifecycle the judge reads.", nameof(entity));
+		}
+
+		var entry = context.Entry(entity);
+		var stored = entry.State == EntityState.Added ? null : await entry.GetDatabaseValuesAsync(cancellationToken);
+		var current = (Enum)entry.Property(_lifecycle.StatusPropertyOf(entity.GetType())!.Name).CurrentValue!;
+		var asIs = await RulesMetAsync(context, ChangeOf(entry, stored, current), cancellationToken);
+		var moved = await RulesMetAsync(context, ChangeOf(entry, stored, status), cancellationToken);
+		return moved.IsSubsetOf(asIs);
+	}
+
+	/// <summary>
+	/// The rules one change meets on the save alone.
+	/// </summary>
+	private async Task<HashSet<string>> RulesMetAsync(PlainfraContext context, RequestedChange change, CancellationToken cancellationToken)
+	{
+		var judgement = new StateJudgement();
+		await new LifecycleRuling(this, context, judgement, cancellationToken).JudgeAsync(change);
+		return judgement.Conflicts.Select(conflict => conflict.Rule).ToHashSet(StringComparer.Ordinal);
+	}
+
+	/// <summary>
+	/// Reads what the save asks of each objective, stellar directive and fate whose status or parent it changes, or that it
+	/// creates: the status and parent as stored against those it is about to store. The stored row, not the tracked original
+	/// values, is the reference, so an entity attached rather than loaded is read correctly too.
+	/// </summary>
+	private async Task<List<RequestedChange>> ReadChangesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var changes = new List<RequestedChange>();
+		var entries = context.ChangeTracker.Entries()
+			.Where(entry => entry.State is EntityState.Added or EntityState.Modified && Shapes.ContainsKey(entry.Entity.GetType()))
+			.ToList();
+		foreach (var entry in entries)
+		{
+			var shape = Shapes[entry.Entity.GetType()];
+			var statusName = _lifecycle.StatusPropertyOf(entry.Entity.GetType())!.Name;
+			if (entry.State == EntityState.Modified
+				&& !entry.Property(statusName).IsModified
+				&& !(shape.ParentProperty is { } parentName && entry.Property(parentName).IsModified))
+			{
+				continue;
+			}
+
+			var stored = entry.State == EntityState.Added ? null : await entry.GetDatabaseValuesAsync(cancellationToken);
+			changes.Add(ChangeOf(entry, stored, (Enum)entry.Property(statusName).CurrentValue!));
+		}
+
+		return changes;
+	}
+
+	/// <summary>
+	/// What a save that leaves the item in <paramref name="status"/> asks of it, against its stored row
+	/// (<see langword="null"/> for an item the save creates).
+	/// </summary>
+	private RequestedChange ChangeOf(EntityEntry entry, PropertyValues? stored, Enum status)
+	{
+		var shape = Shapes[entry.Entity.GetType()];
+		var storedStatus = stored?[_lifecycle.StatusPropertyOf(entry.Entity.GetType())!.Name] as Enum;
+		return new RequestedChange(
+			entry.Entity,
+			new EndpointRef(shape.Kind, ((IPuckNamedEntity)entry.Entity).Id),
+			storedStatus,
+			status,
+			storedStatus is null ? null : _lifecycle.StateOf(storedStatus),
+			_lifecycle.StateOf(status),
+			shape.ParentProperty is { } storedParent && stored is not null ? stored[storedParent] as string : null,
+			shape.ParentProperty is { } parent ? entry.Property(parent).CurrentValue as string : null,
+			Created: stored is null);
+	}
+
+	/// <summary>
+	/// Whether a sprint is the active one: started, not ended, and not the planning placeholder.
+	/// </summary>
+	internal static bool IsActiveOnrush(OnrushSprint sprint)
+		=> sprint.Id != OnrushSprint.PlanningPlaceholderId && sprint.StartDate != null && sprint.EndDate == null;
+
+	/// <summary>
+	/// Whether a Polaris cycle is the active one: started and not ended.
+	/// </summary>
+	internal static bool IsActivePolaris(PolarisCycle cycle) => cycle.StartTime != null && cycle.EndTime == null;
+
+	/// <summary>
+	/// Names an entity for a conflict or a compensation: its kind, its id and its title.
+	/// </summary>
+	internal static StateSubject SubjectOf(object entity)
+		=> entity is IPuckNamedEntity named
+			? new StateSubject(entity.GetType().Name, named.Id, string.IsNullOrWhiteSpace(named.Title) ? null : named.Title)
+			: new StateSubject(entity.GetType().Name, entity.ToString() ?? string.Empty);
+
+	/// <summary>
+	/// Words a subject the way a message reads it: <c>Directive 'Campaign'</c>.
+	/// </summary>
+	internal static string Name(StateSubject subject)
+	{
+		var kind = subject.Kind switch
+		{
+			nameof(StellarDirective) => "Directive",
+			nameof(OnrushSprint) => "Onrush sprint",
+			nameof(PolarisCycle) => "Polaris cycle",
+			_ => subject.Kind,
+		};
+		return $"{kind} '{subject.Title ?? subject.Id}'";
+	}
+
+	private static string Count(int count, string one, string many) => $"{count} {(count == 1 ? one : many)}";
+
+	/// <summary>
+	/// How an endpoint kind with a status of its own sits in the structure: its dependency endpoint kind, and the property
+	/// naming its parent directive, if it has one.
+	/// </summary>
+	private sealed record EndpointShape(DependencyEndpointKind Kind, string? ParentProperty);
+
+	/// <summary>
+	/// What a save asks of one objective, stellar directive or fate.
+	/// </summary>
+	private sealed record RequestedChange(
+		object Entity,
+		EndpointRef Endpoint,
+		Enum? StoredStatus,
+		Enum Status,
+		LifecycleState? StoredState,
+		LifecycleState State,
+		string? StoredParentId,
+		string? ParentId,
+		bool Created)
+	{
+		/// <summary>
+		/// Gets the state the item moves from: as stored, or Open for an item the save creates.
+		/// </summary>
+		public LifecycleState From => StoredState ?? LifecycleState.Open;
+
+		/// <summary>
+		/// Gets whether the save makes a stellar directive Over that was not.
+		/// </summary>
+		public bool BecomesOver => Status is DirectiveStatus.Over && StoredStatus is not DirectiveStatus.Over;
+
+		/// <summary>
+		/// Gets whether the save moves the item under another parent.
+		/// </summary>
+		public bool ParentChanged => !string.Equals(StoredParentId, ParentId, StringComparison.OrdinalIgnoreCase);
+	}
+
+	/// <summary>
+	/// One move of an item to a state: requested, or proposed to compensate.
+	/// </summary>
+	private sealed record Move(object Entity, EndpointRef Endpoint, LifecycleState From, LifecycleState To, Enum Status);
+
+	/// <summary>
+	/// The lifecycle rules over one save: the graph as the save leaves it, and the moves compensation would add on top of it.
+	/// A conflict found on what the save asks is judged on the save alone; the moves its compensations add are judged in the
+	/// rounds that follow, each on everything moved before it, until no move is left to judge.
+	/// </summary>
+	private sealed class LifecycleRuling(StateJudge judge, PlainfraContext context, StateJudgement judgement, CancellationToken cancellationToken)
+	{
+		// Each item moves up the main line at most twice (to Started, then Finished), so the rounds end long before this.
+		private const int MaxRounds = 1024;
+
+		private readonly Dictionary<EndpointRef, Resolved?> _resolved = new(EndpointComparer.Instance);
+		private readonly Dictionary<EndpointRef, LifecycleState> _moved = new(EndpointComparer.Instance);
+		private readonly Dictionary<string, bool> _unlocked = new(StringComparer.OrdinalIgnoreCase);
+		private readonly HashSet<string> _unlocking = new(StringComparer.OrdinalIgnoreCase);
+		private readonly List<Move> _proposed = [];
+		private List<Dependency>? _explicit;
+		private List<Dependency>? _intrinsic;
+		private Dictionary<string, Checkpoint>? _checkpoints;
+
+		private EntityLifecycleResolver Lifecycle => judge._lifecycle;
+
+		public async Task RuleAsync(IReadOnlyList<RequestedChange> changes)
+		{
+			foreach (var change in changes)
+			{
+				await JudgeAsync(change);
+			}
+
+			for (var round = 0; _proposed.Count > 0 && round < MaxRounds; round++)
+			{
+				var next = new List<(Move Move, LifecycleState From)>();
+				foreach (var move in _proposed)
+				{
+					var before = await StateAsync(move.Endpoint) ?? move.From;
+					if (move.To > before)
+					{
+						_moved[move.Endpoint] = move.To;
+						next.Add((move, before));
+					}
+				}
+
+				_proposed.Clear();
+				_unlocked.Clear();
+				foreach (var (move, from) in next)
+				{
+					await JudgeMoveAsync(SubjectOf(move.Entity), move.Endpoint, move.Entity.GetType(), from, move.To, becomesOver: false);
+				}
+			}
+		}
+
+		/// <summary>
+		/// Judges what the save asks of one item on the save alone: the move, and where it arrives. The moves its conflicts
+		/// propose are left for the rounds <see cref="RuleAsync"/> runs.
+		/// </summary>
+		public async Task JudgeAsync(RequestedChange change)
+		{
+			var subject = SubjectOf(change.Entity);
+			if (change.State != change.From || change.BecomesOver)
+			{
+				await JudgeMoveAsync(subject, change.Endpoint, change.Entity.GetType(), change.From, change.State, change.BecomesOver);
+			}
+
+			await JudgeArrivalAsync(subject, change);
+		}
+
+		/// <summary>
+		/// Judges one item's move: the gates of every state it enters, and the open children of a directive that finishes or
+		/// becomes Over.
+		/// </summary>
+		private async Task JudgeMoveAsync(StateSubject subject, EndpointRef endpoint, Type kind, LifecycleState from, LifecycleState to, bool becomesOver)
+		{
+			var transition = Lifecycle.Transition(kind, from, to);
+			foreach (var state in transition.Entered)
+			{
+				if (state == LifecycleState.Started)
+				{
+					await GateAsync(subject, endpoint, DependencyConstraint.ToBegin, StartGateRule, "start");
+				}
+				else if (state == LifecycleState.Finished)
+				{
+					await GateAsync(subject, endpoint, DependencyConstraint.ToFinish, FinishGateRule, "finish");
+					if (kind == typeof(StellarDirective))
+					{
+						await OpenChildrenAsync(subject, endpoint, "finish");
+					}
+				}
+			}
+
+			if (becomesOver && !transition.Entered.Contains(LifecycleState.Finished))
+			{
+				await OpenChildrenAsync(subject, endpoint, "be Over");
+			}
+		}
+
+		private async Task GateAsync(StateSubject subject, EndpointRef target, DependencyConstraint gate, string rule, string verb)
+		{
+			var blocking = new List<Dependency>();
+			foreach (var edge in await ExplicitAsync())
+			{
+				// The default constraint (null) is ToBegin.
+				if (Targets(edge, target) && (edge.Constraint ?? DependencyConstraint.ToBegin) == gate && !await SatisfiedAsync(edge))
+				{
+					blocking.Add(edge);
+				}
+			}
+
+			if (blocking.Count > 0)
+			{
+				await ConflictAsync(rule, subject, $"{Name(subject)} cannot {verb}: it is blocked by {Count(blocking.Count, "dependency", "dependencies")}.", blocking);
+			}
+		}
+
+		private async Task OpenChildrenAsync(StateSubject subject, EndpointRef target, string verb)
+		{
+			var open = new List<Dependency>();
+			foreach (var edge in await IntrinsicAsync())
+			{
+				if (Targets(edge, target) && !await SatisfiedAsync(edge))
+				{
+					open.Add(edge);
+				}
+			}
+
+			if (open.Count > 0)
+			{
+				await ConflictAsync(OpenChildrenRule, subject, $"{Name(subject)} cannot {verb}: it still has {Count(open.Count, "open child", "open children")}.", open);
+			}
+		}
+
+		/// <summary>
+		/// Open work arriving under a directive that was Over before the save and stays Over: the directive reopens to the
+		/// finish that tolerates open work. A directive this save makes Over is judged by its own move instead, whose
+		/// compensation finishes the work.
+		/// </summary>
+		private async Task JudgeArrivalAsync(StateSubject subject, RequestedChange change)
+		{
+			if (change.ParentId is null || change.State is not (LifecycleState.Open or LifecycleState.Started))
+			{
+				return;
+			}
+
+			var arrived = change.Created || change.ParentChanged || change.StoredState is LifecycleState.Finished or LifecycleState.Deferred;
+			if (!arrived
+				|| (await ResolveAsync(new EndpointRef(DependencyEndpointKind.Directive, change.ParentId)))?.Entity is not StellarDirective parent
+				|| parent.Status != DirectiveStatus.Over
+				|| await StoredStatusAsync(parent) is not DirectiveStatus.Over)
+			{
+				return;
+			}
+
+			var reopened = Lifecycle.DefaultStatus(typeof(StellarDirective), LifecycleState.Finished)!;
+			var move = new Move(parent, new EndpointRef(DependencyEndpointKind.Directive, parent.Id), LifecycleState.Finished, LifecycleState.Finished, reopened);
+			judgement.Conflict(
+				new StateConflict(
+					StateConflictKind.Lifecycle,
+					OverOpenWorkRule,
+					subject,
+					$"{Name(subject)} is open work, and its directive is Over.",
+					[Compensation(move, "It receives open work.")]),
+				[move.Entity]);
+		}
+
+		/// <summary>
+		/// Records a lifecycle conflict over the edges that block it, with the moves that would satisfy them all — or none,
+		/// when any of them could not be satisfied — and proposes those moves for judging in the next round.
+		/// </summary>
+		private async Task ConflictAsync(string rule, StateSubject subject, string message, IReadOnlyList<Dependency> blocking)
+		{
+			var moves = new List<Move>();
+			foreach (var edge in blocking)
+			{
+				var satisfying = await CompensateAsync(edge.Source, Needed(edge), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+				if (satisfying is null)
+				{
+					judgement.Conflict(new StateConflict(StateConflictKind.Lifecycle, rule, subject, message, []), []);
+					return;
+				}
+
+				moves.AddRange(satisfying);
+			}
+
+			// One move per item: the furthest any edge needs, since a finish passes through the start.
+			var merged = moves
+				.GroupBy(move => move.Endpoint, EndpointComparer.Instance)
+				.Select(group => group.MaxBy(move => move.To)!)
+				.ToList();
+			var reason = rule == OpenChildrenRule ? "Its directive is finishing." : "A dependency needs it.";
+			judgement.Conflict(
+				new StateConflict(StateConflictKind.Lifecycle, rule, subject, message, merged.Select(move => Compensation(move, reason)).ToList()),
+				merged.Select(move => move.Entity));
+			_proposed.AddRange(merged);
+		}
+
+		/// <summary>
+		/// The moves that would bring an edge's source to <paramref name="needed"/>, or <see langword="null"/> when nothing the
+		/// core could move would.
+		/// </summary>
+		private async Task<List<Move>?> CompensateAsync(EndpointRef source, LifecycleState needed, HashSet<string> visiting)
+		{
+			if (source.Kind == DependencyEndpointKind.Checkpoint)
+			{
+				// A checkpoint unlocks of itself once what holds it is met; only the dependencies holding it can be moved.
+				var checkpoint = await CheckpointAsync(source.Id);
+				if (checkpoint is null
+					|| !DependencyReconciler.TollMet(checkpoint, DateTime.Now)
+					|| !DependencyReconciler.ConditionMet(checkpoint)
+					|| !visiting.Add(source.Id))
+				{
+					return null;
+				}
+
+				var moves = new List<Move>();
+				foreach (var edge in await ExplicitAsync())
+				{
+					if (!Targets(edge, source) || await SatisfiedAsync(edge))
+					{
+						continue;
+					}
+
+					var inner = await CompensateAsync(edge.Source, Needed(edge), visiting);
+					if (inner is null)
+					{
+						return null;
+					}
+
+					moves.AddRange(inner);
+				}
+
+				return moves;
+			}
+
+			// An occurrence moves with time, not by a status the core could set.
+			if (source.Kind == DependencyEndpointKind.Eventive || await ResolveAsync(source) is not { } resolved)
+			{
+				return null;
+			}
+
+			var state = _moved.TryGetValue(source, out var moved) ? moved : resolved.State;
+			if (state >= needed)
+			{
+				return [];
+			}
+
+			var kind = resolved.Entity.GetType();
+			if (state == LifecycleState.Deferred
+				|| !Lifecycle.StatesOf(kind).Contains(needed)
+				|| Lifecycle.DefaultStatus(kind, needed) is not { } status)
+			{
+				return null;
+			}
+
+			return [new Move(resolved.Entity, source, state, needed, status)];
+		}
+
+		/// <summary>
+		/// Whether an edge holds, read on the save as it stands and the moves proposed so far: its source reached the state
+		/// its trigger needs, or, for a checkpoint source, the checkpoint would unlock.
+		/// </summary>
+		private async Task<bool> SatisfiedAsync(Dependency edge)
+		{
+			if (edge.SourceKind == DependencyEndpointKind.Checkpoint)
+			{
+				return await UnlockedAsync(edge.SourceId);
+			}
+
+			return await StateAsync(edge.Source) is { } state && state >= Needed(edge);
+		}
+
+		/// <summary>
+		/// Whether a checkpoint would unlock: its toll and condition stand aside and every dependency into it holds. A loop of
+		/// checkpoints holds itself locked.
+		/// </summary>
+		private async Task<bool> UnlockedAsync(string checkpointId)
+		{
+			if (_unlocked.TryGetValue(checkpointId, out var known))
+			{
+				return known;
+			}
+
+			if (!_unlocking.Add(checkpointId))
+			{
+				return false;
+			}
+
+			var checkpoint = await CheckpointAsync(checkpointId);
+			var unlocked = checkpoint is not null && DependencyReconciler.TollMet(checkpoint, DateTime.Now) && DependencyReconciler.ConditionMet(checkpoint);
+			if (unlocked)
+			{
+				var target = new EndpointRef(DependencyEndpointKind.Checkpoint, checkpointId);
+				foreach (var edge in await ExplicitAsync())
+				{
+					if (Targets(edge, target) && !await SatisfiedAsync(edge))
+					{
+						unlocked = false;
+						break;
+					}
+				}
+			}
+
+			_unlocking.Remove(checkpointId);
+			_unlocked[checkpointId] = unlocked;
+			return unlocked;
+		}
+
+		/// <summary>
+		/// An endpoint's state on the save as it stands and the moves proposed so far, or <see langword="null"/> when no entity
+		/// backs it (an occurrence still projected, an id naming nothing).
+		/// </summary>
+		private async Task<LifecycleState?> StateAsync(EndpointRef endpoint)
+			=> _moved.TryGetValue(endpoint, out var moved) ? moved : (await ResolveAsync(endpoint))?.State;
+
+		private async Task<Resolved?> ResolveAsync(EndpointRef endpoint)
+		{
+			if (_resolved.TryGetValue(endpoint, out var known))
+			{
+				return known;
+			}
+
+			var entity = await DependencyEndpoints.ResolveEntityAsync(context, endpoint, cancellationToken);
+			var resolved = entity is null || context.Entry(entity).State == EntityState.Deleted
+				? null
+				: new Resolved(entity, Lifecycle.StateOf(entity));
+			_resolved[endpoint] = resolved;
+			return resolved;
+		}
+
+		private async Task<Enum?> StoredStatusAsync(StellarDirective directive)
+		{
+			var entry = context.Entry(directive);
+			return entry.State switch
+			{
+				EntityState.Added => null,
+				EntityState.Unchanged => directive.Status,
+				_ => (await entry.GetDatabaseValuesAsync(cancellationToken))?[nameof(StellarDirective.Status)] as Enum,
+			};
+		}
+
+		/// <summary>
+		/// The stored edges as the save leaves them: those it deletes gone, those it adds counted.
+		/// </summary>
+		private async Task<List<Dependency>> ExplicitAsync()
+		{
+			if (_explicit is not null)
+			{
+				return _explicit;
+			}
+
+			var stored = await context.Dependencies.ToListAsync(cancellationToken);
+			_explicit = stored
+				.Where(dependency => context.Entry(dependency).State != EntityState.Deleted)
+				.Concat(context.ChangeTracker.Entries<Dependency>()
+					.Where(entry => entry.State == EntityState.Added)
+					.Select(entry => entry.Entity))
+				.Distinct()
+				.ToList();
+			return _explicit;
+		}
+
+		/// <summary>
+		/// The edges the structure implies as the save leaves it (PEP102 patch 9).
+		/// </summary>
+		private async Task<List<Dependency>> IntrinsicAsync()
+		{
+			if (_intrinsic is not null)
+			{
+				return _intrinsic;
+			}
+
+			_intrinsic = [];
+			foreach (var rule in judge._intrinsicRules)
+			{
+				_intrinsic.AddRange(await rule.DeriveAsync(context, cancellationToken));
+			}
+
+			return _intrinsic;
+		}
+
+		private async Task<Checkpoint?> CheckpointAsync(string checkpointId)
+		{
+			if (_checkpoints is null)
+			{
+				var stored = await context.Checkpoints.ToListAsync(cancellationToken);
+				_checkpoints = stored
+					.Where(checkpoint => context.Entry(checkpoint).State != EntityState.Deleted)
+					.Concat(context.ChangeTracker.Entries<Checkpoint>()
+						.Where(entry => entry.State == EntityState.Added)
+						.Select(entry => entry.Entity))
+					.DistinctBy(checkpoint => checkpoint.Id, StringComparer.OrdinalIgnoreCase)
+					.ToDictionary(checkpoint => checkpoint.Id, StringComparer.OrdinalIgnoreCase);
+			}
+
+			return _checkpoints.GetValueOrDefault(checkpointId);
+		}
+
+		private StateCompensation Compensation(Move move, string reason)
+			=> new(SubjectOf(move.Entity), move.From, move.To, move.Status.ToString(), reason);
+
+		/// <summary>
+		/// The state an edge needs of its source: the finish for a finish trigger (the default), the start for a begin trigger.
+		/// </summary>
+		private static LifecycleState Needed(Dependency edge)
+			=> (edge.Trigger ?? DependencyTrigger.OnFinish) == DependencyTrigger.OnFinish ? LifecycleState.Finished : LifecycleState.Started;
+
+		private static bool Targets(Dependency edge, EndpointRef target)
+			=> edge.TargetKind == target.Kind && string.Equals(edge.TargetId, target.Id, StringComparison.OrdinalIgnoreCase);
+
+		private sealed record Resolved(object Entity, LifecycleState State);
+	}
+
+	/// <summary>
+	/// Compares endpoints as the core's ids compare: kind and slot exactly, id regardless of case.
+	/// </summary>
+	private sealed class EndpointComparer : IEqualityComparer<EndpointRef>
+	{
+		public static EndpointComparer Instance { get; } = new();
+
+		public bool Equals(EndpointRef x, EndpointRef y)
+			=> x.Kind == y.Kind && x.RecurrenceId == y.RecurrenceId && string.Equals(x.Id, y.Id, StringComparison.OrdinalIgnoreCase);
+
+		public int GetHashCode(EndpointRef endpoint)
+			=> HashCode.Combine(endpoint.Kind, endpoint.RecurrenceId, StringComparer.OrdinalIgnoreCase.GetHashCode(endpoint.Id));
+	}
+}
+
+/// <summary>
+/// What <see cref="StateJudge"/> found in one save (PEP103): the conflicts, and the entities their subjects and compensations
+/// name, so a compensation is applied to the very instance the save tracks.
+/// </summary>
+public sealed class StateJudgement
+{
+	private readonly List<StateConflict> _conflicts = [];
+	private readonly Dictionary<string, object> _entities = new(StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// Gets every conflict found, in the order found.
+	/// </summary>
+	public IReadOnlyList<StateConflict> Conflicts => _conflicts;
+
+	/// <summary>
+	/// Gets the tracked entity a subject names, or <see langword="null"/> when the judge did not resolve it.
+	/// </summary>
+	public object? EntityOf(StateSubject subject)
+	{
+		ArgumentNullException.ThrowIfNull(subject);
+		return _entities.GetValueOrDefault(Key(subject.Kind, subject.Id));
+	}
+
+	internal void Conflict(StateConflict conflict, IEnumerable<object> entities)
+	{
+		_conflicts.Add(conflict);
+		foreach (var entity in entities)
+		{
+			var subject = StateJudge.SubjectOf(entity);
+			_entities[Key(subject.Kind, subject.Id)] = entity;
+		}
+	}
+
+	internal void Refuse(string rule, StateSubject subject, string message)
+		=> _conflicts.Add(new StateConflict(StateConflictKind.Systemic, rule, subject, message, []));
+
+	private static string Key(string kind, string id) => $"{kind}\u001F{id}";
+}

@@ -31,6 +31,9 @@ public sealed class SystemModule : Module
 			return Results.Ok(await api.GetBriefingAsync(cancellationToken));
 		});
 
+		// How each kind's lifecycle reads (PEP103), so a client shows statuses the way the core reads them.
+		group.MapGet("/lifecycles", (ISystemApi api) => Results.Ok(api.GetLifecycles()));
+
 		// Long-lived: holds the response open and streams entity changes as they are saved, so a client
 		// learns about writes it did not make — a markdown edit picked up by the watcher, the CLI, or the
 		// scheduler.

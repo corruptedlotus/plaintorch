@@ -41,5 +41,6 @@ export * from './ReflectiveItem'
 export * from './AttentiveItem'
 export * from './EventiveItem'
 export * from './StatusItem'
+export * from './StateBubble'
 
 export * from './navigateToEntity'

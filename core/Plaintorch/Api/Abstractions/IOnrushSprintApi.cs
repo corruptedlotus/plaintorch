@@ -68,9 +68,10 @@ public interface IOnrushSprintApi
 	Task SetGraphLayoutAsync(string onrushSprintId, string? graphLayout, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Assigns all onrush-state objectives to the target sprint.
+	/// Assigns every objective whose status is Onboard to the target sprint, wherever it sits now: the sprint it came on board
+	/// may have ended, or it may be in none.
 	/// </summary>
-	Task<IReadOnlyList<Objective>> AssignAllOnrushStateObjectivesToSelfAsync(string onrushSprintId, CancellationToken cancellationToken = default);
+	Task<IReadOnlyList<Objective>> AssignAllOnboardObjectivesToSelfAsync(string onrushSprintId, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Issues a new executive order against an onrush sprint.

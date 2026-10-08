@@ -367,7 +367,7 @@ public sealed class OnrushSprintApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<IReadOnlyList<Objective>> AssignAllOnrushStateObjectivesToSelfAsync(string onrushSprintId, CancellationToken cancellationToken = default)
+	public async Task<IReadOnlyList<Objective>> AssignAllOnboardObjectivesToSelfAsync(string onrushSprintId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
 		var sprintExists = await context.OnrushSprints.AnyAsync(sprint => sprint.Id == onrushSprintId, cancellationToken);
@@ -377,7 +377,7 @@ public sealed class OnrushSprintApiService(
 		}
 
 		var objectives = await context.Objectives
-			.Where(objective => objective.Status == ObjectiveStatus.Onrush)
+			.Where(objective => objective.Status == ObjectiveStatus.Onboard)
 			.ToListAsync(cancellationToken);
 
 		foreach (var objective in objectives)
@@ -388,7 +388,7 @@ public sealed class OnrushSprintApiService(
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
-			"onrush.assign-onrush-state-objectives",
+			"onrush.assign-onboard-objectives",
 			subjectType: nameof(OnrushSprint),
 			subjectId: onrushSprintId,
 			details: new { objectiveCount = objectives.Count },

@@ -70,7 +70,7 @@ public sealed class VaultEntityGateway(PlainfraContext context)
 
 	// Restricting relationships a save-time state rule releases in the very save that deletes the principal, so they never
 	// reach the database: an incentive's work records, its executives and a decree's reflectives (kept with the reference
-	// cleared in ended cycles, removed elsewhere; PlaintorchStatePolicyProcessor).
+	// cleared in ended cycles, removed elsewhere; the state engine's StructureReactions).
 	private static readonly HashSet<(Type Dependent, string Property)> ReleasedOnDelete =
 	[
 		(typeof(Executive), nameof(Executive.IncentiveId)),

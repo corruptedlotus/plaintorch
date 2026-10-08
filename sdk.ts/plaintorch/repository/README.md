@@ -94,12 +94,27 @@ The one call that folds the whole edit cycle. See below.
 
 ```ts
 protected binder = this.ref.binder('entity', {
-  status: (o) => core.objectives.shiftWorkflow(o.id, { status: o.status }),
-  '*':    (o) => core.objectives.update(o.id, o),
+  '*': (o, keyPath) => core.objectives.update(o.id, { [keyPath]: o[keyPath] }),
 }, (keyPath, o, saved) => {
   if (saved && keyPath === 'title') void this.revealRenamedNote(o.id)
 })
-// template: <p7t-editable ${this.binder.bind('status')}> … </p7t-editable>
+// template: <p7t-editable-plaintext ${this.binder.bind('title')}></p7t-editable-plaintext>
+```
+
+A state is never bound: the state bubble (`shiftState`, `editState` in SIPA) sends the shift itself and shows what
+became of it.
+
+### Await the core's final answer — `ref.awaitCommit`
+For a surface that asks for a change itself and shows its outcome. The commit runs in a state enforcement scope
+(`client.withStateEnforcement`, PEP103), so a change the core holds back for confirmation, or refuses, comes back with
+the outcome instead of reaching the client-wide prompt, and no failure toast is raised. `{ force: true }` repeats it
+with the user's confirmation.
+
+```ts
+const { saved, enforcement } = await this.ref.awaitCommit(o => core.objectives.shiftWorkflow(o.id, { status }))
+if (enforcement?.outcome === StateDecisionOutcome.Confirm) {
+  // ask, then: await this.ref.awaitCommit(send, { force: true })
+}
 ```
 
 ### Edit imperatively (a button, not a binding)

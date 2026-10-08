@@ -105,7 +105,7 @@ export class EditablePart<T> extends Component {
 	}
 
 	protected beginEditing() {
-		this.editingPromise = this.doEdit(this.value)
+		this.editingPromise = this.doEdit(this.value, this)
 		if (!!this.editingPromise) {
 			this.active = true
 			this.editingPromise.then(
@@ -166,7 +166,11 @@ export class EditablePart<T> extends Component {
 		return !this.editButton || this.disabled || this.active ? nothing : this.affordanceTemplate('edit', 'lucide:pencil', 'Edit', () => this.startEditing())
 	}
 
-	doEdit = (value: T | undefined): Promise<T | undefined> | undefined => undefined
+	/**
+	 * Turns the current value into a promise of the next one; a rejection is a cancel. It is handed the field too, for a
+	 * prompt that points at what is being edited — a bubble.
+	 */
+	doEdit = (_value: T | undefined, _field: EditablePart<T>): Promise<T | undefined> | undefined => undefined
 
 	static override get styles() {
 		return css`

@@ -61,13 +61,13 @@ public sealed class BacklogScheduleTests : VaultTestBase
 	// --- recording: the objective begins at Polaris ---
 
 	[Fact]
-	public async Task An_objective_begins_when_it_is_set_to_polaris_not_when_it_joins_an_onrush()
+	public async Task An_objective_begins_when_it_is_set_to_polaris_not_when_it_comes_on_board_an_onrush()
 	{
 		var objective = await Objective(api => api.CreateStandaloneAsync("Chart the course", cancellationToken: Ct));
 		Assert.Empty(await StoredAsync(objective.Id));
 
-		// Onrush commits the objective to a sprint without beginning it.
-		await ShiftAsync(objective.Id, ObjectiveStatus.Onrush);
+		// Onboard commits the objective to a sprint without beginning it.
+		await ShiftAsync(objective.Id, ObjectiveStatus.Onboard);
 		Assert.Empty(await StoredAsync(objective.Id));
 
 		var before = DateTime.Now;
@@ -86,11 +86,11 @@ public sealed class BacklogScheduleTests : VaultTestBase
 	public async Task Adding_an_onrush_member_records_nothing()
 	{
 		var objective = await Objective(api => api.CreateStandaloneAsync("Sprint work", cancellationToken: Ct));
-		var sprint = await Vault.WithScopeAsync(services => services.GetRequiredService<IOnrushSprintApi>().PlanAsync(new OnrushSprintPlan("Sprint"), Ct));
+		var sprint = await Vault.WithScopeAsync(services => services.GetRequiredService<IOnrushSprintApi>().StartNewAsync(cancellationToken: Ct));
 
-		// Joining a sprint promotes a standby objective to Onrush, which is not a begin.
+		// Coming on board the active sprint makes a standby objective Onboard, which is not a begin.
 		var member = await Objective(api => api.AddToOnrushAsync(objective.Id, sprint.Id, Ct));
-		Assert.Equal(ObjectiveStatus.Onrush, member.Status);
+		Assert.Equal(ObjectiveStatus.Onboard, member.Status);
 		Assert.Empty(await StoredAsync(objective.Id));
 	}
 
@@ -471,7 +471,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		Assert.Equal([LifecycleState.Started, LifecycleState.Finished], resolver.Transition(ObjectiveStatus.Standby, ObjectiveStatus.Done).Entered);
 		Assert.Equal([LifecycleState.Started, LifecycleState.Finished], resolver.Transition(ObjectiveStatus.Failed, ObjectiveStatus.Archived).Entered);
 		Assert.Equal([LifecycleState.Finished, LifecycleState.Started], resolver.Transition(ObjectiveStatus.Done, ObjectiveStatus.Blocked).Left);
-		Assert.False(resolver.Transition(ObjectiveStatus.Standby, ObjectiveStatus.Onrush).IsChange);
+		Assert.False(resolver.Transition(ObjectiveStatus.Standby, ObjectiveStatus.Onboard).IsChange);
 		var deferral = resolver.Transition(ObjectiveStatus.Polaris, ObjectiveStatus.Failed);
 		Assert.True(deferral.Defers);
 		Assert.Empty(deferral.Entered);

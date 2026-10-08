@@ -3,7 +3,7 @@ import { EntityBanner } from './EntityBanner'
 import { DependencyEndpointKind, Objective, ObjectiveUpdate, PolarisCycle } from '@pleiades/sdk'
 import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
 import { OnrushSprint } from "@pleiades/sdk"
-import { addObjectiveToPolaris, confirmAction, core, IconItem, IconName, isObjectiveInCycle, followRenamedNote, objectiveStatusDescriptors, removeConfirmation, SelectCollegeModal, SelectStatusModal } from ".."
+import { addObjectiveToPolaris, confirmAction, core, editState, IconItem, IconName, isObjectiveInCycle, followRenamedNote, removeConfirmation, SelectCollegeModal } from ".."
 import { createChild, SuggestModalBase, toast } from '../../host'
 
 @component('p7t-objective-banner')
@@ -19,8 +19,8 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 		return this.entity ? { kind: DependencyEndpointKind.Objective, id: this.entity.id } : undefined
 	}
 
+	// The status is not bound: the state bubble saves a shift itself (editState).
 	protected binder = this.ref.binder('entity', {
-		status: (entity) => core.objectives.shiftWorkflow(entity.id, { status: entity.status }),
 		// Send only the changed field. The whole objective is cyclic (directive → objectives → this objective)
 		// once the identity map cross-links it, so serializing it throws; the update endpoint wants the one field.
 		'*': (entity, keyPath) => core.objectives.update(entity.id, { [keyPath]: entity[keyPath as keyof Objective] } as ObjectiveUpdate)
@@ -123,7 +123,7 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${() => SelectStatusModal.prompt(objectiveStatusDescriptors)} ${this.binder.bind('status')}>
+			<p7t-editable .value=${this.entity!.status} .doEdit=${(_: unknown, field: HTMLElement) => editState(field, this.entity)}>
 				<p7t-status-item
 					.status=${ObjectiveStatus[this.entity!.status] as keyof typeof ObjectiveStatus}>
 				</p7t-status-item>

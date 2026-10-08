@@ -383,7 +383,6 @@ public sealed class PolarisCycleApiService(
 					objective.OnrushSprintId = plan.OnrushSprintId;
 				}
 
-				objective.Status = ObjectiveStatus.Polaris;
 				executiveTitle = plan.ExecutiveTitle ?? objective.Title;
 				break;
 
@@ -408,8 +407,18 @@ public sealed class PolarisCycleApiService(
 		};
 		executive.NormalizeTimeAllocations();
 
+		// Joining the active cycle moves the objective to Polaris where nothing blocks it: the state engine does that on the
+		// save (Patch103.3). An existing objective's note follows its planned fields and whatever status the engine sets.
 		context.Add(executive);
-		await context.SaveChangesAsync(cancellationToken);
+		if (plan.Mode == PolarisExecutivePlanningMode.FromObjective)
+		{
+			await writeQueue.WriteAsync(objective!, cancellationToken: cancellationToken);
+		}
+		else
+		{
+			await context.SaveChangesAsync(cancellationToken);
+		}
+
 		await LoadAffinityAsync(executive, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
@@ -879,7 +888,6 @@ public sealed class PolarisCycleApiService(
 			OnrushSprintId = onrushSprintId,
 			College = college ?? ObjectiveCollege.Unspecified,
 			CelestronValue = celestronValue ?? 0,
-			Status = ObjectiveStatus.Polaris,
 		};
 
 		context.Objectives.Add(objective);

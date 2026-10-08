@@ -6,7 +6,6 @@ using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.Media;
-using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Media;
@@ -25,7 +24,6 @@ public sealed class DirectiveApiService(
 	VaultEntityLifecycleService lifecycleService,
 	VaultTemporalDataService temporalDataService,
 	VaultAuditLogService auditLogService,
-	DependencyGateService dependencyGate,
 	VaultMediaService mediaService,
 	MediaAssetFolderResolver folderResolver,
 	VaultEntityGateway entityGateway,
@@ -282,8 +280,6 @@ public sealed class DirectiveApiService(
 			throw new InvalidOperationException($"Directive '{directiveId}' is a lunar directive; shift its moonlight state through the lunar workflow instead.");
 		}
 
-		await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Directive, stellar.Id), stellar.Status, shift.Status, cancellationToken);
-
 		var previousStatus = stellar.Status;
 		stellar.Status = shift.Status;
 		await writeQueue.WriteAsync(stellar, cancellationToken: cancellationToken);
@@ -356,7 +352,7 @@ public sealed class DirectiveApiService(
 
 		var snapshot = Clone(directive);
 		var databaseGraveyard = temporalDataService.StageEntityArchive(snapshot, "api-delete", Environment.UserName);
-		// A lunar directive's timeframes go by the database cascade; the state-policy save hook clears the availabilities
+		// A lunar directive's timeframes go by the database cascade; the state interceptor clears the availabilities
 		// pointing at them, tracked, in this same save (PEP100 patch 2, D9).
 		context.Directives.Remove(directive);
 		await writeQueue.RecordRemoveAsync(snapshot, cancellationToken);
@@ -702,7 +698,7 @@ public sealed class DirectiveApiService(
 			timeframe.Icon = string.IsNullOrWhiteSpace(update.Icon.Value) ? null : update.Icon.Value.Trim();
 		}
 
-		// Leaving Availability mode clears the directives pointing at this timeframe in the state-policy save hook
+		// Leaving Availability mode clears the directives pointing at this timeframe in the state interceptor
 		// (PEP100 patch 2, D9), on every write pathway.
 		if (update.AutoInclusion is not null)
 		{
@@ -742,7 +738,7 @@ public sealed class DirectiveApiService(
 		var timeframe = await context.Timeframes.FirstOrDefaultAsync(item => item.Id == timeframeId, cancellationToken)
 			?? throw new InvalidOperationException($"Timeframe '{timeframeId}' was not found.");
 
-		// The state-policy save hook clears the directive availabilities pointing at it, tracked (PEP100 patch 2, D9).
+		// The state interceptor clears the directive availabilities pointing at it, tracked (PEP100 patch 2, D9).
 		context.Timeframes.Remove(timeframe);
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(

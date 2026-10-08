@@ -125,8 +125,9 @@ public sealed record DependencyGraphSnapshot(IReadOnlyList<Dependency> Explicit,
 }
 
 /// <summary>
-/// Reads the dependency graph — stored edges and the intrinsic edges every registered rule derives — for the gate, the
-/// reconciler, the API and the purge alike (PEP102 patch 9), so they all see the one graph.
+/// Reads the dependency graph — stored edges and the intrinsic edges every registered rule derives — for the lock readings,
+/// the API and the purge alike (PEP102 patch 9), so they see the one graph. The state judge derives the intrinsic edges through the same
+/// rules, and the reconciler reads only the stored edges, whose satisfaction it keeps.
 /// </summary>
 public sealed class DependencyGraphService(PlainfraContext context, IEnumerable<IIntrinsicDependencyRule> rules)
 {

@@ -1,5 +1,5 @@
 import { Controller, type ReactiveElement } from '@a11d/lit'
-import { EntityDraft, EntityRepository, identify, type EntityKey, type EntitySubscription } from '@pleiades/sdk'
+import { EntityDraft, EntityRepository, identify, type EntityKey, type EntitySubscription, type StateEnforcementProblem } from '@pleiades/sdk'
 import { getCore } from './coreProvider'
 import { ReactiveBinder } from '../editing/ReactiveBinder'
 import { toast } from '../../host'
@@ -22,6 +22,20 @@ export type EntityFieldWrite<T> = (entity: T, keyPath: string) => Promise<unknow
  * for any field without its own entry. Each write is handed the changed key, so the fallback can send a partial.
  */
 export type EntityPersistMap<T> = Record<string, EntityFieldWrite<T>> & { '*': EntityFieldWrite<T> }
+
+/** How {@link EntityRef.awaitCommit} sends a change. */
+export interface EntityCommitOptions {
+	/** Sends it forcing the compensations the core proposed: the user's confirmation of a held-back change (PEP103). */
+	readonly force?: boolean
+}
+
+/** What became of a change {@link EntityRef.awaitCommit} sent, once the core gave its final answer. */
+export interface EntityCommitOutcome {
+	/** Whether the core accepted it. */
+	readonly saved: boolean
+	/** The core's state enforcement answer (PEP103), when it held the change back for confirmation or refused it. */
+	readonly enforcement?: StateEnforcementProblem
+}
 
 /** Runs after a field commit settles, for surface-specific follow-up such as revealing a renamed note. */
 export type EntityCommitReaction<T> = (keyPath: string, entity: T, saved: boolean) => void | Promise<void>
@@ -158,6 +172,32 @@ export class EntityRef<T extends object> extends Controller {
 
 		await reaction?.(saved)
 		return saved
+	}
+
+	/**
+	 * Sends a change and awaits the core's final answer for this one commit, for a surface that asked for the change itself
+	 * and shows what became of it — the state bubble. A state enforcement answer (PEP103) comes back with the outcome rather
+	 * than going to the client's global hook, which would put up a prompt of its own, and no failure toast is raised: the
+	 * caller shows the outcome where the change was asked for. Otherwise it is {@link commit}: the same guard, invalidation,
+	 * and rollback of an edit a binding applied in advance.
+	 */
+	public async awaitCommit(send: EntityFieldPersist<T>, options: EntityCommitOptions = {}): Promise<EntityCommitOutcome> {
+		const repository = this.repository()
+		const id = this.source()
+		const entity = this.value
+		if (!repository || !id || !entity) {
+			return { saved: false }
+		}
+
+		repository.touch(id)
+		const snapshot = this.editSnapshot
+		this.editSnapshot = undefined
+
+		let enforcement: StateEnforcementProblem | undefined
+		const saved = await getCore().withStateEnforcement(
+			{ force: options.force, answer: problem => enforcement = problem },
+			() => repository.commit(id, async () => await send(entity), snapshot))
+		return { saved, enforcement }
 	}
 
 	/**

@@ -67,10 +67,11 @@ export class PlaintorchOnrushSdk {
 		return await this.client.putJson(`/api/onrush/${encodeURIComponent(onrushId)}/graph-layout`, request)
 	}
 
-	public async assignOnrushStateObjectives(onrushId: string): Promise<Objective[]> {
+	/** Pulls every objective whose status is Onboard into the sprint, wherever it sits now. */
+	public async assignOnboardObjectives(onrushId: string): Promise<Objective[]> {
 		return (
 			(await this.client.postForJson<Objective[]>(
-				`/api/onrush/${encodeURIComponent(onrushId)}/assign-onrush`,
+				`/api/onrush/${encodeURIComponent(onrushId)}/assign-onboard`,
 				{}
 			)) ?? []
 		)

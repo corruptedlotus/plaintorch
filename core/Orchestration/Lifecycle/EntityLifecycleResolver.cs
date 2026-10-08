@@ -125,6 +125,40 @@ public sealed class EntityLifecycleResolver
 		=> Kind(entityType)?.StatusType is { } statusType ? LifecycleDeclarations.DefaultStatus(statusType, state) : null;
 
 	/// <summary>
+	/// Gets the property that holds a kind's lifecycle status (the one marked <see cref="LifecycleStatusAttribute"/>), or
+	/// <see langword="null"/> for a kind whose state comes from a source or that has no lifecycle.
+	/// </summary>
+	public PropertyInfo? StatusPropertyOf(Type entityType) => Kind(entityType)?.StatusProperty;
+
+	/// <summary>
+	/// Gets the status enum a kind is read through: its status property's type, or the type a state source sets (an eventive's
+	/// resolution), or <see langword="null"/> for a kind with no status (a checkpoint) or no lifecycle.
+	/// </summary>
+	public Type? StatusTypeOf(Type entityType) => Kind(entityType)?.StatusType;
+
+	/// <summary>
+	/// Sets an entity's lifecycle status, as the core does when it moves the entity to another state of its own accord.
+	/// </summary>
+	/// <exception cref="InvalidOperationException">
+	/// The entity's kind has no status property (its state comes from a source, or it has no lifecycle), or
+	/// <paramref name="status"/> is not a value of that property's enum.
+	/// </exception>
+	public void SetStatus(object entity, Enum status)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		ArgumentNullException.ThrowIfNull(status);
+		var type = entity.GetType();
+		var property = StatusPropertyOf(type)
+			?? throw new InvalidOperationException($"'{type.Name}' has no lifecycle status the core can set.");
+		if (property.PropertyType != status.GetType())
+		{
+			throw new InvalidOperationException($"'{status.GetType().Name}.{status}' is not a status of '{type.Name}'.");
+		}
+
+		property.SetValue(entity, status);
+	}
+
+	/// <summary>
 	/// Validates, at vault activation, that every lifecycle declaration is coherent:
 	/// <list type="bullet">
 	/// <item><description>every member of a lifecycle status enum declares its state, and the enum has a main-line state;</description></item>
