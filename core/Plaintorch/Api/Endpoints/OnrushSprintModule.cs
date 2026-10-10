@@ -74,6 +74,9 @@ public sealed class OnrushSprintModule : Module
 		group.MapPost("/start-new", async (OnrushSprintDateRequest request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.StartNewAsync(request.Date, cancellationToken)));
 
+		group.MapPost("/ensure", async (EnsureOnrushRequest request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.EnsureAsync(request.Slot, cancellationToken)));
+
 		group.MapPost("/{onrushSprintId}/begin", async (string onrushSprintId, OnrushSprintDateRequest request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.BeginAsync(onrushSprintId, request.Date, cancellationToken)));
 

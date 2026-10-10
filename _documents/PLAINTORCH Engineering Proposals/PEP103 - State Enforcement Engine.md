@@ -332,6 +332,78 @@ Taking an objective out of a sprint or a cycle, or ending or deleting either, ke
 ### Open edges
 Every open edge of Patch103.2 still stands.
 
+## Patch103.4 - Reopened Dependencies and How Cycles Run
+Four rulings, built together. A status may move anywhere a dependency allows, including back, and a move back that reopens a dependency is judged like any rule. Sprints and cycles now run one way through: they begin once, end once and only after they begin, and a Polaris cycle never begins before its day. Starting a sprint uses up the plan, and joining the active or planning sprint creates it when it is missing.
+
+### Moving back (I-013)
+Any status may follow any other, as long as no dependency is reopened (user ruling). The forward gates stay as they were. The new rule, `dependency.reopen`, is judged on every move back:
+- **When it applies.** An item moves back out of the state one of its dependencies needs, and that dependency's target has already passed the state it gates. A begin constraint gates the start, a finish constraint the finish. Intrinsic edges count, so a child brought back from a finish reopens its finished directive.
+- **The exception.** Setting an item aside never reopens anything (user ruling). A deferred child's intrinsic edge is switched off anyway.
+- **What it does.** The level decides, as for any lifecycle conflict:
+  - Under Auto, each target moves back to the state before the one it gates: to its default open status for a begin constraint, to its default started status for a finish one. Each move back is judged in turn, so the cascade runs down the chain (user ruling).
+  - Under Warn, the change is held for confirmation.
+  - Under Block, it is refused.
+  - Under Ignore, it goes through.
+- **Through checkpoints.** A checkpoint the move back relocks takes back what it held.
+- **What cannot move back.** A target with no state to go back to (a fate has no open state) leaves the conflict without a compensation, so it is refused under Auto and Warn.
+- **Messages.** "Objective 'Survey' cannot move back: 1 item already relies on it." A confirmation reads "Going ahead would also reopen 2 items."
+- **Merging.** Two compensations of one item in the same direction take the furthest, back or forward. Opposite directions clash.
+- **A shift to the status an item already has** now writes nothing.
+
+### Finished directives (I-031)
+A finished directive relies on every child having finished, so open work can no longer stand under one. The Over rule became `directive.finished-open-work`: open work arriving under a directive that has finished — Fulfilled or Over, created there, moved there, or taken up again from a deferral — reopens the directive to its start (Active). Over no longer reopens to Fulfilled. Work brought back from a finish is the reopen rule's, with the same result.
+
+### How sprints and cycles run (I-015, I-016, I-017)
+New systemic rules, refused at every level and on every pathway:
+- **`onrush.restart`, `polaris.restart`.** A sprint or cycle that has ended never begins again, and its end is never moved. Clearing the end takes it up again, which stays allowed.
+- **`onrush.end`, `polaris.end`.** Nothing ends before it begins or before its start. The planning placeholder never ends: its dates are the plan's, and a plan has not begun.
+- **`polaris.early-start`.** A Polaris cycle never begins before its day (user ruling), so a future forecast can no longer be begun and supersede the plans before it.
+
+The sprint verbs check this themselves where a request changes nothing a save could read: beginning an ended sprint without a new start, or ending it again on the day it ended. They are refused through the decision service (`StateDecisionService.RefuseOutright`), with the same 409. A Polaris cycle's end is no longer refused by its lifecycle helper with an untyped error; the engine refuses it.
+
+**Move to next Polaris (I-016).** It now goes to the next cycle that can still begin (user ruling): the first day after the executive's own cycle, and no earlier than today while today's cycle has not begun. Work moved on from an old cycle lands in today's cycle, not in a past forecast that the active cycle would supersede.
+
+### Starting and joining a sprint (I-017)
+- **Start new** ensures a sprint is active (user ruling). The running sprint is returned untouched; otherwise the planning placeholder is begun; otherwise a sprint is started for today.
+- **Joining a slot.** An objective or a stellar directive can join the active sprint or the planning one (`OnrushSlot`) instead of a sprint named by id. The one it names is created when it does not exist (user ruling), as adding to the current Polaris cycle starts a cycle:
+  - the active slot starts new as above;
+  - the planning slot plans a placeholder titled "Planned Onrush".
+
+  It is served as `POST /api/onrush/ensure` and as a `slot` on the onrush join requests.
+- **SIPA's Onrush picker** always offers both, and says what happens to a missing one: "The planned Onrush will begin", "A new Onrush will start" or "A new plan will be made". The objective banner and the backlog grid use it, and the banner's picker also offers "No Onrush".
+
+Sprints and cycles share one reading of their phase, `CyclePhase` (Planned, Active, Ended). Their planning machinery stays apart: a sprint is planned as the one placeholder, a cycle as a forecast for its day (user ruling).
+
+### The client
+- **Moving back in the state bubble.** Each served dependency says whether its target relies on it (`Dependency.ReliedOn`), so the bubble greys a move back that would reopen one: "relied on by 1 item". A move back that is only held through a checkpoint is not greyed; the engine still judges it.
+- **Wording.** A compensation that moves an item back reads "Reopen".
+
+### User rulings
+- **Moving back.** Any status may follow any other as long as no dependency gets reopened, as dependencies allow it. Under Auto, the status change cascades.
+- **Setting aside is the exception.** Setting an item aside never reopens a dependency, especially as outgoing intrinsic dependencies are switched off while deferred.
+- **I-015 is a plain bug.**
+- **Polaris.** It must be impossible to start a future Polaris cycle, and "move to next Polaris" always anchors on the next cycle that can be started.
+- **Sprints and cycles.**
+  - Starting a new onrush uses up the plan when there is one, and does nothing when one is already active.
+  - No cycle ends twice or before it begins.
+  - Adding to an onrush picks the active or the planning one, and either is created when missing, as Polaris cycles are. The UI always offers both, noting when one will be created.
+  - Sprints and cycles may share cycle utilities, but not their infrastructure: a sprint's planning is a singleton, a cycle's is per cycle.
+
+### Calls made without a ruling
+- **Intrinsic edges count as dependencies for the reopen rule.** Over therefore reopens to Active rather than Fulfilled.
+- **Open work arriving under a Fulfilled directive** reopens it too (it used to be accepted, I-031).
+- **A target that cannot move back refuses the move.**
+- **Clearing a sprint's or cycle's end** stays the way to take it up again.
+- **A plan can no longer carry an end date,** since a plan has not begun. Planning with one is refused.
+- **Begun plans keep their title.** A plan made for something to join is titled "Planned Onrush", and keeps that title once begun.
+
+### Ledger
+- **Struck:** I-013, I-015, I-017, I-031.
+- **Trimmed to what still holds:** I-016, I-022, I-033, I-050, I-056, I-057.
+
+### Open edges
+Every open edge of Patch103.2 still stands.
+
 # Inventory: state enforcement in the core
 Every piece of core logic that changes state the caller did not directly ask to change (**auto-mutation**), or that refuses, skips or silently drops an operation because of a state rule (**rejection**). Taken on 2026-10-02, and brought up to date on 2026-10-04 at `b1697b9`: the PEP101 state polish and the intrinsic dependencies, rebased onto `dev/phase3a`. Line numbers refer to that commit. Rules that dev/phase3a added are marked *(dev/phase3a)*. IDs are stable: a new rule takes the next free number in its prefix, wherever its row sits.
 
@@ -1003,23 +1075,8 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: SM-30. Where: `LorePageSaveHook.cs:15-20`, `66-92`; `VaultWatcherSyncService.cs:326`, `373`.
 
 ### Lifecycle and transitions
-- **I-013 · No transition legality.** Any status may follow any other (Done → Standby, Failed → Done, any lunar or decree status), though the GENESIS orders read Planned → Committed → Active → Fulfilled → Over and Standby → [Blocked] → Onboard → Polaris → Done → Archived. A same-status shift rewrites the note and reruns the hook. *Engine 1: the engine declares lifecycle transitions.*
-  Rows: LC-09, OB-03, DI-04, DE-07. Where: `ObjectiveApiService.cs:138-154`; `DirectiveApiService.cs:273-297`, `496-518`; `DeclarativeApiService.cs:105-109`, `247-250`; `Orchestration/.GENESIS.md:51-60`.
-- **I-015 · Begin and end act on ended sprints and cycles.** *(changed by dev/phase3a)* Re-beginning an ended sprint or cycle rewrites its start, possibly to after its end, and leaves it ended. A re-begun cycle re-runs the PEP104 selection on the new start day, adds reflectives to the ended cycle (which revokes a collected reward) and skips the warm. Re-ending overwrites the end. *Engine 1: declared phase transitions refuse or reopen consistently.*
-  Rows: SH-16, ON-03, ON-06, PO-03, PO-06, MA-03. Where: `OnrushSprintApiService.cs:88-94`, `144-147`, `177`; `PolarisCycleApiService.cs:77-93`, `105-112`, `187-198`; `PolarisCycleLifecycle.cs:44-55`; `ProximityMaterializationService.cs:47-55`; `PlaintorchStatePolicyProcessor.cs:1031-1055`.
-- **I-016 · Forecast supersession deletes plans it should not.** Any save of the active cycle deletes every unstarted forecast dated on or before the active cycle's id day, with its executives and notes. That catches plans it should not:
-  - Begin accepts any cycle on any day, so beginning D+3's forecast today deletes the plans for today, D+1 and D+2 (defect, by reading).
-  - Planning accepts any reference date, and next-Polaris from an old cycle plans a past forecast, which the next edit of the active cycle (even a title change) deletes.
-
-  An id that is not a date stamp silently disables supersession. *Engine 1: supersession declared on the begin transition, a begin bound to its cycle's day, and a valid-date invariant.*
+- **I-016 · Forecast supersession deletes plans it should not.** Any save of the active cycle deletes every unstarted forecast dated on or before the active cycle's id day, with its executives and notes. Since Patch103.4 a cycle cannot begin before its day, and next-Polaris lands in the next cycle that can still begin, so neither reaches a plan any more. Planning still accepts any reference date: a forecast planned for a past day is deleted by the next edit of the active cycle (even a title change). An id that is not a date stamp silently disables supersession. *Engine 1: supersession declared on the begin transition, a begin bound to its cycle's day, and a valid-date invariant.*
   Rows: SH-11, SH-23, PO-01, PO-03, PO-12, ID-09, DM-07. Where: `PolarisCycleApiService.cs:33-46`, `55-61`, `77-93`, `555-572`; `PlaintorchStatePolicyProcessor.cs:661-713`.
-- **I-017 · Onrush and Polaris verbs disagree.** The differences:
-  - start-new returns the active cycle, but always creates a sprint, which SH-09 refuses while one is active, wasting the minted id
-  - end refuses an unstarted cycle but accepts anything for a sprint
-  - Polaris has a "current" with a today fallback and auto-start; onrush has neither
-
-  *Engine 1: one lifecycle declaration per container kind.*
-  Rows: ON-03, ON-05, ON-06, PO-02, PO-04, PO-06. Where: `PolarisCycleApiService.cs:64-70`, `130-164`, `187-198`; `PolarisCycleLifecycle.cs:60-66`; `OnrushSprintApiService.cs:152-181`.
 - **I-018 · "Current cycle" means three things.** *(made worse by dev/phase3a)* The three:
   - `GET /api/polaris/current` takes the running cycle, else today's while not concluded.
   - Begin, end, inclusions, start-new and add-to-current take today's cycle even when ended, so "current" planning lands in a concluded cycle.
@@ -1029,7 +1086,7 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: LC-13, DI-12, PO-02, PO-04, PO-05. Where: `PlaintorchStateService.cs:58-77`; `PolarisCycleApiService.cs:130-153`, `838-854`; `DirectiveApiService.cs:579-591`.
 - **I-021 · Ended sprints and cycles keep accepting work.** Ended sprints take orders, joins, assign-all and new checkpoints. Ended cycles accept new executives by explicit id, and their executives and reflectives stay executable, movable and removable, re-settling rewards after the fact. *Engine 1: phase-dependent legality declared on cycles and sprints.*
   Rows: OB-04, DI-08, ON-09, ON-10, PO-05, PO-11, PO-12, PO-13, PO-16. Where: `OnrushSprintApiService.cs:370-388`, `407-412`; `ObjectiveApiService.cs:165-172`; `DirectiveApiService.cs:306-311`; `DependencyApiService.cs:189-193`; `PolarisCycleApiService.cs:425-511`, `514-549`, `595-612`, `801-831`, `860-866`.
-- **I-022 · "Active" ignores the calendar.** A sprint or cycle is active as soon as it has a start and no end. So a future start already blocks other sprints and doubles settlements, and a future end date ends a sprint at once. *Engine 1 and 5: window rules re-evaluated on a clock.*
+- **I-022 · "Active" ignores the calendar.** A sprint is active as soon as it has a start and no end. So a future start already blocks other sprints and doubles settlements, and a future end date ends a sprint at once. Since Patch103.4 a Polaris cycle cannot begin before its day. *Engine 1 and 5: window rules re-evaluated on a clock.*
   Rows: SH-09, SH-10, SH-12, LC-13, ON-03, ON-06. Where: `PlaintorchStatePolicyProcessor.cs:1095-1103`; `PlaintorchStateService.cs:29-39`, `58-64`; `OnrushSprintApiService.cs:94`, `177`; `PolarisCycleApiService.cs:60`, `193`.
 - **I-023 · Initial states are policy in property initialisers.** *(changed by dev/phase3a: On Hold now pauses reflection)* A fate is begun at birth and records its begin before anything could gate it, a decree materialises at once, and a lunar directive starts On Hold and so pauses reflection under it; the lifecycle declarations never see these choices. *Engine 1: initial states declared with the lifecycle.*
   Rows: LC-01, DM-01. Where: `Fate.cs:33`; `Decree.cs:31`; `LunarDirective.cs:32`; `StellarDirective.cs:31`; `Objective.cs:55`.
@@ -1045,13 +1102,7 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: SH-21, LC-02, DM-04, DM-05. Where: `AttentiveResolution.cs:6-20`; `EventiveResolution.cs:7-28`; `DeclarativeApiService.cs:437-440`, `480-483`; `EventiveLifecyclePhaseSource.cs:30-39`.
 
 ### Gates and dependencies
-- **I-031 · Fulfilled with open children is both refused and created.** The gate refuses entering Fulfilled while a child is open. Yet reopening an Over directive that receives open work (SH-20, a compensation since Patch103.2) creates exactly that state, and a child created or moved under a Fulfilled parent is accepted with neither reopening nor refusal. *Engine 1: one declared invariant for Fulfilled.*
-  Rows: SH-20, LC-10. Where: `DependencyGateService.cs:37-41`, `82-91`; `PlaintorchStatePolicyProcessor.cs:194-199`, `244`, `274-277`.
-- **I-033 · Satisfaction can be withdrawn after dependants move on.** Two triggers make edges unsatisfied after the fact:
-  - a source is un-finished
-  - a toll-free checkpoint re-locks at the first save after its due, which also withdraws its finish record
-
-  Dependants that already began or finished are neither reverted nor flagged, and un-begin and un-finish shifts are never gated. *Engine 1: a declared reaction for withdrawn gates.*
+- **I-033 · Satisfaction can be withdrawn after dependants move on.** Since Patch103.4 a source moving back is judged (`dependency.reopen`), and under Auto what relied on it moves back too. One trigger remains: a toll-free checkpoint re-locks at the first save after its due, which also withdraws its finish record. That is time, not a move, so dependants that already began or finished are neither reverted nor flagged. *Engine 1: a declared reaction for withdrawn gates.*
   Rows: SH-21, SH-22, SH-25, LC-03, LC-09. Where: `DependencyReconciler.cs:55-60`, `78-84`; `DependencyGateService.cs:20-35`; `BacklogScheduleRecorder.cs:84-87`; `CheckpointLifecyclePhaseSource.cs:17-26`.
 - **I-034 · Dependency loops through a checkpoint are accepted.** The ordering walk treats a checkpoint as a dead end, so `X.finish → checkpoint → X.begin` is not refused, and it deadlocks X. *Engine 1: edge legality declared over checkpoints too.*
   Rows: LC-14, DP-07. Where: `DependencyOrdering.cs:45-51`, `86-88`.
@@ -1112,7 +1163,7 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   - Fate creation refuses it, even when an explicit orbit discards the window, but accepts start == end as a spanless one-off.
   - The order window refuses it.
   - An eventive reschedule silently drops an end that is not after the start.
-  - Sprints and cycles never check: end, generic update, re-end.
+  - Since Patch103.4 sprints and cycles refuse an end before their start, on every pathway (`onrush.end`, `polaris.end`).
 
   *Engine 1: one declared range invariant.*
   Rows: ON-06, ON-07, ON-11, PO-06, DE-02, DE-11, DM-07, DM-18. Where: `DeclarativeApiService.cs:65`, `432-435`, `660-676`, `704-715`; `OccurrenceDurations.cs:51-56`; `OnrushSprintApiService.cs:170-181`, `341-349`, `524-530`; `PolarisCycleLifecycle.cs:44-76`.
@@ -1147,13 +1198,14 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   - "active Polaris" is written ten times
   - "active onrush" five times, with two orderings
   - ended, not-begun, forecast and today's-cycle readings are further copies; phase3a added "not begun" for delete and "today unless concluded"
+  - since Patch103.4 one reading exists (`CyclePhase`), which the engine and the sprint verbs read; the copies above remain
 
   *Engine 1: cycle and sprint phases declared and read once.*
   Rows: SH-01, SH-02, SH-09, SH-10, SH-11, LC-13, DI-12, PO-02, PO-17. Where: `PlaintorchStatePolicyProcessor.cs:311`, `328`, `521`, `649-652`, `684-686`, `700`, `1089`, `1095-1103`; `PlaintorchStateService.cs:33-35`, `62`, `73-76`; `PolarisCycleApiService.cs:79`, `109`, `135`, `141-153`, `237`, `288`, `846`, `852-853`; `OnrushSprintApiService.cs:88`; `DirectiveApiService.cs:585`; `PlaintorchEngine.cs:90`; `ProximityMaterializationService.cs:50`.
 - **I-057 · Status knowledge is hardcoded past the lifecycle.** *(made worse by dev/phase3a)* These rules name statuses directly instead of reading the lifecycle declarations:
   - the objective "closed" set (Done, Archived, Failed), for settlement and again for due hardening
   - the generating statuses (fate Active and, by preference, OptOut; decree Active; objectives not closed; lunar Active up the lineage), written into `NextOccurrence`, resume, hardening, the rolling pass, the projection, reflective selection, decree executives and manual eventives. A non-reflect decree under an On Hold lunar directive keeps generating attentives (unverified whether intended)
-  - Over in the Over rules (SH-20); the Fulfilled that reopening sets now comes from the default translation
+  - Over in the open-children rule (SH-20); the Active that reopening a finished directive sets comes from the default translation
   - Onboard and Polaris as the targets of the moves on joining, and Onboard for assign-all (which statuses move is read by state since Patch103.3)
   - attentive Done
   - the unlock formula: incoming edges, toll or due, and the external condition, combined by hand

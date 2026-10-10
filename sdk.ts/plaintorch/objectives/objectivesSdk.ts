@@ -1,4 +1,5 @@
 import type { PlaintorchCoreClient } from "../coreClient"
+import type { OnrushSlot } from "../onrush/models"
 import type {
 	AddObjectiveToOnrushRequest,
 	CreateObjectiveRequest,
@@ -44,8 +45,12 @@ export class PlaintorchObjectivesSdk {
 		)
 	}
 
-	public async addToOnrush(objectiveId: string, onrushSprintId: string): Promise<boolean> {
-		const request: AddObjectiveToOnrushRequest = { onrushSprintId }
+	/**
+	 * Adds an objective to a sprint: one named by id, or the active or planning one (an {@link OnrushSlot}), which the core
+	 * creates when it does not exist yet.
+	 */
+	public async addToOnrush(objectiveId: string, target: string | OnrushSlot): Promise<boolean> {
+		const request: AddObjectiveToOnrushRequest = typeof target === 'string' ? { onrushSprintId: target } : { slot: target }
 		return (await this.client.postForJson<Objective>(
 			`/api/objectives/${encodeURIComponent(objectiveId)}/onrush`,
 			request
@@ -56,8 +61,8 @@ export class PlaintorchObjectivesSdk {
 		return await this.client.delete(`/api/objectives/${encodeURIComponent(objectiveId)}/onrush`)
 	}
 
-	public async addToOnrushAndFetch(objectiveId: string, onrushSprintId: string): Promise<Objective | undefined> {
-		const request: AddObjectiveToOnrushRequest = { onrushSprintId }
+	public async addToOnrushAndFetch(objectiveId: string, target: string | OnrushSlot): Promise<Objective | undefined> {
+		const request: AddObjectiveToOnrushRequest = typeof target === 'string' ? { onrushSprintId: target } : { slot: target }
 		return await this.client.postForJson<Objective>(
 			`/api/objectives/${encodeURIComponent(objectiveId)}/onrush`,
 			request

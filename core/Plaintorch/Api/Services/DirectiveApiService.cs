@@ -27,7 +27,8 @@ public sealed class DirectiveApiService(
 	VaultMediaService mediaService,
 	MediaAssetFolderResolver folderResolver,
 	VaultEntityGateway entityGateway,
-	TimeframeCandidateService candidateService) : IDirectiveApi
+	TimeframeCandidateService candidateService,
+	IOnrushSprintApi onrushApi) : IDirectiveApi
 {
 	/// <inheritdoc />
 	public async Task<Directive?> GetAsync(string directiveId, CancellationToken cancellationToken = default)
@@ -280,6 +281,12 @@ public sealed class DirectiveApiService(
 			throw new InvalidOperationException($"Directive '{directiveId}' is a lunar directive; shift its moonlight state through the lunar workflow instead.");
 		}
 
+		// A shift to the status it already has changes nothing, so nothing is written (PEP103 patch 4).
+		if (stellar.Status == shift.Status)
+		{
+			return stellar;
+		}
+
 		var previousStatus = stellar.Status;
 		stellar.Status = shift.Status;
 		await writeQueue.WriteAsync(stellar, cancellationToken: cancellationToken);
@@ -308,6 +315,17 @@ public sealed class DirectiveApiService(
 		await writeQueue.WriteAsync(stellar, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "directive.add-to-onrush", subject: stellar, details: new { onrushSprintId }, cancellationToken: cancellationToken);
 		return stellar;
+	}
+
+	/// <inheritdoc />
+	public async Task<StellarDirective> AddToOnrushAsync(string directiveId, OnrushSlot slot, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
+		await FindStellarAsync(directiveId, "join an onrush", cancellationToken);
+
+		// The slot's sprint is created when it does not exist yet, as adding to the current Polaris cycle starts one.
+		var sprint = await onrushApi.EnsureAsync(slot, cancellationToken);
+		return await AddToOnrushAsync(directiveId, sprint.Id, cancellationToken);
 	}
 
 	/// <inheritdoc />
@@ -499,6 +517,11 @@ public sealed class DirectiveApiService(
 		if (directive is not LunarDirective lunar)
 		{
 			throw new InvalidOperationException($"Directive '{directiveId}' is a stellar directive and has no moonlight state; use the regular workflow shift instead.");
+		}
+
+		if (lunar.Status == shift.Status)
+		{
+			return lunar;
 		}
 
 		var previousStatus = lunar.Status;

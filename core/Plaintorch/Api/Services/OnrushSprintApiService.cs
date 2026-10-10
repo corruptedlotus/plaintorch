@@ -3,6 +3,7 @@ using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
+using Pleiades.Plaintorch.Enforcement;
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
@@ -21,7 +22,8 @@ public sealed class OnrushSprintApiService(
 	PlaintorchMarkdownStorageService markdownFileService,
 	VaultWriteQueue writeQueue,
 	VaultTemporalDataService temporalDataService,
-	VaultAuditLogService auditLogService) : IOnrushSprintApi
+	VaultAuditLogService auditLogService,
+	StateDecisionService decisions) : IOnrushSprintApi
 {
 	/// <inheritdoc />
 	public async Task<OnrushSprint> PlanAsync(OnrushSprintPlan plan, CancellationToken cancellationToken = default)
@@ -85,9 +87,15 @@ public sealed class OnrushSprintApiService(
 			.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
 			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
 
-		if (sprint.StartDate is not null && sprint.EndDate is null && sprint.Id != OnrushSprint.PlanningPlaceholderId)
+		switch (CyclePhases.Of(sprint))
 		{
-			return sprint;
+			case CyclePhase.Active:
+				return sprint;
+			case CyclePhase.Ended:
+				// Nothing a save could read says this is a begin when no new start is named, so the verb asks itself.
+				var subject = StateJudge.SubjectOf(sprint);
+				decisions.RefuseOutright(StateJudge.SprintRestartRule, subject, StateJudge.RestartMessage(subject)).ThrowIfStopped();
+				break;
 		}
 
 		var previous = Clone(sprint);
@@ -151,6 +159,18 @@ public sealed class OnrushSprintApiService(
 	/// <inheritdoc />
 	public async Task<OnrushSprint> StartNewAsync(DateOnly? startDate = null, CancellationToken cancellationToken = default)
 	{
+		// "Start new" ensures a sprint is active, as Polaris's does: the running one is kept, a plan is begun rather than
+		// left behind, and a sprint is created only when there is neither.
+		if (await stateService.GetActiveOnrushSprintAsync(cancellationToken) is { } active)
+		{
+			return active;
+		}
+
+		if (await context.OnrushSprints.AnyAsync(sprint => sprint.Id == OnrushSprint.PlanningPlaceholderId, cancellationToken))
+		{
+			return await BeginAsync(OnrushSprint.PlanningPlaceholderId, startDate, cancellationToken);
+		}
+
 		var resolvedStartDate = startDate ?? DateOnly.FromDateTime(DateTime.Today);
 		var sprint = new OnrushSprint
 		{
@@ -167,11 +187,36 @@ public sealed class OnrushSprintApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task<OnrushSprint> EnsureAsync(OnrushSlot slot, CancellationToken cancellationToken = default)
+	{
+		if (slot == OnrushSlot.Active)
+		{
+			return await StartNewAsync(cancellationToken: cancellationToken);
+		}
+
+		return await context.OnrushSprints.FirstOrDefaultAsync(sprint => sprint.Id == OnrushSprint.PlanningPlaceholderId, cancellationToken)
+			?? await PlanAsync(new OnrushSprintPlan(PlaintorchDefaultTitleFactory.CreateOnrushPlanTitle()), cancellationToken);
+	}
+
+	/// <inheritdoc />
 	public async Task<OnrushSprint> EndAsync(string onrushSprintId, DateOnly? endDate = null, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
 		var sprint = await context.OnrushSprints.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
 			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
+
+		// No sprint ends twice or before it begins (PEP103 patch 4). The save would be refused too, but ending again on the
+		// day it ended changes nothing a save could read.
+		var subject = StateJudge.SubjectOf(sprint);
+		switch (CyclePhases.Of(sprint))
+		{
+			case CyclePhase.Ended:
+				decisions.RefuseOutright(StateJudge.SprintRestartRule, subject, StateJudge.EndedMessage(subject)).ThrowIfStopped();
+				break;
+			case CyclePhase.Planned:
+				decisions.RefuseOutright(StateJudge.SprintEndRule, subject, StateJudge.UnbegunEndMessage(subject)).ThrowIfStopped();
+				break;
+		}
 
 		var previous = Clone(sprint);
 		sprint.EndDate = endDate ?? DateOnly.FromDateTime(DateTime.Today);

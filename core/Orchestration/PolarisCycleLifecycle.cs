@@ -55,16 +55,12 @@ public sealed class PolarisCycleLifecycle
 	}
 
 	/// <summary>
-	/// Completes a started cycle.
+	/// Completes a cycle. Whether it may end is the state engine's to say, on every pathway (PEP103 patch 4): a cycle that
+	/// has not begun, or has already ended, is refused when the end is saved (<c>polaris.end</c>, <c>polaris.restart</c>).
 	/// </summary>
 	public PolarisCycle Finish(PolarisCycle cycle, DateTimeOffset endTime)
 	{
 		ArgumentNullException.ThrowIfNull(cycle);
-		if (cycle.StartTime is null)
-		{
-			throw new InvalidOperationException("A Polaris cycle cannot finish before it starts.");
-		}
-
 		return new PolarisCycle
 		{
 			Id = cycle.Id,

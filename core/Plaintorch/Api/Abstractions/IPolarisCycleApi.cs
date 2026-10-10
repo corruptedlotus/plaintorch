@@ -80,8 +80,9 @@ public interface IPolarisCycleApi
 	Task<Executive> UpdateExecutiveAsync(long executiveId, ExecutiveUpdate update, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Defers an executive to the next day's Polaris cycle (PEP111), creating that day's forecast cycle when none
-	/// exists yet. The carried-forward work becomes the new allocation envelope — estimation, minimum, and maximum
+	/// Defers an executive to the next Polaris cycle that can still be begun (PEP111, PEP103 patch 4): the first day after
+	/// its own cycle's, and no earlier than today's cycle while today's has not begun, else a later day's. That day's forecast
+	/// cycle is created when none exists yet. The carried-forward work becomes the new allocation envelope — estimation, minimum, and maximum
 	/// are all set to the tracked (elapsed) minutes and the elapsed tally is reset to zero — so the next day starts
 	/// from a fresh estimate of what is left. Refused when the target cycle already holds the same incentive.
 	/// </summary>

@@ -129,9 +129,11 @@ public sealed class StateEngineTests : VaultTestBase
 	{
 		await SetEnforcementAsync(BacklogStateEnforcementLevel.Ignore);
 		await Vault.WithScopeAsync(services => services.GetRequiredService<IOnrushSprintApi>().StartNewAsync(cancellationToken: Ct));
+		await Vault.WithScopeAsync(services => services.GetRequiredService<IOnrushSprintApi>().PlanAsync(new OnrushSprintPlan("Next sprint"), Ct));
 
+		// Starting new keeps the running sprint (PEP103 patch 4), so a second one comes from beginning the plan.
 		var refused = await Assert.ThrowsAsync<StateEnforcementException>(() => Vault.WithScopeAsync(services =>
-			services.GetRequiredService<IOnrushSprintApi>().StartNewAsync(cancellationToken: Ct)));
+			services.GetRequiredService<IOnrushSprintApi>().BeginAsync(OnrushSprint.PlanningPlaceholderId, cancellationToken: Ct)));
 		Assert.Equal(StateDecisionOutcome.Refuse, refused.Decision.Outcome);
 		var conflict = Assert.Single(refused.Decision.Conflicts);
 		Assert.Equal(StateConflictKind.Systemic, conflict.Kind);

@@ -104,8 +104,8 @@ public sealed class PolarisCycleApiService(
 	/// </remarks>
 	private async Task WarmCandidatesAsync(PolarisCycle cycle, CancellationToken cancellationToken)
 	{
-		// The lifecycle keeps an existing end time, so re-beginning an ended cycle leaves it ended; only a cycle that is
-		// now strictly active has candidates worth warming.
+		// Only a cycle that is now strictly active has candidates worth warming (an ended one never begins again: the state
+		// engine refuses it, PEP103 patch 4).
 		if (cycle.StartTime is null || cycle.EndTime is not null)
 		{
 			return;
@@ -528,7 +528,7 @@ public sealed class PolarisCycleApiService(
 			?? throw new InvalidOperationException($"Executive '{executiveId}' was not found.");
 
 		var currentDate = ResolveCycleDate(executive.PolarisCycle);
-		var next = await EnsureNextForecastCycleAsync(currentDate, cancellationToken);
+		var next = await EnsureNextStartableCycleAsync(currentDate, cancellationToken);
 
 		// A cycle holds at most one executive per incentive (PEP111).
 		if (!string.IsNullOrWhiteSpace(executive.IncentiveId))
@@ -558,21 +558,33 @@ public sealed class PolarisCycleApiService(
 	}
 
 	/// <summary>
-	/// Finds the cycle for the day after <paramref name="currentDate"/>, or plans and persists a forecast one
-	/// (a one-day-ahead forecast anchored on <paramref name="currentDate"/>).
+	/// Finds or plans the next cycle work can move on to (PEP103 patch 4): the first day after <paramref name="currentDate"/>
+	/// whose cycle can still be begun — today's while it has not begun, else a later day's. Work moved on from an old cycle
+	/// so lands where it can be worked, never in a past forecast that the active cycle would supersede.
 	/// </summary>
-	private async Task<PolarisCycle> EnsureNextForecastCycleAsync(DateOnly currentDate, CancellationToken cancellationToken)
+	private async Task<PolarisCycle> EnsureNextStartableCycleAsync(DateOnly currentDate, CancellationToken cancellationToken)
 	{
-		var nextDate = currentDate.AddDays(1);
-		var existingId = puckCreationService.ComposeIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: nextDate)]);
-		var existing = await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == existingId, cancellationToken);
-		if (existing is not null)
+		var today = DateOnly.FromDateTime(DateTime.Today);
+		var day = currentDate.AddDays(1) > today ? currentDate.AddDays(1) : today;
+		while (true)
 		{
-			return existing;
+			var dayId = puckCreationService.ComposeIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: day)]);
+			var existing = await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == dayId, cancellationToken);
+			if (existing is null)
+			{
+				break;
+			}
+
+			if (existing.StartTime is null)
+			{
+				return existing;
+			}
+
+			day = day.AddDays(1);
 		}
 
-		var id = await MintDayIdAsync(nextDate, cancellationToken);
-		var forecast = lifecycle.PlanForecast(currentDate, 1, id);
+		var id = await MintDayIdAsync(day, cancellationToken);
+		var forecast = lifecycle.PlanForecast(today, day.DayNumber - today.DayNumber, id);
 		context.PolarisCycles.Add(forecast);
 		// A Polaris cycle is vault-backed, so its creation goes through the write queue (PEP110), like PlanAsync.
 		await writeQueue.WriteAsync(forecast, cancellationToken: cancellationToken);

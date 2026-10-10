@@ -91,6 +91,16 @@ public sealed class Dependency
 	[NotMapped]
 	public bool GatesNextTransition { get; set; }
 
+	/// <summary>
+	/// Gets or sets whether the dependency's target already relies on it (PEP103 patch 4): it is satisfied, and its target
+	/// has passed the state it gates — started, for a begin constraint; finished, for a finish one. Its source moving back out
+	/// of the state it needs would reopen it, which the state engine judges (<c>dependency.reopen</c>). Only an objective,
+	/// stellar directive or fate target is read: what a checkpoint passes on is the engine's to follow. Computed when the
+	/// edge is served (<c>DependencyGateService.StampNextTransitionAsync</c>), never stored.
+	/// </summary>
+	[NotMapped]
+	public bool ReliedOn { get; set; }
+
 	[NotMapped]
 	/// <summary>
 	/// Gets the source endpoint as a reference value.

@@ -68,14 +68,17 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 	/// Stamps each dependency's <see cref="Dependency.GatesNextTransition"/>: whether, still unsatisfied, it gates the
 	/// next lifecycle transition its target has to make. This is what separates what holds an entity back right now
 	/// from what will only matter later (a finish gate on an entity that has not begun) or no longer matters (a begin
-	/// gate on one that already has). The distinct targets are resolved together, one query per kind.
+	/// gate on one that already has). Each satisfied one gets <see cref="Dependency.ReliedOn"/>: whether its target has
+	/// passed the state it gates, so its source cannot move back freely (PEP103 patch 4). The distinct targets are resolved
+	/// together, one query per kind.
 	/// </summary>
 	public async Task StampNextTransitionAsync(IEnumerable<Dependency> dependencies, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(dependencies);
 		var pending = dependencies.ToList();
 		var targets = pending
-			.Where(dependency => !dependency.Satisfied && dependency.TargetKind != DependencyEndpointKind.Checkpoint)
+			.Where(dependency => dependency.TargetKind is not (DependencyEndpointKind.Checkpoint or DependencyEndpointKind.Eventive)
+				|| (!dependency.Satisfied && dependency.TargetKind != DependencyEndpointKind.Checkpoint))
 			.Select(dependency => dependency.Target)
 			.Distinct()
 			.ToList();
@@ -86,8 +89,15 @@ public sealed class DependencyGateService(PlainfraContext context, EntityLifecyc
 			if (dependency.Satisfied)
 			{
 				dependency.GatesNextTransition = false;
+				// The default constraint (null) is ToBegin.
+				var gated = dependency.Constraint is DependencyConstraint.ToFinish ? LifecycleState.Finished : LifecycleState.Started;
+				dependency.ReliedOn = dependency.TargetKind is not (DependencyEndpointKind.Checkpoint or DependencyEndpointKind.Eventive)
+					&& lifecycles.TryGetValue(dependency.Target, out var target)
+					&& target.State >= gated;
 				continue;
 			}
+
+			dependency.ReliedOn = false;
 
 			dependency.GatesNextTransition = ResolveNextTransition(dependency.Target, lifecycles) switch
 			{

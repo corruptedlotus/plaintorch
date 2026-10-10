@@ -1,4 +1,5 @@
 import type { PlaintorchCoreClient } from "../coreClient"
+import type { OnrushSlot } from "../onrush/models"
 import type {
 	CreateDirectiveRequest,
 	CreateLunarDirectiveRequest,
@@ -129,8 +130,12 @@ export class PlaintorchDirectivesSdk {
 	}
 
 	/** Makes a stellar directive a member of an onrush sprint (PEP102 patch 10), shaped like the objective's. */
-	public async addToOnrush(directiveId: string, onrushSprintId: string): Promise<boolean> {
-		const request: AddDirectiveToOnrushRequest = { onrushSprintId }
+	/**
+	 * Adds a stellar directive to a sprint: one named by id, or the active or planning one (an {@link OnrushSlot}), which
+	 * the core creates when it does not exist yet.
+	 */
+	public async addToOnrush(directiveId: string, target: string | OnrushSlot): Promise<boolean> {
+		const request: AddDirectiveToOnrushRequest = typeof target === 'string' ? { onrushSprintId: target } : { slot: target }
 		return (await this.client.postForJson<Directive>(`/api/directives/stellar/${encodeURIComponent(directiveId)}/onrush`, request)) !== null
 	}
 

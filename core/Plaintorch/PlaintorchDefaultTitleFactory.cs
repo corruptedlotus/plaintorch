@@ -17,6 +17,14 @@ public static class PlaintorchDefaultTitleFactory
 	}
 
 	/// <summary>
+	/// Creates the default title of an onrush plan made for something to join (PEP103 patch 4). A plan has no date yet.
+	/// </summary>
+	public static string CreateOnrushPlanTitle()
+	{
+		return "Planned Onrush";
+	}
+
+	/// <summary>
 	/// Creates the default Polaris title for a date.
 	/// </summary>
 	public static string CreatePolarisTitle(DateOnly date)

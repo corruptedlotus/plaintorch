@@ -81,14 +81,27 @@ public sealed class StateDecisionService(IOptionsSnapshot<BacklogPreferences> pr
 			: Refuse(level, conflicts, $"{Describe(conflicts)} State enforcement is set to warn, and nobody can confirm this change here.");
 	}
 
+	/// <summary>
+	/// Refuses a verb the state rules forbid outright, as a systemic conflict is refused: at every level, and answered like
+	/// any refused save (409 on the API). It is for a verb whose request changes nothing the judge could read — beginning a
+	/// sprint that has ended without naming a new start, say — so the verb asks here rather than relying on a save.
+	/// </summary>
+	public StateDecision RefuseOutright(string rule, StateSubject subject, string message)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(rule);
+		ArgumentNullException.ThrowIfNull(subject);
+		return Refuse(Level, [new StateConflict(StateConflictKind.Systemic, rule, subject, message, [])], message);
+	}
+
 	private static StateDecision Refuse(BacklogStateEnforcementLevel level, IReadOnlyList<StateConflict> conflicts, string message)
 		=> new(StateDecisionOutcome.Refuse, level, conflicts, [], message);
 
 	/// <summary>
 	/// Gathers the compensations of every conflict, each item moved once. Two conflicts asking the same move share it, and
-	/// two asking different states of one item's main line take the furthest, which a move passes through the nearer one
-	/// on its way (a finish enters the start). Setting an item aside while another conflict needs it on its main line
-	/// cannot be done at once: that is a clash.
+	/// two asking different states of one item's main line in the same direction take the furthest — forward, a finish
+	/// enters the start on its way; back, the earlier state takes back what the later one would. Moving an item forward
+	/// while another conflict moves it back, or setting it aside while another needs it on its main line, cannot be done at
+	/// once: that is a clash.
 	/// </summary>
 	private static bool TryMerge(IReadOnlyList<StateConflict> conflicts, out IReadOnlyList<StateCompensation> merged, out string clash)
 	{
@@ -109,14 +122,15 @@ public sealed class StateDecisionService(IOptionsSnapshot<BacklogPreferences> pr
 				continue;
 			}
 
-			if (kept.To == LifecycleState.Deferred || compensation.To == LifecycleState.Deferred)
+			var back = compensation.To < compensation.From;
+			if (kept.To == LifecycleState.Deferred || compensation.To == LifecycleState.Deferred || back != kept.To < kept.From)
 			{
 				merged = [];
 				clash = $"Resolving this change would need {Name(compensation.Subject)} to be both {kept.To} and {compensation.To}.";
 				return false;
 			}
 
-			if (compensation.To > kept.To)
+			if (back ? compensation.To < kept.To : compensation.To > kept.To)
 			{
 				moves[same] = compensation with { From = kept.From };
 			}
@@ -150,10 +164,10 @@ public sealed class StateDecisionService(IOptionsSnapshot<BacklogPreferences> pr
 
 	private static string Verb(StateCompensation move) => move.To switch
 	{
-		LifecycleState.Started => "start",
-		LifecycleState.Finished when move.From == LifecycleState.Finished => "reopen",
-		LifecycleState.Finished => "finish",
 		LifecycleState.Deferred => "set aside",
+		_ when move.To <= move.From => "reopen",
+		LifecycleState.Started => "start",
+		LifecycleState.Finished => "finish",
 		_ => "reopen",
 	};
 

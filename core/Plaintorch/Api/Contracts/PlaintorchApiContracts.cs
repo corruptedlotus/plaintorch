@@ -297,6 +297,23 @@ public sealed record OnrushSprintUpdate(
 	Optional<DateOnly?> EndDate = default);
 
 /// <summary>
+/// Which onrush sprint something joins when no sprint is named (PEP103 patch 4): the active one, or the one being planned.
+/// Either is created when it does not exist yet, the way adding to the current Polaris cycle starts one.
+/// </summary>
+public enum OnrushSlot
+{
+	/// <summary>
+	/// The active sprint: the running one, else the plan begun, else a sprint started for today.
+	/// </summary>
+	Active,
+
+	/// <summary>
+	/// The sprint being planned: the planning placeholder, planned now when there is none.
+	/// </summary>
+	Planning,
+}
+
+/// <summary>
 /// Represents the data required to plan an onrush sprint.
 /// </summary>
 public sealed record OnrushSprintPlan(

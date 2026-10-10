@@ -1,5 +1,6 @@
 using Pleiades.Orchestration;
 using Pleiades.Orchestration.Lifecycle;
+using Pleiades.Plaintorch.Api.Contracts;
 
 namespace Pleiades.Plaintorch.Api.Transport;
 
@@ -80,14 +81,21 @@ public sealed record CreateObjectiveRequest(
 	string? OnrushSprintId = null);
 
 /// <summary>
-/// Represents the transport payload used to assign an objective to onrush.
+/// Represents the transport payload used to assign an objective to onrush: a sprint by id, or a slot (active or planning)
+/// that is created when it does not exist yet (PEP103 patch 4).
 /// </summary>
-public sealed record AddObjectiveToOnrushRequest(string OnrushSprintId);
+public sealed record AddObjectiveToOnrushRequest(string? OnrushSprintId = null, OnrushSlot? Slot = null);
 
 /// <summary>
-/// Represents the transport payload used to add a stellar directive to an onrush sprint (PEP102 patch 10).
+/// Represents the transport payload used to add a stellar directive to an onrush sprint (PEP102 patch 10): a sprint by id,
+/// or a slot that is created when it does not exist yet (PEP103 patch 4).
 /// </summary>
-public sealed record AddDirectiveToOnrushRequest(string OnrushSprintId);
+public sealed record AddDirectiveToOnrushRequest(string? OnrushSprintId = null, OnrushSlot? Slot = null);
+
+/// <summary>
+/// Represents the transport payload used to ensure an onrush slot exists (PEP103 patch 4).
+/// </summary>
+public sealed record EnsureOnrushRequest(OnrushSlot Slot);
 
 /// <summary>
 /// Represents the transport payload used to shift onrush sprint dates.

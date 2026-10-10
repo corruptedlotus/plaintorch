@@ -4,6 +4,7 @@ import {
 	DependencyConstraint,
 	DependencyEndpointKind,
 	DependencyOrigin,
+	DependencyTrigger,
 	DirectiveStatus,
 	enteredStates,
 	FateStatus,
@@ -80,6 +81,11 @@ const endpointKinds: Readonly<Record<string, DependencyEndpointKind>> = {
  * Nothing changes on screen before the core accepts, so a row whose state filters it out of a view stays until it has
  * really moved.
  */
+/** The state a dependency needs of its source: the finish for a finish trigger (the default), the start for a begin one. */
+function needed(edge: { trigger?: DependencyTrigger | undefined }): LifecycleState {
+	return (edge.trigger ?? DependencyTrigger.OnFinish) === DependencyTrigger.OnFinish ? LifecycleState.Finished : LifecycleState.Started
+}
+
 @component('p7t-state-bubble')
 export class StateBubble extends InteractionBubbleBase<number, StateBubbleOptions> {
 	/** The status being sent, while the core's answer is awaited. */
@@ -403,6 +409,18 @@ export class StateBubble extends InteractionBubbleBase<number, StateBubbleOption
 		const id = this.options?.entity.id
 		if (!lifecycle || endpoint === undefined || !graph || !current || !id) {
 			return undefined
+		}
+
+		// A move back out of what a dependency needs, while its target already relies on it, reopens it (PEP103 patch 4).
+		// Setting an item aside never does.
+		const back = status.state < current.state && status.state !== LifecycleState.Deferred
+		const relying = !back ? [] : graph.filter(edge => edge.reliedOn
+			&& edge.sourceKind === endpoint
+			&& edge.sourceId === id
+			&& needed(edge) > status.state
+			&& needed(edge) <= current.state)
+		if (relying.length > 0) {
+			return `relied on by ${relying.length} ${relying.length === 1 ? 'item' : 'items'}`
 		}
 
 		const entered = enteredStates(lifecycle, current.state, status.state)

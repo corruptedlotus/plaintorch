@@ -1,6 +1,6 @@
 import { model } from "@a11d/api-dotnet"
 import type { Directive } from "../directives/models"
-import type { OnrushSprint } from "../onrush/models"
+import type { OnrushSlot, OnrushSprint } from "../onrush/models"
 import type { Executive } from "../polaris"
 export enum ObjectiveStatus {
 	'Standby' = 0,
@@ -83,6 +83,8 @@ export interface ObjectiveWorkflowShift {
 	status: ObjectiveStatus
 }
 
+/** Joins a sprint by id, or a slot that is created when it does not exist yet (PEP103 patch 4). */
 export interface AddObjectiveToOnrushRequest {
-	onrushSprintId: string
+	onrushSprintId?: string | undefined
+	slot?: OnrushSlot | undefined
 }

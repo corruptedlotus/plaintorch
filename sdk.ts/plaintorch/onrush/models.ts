@@ -62,6 +62,19 @@ export interface OnrushSprintDateRequest {
 	date?: string | undefined
 }
 
+/**
+ * Which onrush sprint something joins when no sprint is named (PEP103 patch 4). Either is created when it does not exist
+ * yet: the active one begins the plan, or starts a sprint for today; the planning one is planned under a default title.
+ */
+export enum OnrushSlot {
+	Active = 0,
+	Planning = 1,
+}
+
+export interface EnsureOnrushRequest {
+	slot: OnrushSlot
+}
+
 /** Payload that persists a sprint's dependency-canvas layout; a null layout forgets it (PEP102). */
 export interface SetGraphLayoutRequest {
 	layout?: string | undefined

@@ -84,6 +84,11 @@ public interface IDirectiveApi
 	Task<StellarDirective> AddToOnrushAsync(string directiveId, string onrushSprintId, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Adds a stellar directive to the sprint in a slot, creating that sprint when it does not exist yet (PEP103 patch 4).
+	/// </summary>
+	Task<StellarDirective> AddToOnrushAsync(string directiveId, OnrushSlot slot, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Takes a stellar directive out of whichever onrush sprint holds it (PEP102 patch 10). The directive itself survives.
 	/// </summary>
 	Task<StellarDirective> RemoveFromOnrushAsync(string directiveId, CancellationToken cancellationToken = default);

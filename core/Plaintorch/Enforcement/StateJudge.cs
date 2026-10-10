@@ -16,12 +16,20 @@ namespace Pleiades.Plaintorch.Enforcement;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Systemic rules</b>, which no state change resolves and every level refuses: at most one planning placeholder sprint,
-/// one active onrush sprint and one active Polaris cycle.
+/// <b>Systemic rules</b>, which no state change resolves and every level refuses:
+/// <list type="bullet">
+/// <item><description>at most one planning placeholder sprint, one active onrush sprint and one active Polaris
+/// cycle;</description></item>
+/// <item><description>a sprint or cycle that has ended never begins again, and its end is never moved
+/// (<c>onrush.restart</c>, <c>polaris.restart</c>);</description></item>
+/// <item><description>a sprint or cycle ends only once it has begun, and never before its start (<c>onrush.end</c>,
+/// <c>polaris.end</c>); the planning placeholder never ends;</description></item>
+/// <item><description>a Polaris cycle never begins before its day (<c>polaris.early-start</c>).</description></item>
+/// </list>
 /// </para>
 /// <para>
 /// <b>Lifecycle rules</b>, judged on every lifecycle state a save moves an objective, a stellar directive or a fate into
-/// (<see cref="LifecycleTransition.Entered"/>), so a jump meets every gate it passes:
+/// (<see cref="LifecycleTransition.Entered"/>), so a jump meets every gate it passes, and on every move back:
 /// <list type="bullet">
 /// <item><description><c>dependency.start-gate</c>: entering Started needs every stored dependency constrained to the start
 /// (<see cref="DependencyConstraint.ToBegin"/>, the default) satisfied.</description></item>
@@ -29,20 +37,27 @@ namespace Pleiades.Plaintorch.Enforcement;
 /// finish satisfied.</description></item>
 /// <item><description><c>directive.open-children</c>: a stellar directive entering Finished, or becoming
 /// <see cref="DirectiveStatus.Over"/>, needs every direct child finished or set aside (its intrinsic edges).</description></item>
-/// <item><description><c>directive.over-open-work</c>: open work cannot arrive under a directive that is Over — an item created
-/// there, moved there, or brought back there from a finish or a deferral.</description></item>
+/// <item><description><c>dependency.reopen</c>: any status may follow any other, as long as no dependency is reopened (user
+/// ruling, PEP103 patch 4). An item moving back out of the state one of its dependencies needs — its intrinsic edge to its
+/// directive included — conflicts while that dependency's target has already passed the state it gates. Setting an item
+/// aside is the exception: a deferral never reopens anything.</description></item>
+/// <item><description><c>directive.finished-open-work</c>: open work cannot arrive under a directive that has finished — an
+/// item created there, moved there, or taken up there again from a deferral. Work brought back from a finish is the reopen
+/// rule's.</description></item>
 /// </list>
-/// A move back down the main line and a deferral enter nothing, so they are never gated.
+/// A move back is otherwise never gated, and a deferral never is.
 /// </para>
 /// <para>
 /// <b>Compensations.</b> Each lifecycle conflict carries the moves that would resolve it: a dependency's source moved to the
-/// state its trigger needs, an open child finished, an Over parent reopened to the finish that tolerates open work. Each item
+/// state its trigger needs, an open child finished, and, the other way, a target that relied on a reopened dependency moved
+/// back to the state before the one it gates, or a finished directive receiving open work reopened to its start. Each item
 /// moves to the default status of its new state (<see cref="EntityLifecycleResolver.DefaultStatus"/>). A move is judged in
-/// turn, as a requested one is, so a source that is gated itself brings the moves its own gates need, until nothing more is
-/// needed. A locked checkpoint is passed through to the dependencies holding it, when its toll and condition do not. A
+/// turn, as a requested one is, so a source that is gated itself brings the moves its own gates need, and a target moved
+/// back takes back what relied on it in turn, until nothing more is needed. A locked checkpoint is passed through to the
+/// dependencies holding it, when its toll and condition do not, and a checkpoint that relocks takes back what it held. A
 /// conflict nothing could resolve carries no compensation: a source that is set aside (taking it up again is the user's
-/// call), an occurrence (time moves it), a fate asked to finish (a fate never does), a checkpoint held by its toll or its
-/// condition, or an endpoint with nothing behind it.
+/// call), an occurrence (time moves it), a fate asked to finish (a fate never does) or to move back before its start (a fate
+/// has no open state), a checkpoint held by its toll or its condition, or an endpoint with nothing behind it.
 /// </para>
 /// <para>
 /// Messages say what blocks a change, not which items or edges do: "… cannot finish: it is blocked by 2 dependencies." The
@@ -82,9 +97,39 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 	public const string OpenChildrenRule = "directive.open-children";
 
 	/// <summary>
-	/// The rule keeping open work from arriving under a directive that is Over.
+	/// The rule keeping open work from arriving under a directive that has finished.
 	/// </summary>
-	public const string OverOpenWorkRule = "directive.over-open-work";
+	public const string FinishedOpenWorkRule = "directive.finished-open-work";
+
+	/// <summary>
+	/// The rule keeping an item from moving back out of what a dependency needs while the dependency's target relies on it.
+	/// </summary>
+	public const string ReopenRule = "dependency.reopen";
+
+	/// <summary>
+	/// The rule keeping an ended sprint from beginning again or moving its end.
+	/// </summary>
+	public const string SprintRestartRule = "onrush.restart";
+
+	/// <summary>
+	/// The rule keeping a sprint from ending before it begins, or before its start.
+	/// </summary>
+	public const string SprintEndRule = "onrush.end";
+
+	/// <summary>
+	/// The rule keeping an ended Polaris cycle from beginning again or moving its end.
+	/// </summary>
+	public const string CycleRestartRule = "polaris.restart";
+
+	/// <summary>
+	/// The rule keeping a Polaris cycle from ending before it begins, or before its start.
+	/// </summary>
+	public const string CycleEndRule = "polaris.end";
+
+	/// <summary>
+	/// The rule keeping a Polaris cycle from beginning before its day.
+	/// </summary>
+	public const string CycleEarlyStartRule = "polaris.early-start";
 
 	private static readonly IReadOnlyDictionary<Type, EndpointShape> Shapes = new Dictionary<Type, EndpointShape>
 	{
@@ -105,6 +150,7 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 		var judgement = new StateJudgement();
 		await JudgeOnrushAsync(context, judgement, cancellationToken);
 		await JudgePolarisAsync(context, judgement, cancellationToken);
+		await JudgeRunsAsync(context, judgement, cancellationToken);
 
 		var changes = await ReadChangesAsync(context, cancellationToken);
 		if (changes.Count > 0)
@@ -196,10 +242,102 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 	}
 
 	/// <summary>
+	/// The run of every sprint and cycle whose start or end the save sets (PEP103 patch 4): one that has ended never begins
+	/// again and keeps its end, nothing ends before it begins or before its start, the planning placeholder never ends (its
+	/// dates are the plan's, and a plan has not begun), and a Polaris cycle never begins before its day. A sprint or cycle the
+	/// save leaves untouched is not read, so a row stored out of shape does not stop an unrelated save.
+	/// </summary>
+	private static async Task JudgeRunsAsync(PlainfraContext context, StateJudgement judgement, CancellationToken cancellationToken)
+	{
+		foreach (var entry in context.ChangeTracker.Entries<OnrushSprint>().ToList())
+		{
+			var placeholder = string.Equals(entry.Entity.Id, OnrushSprint.PlanningPlaceholderId, StringComparison.OrdinalIgnoreCase);
+			await JudgeRunAsync(entry, nameof(OnrushSprint.StartDate), nameof(OnrushSprint.EndDate), !placeholder, SprintRestartRule, SprintEndRule, judgement, cancellationToken);
+		}
+
+		foreach (var entry in context.ChangeTracker.Entries<PolarisCycle>().ToList())
+		{
+			var startSet = await JudgeRunAsync(entry, nameof(PolarisCycle.StartTime), nameof(PolarisCycle.EndTime), true, CycleRestartRule, CycleEndRule, judgement, cancellationToken);
+			if (startSet
+				&& entry.Entity.StartTime is { } start
+				&& entry.Entity.Day is { } day
+				&& DateOnly.FromDateTime(start.LocalDateTime) < day)
+			{
+				var subject = SubjectOf(entry.Entity);
+				judgement.Refuse(CycleEarlyStartRule, subject, $"{Name(subject)} cannot begin before its day.");
+			}
+		}
+	}
+
+	/// <summary>
+	/// Judges the run of one sprint or cycle, and returns whether the save sets its start.
+	/// </summary>
+	/// <param name="entry">The sprint or cycle.</param>
+	/// <param name="startName">The property holding its start.</param>
+	/// <param name="endName">The property holding its end.</param>
+	/// <param name="canBegin">Whether it can begin at all; the planning placeholder cannot, so it can never end.</param>
+	/// <param name="restartRule">The rule an ended one breaks by beginning again or moving its end.</param>
+	/// <param name="endRule">The rule one breaks by ending before it begins or before its start.</param>
+	/// <param name="judgement">Where conflicts go.</param>
+	/// <param name="cancellationToken">A token to cancel the read of the stored row.</param>
+	private static async Task<bool> JudgeRunAsync(
+		EntityEntry entry,
+		string startName,
+		string endName,
+		bool canBegin,
+		string restartRule,
+		string endRule,
+		StateJudgement judgement,
+		CancellationToken cancellationToken)
+	{
+		if (entry.State is not (EntityState.Added or EntityState.Modified)
+			|| (entry.State == EntityState.Modified && !entry.Property(startName).IsModified && !entry.Property(endName).IsModified))
+		{
+			return false;
+		}
+
+		var stored = entry.State == EntityState.Added ? null : await entry.GetDatabaseValuesAsync(cancellationToken);
+		var storedEnd = stored?[endName];
+		var start = entry.Property(startName).CurrentValue;
+		var end = entry.Property(endName).CurrentValue;
+		var startSet = !Equals(stored?[startName], start);
+		var endSet = !Equals(storedEnd, end);
+		var subject = SubjectOf(entry.Entity);
+
+		// Clearing the end takes an ended sprint or cycle up again; that stays allowed.
+		if (storedEnd is not null && end is not null)
+		{
+			if (startSet)
+			{
+				judgement.Refuse(restartRule, subject, RestartMessage(subject));
+			}
+
+			if (endSet)
+			{
+				judgement.Refuse(restartRule, subject, EndedMessage(subject));
+			}
+		}
+		else if (end is not null && endSet)
+		{
+			if (!canBegin || start is null)
+			{
+				judgement.Refuse(endRule, subject, UnbegunEndMessage(subject));
+			}
+			else if (Comparer<object>.Default.Compare(end, start) < 0)
+			{
+				judgement.Refuse(endRule, subject, $"{Name(subject)} cannot end before its start.");
+			}
+		}
+
+		return startSet;
+	}
+
+	/// <summary>
 	/// Whether the lifecycle rules would let the save move <paramref name="entity"/> to <paramref name="status"/>, judged on the
 	/// save as it stands: the move meets no rule the item does not meet already where the save leaves it. A held gate of a
-	/// state the move enters blocks it, and so does bringing open work back under a directive that is Over; a conflict the
-	/// save has anyway (open work created under such a directive) does not, and is weighed as usual. Nothing is proposed to
+	/// state the move enters blocks it, and so does moving back out of what a dependency's target already relies on —
+	/// bringing work back under a finished directive among it; a conflict the save has anyway (open work created under such a
+	/// directive) does not, and is weighed as usual. Nothing is proposed to
 	/// unblock a move, whatever the level. The engine makes its own moves only where this holds
 	/// (<see cref="MembershipReactions"/>).
 	/// </summary>
@@ -287,13 +425,12 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 	/// <summary>
 	/// Whether a sprint is the active one: started, not ended, and not the planning placeholder.
 	/// </summary>
-	internal static bool IsActiveOnrush(OnrushSprint sprint)
-		=> sprint.Id != OnrushSprint.PlanningPlaceholderId && sprint.StartDate != null && sprint.EndDate == null;
+	internal static bool IsActiveOnrush(OnrushSprint sprint) => CyclePhases.Of(sprint) == CyclePhase.Active;
 
 	/// <summary>
 	/// Whether a Polaris cycle is the active one: started and not ended.
 	/// </summary>
-	internal static bool IsActivePolaris(PolarisCycle cycle) => cycle.StartTime != null && cycle.EndTime == null;
+	internal static bool IsActivePolaris(PolarisCycle cycle) => CyclePhases.Of(cycle) == CyclePhase.Active;
 
 	/// <summary>
 	/// Names an entity for a conflict or a compensation: its kind, its id and its title.
@@ -319,6 +456,21 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 	}
 
 	private static string Count(int count, string one, string many) => $"{count} {(count == 1 ? one : many)}";
+
+	/// <summary>
+	/// Words the refusal of a sprint or cycle that has ended being begun again.
+	/// </summary>
+	internal static string RestartMessage(StateSubject subject) => $"{Name(subject)} has ended; it cannot begin again.";
+
+	/// <summary>
+	/// Words the refusal of a sprint or cycle that has ended being ended again.
+	/// </summary>
+	internal static string EndedMessage(StateSubject subject) => $"{Name(subject)} has already ended.";
+
+	/// <summary>
+	/// Words the refusal of a sprint or cycle being ended before it has begun.
+	/// </summary>
+	internal static string UnbegunEndMessage(StateSubject subject) => $"{Name(subject)} cannot end before it begins.";
 
 	/// <summary>
 	/// How an endpoint kind with a status of its own sits in the structure: its dependency endpoint kind, and the property
@@ -391,11 +543,12 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 
 			for (var round = 0; _proposed.Count > 0 && round < MaxRounds; round++)
 			{
+				// A move forward is judged on the gates it enters; a move back on what relied on the item.
 				var next = new List<(Move Move, LifecycleState From)>();
 				foreach (var move in _proposed)
 				{
 					var before = await StateAsync(move.Endpoint) ?? move.From;
-					if (move.To > before)
+					if (move.To != before && (move.To > before) == (move.To > move.From))
 					{
 						_moved[move.Endpoint] = move.To;
 						next.Add((move, before));
@@ -406,14 +559,21 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 				_unlocked.Clear();
 				foreach (var (move, from) in next)
 				{
-					await JudgeMoveAsync(SubjectOf(move.Entity), move.Endpoint, move.Entity.GetType(), from, move.To, becomesOver: false);
+					if (move.To > from)
+					{
+						await JudgeMoveAsync(SubjectOf(move.Entity), move.Endpoint, move.Entity.GetType(), from, move.To, becomesOver: false);
+					}
+					else
+					{
+						await ReopenAsync(SubjectOf(move.Entity), move.Endpoint, from, move.To);
+					}
 				}
 			}
 		}
 
 		/// <summary>
-		/// Judges what the save asks of one item on the save alone: the move, and where it arrives. The moves its conflicts
-		/// propose are left for the rounds <see cref="RuleAsync"/> runs.
+		/// Judges what the save asks of one item on the save alone: the move, what relied on it if it moves back, and where it
+		/// arrives. The moves its conflicts propose are left for the rounds <see cref="RuleAsync"/> runs.
 		/// </summary>
 		public async Task JudgeAsync(RequestedChange change)
 		{
@@ -423,7 +583,117 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 				await JudgeMoveAsync(subject, change.Endpoint, change.Entity.GetType(), change.From, change.State, change.BecomesOver);
 			}
 
+			if (!change.Created && change.State < change.From)
+			{
+				// The item is read where the save leaves it, also when the change is only being weighed (AllowsAsync).
+				_moved[change.Endpoint] = change.State;
+				await ReopenAsync(subject, change.Endpoint, change.From, change.State);
+			}
+
 			await JudgeArrivalAsync(subject, change);
+		}
+
+		/// <summary>
+		/// An item moving back out of the state one of its dependencies needs, while that dependency's target has already
+		/// passed the state it gates (PEP103 patch 4): the targets move back to the state before it, each in turn taking back
+		/// what relied on it. A checkpoint the move relocks takes back what it held. Setting an item aside never reopens
+		/// anything (user ruling), and an occurrence is not judged.
+		/// </summary>
+		private async Task ReopenAsync(StateSubject subject, EndpointRef endpoint, LifecycleState from, LifecycleState to)
+		{
+			if (to >= from || to == LifecycleState.Deferred)
+			{
+				return;
+			}
+
+			_unlocked.Clear();
+			var moves = new List<Move>();
+			var stuck = new HashSet<EndpointRef>(EndpointComparer.Instance);
+			var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			foreach (var edge in (await ExplicitAsync()).Concat(await IntrinsicAsync()))
+			{
+				var needed = Needed(edge);
+				if (Sources(edge, endpoint) && from >= needed && to < needed)
+				{
+					await RelyingAsync(edge, moves, stuck, visiting);
+				}
+			}
+
+			if (moves.Count == 0 && stuck.Count == 0)
+			{
+				return;
+			}
+
+			// One move per item: the furthest back any reopened dependency needs.
+			var merged = moves
+				.GroupBy(move => move.Endpoint, EndpointComparer.Instance)
+				.Select(group => group.MinBy(move => move.To)!)
+				.ToList();
+			var relying = merged.Select(move => move.Endpoint).Concat(stuck).Distinct(EndpointComparer.Instance).Count();
+			var message = $"{Name(subject)} cannot move back: {Count(relying, "item already relies", "items already rely")} on it.";
+			if (stuck.Count > 0)
+			{
+				judgement.Conflict(new StateConflict(StateConflictKind.Lifecycle, ReopenRule, subject, message, []), []);
+				return;
+			}
+
+			judgement.Conflict(
+				new StateConflict(StateConflictKind.Lifecycle, ReopenRule, subject, message, merged.Select(move => Compensation(move, "It relied on an item that moved back.")).ToList()),
+				merged.Select(move => move.Entity));
+			_proposed.AddRange(merged);
+		}
+
+		/// <summary>
+		/// Gathers the moves back of what relied on an edge that no longer holds: its target, when the target has passed the
+		/// state the edge gates, or what a checkpoint the edge kept unlocked held in turn. A target relying on it that cannot
+		/// move back (a fate has no open state) goes to <paramref name="stuck"/>.
+		/// </summary>
+		private async Task RelyingAsync(Dependency edge, List<Move> moves, HashSet<EndpointRef> stuck, HashSet<string> visiting)
+		{
+			if (edge.TargetKind == DependencyEndpointKind.Checkpoint)
+			{
+				// A checkpoint that stays unlocked by other means, or was never unlocked, held nothing on this edge.
+				var checkpoint = await CheckpointAsync(edge.TargetId);
+				if (checkpoint is null || !checkpoint.Unlocked || await UnlockedAsync(edge.TargetId) || !visiting.Add(edge.TargetId))
+				{
+					return;
+				}
+
+				var held = new EndpointRef(DependencyEndpointKind.Checkpoint, edge.TargetId);
+				foreach (var outgoing in await ExplicitAsync())
+				{
+					if (Sources(outgoing, held))
+					{
+						await RelyingAsync(outgoing, moves, stuck, visiting);
+					}
+				}
+
+				return;
+			}
+
+			// An occurrence moves with time, and is not judged.
+			var target = new EndpointRef(edge.TargetKind, edge.TargetId, edge.TargetRecurrenceId);
+			if (edge.TargetKind == DependencyEndpointKind.Eventive || await ResolveAsync(target) is not { } resolved)
+			{
+				return;
+			}
+
+			var gated = Gated(edge);
+			var state = _moved.TryGetValue(target, out var moved) ? moved : resolved.State;
+			if (state < gated)
+			{
+				return;
+			}
+
+			var back = gated == LifecycleState.Finished ? LifecycleState.Started : LifecycleState.Open;
+			var kind = resolved.Entity.GetType();
+			if (!Lifecycle.StatesOf(kind).Contains(back) || Lifecycle.DefaultStatus(kind, back) is not { } status)
+			{
+				stuck.Add(target);
+				return;
+			}
+
+			moves.Add(new Move(resolved.Entity, target, state, back, status));
 		}
 
 		/// <summary>
@@ -491,9 +761,10 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 		}
 
 		/// <summary>
-		/// Open work arriving under a directive that was Over before the save and stays Over: the directive reopens to the
-		/// finish that tolerates open work. A directive this save makes Over is judged by its own move instead, whose
-		/// compensation finishes the work.
+		/// Open work arriving under a directive that had finished before the save and stays finished — created there, moved
+		/// there, or taken up there again from a deferral: the directive reopens to its start, since a finished directive
+		/// relies on every child having finished (its intrinsic edges). Work brought back from a finish is judged by the
+		/// reopen rule instead, and a directive this save finishes by its own move, whose compensation finishes the work.
 		/// </summary>
 		private async Task JudgeArrivalAsync(StateSubject subject, RequestedChange change)
 		{
@@ -502,25 +773,28 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 				return;
 			}
 
-			var arrived = change.Created || change.ParentChanged || change.StoredState is LifecycleState.Finished or LifecycleState.Deferred;
+			var arrived = change.Created || change.ParentChanged || change.StoredState is LifecycleState.Deferred;
+			var endpoint = new EndpointRef(DependencyEndpointKind.Directive, change.ParentId);
 			if (!arrived
-				|| (await ResolveAsync(new EndpointRef(DependencyEndpointKind.Directive, change.ParentId)))?.Entity is not StellarDirective parent
-				|| parent.Status != DirectiveStatus.Over
-				|| await StoredStatusAsync(parent) is not DirectiveStatus.Over)
+				|| (await ResolveAsync(endpoint))?.Entity is not StellarDirective parent
+				|| (_moved.TryGetValue(endpoint, out var moved) ? moved : Lifecycle.StateOf(parent.Status)) != LifecycleState.Finished
+				|| await StoredStatusAsync(parent) is not { } stored
+				|| Lifecycle.StateOf(stored) != LifecycleState.Finished)
 			{
 				return;
 			}
 
-			var reopened = Lifecycle.DefaultStatus(typeof(StellarDirective), LifecycleState.Finished)!;
-			var move = new Move(parent, new EndpointRef(DependencyEndpointKind.Directive, parent.Id), LifecycleState.Finished, LifecycleState.Finished, reopened);
+			var reopened = Lifecycle.DefaultStatus(typeof(StellarDirective), LifecycleState.Started)!;
+			var move = new Move(parent, endpoint, LifecycleState.Finished, LifecycleState.Started, reopened);
 			judgement.Conflict(
 				new StateConflict(
 					StateConflictKind.Lifecycle,
-					OverOpenWorkRule,
+					FinishedOpenWorkRule,
 					subject,
-					$"{Name(subject)} is open work, and its directive is Over.",
+					$"{Name(subject)} is open work, and its directive has finished.",
 					[Compensation(move, "It receives open work.")]),
 				[move.Entity]);
+			_proposed.Add(move);
 		}
 
 		/// <summary>
@@ -766,6 +1040,15 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 
 		private static bool Targets(Dependency edge, EndpointRef target)
 			=> edge.TargetKind == target.Kind && string.Equals(edge.TargetId, target.Id, StringComparison.OrdinalIgnoreCase);
+
+		private static bool Sources(Dependency edge, EndpointRef source)
+			=> edge.SourceKind == source.Kind && string.Equals(edge.SourceId, source.Id, StringComparison.OrdinalIgnoreCase);
+
+		/// <summary>
+		/// The state an edge gates on its target: the finish for a finish constraint, the start otherwise (the default).
+		/// </summary>
+		private static LifecycleState Gated(Dependency edge)
+			=> (edge.Constraint ?? DependencyConstraint.ToBegin) == DependencyConstraint.ToFinish ? LifecycleState.Finished : LifecycleState.Started;
 
 		private sealed record Resolved(object Entity, LifecycleState State);
 	}

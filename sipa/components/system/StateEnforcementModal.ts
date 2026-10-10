@@ -68,12 +68,12 @@ export const stateEnforcementPrompt: StateEnforcementHandler = {
 	refused: problem => toast(problem.message, 'warning'),
 }
 
-/** One move in words: "Finish Directive 'Foundation' (Fulfilled)". */
+/** One move in words: "Finish Directive 'Foundation' (Fulfilled)"; a move back reads "Reopen". */
 export function describeMove(move: StateCompensation): string {
-	const verb = move.to === LifecycleState.Started ? 'Start'
-		: move.to === LifecycleState.Finished && move.from === LifecycleState.Finished ? 'Reopen'
-			: move.to === LifecycleState.Finished ? 'Finish'
-				: move.to === LifecycleState.Deferred ? 'Set aside'
+	const verb = move.to === LifecycleState.Deferred ? 'Set aside'
+		: move.to <= move.from ? 'Reopen'
+			: move.to === LifecycleState.Started ? 'Start'
+				: move.to === LifecycleState.Finished ? 'Finish'
 					: 'Reopen'
 	const kind = kindLabels[move.subject.kind] ?? move.subject.kind
 	const status = move.status ? ` (${move.status})` : ''

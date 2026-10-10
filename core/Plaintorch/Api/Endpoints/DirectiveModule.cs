@@ -90,7 +90,11 @@ public sealed class DirectiveModule : Module
 
 		// Onrush membership (PEP102 patch 10), shaped like the objective's.
 		stellar.MapPost("/{directiveId}/onrush", async (string directiveId, AddDirectiveToOnrushRequest request, IDirectiveApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.AddToOnrushAsync(directiveId, request.OnrushSprintId, cancellationToken)));
+			request.Slot is { } slot
+				? Results.Ok(await api.AddToOnrushAsync(directiveId, slot, cancellationToken))
+				: string.IsNullOrWhiteSpace(request.OnrushSprintId)
+					? Results.BadRequest("Name an onrush sprint, or the active or planning one.")
+					: Results.Ok(await api.AddToOnrushAsync(directiveId, request.OnrushSprintId, cancellationToken)));
 
 		stellar.MapDelete("/{directiveId}/onrush", async (string directiveId, IDirectiveApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.RemoveFromOnrushAsync(directiveId, cancellationToken)));

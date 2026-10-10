@@ -18,7 +18,8 @@ public sealed class ObjectiveApiService(
 	VaultWriteQueue writeQueue,
 	VaultTemporalDataService temporalDataService,
 	VaultEntityLifecycleService lifecycleService,
-	VaultAuditLogService auditLogService) : IObjectiveApi
+	VaultAuditLogService auditLogService,
+	IOnrushSprintApi onrushApi) : IObjectiveApi
 {
 	/// <inheritdoc />
 	public Task<Objective?> GetAsync(string objectiveId, CancellationToken cancellationToken = default)
@@ -141,6 +142,12 @@ public sealed class ObjectiveApiService(
 		var objective = await context.Objectives.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
 			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
 
+		// A shift to the status it already has changes nothing, so nothing is written (PEP103 patch 4).
+		if (objective.Status == shift.Status)
+		{
+			return objective;
+		}
+
 		var previous = Clone(objective);
 
 		objective.Status = shift.Status;
@@ -170,6 +177,20 @@ public sealed class ObjectiveApiService(
 		await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.add-to-onrush", subject: objective, cancellationToken: cancellationToken);
 		return objective;
+	}
+
+	/// <inheritdoc />
+	public async Task<Objective> AddToOnrushAsync(string objectiveId, OnrushSlot slot, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(objectiveId);
+		if (!await context.Objectives.AnyAsync(item => item.Id == objectiveId, cancellationToken))
+		{
+			throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
+		}
+
+		// The slot's sprint is created when it does not exist yet, as adding to the current Polaris cycle starts one.
+		var sprint = await onrushApi.EnsureAsync(slot, cancellationToken);
+		return await AddToOnrushAsync(objectiveId, sprint.Id, cancellationToken);
 	}
 
 	public async Task<Objective> RemoveFromOnrushAsync(string objectiveId, CancellationToken cancellationToken = default)

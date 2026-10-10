@@ -1,6 +1,6 @@
 import { model, ModelValueConstructor } from "@a11d/api-dotnet"
 import type { Objective, ObjectiveCollege } from "../objectives/models"
-import type { OnrushSprint } from "../onrush/models"
+import type { OnrushSlot, OnrushSprint } from "../onrush/models"
 export enum DirectiveStatus {
 	Planned = 0,
 	Committed = 1,
@@ -258,8 +258,10 @@ export interface DirectiveBannerRequest {
  * not in {@link TimeframeInclusion.Availability Availability} mode.
  */
 /** Payload to make a stellar directive a member of an onrush sprint (PEP102 patch 10). */
+/** Joins a sprint by id, or a slot that is created when it does not exist yet (PEP103 patch 4). */
 export interface AddDirectiveToOnrushRequest {
-	onrushSprintId: string
+	onrushSprintId?: string | undefined
+	slot?: OnrushSlot | undefined
 }
 
 export interface DirectiveAvailabilityRequest {

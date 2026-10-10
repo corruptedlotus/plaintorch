@@ -69,6 +69,12 @@ export class Dependency {
 	 * for a gate on a transition the target has already made or is not yet up to. Read-only.
 	 */
 	gatesNextTransition: boolean = false
+	/**
+	 * Server-computed: whether the target already relies on this dependency (PEP103 patch 4) — it is satisfied and the
+	 * target has passed the state it gates. Its source moving back out of the state it needs would reopen it, which the core
+	 * judges like any rule. Read for objective, stellar directive and fate targets only.
+	 */
+	reliedOn: boolean = false
 
 	get source(): EndpointRef {
 		return { kind: this.sourceKind, id: this.sourceId, recurrenceId: this.sourceRecurrenceId }

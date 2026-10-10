@@ -3,7 +3,7 @@ import {
 	type FateUpdate
 } from '@pleiades/sdk'
 import {
-	addObjectiveToPolaris, core, ExpandingAction, IconName, isArchivedStatus, isInactiveStatus, PromptTextModal,
+	addObjectiveToPolaris, core, ExpandingAction, IconName, isArchivedStatus, isInactiveStatus, OnrushPickerModal, PromptTextModal,
 	type ScheduleValue, type Status
 } from '..'
 import { host, toast } from '../../host'
@@ -423,7 +423,6 @@ export function directiveActions(directive: Directive): ExpandingAction[] {
 
 /** The choices offered on an objective row. */
 export function objectiveActions(objective: Objective): ExpandingAction[] {
-	const objectiveId = objective.id
 	return [
 		{
 			key: 'polaris',
@@ -437,18 +436,8 @@ export function objectiveActions(objective: Objective): ExpandingAction[] {
 			key: 'onrush',
 			icon: 'onrush',
 			label: 'Add to Onrush',
-			run: async () => {
-				// The active sprint when one is running, otherwise the one still being planned.
-				const sprint = await core.onrush.getCurrent() ?? await core.onrush.getPlanning()
-				if (!sprint) {
-					toast('There is no Onrush to add to.', 'warning')
-					return
-				}
-
-				const added = await core.repos.objectives.mutate(objectiveId, async () =>
-					await core.objectives.addToOnrush(objectiveId, sprint.id))
-				toast(added ? `Added to ${sprint.title}.` : 'Could not add to Onrush.', added ? 'success' : 'error')
-			}
+			// The active or the planning sprint, each offered whether it exists yet or not (PEP103 patch 4).
+			run: () => new OnrushPickerModal(objective).open()
 		}
 	]
 }
