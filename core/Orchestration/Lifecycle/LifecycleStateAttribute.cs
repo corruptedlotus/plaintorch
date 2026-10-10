@@ -17,4 +17,12 @@ public sealed class LifecycleStateAttribute(LifecycleState state) : Attribute
 	/// Gets the lifecycle state the decorated status member stands for.
 	/// </summary>
 	public LifecycleState State { get; } = state;
+
+	/// <summary>
+	/// Gets or sets whether the status closes its item (PEP103 patch 5): a finished status that stands only while everything
+	/// the item depends on holds — an objective's Archived, a directive's Over. A dependency added to a finished item, or one
+	/// that stops holding, only keeps it from closing; an item already closed steps back to its kind's default finished
+	/// status. Only a <see cref="LifecycleState.Finished"/> member may close.
+	/// </summary>
+	public bool Closed { get; init; }
 }

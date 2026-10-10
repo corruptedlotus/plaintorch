@@ -43,9 +43,11 @@ public enum ObjectiveStatus
 	[LifecycleState(LifecycleState.Finished)]
 	Done = 4,
 	/// <summary>
-	/// The objective has been archived.
+	/// The objective has been archived: finished and closed (PEP103 patch 5). It stands only while every dependency it has
+	/// holds; an objective that gains one that does not, or joins the active onrush sprint or Polaris cycle, steps back to
+	/// <see cref="Done"/>, as the backlog state enforcement level decides.
 	/// </summary>
-	[LifecycleState(LifecycleState.Finished)]
+	[LifecycleState(LifecycleState.Finished, Closed = true)]
 	Archived = 5,
 	/// <summary>
 	/// The objective has failed. Deferred: neither started nor finished, and its intrinsic dependency on its directive is

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Plaintorch.Preferences;
 using Pleiades.Puck;
 using Pleiades.Vault.Database;
@@ -18,8 +19,8 @@ namespace Pleiades.Plaintorch.Enforcement;
 /// <list type="number">
 /// <item><description>Every fate or decree in the save gets its cached next occurrence recomputed (SH-07).</description></item>
 /// <item><description>An active Polaris cycle supersedes the unstarted forecasts on or before its day (SH-11).</description></item>
-/// <item><description>Objectives settle their Celestron value on entering Done, Archived or Failed, and leaving revokes it
-/// (SH-12).</description></item>
+/// <item><description>Objectives settle their Celestron value on finishing (Done or Archived), and leaving the finish revokes
+/// it (SH-12).</description></item>
 /// <item><description>Attentives carry their resolution time and grant their decree's reward while Done (SH-13, SH-14).</description></item>
 /// <item><description>Executing a decree-backed executive or reflective grants the decree's reward (SH-15, SH-29), and a
 /// cycle whose reflectives are all executed grants the collection reward (SH-16).</description></item>
@@ -128,8 +129,11 @@ public sealed class OutcomeReactions(
 	}
 
 	/// <summary>
-	/// Settles an objective (PEP100): entering Done, Archived or Failed earns its Celestron value once, doubled while it
-	/// belongs to the active onrush sprint, and leaving those statuses revokes it.
+	/// Settles an objective (PEP100): finishing it — entering a status its lifecycle declares finished, Done or Archived —
+	/// earns its Celestron value once, doubled while it belongs to the active onrush sprint, and leaving the finish revokes
+	/// it. Only finishing settles (user ruling, PEP103 patch 5): Failed sets an objective aside and earns nothing. Whenever an
+	/// objective's status changes, its settlement is brought in line with where it stands, so a settlement booked before that
+	/// ruling for a failure is taken back once the objective next moves.
 	/// </summary>
 	private static async Task ApplyObjectiveSettlementRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
@@ -148,13 +152,11 @@ public sealed class OutcomeReactions(
 		{
 			var current = entry.Entity;
 			var previousStatus = entry.State == EntityState.Added
-				? ObjectiveStatus.Standby
+				? (ObjectiveStatus?)null
 				: entry.OriginalValues.GetValue<ObjectiveStatus>(nameof(Objective.Status));
 
-			var wasTerminal = IsSettlementStatus(previousStatus);
 			var isTerminal = IsSettlementStatus(current.Status);
-
-			if (wasTerminal == isTerminal)
+			if (previousStatus == current.Status || (previousStatus is null && !isTerminal))
 			{
 				continue;
 			}
@@ -286,6 +288,12 @@ public sealed class OutcomeReactions(
 	/// their objective settles its own Celestron on completion. Keyed by decree + cycle (the executive's identity),
 	/// so the ledger entry is stable and idempotent across re-saves.
 	/// </summary>
+	/// <remarks>
+	/// The reward follows its executive (PEP103 patch 5): it is read again whenever the executive's execution, decree or
+	/// cycle changes. An executed executive moved to another cycle takes its grant along, rekeyed and at the amount it was
+	/// granted; one reassigned to another decree gives its grant back and earns the new decree's; and one un-executed after
+	/// either gives back the grant it holds now, so nothing is left behind under an old key to be paid a second time.
+	/// </remarks>
 	private static async Task ApplyDecreeExecutiveRewardRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
 		var executiveEntries = context.ChangeTracker.Entries<Executive>()
@@ -299,17 +307,38 @@ public sealed class OutcomeReactions(
 		foreach (var entry in executiveEntries)
 		{
 			var current = entry.Entity;
-			if (string.IsNullOrWhiteSpace(current.IncentiveId))
+			var added = entry.State == EntityState.Added;
+			var wasExecuted = !added && entry.OriginalValues.GetValue<bool>(nameof(Executive.Executed));
+			var wasIncentive = added ? null : entry.OriginalValues.GetValue<string?>(nameof(Executive.IncentiveId));
+			var wasCycle = added ? current.PolarisCycleId : entry.OriginalValues.GetValue<string>(nameof(Executive.PolarisCycleId));
+			var sameDecree = string.Equals(wasIncentive, current.IncentiveId, StringComparison.OrdinalIgnoreCase);
+			var sameCycle = string.Equals(wasCycle, current.PolarisCycleId, StringComparison.OrdinalIgnoreCase);
+			if (wasExecuted == current.Executed && (!current.Executed || (sameDecree && sameCycle)))
 			{
 				continue;
 			}
 
-			var wasExecuted = entry.State != EntityState.Added
-				&& entry.OriginalValues.GetValue<bool>(nameof(Executive.Executed));
-			if (wasExecuted == current.Executed)
+			// The grant the executive held before the save, under the key it had then.
+			var held = wasExecuted && !string.IsNullOrWhiteSpace(wasIncentive)
+				? await DecreeGrantsAsync(context, wasIncentive, wasCycle, cancellationToken)
+				: [];
+			if (!current.Executed || string.IsNullOrWhiteSpace(current.IncentiveId))
 			{
+				context.CelestronLedger.RemoveRange(held);
 				continue;
 			}
+
+			if (sameDecree && held.Count > 0)
+			{
+				foreach (var grant in held)
+				{
+					grant.Description = DecreeExecutionDescription(current.PolarisCycleId);
+				}
+
+				continue;
+			}
+
+			context.CelestronLedger.RemoveRange(held);
 
 			// Only decree-backed executives carry a per-execution reward; the query returns nothing for an
 			// objective-backed one (its incentive id is not a decree), so it is naturally exempt.
@@ -319,33 +348,32 @@ public sealed class OutcomeReactions(
 				.Where(item => item.Id == current.IncentiveId)
 				.Select(item => (int?)item.ActiveCelestron)
 				.FirstOrDefaultAsync(cancellationToken);
-			if (reward is not { } amount || amount == 0)
+			if (reward is not { } amount || amount == 0
+				|| (await DecreeGrantsAsync(context, current.IncentiveId, current.PolarisCycleId, cancellationToken)).Count > 0)
 			{
 				continue;
 			}
 
-			var description = $"{DecreeExecutionDescriptionPrefix} (cycle {current.PolarisCycleId})";
-			var existingTransactions = await context.CelestronLedger
-				.Where(item => item.SourcePuck == current.IncentiveId && item.Description == description)
-				.ToListAsync(cancellationToken);
-
-			if (current.Executed)
+			context.CelestronLedger.Add(new CelestronTransaction
 			{
-				if (existingTransactions.Count == 0)
-				{
-					context.CelestronLedger.Add(new CelestronTransaction
-					{
-						Amount = amount,
-						SourcePuck = current.IncentiveId,
-						Description = description,
-					});
-				}
-			}
-			else if (existingTransactions.Count > 0)
-			{
-				context.CelestronLedger.RemoveRange(existingTransactions);
-			}
+				Amount = amount,
+				SourcePuck = current.IncentiveId,
+				Description = DecreeExecutionDescription(current.PolarisCycleId),
+			});
 		}
+	}
+
+	private static string DecreeExecutionDescription(string cycleId) => $"{DecreeExecutionDescriptionPrefix} (cycle {cycleId})";
+
+	/// <summary>
+	/// The ledger rows granting a decree's execution reward in one cycle.
+	/// </summary>
+	private static Task<List<CelestronTransaction>> DecreeGrantsAsync(PlainfraContext context, string decreeId, string cycleId, CancellationToken cancellationToken)
+	{
+		var description = DecreeExecutionDescription(cycleId);
+		return context.CelestronLedger
+			.Where(item => item.SourcePuck == decreeId && item.Description == description)
+			.ToListAsync(cancellationToken);
 	}
 
 	/// <summary>
@@ -522,9 +550,7 @@ public sealed class OutcomeReactions(
 	}
 
 	private static bool IsSettlementStatus(ObjectiveStatus status)
-	{
-		return status is ObjectiveStatus.Done or ObjectiveStatus.Archived or ObjectiveStatus.Failed;
-	}
+		=> LifecycleDeclarations.StateOf(status) == LifecycleState.Finished;
 
 	private static bool TryParseCycleDate(string cycleId, out DateOnly date)
 	{

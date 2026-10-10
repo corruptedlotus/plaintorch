@@ -443,7 +443,8 @@ public sealed class PolarisCycleApiService(
 		}
 
 		// The executive's incentive can be reassigned but never cleared — an executive without an incentive has
-		// nothing to work at.
+		// nothing to work at. Reassigning follows the rules of adding (PEP103 patch 5): the state engine takes an objective
+		// or a started decree only, and a closed objective joining the active cycle is the enforcement level's call.
 		if (!string.IsNullOrWhiteSpace(update.ObjectiveId) && update.ObjectiveId != executive.IncentiveId)
 		{
 			await EnsureIncentiveNotInCycleAsync(executive.PolarisCycleId, update.ObjectiveId, cancellationToken);
@@ -537,24 +538,39 @@ public sealed class PolarisCycleApiService(
 		}
 
 		// Carry the tracked work forward as the fresh allocation envelope — the day starts from an estimate of
-		// what was actually worked so far — and restart tracking from zero.
+		// what was actually worked so far — and restart tracking from zero. An ended cycle's record is history (PEP103
+		// patch 5), so work moved on from one is carried by a new executive in the next cycle, and the old one stays as it
+		// was worked.
 		var carried = executive.Elapsed;
-		executive.PolarisCycleId = next.Id;
-		executive.Estimation = carried;
-		executive.Minimum = carried;
-		executive.Maximum = carried;
-		executive.Elapsed = 0;
-		executive.NormalizeTimeAllocations();
+		var fromCycleId = executive.PolarisCycleId;
+		var moved = executive;
+		if (executive.PolarisCycle?.EndTime is not null)
+		{
+			moved = new Executive
+			{
+				PolarisCycleId = next.Id,
+				IncentiveId = executive.IncentiveId,
+				AffinityTimeframeId = executive.AffinityTimeframeId,
+			};
+			context.Add(moved);
+		}
+
+		moved.PolarisCycleId = next.Id;
+		moved.Estimation = carried;
+		moved.Minimum = carried;
+		moved.Maximum = carried;
+		moved.Elapsed = 0;
+		moved.NormalizeTimeAllocations();
 
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"polaris.move-executive-next",
 			subjectType: nameof(Executive),
-			subjectId: executive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-			details: new { toCycleId = next.Id, incentiveId = executive.IncentiveId, carried },
+			subjectId: moved.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+			details: new { fromCycleId, fromExecutiveId = executive.Id, toCycleId = next.Id, incentiveId = moved.IncentiveId, carried },
 			cancellationToken: cancellationToken);
-		return executive;
+		return moved;
 	}
 
 	/// <summary>
@@ -727,12 +743,10 @@ public sealed class PolarisCycleApiService(
 			? await ResolveCreationAffinityAsync(request.AffinityTimeframeId, null, null, cancellationToken)
 			: null;
 		var cycle = await ResolveOrStartCurrentAsync(polarisCycleId, cancellationToken);
+		// A decree that is not started cannot be worked: the state engine refuses it on the save, as it refuses reassigning an
+		// executive to one (PEP103 patch 5, polaris.incentive).
 		var decree = await context.Decrees.AsNoTracking().FirstOrDefaultAsync(item => item.Id == request.DecreeId, cancellationToken)
 			?? throw new InvalidOperationException($"Decree '{request.DecreeId}' was not found.");
-		if (decree.Status != DecreeStatus.Active)
-		{
-			throw new InvalidOperationException($"Decree '{decree.Id}' is {decree.Status} and cannot be added to a Polaris cycle.");
-		}
 
 		// A decree occupies a cycle as an executive, at most once — the cycle is the temporal context (PEP111).
 		await EnsureIncentiveNotInCycleAsync(cycle.Id, decree.Id, cancellationToken);

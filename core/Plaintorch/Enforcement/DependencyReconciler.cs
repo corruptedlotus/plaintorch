@@ -30,6 +30,43 @@ public sealed class DependencyReconciler(EntityLifecycleResolver lifecycleResolv
 	internal static bool ConditionMet(Checkpoint checkpoint) => checkpoint.ExternalCondition != false;
 
 	/// <summary>
+	/// Whether a checkpoint has something to wait for (PEP103 patch 5): a dependency into it, an external condition, or a toll
+	/// that is owed (its due has passed, or it has none) or has been paid. A toll still waived while there is time holds
+	/// nothing back.
+	/// </summary>
+	internal static bool Holds(Checkpoint checkpoint, int incoming, DateTime now)
+		=> incoming > 0
+			|| checkpoint.ExternalCondition is not null
+			|| (checkpoint.CelestronToll is not null && (checkpoint.TollPaid || checkpoint.Due is not { } due || now >= due.Moment));
+
+	/// <summary>
+	/// Whether a checkpoint is unlocked — finished — once the save is through (PEP103 patch 5).
+	/// <list type="bullet">
+	/// <item><description>A dependency into it that does not hold, or an external condition that does not, locks it, unlocked
+	/// or not: something new blocks it, so it takes back its finish.</description></item>
+	/// <item><description>Once unlocked it stays so otherwise: what is done is done, so its due no longer brings its toll
+	/// due, and losing what it waited for leaves it finished.</description></item>
+	/// <item><description>A locked one unlocks only once it has had something to wait for (<see cref="Holds"/>) and all of it
+	/// is met, its toll included. One with nothing to wait for — a sprint's milestone before anything leads into it — stays
+	/// locked.</description></item>
+	/// </list>
+	/// </summary>
+	/// <param name="checkpoint">The checkpoint, as the save leaves it; its <see cref="Checkpoint.Unlocked"/> is the state it
+	/// stands in before this reading.</param>
+	/// <param name="incoming">How many dependencies lead into it.</param>
+	/// <param name="incomingMet">Whether every dependency into it holds.</param>
+	/// <param name="now">The moment its due is read against.</param>
+	internal static bool Unlocks(Checkpoint checkpoint, int incoming, bool incomingMet, DateTime now)
+	{
+		if (!incomingMet || !ConditionMet(checkpoint))
+		{
+			return false;
+		}
+
+		return checkpoint.Unlocked || (Holds(checkpoint, incoming, now) && TollMet(checkpoint, now));
+	}
+
+	/// <summary>
 	/// Reconciles all dependency edges and checkpoints in the current unit of work.
 	/// </summary>
 	public async Task ReconcileAsync(PlainfraContext context, CancellationToken cancellationToken)
@@ -89,7 +126,7 @@ public sealed class DependencyReconciler(EntityLifecycleResolver lifecycleResolv
 			{
 				var incoming = incomingByCheckpoint.GetValueOrDefault(checkpoint.Id) ?? [];
 				var dependenciesMet = incoming.All(dependency => dependency.Satisfied);
-				changed |= SetUnlocked(context, checkpoint, dependenciesMet && TollMet(checkpoint, now) && ConditionMet(checkpoint));
+				changed |= SetUnlocked(context, checkpoint, Unlocks(checkpoint, incoming.Count, dependenciesMet, now));
 			}
 
 			foreach (var dependency in checkpointSourced)

@@ -57,7 +57,8 @@ public sealed class SystemApiService(
 					Convert.ToInt32(member.Status, System.Globalization.CultureInfo.InvariantCulture),
 					member.Status.ToString(),
 					member.State,
-					Equals(LifecycleDeclarations.DefaultStatus(statusType, member.State), member.Status)))
+					Equals(LifecycleDeclarations.DefaultStatus(statusType, member.State), member.Status),
+					LifecycleDeclarations.IsClosed(member.Status)))
 				.ToList()
 			: [];
 		return new LifecycleKindDescription(kind.Name, lifecycleResolver.StatesOf(kind).Order().ToList(), statuses);

@@ -361,31 +361,29 @@ public sealed class BacklogScheduleTests : VaultTestBase
 	[Fact]
 	public async Task A_checkpoint_finishes_when_it_unlocks_and_is_un_finished_when_it_re_locks()
 	{
-		// With nothing to wait for, a new checkpoint is unlocked, and so finished, the moment it exists.
+		// With nothing to wait for, a new checkpoint is not finished (PEP103 patch 5, I-036): it records nothing.
 		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Gate", cancellationToken: Ct));
-		Assert.True(checkpoint.Unlocked);
-		var onCreation = Record(await StoredAsync(checkpoint.Id), LifecycleState.Finished);
-		Assert.Equal(checkpoint.Id, onCreation.CheckpointId);
+		Assert.False(checkpoint.Unlocked);
+		Assert.Empty(await StoredAsync(checkpoint.Id));
 
-		// A gate into it re-locks it, which withdraws the finish.
+		// A gate into it gives it something to wait for; meeting the gate unlocks it: finished, and never begun, since a
+		// checkpoint cannot be started.
 		var first = await Directive(api => api.CreateStandaloneAsync("First prereq", cancellationToken: Ct));
 		await Deps(api => api.CreateAsync(DirectiveRef(first.Id), CheckpointRef(checkpoint.Id), cancellationToken: Ct));
 		Assert.False((await Deps(api => api.GetCheckpointAsync(checkpoint.Id, Ct)))!.Unlocked);
 		Assert.Empty(await StoredAsync(checkpoint.Id));
-
-		// Meeting the gate unlocks it again: finished afresh, and never begun, since a checkpoint cannot be started.
 		await Directive(api => api.ShiftStellarWorkflowAsync(first.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Fulfilled), Ct));
 		var unlocked = Assert.Single(await StoredAsync(checkpoint.Id));
 		Assert.Equal(BacklogScheduleType.Record, unlocked.Type);
 		Assert.Equal(LifecycleState.Finished, unlocked.State);
-		Assert.NotEqual(onCreation.Id, unlocked.Id);
+		Assert.Equal(checkpoint.Id, unlocked.CheckpointId);
 
-		// Another unmet gate re-locks it; meeting that one too finishes it once more.
+		// Another unmet gate re-locks it, which withdraws the finish; meeting that one too finishes it once more.
 		var second = await Directive(api => api.CreateStandaloneAsync("Second prereq", cancellationToken: Ct));
 		await Deps(api => api.CreateAsync(DirectiveRef(second.Id), CheckpointRef(checkpoint.Id), cancellationToken: Ct));
 		Assert.Empty(await StoredAsync(checkpoint.Id));
 		await Directive(api => api.ShiftStellarWorkflowAsync(second.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct));
-		Record(await StoredAsync(checkpoint.Id), LifecycleState.Finished);
+		Assert.NotEqual(unlocked.Id, Record(await StoredAsync(checkpoint.Id), LifecycleState.Finished).Id);
 	}
 
 	[Fact]

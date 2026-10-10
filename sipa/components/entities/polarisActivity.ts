@@ -198,7 +198,8 @@ export async function movePolarisActivity(activity: PolarisActivity, cycle: Pola
 /**
  * Defers an activity to the next day's Polaris cycle (PEP111): the core creates that day's forecast cycle when
  * none exists, carries the tracked minutes forward as the new allocation envelope, and resets the tally. The
- * current cycle re-reads itself so the row leaves it and lands on the next.
+ * current cycle re-reads itself so the row leaves it and lands on the next. An ended cycle keeps its record (PEP103
+ * patch 5): the core carries the work on with a new activity, and the row stays where it was worked.
  */
 export async function moveToNextPolaris(activity: PolarisActivity): Promise<boolean> {
 	const title = polarisActivityTitle(activity)
@@ -216,7 +217,7 @@ export async function moveToNextPolaris(activity: PolarisActivity): Promise<bool
 	}
 
 	await revalidatePolarisCycles(activity.polarisCycleId)
-	toast(`Moved ${title} to the next Polaris cycle.`, 'success')
+	toast(moved.id === activity.id ? `Moved ${title} to the next Polaris cycle.` : `Carried ${title} on to the next Polaris cycle.`, 'success')
 	return true
 }
 

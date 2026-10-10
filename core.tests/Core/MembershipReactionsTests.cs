@@ -13,8 +13,9 @@ namespace Pleiades.Tests.Core;
 
 /// <summary>
 /// The moves the engine makes when an objective joins (PEP103 Patch103.3): coming on board the active onrush sprint makes it
-/// Onboard, joining the active Polaris cycle makes it Polaris, each from an open or finished status and only where nothing
-/// blocks it. The planning sprint and a forecast move nothing until they begin, and leaving moves nothing.
+/// Onboard, joining the active Polaris cycle makes it Polaris, each from an open status and only where nothing blocks it:
+/// joining pushes forward only (PEP103 patch 5), so a finished objective joins as it is. The planning sprint and a forecast
+/// move nothing until they begin, and leaving moves nothing.
 /// </summary>
 public sealed class MembershipReactionsTests : VaultTestBase
 {
@@ -54,7 +55,7 @@ public sealed class MembershipReactionsTests : VaultTestBase
 	private static EndpointRef ObjectiveRef(string id) => new(DependencyEndpointKind.Objective, id);
 
 	[Fact]
-	public async Task Coming_on_board_the_active_sprint_makes_open_and_finished_objectives_onboard()
+	public async Task Coming_on_board_the_active_sprint_makes_open_objectives_onboard()
 	{
 		var sprint = await Onrush(api => api.StartNewAsync(cancellationToken: Ct));
 		var standby = await ObjectiveInAsync("Standby work");
@@ -71,15 +72,15 @@ public sealed class MembershipReactionsTests : VaultTestBase
 
 		Assert.Equal(ObjectiveStatus.Onboard, await StatusAsync(standby.Id));
 		Assert.Equal(ObjectiveStatus.Onboard, await StatusAsync(blocked.Id));
-		// A finished objective is taken up again; one already started, or set aside, keeps its status.
-		Assert.Equal(ObjectiveStatus.Onboard, await StatusAsync(done.Id));
+		// Joining pushes forward only: one finished, already started, or set aside keeps its status.
+		Assert.Equal(ObjectiveStatus.Done, await StatusAsync(done.Id));
 		Assert.Equal(ObjectiveStatus.Polaris, await StatusAsync(started.Id));
 		Assert.Equal(ObjectiveStatus.Failed, await StatusAsync(failed.Id));
 
 		// The note follows, and each move is on the record.
 		Assert.Contains("status: Onboard", Vault.ReadVaultFile("Objectives/Standby work.md"));
 		var joins = await Vault.QueryAsync(context => context.AuditLogEntries.AsNoTracking().Where(entry => entry.Action == "state.join").ToListAsync(Ct));
-		Assert.Equal(3, joins.Count);
+		Assert.Equal(2, joins.Count);
 	}
 
 	[Fact]
@@ -100,7 +101,7 @@ public sealed class MembershipReactionsTests : VaultTestBase
 		// Beginning the sprint brings its members on board, as joining it once active would.
 		var begun = await Onrush(api => api.BeginAsync(OnrushSprint.PlanningPlaceholderId, cancellationToken: Ct));
 		Assert.Equal(ObjectiveStatus.Onboard, await StatusAsync(standby.Id));
-		Assert.Equal(ObjectiveStatus.Onboard, await StatusAsync(done.Id));
+		Assert.Equal(ObjectiveStatus.Done, await StatusAsync(done.Id));
 		Assert.Equal(ObjectiveStatus.Polaris, await StatusAsync(started.Id));
 		var member = await Vault.QueryAsync(context => context.Objectives.AsNoTracking().IgnoreAutoIncludes().SingleAsync(objective => objective.Id == standby.Id, Ct));
 		Assert.Equal(begun.Id, member.OnrushSprintId);
@@ -154,7 +155,7 @@ public sealed class MembershipReactionsTests : VaultTestBase
 		}
 
 		Assert.Equal(ObjectiveStatus.Polaris, await StatusAsync(standby.Id));
-		Assert.Equal(ObjectiveStatus.Polaris, await StatusAsync(done.Id));
+		Assert.Equal(ObjectiveStatus.Done, await StatusAsync(done.Id));
 		Assert.Equal(ObjectiveStatus.Failed, await StatusAsync(failed.Id));
 		Assert.Equal(ObjectiveStatus.Standby, await StatusAsync(gated.Id));
 		Assert.Equal(DirectiveStatus.Planned, await DirectiveStatusAsync(prerequisite.Id));
@@ -235,7 +236,7 @@ public sealed class MembershipReactionsTests : VaultTestBase
 		await Directive(api => api.ShiftStellarWorkflowAsync(campaign.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Over), Ct));
 		var sprint = await Onrush(api => api.StartNewAsync(cancellationToken: Ct));
 
-		// The join goes ahead; taking the objective up again would bring open work under the Over directive, so it stays done.
+		// The join goes ahead, and the objective joins as it is: joining never moves a finished objective back.
 		await Objective(api => api.AddToOnrushAsync(quest.Id, sprint.Id, Ct));
 
 		Assert.Equal(ObjectiveStatus.Done, await StatusAsync(quest.Id));

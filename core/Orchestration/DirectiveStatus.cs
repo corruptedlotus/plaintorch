@@ -29,9 +29,11 @@ public enum DirectiveStatus
 	[LifecycleState(LifecycleState.Finished)]
 	Fulfilled,
 	/// <summary>
-	/// The directive has concluded and is over.
+	/// The directive has concluded and is over: finished and closed (PEP103 patch 5). It stands only while every dependency it
+	/// has holds, its children included; one that gains one that does not — open work arriving under it among them — steps
+	/// back to <see cref="Fulfilled"/>, as the backlog state enforcement level decides.
 	/// </summary>
-	[LifecycleState(LifecycleState.Finished)]
+	[LifecycleState(LifecycleState.Finished, Closed = true)]
 	Over,
 	/// <summary>
 	/// The directive has failed. Deferred: neither started nor finished, and its intrinsic dependencies — to its parent and

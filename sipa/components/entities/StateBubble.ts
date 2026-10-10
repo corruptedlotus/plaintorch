@@ -398,7 +398,8 @@ export class StateBubble extends InteractionBubbleBase<number, StateBubbleOption
 
 	/**
 	 * Why moving to a status would be held back by what the item depends on, read off the graph the client holds — an
-	 * unmet edge constrained to a state the move enters, or, for a directive becoming Over, an open child — or nothing
+	 * unmet edge constrained to a state the move enters, or, for a move that closes the item (an objective's Archived, a
+	 * directive's Over), any unmet edge into it, an open child among them — or nothing
 	 * when nothing holds it or the graph is not at hand. The enforcement level plays no part: this is what the rules say.
 	 */
 	private holdOf(status: LifecycleStatus): string | undefined {
@@ -423,14 +424,16 @@ export class StateBubble extends InteractionBubbleBase<number, StateBubbleOption
 			return `relied on by ${relying.length} ${relying.length === 1 ? 'item' : 'items'}`
 		}
 
+		// Closing an item (an objective's Archived, a directive's Over) needs every dependency into it to hold, its children
+		// included, whatever it is constrained to (PEP103 patch 5).
 		const entered = enteredStates(lifecycle, current.state, status.state)
-		const becomesOver = this.typeName === 'StellarDirective' && status.value === DirectiveStatus.Over
+		const closes = status.isClosed && !current.isClosed
 		const holding = graph.filter(edge => !edge.satisfied
 			&& edge.targetKind === endpoint
 			&& edge.targetId === id
-			&& ((entered.includes(LifecycleState.Started) && (edge.constraint ?? DependencyConstraint.ToBegin) === DependencyConstraint.ToBegin)
-				|| (entered.includes(LifecycleState.Finished) && edge.constraint === DependencyConstraint.ToFinish)
-				|| (becomesOver && edge.origin === DependencyOrigin.Intrinsic)))
+			&& (closes
+				|| (entered.includes(LifecycleState.Started) && (edge.constraint ?? DependencyConstraint.ToBegin) === DependencyConstraint.ToBegin)
+				|| (entered.includes(LifecycleState.Finished) && edge.constraint === DependencyConstraint.ToFinish)))
 		if (holding.length === 0) {
 			return undefined
 		}

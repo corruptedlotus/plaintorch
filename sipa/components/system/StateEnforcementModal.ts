@@ -70,6 +70,11 @@ export const stateEnforcementPrompt: StateEnforcementHandler = {
 
 /** One move in words: "Finish Directive 'Foundation' (Fulfilled)"; a move back reads "Reopen". */
 export function describeMove(move: StateCompensation): string {
+	// A closed item stepping back to its open finish stays finished (PEP103 patch 5): it returns to that status.
+	if (move.to === move.from && move.to === LifecycleState.Finished) {
+		return `Return ${kindLabels[move.subject.kind] ?? move.subject.kind} '${move.subject.title ?? move.subject.id}' to ${move.status ?? 'its finish'}`
+	}
+
 	const verb = move.to === LifecycleState.Deferred ? 'Set aside'
 		: move.to <= move.from ? 'Reopen'
 			: move.to === LifecycleState.Started ? 'Start'

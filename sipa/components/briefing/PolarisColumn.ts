@@ -33,7 +33,10 @@ export class PolarisColumn extends PolarisBriefingBase {
 
 	override collapsible = true
 
-	/** Whether the day, while it has no cycle, is offered for planning: the column then shows the button planning it. */
+	/**
+	 * Whether the day, while it has no cycle, is offered for planning: the column then shows the button planning it. Its
+	 * host offers today and the days ahead only; a day that has passed is refused here too.
+	 */
 	@property({ type: Boolean }) plannable = false
 
 	/** While the day's forecast is being planned or deleted. */
@@ -242,11 +245,17 @@ export class PolarisColumn extends PolarisBriefingBase {
 		`
 	}
 
-	/** Plans the day: a forecast cycle for it, planned from today. */
+	/** Plans the day: a forecast cycle for it, planned from today. A day that has passed is never planned (PEP103 patch 5). */
 	private async plan() {
 		const day = this.day
 		if (!day || this.data || this.busy) return
 		const today = isoDay(new Date())
+		if (day < today) {
+			this.plannable = false
+			toast('A day that has passed cannot be planned.', 'error')
+			return
+		}
+
 		this.busy = true
 		try {
 			const planned = await core.polaris.plan({ forecastReference: today, daysAhead: isoDaysBetween(today, day) })

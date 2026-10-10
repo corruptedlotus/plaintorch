@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Pleiades.Puck;
 using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch.Enforcement;
@@ -64,6 +65,7 @@ public sealed class StateInterceptor(StateEngine engine, StateNoteSyncService no
 		if (Release(eventData.Context) is { } work)
 		{
 			noteSync.ApplyAsync(work, CancellationToken.None).GetAwaiter().GetResult();
+			ForgetDrained(eventData.Context!, work);
 		}
 
 		return base.SavedChanges(eventData, result);
@@ -78,6 +80,7 @@ public sealed class StateInterceptor(StateEngine engine, StateNoteSyncService no
 		if (Release(eventData.Context) is { } work)
 		{
 			await noteSync.ApplyAsync(work, cancellationToken);
+			ForgetDrained(eventData.Context!, work);
 		}
 
 		return await base.SavedChangesAsync(eventData, result, cancellationToken);
@@ -106,6 +109,29 @@ public sealed class StateInterceptor(StateEngine engine, StateNoteSyncService no
 		}
 
 		_pending[context.ContextId.InstanceId] = work;
+	}
+
+	/// <summary>
+	/// The note work drains the save's reconcile intents on a scope of its own, which clears their rows, while the saving
+	/// context still tracks them as saved. A later write of the same item on that context would then update a row that is
+	/// gone, so the context lets them go; one the drain could not clear is still in the store, where the next write finds it.
+	/// </summary>
+	private static void ForgetDrained(DbContext context, StateNoteWork work)
+	{
+		if (work.Reconciles.Count == 0)
+		{
+			return;
+		}
+
+		var drained = work.Reconciles.OfType<IPuckNamedEntity>().ToList();
+		foreach (var entry in context.ChangeTracker.Entries<VaultWriteIntent>().Where(entry => entry.State == EntityState.Unchanged).ToList())
+		{
+			if (drained.Any(entity => string.Equals(entity.GetType().FullName, entry.Entity.EntityType, StringComparison.Ordinal)
+				&& string.Equals(entity.Id, entry.Entity.EntityId, StringComparison.OrdinalIgnoreCase)))
+			{
+				entry.State = EntityState.Detached;
+			}
+		}
 	}
 
 	private StateNoteWork? Release(DbContext? context)

@@ -10,6 +10,11 @@ export interface LifecycleStatus {
 	state: LifecycleState
 	/** Whether it is the status the core sets for its state of its own accord: the lowest-valued one. */
 	isDefault: boolean
+	/**
+	 * Whether it closes its item (PEP103 patch 5): a finished status that stands only while everything the item depends on
+	 * holds, such as an objective's Archived or a directive's Over. A dependency that does not hold keeps an item from closing.
+	 */
+	isClosed: boolean
 }
 
 /**

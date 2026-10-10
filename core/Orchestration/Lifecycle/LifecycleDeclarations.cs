@@ -50,6 +50,16 @@ public static class LifecycleDeclarations
 		=> DefaultStatus(typeof(TStatus), state) is TStatus status ? status : null;
 
 	/// <summary>
+	/// Gets whether a status member closes its item (<see cref="LifecycleStateAttribute.Closed"/>, PEP103 patch 5): a finished
+	/// status that stands only while everything the item depends on holds.
+	/// </summary>
+	public static bool IsClosed(Enum status)
+	{
+		ArgumentNullException.ThrowIfNull(status);
+		return Of(status.GetType()).Closed.Contains(status.ToString());
+	}
+
+	/// <summary>
 	/// Validates a lifecycle status enum: every member declares a state, and at least one member is on the main line, since a
 	/// kind that can only be deferred has no lifecycle to defer from.
 	/// </summary>
@@ -67,6 +77,18 @@ public static class LifecycleDeclarations
 		{
 			throw new InvalidOperationException($"Lifecycle status '{statusType.Name}' declares no {nameof(LifecycleState.Open)}, {nameof(LifecycleState.Started)} or {nameof(LifecycleState.Finished)} member.");
 		}
+
+		var strayClosed = lifecycle.Closed.Where(member => lifecycle.States[member] != LifecycleState.Finished).ToList();
+		if (strayClosed.Count > 0)
+		{
+			throw new InvalidOperationException(
+				$"Lifecycle status '{statusType.Name}' closes with {string.Join(", ", strayClosed.Select(member => $"'{member}'"))}, which {(strayClosed.Count == 1 ? "is" : "are")} not {nameof(LifecycleState.Finished)}.");
+		}
+
+		if (lifecycle.Closed.Count > 0 && lifecycle.Defaults.TryGetValue(LifecycleState.Finished, out var finished) && lifecycle.Closed.Contains(finished.ToString()))
+		{
+			throw new InvalidOperationException($"Lifecycle status '{statusType.Name}' closes with its default finished status '{finished}'; a closed item needs an open finish to step back to.");
+		}
 	}
 
 	private static EnumLifecycle Of(Type statusType)
@@ -83,6 +105,7 @@ public static class LifecycleDeclarations
 		}
 
 		var states = new Dictionary<string, LifecycleState>(StringComparer.Ordinal);
+		var closed = new HashSet<string>(StringComparer.Ordinal);
 		var defaults = new Dictionary<LifecycleState, Enum>();
 		var members = new List<(Enum Status, LifecycleState State)>();
 		var undeclared = new List<string>();
@@ -98,15 +121,21 @@ public static class LifecycleDeclarations
 			}
 
 			states[field.Name] = declaration.State;
+			if (declaration.Closed)
+			{
+				closed.Add(field.Name);
+			}
+
 			members.Add(((Enum)field.GetValue(null)!, declaration.State));
 			defaults.TryAdd(declaration.State, (Enum)field.GetValue(null)!);
 		}
 
-		return new EnumLifecycle(states, states.Values.ToHashSet(), defaults, members, undeclared);
+		return new EnumLifecycle(states, closed, states.Values.ToHashSet(), defaults, members, undeclared);
 	}
 
 	private sealed record EnumLifecycle(
 		IReadOnlyDictionary<string, LifecycleState> States,
+		IReadOnlySet<string> Closed,
 		IReadOnlySet<LifecycleState> Covered,
 		IReadOnlyDictionary<LifecycleState, Enum> Defaults,
 		IReadOnlyList<(Enum Status, LifecycleState State)> Members,

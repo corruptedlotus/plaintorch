@@ -99,7 +99,10 @@ public sealed class OnrushSprintApiService(
 		}
 
 		var previous = Clone(sprint);
-		var resolvedStartDate = startDate ?? sprint.StartDate ?? DateOnly.FromDateTime(DateTime.Today);
+		// A plan's date is when it was meant to begin; beginning it now on a day still to come would be refused (PEP103
+		// patch 5, onrush.early-start), so a plan dated ahead begins today. A date named by the caller is taken as named.
+		var today = DateOnly.FromDateTime(DateTime.Today);
+		var resolvedStartDate = startDate ?? (sprint.StartDate is { } planned && planned <= today ? planned : today);
 
 		if (sprint.Id == OnrushSprint.PlanningPlaceholderId)
 		{
@@ -237,28 +240,40 @@ public sealed class OnrushSprintApiService(
 			.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
 			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
 
-		// Executive orders belong to the sprint outright, so they go with it — markdown and all.
-		foreach (var order in sprint.ExecutiveOrders.ToList())
-		{
-			temporalDataService.StageEntityArchive(order, "api-delete", Environment.UserName);
-			context.ExecutiveOrders.Remove(order);
-			await markdownFileService.DeleteExecutiveOrderAsync(order, cancellationToken);
-		}
-
 		// The milestone is the sprint's own — the one deletion the checkpoint service refuses on its own terms
 		// is exactly this one, done because the sprint is going. The sprint and its milestone point at each
-		// other, so the cycle is broken and the milestone removed in this first save, before the sprint itself
-		// is deleted below; deleting both ends of the cycle in one save leaves EF unable to order the commands.
-		if (sprint.MilestoneCheckpoint is { } milestone)
+		// other, so the cycle is broken in this first save, and both go in the second; deleting both ends of the
+		// cycle in one save leaves EF unable to order the commands. Breaking it only lets the milestone leave the
+		// sprint, which an ended sprint allows (PEP103 patch 5): what it holds stays as it was until the sprint goes.
+		var milestone = sprint.MilestoneCheckpoint;
+		if (milestone is not null)
 		{
 			sprint.MilestoneCheckpointId = null;
 			sprint.MilestoneCheckpoint = null;
 			milestone.OnrushSprintId = null;
 			milestone.OnrushSprint = null;
-			context.Checkpoints.Remove(milestone);
+			await context.SaveChangesAsync(cancellationToken);
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		// Executive orders belong to the sprint outright, so they go with it — markdown and all. Their notes are archived
+		// first, while nothing is pending removal: archiving saves, and what an ended sprint holds may only go in the save
+		// that removes the sprint (PEP103 patch 5).
+		var orders = sprint.ExecutiveOrders.ToList();
+		foreach (var order in orders)
+		{
+			await markdownFileService.DeleteExecutiveOrderAsync(order, cancellationToken);
+		}
+
+		foreach (var order in orders)
+		{
+			temporalDataService.StageEntityArchive(order, "api-delete", Environment.UserName);
+			context.ExecutiveOrders.Remove(order);
+		}
+
+		if (milestone is not null)
+		{
+			context.Checkpoints.Remove(milestone);
+		}
 
 		// The sprint no longer names a milestone, so it can go. Its SetNull foreign keys free the objectives, the
 		// directives and any other checkpoints it merely tracked — they live on, detached — and EF drops the reference

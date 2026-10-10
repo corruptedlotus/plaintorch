@@ -67,6 +67,21 @@ public sealed class EntityLifecycleResolver
 	public LifecycleState StateOf(Enum status) => LifecycleDeclarations.StateOf(status);
 
 	/// <summary>
+	/// Gets whether a status value closes its item (<see cref="LifecycleStateAttribute.Closed"/>, PEP103 patch 5).
+	/// </summary>
+	public bool IsClosed(Enum status) => LifecycleDeclarations.IsClosed(status);
+
+	/// <summary>
+	/// Gets whether an entity stands closed: its kind has a status, and the status it holds closes it. A kind whose state comes
+	/// from a source (a checkpoint, an occurrence) never closes.
+	/// </summary>
+	public bool IsClosed(object entity)
+	{
+		ArgumentNullException.ThrowIfNull(entity);
+		return StatusPropertyOf(entity.GetType())?.GetValue(entity) is Enum status && LifecycleDeclarations.IsClosed(status);
+	}
+
+	/// <summary>
 	/// Gets the state an item of the kind reaches next going up the order from <paramref name="current"/> — Open for a
 	/// deferred kind that has an Open state, then Started, then Finished, skipping any the kind does not pass through — or
 	/// <see langword="null"/> when nothing lies ahead.

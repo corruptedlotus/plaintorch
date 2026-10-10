@@ -22,4 +22,8 @@ public sealed record LifecycleKindDescription(string Kind, IReadOnlyList<Lifecyc
 /// <param name="Name">Its name.</param>
 /// <param name="State">The lifecycle state it stands for.</param>
 /// <param name="IsDefault">Whether it is the status the core sets for its state of its own accord, the lowest-valued one.</param>
-public sealed record LifecycleStatusDescription(int Value, string Name, LifecycleState State, bool IsDefault);
+/// <param name="IsClosed">
+/// Whether it closes its item (PEP103 patch 5): a finished status that stands only while everything the item depends on
+/// holds, such as an objective's Archived or a directive's Over.
+/// </param>
+public sealed record LifecycleStatusDescription(int Value, string Name, LifecycleState State, bool IsDefault, bool IsClosed);

@@ -1,6 +1,6 @@
 import { Component, component, css, html, state } from '@a11d/lit'
 import { dateOfIsoDay, forecastHorizon, isoDay, type PolarisCycle } from '@pleiades/sdk'
-import { core, DerivedRef, type PolarisColumn } from '..'
+import { core, DerivedRef, subscribeElementTick, type PolarisColumn } from '..'
 import { loadMitraEmbed, type MitraRange } from './mitraEmbed'
 
 /**
@@ -24,8 +24,13 @@ export class ForecastView extends Component {
 	/** How many days fit the width — and how many, from today, always offer planning. */
 	static readonly visibleDays = 3
 
-	/** Today, as the ISO date the cycles' days are compared with. Fixed for the view's life, like where it starts. */
-	private readonly today = isoDay(new Date())
+	/**
+	 * Today, as the ISO date the cycles' days are compared with. It follows the app clock (by the minute), so a day that
+	 * passes while the view stays open stops offering planning (PEP103 patch 5): a past day is never planned.
+	 */
+	@state() private today = isoDay(new Date())
+
+	private stopTick?: () => void
 
 	/**
 	 * Where the strip starts — today's local midnight. One instance for the view's life: the embed takes a new date as
@@ -125,6 +130,22 @@ export class ForecastView extends Component {
 		column.data = plan.byDay.get(day)
 		column.plannable = day >= this.today && day <= plan.horizon
 		column.collapsed = this.collapsed
+	}
+
+	override connectedCallback() {
+		super.connectedCallback()
+		this.stopTick ??= subscribeElementTick(this, now => {
+			const today = isoDay(new Date(now))
+			if (today !== this.today) {
+				this.today = today
+			}
+		}, '60s')
+	}
+
+	override disconnectedCallback() {
+		super.disconnectedCallback()
+		this.stopTick?.()
+		this.stopTick = undefined
 	}
 
 	/** A column's chevron asks for the row to collapse or open: the state is the row's, so every column follows. */

@@ -97,17 +97,21 @@ public sealed class CycleRunTests : VaultTestBase
 	[Fact]
 	public async Task Work_moved_on_from_an_old_cycle_lands_in_the_next_cycle_that_can_still_begin()
 	{
-		// Three days ago: planned, begun on its day, ended, with work left in it.
+		// Three days ago: planned, begun on its day, worked, ended, with work left in it.
 		var past = await Polaris(api => api.PlanAsync(Today.AddDays(-3), 0, cancellationToken: Ct));
 		var start = new DateTimeOffset(Today.AddDays(-3).ToDateTime(new TimeOnly(9, 0)));
 		await Polaris(api => api.BeginAsync(past.Id, start, Ct));
-		await Polaris(api => api.EndAsync(past.Id, start.AddHours(8), Ct));
 		var objective = await Objective(api => api.CreateStandaloneAsync("Carried work", cancellationToken: Ct));
 		var planned = await Polaris(api => api.PlanExecutiveAsync(new PolarisExecutivePlan(PolarisExecutivePlanningMode.FromObjective, ObjectiveId: objective.Id), past.Id, Ct));
+		await Polaris(api => api.EndAsync(past.Id, start.AddHours(8), Ct));
 
-		// Today has not begun: the work lands in today's cycle, not in the past one after the old.
+		// Today has not begun: the work lands in today's cycle, not in the past one after the old. The ended cycle keeps its
+		// record, so the work is carried on by a new executive (PEP103 patch 5).
 		var moved = await Polaris(api => api.MoveExecutiveToNextPolarisAsync(planned.Executive.Id, Ct));
 		Assert.Equal(Today, (await CycleAsync(moved.PolarisCycleId)).Day);
+		Assert.NotEqual(planned.Executive.Id, moved.Id);
+		var kept = await Vault.QueryAsync(context => context.Set<Executive>().AsNoTracking().IgnoreAutoIncludes().SingleAsync(item => item.Id == planned.Executive.Id, Ct));
+		Assert.Equal(past.Id, kept.PolarisCycleId);
 
 		// Once today has begun, the next cycle that can begin is tomorrow's.
 		await Polaris(api => api.StartNewAsync(cancellationToken: Ct));

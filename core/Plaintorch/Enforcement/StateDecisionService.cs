@@ -99,9 +99,10 @@ public sealed class StateDecisionService(IOptionsSnapshot<BacklogPreferences> pr
 	/// <summary>
 	/// Gathers the compensations of every conflict, each item moved once. Two conflicts asking the same move share it, and
 	/// two asking different states of one item's main line in the same direction take the furthest — forward, a finish
-	/// enters the start on its way; back, the earlier state takes back what the later one would. Moving an item forward
-	/// while another conflict moves it back, or setting it aside while another needs it on its main line, cannot be done at
-	/// once: that is a clash.
+	/// enters the start on its way; back, the earlier state takes back what the later one would. A closed item stepping back
+	/// to its open finish (PEP103 patch 5) stays in its state, so it goes along with a move back, which takes it further.
+	/// Moving an item forward while another conflict moves it back, or setting it aside while another needs it on its main
+	/// line, cannot be done at once: that is a clash.
 	/// </summary>
 	private static bool TryMerge(IReadOnlyList<StateConflict> conflicts, out IReadOnlyList<StateCompensation> merged, out string clash)
 	{
@@ -117,8 +118,20 @@ public sealed class StateDecisionService(IOptionsSnapshot<BacklogPreferences> pr
 			}
 
 			var kept = moves[same];
-			if (kept.To == compensation.To)
+			if (kept.To == compensation.To && (kept.To != kept.From || kept.Status == compensation.Status))
 			{
+				continue;
+			}
+
+			// A step back within the finish (closed to open) gives way to a move back, which leaves the item open anyway.
+			if (compensation.To == compensation.From && kept.To <= kept.From && kept.To != LifecycleState.Deferred)
+			{
+				continue;
+			}
+
+			if (kept.To == kept.From && compensation.To <= compensation.From && compensation.To != LifecycleState.Deferred)
+			{
+				moves[same] = compensation;
 				continue;
 			}
 
@@ -146,13 +159,15 @@ public sealed class StateDecisionService(IOptionsSnapshot<BacklogPreferences> pr
 
 	/// <summary>
 	/// Sums up what confirming would move, by what happens to the items rather than which they are: "finish 2 items and
-	/// start 1 item". The compensations themselves name the items.
+	/// start 1 item", or "return 1 item to Done" for a closed item stepping back. The compensations themselves name the items.
 	/// </summary>
 	private static string DescribeMoves(IEnumerable<StateCompensation> compensations)
 	{
 		var verbs = compensations
-			.GroupBy(Verb)
-			.Select(group => $"{group.Key} {group.Count()} {(group.Count() == 1 ? "item" : "items")}")
+			.GroupBy(move => move.To == move.From ? $"return\u001F{move.Status}" : Verb(move))
+			.Select(group => group.Key.Split('\u001F') is [var verb, var status]
+				? $"{verb} {group.Count()} {(group.Count() == 1 ? "item" : "items")} to {status}"
+				: $"{group.Key} {group.Count()} {(group.Count() == 1 ? "item" : "items")}")
 			.ToList();
 		return verbs.Count switch
 		{

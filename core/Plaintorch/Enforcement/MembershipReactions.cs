@@ -8,6 +8,13 @@ using Pleiades.Vault.Database;
 namespace Pleiades.Plaintorch.Enforcement;
 
 /// <summary>
+/// One objective joining the active onrush sprint or Polaris cycle in a save (PEP103 patch 3).
+/// </summary>
+/// <param name="Objective">The objective, as the save tracks it.</param>
+/// <param name="Membership">What it joins, as a message words it: <c>onrush sprint</c> or <c>Polaris cycle</c>.</param>
+internal sealed record MembershipJoin(Objective Objective, string Membership);
+
+/// <summary>
 /// The moves the engine makes of its own accord when an objective joins (PEP103, Patch103.3): coming on board the active
 /// onrush sprint makes it <see cref="ObjectiveStatus.Onboard"/>, and joining the active Polaris cycle makes it
 /// <see cref="ObjectiveStatus.Polaris"/>, each where nothing blocks the move. They run last in the structure phase, on the
@@ -23,17 +30,17 @@ namespace Pleiades.Plaintorch.Enforcement;
 /// Joining the planning placeholder, a forecast, or a sprint or cycle that has ended moves nothing.
 /// </para>
 /// <para>
-/// <b>What moves.</b> An objective that is open short of the target (Standby or Blocked, and Onboard on its way to Polaris) or
-/// finished moves to it; one already started, or set aside, keeps its status. An objective the save creates moves only from
-/// an open status, so one created finished stays finished, and the engine never overrides a status the save sets itself.
-/// When both apply, the sprint's move comes first and the cycle's then takes the objective further.
+/// <b>What moves.</b> Joining pushes an objective forward only (user ruling, PEP103 patch 5): one that is open short of the
+/// target (Standby or Blocked, and Onboard on its way to Polaris) moves to it; one already started, finished or set aside
+/// keeps its status, and the engine never overrides a status the save sets itself. When both apply, the sprint's move comes
+/// first and the cycle's then takes the objective further. A closed objective (Archived) joining is the judge's
+/// (<see cref="StateJudge.ClosedJoinRule"/>): it steps back to Done, or the join waits or is refused, as the level decides.
 /// </para>
 /// <para>
 /// <b>Only where nothing blocks it.</b> A move is made only where the lifecycle rules allow it as the save stands
-/// (<see cref="StateJudge.AllowsAsync"/>): a held gate, or a finished objective returning under a directive that is Over,
-/// leaves the status as it is at every level, and the join itself goes ahead. The engine never compensates for its own moves
-/// nor asks about them. Each move is put on the record (<c>state.join</c>) and the objective's note follows once the save
-/// commits.
+/// (<see cref="StateJudge.AllowsAsync"/>): a held gate leaves the status as it is at every level, and the join itself goes
+/// ahead. The engine never compensates for its own moves nor asks about them. Each move is put on the record
+/// (<c>state.join</c>) and the objective's note follows once the save commits.
 /// </para>
 /// <para>
 /// <b>Leaving moves nothing.</b> Taking an objective out of a sprint or a cycle, or ending or deleting either, keeps every
@@ -61,6 +68,17 @@ public sealed class MembershipReactions(StateJudge judge, EntityLifecycleResolve
 
 		var joining = await JoiningPolarisAsync(context, cancellationToken);
 		await MoveAsync(pass, joining.Where(objective => !asked.Contains(objective)).ToList(), ObjectiveStatus.Polaris, "polaris", cancellationToken);
+	}
+
+	/// <summary>
+	/// Every objective joining the active sprint or the active Polaris cycle in this save, as the save stands, with what it
+	/// joins. The judge reads it for closed objectives (<see cref="StateJudge.ClosedJoinRule"/>).
+	/// </summary>
+	internal static async Task<List<MembershipJoin>> JoinsAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		var joins = (await BoardingAsync(context, cancellationToken)).Select(objective => new MembershipJoin(objective, "onrush sprint")).ToList();
+		joins.AddRange((await JoiningPolarisAsync(context, cancellationToken)).Select(objective => new MembershipJoin(objective, "Polaris cycle")));
+		return joins;
 	}
 
 	/// <summary>
@@ -135,7 +153,7 @@ public sealed class MembershipReactions(StateJudge judge, EntityLifecycleResolve
 	/// </summary>
 	private async Task MoveAsync(StatePass pass, List<Objective> objectives, ObjectiveStatus target, string membership, CancellationToken cancellationToken)
 	{
-		var pending = objectives.Where(objective => Moves(pass.Context, objective, target)).ToList();
+		var pending = objectives.Where(objective => Moves(objective, target)).ToList();
 		var moved = true;
 		while (moved && pending.Count > 0)
 		{
@@ -162,16 +180,11 @@ public sealed class MembershipReactions(StateJudge judge, EntityLifecycleResolve
 	}
 
 	/// <summary>
-	/// Whether joining moves an objective to <paramref name="target"/>: it is open short of the target, or finished and not
-	/// created by this save.
+	/// Whether joining moves an objective to <paramref name="target"/>: it is open short of the target. Joining pushes forward
+	/// only (PEP103 patch 5), so nothing started, finished or set aside moves.
 	/// </summary>
-	private bool Moves(PlainfraContext context, Objective objective, ObjectiveStatus target)
-		=> objective.Status != target && lifecycleResolver.StateOf(objective.Status) switch
-		{
-			LifecycleState.Open => true,
-			LifecycleState.Finished => context.Entry(objective).State != EntityState.Added,
-			_ => false,
-		};
+	private bool Moves(Objective objective, ObjectiveStatus target)
+		=> objective.Status != target && lifecycleResolver.StateOf(objective.Status) == LifecycleState.Open;
 
 	/// <summary>
 	/// Whether the save sets a reference: an item it creates holds it from the start, and an item it modifies holds another

@@ -84,7 +84,9 @@ public interface IPolarisCycleApi
 	/// its own cycle's, and no earlier than today's cycle while today's has not begun, else a later day's. That day's forecast
 	/// cycle is created when none exists yet. The carried-forward work becomes the new allocation envelope — estimation, minimum, and maximum
 	/// are all set to the tracked (elapsed) minutes and the elapsed tally is reset to zero — so the next day starts
-	/// from a fresh estimate of what is left. Refused when the target cycle already holds the same incentive.
+	/// from a fresh estimate of what is left. Refused when the target cycle already holds the same incentive. An ended
+	/// cycle's record is history (PEP103 patch 5), so work moved on from one is carried by a new executive in the next cycle,
+	/// which is returned, and the old executive stays as it was worked.
 	/// </summary>
 	Task<Executive> MoveExecutiveToNextPolarisAsync(long executiveId, CancellationToken cancellationToken = default);
 
