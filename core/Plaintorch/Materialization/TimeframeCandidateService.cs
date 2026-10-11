@@ -1,12 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch.Materialization;
 
 /// <summary>
 /// Computes and caches the timeframe candidates of a begun Polaris cycle (PEP100 patch 2): every timeframe without an
-/// orbit, plus every timeframe whose orbit selects the cycle's day on the vault default calendar.
+/// orbit, plus every timeframe whose orbit selects the cycle's day on the vault default calendar. A Stale lunar directive's
+/// timeframes are never candidates (PEP103 patch 6, <see cref="TemporalActivation.TimeframesAct"/>).
 /// </summary>
 /// <remarks>
 /// The cycle's day is its local start day (<see cref="CycleDay"/>), the same day cycle-begin reflectives are matched
@@ -64,8 +66,10 @@ public sealed class TimeframeCandidateService(
 
 	private async Task<IReadOnlyList<long>> ComputeAsync(DateOnly day, CancellationToken cancellationToken)
 	{
+		var acting = TemporalActivation.TimeframeStatuses();
 		var timeframes = await context.Timeframes
 			.AsNoTracking()
+			.Where(timeframe => acting.Contains(timeframe.Directive!.Status))
 			.OrderBy(timeframe => timeframe.Id)
 			.ToListAsync(cancellationToken);
 

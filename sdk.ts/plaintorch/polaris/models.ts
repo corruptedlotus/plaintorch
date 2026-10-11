@@ -1,5 +1,5 @@
 import { model } from "@a11d/api-dotnet"
-import type { Attentive, Decree, Eventive } from "../declaratives/models"
+import type { Attentive, Decree, Eventive, Terminative } from "../declaratives/models"
 import type { Objective, ObjectiveCollege } from "../objectives/models"
 import type { Timeframe } from "../directives/models"
 
@@ -73,20 +73,24 @@ export class PolarisCycle {
 
 /**
  * Unbound eventives and attentives a Polaris cycle includes non-structurally because they fall within
- * 24h of its beginning (PEP100). The cycle never relationally owns these records.
+ * 24h of its beginning (PEP100), and the terminatives of the dues there (PEP103 patch 7). The cycle never relationally
+ * owns these records.
  */
 export interface PolarisCycleInclusions {
 	eventives: Eventive[]
 	attentives: Attentive[]
+	terminatives: Terminative[]
 }
 
 /**
  * The day-level agenda relative to today: unbound attentives requiring attention (same-day/24h and
- * previous unattended) and upcoming eventives within a short horizon (PEP100).
+ * previous unattended), upcoming eventives within a short horizon (PEP100), and the terminatives of the dues still
+ * pending up to that horizon, overdue ones included, unless ignored (PEP103 patch 7).
  */
 export interface PolarisAgenda {
 	attentives: Attentive[]
 	eventives: Eventive[]
+	terminatives: Terminative[]
 }
 
 /**

@@ -9,9 +9,10 @@ namespace Pleiades.Orchestration;
 public enum DirectiveStatus
 {
 	/// <summary>
-	/// The directive has been defined but not yet committed. The directives' default open status.
+	/// The directive has been defined but not yet committed. The directives' default open status, and the one a directive
+	/// is created in.
 	/// </summary>
-	[LifecycleState(LifecycleState.Open)]
+	[LifecycleState(LifecycleState.Open, Initial = true)]
 	Planned,
 	/// <summary>
 	/// The directive has been committed to active work, but has not started.

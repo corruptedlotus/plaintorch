@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Plaintorch.Preferences;
 using Pleiades.Vault.Database;
 
@@ -296,8 +297,9 @@ public sealed class PlaintorchOrbitService(
 	/// <summary>
 	/// Determines whether lunar reflection is live for a directive lineage (PEP104): the lineage belongs to a Moonlight
 	/// hierarchy (see <see cref="IsInLunarHierarchyAsync"/>) and every lunar directive on it, the directive itself and
-	/// each ancestor, is <see cref="LunarDirectiveStatus.Active"/>. An On Hold or Stale lunar directive pauses reflection
-	/// for its whole subtree; the walk never looks at stellar directives' own states.
+	/// each ancestor, is started (<see cref="LunarDirectiveStatus.Active"/>). An On Hold (set aside) or Stale (finished)
+	/// lunar directive pauses reflection for its whole subtree, and that is all its status governs (user ruling, PEP103
+	/// patch 6); the walk never looks at stellar directives' own states.
 	/// </summary>
 	public async Task<bool> IsLunarHierarchyActiveAsync(string? directiveId, CancellationToken cancellationToken = default)
 	{
@@ -316,7 +318,7 @@ public sealed class PlaintorchOrbitService(
 
 			if (directive is LunarDirective lunar)
 			{
-				if (lunar.Status != LunarDirectiveStatus.Active)
+				if (LifecycleDeclarations.StateOf(lunar.Status) != LifecycleState.Started)
 				{
 					return false;
 				}

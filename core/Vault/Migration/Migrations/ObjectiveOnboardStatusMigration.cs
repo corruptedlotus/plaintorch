@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Pleiades.Orchestration;
@@ -19,7 +18,7 @@ namespace Pleiades.Vault.Migration.Migrations;
 /// objective was edited while the core was away. An objective without a note is left alone. A note this pass never sees
 /// still reads, since <see cref="ObjectiveStatus.Onboard"/> keeps its old name as an alias.
 /// </remarks>
-public sealed partial class ObjectiveOnboardStatusMigration(
+public sealed class ObjectiveOnboardStatusMigration(
 	PlainfraContext context,
 	PlaintorchMarkdownStorageService storageService,
 	VaultLayout layout,
@@ -87,49 +86,8 @@ public sealed partial class ObjectiveOnboardStatusMigration(
 
 	/// <summary>
 	/// Renames the value of a note's frontmatter <c>status</c> line from <c>Onrush</c> to <c>Onboard</c>, keeping the key,
-	/// any quotes and anything after the value as they are.
+	/// any quotes and anything after the value as they are (<see cref="FrontmatterStatusRename"/>).
 	/// </summary>
-	/// <param name="markdown">The note.</param>
-	/// <param name="renamed">The note with the value renamed, or the note itself when nothing was renamed.</param>
-	/// <returns>Whether the note's frontmatter said <c>status: Onrush</c>, in any case.</returns>
 	internal static bool TryRenameStatus(string markdown, out string renamed)
-	{
-		ArgumentNullException.ThrowIfNull(markdown);
-		renamed = markdown;
-		var lines = markdown.Split('\n');
-		if (lines[0].TrimStart('﻿').TrimEnd('\r').Trim() != "---")
-		{
-			return false;
-		}
-
-		for (var index = 1; index < lines.Length; index++)
-		{
-			var line = lines[index].TrimEnd('\r');
-			if (line == "---")
-			{
-				return false;
-			}
-
-			var match = StatusLine().Match(line);
-			if (!match.Success)
-			{
-				continue;
-			}
-
-			lines[index] = string.Concat(
-				match.Groups["prefix"].Value,
-				match.Groups["quote"].Value,
-				nameof(ObjectiveStatus.Onboard),
-				match.Groups["quote"].Value,
-				match.Groups["rest"].Value,
-				lines[index].EndsWith('\r') ? "\r" : string.Empty);
-			renamed = string.Join('\n', lines);
-			return true;
-		}
-
-		return false;
-	}
-
-	[GeneratedRegex("""^(?<prefix>status\s*:\s*)(?<quote>["']?)onrush\k<quote>(?<rest>\s*(#.*)?)$""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-	private static partial Regex StatusLine();
+		=> FrontmatterStatusRename.TryRename(markdown, "Onrush", nameof(ObjectiveStatus.Onboard), out renamed);
 }

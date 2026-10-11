@@ -30,8 +30,8 @@ public sealed class LunarDirective : Directive
 	/// Gets or sets the moonlight state of the lunar directive.
 	/// </summary>
 	[MarkdownField("status")]
-	[LifecycleStatus]
-	public LunarDirectiveStatus Status { get; set; } = LunarDirectiveStatus.OnHold;
+	[LifecycleStatus(History = true)]
+	public LunarDirectiveStatus Status { get; set; } = LifecycleDeclarations.InitialStatus<LunarDirectiveStatus>();
 
 	[InverseProperty(nameof(Timeframe.Directive))]
 	/// <summary>

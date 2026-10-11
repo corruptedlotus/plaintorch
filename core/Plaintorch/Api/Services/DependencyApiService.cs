@@ -390,11 +390,10 @@ public sealed class DependencyApiService(
 					throw new InvalidOperationException($"The {side} eventive endpoint requires an occurrence date (RECURRENCE-ID).");
 				}
 
-				var ownerExists = await context.Fates.AnyAsync(item => item.Id == endpoint.Id, cancellationToken)
-					|| await context.Objectives.AnyAsync(item => item.Id == endpoint.Id, cancellationToken);
-				if (!ownerExists)
+				// Only a fate owns eventives: an item's due is a terminative, which no edge names (PEP103 patch 7).
+				if (!await context.Fates.AnyAsync(item => item.Id == endpoint.Id, cancellationToken))
 				{
-					throw new InvalidOperationException($"The {side} eventive owner '{endpoint.Id}' was not found (expected a fate or objective).");
+					throw new InvalidOperationException($"The {side} eventive owner '{endpoint.Id}' was not found (expected a fate).");
 				}
 
 				break;

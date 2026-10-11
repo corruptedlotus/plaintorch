@@ -16,7 +16,10 @@ import "../editing/EditableTime"
 import { zoneCity } from "../editing/TimeZoneSelect"
 import { createChild, ModalBase, toast } from "../../host"
 
-/** The occurrence a single {@link OccurrenceEditor} edits: an attentive of a decree, or an eventive of a fate/objective. */
+/**
+ * The occurrence a single {@link OccurrenceEditor} edits: an attentive of a decree, or an eventive of a fate. A
+ * terminative, the due of an item, has its own editor (`TerminativeModal`), since only its ignore flag is a user's.
+ */
 export type OccurrenceTarget =
 	| { readonly kind: 'attentive', readonly attentive: Attentive }
 	| { readonly kind: 'eventive', readonly eventive: Eventive }
@@ -43,23 +46,17 @@ const eventiveResolutions: readonly ResolutionChoice<EventiveResolution>[] = [
 export function occurrenceTitle(target: OccurrenceTarget): string {
 	return target.kind === 'attentive'
 		? target.attentive.decree?.title ?? 'Attentive'
-		: target.eventive.fate?.title ?? target.eventive.objective?.title ?? 'Eventive'
+		: target.eventive.fate?.title ?? 'Eventive'
 }
 
-/** The owning incentive's id — the decree, fate, or objective the occurrence navigates to. */
+/** The owning declarative's id — the decree or fate the occurrence navigates to. */
 function occurrenceOwnerId(target: OccurrenceTarget): string | undefined {
-	return target.kind === 'attentive'
-		? target.attentive.decreeId
-		: target.eventive.fateId ?? target.eventive.objectiveId
+	return (target.kind === 'attentive' ? target.attentive.decreeId : target.eventive.fateId) || undefined
 }
 
 /** The glyph and label of the owning incentive, for the "navigate" affordance. */
 function occurrenceOwner(target: OccurrenceTarget): { icon: IconName, label: string } {
-	if (target.kind === 'attentive') {
-		return { icon: 'decree', label: 'decree' }
-	}
-
-	return target.eventive.fateId ? { icon: 'fate', label: 'fate' } : { icon: 'objective', label: 'objective' }
+	return target.kind === 'attentive' ? { icon: 'decree', label: 'decree' } : { icon: 'fate', label: 'fate' }
 }
 
 /** Addresses an attentive occurrence by its RECURRENCE-ID (attentives are always unbound, PEP111). */
@@ -73,7 +70,7 @@ function attentiveRef(attentive: Attentive): AttentiveOccurrenceRef {
  */
 function eventiveRef(eventive: Eventive): EventiveOccurrenceRef {
 	return eventive.recurrenceId
-		? { ownerId: eventive.fateId ?? eventive.objectiveId ?? '', recurrenceId: eventive.recurrenceId }
+		? { ownerId: eventive.fateId, recurrenceId: eventive.recurrenceId }
 		: { id: eventive.id }
 }
 
@@ -92,7 +89,7 @@ export async function applyOccurrenceUpdate(target: OccurrenceTarget, update: At
 		const updated = await core.declaratives.updateEventive(eventiveRef(target.eventive), update as EventiveUpdate)
 		next = updated && {
 			kind: 'eventive',
-			eventive: { ...target.eventive, ...updated, fate: updated.fate ?? target.eventive.fate, objective: updated.objective ?? target.eventive.objective }
+			eventive: { ...target.eventive, ...updated, fate: updated.fate ?? target.eventive.fate }
 		}
 	}
 
@@ -146,7 +143,7 @@ export function openOccurrenceModal(target: OccurrenceTarget, changed?: (updated
 
 /**
  * A simple editor for a single occurrence — an attentive or an eventive. It sets the occurrence's resolution,
- * navigates to the decree or fate/objective behind it, and reschedules it (its date and time). It carries no
+ * navigates to the decree or fate behind it, and reschedules it (its date and time). It carries no
  * time allocation: allocation lives on the executive (PEP111).
  */
 @component('p7t-occurrence-editor')

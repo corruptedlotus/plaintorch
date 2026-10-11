@@ -42,6 +42,7 @@ public sealed class SystemApiService(
 		typeof(Decree),
 		typeof(Attentive),
 		typeof(Eventive),
+		typeof(Terminative),
 		typeof(Checkpoint),
 	];
 

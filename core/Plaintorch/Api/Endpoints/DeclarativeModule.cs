@@ -84,8 +84,8 @@ public sealed class DeclarativeModule : Module
 
 		var eventives = endpoints.MapEnrichedGroup("/api/eventives");
 
-		eventives.MapGet("/", async (string? fateId, string? objectiveId, IDeclarativeApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.ListEventivesAsync(fateId, objectiveId, cancellationToken)));
+		eventives.MapGet("/", async (string? fateId, IDeclarativeApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.ListEventivesAsync(fateId, cancellationToken)));
 
 		eventives.MapPost("/", async (EventivePlan request, IDeclarativeApi api, CancellationToken cancellationToken) =>
 		{
@@ -103,5 +103,14 @@ public sealed class DeclarativeModule : Module
 
 		attentives.MapPut("/", async (AttentiveUpdateRequest request, IDeclarativeApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateAttentiveAsync(request.Occurrence, request.Update, cancellationToken)));
+
+		// PEP103 patch 7: the occurrences of items' dues. Only the ignore flag is a user's to change.
+		var terminatives = endpoints.MapEnrichedGroup("/api/terminatives");
+
+		terminatives.MapGet("/", async (string? originId, IDeclarativeApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.ListTerminativesAsync(originId, cancellationToken)));
+
+		terminatives.MapPut("/", async (TerminativeUpdateRequest request, IDeclarativeApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.UpdateTerminativeAsync(request.Occurrence, request.Update, cancellationToken)));
 	}
 }

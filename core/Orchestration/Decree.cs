@@ -29,8 +29,8 @@ public sealed class Decree : Declarative
 	/// Gets or sets the current decree state.
 	/// </summary>
 	[MarkdownField("status")]
-	[LifecycleStatus]
-	public DecreeStatus Status { get; set; } = DecreeStatus.Active;
+	[LifecycleStatus(History = true)]
+	public DecreeStatus Status { get; set; } = LifecycleDeclarations.InitialStatus<DecreeStatus>();
 
 	/// <summary>
 	/// Gets or sets the optional Orbit scheduling notation that defines the decree's routine.

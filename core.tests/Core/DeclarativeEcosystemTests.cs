@@ -25,12 +25,12 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 
 		Assert.StartsWith("LUNA", lunar.Id);
 		Assert.Equal(7, lunar.Id.Length);
-		Assert.Equal(LunarDirectiveStatus.OnHold, lunar.Status);
+		Assert.Equal(LunarDirectiveStatus.Active, lunar.Status);
 
 		var shifted = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IDirectiveApi>()
-			.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Active), cancellationToken));
-		Assert.Equal(LunarDirectiveStatus.Active, shifted.Status);
+			.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.OnHold), cancellationToken));
+		Assert.Equal(LunarDirectiveStatus.OnHold, shifted.Status);
 
 		// The stellar workflow does not apply to lunar directives, and vice versa.
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Vault.WithScopeAsync(services => services
@@ -352,7 +352,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 			.GetRequiredService<IPolarisCycleApi>()
 			.GetInclusionsAsync(null, cancellationToken));
 		Assert.Contains(inclusions.Eventives, item => item.FateId == fate.Id);
-		Assert.Contains(inclusions.Eventives, item => item.ObjectiveId == objective.Id);
+		Assert.Contains(inclusions.Terminatives, item => item.ObjectiveId == objective.Id);
 		Assert.Contains(inclusions.Attentives, item => item.DecreeId == decree.Id);
 	}
 

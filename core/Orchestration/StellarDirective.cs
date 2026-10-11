@@ -15,26 +15,31 @@ namespace Pleiades.Orchestration;
 /// They follow the stellar lifecycle <see cref="Status"/> and carry an optional due date. When a directive is planned
 /// to begin or finish, and when it actually did, lives in its <see cref="BacklogSchedule"/> rows (PEP101), which
 /// replaced the former <c>startDate</c>/<c>endDate</c> frontmatter fields; a note still carrying those keys drops them
-/// on its next rewrite.
+/// on its next rewrite. Its due spawns its <see cref="Terminative"/> (<see cref="IDueOwner"/>, PEP103 patch 7), as a
+/// whole-day due.
 /// </remarks>
 [PuckEntity("stellar-directive")]
 [PuckFormat("A{S:8}")]
 [RetiredMarkdownField("startDate")]
 [RetiredMarkdownField("endDate")]
-public sealed class StellarDirective : Directive
+public sealed class StellarDirective : Directive, IDueOwner
 {
 	/// <summary>
 	/// Gets or sets the state of the stellar directive.
 	/// </summary>
 	[MarkdownField("status")]
 	[LifecycleStatus]
-	public DirectiveStatus Status { get; set; } = DirectiveStatus.Planned;
+	public DirectiveStatus Status { get; set; } = LifecycleDeclarations.InitialStatus<DirectiveStatus>();
 
 	/// <summary>
 	/// Gets or sets the optional due date.
 	/// </summary>
 	[MarkdownField("due")]
 	public DateOnly? Due { get; set; }
+
+	/// <inheritdoc />
+	/// <remarks>A stellar directive's due is a date, so it falls due as a whole day.</remarks>
+	Due? IDueOwner.Due => Due is { } date ? Orchestration.Due.On(date) : null;
 
 	/// <summary>
 	/// Gets or sets the onrush sprint this directive is a member of, if any (PEP102 patch 10): an onrush tracks stellar

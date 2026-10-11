@@ -8,7 +8,8 @@ namespace Pleiades.Orchestration;
 
 /// <summary>
 /// Represents an actionable objective attached to directives and optional onrush sprints.
-/// Objectives are incentives: they share their table with the fate and decree declaratives (PEP100).
+/// Objectives are incentives: they share their table with the fate and decree declaratives (PEP100). An objective's due
+/// spawns its <see cref="Terminative"/> (<see cref="IDueOwner"/>, PEP103 patch 7).
 /// </summary>
 [PuckEntity("objective")]
 [PuckFormat("j{S:8}")]
@@ -19,7 +20,7 @@ namespace Pleiades.Orchestration;
 	ParentIdProperty = nameof(DirectiveId),
 	ParentEntityType = typeof(Directive),
 	PartitionUnder = "Objectives")]
-public sealed class Objective : Incentive
+public sealed class Objective : Incentive, IDueOwner
 {
 	/// <summary>
 	/// Gets or sets the related onrush sprint identifier.
@@ -52,17 +53,11 @@ public sealed class Objective : Incentive
 	/// </summary>
 	[MarkdownField("status")]
 	[LifecycleStatus]
-	public ObjectiveStatus Status { get; set; } = ObjectiveStatus.Standby;
+	public ObjectiveStatus Status { get; set; } = LifecycleDeclarations.InitialStatus<ObjectiveStatus>();
 
 	/// <summary>
 	/// Gets or sets the objective's ledger value.
 	/// </summary>
 	[MarkdownField("starfire")]
 	public int CelestronValue { get; set; }
-
-	/// <summary>
-	/// Gets the eventives materialized from this objective's due date (PEP100).
-	/// </summary>
-	[InverseProperty(nameof(Eventive.Objective))]
-	public List<Eventive> Eventives { get; set; } = [];
 }

@@ -10,6 +10,11 @@ export enum DirectiveStatus {
 	Failed = 5
 }
 
+/**
+ * A lunar directive's status (PEP100). A lunar directive is created Active and moves at will between Active (started),
+ * OnHold (set aside) and Stale (finished). Only lunar reflection follows it: reflection runs under an Active lineage
+ * (PEP103 patch 6).
+ */
 export enum LunarDirectiveStatus {
 	OnHold = 0,
 	Active = 1,

@@ -25,4 +25,12 @@ public sealed class LifecycleStateAttribute(LifecycleState state) : Attribute
 	/// status. Only a <see cref="LifecycleState.Finished"/> member may close.
 	/// </summary>
 	public bool Closed { get; init; }
+
+	/// <summary>
+	/// Gets or sets whether the status is the one an item of the kind is created in (PEP103 patch 6): an objective starts
+	/// Standby, a directive Planned, and a fate, a decree and a lunar directive start Active, already under way. At most one
+	/// member of an enum is initial; with none, the lowest-valued member is
+	/// (<see cref="LifecycleDeclarations.InitialStatus(Type)"/>).
+	/// </summary>
+	public bool Initial { get; init; }
 }

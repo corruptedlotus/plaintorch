@@ -656,7 +656,7 @@ public sealed class PolarisCycleApiService(
 
 		if (cycle.StartTime is null)
 		{
-			return new PolarisCycleInclusions([], []);
+			return new PolarisCycleInclusions([], [], []);
 		}
 
 		var (windowStart, windowEnd) = InclusionWindow.Resolve(cycle);
@@ -671,7 +671,8 @@ public sealed class PolarisCycleApiService(
 
 		return new PolarisCycleInclusions(
 			projection.Eventives.Where(item => InclusionWindow.EventiveIntersects(item, windowStart, windowEnd)).ToList(),
-			projection.Attentives.Where(item => InclusionWindow.AttentiveIntersects(item, windowStart, windowEnd)).ToList());
+			projection.Attentives.Where(item => InclusionWindow.AttentiveIntersects(item, windowStart, windowEnd)).ToList(),
+			projection.Terminatives.Where(item => InclusionWindow.TerminativeIntersects(item, windowStart, windowEnd)).ToList());
 	}
 
 	/// <inheritdoc />
@@ -729,7 +730,13 @@ public sealed class PolarisCycleApiService(
 			.OrderBy(item => item.Epoch.LocalMoment)
 			.ToList();
 
-		return new PolarisAgenda(attentives, eventives);
+		// The dues still pending up to the horizon, overdue ones included (PEP103 patch 7): a terminative stays on the agenda
+		// until its origin is finished or set aside, or the user ignores it.
+		var terminatives = (await projectionService.ProjectTerminativesAsync(windowStart: null, horizon.AddDays(1).ToDateTime(TimeOnly.MinValue), cancellationToken))
+			.Where(item => item.Resolution == TerminativeResolution.Pending && !item.Ignored)
+			.ToList();
+
+		return new PolarisAgenda(attentives, eventives, terminatives);
 	}
 
 	/// <inheritdoc />

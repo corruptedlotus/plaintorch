@@ -12,7 +12,10 @@ import type {
 	EventiveUpdate,
 	Fate,
 	FatePlan,
-	FateUpdate
+	FateUpdate,
+	Terminative,
+	TerminativeOccurrenceRef,
+	TerminativeUpdate
 } from "./contracts"
 export class PlaintorchDeclarativesSdk {
 	public constructor(private readonly client: PlaintorchCoreClient) { }
@@ -71,15 +74,8 @@ export class PlaintorchDeclarativesSdk {
 		return await this.client.postForJson<Decree>(`/api/decrees/${encodeURIComponent(decreeId)}/begin`, {})
 	}
 
-	public async listEventives(fateId?: string, objectiveId?: string): Promise<Eventive[]> {
-		const query = new URLSearchParams()
-		if (fateId) {
-			query.set("fateId", fateId)
-		}
-		if (objectiveId) {
-			query.set("objectiveId", objectiveId)
-		}
-		const suffix = query.size > 0 ? `?${query.toString()}` : ""
+	public async listEventives(fateId?: string): Promise<Eventive[]> {
+		const suffix = fateId ? `?fateId=${encodeURIComponent(fateId)}` : ""
 		return (await this.client.getJson<Eventive[]>(`/api/eventives${suffix}`)) ?? []
 	}
 
@@ -102,5 +98,19 @@ export class PlaintorchDeclarativesSdk {
 
 	public async updateAttentive(occurrence: AttentiveOccurrenceRef, update: AttentiveUpdate): Promise<Attentive | undefined> {
 		return await this.client.putForJson<Attentive>(`/api/attentives`, { occurrence, update })
+	}
+
+	/** Lists the hardened terminatives (PEP103 patch 7), or only the one of an origin. */
+	public async listTerminatives(originId?: string): Promise<Terminative[]> {
+		const suffix = originId ? `?originId=${encodeURIComponent(originId)}` : ""
+		return (await this.client.getJson<Terminative[]>(`/api/terminatives${suffix}`)) ?? []
+	}
+
+	/**
+	 * Raises or lowers a terminative's ignore flag, the one change a user makes to it (PEP103 patch 7). A projected
+	 * terminative hardens into the same save; the response carries its origin.
+	 */
+	public async updateTerminative(occurrence: TerminativeOccurrenceRef, update: TerminativeUpdate): Promise<Terminative | undefined> {
+		return await this.client.putForJson<Terminative>(`/api/terminatives`, { occurrence, update })
 	}
 }

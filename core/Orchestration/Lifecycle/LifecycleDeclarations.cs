@@ -50,6 +50,18 @@ public static class LifecycleDeclarations
 		=> DefaultStatus(typeof(TStatus), state) is TStatus status ? status : null;
 
 	/// <summary>
+	/// Gets the status an item of the kind is created in (<see cref="LifecycleStateAttribute.Initial"/>, PEP103 patch 6): the
+	/// member declared initial, else the lowest-valued member. Entities take it as their status's starting value, so the
+	/// initial state is declared with the lifecycle rather than in a property initialiser.
+	/// </summary>
+	public static Enum InitialStatus(Type statusType) => Of(statusType).Initial;
+
+	/// <inheritdoc cref="InitialStatus(Type)"/>
+	public static TStatus InitialStatus<TStatus>()
+		where TStatus : struct, Enum
+		=> (TStatus)InitialStatus(typeof(TStatus));
+
+	/// <summary>
 	/// Gets whether a status member closes its item (<see cref="LifecycleStateAttribute.Closed"/>, PEP103 patch 5): a finished
 	/// status that stands only while everything the item depends on holds.
 	/// </summary>
@@ -89,6 +101,11 @@ public static class LifecycleDeclarations
 		{
 			throw new InvalidOperationException($"Lifecycle status '{statusType.Name}' closes with its default finished status '{finished}'; a closed item needs an open finish to step back to.");
 		}
+
+		if (lifecycle.InitialCount > 1)
+		{
+			throw new InvalidOperationException($"Lifecycle status '{statusType.Name}' declares {lifecycle.InitialCount} initial members; an item is created in one.");
+		}
 	}
 
 	private static EnumLifecycle Of(Type statusType)
@@ -107,6 +124,8 @@ public static class LifecycleDeclarations
 		var states = new Dictionary<string, LifecycleState>(StringComparer.Ordinal);
 		var closed = new HashSet<string>(StringComparer.Ordinal);
 		var defaults = new Dictionary<LifecycleState, Enum>();
+		Enum? initial = null;
+		var initialCount = 0;
 		var members = new List<(Enum Status, LifecycleState State)>();
 		var undeclared = new List<string>();
 		// Read in value order, so the first member met for a state is its default.
@@ -126,16 +145,26 @@ public static class LifecycleDeclarations
 				closed.Add(field.Name);
 			}
 
+			if (declaration.Initial)
+			{
+				initial ??= (Enum)field.GetValue(null)!;
+				initialCount++;
+			}
+
 			members.Add(((Enum)field.GetValue(null)!, declaration.State));
 			defaults.TryAdd(declaration.State, (Enum)field.GetValue(null)!);
 		}
 
-		return new EnumLifecycle(states, closed, states.Values.ToHashSet(), defaults, members, undeclared);
+		// An enum with no member at all has no initial status either; validation reports it as undeclared.
+		initial ??= members.Count > 0 ? members[0].Status : (Enum)Enum.ToObject(enumType, 0);
+		return new EnumLifecycle(states, closed, initial, initialCount, states.Values.ToHashSet(), defaults, members, undeclared);
 	}
 
 	private sealed record EnumLifecycle(
 		IReadOnlyDictionary<string, LifecycleState> States,
 		IReadOnlySet<string> Closed,
+		Enum Initial,
+		int InitialCount,
 		IReadOnlySet<LifecycleState> Covered,
 		IReadOnlyDictionary<LifecycleState, Enum> Defaults,
 		IReadOnlyList<(Enum Status, LifecycleState State)> Members,

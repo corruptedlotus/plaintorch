@@ -145,12 +145,12 @@ export class EndpointList extends Component {
 	}
 
 	/**
-	 * An eventive endpoint: its owning incentive (a fate or an objective, addressed by the eventive's owner id)
-	 * under a subtle line for the occurrence the endpoint pins, read from its own recurrence slot.
+	 * An eventive endpoint: its owning fate (addressed by the eventive's owner id) under a subtle line for the occurrence
+	 * the endpoint pins, read from its own recurrence slot. An item's due is a terminative, which no edge names (PEP103
+	 * patch 7).
 	 */
 	private eventiveTemplate(endpoint: EndpointRef) {
 		const owner = this.fateList.value?.find(fate => fate.id === endpoint.id)
-			?? this.objectiveList.value?.find(objective => objective.id === endpoint.id)
 		const when = occurrenceLabel(endpoint)
 		return html`
 			<div class='endpoint'>

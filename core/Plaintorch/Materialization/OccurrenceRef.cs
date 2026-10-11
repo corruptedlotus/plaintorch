@@ -2,8 +2,9 @@ namespace Pleiades.Plaintorch.Materialization;
 
 /// <summary>
 /// The kind of declarative that owns an occurrence, and therefore which instance table it hardens into: a
-/// fate or an objective owns an <see cref="Pleiades.Orchestration.Eventive"/>, a decree owns an
-/// <see cref="Pleiades.Orchestration.Attentive"/>.
+/// fate owns an <see cref="Pleiades.Orchestration.Eventive"/>, a decree owns an
+/// <see cref="Pleiades.Orchestration.Attentive"/>. An item's due owns a <see cref="Pleiades.Orchestration.Terminative"/>
+/// (PEP103 patch 7), which its origin alone identifies, so it needs no reference of this shape.
 /// </summary>
 public enum OccurrenceOwnerKind
 {
@@ -12,9 +13,6 @@ public enum OccurrenceOwnerKind
 
 	/// <summary>A decree — its occurrences are attentives.</summary>
 	Decree,
-
-	/// <summary>An objective — its due date is an eventive.</summary>
-	Objective,
 }
 
 /// <summary>
@@ -23,7 +21,7 @@ public enum OccurrenceOwnerKind
 /// it has been hardened into a row, so the same reference resolves a projected occurrence and its hardened
 /// twin identically.
 /// </summary>
-/// <param name="OwnerKind">Whether the owner is a fate, decree, or objective.</param>
+/// <param name="OwnerKind">Whether the owner is a fate or a decree.</param>
 /// <param name="OwnerId">The owning declarative's PUCK id.</param>
 /// <param name="RecurrenceId">The occurrence's original slot moment (<see cref="Pleiades.Orchestration.Occurrence.RecurrenceId"/>).</param>
 public readonly record struct OccurrenceRef(

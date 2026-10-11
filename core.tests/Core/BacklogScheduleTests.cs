@@ -316,38 +316,41 @@ public sealed class BacklogScheduleTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task A_fate_is_started_while_active_and_set_aside_while_cancelled()
+	public async Task A_fate_is_started_while_active_and_set_aside_while_stopped()
 	{
 		// An active fate is Started, so it is recorded as starting when it is created active.
 		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Solstice", Date: new DateOnly(2026, 12, 21)), Ct));
 		var started = Record(await StoredAsync(fate.Id), LifecycleState.Started);
 
-		// Cancelled is Deferred, not a finish: a fate never finishes. The start stands beside the deferral.
-		await Declarative(api => api.UpdateFateAsync(fate.Id, new FateUpdate(Status: FateStatus.Cancelled), Ct));
-		var cancelled = await StoredAsync(fate.Id);
-		Assert.Equal(2, cancelled.Count);
-		Record(cancelled, LifecycleState.Deferred);
+		// Stopped is Deferred, not a finish: a fate never finishes. The start stands beside the deferral.
+		await Declarative(api => api.UpdateFateAsync(fate.Id, new FateUpdate(Status: FateStatus.Stopped), Ct));
+		var stopped = await StoredAsync(fate.Id);
+		Assert.Equal(2, stopped.Count);
+		Record(stopped, LifecycleState.Deferred);
 
-		// Restored, it is no longer set aside, and its first start still stands.
+		// Restored, it starts again: a fate keeps a history, so the new start is recorded beside the first one and the
+		// deferral (PEP103 patch 6).
 		await Declarative(api => api.UpdateFateAsync(fate.Id, new FateUpdate(Status: FateStatus.Active), Ct));
-		Assert.Equal(started.Id, Assert.Single(await StoredAsync(fate.Id)).Id);
+		var restored = await StoredAsync(fate.Id);
+		Assert.Equal(3, restored.Count);
+		Assert.Contains(restored, schedule => schedule.Id == started.Id);
+		Assert.Equal(2, restored.Count(schedule => schedule.State == LifecycleState.Started));
 	}
 
 	[Fact]
 	public async Task Decrees_and_lunar_directives_record_their_starts_and_deferrals()
 	{
-		// A lunar directive is created On Hold, which sets it aside from the outset.
+		// A lunar directive is created Active, already under way (PEP103 patch 6).
 		var lunar = await Directive(api => api.CreateLunarAsync("Moon law", cancellationToken: Ct));
-		Record(await StoredAsync(lunar.Id), LifecycleState.Deferred);
+		var started = Record(await StoredAsync(lunar.Id), LifecycleState.Started);
 
-		await Directive(api => api.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Active), Ct));
-		var started = Assert.Single(await StoredAsync(lunar.Id));
-		Assert.Equal((BacklogScheduleType.Record, LifecycleState.Started), (started.Type, started.State));
-
+		// On Hold sets it aside, and Stale finishes it; each state it enters is recorded, and none is withdrawn.
+		await Directive(api => api.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.OnHold), Ct));
 		await Directive(api => api.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Stale), Ct));
 		var stale = await StoredAsync(lunar.Id);
 		Assert.Equal(started.Id, Record(stale, LifecycleState.Started).Id);
 		Record(stale, LifecycleState.Deferred);
+		Record(stale, LifecycleState.Finished);
 
 		// A decree is created Active, so Started; abandoning it adds the deferral beside the start.
 		var decree = await Declarative(api => api.CreateDecreeAsync(new DecreePlan("Routine"), Ct));
@@ -414,7 +417,7 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		Assert.Equal(all, resolver.StatesOf(typeof(Eventive)).Order());
 		Assert.Equal([LifecycleState.Deferred, LifecycleState.Started], resolver.StatesOf(typeof(Fate)).Order());
 		Assert.Equal([LifecycleState.Deferred, LifecycleState.Started], resolver.StatesOf(typeof(Decree)).Order());
-		Assert.Equal([LifecycleState.Deferred, LifecycleState.Started], resolver.StatesOf(typeof(LunarDirective)).Order());
+		Assert.Equal([LifecycleState.Deferred, LifecycleState.Started, LifecycleState.Finished], resolver.StatesOf(typeof(LunarDirective)).Order());
 		Assert.Equal([LifecycleState.Deferred, LifecycleState.Open, LifecycleState.Finished], resolver.StatesOf(typeof(Checkpoint)).Order());
 		Assert.Equal([LifecycleState.Deferred, LifecycleState.Open, LifecycleState.Finished], resolver.StatesOf(typeof(Attentive)).Order());
 		Assert.False(resolver.IsLifecycleKind(typeof(PolarisCycle)));
@@ -439,7 +442,8 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		Assert.Equal(ObjectiveStatus.Done, resolver.DefaultStatus(typeof(Objective), LifecycleState.Finished));
 		Assert.Equal(DirectiveStatus.Planned, resolver.DefaultStatus(typeof(StellarDirective), LifecycleState.Open));
 		Assert.Equal(DirectiveStatus.Fulfilled, resolver.DefaultStatus(typeof(StellarDirective), LifecycleState.Finished));
-		Assert.Equal(FateStatus.OptOut, resolver.DefaultStatus(typeof(Fate), LifecycleState.Deferred));
+		Assert.Equal(FateStatus.Stopped, resolver.DefaultStatus(typeof(Fate), LifecycleState.Deferred));
+		Assert.Equal(LunarDirectiveStatus.Stale, resolver.DefaultStatus(typeof(LunarDirective), LifecycleState.Finished));
 		Assert.Equal(LunarDirectiveStatus.OnHold, resolver.DefaultStatus(typeof(LunarDirective), LifecycleState.Deferred));
 		Assert.Equal(EventiveResolution.Missed, resolver.DefaultStatus(typeof(Eventive), LifecycleState.Deferred));
 
@@ -516,16 +520,19 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		await Schedules(api => api.AddAsync(checkpoint.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 11, 29), Ct));
 
 		Assert.Equal(new DateTime(2026, 12, 15), Assert.Single(await StoredAsync(directive.Id)).Time);
-		// A lunar directive starts, so it takes a start plan, beside the Deferred record it was created with (On Hold).
+		// A lunar directive starts, so it takes a start plan, beside the Started record it was created with (Active).
 		Assert.Equal(lunar.Id, Slot(await StoredAsync(lunar.Id), BacklogScheduleType.Plan, LifecycleState.Started)!.DirectiveId);
 		var checkpointPlan = Slot(await StoredAsync(checkpoint.Id), BacklogScheduleType.Plan, LifecycleState.Finished)!;
 		Assert.Equal(checkpoint.Id, checkpointPlan.CheckpointId);
 		Assert.Equal(new DateTime(2026, 11, 29), checkpointPlan.Time);
 
-		// A checkpoint never starts, so there is no start of it to plan; a lunar directive never finishes.
+		// A checkpoint never starts, so there is no start of it to plan; a fate never finishes, while a lunar directive does
+		// (Stale, PEP103 patch 6).
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(checkpoint.Id, BacklogScheduleType.Plan, LifecycleState.Started, new DateTime(2026, 11, 1), Ct)));
 		Assert.Null(Slot(await StoredAsync(checkpoint.Id), BacklogScheduleType.Plan, LifecycleState.Started));
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(lunar.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 11, 1), Ct)));
+		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Solstice", Date: new DateOnly(2026, 12, 21)), Ct));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(fate.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 11, 1), Ct)));
+		await Schedules(api => api.AddAsync(lunar.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 11, 1), Ct));
 	}
 
 	[Fact]

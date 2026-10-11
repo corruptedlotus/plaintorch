@@ -15,9 +15,10 @@ namespace Pleiades.Orchestration;
 public enum ObjectiveStatus
 {
 	/// <summary>
-	/// The objective exists but is waiting to be acted on. The objectives' default open status.
+	/// The objective exists but is waiting to be acted on. The objectives' default open status, and the one an objective is
+	/// created in.
 	/// </summary>
-	[LifecycleState(LifecycleState.Open)]
+	[LifecycleState(LifecycleState.Open, Initial = true)]
 	Standby = 0,
 	/// <summary>
 	/// The objective is temporarily blocked. Still open: it is meant to go on once it is unblocked.

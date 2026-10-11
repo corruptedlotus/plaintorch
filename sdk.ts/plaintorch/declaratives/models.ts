@@ -1,12 +1,17 @@
 import { model } from "@a11d/api-dotnet"
+import type { Checkpoint } from "../dependencies/models"
 import type { Directive, Timeframe } from "../directives/models"
 import { ObjectiveCollege, type Objective } from "../objectives/models"
 import type { Executive } from "../polaris/models"
 
+/**
+ * A fate's status (PEP100). Active and OptOut are both under way (started); Stopped sets the fate aside, and was named
+ * Cancelled before PEP103 patch 6.
+ */
 export enum FateStatus {
 	Active = 0,
 	OptOut = 1,
-	Cancelled = 2
+	Stopped = 2
 }
 
 export enum DecreeStatus {
@@ -120,6 +125,16 @@ export enum AttentiveResolution {
 }
 
 /**
+ * How a {@link Terminative} resolves (PEP103 patch 7). Only the core sets it, from the origin's lifecycle: pending while the
+ * origin's due acts, resolved once the origin is finished or set aside. A checkpoint's stays pending past its due until it
+ * unlocks.
+ */
+export enum TerminativeResolution {
+	Pending = 0,
+	Resolved = 1
+}
+
+/**
  * Fate declarative (PEP100): an event-like incentive that happens rather than gets done. Orbit-only (PEP111):
  * a one-off is a fixed-datetime `Z{…}` literal, a recurring fate a recurrence orbit — there are no bare
  * date/time fields, the occurrence's shape comes from the resolved orbit.
@@ -174,13 +189,12 @@ export class Decree {
 }
 
 /**
- * The non-hierarchical base of a declarative's materialized occurrences (PEP111): an {@link Eventive} of a fate
- * or of an objective's due, or an {@link Attentive} of a decree. It carries what every occurrence shares — its
- * row identity, its position in time, and its iCalendar identity ({@link recurrenceOwnerUid} +
- * {@link recurrenceId}).
+ * The non-hierarchical base of materialized occurrences (PEP111): an {@link Eventive} of a fate, an {@link Attentive} of
+ * a decree, or a {@link Terminative} of an item's due (PEP103 patch 7). It carries what every occurrence shares — its row
+ * identity, its position in time, and its iCalendar identity ({@link recurrenceOwnerUid} + {@link recurrenceId}).
  *
  * Abstract and never registered with `@model`: the core stamps the concrete kind as the runtime type, so a
- * response revives into {@link Eventive} or {@link Attentive}, never into this base.
+ * response revives into {@link Eventive}, {@link Attentive} or {@link Terminative}, never into this base.
  */
 export abstract class Occurrence {
 	/** The database identity; `0` for an occurrence still projected from its schedule (not yet hardened). */
@@ -195,8 +209,8 @@ export abstract class Occurrence {
 	 */
 	recurrenceId: string | undefined
 	/**
-	 * Server-computed: the owning declarative's UID — the fate or objective id for an eventive, the decree id for
-	 * an attentive. With {@link recurrenceId} it addresses the occurrence. Read-only.
+	 * Server-computed: the owner's UID — the fate id for an eventive, the decree id for an attentive, the origin's id for a
+	 * terminative. With {@link recurrenceId} it addresses the occurrence. Read-only.
 	 */
 	recurrenceOwnerUid: string = ''
 	/**
@@ -207,15 +221,14 @@ export abstract class Occurrence {
 }
 
 /**
- * Per-occurrence instance of a fate or of an objective's due date. Never Polaris-bound. Its position in time is
- * the owned {@link Epoch} (PEP111); it carries no time allocation — allocation lives on the executive.
+ * Per-occurrence instance of a fate. Never Polaris-bound. Its position in time is the owned {@link Epoch} (PEP111); it
+ * carries no time allocation — allocation lives on the executive. An item's due is a {@link Terminative}, no longer an
+ * eventive (PEP103 patch 7).
  */
 @model('Eventive')
 export class Eventive extends Occurrence {
-	fateId: string | undefined
+	fateId: string = ''
 	fate?: Fate | undefined
-	objectiveId: string | undefined
-	objective?: Objective | undefined
 	resolution: EventiveResolution = EventiveResolution.Pending
 
 	get isOverdue() {
@@ -243,6 +256,51 @@ export class Attentive extends Occurrence {
 
 	get isOverdue() {
 		return this.resolution === AttentiveResolution.Pending
+			&& epochHasPassed(this.epoch)
+	}
+}
+
+/** The kind of item a {@link Terminative} is the due of. */
+export type TerminativeOriginKind = 'objective' | 'directive' | 'checkpoint'
+
+/**
+ * The occurrence of an item's due (PEP103 patch 7): the one terminative an objective, a stellar directive or a checkpoint
+ * spawns from its deadline. It sits on the agenda beside the eventives. The core keeps it its origin's mirror, hardened or
+ * not: it follows the due, takes its {@link resolution} from the origin's lifecycle, and goes when the due is cleared or
+ * the origin deleted. The one thing a user sets is {@link ignored}.
+ */
+@model('Terminative')
+export class Terminative extends Occurrence {
+	objectiveId: string | undefined
+	objective?: Objective | undefined
+	directiveId: string | undefined
+	/** The stellar directive whose due this is. */
+	directive?: Directive | undefined
+	checkpointId: string | undefined
+	checkpoint?: Checkpoint | undefined
+	/** Set by the core alone, from the origin's lifecycle. */
+	resolution: TerminativeResolution = TerminativeResolution.Pending
+	/** Whether the user raised the ignore flag: the agenda no longer lists the terminative. */
+	ignored: boolean = false
+
+	/** The id of the item whose due this is. */
+	get originId() {
+		return this.objectiveId ?? this.directiveId ?? this.checkpointId ?? ''
+	}
+
+	/** Which kind of item this is the due of. */
+	get originKind(): TerminativeOriginKind {
+		return this.objectiveId ? 'objective' : this.directiveId ? 'directive' : 'checkpoint'
+	}
+
+	/** The origin, when the core sent it along. */
+	get origin(): Objective | Directive | Checkpoint | undefined {
+		return this.objective ?? this.directive ?? this.checkpoint
+	}
+
+	/** Whether the due has passed while it is still pending. */
+	get isOverdue() {
+		return this.resolution === TerminativeResolution.Pending
 			&& epochHasPassed(this.epoch)
 	}
 }
@@ -353,17 +411,34 @@ export interface EventivePlan {
 }
 
 /**
- * Addresses a single eventive occurrence by its owner UID (a fate or objective id) and RECURRENCE-ID
+ * Addresses a single eventive occurrence by its owner UID (a fate id) and RECURRENCE-ID
  * (Strategy 1). Interacting with the occurrence hardens it, so a projected occurrence needs no row id. A manual
  * eventive has no RECURRENCE-ID, so it — like any hardened row — is addressed by its {@link id} instead, which wins
  * when given.
  */
 export interface EventiveOccurrenceRef {
-	/** The owning fate or objective id (the iCalendar UID). */
+	/** The owning fate id (the iCalendar UID). */
 	ownerId?: string | undefined
 	/** The occurrence's {@link Occurrence.recurrenceId} — its original slot moment. */
 	recurrenceId?: string | undefined
 	/** The hardened row's id — the only address a manual eventive has. */
+	id?: number | undefined
+}
+
+/** The one change a user makes to a {@link Terminative} (PEP103 patch 7). Omit to keep. */
+export interface TerminativeUpdate {
+	ignored?: boolean | undefined
+}
+
+/**
+ * Addresses a {@link Terminative} by its origin — the item whose due it is, which has at most one — so a projected
+ * terminative and its hardened twin resolve identically. A hardened one may instead be addressed by its {@link id}, which
+ * wins when given.
+ */
+export interface TerminativeOccurrenceRef {
+	/** The origin's id: an objective, a stellar directive or a checkpoint. */
+	originId?: string | undefined
+	/** The hardened row's id. */
 	id?: number | undefined
 }
 

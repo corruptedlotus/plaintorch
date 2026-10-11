@@ -27,14 +27,18 @@ namespace Pleiades.Plaintorch.Enforcement;
 /// records themselves show, so resuming to where the item was changes nothing else.</description></item>
 /// </list>
 /// An entity created in a state counts as entering it. Only the states an owner's kind passes through are recorded: a
-/// checkpoint never starts, and a fate, a decree or a lunar directive never finishes. A state that changes with time alone
-/// (a checkpoint whose due passes) reads the same stored and current, so it is recorded only once the engine's clock
-/// re-evaluates it.
+/// checkpoint never starts, and a fate or a decree never finishes. A state that changes with time alone (a checkpoint whose
+/// due passes) reads the same stored and current, so it is recorded only once the engine's clock re-evaluates it.
+/// <para>
+/// A kind that keeps a history (<see cref="EntityLifecycleResolver.KeepsHistory"/>: a fate, a decree, a lunar directive)
+/// has no place on a main line to keep (PEP103 patch 6): every state it enters is recorded anew, at the save's moment, and
+/// nothing is withdrawn, so it may hold several records of one state.
+/// </para>
 /// </description></item>
 /// <item><description>
 /// <b>Replacement.</b> Every schedule added in the save replaces the other schedules of its slot — the same owner,
 /// type and state — whether they are stored or tracked. Two additions to one slot in a single save keep the later
-/// one.
+/// one. A history record replaces nothing.
 /// </description></item>
 /// </list>
 /// </remarks>
@@ -50,15 +54,16 @@ public sealed class BacklogScheduleRecorder(EntityLifecycleResolver lifecycleRes
 		// A record is a civil wall-clock moment, like every schedule time: the local time with no kind, which would
 		// otherwise serialize with the machine's offset. One moment for the whole save, so a jump straight to a finished
 		// status records its start and its finish at the same instant.
-		var withdrawn = await RecordLifecycleTransitionsAsync(context, DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified), cancellationToken);
-		await SettleSlotsAsync(context, withdrawn, cancellationToken);
+		var history = new HashSet<BacklogSchedule>(ReferenceEqualityComparer.Instance);
+		var withdrawn = await RecordLifecycleTransitionsAsync(context, DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified), history, cancellationToken);
+		await SettleSlotsAsync(context, withdrawn, history, cancellationToken);
 	}
 
 	/// <summary>
 	/// Adds a record for every state an owner enters in this save, and returns the slots of the records to withdraw for
-	/// every state an owner leaves.
+	/// every state an owner leaves. The records of owners that keep a history go into <paramref name="history"/>.
 	/// </summary>
-	private async Task<List<BacklogSchedule>> RecordLifecycleTransitionsAsync(PlainfraContext context, DateTime now, CancellationToken cancellationToken)
+	private async Task<List<BacklogSchedule>> RecordLifecycleTransitionsAsync(PlainfraContext context, DateTime now, ISet<BacklogSchedule> history, CancellationToken cancellationToken)
 	{
 		var entered = new List<BacklogSchedule>();
 		var withdrawn = new List<BacklogSchedule>();
@@ -83,6 +88,18 @@ public sealed class BacklogScheduleRecorder(EntityLifecycleResolver lifecycleRes
 			var after = lifecycleResolver.StateOf(entry.Entity);
 			if (before == after)
 			{
+				continue;
+			}
+
+			if (lifecycleResolver.KeepsHistory(kind))
+			{
+				if (states.Contains(after))
+				{
+					var record = Record(entry.Entity, after, now);
+					entered.Add(record);
+					history.Add(record);
+				}
+
 				continue;
 			}
 
@@ -136,8 +153,9 @@ public sealed class BacklogScheduleRecorder(EntityLifecycleResolver lifecycleRes
 
 	/// <summary>
 	/// Replaces every slot an addition lands in and empties every withdrawn slot, over stored and tracked schedules alike.
+	/// A history record takes no slot: it neither replaces nor is replaced.
 	/// </summary>
-	private static async Task SettleSlotsAsync(PlainfraContext context, IReadOnlyList<BacklogSchedule> withdrawn, CancellationToken cancellationToken)
+	private static async Task SettleSlotsAsync(PlainfraContext context, IReadOnlyList<BacklogSchedule> withdrawn, IReadOnlySet<BacklogSchedule> history, CancellationToken cancellationToken)
 	{
 		var added = context.ChangeTracker.Entries<BacklogSchedule>()
 			.Where(entry => entry.State == EntityState.Added)
@@ -162,7 +180,7 @@ public sealed class BacklogScheduleRecorder(EntityLifecycleResolver lifecycleRes
 
 		// The later addition to a slot wins; the tracker lists additions in the order they were made.
 		var winners = new List<BacklogSchedule>();
-		foreach (var schedule in added)
+		foreach (var schedule in added.Where(schedule => !history.Contains(schedule)))
 		{
 			winners.RemoveAll(winner => winner.SharesSlotWith(schedule));
 			winners.Add(schedule);
@@ -176,6 +194,11 @@ public sealed class BacklogScheduleRecorder(EntityLifecycleResolver lifecycleRes
 			}
 
 			var schedule = entry.Entity;
+			if (history.Contains(schedule))
+			{
+				continue;
+			}
+
 			// A withdrawn slot empties whatever stands in it: a record never outlives its state.
 			var inWithdrawnSlot = withdrawn.Any(slot => slot.SharesSlotWith(schedule));
 			var replaced = !winners.Contains(schedule) && winners.Any(winner => winner.SharesSlotWith(schedule));

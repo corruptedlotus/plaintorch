@@ -11,11 +11,13 @@ namespace Pleiades.Orchestration;
 /// Checkpoints are PUCK-addressable but database-only (no <c>VaultStorage</c>): they carry no markdown file.
 /// A checkpoint is one-shot: it cannot be started, only finished, and its unlock is its finish
 /// (<c>CheckpointLifecyclePhaseSource</c>); re-locking un-finishes it. With that single phase implied, a checkpoint
-/// endpoint always leaves the dependency's trigger (as source) or constraint (as target) empty.
+/// endpoint always leaves the dependency's trigger (as source) or constraint (as target) empty. Its due spawns its
+/// <see cref="Terminative"/> (<see cref="IDueOwner"/>, PEP103 patch 7), which keeps acting past the due, while the
+/// checkpoint stays locked, since passing the due is what sets it aside.
 /// </remarks>
 [PuckEntity("checkpoint")]
 [PuckFormat("c{S:4}")]
-public sealed class Checkpoint : PuckNamedEntity
+public sealed class Checkpoint : PuckNamedEntity, IDueOwner
 {
 	/// <summary>
 	/// Gets or sets the optional deadline moment (PEP111). When set, the Celestron toll is suppressed until the due
@@ -23,6 +25,10 @@ public sealed class Checkpoint : PuckNamedEntity
 	/// moment has passed. <see langword="null"/> means the toll (if any) is always owed. Owned by the checkpoint.
 	/// </summary>
 	public Due? Due { get; set; }
+
+	/// <inheritdoc />
+	/// <remarks>A checkpoint still locked once its due has passed is deferred by that alone.</remarks>
+	bool IDueOwner.DueDefers => true;
 
 	/// <summary>
 	/// Gets or sets the optional Celestron toll that must be paid before the checkpoint can unlock. A

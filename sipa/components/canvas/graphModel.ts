@@ -61,8 +61,8 @@ export interface CanvasGraph {
 /**
  * Identifies a node, and therefore an endpoint.
  *
- * Kind is part of the identity rather than decoration: the core addresses an occurrence of an objective as an
- * eventive carrying that objective's own id, so the id alone does not tell two endpoints apart.
+ * Kind is part of the identity rather than decoration: the core addresses an occurrence of a fate as an eventive
+ * carrying that fate's own id, so the id alone does not tell two endpoints apart.
  */
 export function endpointKey(ref: EndpointRef): string {
 	const kind = DependencyEndpointKind[ref.kind]

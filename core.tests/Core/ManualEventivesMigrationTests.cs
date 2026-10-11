@@ -31,11 +31,13 @@ public sealed class ManualEventivesMigrationTests : IDisposable
 		await SeedPreMigrationRowsAsync();
 		await MigrateAsync(ThisMigration);
 
+		// The model now knows fate eventives only, with a required fate (an objective's due is a terminative since PEP103
+		// patch 7), so the fate's row is read through it and the objective's row straight from the table.
 		await using var context = CreateContext();
 		var eventives = await context.Eventives
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
-			.OrderBy(item => item.Id)
+			.Where(item => item.Id == 1)
 			.ToListAsync(Ct);
 
 		Assert.Collection(
@@ -51,14 +53,10 @@ public sealed class ManualEventivesMigrationTests : IDisposable
 				Assert.Equal("1h", timed.Epoch.Duration);
 				Assert.Equal(EventiveResolution.Missed, timed.Resolution);
 				Assert.False(timed.IsManual);
-			},
-			allDay =>
-			{
-				Assert.Equal(2, allDay.Id);
-				Assert.Equal("o-objective", allDay.ObjectiveId);
-				Assert.Equal(new DateTime(2026, 7, 21), allDay.RecurrenceId);
-				Assert.False(allDay.IsManual);
 			});
+		var connection = context.Database.GetDbConnection();
+		await connection.OpenAsync(Ct);
+		Assert.Equal("o-objective|2026-07-21 00:00:00", await ScalarAsync(connection, "SELECT ObjectiveId || '|' || RecurrenceId FROM Eventives WHERE Id = 2"));
 
 		// The rebuilt eventive column admits a slotless row; the attentive column still refuses one.
 		await ExecuteAsync("""

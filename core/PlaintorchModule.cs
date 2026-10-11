@@ -185,10 +185,12 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<IVaultMigration, DirectiveStartEndRetirementMigration>();
 		services.AddScoped<IVaultMigration, IntrinsicDependencyPurgeMigration>();
 		services.AddScoped<IVaultMigration, ObjectiveOnboardStatusMigration>();
+		services.AddScoped<IVaultMigration, FateStoppedStatusMigration>();
 		services.AddScoped<PlaintorchEngine>();
 		services.AddScoped<TimeframeAffinityResolver>();
 		services.AddScoped<TimeframeCandidateService>();
 		services.AddSingleton<MaterializationPolicyOptions>();
+		services.AddSingleton<TerminativeService>();
 		services.AddScoped<OccurrenceHardeningService>();
 		services.AddScoped<AgendaProjectionService>();
 		services.AddScoped<ProximityMaterializationService>();

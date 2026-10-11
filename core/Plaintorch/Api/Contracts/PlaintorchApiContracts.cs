@@ -539,13 +539,13 @@ public sealed record EventivePlan(
 	Epoch Epoch);
 
 /// <summary>
-/// Addresses a single eventive occurrence by its owner UID (a fate or objective id) and RECURRENCE-ID
+/// Addresses a single eventive occurrence by its owner UID (a fate id) and RECURRENCE-ID
 /// (Strategy 1): the recurrence-id resolves a projected occurrence and its hardened twin identically, so an
 /// interaction hardens the occurrence and applies to it without ever needing a database row id. A manual eventive
 /// has no RECURRENCE-ID, so it — like any hardened row — is addressed by its row <paramref name="Id"/> instead,
 /// which wins when given.
 /// </summary>
-/// <param name="OwnerId">The owning fate or objective id (the iCalendar <c>UID</c>).</param>
+/// <param name="OwnerId">The owning fate id (the iCalendar <c>UID</c>).</param>
 /// <param name="RecurrenceId">The occurrence's original slot moment (<see cref="Occurrence.RecurrenceId"/>).</param>
 /// <param name="Id">The hardened row's id — the only address a manual eventive has.</param>
 public sealed record EventiveOccurrenceRef(
@@ -564,6 +564,29 @@ public sealed record EventiveOccurrenceRef(
 public sealed record AttentiveOccurrenceRef(
 	string? DecreeId = null,
 	DateTime? RecurrenceId = null);
+
+/// <summary>
+/// The change a user makes to a terminative (PEP103 patch 7): its ignore flag, the one field the engine leaves to the
+/// user. An omitted flag leaves it as it is.
+/// </summary>
+/// <param name="Ignored">Whether the agenda no longer lists the terminative.</param>
+public sealed record TerminativeUpdate(bool? Ignored = null);
+
+/// <summary>
+/// Addresses a terminative (PEP103 patch 7) by its origin — the objective, stellar directive or checkpoint whose due it
+/// is, which has at most one — so a projected terminative and its hardened twin resolve identically. A hardened one may
+/// instead be addressed by its row <paramref name="Id"/>, which wins when given.
+/// </summary>
+/// <param name="OriginId">The origin's PUCK id.</param>
+/// <param name="Id">The hardened row's id.</param>
+public sealed record TerminativeOccurrenceRef(
+	string? OriginId = null,
+	long? Id = null);
+
+/// <summary>
+/// The request body for updating a terminative over the wire: the terminative to address plus the update to apply.
+/// </summary>
+public sealed record TerminativeUpdateRequest(TerminativeOccurrenceRef Occurrence, TerminativeUpdate Update);
 
 /// <summary>
 /// The request body for updating an eventive occurrence over the wire: the occurrence to address plus the
@@ -595,20 +618,24 @@ public sealed record PolarisDecreeAdd(
 
 /// <summary>
 /// Represents the unbound items a Polaris cycle includes non-structurally because they fall within 24h of
-/// its beginning (PEP100). The cycle never relationally owns these records.
+/// its beginning (PEP100), the terminatives of the dues there among them (PEP103 patch 7). The cycle never relationally
+/// owns these records.
 /// </summary>
 public sealed record PolarisCycleInclusions(
 	IReadOnlyList<Eventive> Eventives,
-	IReadOnlyList<Attentive> Attentives);
+	IReadOnlyList<Attentive> Attentives,
+	IReadOnlyList<Terminative> Terminatives);
 
 /// <summary>
 /// Represents the day-level agenda: unbound attentives requiring attention (same-day/24h and previous
-/// unattended) and upcoming eventives within a short horizon. Computed relative to today, independent of
-/// any Polaris cycle (PEP100).
+/// unattended), upcoming eventives within a short horizon, and the terminatives of the dues still pending up to that
+/// horizon, overdue ones included, unless ignored (PEP103 patch 7). Computed relative to today, independent of any Polaris
+/// cycle (PEP100).
 /// </summary>
 public sealed record PolarisAgenda(
 	IReadOnlyList<Attentive> Attentives,
-	IReadOnlyList<Eventive> Eventives);
+	IReadOnlyList<Eventive> Eventives,
+	IReadOnlyList<Terminative> Terminatives);
 
 /// <summary>
 /// Represents the data required to define a directive-level timeframe (PEP100). <paramref name="Icon"/> and the

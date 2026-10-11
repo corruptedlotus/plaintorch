@@ -150,7 +150,7 @@ public static class DependencyEndpoints
 			.Select(entry => entry.Entity)
 			.ToList();
 		candidates.AddRange(await context.Eventives
-			.Where(item => (item.FateId != null && owners.Contains(item.FateId)) || (item.ObjectiveId != null && owners.Contains(item.ObjectiveId)))
+			.Where(item => owners.Contains(item.FateId))
 			.ToListAsync(cancellationToken));
 
 		foreach (var endpoint in wanted)
@@ -191,7 +191,7 @@ public static class DependencyEndpoints
 			return added;
 		}
 
-		var query = context.Eventives.Where(item => item.FateId == endpoint.Id || item.ObjectiveId == endpoint.Id);
+		var query = context.Eventives.Where(item => item.FateId == endpoint.Id);
 		if (endpoint.RecurrenceId is { } slot)
 		{
 			query = query.Where(item => item.RecurrenceId == slot);
@@ -202,8 +202,7 @@ public static class DependencyEndpoints
 
 	private static bool MatchesSlot(Eventive eventive, EndpointRef endpoint)
 	{
-		if (!string.Equals(eventive.FateId, endpoint.Id, StringComparison.OrdinalIgnoreCase)
-			&& !string.Equals(eventive.ObjectiveId, endpoint.Id, StringComparison.OrdinalIgnoreCase))
+		if (!string.Equals(eventive.FateId, endpoint.Id, StringComparison.OrdinalIgnoreCase))
 		{
 			return false;
 		}

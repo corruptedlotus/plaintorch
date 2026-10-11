@@ -17,7 +17,7 @@ export interface OccurrenceSchedule {
 }
 
 /**
- * List-row base for the non-PUCK occurrence records — reflectives, attentives, eventives.
+ * List-row base for the non-PUCK occurrence records — reflectives, attentives, eventives, terminatives.
  *
  * These are numeric-keyed rows served inside an aggregate (a Polaris cycle, the agenda), not PUCK-tracked
  * entities, so they cannot ride on {@link EntityItem} (which resolves and watches by PUCK identity). This
@@ -176,7 +176,7 @@ export class OccurrenceItem extends Component {
 				${!anchor ? nothing : html`<span class='tag' ${tooltip(anchor.label)}><p7t-icon icon='lucide:globe'></p7t-icon>${anchor.city}</span>`}
 				<div class='filler'></div>
 				${!state ? nothing : html`<span class='tag'>${state.label}</span>`}
-				${!occurrence ? nothing : this.sourceTemplate(occurrenceSourceOf(occurrence))}
+				${!this.source ? nothing : this.sourceTemplate(this.source)}
 			</div>
 		`
 	}
@@ -196,6 +196,12 @@ export class OccurrenceItem extends Component {
 
 	/** The occurrence this row draws, for its source; a reflective is not one, so none by default. */
 	protected get occurrence(): Occurrence | undefined { return undefined }
+
+	/** Where the occurrence came from, as the mini line tags it: its orbit or a hand, by default. */
+	protected get source(): OccurrenceDescriptor | undefined {
+		const occurrence = this.occurrence
+		return occurrence ? occurrenceSourceOf(occurrence) : undefined
+	}
 
 	/** The schedule the occurrence is born of — its owner, when the row has it; none by default. */
 	protected get schedule(): OccurrenceSchedule | undefined { return undefined }

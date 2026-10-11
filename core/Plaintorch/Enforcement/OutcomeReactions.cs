@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Pleiades.Orchestration;
 using Pleiades.Orchestration.Lifecycle;
+using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.Preferences;
 using Pleiades.Puck;
 using Pleiades.Vault.Database;
@@ -25,11 +26,14 @@ namespace Pleiades.Plaintorch.Enforcement;
 /// <item><description>Executing a decree-backed executive or reflective grants the decree's reward (SH-15, SH-29), and a
 /// cycle whose reflectives are all executed grants the collection reward (SH-16).</description></item>
 /// <item><description>Every stored dependency's satisfaction and every checkpoint's unlock are recomputed (SH-21, SH-22).</description></item>
+/// <item><description>Every terminative of an item in the save, and every terminative in the save, mirrors its origin's due
+/// and lifecycle (PEP103 patch 7).</description></item>
 /// </list>
 /// Context-bound services are resolved from the scope when needed, for the reason <see cref="StateEngine"/> gives.
 /// </remarks>
 public sealed class OutcomeReactions(
 	DependencyReconciler dependencyReconciler,
+	TerminativeService terminativeService,
 	IOptionsSnapshot<ReflectionPreferences> reflectionPreferences,
 	IServiceProvider serviceProvider)
 {
@@ -54,6 +58,68 @@ public sealed class OutcomeReactions(
 		await ApplyReflectiveDecreeRewardRulesAsync(context, cancellationToken);
 		await ApplyReflectiveCollectionRewardRulesAsync(context, reflectionPreferences.Value.DailyReward, cancellationToken);
 		await dependencyReconciler.ReconcileAsync(context, cancellationToken);
+		await SyncTerminativesAsync(context, cancellationToken);
+	}
+
+	/// <summary>
+	/// Keeps every terminative its origin's mirror (PEP103 patch 7), hardened or not: in the same save that changes an item
+	/// under the due contract — its due, its status, a checkpoint's unlock — its terminative follows the due and takes the
+	/// resolution the item's lifecycle gives, and a due cleared takes the terminative away. A terminative the save hardens or
+	/// touches is brought in line the same way, so its resolution is always the engine's whatever a writer set. Runs last,
+	/// after the reconciler has unlocked or relocked the checkpoints, so it reads every item as the save leaves it.
+	/// </summary>
+	private async Task SyncTerminativesAsync(PlainfraContext context, CancellationToken cancellationToken)
+	{
+		// An owned due is an entry of its own, keyed by its owner's id: replacing or clearing it leaves the owner's entry
+		// unchanged, so the owners of the owned entries the save changes count as changed too.
+		var entries = context.ChangeTracker.Entries().ToList();
+		var ownedChanges = entries
+			.Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted && entry.Metadata.IsOwned())
+			.Select(entry => entry.Metadata.FindOwnership() is { } ownership ? entry.Property(ownership.Properties[0].Name).CurrentValue as string : null)
+			.OfType<string>()
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var origins = entries
+			.Where(entry => entry.Entity is IDueOwner owner
+				&& (entry.State is EntityState.Added or EntityState.Modified
+					|| (entry.State == EntityState.Unchanged && ownedChanges.Contains(owner.Id))))
+			.Select(entry => (IDueOwner)entry.Entity)
+			.ToList();
+		var touched = context.ChangeTracker.Entries<Terminative>()
+			.Where(entry => entry.State is EntityState.Added or EntityState.Modified)
+			.Select(entry => entry.Entity)
+			.ToList();
+		if (origins.Count == 0 && touched.Count == 0)
+		{
+			return;
+		}
+
+		var mirrored = new Dictionary<Terminative, IDueOwner>();
+		foreach (var terminative in await terminativeService.FindOfAsync(context, origins, cancellationToken))
+		{
+			if (origins.FirstOrDefault(terminative.BelongsTo) is { } origin)
+			{
+				mirrored[terminative] = origin;
+			}
+		}
+
+		var orphans = touched.Where(terminative => !mirrored.ContainsKey(terminative)).ToList();
+		foreach (var (terminative, origin) in await terminativeService.FindOriginsAsync(context, orphans, cancellationToken))
+		{
+			mirrored[terminative] = origin;
+		}
+
+		foreach (var (terminative, origin) in mirrored)
+		{
+			if (context.Entry(terminative).State == EntityState.Deleted)
+			{
+				continue;
+			}
+
+			if (!terminativeService.Mirror(terminative, origin))
+			{
+				context.Terminatives.Remove(terminative);
+			}
+		}
 	}
 
 	/// <summary>
@@ -113,16 +179,16 @@ public sealed class OutcomeReactions(
 		var now = DateTimeOffset.Now;
 		foreach (var fate in fates)
 		{
-			// A paused fate (cancelled) generates nothing, so it has no upcoming occurrence; an active or opted-out
-			// fate keeps generating and caches its next.
-			fate.NextOccurrence = fate.Status is FateStatus.Active or FateStatus.OptOut && !string.IsNullOrWhiteSpace(fate.Orbit)
+			// A fate whose temporal activation is off (stopped) generates nothing, so it has no upcoming occurrence; an
+			// active or opted-out fate keeps generating and caches its next (PEP103 patch 6).
+			fate.NextOccurrence = TemporalActivation.IsActive(fate.Status) && !string.IsNullOrWhiteSpace(fate.Orbit)
 				? await orbitService.ComputeNextOccurrenceAsync(fate, now, cancellationToken)
 				: null;
 		}
 
 		foreach (var decree in decrees)
 		{
-			decree.NextOccurrence = decree.Status == DecreeStatus.Active && !string.IsNullOrWhiteSpace(decree.Orbit)
+			decree.NextOccurrence = TemporalActivation.IsActive(decree.Status) && !string.IsNullOrWhiteSpace(decree.Orbit)
 				? await orbitService.ComputeNextOccurrenceAsync(decree, now, cancellationToken)
 				: null;
 		}

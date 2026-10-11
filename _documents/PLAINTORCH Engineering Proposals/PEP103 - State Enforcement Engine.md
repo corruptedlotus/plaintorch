@@ -117,7 +117,7 @@ Warn relies on a request-wide API flag:
 - **Clashing compensations.** Two compensations that would move one item to different states are refused rather than reconciled.
 - **Checkpoint deferral goes unrecorded.** A checkpoint becomes deferred by time alone, so its deferral is not recorded until the engine has a clock (I-070).
 - **The client can't prompt yet.** The SDK drops every non-OK response, so a client cannot build the Warn prompt (I-192). This must land with the first engine rule that can return Warn.
-- **On Hold's reach.** What On Hold should suspend beyond reflection is still undecided (I-024).
+- **On Hold's reach.** What On Hold should suspend beyond reflection is still undecided (I-024, since resolved).
 
 ## Patch103.2 - The State Interceptor
 The engine starts here. Every piece of state logic now runs in one save interceptor, and every decision a rule calls for goes through the backlog state enforcement level. The rules themselves are the ones the core already had, moved rather than rewritten, with three exceptions: the gate now reaches every pathway, the Over rule is declared on Over, and reopening an Over directive became a compensation.
@@ -256,7 +256,7 @@ A refusal is shown as a warning toast.
 - **A compensation only ever takes the default status.** It never moves an item to Archived, Over or Onboard, nor sets one aside.
 - **Edge sides ignore the kind's states** (I-191).
 - **Checkpoint deferral goes unrecorded** (I-070).
-- **On Hold's reach** (I-024).
+- **On Hold's reach** (I-024, since resolved).
 
 ## Patch103.3 - Onboard and the Moves on Joining
 The objective status Onrush is renamed Onboard, and the engine now moves an objective of its own accord when it joins the active onrush sprint or the active Polaris cycle. Both moves used to live elsewhere: the engine promoted a waiting objective that joined any sprint, and planning set Polaris on any objective it touched, in any cycle. Now one reaction does both, on every pathway, and only where nothing blocks the move.
@@ -508,6 +508,163 @@ The engine now records a reconcile intent, in the save's transaction, for every 
 
 ### Open edges
 Every open edge of Patch103.2 still stands. Removing an executed executive still keeps its reward (I-042).
+
+## Patch103.6 - Initial States and Temporal Activation
+Rulings on I-023 and the topics around it, built together. Every kind is created in a status its lifecycle declares. Declaratives and lunar directives are already under way when created, and keep a history of the states they enter. A lunar directive's status governs reflection, and its timeframes once it is Stale. An opted-out fate counts as running, a cancelled fate is now stopped, and a stale lunar directive is finished. Whatever is finished or set aside has its temporal activation switched off, through one gate.
+
+### Initial states (I-023)
+A status may declare that items of its kind are created in it: `[LifecycleState(..., Initial = true)]`. `LifecycleDeclarations.InitialStatus` reads it, and every entity's status starts from it, no longer from a property initialiser of its own:
+- an objective starts Standby, and a directive Planned;
+- a fate and a decree start Active, under way from their creation (user ruling: the intended behaviour);
+- a lunar directive starts Active (user ruling), where it used to start On Hold.
+
+At most one member of an enum is initial. With none, the lowest-valued member is.
+
+### Lunar directives (I-024)
+A lunar directive has no ordinary lifecycle (user ruling). It starts Active (started), can be put On Hold (set aside) or left Stale (finished), and moves at will between the three. Stale used to read as set aside.
+
+Its status governs two things (user rulings):
+- **Reflection** runs under a lunar directive that is started, its ancestors included, and is paused under one On Hold or Stale.
+- **Its timeframes** act until it is Stale (`TemporalActivation.TimeframesAct`). A Stale lunar directive's timeframes are never candidates of a cycle, never active, and lend no availability or affinity: the walk for an availability passes on to the next one up. On Hold keeps them. A change of status invalidates the cached candidates.
+
+Nothing else in its hierarchy follows its status: the attentives of its decrees that do not reflect carry on.
+
+### Fates
+- **Stopped replaces Cancelled** (user ruling). It sets the fate aside. The `FateStoppedStatus` database migration renames the stored statuses, the v8 vault migration (`FateStoppedStatusMigration`) renames them in notes, and a note that still reads `status: Cancelled` reads as Stopped (`MarkdownEnumAlias`).
+- **OptOut counts as Active** (user ruling): started, and temporally active. It now satisfies what waits on the fate's start, records no deferral, and keeps its next occurrence rolling forward. How its occurrences show stays as it was: they are stamped OptOut and hidden from the agenda, and time hardens them only under the auto-materialise-optout preference. Taking a fate back from OptOut to Active seeks its cursor to now, as a resume does, so none of the occurrences it passed while opted out harden afterwards.
+- **Declaratives stay Active at creation** (user ruling). A decree's Abandoned and a fate's Stopped set it aside.
+
+### History records
+A fate, a decree and a lunar directive keep a history of their states (user ruling), declared on their status property (`[LifecycleStatus(History = true)]`). Each state they enter is recorded anew, at the save's moment, and no record is withdrawn, so they may hold several records of one state. Other kinds still record where they stand on the main line. The `BacklogRecordHistory` database migration lifts the uniqueness of records: only plans stay unique to their owner and state. Going down keeps the latest record of each slot.
+
+### Temporal activation
+`TemporalActivation` is the one gate on whether time acts on an item (user ruling): an item is temporally active while it is open or started. Whatever is finished or set aside has it switched off altogether:
+- **Orbit materialization.** A fate's eventives and a decree's attentives are neither projected, hardened by time nor by interaction, nor added by hand, and the cached next occurrence is cleared.
+- **Dues.** An objective's due eventive is neither projected nor hardened. One already hardened stays, and can still be resolved.
+- **Reflection.** A decree that is not active is never drawn into a cycle.
+
+Every rule that let time act on an item asks the gate by lifecycle state, through `TemporalActivation.IsActive` or the statuses it lists for a query. None names a status any more. Switching an item off stops its projection; an occurrence already hardened stays, and can still be resolved (user ruling). A checkpoint's due stays the reconciler's: once a checkpoint has finished, its due no longer brings its toll due (Patch103.5).
+
+### The client
+- **SDK.** `FateStatus.Stopped` replaces `Cancelled`.
+- **SIPA.** The status chips read "Stopped", and an opted-out fate is no longer drawn as done with.
+
+### User rulings
+- Lunar directives and declaratives can record several instances of one record.
+- Lunar directives have no normal lifecycle:
+  - they start Active (started), can be put On Hold (set aside) or left Stale (finished);
+  - lunar reflection is disabled under a lunar directive that is not Active, and nothing else in the hierarchy is affected.
+- Fates have Stopped instead of Cancelled.
+- OptOut counts as Active in lifecycle management.
+- Declaratives stay Active at creation: that is the intended behaviour. Stopped and Abandoned count as set aside.
+- Whatever is finished or set aside has its temporal activation completely disabled, through one gate:
+  - due eventive materialization;
+  - effects that trigger on dues;
+  - orbit materialization.
+- Follow-up rulings:
+  - A lunar directive's timeframes are disabled when it is Stale.
+  - Hardened occurrences remain when an item is switched off; only its projection stops.
+  - Every due should project and materialise an eventive, not only an objective's. The architecture is still open (I-195, since resolved).
+  - A plan is just a plan for now; it is left as it is until a planning interface is built.
+
+### Calls made without a ruling
+- **Initial states are declared on the lifecycle,** for objectives and directives too, which I-023's expectation asks for.
+- **Opted-out cursors.** An opted-out fate's cursor still waits under the default preference, so turning the preference on hardens what has elapsed. Leaving OptOut seeks the cursor instead.
+- **Existing records are left as they were.** A lunar directive that was Stale before this patch keeps the deferral record it got then.
+- **The SIPA chip for OptOut** no longer marks the fate as done with.
+
+### Ledger
+- **Struck:** I-023, I-024.
+- **Trimmed to what still holds:** I-028, I-057, I-061.
+- **New:** I-195.
+
+### Open edges
+Every open edge of Patch103.2 still stands. Only an objective's due acts yet; every due should (I-195, since resolved).
+
+## Patch103.7 - Terminatives
+The ruling on I-195, built. Every item that carries a due — an objective, a stellar directive, a checkpoint — is under one due contract, and its due spawns a terminative: a new kind of occurrence beside the eventive and the attentive. A terminative is projected while its origin's due acts and hardened like any occurrence, and the state engine keeps it its origin's mirror even once hardened. Its resolution is the engine's alone; a user only raises or lowers its ignore flag. Eventives are now a fate's alone.
+
+### The due contract (I-195)
+`IDueOwner` is the contract (user ruling): an item that can carry a `Due`. Objectives, stellar directives and checkpoints implement it. A stellar directive's due is still a date, so it falls due as a whole day.
+
+Whether a due acts is the temporal-activation gate's (`TemporalActivation.DueActs`): while its item is open or started. A checkpoint is the exception the contract declares (`DueDefers`): passing its due is what sets it aside, so its due acts until it unlocks, or it would switch itself off the moment it arrived.
+
+`TerminativeService` is the one due mechanism. The projection, the rolling pass, interaction and the state engine all go through it to:
+- read whether a due acts;
+- find the items whose dues fall in a window;
+- spawn a terminative, and keep one in line with its origin.
+
+Only the store queries are kind-specific, since each kind keeps its due on its own table.
+
+### Terminatives
+`Terminative` is the load-bearing model (user ruling). It carries the owner columns of every kind that can own one: `ObjectiveId`, `DirectiveId`, `CheckpointId`. The store backs its identity: exactly one owner is set (`CK_Terminatives_SingleOwner`), and each origin has at most one (unique indexes). Deleting the origin deletes it.
+- **Its place follows the due.** A whole-day due is an all-day occurrence; a timed one is minute-granular, anchored in the due's zone. Its RECURRENCE-ID is the due's moment, and moves with the due: an origin has one terminative, so the origin alone identifies it.
+- **Projected and hardened.** It is projected while its origin's due acts. Time hardens it on its due's day, as it hardened an objective's due eventive. Interaction hardens it too: raising the ignore flag on a projected one.
+- **Resolution** has two values: Pending and Resolved. Only the state engine sets it, from the origin's lifecycle (user ruling). A terminative is pending while its origin's due acts, and resolved once the origin is finished or set aside. Taking the origin up again makes it pending again. A writer that stores another resolution is corrected on the same save.
+- **The ignore flag** is the one thing about a terminative a user sets (user ruling). The engine never touches it. An ignored terminative still follows its origin; the agenda no longer lists it.
+- **It syncs with its origin, even hardened** (user ruling). A new last step of the outcome phase runs after the reconciler has unlocked or relocked the checkpoints. In every save that touches an item under the contract (its due, its status, a checkpoint's unlock), the item's terminative follows the due and takes the resolution the lifecycle gives. A due cleared takes a hardened terminative away. An owned due is an entry of its own, so a due replaced or cleared alone is found through the owned entries, by their owner's key (I-196).
+- **Not a dependency endpoint.** An edge names the origin itself. An eventive endpoint must name a fate, since eventives are a fate's alone now: `Eventive.ObjectiveId` is gone and `FateId` is required.
+
+### The agenda
+Terminatives are grouped with the eventives (user ruling):
+- **The day agenda** (`PolarisAgenda.Terminatives`) lists the terminatives still pending up to its horizon, overdue ones included, unless ignored. A terminative stays there until its origin is finished or set aside, or the user ignores it.
+- **A cycle's inclusions** carry the terminatives in its 24h window.
+- **The projection** (`AgendaProjection.Terminatives`) unions the projected ones with the hardened ones. A hardened terminative stands in for its origin's projection.
+
+### The API
+- `GET /api/terminatives?originId=` lists the hardened terminatives, or the one of an origin.
+- `PUT /api/terminatives` takes `{ occurrence: { originId | id }, update: { ignored } }`. A projected terminative, addressed by its origin, hardens into the same save. A due that does not act hardens none: an item with no due, or one finished or set aside, is refused.
+- `GET /api/eventives` no longer filters by objective.
+- The lifecycles served to a client include `Terminative`.
+
+### Migration
+The `Terminatives` database migration adds the table and moves each objective's hardened due eventives into its one terminative:
+- The terminative is placed on the objective's current due, as the engine keeps it from then on. An objective whose due was cleared keeps none.
+- It is resolved when the objective is Done, Archived or Failed, and ignored when the user had resolved any of those eventives (missed, cancelled, opted out).
+- Edges that named an objective's due eventive are deleted, since no edge names a terminative.
+- Going back down, an objective's terminative becomes an all-day due eventive again, cancelled when it was ignored. The eventives table is rebuilt by hand there, because EF runs its own rebuild after every other operation.
+
+The vault needs no migration: occurrences are database-only.
+
+### The client
+- **SDK.**
+  - `Terminative` (with `originId`, `originKind`, `origin`, `isOverdue`) and `TerminativeResolution`.
+  - `listTerminatives` and `updateTerminative`.
+  - The agenda and the inclusions carry `terminatives`.
+  - An eventive no longer has an objective.
+- **SIPA.**
+  - `p7t-terminative-item` draws a terminative row: the origin's title and directive, and when the due falls, flagged once it passes while pending. A resolved or ignored one is dimmed.
+  - `TerminativeModal` (`p7t-terminative-editor`) shows the due and the resolution, navigates to the origin, and raises or lowers the ignore flag. The row's context menu does the same.
+  - The briefing agenda's upcoming group draws eventives and terminatives together, in the order they fall, and counts both.
+  - A new `terminative` glyph, drawn in the occurrence glyphs' style.
+
+### User rulings
+- Go with the due contract, and give `Occurrence` a new derivation, `Terminative`: the load-bearing model that stores all the extra columns.
+- Terminatives have only a pending and a resolved resolution:
+  - only the state engine mutates it, based on the origin item's lifecycle;
+  - nothing else about them is user-mutable, except an ignore flag.
+- They spawn from due contracts, and sync with the contract, even after hardening.
+- Terminatives are grouped alongside eventives on the agenda.
+- They have their own modal and item components, as eventives and attentives do, with the ability to navigate to the origin entity and raise the ignore flag.
+
+### Calls made without a ruling
+- **Resolved means the due acts no more**, not only that the origin finished. A failed objective's or directive's terminative resolves too, so it stops nagging; taking the origin up again makes it pending. A checkpoint's resolves only on its unlock.
+- **The ignore flag is never touched by the engine.** It survives the due moving, and a user can lower it again.
+- **The agenda lists overdue terminatives**, as it lists overdue attentives, until the origin is finished or set aside or the user ignores them. Resolved and ignored ones are left off.
+- **Time hardens a terminative on its due's day,** as it hardened an objective's due eventive.
+- **A due cleared deletes a hardened terminative,** since there is no due left to mirror.
+- **Terminatives are not dependency endpoints.** The migration deletes the edges that named an objective's due eventive.
+- **A stellar directive's due stays a date,** so its terminative is all-day.
+- **Navigating to the origin** opens an objective's or a directive's note, as an occurrence opens its owner's. A checkpoint has no note, so it opens the checkpoint's banner in a modal.
+- **The SIPA occurrence editor stays for eventives and attentives;** a terminative has its own, since only its flag is a user's.
+
+### Ledger
+- **Struck:** I-195.
+- **Trimmed to what still holds:** I-028, I-068, I-134.
+- **New:** I-196.
+
+### Open edges
+Every open edge of Patch103.2 still stands. An objective's, a directive's and a checkpoint's own banners do not show their terminative yet.
 
 # Inventory: state enforcement in the core
 Every piece of core logic that changes state the caller did not directly ask to change (**auto-mutation**), or that refuses, skips or silently drops an operation because of a state rule (**rejection**). Taken on 2026-10-02, and brought up to date on 2026-10-04 at `b1697b9`: the PEP101 state polish and the intrinsic dependencies, rebased onto `dev/phase3a`. Line numbers refer to that commit. Rules that dev/phase3a added are marked *(dev/phase3a)*. IDs are stable: a new rule takes the next free number in its prefix, wherever its row sits.
@@ -1191,15 +1348,11 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: LC-13, DI-12, PO-02, PO-04, PO-05. Where: `PlaintorchStateService.cs:58-77`; `PolarisCycleApiService.cs:130-153`, `838-854`; `DirectiveApiService.cs:579-591`.
 - **I-022 · "Active" ignores the calendar.** A sprint is active as soon as it has a start and no end, so a future end date ends a sprint at once. Since Patch103.4 a Polaris cycle cannot begin before its day, and since Patch103.5 a sprint cannot begin on a day still to come (`onrush.early-start`). How a sprint's window should read the calendar is still open (user ruling). *Engine 1 and 5: window rules re-evaluated on a clock.*
   Rows: SH-09, SH-10, SH-12, LC-13, ON-03, ON-06. Where: `PlaintorchStatePolicyProcessor.cs:1095-1103`; `PlaintorchStateService.cs:29-39`, `58-64`; `OnrushSprintApiService.cs:94`, `177`; `PolarisCycleApiService.cs:60`, `193`.
-- **I-023 · Initial states are policy in property initialisers.** *(changed by dev/phase3a: On Hold now pauses reflection)* A fate is begun at birth and records its begin before anything could gate it, a decree materialises at once, and a lunar directive starts On Hold and so pauses reflection under it; the lifecycle declarations never see these choices. *Engine 1: initial states declared with the lifecycle.*
-  Rows: LC-01, DM-01. Where: `Fate.cs:33`; `Decree.cs:31`; `LunarDirective.cs:32`; `StellarDirective.cs:31`; `Objective.cs:55`.
-- **I-024 · Lunar status means more on paper than in code.** *(changed by dev/phase3a: reflection pause added)* On Hold is documented as "not currently enforced", but only reflection reads it. The directive's timeframes and availability, its non-reflect decrees' attentives and a paused reflect-decree's cached next occurrence (SH-07) carry on, and nothing governs its transitions. What On Hold should suspend is a spec decision. *Engine 1: the engine declares once what On Hold suspends, once the spec decides.*
-  Rows: SH-07, DI-04, DM-03. Where: `LunarDirectiveStatus.cs:8-19`; `PlaintorchOrbitService.cs:298-327`; `PlaintorchStatePolicyProcessor.cs:560-563`; `DirectiveApiService.cs:496-518`; `VaultWatcherSyncService.cs:269`.
 
 ### Schedules and occurrences
 - **I-027 · A zone change leaves occurrences and the cursor on the old zone.** *(new in dev/phase3a)* Changing a fate's or decree's zone neither restamps hardened occurrences nor resets the cursor, because SH-05 watches only the orbit. `NextOccurrence`, meanwhile, is recomputed on the new zone's clock. *Engine 1: a cursor reaction on the zone field; whether to restamp is a time-model choice.*
   Rows: SH-05, SH-07, DE-16. Where: `DeclarativeApiService.cs:140-143`, `285-288`; `PlaintorchStatePolicyProcessor.cs:567-577`; `PlaintorchOrbitService.cs:60-68`, `166-176`.
-- **I-028 · Occurrence refusals depend on the address.** *(changed by dev/phase3a)* By owner and slot, a cancelled or frozen fate's already-hardened eventive cannot be edited, because the refusals run before the existing-row lookup. By row id it can, and a manual eventive always can. Abandoning a decree freezes its existing attentives, so they cannot be resolved late. *Engine 1: refusals declared on occurrence state, not on the call.*
+- **I-028 · Occurrence refusals depend on the address.** *(changed by dev/phase3a)* By owner and slot, a stopped or frozen fate's already-hardened eventive cannot be edited, because the refusals run before the existing-row lookup. By row id it can, and a manual eventive always can. Abandoning a decree freezes its existing attentives, so they cannot be resolved late. *Engine 1: refusals declared on occurrence state, not on the call.*
   Rows: LC-11, DE-09, DE-10, DE-13. Where: `DeclarativeApiService.cs:612-626`; `OccurrenceHardeningService.cs:65-86`, `146-169`.
 - **I-029 · Resolutions have no transition rules.** Attentive and eventive resolutions take any value from any value, through the API only, and a fate's status change never restamps the eventives it already has. *Engine 1: transition legality for resolutions.*
   Rows: SH-21, LC-02, DM-04, DM-05. Where: `AttentiveResolution.cs:6-20`; `EventiveResolution.cs:7-28`; `DeclarativeApiService.cs:437-440`, `480-483`; `EventiveLifecyclePhaseSource.cs:30-39`.
@@ -1292,13 +1445,12 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   *Engine 1: cycle and sprint phases declared and read once.*
   Rows: SH-01, SH-02, SH-09, SH-10, SH-11, LC-13, DI-12, PO-02, PO-17. Where: `PlaintorchStatePolicyProcessor.cs:311`, `328`, `521`, `649-652`, `684-686`, `700`, `1089`, `1095-1103`; `PlaintorchStateService.cs:33-35`, `62`, `73-76`; `PolarisCycleApiService.cs:79`, `109`, `135`, `141-153`, `237`, `288`, `846`, `852-853`; `OnrushSprintApiService.cs:88`; `DirectiveApiService.cs:585`; `PlaintorchEngine.cs:90`; `ProximityMaterializationService.cs:50`.
 - **I-057 · Status knowledge is hardcoded past the lifecycle.** *(made worse by dev/phase3a)* These rules name statuses directly instead of reading the lifecycle declarations:
-  - the objective statuses that end its due (Done, Archived, Failed), for due hardening and the projection; settlement reads the finish since Patch103.5
-  - the generating statuses (fate Active and, by preference, OptOut; decree Active; objectives not Done, Archived or Failed; lunar Active up the lineage), written into `NextOccurrence`, resume, hardening, the rolling pass, the projection, reflective selection, decree executives and manual eventives. A non-reflect decree under an On Hold lunar directive keeps generating attentives (unverified whether intended)
   - Onboard and Polaris as the targets of the moves on joining, and Onboard for assign-all (which statuses move is read by state since Patch103.3)
+  - OptOut, for how an opted-out fate's occurrences show and harden (a presentation rule, not activation)
   - attentive Done
   - the unlock formula: incoming edges, toll or due, and the external condition, combined by hand in one place since Patch103.5 (`DependencyReconciler.Unlocks`), which the judge shares
 
-  Since Patch103.5 which statuses close an item is declared (`LifecycleStateAttribute.Closed`), and the open-children rule and the client read it rather than naming Over. *Engine 1: declared phases, read once.*
+  Since Patch103.5 which statuses close an item is declared (`LifecycleStateAttribute.Closed`). Since Patch103.6 which statuses let time act on an item is read off the lifecycle through one gate (`TemporalActivation`): settlement, dues, orbit materialization, the projection, hardening, the rolling pass, reflective selection and manual eventives no longer name statuses. *Engine 1: declared phases, read once.*
   Rows: SH-07, SH-12, SH-13, SH-14, SH-20, SH-22, OB-04, ON-09, PO-14, DE-08, DE-09, DE-10, DE-13, MA-01, MA-03a, MA-05, MA-06. Where: `PlaintorchStatePolicyProcessor.cs:233`, `244`, `554-563`, `800-805`, `1105-1108`; `ProximityMaterializationService.cs:58`, `160-168`, `185-194`, `211-219`; `DeclarativeApiService.cs:147`, `295`, `379`; `OccurrenceHardeningService.cs:71-74`, `151-154`, `176`; `PolarisCycleApiService.cs:711`; `PlaintorchOrbitService.cs:298-327`; `AgendaProjectionService.cs:90`, `113-117`, `137-144`; `ObjectiveApiService.cs:191-194`; `OnrushSprintApiService.cs:380`; `DependencyReconciler.cs:75-85`.
 - **I-058 · Default edge sides are restated five times.** Null trigger means OnFinish, null constraint means ToBegin, and checkpoint sides are empty. Each consumer re-derives this by hand, and Patch103.2's judge is one more (`StateJudge`'s needed state and default constraint), in place of the gate check it took over. *Engine 1: declared once on the edge.*
   Rows: LC-08. Where: `DependencyRules.cs:62-74`; `DependencyReconciler.cs:58`; `DependencyGateService.cs:64-67`, `121-123`; `DependencyApiService.cs:175-176`; `DependencyOrdering.cs:249-262`.
@@ -1312,7 +1464,7 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: SH-01, SH-02, SH-18, DI-05, DP-11, LO-05, WA-14, WA-28, DB-03, DB-09, DB-17. Where: `VaultEntityGateway.cs:70-134`; `DirectiveApiService.cs:352-355`; `LorePageApiService.cs:163-167`; `DependencyApiService.cs:280-283`; `PlaintorchStatePolicyProcessor.cs:73-103`, `294-338`; `VaultWatcherSyncService.cs:690-718`.
 - **I-060 · The orbit-state reset runs twice.** *(changed by dev/phase3a: zones and calendar-aware one-offs added; the reset still ignores both)* On an `orbit:` change the watcher removes a fate's or decree's schedule state in its own unit of work, and SH-05 removes and re-adds it in the same save; the watcher's doc ("lazily rebuilt on the next seeking resolution") is stale. Neither reset reacts to `calendar:` (I-005) or `timezone:` (I-027). *Engine 1: one cursor reaction at the save boundary.*
   Rows: SH-05, DE-17, WA-24, MA-08, MA-09. Where: `VaultWatcherSyncService.cs:310-314`, `507-528`; `PlaintorchStatePolicyProcessor.cs:427-489`, `567-577`.
-- **I-061 · NextOccurrence has two implementations that disagree.** *(changed by dev/phase3a: both now read the zone clock)* SH-07 refreshes every fate or decree in a save. The hourly pass refreshes only what it seeks. An OptOut fate (without the auto-materialise preference) and a lunar reflect-decree therefore keep a cached value that never rolls forward between saves. *Engine 1 and 5: one derived-field reaction, re-evaluated on a clock.*
+- **I-061 · NextOccurrence has two implementations that disagree.** *(changed by dev/phase3a: both now read the zone clock)* SH-07 refreshes every fate or decree in a save. The hourly pass refreshes what it seeks and, since Patch103.6, an opted-out fate it does not seek. A lunar reflect-decree therefore still keeps a cached value that never rolls forward between saves. *Engine 1 and 5: one derived-field reaction, re-evaluated on a clock.*
   Rows: SH-07, DE-16, MA-01, MA-09. Where: `PlaintorchStatePolicyProcessor.cs:533-565`; `ProximityMaterializationService.cs:160-205`.
 - **I-062 · Contradicted edges are handled three ways.** They are refused at creation, purged on save, and purged again by a migration that has its own copy of the planning. *Engine 1: one edge-legality rule with one reaction.*
   Rows: SH-19, LC-14, LC-15, DP-07. Where: `DependencyApiService.cs:40-47`; `PlaintorchStatePolicyProcessor.cs:115-178`; `IntrinsicDependencyPurgeMigration.cs:41-58`.
@@ -1339,8 +1491,8 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
 
   *Engine 6: database constraints or in-transaction checks.*
   Rows: SH-08, SH-09, SH-10, SH-12, SH-14, SH-15, SH-16, SH-29, DP-04, DB-01, MA-03c. Where: `PlaintorchStatePolicyProcessor.cs:604-692`, `743-753`, `824-833`, `909-924`, `970-984`, `1033-1047`; `ProximityMaterializationService.cs:60-64`, `101-120`; `PlainfraContext.cs:334-356`; `PlainfraContextModelSnapshot.cs:149-196`.
-- **I-068 · Occurrence identity has no database backstop.** *(changed by dev/phase3a: manual eventives carry no RECURRENCE-ID)* One row per owner and RECURRENCE-ID is check-then-insert in four places (the projection, the rolling pass, interaction and dependency hardening), with no unique index on attentives or eventives, and no CHECK gives an eventive exactly one owner. The RECURRENCE-ID's immutability rests on a public setter no code happens to call. Since dev/phase3a a manual eventive has no RECURRENCE-ID at all, and the ManualEventives Down can pin one onto a slot an orbit-born row already holds. *Engine 6: declared invariants backed by database constraints.*
-  Rows: DB-04, DB-15, MG-21, DM-15. Where: `PlainfraContextModelSnapshot.cs:43-49`, `266-272`; `20260930141546_ManualEventives.cs:35-38`; `Occurrence.cs:34-47`; `ProximityMaterializationService.cs:211-218`, `253-260`, `287-293`; `OccurrenceHardeningService.cs:78-86`, `182-198`, `226-241`; `PlainfraContext.cs:414-452`.
+- **I-068 · Occurrence identity has no database backstop.** *(changed by dev/phase3a: manual eventives carry no RECURRENCE-ID)* One row per owner and RECURRENCE-ID is check-then-insert in four places (the projection, the rolling pass, interaction and dependency hardening), with no unique index on attentives or eventives. The RECURRENCE-ID's immutability rests on a public setter no code happens to call. Since dev/phase3a a manual eventive has no RECURRENCE-ID at all, and the ManualEventives Down can pin one onto a slot an orbit-born row already holds. *Engine 6: declared invariants backed by database constraints.*
+  Rows: DB-04, DB-15, MG-21, DM-15. Where: `PlainfraContextModelSnapshot.cs:43-49`, `266-272`; `20260930141546_ManualEventives.cs:35-38`; `Occurrence.cs:34-47`; `ProximityMaterializationService.cs:211-218`, `253-260`, `287-293`; `OccurrenceHardeningService.cs:78-86`, `226-241`; `PlainfraContext.cs:414-452`.
 - **I-069 · Store cascades and set-nulls go unseen.** *(changed by dev/phase3a)* For rows the context has not loaded, these all happen inside SQLite: eventive, attentive, schedule and orbit-state cascades, a cycle's executives and reflectives, a lunar directive's timeframes, and timeframe affinity clears. The change feed, the graveyard, the audit and the backlog records never see them; only availability is cleared first (SH-04). A begun cycle deleted outside the API would take its worked executives with it; since dev/phase3a, the API refuses that delete (PO-17). *Engine 1 and 3: declared reactions turn store cascades into tracked removals and releases, with their effects.*
   Rows: DB-02, DB-04, DB-05, DB-06, DB-07. Where: `PlainfraContext.cs:444-478`; `PlainfraContextModelSnapshot.cs:1118-1122`, `1286-1290`, `1365-1369`, `1380-1384`.
 - **I-070 · Time-driven state waits for an unrelated save.** Eventive phases, checkpoint dues and re-locks, and the `NextOccurrence` of declaratives the hourly pass skips are persisted only by the next save of anything, a diagnostics flush included. The gate reads persisted `Satisfied` flags while deriving intrinsic edges live. Records carry the time of whichever save noticed the change. A checkpoint whose due passes is Deferred (Patch103.1), yet no save records it: the recorder compares the stored and the current state read at the same moment, so a change made by time alone is never seen. *Engine 5: time-dependent rules re-evaluated on a clock.*
@@ -1353,6 +1505,8 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Where: `WatcherRetryScheduler.cs`; `WatcherStatusReporter.cs`; `VaultWatcherReconciler.cs`.
 - **I-073 · Service refusals reach clients as bodiless 500s.** Since Patch103.2 every refusal of the state engine — the gates, the Over rules, exclusivity — is a `StateEnforcementException`, answered with 409 and its decision. No handler maps the services' own refusals (`InvalidOperationException`, `ArgumentException`, a raw `DbUpdateException`) or an orbit that fails to build, and the host runs as Production, so those reach clients as bodiless 500s and their messages stay in the server log. *Engine 4: typed violations mapped to 409 and 422.*
   Rows: EP-01. Where: `PlaintorchHostFactory.cs:70-73`.
+- **I-196 · Owned values change out of the engine's sight.** *(new in Patch103.7)* An owned value — an objective's or a checkpoint's `Due`, an occurrence's `Epoch`, a cycle's forecast — is an entry of its own, so replacing or clearing it leaves its owner's entry unchanged. A rule that asks whether the owner changed misses it. The note-change scan (engine point 7) never queues a note for a due changed alone (defect, by reading); it stays latent while every writer of a due writes its note itself. Only the terminative reaction reads the owned entries, by their owner's key. *Engine 1 and 7: a change read on its owner, owned values included.*
+  Where: `StateEngine.cs` (`NoteChanges`); `OutcomeReactions.cs` (`SyncTerminativesAsync`); `PlainfraContext.cs` (`OwnsOne`).
 
 ### Notes written outside the outbox
 - **I-075 · Superseded forecast notes are hard-deleted.** After commit, SH-23 `File.Delete`s each superseded forecast's note at its computed path. There is no remove intent and no graveyard copy. A crash between commit and delete leaves an orphan note, and a note elsewhere survives. *Engine 7: a remove intent recorded in the transaction.*
@@ -1500,12 +1654,8 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: AC-07, AC-12, AC-14. Where: `VaultMigrationRunner.cs:59-63`; `VaultSettings.cs:27-44`; `VaultVersionService.cs:26-31`; `PlainfraContextInitializer.cs:39-52`.
 
 ## Materialisation and derived reads
-- **I-134 · Some occurrences are never hardened.** Two ways an occurrence is never hardened:
-  - The rolling pass seeks an orbit's occurrences, advancing the cursor, before the LC-11 freeze check, so an occurrence frozen by an unmet edge is consumed and never hardened after the gate opens.
-  - Any eventive of an objective suppresses its due. An eventive hardened at a slot the caller named (never checked against the due), or at a due since moved, leaves the current due unhardened for good (defect, by reading).
-
-  *Systematic: materialisation cursor mechanics; the engine only supplies the freeze rule.*
-  Rows: LC-11, DE-09, MA-01, MA-02, DM-27. Where: `ProximityMaterializationService.cs:166-172`, `208-229`, `277-285`; `PlaintorchOrbitService.cs:166-176`; `OccurrenceHardeningService.cs:182-198`.
+- **I-134 · Some occurrences are never hardened.** The rolling pass seeks an orbit's occurrences, advancing the cursor, before the LC-11 freeze check, so an occurrence frozen by an unmet edge is consumed and never hardened after the gate opens. *Systematic: materialisation cursor mechanics; the engine only supplies the freeze rule.*
+  Rows: LC-11, MA-01, MA-02, DM-27. Where: `ProximityMaterializationService.cs:166-172`, `277-285`; `PlaintorchOrbitService.cs:166-176`.
 - **I-135 · Reads write.** Computing timeframe candidates on an API read saves lazily created orbit states, and a lost race detaches them with only a log line. A malformed timeframe orbit silently reads as non-matching. Previewing an orbit with no state adds a state that persists only if the request happens to save. *Systematic: materialisation mechanics.*
   Rows: SH-05, SH-06, MA-06, MA-07. Where: `TimeframeCandidateService.cs:74-97`; `PlaintorchOrbitService.cs:334-351`, `471-496`.
 - **I-136 · The active lore spine is computed three ways and cached without its date.** The cached spine stamps lore responses, the briefing computes it fresh, and an unmapped `ListActiveAsync` computes it again. The cache is keyed by session generation and dropped only on async lore saves, though the spine depends on today's date, so `IsActive` stamps go stale at a day rollover until the next lore write; the `ExecuteUpdate` re-key bypasses the drop too (I-010). Today is the UTC date (I-159). *Systematic: a cached read projection; engine point 5's clock could drive the drop.*

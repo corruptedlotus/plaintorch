@@ -146,6 +146,13 @@ public sealed class EntityLifecycleResolver
 	public PropertyInfo? StatusPropertyOf(Type entityType) => Kind(entityType)?.StatusProperty;
 
 	/// <summary>
+	/// Gets whether a kind keeps a history of its states (<see cref="LifecycleStatusAttribute.History"/>, PEP103 patch 6):
+	/// every state it enters is recorded anew and none withdrawn, as a fate, a decree and a lunar directive are.
+	/// </summary>
+	public bool KeepsHistory(Type entityType)
+		=> Kind(entityType)?.StatusProperty?.GetCustomAttribute<LifecycleStatusAttribute>(inherit: true)?.History == true;
+
+	/// <summary>
 	/// Gets the status enum a kind is read through: its status property's type, or the type a state source sets (an eventive's
 	/// resolution), or <see langword="null"/> for a kind with no status (a checkpoint) or no lifecycle.
 	/// </summary>
