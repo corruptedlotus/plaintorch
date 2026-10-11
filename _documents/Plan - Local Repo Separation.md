@@ -62,14 +62,14 @@ Ordered so each fix rests on the one before it.
 - [x] **Client hygiene.** The debug log in `PlaintorchCoreClient.send` reads the response body before the caller does, which makes every read through the fetch transport reject. Read once, or drop the log.
 
 # Stage 4 — Finish the test backlog
-*Size: medium.*
+*Size: medium. Done 2026-10-11, one binder row left open.*
 
-- [ ] `EntityDraft`: prototype-correct copy, isolation before commit, diff against the fork baseline, rollback, spent-after-commit, the shallow caveat.
+- [x] `EntityDraft`: prototype-correct copy, isolation before commit, diff against the fork baseline, rollback, spent-after-commit, the shallow caveat.
 - [x] `ChangeFeed`: line reassembly, dispatch (critical, malformed), reconnect back-off under fake timers, reconnect marks everything stale. *Written with stage 2, before the feed was made generic; the `Deleted` operation is tested when stage 3 gives it meaning.*
 - [x] Client wiring: revision captured before the request leaves, a boolean write's body consumed, a throwing read still closes its bracket. *Written with stage 2, before the bracketing moved into `store.read`. The non-ok path still does not consume its body — that stays open with the transport suite.*
-- [ ] Lit bindings under a DOM test environment: `EntityRef` lifecycle and edit cycle, `EntityWatch`, `QueryRef`, `DerivedRef`, and each of the not-loaded / loading / loaded / removed / failed states.
-- [ ] **The foreign-domain fixture** from *Goal* — the acceptance test for the whole effort, and the living example in the README.
-- [ ] [[Criteria - Client SDK & Repository System]] updated: Tier 2 rows flipped, new rows for the data states, removal, read outcomes and policy injection.
+- [x] Lit bindings under a DOM test environment: `EntityRef` lifecycle and edit cycle, `EntityWatch`, `QueryRef`, `DerivedRef`, and each of the not-loaded / loading / loaded / removed / failed states. *SIPA gained its own Vitest + happy-dom setup (`npm test` in `sipa`). The `binder()` cycle through a real editable is the one row left open.*
+- [x] **The foreign-domain fixture** from *Goal* — the acceptance test for the whole effort (`foreignDomain.test.ts`, a bookshop). *Becomes the README example when the package moves in stage 5.*
+- [x] [[Criteria - Client SDK & Repository System]] updated: Tier 2 rows flipped, new rows for the data states, removal, read outcomes and policy injection.
 
 The transport suite (Tier 3: socket pinning, timeouts over a real pipe) stays on the SDK's own backlog. It tests PLAINTORCH's transport, not the library, and does not gate this plan.
 

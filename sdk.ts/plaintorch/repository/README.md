@@ -374,5 +374,7 @@ Diagnostics: `store.recordCount`, `store.pendingChangeCount`, `store.inFlightRea
 
 Suites live beside their subject as `*.test.ts` and run under Vitest (`npm test` in `sdk.ts`). The reactive
 core is pure and in-memory, so a suite needs no core process, socket, or DOM — a real `EntityStore` plus the
-fakes in `test-utils.ts`. The full invariant catalogue is
+fakes in `test-utils.ts`. `foreignDomain.test.ts` is the acceptance test: a bookshop that shares nothing with
+PLAINTORCH runs the whole cycle through the generic pieces alone. The Lit bindings have their own suite in
+`sipa/components/data/bindings.test.ts` (`npm test` in `sipa`, under happy-dom). The full invariant catalogue is
 `_documents/Criteria - Client SDK & Repository System.md`.

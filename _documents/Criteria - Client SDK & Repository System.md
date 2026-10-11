@@ -226,6 +226,7 @@ A fetcher answers with a value, with an authoritative nothing (`undefined`), or 
 | Derived: `isResolved` tells never resolved from resolved to nothing; an unanswered record recovers | edge | ✅ | `states.test.ts` |
 | Derived `prune` drops unobserved records that are expired, stale or never resolved; spares the in-flight | happy/edge | ✅ | `states.test.ts` |
 | A set's sweep prunes first, so an expired unobserved view no longer pins its entities; an observed one always does | fault | ✅ | `states.test.ts` |
+| **The foreign-domain fixture** — a bookshop with its own identity (per-type id fields, no title, no `@type`), merge policy, dependents and a 204-answering backend runs read, write, outage, feed, removal and eviction through the generic pieces alone | happy/fault | ✅ | `foreignDomain.test.ts` (acceptance) |
 | `ChangeFeed`: a `Deleted` event removes at once, after queueing its invalidation; other operations remove nothing | happy | ✅ | `changeFeed.test.ts` |
 
 ## Removal reach — `detach.test.ts`
@@ -287,7 +288,7 @@ The same guarantees through the real client over a scripted transport (`repos/te
 | `commit` (store-direct) returns a boolean; `fork` undefined when unresolved | happy/edge | ✅ | `entityRepository.test.ts` |
 | `revalidateIfObserved` skips when unobserved **and** when writing | edge | ✅ | `entityRepository.test.ts` |
 | `revalidateObserved` refetches only resolved, observed identities | edge | ✅ | `entityRepository.test.ts` |
-| `EntityDraft`: prototype-correct copy; isolation before commit | happy | ✅ | `policy.test.ts`, `entityRepository.test.ts` |
+| `EntityDraft`: prototype-correct copy; isolation before commit | happy | ✅ | `policy.test.ts`, `draft.test.ts` |
 | `EntityDraft.diff` is only the fields changed from the fork baseline | happy | ✅ | `entityRepository.test.ts` |
 | `commit` applies + invalidates; rolls back on reject; concurrency survival | happy/fault | ⏳ | — |
 | `cancel`; spent-after-commit; empty-diff no-op; shallow caveat | edge | ⏳ | — |
@@ -313,13 +314,21 @@ The same guarantees through the real client over a scripted transport (`repos/te
 | A timed-out GET retries once; a POST/PUT/DELETE does not | edge | ⏳ | — |
 | `stream()` bounds only the connect; the feed never occupies a pool slot | edge | ⏳ | — |
 
-## Lit controllers (plugin package — separate Vitest setup needed)
+## Lit bindings — `sipa/components/data/bindings.test.ts`
+SIPA has its own Vitest setup (`npm test` in `sipa`; `vitest.config.ts` is the legacy-decorator transform plus `happy-dom`). The bindings are mounted as real elements over a real client whose core is a scripted table.
+
 | Behaviour / Invariant | Kind | Status | Test ref |
 |---|---|---|---|
-| `EntityRef` subscribes on connect, re-renders on change, releases on disconnect | happy | 🔲 | — |
-| `EntityRef.binder` runs the snapshot → send → rollback cycle on a fake host | happy/fault | 🔲 | — |
-| `EntityWatch` observes a handed instance; `publish` broadcasts an in-place edit | happy | 🔲 | — |
-| `QueryRef.items` filters + orders the live type; re-renders on a member change | happy | 🔲 | — |
+| `EntityRef` resolves and renders; re-renders on a change made elsewhere; releases on disconnect | happy | ✅ | `bindings.test.ts` |
+| `EntityRef` follows a change of identifier while mounted; two hosts share one request | edge | ✅ | `bindings.test.ts` |
+| `EntityRef` reads not-loaded (core unreachable) and removed (core says gone), re-rendering to say so | fault | ✅ | `bindings.test.ts` |
+| `EntityRef.commit` broadcasts an accepted edit; rolls back a rejected one with a toast | happy/fault | ✅ | `bindings.test.ts` |
+| `EntityRef.fork` yields a draft once resolved, none before | edge | ✅ | `bindings.test.ts` |
+| `EntityRef.binder` runs the snapshot → send → rollback cycle through a real editable | happy/fault | 🔲 | — (needs an editable in the harness) |
+| `EntityWatch` re-renders a host handed an entity; `publish` broadcasts an in-place edit | happy | ✅ | `bindings.test.ts` |
+| `EntityWatch.removed` and the `entity-removed` attribute, also for a host mounted after the removal | fault | ✅ | `bindings.test.ts` |
+| `QueryRef.items` filters + orders the live type; re-renders on a member change, a new member, a removal | happy | ✅ | `bindings.test.ts` |
+| `DerivedRef` resolves and re-renders on record change; loses a removed member without a refetch; reads not-loaded | happy/fault | ✅ | `bindings.test.ts` |
 
 ---
 
