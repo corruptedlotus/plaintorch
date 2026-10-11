@@ -24,6 +24,11 @@ export default defineConfig({
 			}
 		}
 	],
+	// `@corruptedlotus/local-repo` is linked from `/local-repo`; its `source` condition resolves it to TypeScript, as the
+	// bundles do, so no build of the package is needed before the suites run.
+	resolve: {
+		conditions: ["source"]
+	},
 	test: {
 		include: ["plaintorch/**/*.test.ts"],
 		environment: "node"

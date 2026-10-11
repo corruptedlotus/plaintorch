@@ -1,4 +1,5 @@
-export * from './ReactiveBinder'
+// The two-way binder lives with the repository package's Lit bindings; SIPA's editables are written against it.
+export { ReactiveBinder } from '@corruptedlotus/local-repo/lit'
 export * from './EditableDataLink'
 export * from './EditableTextPart'
 export * from './EditablePlainText'

@@ -16,7 +16,7 @@ import { PlaintorchDependenciesSdk } from "./dependencies/dependenciesSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
 import { PlaintorchPreferencesSdk } from "./preferences/preferencesSdk"
 import { PlaintorchMediaSdk } from "./media/mediaSdk"
-import { EntityStore, type AbsorptionContext } from "./repository"
+import { EntityStore, type AbsorptionContext } from "@corruptedlotus/local-repo"
 import { plaintorchEntityPolicy } from "./repos/policy"
 import { PlaintorchRepositories } from "./repos/repositories"
 

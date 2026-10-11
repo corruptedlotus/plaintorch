@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@a11d/api": "^0.4.0",
-    "@a11d/api-dotnet": "^0.1.0"
+    "@a11d/api-dotnet": "^0.1.0",
+    "@corruptedlotus/local-repo": "file:../local-repo"
   }
 }

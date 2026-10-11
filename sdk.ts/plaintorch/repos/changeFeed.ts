@@ -1,5 +1,5 @@
 import type { PlaintorchCoreClient } from "../coreClient"
-import { ChangeFeed, type ChangeFeedOptions, type ChangeFeedSink } from "../repository/changeFeed"
+import { ChangeFeed, type ChangeFeedOptions, type ChangeFeedSink } from "@corruptedlotus/local-repo"
 
 export interface PlaintorchChangeFeedOptions extends ChangeFeedOptions {
 	/** Path of the feed endpoint. */

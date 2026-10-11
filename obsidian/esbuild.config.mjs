@@ -32,6 +32,11 @@ const context = await esbuild.context({
   },
   format: "cjs",
   target: "es2020",
+  // SIPA and the repository package (`@corruptedlotus/local-repo`) are bundled from their TypeScript, which their
+  // `source` export condition selects. The package's Lit bindings import `@a11d/lit`; that must be the one copy SIPA
+  // itself uses — a second Lit runtime would register its own element bases and directives — so it is aliased here.
+  conditions: ["source"],
+  alias: { "@a11d/lit": path.resolve("../sipa/node_modules/@a11d/lit") },
   logLevel: "info",
   define: {
     // Bake the dev-profile flag directly into the bundle as a literal (compile-time substitution, not a runtime

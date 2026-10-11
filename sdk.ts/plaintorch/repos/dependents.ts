@@ -1,5 +1,4 @@
-import { entityKey, type EntityKey, type EntityTypeName } from "../repository/identity"
-import type { DependentTable } from "../repository/invalidation"
+import { entityKey, type EntityKey, type EntityTypeName, type DependentTable } from "@corruptedlotus/local-repo"
 
 const key = (typeName: EntityTypeName, id: unknown): EntityKey | undefined =>
 	typeof id === "string" && id.length > 0 ? entityKey(typeName, id) : undefined

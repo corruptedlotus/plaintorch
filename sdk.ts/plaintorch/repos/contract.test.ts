@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { ModelValueConstructor } from "@a11d/api-dotnet"
-import { EntityStore } from "../repository/entityStore"
+import { EntityStore } from "@corruptedlotus/local-repo"
 import { plaintorchEntityPolicy } from "./policy"
 import { PlaintorchRepositories } from "./repositories"
 import type { PlaintorchCoreClient } from "../coreClient"

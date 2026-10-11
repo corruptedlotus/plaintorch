@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { createAbsorbingReviver } from "../repository/absorption"
-import { EntityStore } from "../repository/entityStore"
+import { createAbsorbingReviver, EntityStore } from "@corruptedlotus/local-repo"
 import { plaintorchEntityPolicy } from "./policy"
 import { Objective } from "../objectives/models"
 import { OnrushSprint } from "../onrush/models"

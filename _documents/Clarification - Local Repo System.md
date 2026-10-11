@@ -1,4 +1,4 @@
-> This blueprint describes the frontend repository system introduced in [[PEP106 - Frontend Repository System]]. It lives in the SDK (`sdk.ts/plaintorch/repository`) and the Obsidian plugin, and is entirely separate from the core-side `PlaintorchRepository`, which is an unrelated data-access service that happens to share the word.
+> This blueprint describes the frontend repository system introduced in [[PEP106 - Frontend Repository System]]. It is the package `@corruptedlotus/local-repo` (`/local-repo`), which the SDK consumes and re-exports — `sdk.ts/plaintorch/repos` holds PLAINTORCH's declarations to it — and whose Lit bindings SIPA's components hold; it is entirely separate from the core-side `PlaintorchRepository`, which is an unrelated data-access service that happens to share the word.
 
 # Abstract
 The local repository system is the frontend's single source of truth for entities. Before it, every component fetched and held its own copy of an entity, so two surfaces showing the same thing were unrelated objects and an edit to one was invisible to the other. The repository system replaces that with one canonical instance per entity identity, shared by reference across every surface. Keeping surfaces in step then reduces to telling them to re-render — no data is ever copied between them.
@@ -24,7 +24,7 @@ An entity is recognised by *shape*, not by a hard-coded list of type names. The 
 
 Both halves of the shape test carry weight. The `id` must be a string because child records such as a dependency edge key on a number and must not be tracked. The `title` must be present because a value object can carry a string `id` that is a *reference* to another entity — a dependency endpoint does — and tracking those would merge two unrelated references that happen to point at the same entity into one instance.
 
-The shape test is PLAINTORCH's *policy*, not something the store assumes. A store is built with a policy naming what an entity is, how a payload becomes a model instance, and which of a payload's fields are trusted; PLAINTORCH declares its own once (`repos/policy.ts`), and the generic files under `repository/` hold no domain knowledge.
+The shape test is PLAINTORCH's *policy*, not something the store assumes. A store is built with a policy naming what an entity is, how a payload becomes a model instance, and which of a payload's fields are trusted; PLAINTORCH declares its own once (`sdk.ts/plaintorch/repos/policy.ts`), and the package holds no domain knowledge.
 
 Recognising an entity is therefore structural and universal; only *routing* a type name to a specific repository is declared by hand. This is deliberate: an earlier closed list of type names drifted out of step with the core (the concrete stellar directive serialises as `StellarDirective`, the list said `Directive`), and every directive silently stopped being tracked, which is invisible because an entity that is never absorbed simply never notifies anyone.
 
@@ -112,7 +112,7 @@ The long-lived change feed is deliberately kept **off** that pool, on its own de
 Because the pool is keep-alive, a socket is not returned to it until its response body has been fully read. **Every one-shot response must therefore be consumed**, even when the caller only cares whether the request succeeded and ignores the body, and even when the response is an error. A body left undrained pins its connection; enough pinned connections exhaust the pool, at which point every subsequent request — reads included — queues with no socket to run on and fails on its timeout, until the server's own keep-alive timeout eventually closes the pinned connections. From the outside this is indistinguishable from the core hanging and then recovering, so the invariant is a correctness requirement of the transport, not an optimisation.
 
 # Surfaces
-Two small controllers connect a component to the store:
+Two small controllers, from the package's `/lit` entry, connect a component to the store:
 - **`EntityRef`** resolves an entity by id, subscribes, re-renders the host on change, and releases on disconnect. The id is read from a thunk on every host update, so a reference re-resolves when its target changes while the host stays mounted. Because every surface observing an identity is handed the same instance, an edit made anywhere reaches all of them without any of them knowing the others exist.
 - **`EntityWatch`** is for a list item *handed* its entity as a property by an aggregate. That instance is already canonical, so the item only needs to learn when it changes — it fetches nothing.
 

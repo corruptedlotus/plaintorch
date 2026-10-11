@@ -1,6 +1,6 @@
 export * from "./coreClient"
 export { toLines, type PlaintorchCoreRequest, type PlaintorchCoreResponse, type PlaintorchCoreTransport } from "./internal/transport"
-export * from "./repository"
+export * from "@corruptedlotus/local-repo"
 export * from "./repos"
 export * from "./system"
 export * from "./media"

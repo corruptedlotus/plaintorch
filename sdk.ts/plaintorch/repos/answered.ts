@@ -1,5 +1,5 @@
 import type { PlaintorchCoreClient } from "../coreClient"
-import { unresolved, type Unresolved } from "../repository/outcome"
+import { unresolved, type Unresolved } from "@corruptedlotus/local-repo"
 import { PlaintorchObjectivesSdk } from "../objectives/objectivesSdk"
 import { PlaintorchDeclarativesSdk } from "../declaratives/declarativesSdk"
 import { PlaintorchDirectivesSdk } from "../directives/directivesSdk"
