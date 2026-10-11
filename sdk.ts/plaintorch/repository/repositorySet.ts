@@ -4,6 +4,7 @@ import { EntityRepository, type EntityFetcher, type EntityRepositoryOptions } fr
 import type { EntityStore } from "./entityStore"
 import { collectEntityKeys, entityKey, type EntityKey, type EntityTypeName } from "./identity"
 import { InvalidationScheduler, type DependentTable, type InvalidationTarget } from "./invalidation"
+import type { WriteSuccess } from "./mutation"
 
 /**
  * How often the periodic eviction sweep runs once started. Eviction is housekeeping with no urgency — a
@@ -14,6 +15,11 @@ export const defaultEvictionSweepIntervalMs = 60_000
 export interface RepositorySetOptions {
 	/** What a change to each entity type makes stale beyond itself. */
 	dependents?: DependentTable
+	/**
+	 * Whether a write's result means the backend accepted it, for every entity repository of the set that
+	 * does not declare its own. Defaults to {@link isSuccessfulMutation}.
+	 */
+	succeeded?: WriteSuccess
 }
 
 /**
@@ -34,10 +40,12 @@ export class RepositorySet implements InvalidationTarget, ChangeFeedSink {
 	private readonly byTypeName = new Map<EntityTypeName, EntityRepository<never>>()
 	private readonly records: DerivedRepository<unknown>[] = []
 	private evictionTimer?: ReturnType<typeof setInterval>
+	private readonly succeeded?: WriteSuccess
 
 	public constructor(public readonly store: EntityStore, options: RepositorySetOptions = {}) {
 		// Resolved lazily: the scheduler reaches back into the set it is handed to.
 		this.invalidation = new InvalidationScheduler(store, () => this, options.dependents)
+		this.succeeded = options.succeeded
 	}
 
 	/**
@@ -59,7 +67,11 @@ export class RepositorySet implements InvalidationTarget, ChangeFeedSink {
 			)
 		}
 
-		const repository = new EntityRepository<T>(this.store, typeName, fetcher, { ...options, invalidation: this.invalidation })
+		const repository = new EntityRepository<T>(this.store, typeName, fetcher, {
+			succeeded: this.succeeded,
+			...options,
+			invalidation: this.invalidation
+		})
 		this.byTypeName.set(typeName, repository as EntityRepository<never>)
 		return repository
 	}
@@ -130,6 +142,14 @@ export class RepositorySet implements InvalidationTarget, ChangeFeedSink {
 	}
 
 	/**
+	 * Records that an entity no longer exists, so everything observing it reads it as removed. For a removal
+	 * announced from outside — a change feed's deletion — rather than discovered by asking for the entity.
+	 */
+	public remove(typeName: string, id: string): void {
+		this.store.remove(entityKey(typeName, id))
+	}
+
+	/**
 	 * Gives up the local claim on an identity, so the next read of it applies whatever its age.
 	 *
 	 * Used for changes the backend declares authoritative. A write still in flight keeps its own protection —
@@ -150,10 +170,14 @@ export class RepositorySet implements InvalidationTarget, ChangeFeedSink {
 	 * Only entities held nowhere are dropped — one fetched for a surface since closed, or one dropped from a
 	 * listing that has since refreshed. Anything a derived view or subscription still reaches is kept, so no
 	 * surface can be left holding an instance a later fetch would duplicate. Returns how many were evicted.
+	 *
+	 * A record nothing observes, whose value would not be served again anyway, is dropped first and so pins
+	 * nothing: holding a view without observing it is outside what the canonical-instance guarantee covers.
 	 */
 	public sweep(): number {
 		const reachable = new Set<EntityKey>()
 		for (const record of this.records) {
+			record.prune()
 			for (const value of record.resolvedValues()) {
 				collectEntityKeys(value, reachable, this.store.identify)
 			}

@@ -1,5 +1,5 @@
 import { component, css, html, nothing, property, unsafeCSS } from '@a11d/lit'
-import { EntityWatch, IconName, navigateToEntity } from '..'
+import { EntityWatch, IconName, navigateToEntity, removedEntityStyles } from '..'
 import { CardComponent } from '../design'
 import { 'everglow-banner' as EverglowBanner } from '../../assets/design'
 import { 'grunge-1-png' as GrungeNoise } from '../../assets/design'
@@ -21,6 +21,7 @@ export class BriefingCard<T> extends CardComponent {
 	static override get styles() {
 		return css`
 			${super.styles}
+			${removedEntityStyles}
 
 			:host {
 				background:

@@ -38,6 +38,15 @@ export class DerivedRef<T> extends Controller {
 		return this.failure
 	}
 
+	/**
+	 * Whether the record has never been answered for. A record the core resolved to nothing — an empty listing,
+	 * no current sprint — *is* loaded; not loaded and not {@link loading} means the core could not be asked.
+	 */
+	public get notLoaded(): boolean {
+		const key = this.source()
+		return key !== undefined && !this.repository.isResolved(key)
+	}
+
 	public override hostConnected(): void {
 		this.sync()
 	}

@@ -1,4 +1,4 @@
-import type { EntityIdentifier } from "./identity"
+import type { EntityIdentifier, EntityTypeName } from "./identity"
 
 /**
  * Turns a wire payload into the model instance a surface works with.
@@ -43,10 +43,36 @@ export interface EntityPolicy {
 	readonly models?: ModelConstructor
 	/** Which fields of a payload merge. Defaults to {@link everyKey}. */
 	readonly mergeableKeys?: MergeableKeys
+	/**
+	 * What becomes of what still holds an entity once it is removed — one answer for every type, or one per
+	 * type name. Defaults to `"detach"`.
+	 */
+	readonly removal?: RemovalMode | ((typeName: EntityTypeName) => RemovalMode)
 }
 
+/**
+ * What the store does, on removing an entity, about the collections that still hold it.
+ *
+ * - `"detach"` — the entity is taken out of every collection the store can reach: the collections of the other
+ *   entities it holds, and the values of the derived records over it. A listing loses the row and an owner
+ *   loses the member at once, and whatever observes them is told. This is the relationship fix-up an identity
+ *   map conventionally performs on a delete.
+ * - `"keep"` — nothing else is touched. Whatever holds the instance goes on holding it until it is refreshed;
+ *   the identity itself still reads as removed, which is what a surface that wants to *show* a removal — a row
+ *   struck through rather than gone — needs.
+ *
+ * Either way a single reference pointing at the entity is left as it is.
+ */
+export type RemovalMode = "detach" | "keep"
+
 /** An {@link EntityPolicy} with its defaults filled in. */
-export type ResolvedEntityPolicy = Required<EntityPolicy>
+export interface ResolvedEntityPolicy {
+	readonly identify: EntityIdentifier
+	readonly models: ModelConstructor
+	readonly mergeableKeys: MergeableKeys
+	/** The removal mode of a type. */
+	readonly removal: (typeName: EntityTypeName) => RemovalMode
+}
 
 /** Constructs nothing: entities stay the plain objects they were parsed as, and every type name is routable. */
 export const plainModels: ModelConstructor = {
@@ -60,9 +86,11 @@ export const everyKey: MergeableKeys = (payload) => Object.keys(payload)
 
 /** Fills in the defaults of a policy. */
 export function resolvePolicy(policy: EntityPolicy): ResolvedEntityPolicy {
+	const removal = policy.removal ?? "detach"
 	return {
 		identify: policy.identify,
 		models: policy.models ?? plainModels,
-		mergeableKeys: policy.mergeableKeys ?? everyKey
+		mergeableKeys: policy.mergeableKeys ?? everyKey,
+		removal: typeof removal === "function" ? removal : () => removal
 	}
 }

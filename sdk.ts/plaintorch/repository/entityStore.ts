@@ -2,6 +2,7 @@ import { collectEntityKeys, typeNameFromKey, type EntityIdentifier, type EntityK
 import { isEquivalent } from "./equivalence"
 import { resolvePolicy, type EntityPolicy, type ResolvedEntityPolicy } from "./policy"
 import { createAbsorbingReviver } from "./absorption"
+import { detachFrom } from "./detach"
 
 /** Notified when the canonical instance behind an identity changes. */
 export type EntitySubscriber = () => void
@@ -9,12 +10,28 @@ export type EntitySubscriber = () => void
 /** Releases a subscription. */
 export type EntitySubscription = () => void
 
+/**
+ * What the store knows of an identity's data.
+ *
+ * - `not-loaded` — nothing has answered for it yet: never asked for, still being fetched, or asked of a backend
+ *   that did not answer.
+ * - `loaded` — the store holds its canonical instance.
+ * - `removed` — the backend answered that there is no such entity: it was deleted, or never existed.
+ *
+ * These are facts about the data, apart from whether a request is in flight or one failed.
+ */
+export type EntityState = "not-loaded" | "loaded" | "removed"
+
 interface EntityRecord {
 	readonly key: EntityKey
-	/** Undefined while an identity is observed but has not been absorbed yet. */
+	/** Undefined while an identity is observed but has not been absorbed yet, and once it has been removed. */
 	value: object | undefined
+	/** Whether the backend answered that this identity does not exist. Cleared when it is absorbed again. */
+	removed: boolean
 	version: number
 	stale: boolean
+	/** When a repository last resolved this identity from the backend, for its freshness window. */
+	resolvedAt?: number
 	readonly subscribers: Set<EntitySubscriber>
 }
 
@@ -33,6 +50,18 @@ export interface AbsorptionContext {
 	 */
 	readonly authoritative?: boolean
 }
+
+/** What a store tells those listening for removals. */
+export interface EntityRemoval {
+	readonly key: EntityKey
+	/** The instance that was canonical until now, or `undefined` when the identity was never loaded. */
+	readonly instance: object | undefined
+	/** Whether what holds the instance is to let go of it, as the store's policy says for this type. */
+	readonly detach: boolean
+}
+
+/** Told when an identity is removed. */
+export type EntityRemovalListener = (removal: EntityRemoval) => void
 
 /**
  * Parses a response body into canonical instances, absorbing every entity in it under the read it was handed
@@ -61,6 +90,13 @@ export class EntityStore {
 	public readonly identify: EntityIdentifier
 	private readonly records = new Map<EntityKey, EntityRecord>()
 	private readonly globalSubscribers = new Set<EntitySubscriber>()
+	/** Those holding entities outside the store's own records — derived repositories — told of each removal. */
+	private readonly removalListeners = new Set<EntityRemovalListener>()
+	/**
+	 * The instances that were canonical when their entity was removed. Held weakly, so the mark lasts exactly
+	 * as long as something still holds the instance, and costs nothing once nothing does.
+	 */
+	private readonly removedInstances = new WeakSet<object>()
 	/** Subscribers to all entities of one type — for filtered, live-collection views (query refs). */
 	private readonly typeSubscribers = new Map<EntityTypeName, Set<EntitySubscriber>>()
 	/** Keys grouped by type, so a type's members enumerate without scanning the whole store. */
@@ -131,6 +167,7 @@ export class EntityStore {
 			const record: EntityRecord = {
 				key,
 				value: value as object,
+				removed: false,
 				version: 0,
 				stale: false,
 				subscribers: new Set()
@@ -143,7 +180,10 @@ export class EntityStore {
 		}
 
 		if (!existing.value) {
+			// Observed before it was ever absorbed, or removed and now back: either way the incoming instance
+			// is adopted as it is, which keeps its constructed prototype intact.
 			existing.value = value as object
+			existing.removed = false
 			existing.stale = false
 			existing.version++
 			this.announce(existing)
@@ -168,10 +208,46 @@ export class EntityStore {
 	}
 
 	/**
-	 * Determines whether an identity has ever been absorbed.
+	 * Determines whether the store currently holds an instance for an identity.
 	 */
 	public has(key: EntityKey): boolean {
 		return this.records.get(key)?.value !== undefined
+	}
+
+	/**
+	 * What the store knows of an identity's data. An identity the store has never heard of is `not-loaded`.
+	 */
+	public stateOf(key: EntityKey): EntityState {
+		const record = this.records.get(key)
+		if (record?.value !== undefined) {
+			return "loaded"
+		}
+
+		return record?.removed ? "removed" : "not-loaded"
+	}
+
+	/**
+	 * Whether a value someone is holding is an entity that has been removed.
+	 *
+	 * This is the question for whatever holds an entity *by reference* rather than by identifier — a single
+	 * reference on another entity, a property a component was handed — and so has an object in hand, not an
+	 * id to look up. The instance that was canonical when its entity was removed stays marked for as long as
+	 * anything holds it, whether or not the identity is still observed, and stays marked if the identity is
+	 * later absorbed again: that is a new instance, and the old one is still of an entity that was removed.
+	 * A copy of a removed identity that was never canonical — one a response issued before the removal carried
+	 * in — reads as removed too, while the identity is.
+	 */
+	public wasRemoved(value: unknown): boolean {
+		if (value === null || typeof value !== "object") {
+			return false
+		}
+
+		if (this.removedInstances.has(value)) {
+			return true
+		}
+
+		const key = this.identify(value)
+		return key !== undefined && this.records.get(key)?.removed === true
 	}
 
 	/**
@@ -179,6 +255,109 @@ export class EntityStore {
 	 */
 	public version(key: EntityKey): number {
 		return this.records.get(key)?.version ?? 0
+	}
+
+	/**
+	 * Records that the backend has no such entity: drops the canonical instance and tells everything observing
+	 * the identity, which then reads it as `removed`.
+	 *
+	 * Whoever still holds the old instance must let go of it on that notification — it is no longer canonical,
+	 * and an entity absorbed under the same identity later is a new instance. An identity nothing observes
+	 * leaves no trace beyond its ledger marker.
+	 *
+	 * The removal is noted like a local change, so a response issued before it — a listing still in flight that
+	 * names the entity — is discarded for this identity rather than bringing it back.
+	 */
+	public remove(key: EntityKey): void {
+		const record = this.records.get(key)
+		if (!record || record.removed) {
+			return
+		}
+
+		const instance = record.value
+		const existed = instance !== undefined
+		if (instance) {
+			this.removedInstances.add(instance)
+		}
+
+		this.noteLocalChange(key)
+		record.value = undefined
+		record.removed = true
+		record.stale = true
+		record.resolvedAt = undefined
+		record.version++
+
+		if (record.subscribers.size === 0) {
+			this.records.delete(key)
+			this.removeFromIndex(key)
+		}
+
+		// The collections that held it let go before anyone is told, so an observer re-rendering on the
+		// notification already finds the entity gone from everything it reads.
+		const detach = instance !== undefined && this.policy.removal(typeNameFromKey(key)) === "detach"
+		const owners = detach ? this.detachFromOwners(instance) : []
+
+		if (existed || record.subscribers.size > 0) {
+			this.announce(record)
+		}
+
+		for (const owner of owners) {
+			this.announce(owner)
+		}
+
+		for (const listener of [...this.removalListeners]) {
+			listener({ key, instance, detach })
+		}
+	}
+
+	/**
+	 * Listens for removals. For whatever holds entities outside the store's own records — a derived repository
+	 * and its cached views — so it can let go of a removed instance as the store's entities do.
+	 */
+	public subscribeRemovals(listener: EntityRemovalListener): EntitySubscription {
+		this.removalListeners.add(listener)
+		return () => {
+			this.removalListeners.delete(listener)
+		}
+	}
+
+	/**
+	 * Takes a removed instance out of the collections of every entity that still holds it, and returns the
+	 * records that changed. Each is left stale as well: losing a member is a change the backend made, and
+	 * whatever else it changed about the owner has not been read yet.
+	 */
+	private detachFromOwners(instance: object): EntityRecord[] {
+		const changed: EntityRecord[] = []
+		for (const owner of this.records.values()) {
+			if (owner.value && detachFrom(owner.value, instance, this.identify).changed) {
+				owner.version++
+				owner.stale = true
+				changed.push(owner)
+			}
+		}
+
+		return changed
+	}
+
+	/**
+	 * Records that a repository has just resolved an identity from the backend. Kept on the record rather than
+	 * by the repository, so the stamp is evicted with the entity it describes.
+	 */
+	public markResolved(key: EntityKey, at: number = Date.now()): void {
+		const record = this.records.get(key)
+		if (record?.value !== undefined) {
+			record.resolvedAt = at
+		}
+	}
+
+	/** When a repository last resolved an identity from the backend, or `undefined` if none has. */
+	public resolvedAt(key: EntityKey): number | undefined {
+		return this.records.get(key)?.resolvedAt
+	}
+
+	/** Every identity of a type the store has a record for, held or merely observed. */
+	public keysOfType(typeName: EntityTypeName): EntityKey[] {
+		return [...this.typeIndex.get(typeName) ?? []]
 	}
 
 	/**
@@ -564,6 +743,7 @@ export class EntityStore {
 		const record: EntityRecord = {
 			key,
 			value: undefined,
+			removed: false,
 			version: 0,
 			stale: true,
 			subscribers: new Set()

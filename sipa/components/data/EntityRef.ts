@@ -1,5 +1,5 @@
 import { Controller, type ReactiveElement } from '@a11d/lit'
-import { EntityDraft, EntityRepository, identify, type EntityKey, type EntitySubscription } from '@pleiades/sdk'
+import { EntityDraft, EntityRepository, identify, type EntityKey, type EntityState, type EntitySubscription } from '@pleiades/sdk'
 import { getCore } from './coreProvider'
 import { ReactiveBinder } from '../editing/ReactiveBinder'
 import { toast } from '../../host'
@@ -78,6 +78,31 @@ export class EntityRef<T extends object> extends Controller {
 	/** The failure of the last resolution attempt, if it failed. */
 	public get error(): unknown {
 		return this.failure
+	}
+
+	/**
+	 * Whether nothing has answered for the entity yet. Read it beside {@link loading}: not loaded *and* not
+	 * loading means the attempt is over and came back with nothing to show — the core could not be asked —
+	 * which is a different thing from an entity that is {@link removed}.
+	 */
+	public get notLoaded(): boolean {
+		return this.state === 'not-loaded'
+	}
+
+	/**
+	 * Whether the core answered that there is no such entity: it was deleted — here or anywhere else — or the
+	 * identifier never named one. {@link value} is `undefined` from then on; a surface says so rather than going
+	 * on showing what it last had.
+	 */
+	public get removed(): boolean {
+		return this.state === 'removed'
+	}
+
+	/** What the store knows of this reference's entity, or `undefined` while it has nothing to refer to. */
+	private get state(): EntityState | undefined {
+		const repository = this.repository()
+		const id = this.source()
+		return !repository || !id ? undefined : repository.stateOf(id)
 	}
 
 	public override hostConnected(): void {
@@ -251,8 +276,27 @@ export class EntityWatch extends Controller {
 		this.sync()
 	}
 
+	/**
+	 * Reflects {@link removed} onto the host as the `entity-removed` attribute, so the host's stylesheet can
+	 * stand the surface down (see `removedEntityStyles`) without each host wiring the state through by hand.
+	 */
+	public override hostUpdated(): void {
+		(this.host as unknown as Element).toggleAttribute?.('entity-removed', this.removed)
+	}
+
 	public override hostDisconnected(): void {
 		this.release()
+	}
+
+	/**
+	 * Whether the observed entity has been removed since it was handed over. The instance the host still holds
+	 * is no longer canonical. A host rendered from a listing or an owner's collection is usually gone by now,
+	 * since the store takes a removed entity out of those; this is for the host that is still here.
+	 */
+	public get removed(): boolean {
+		// Asked of the instance, not of the identity: the host may have been handed an entity that was removed
+		// before it ever mounted, when nothing was observing the identity and the store kept no record of it.
+		return getCore().store.wasRemoved(this.source())
 	}
 
 	/**

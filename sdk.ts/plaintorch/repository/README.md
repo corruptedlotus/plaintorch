@@ -51,6 +51,7 @@ reference is looking at current state by construction; synchronizing them is jus
 - `policy.ts` — the `EntityPolicy` a store is built with: what an entity is, how a payload becomes a model,
   and which of a payload's fields merge.
 - `EntityStore.read` — the one call a client wraps around a request whose response is absorbed.
+- `outcome.ts` — `unresolved`, what a fetcher answers when no trustworthy answer came back.
 
 **PLAINTORCH's declarations (`sdk.ts/plaintorch/repos/`)**
 - `policy.ts` — the policy the client's store is built with (`identify`, the `@model` constructor adapter,
@@ -60,6 +61,8 @@ reference is looking at current state by construction; synchronizing them is jus
   (watcher, CLI, scheduler writes).
 - `repositories.ts` — `PlaintorchRepositories`, a `RepositorySet` declaring one repository per PLAINTORCH
   type and the derived records the UI observes. This is `core.repos`.
+- `answered.ts` — the **interim** bridge that lets those repositories' fetchers tell "the core did not
+  answer" from "the core says there is nothing". To be replaced by the SDK's error model, not built on.
 
 **Binding layer (`sipa/components/data/EntityRef.ts`)**
 - `EntityRef<T>` — resolves an entity by id, subscribes, re-renders on change, releases on disconnect. Owns
@@ -238,6 +241,68 @@ publishing. Use a binding's immediate `commit` for a single field edited in plac
 
 ---
 
+## What a read can say, and what the store then knows
+
+A fetcher has three answers (`outcome.ts`), and a repository does something different with each:
+
+| The fetcher resolves to | It means | Entity repository | Derived repository |
+|---|---|---|---|
+| a value | here it is | absorbed; stamped fresh | cached; notifies if it changed |
+| `undefined` | the backend says there is nothing | the entity is **removed** | the record is emptied |
+| `unresolved` | no trustworthy answer came back | kept as it was, still stale | last value kept, still stale, nobody notified |
+
+So an outage keeps what is on screen, and a deletion takes it away — where both used to be the same
+"nothing came back".
+
+The store holds one of three **data states** per identity, read with `store.stateOf(key)` /
+`repository.stateOf(id)`:
+
+- `not-loaded` — nothing has answered for it yet;
+- `loaded` — the canonical instance is held;
+- `removed` — the backend answered that it does not exist.
+
+`store.remove(key)` is the removal. It drops the instance, tells the identity's observers and its type's, and
+is noted in the change ledger so a response issued *before* it (a listing still in flight) is discarded for
+that identity instead of bringing it back. An identity absorbed again afterwards is `loaded`, as a new
+instance. A change feed's `Deleted` event removes at once; the refetch that follows confirms it.
+
+An answer of nothing does **not** remove an entity that was absorbed or changed while that request was in
+flight — it is then the older of the two answers, and the identity is left stale for the next read to settle.
+
+A derived record has no identity to remove; `repository.isResolved(key)` tells "never answered" from
+"resolved to nothing".
+
+**What held the removed entity.** This is the store's policy — `removal` on the `EntityPolicy`, one mode for
+every type or a function giving one per type name:
+
+- `"detach"` (the default) — the entity is taken out of every collection the store can reach: the collections
+  of the other entities it holds, including those inside their value objects and child records, and the values
+  of the derived records over it. A listing loses the row and an owner loses the member at the moment of
+  removal, not at the next refetch, and whatever observes them is told. A record that *was* the entity ("the
+  current one") resolves to nothing and is left stale. This is the relationship fix-up an identity map
+  conventionally performs on a delete.
+- `"keep"` — nothing else is touched; holders go on holding the instance until they are refreshed. For a domain
+  that wants to *show* a removal rather than lose the row.
+
+A collection that held the entity is **replaced** by a new array without it rather than spliced in place, the
+way a merge replaces a collection that changed — so a surface handed the collection as a property sees a new
+reference. An owner that lost a member is also left stale. Single references are never cleared: whether an
+owner can do without one is not something the store can know.
+
+**Asking about an instance you hold.** A single reference left in place still points at the removed
+instance, and whatever holds it can ask: `store.wasRemoved(instance)`. The mark is on the instance (held
+weakly), not on the identity, so it answers whether or not anything was observing the entity when it was
+removed, for a surface that mounts afterwards, and after the identity has been absorbed again as a new
+instance. `EntityWatch.removed` is this, for the entity a component was handed — which is how a surface given
+`task.assignee` shows a "no longer exists" panel in its place.
+
+**Writes.** Whether a write's result means the backend accepted it is a `WriteSuccess` test the consumer
+declares — per repository, or once for a whole `RepositorySet` — and `mutate`, `commit` and a draft's `commit`
+all use it. The default treats an absent result as a rejection, which suits a client that reports failure by
+returning nothing; a backend whose writes answer 204 declares otherwise.
+
+---
+
 ## Bounding the map (eviction & prune)
 
 One long-lived context, no fork-per-request-and-clear escape, so the store must actively forget — in two
@@ -256,6 +321,12 @@ halves (Patch106.1):
   everything a resolved derived view reaches (walked with `collectEntityKeys`) plus what the store's own
   subscribed entities nest, and drops the rest. Only entities held nowhere are freed — one fetched for a
   since-closed banner, or dropped from a refreshed listing.
+- **Derived-record prune** (part of the sweep). A record nothing observes, whose value would not be served
+  again anyway — stale, past its freshness window, or never resolved — is dropped before the roots are
+  gathered, so it stops pinning its entities. This is what bounds a repository keyed by something open-ended
+  (a path, a PUCK). An *observed* record is never pruned, however old.
+- **Freshness stamps** live on the store's record (`store.markResolved` / `resolvedAt`), so they are evicted
+  with the entity they describe rather than accumulating in each repository.
 
 Diagnostics: `store.recordCount`, `store.pendingChangeCount`, `store.inFlightReadCount`.
 
@@ -269,10 +340,22 @@ Diagnostics: `store.recordCount`, `store.pendingChangeCount`, `store.inFlightRea
 - **Snapshots and drafts are shallow.** A snapshot (rollback target) and a fork copy share nested arrays and
   objects with the canonical instance. Edit collections through explicit API actions, never by mutating a
   draft's array — the change would leak past the draft and can't be rolled back.
-- **Eviction is gated by the derived caches.** An entity a listing still holds is never evicted (correct), so
-  memory is reclaimed only once the listing itself refreshes or is dropped. Bounding the derived caches
-  themselves is a separate, future lever. The sweep's trigger is a plain periodic interval this version;
-  idle-detected / on-refresh / memory-threshold are recorded in PEP106 for later.
+- **Eviction is gated by the observed caches.** An entity an *observed* listing still holds is never evicted
+  (correct), so memory is reclaimed only once the listing refreshes or stops being observed. A view held
+  without being observed — the array a one-shot `get()` returned, kept in a variable — is pinned only until
+  its record expires: holding a view without observing it is outside the canonical-instance guarantee. The
+  sweep's trigger is a plain periodic interval this version; idle-detected / on-refresh / memory-threshold are
+  recorded in PEP106 for later.
+- **A fetcher must say `unresolved` when it does not know.** `undefined` is taken at its word — the backend
+  has nothing — and removes the entity. A fetcher over a client that returns nothing on failure has to
+  translate, as PLAINTORCH's does in `repos/answered.ts`; otherwise an outage reads as a mass deletion.
+- **Detaching reaches collections the store knows, and nothing else.** A removed entity leaves the listings
+  and owner collections that held it, but an array a component built for itself, a single reference
+  (`task.assignee`), and a child record that is meaningless without the entity it points at are all left as
+  they were until refreshed. Observers are told; a surface handed its entity reads `EntityWatch.removed`.
+- **A response already in flight can show a ghost.** A listing issued before a removal, landing after it, is
+  not absorbed for that identity — but the raw object it carried stays in that listing until the listing is
+  next refreshed.
 - **The prune is read-driven.** A burst of pure local edits with no interleaving reads lingers until the next
   read settles. In practice reads are frequent, so the ledger stays bounded.
 - **Freshness is per-repository, not global.** `EntityRepository` serves from the store within its freshness

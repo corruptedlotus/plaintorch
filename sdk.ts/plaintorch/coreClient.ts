@@ -160,7 +160,31 @@ export class PlaintorchCoreClient {
 		return undefined
 	}
 
+	/**
+	 * Like {@link getJson}, but also says whether the core answered at all.
+	 *
+	 * `answered` is true for a response the core stands behind — a success, including an empty one, and a
+	 * "not found", which carries no value — and false when nothing trustworthy came back: no transport reached
+	 * the core, the request timed out, or the core failed. {@link getJson} cannot make that distinction; it,
+	 * and the `?? []` the listing SDKs wrap it in, turn a failed request into the same emptiness as a real one.
+	 *
+	 * Interim. This exists so the repositories can keep what they hold through an outage; it carries no reason
+	 * for a failure, and is the piece a proper error model replaces.
+	 */
+	public async getJsonAnswer<T>(path: string, context?: AbsorptionContext): Promise<PlaintorchCoreAnswer<T>> {
+		return await this.exchangeForJson<T>({ method: "GET", path }, context)
+	}
+
 	protected async send(request: PlaintorchCoreRequest): Promise<PlaintorchCoreResponse | undefined> {
+		return (await this.exchange(request)).response
+	}
+
+	/**
+	 * Sends a request through the transports in turn until one is accepted. Reports the accepting response, or
+	 * the status the core last refused it with when a transport reached the core and it said no.
+	 */
+	private async exchange(request: PlaintorchCoreRequest): Promise<{ response?: PlaintorchCoreResponse, refusedWith?: number }> {
+		let refusedWith: number | undefined
 		for (const transport of this.transports) {
 			const response = await transport.send(request)
 			if (response?.ok) {
@@ -169,15 +193,18 @@ export class PlaintorchCoreClient {
 					this.lastWriteNotePendingFlag = response.header(noteReadyHeader) === "false"
 				}
 
-				Promise.resolve().then(async () => {
-					const payload = await response.text()
-					console.debug('PLAINTORCH called', request.path, payload ? JSON.parse(payload) : undefined)
-				}).catch(() => { })
-				return response
+				return { response }
+			}
+
+			if (response) {
+				refusedWith = response.status
+				// Drained for the same reason an accepted body is: a transport with a keep-alive pool does not
+				// release a connection until its response has been read.
+				await response.text().catch(() => undefined)
 			}
 		}
 
-		return undefined
+		return { refusedWith }
 	}
 
 	/**
@@ -185,14 +212,21 @@ export class PlaintorchCoreClient {
 	 * updated entity. The store runs it as a read, so a change made while it is in flight outranks it.
 	 */
 	private async sendForJson<T>(request: PlaintorchCoreRequest, context?: AbsorptionContext): Promise<T | undefined> {
+		return (await this.exchangeForJson<T>(request, context)).value
+	}
+
+	private async exchangeForJson<T>(request: PlaintorchCoreRequest, context?: AbsorptionContext): Promise<PlaintorchCoreAnswer<T>> {
 		return await this.store.read(async (parse) => {
-			const response = await this.send(request)
+			const { response, refusedWith } = await this.exchange(request)
 			if (!response) {
-				return undefined
+				return { answered: refusedWith !== undefined && notFoundStatuses.has(refusedWith), value: undefined }
 			}
 
+			// Read exactly once: a body is a stream to some transports, and a second read of it fails.
 			const payload = await response.text()
-			return !payload || payload.trim().length === 0 ? undefined : parse<T>(payload)
+			const value = !payload || payload.trim().length === 0 ? undefined : parse<T>(payload)
+			console.debug("PLAINTORCH called", request.path, value)
+			return { answered: true, value }
 		}, context)
 	}
 
@@ -203,6 +237,19 @@ export class PlaintorchCoreClient {
 		// answered with 200 and a payload, say — would otherwise pin a socket. The node transport already
 		// drains on its own; this covers any transport that does not.
 		await response?.text()
+		if (response) {
+			console.debug("PLAINTORCH called", request.path)
+		}
+
 		return response !== undefined
 	}
 }
+
+/** What {@link PlaintorchCoreClient.getJsonAnswer} reports: whether the core answered, and with what. */
+export interface PlaintorchCoreAnswer<T> {
+	readonly answered: boolean
+	readonly value: T | undefined
+}
+
+/** The refusals that are an answer in themselves: the core is saying there is nothing at that address. */
+const notFoundStatuses: ReadonlySet<number> = new Set([404, 410])

@@ -60,6 +60,25 @@ An `EntityRepository` coordinates reads and writes of one entity type against th
 ## Derived records
 Not everything a surface shows is an entity. The briefing, a note-to-entity resolution, a PUCK resolution, and the various listings are *views* over entities with no identity of their own. A `DerivedRepository` caches these under a key of the caller's choosing, with the same freshness and de-duplication machinery. The entities *inside* a derived record are still absorbed on the way through the client, so a listing and a surface showing one of its members individually agree without either knowing about the other; what the record adds is membership.
 
+## What a read can say
+A fetch has three possible answers, and they are not treated alike:
+- **A value.** Absorbed; the identity is counted as freshly resolved.
+- **Nothing.** The core answered, and there is nothing there. For an entity that is a *removal*; for a derived record it is an emptying.
+- **No answer.** The core could not be reached, or failed. Whatever is held stays exactly as it was, still stale, and is asked for again next time.
+
+The distinction is what keeps an outage from blanking the screen and a deletion from lingering on it — the two used to be the same "nothing came back". Only an authoritative not-found counts as nothing; silence, a timeout and a failing core are all "no answer".
+
+## Data states
+The store keeps one of three states for every identity it has a record for:
+- **Not loaded** — nothing has answered for it yet.
+- **Loaded** — the canonical instance is held.
+- **Removed** — the core answered that there is no such entity: deleted, or never there.
+
+A removal drops the canonical instance, tells everything observing the identity (and everything observing its type), and is noted in the same ledger local edits are, so a response issued *before* it — a listing still in flight that names the entity — is discarded for that identity rather than bringing it back. An entity absorbed under the same identity later is loaded again, as a new instance; whoever still held the old one was told to let go of it.
+
+What still *held* the removed entity is the store's policy. By default — and in PLAINTORCH — it is **detached**: taken out of the collections of every other entity the store holds and out of every derived record over it, each collection replaced by a new one without it and its observers told. A listing loses the row and an owner loses the member at the moment of removal rather than at the next refetch; a record that *was* the entity resolves to nothing. The alternative, per store or per type, is to **keep**: holders go on holding the instance until refreshed, for a surface that would rather show a removal than lose the row. Single references are left alone either way — but whatever holds one can ask the store whether the instance in its hand was removed, and the answer travels with the instance, so it holds for a surface that mounts after the removal and for an entity nothing was observing at the time.
+
+A derived record has no identity to remove. It distinguishes only *never answered* from *resolved*, where resolved may well mean resolved to nothing.
 ## Invalidation
 A write marks stale not only the entity it changed but everything downstream of it. What is downstream of each type is declared once, in a dependency table, resolved against the **canonical** instance — the only place the answer is complete (an objective carries no cycle of its own, but its canonical instance carries the executives that name every cycle holding it). Declaring this once is the point; the alternative is every write site knowing what else to refresh.
 
@@ -70,6 +89,8 @@ Two properties keep this cheap:
 # Staying Current
 ## The change feed
 The change feed keeps the store in step with writes the frontend did not make. The core announces an entity change — a type, an id, and an operation — over a long-lived `text/event-stream`, and the feed turns each announcement into an invalidation.
+
+A change announced as a deletion removes the entity from the store at once, so a surface showing it stops showing it without waiting; the revalidation that follows confirms the removal, or brings the entity back if the announcement was wrong.
 
 The feed is strictly an optimisation: every guarantee of the system except *promptness* holds with it switched off, which is why a feed that cannot be established or that drops is never treated as an error. It simply leaves revalidation to the freshness window and to whatever the host wires up on surface activation. When a connection is (re-)established, anything that happened while disconnected was missed, so everything is marked stale and whatever is on screen is refetched.
 
@@ -96,3 +117,5 @@ Two small controllers connect a component to the store:
 - **`EntityWatch`** is for a list item *handed* its entity as a property by an aggregate. That instance is already canonical, so the item only needs to learn when it changes — it fetches nothing.
 
 A surface that asks for an entity by a type name no repository serves would otherwise render blank forever, which is how a drifted type name hides: the surface looks empty rather than broken. Such a lookup is warned about once per type name instead.
+
+Each controller exposes the data states beside *loading* and *error*, as readable states of their own rather than something inferred from an undefined value: a reference says whether its entity is **not loaded** or **removed**, a derived reference whether its record is **not loaded**, and a watch whether the entity it was handed has since been **removed**. Surfaces render them deliberately. A banner whose entity was removed says so instead of going on showing the last instance; one whose entity could not be loaded says that — a statement about the connection, not the entity — and offers to try again; a panel built around a removed entity stands down whole, actions and editors included. The rule, in short: list items are removed, banners and the modals switch to the removed panel. A row or card that was *handed* its entity normally just disappears, because the listing or collection that rendered it has let go of the entity; one still standing — rendered from something the store cannot reach — is stood down (faded, deaf to the pointer) instead. The modals built around an entity — the full panel, the executive editor, the occurrence editor — watch the entity they are about and switch to the panel when it is removed.

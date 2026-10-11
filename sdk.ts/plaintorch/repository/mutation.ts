@@ -3,10 +3,20 @@ import type { EntityStore } from "./entityStore"
 import type { InvalidationScheduler } from "./invalidation"
 
 /**
- * Whether a write result means the core accepted it.
+ * Decides whether a write's result means the backend accepted it.
  *
- * The client reports a failed request by returning nothing rather than throwing, so an absent result — undefined,
- * null, or false — is a rejection and not merely an operation with no return value.
+ * This is the consumer's to declare, because it depends on how its client reports failure. A repository takes
+ * one for all of its write paths; a single `mutate` can override it.
+ */
+export type WriteSuccess = (result: unknown) => boolean
+
+/**
+ * The default {@link WriteSuccess}, for a client that reports a failed request by returning nothing rather than
+ * throwing: an absent result — undefined, null, or false — is a rejection and not merely an operation with no
+ * return value.
+ *
+ * A backend whose successful writes answer with nothing (a 204) needs a different test, or every accepted
+ * write would be rolled back.
  */
 export function isSuccessfulMutation(result: unknown): boolean {
 	return result !== undefined && result !== null && result !== false

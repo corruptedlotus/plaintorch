@@ -48,11 +48,35 @@ const modelValueConstructor = new ModelValueConstructor()
 /**
  * Constructs the SDK's model classes through `@a11d/api-dotnet`'s registry, which the `@model` decorators
  * fill as their modules load.
+ *
+ * A collection the core truncated is repaired on the way in. The core serializes with
+ * `ReferenceHandler.IgnoreCycles`, which writes `null` wherever an object would recur inside itself, so a
+ * back-reference arrives with a hole where its owner would be: asking for one objective returns its sprint, and
+ * that sprint's `objectives` is `[null]`. {@link plaintorchMergeableKeys} keeps such a collection from being
+ * merged over a real one, but an entity seen for the first time is adopted as constructed, and would hand its
+ * hole to whoever iterates it. So the holes are dropped here. The collection that results is incomplete rather
+ * than wrong to walk, and stays that way until a response that speaks for the collection fills it.
  */
 export const plaintorchModels: ModelConstructor = {
 	shallConstruct: (value) => modelValueConstructor.shallConstruct(value),
-	construct: (value) => modelValueConstructor.construct(value),
+	construct: (value) => modelValueConstructor.construct(withoutCycleHoles(value)),
 	isRegistered: (typeName) => ModelValueConstructor.modelConstructorsByTypeName.has(typeName)
+}
+
+/**
+ * A payload with the `null` entries taken out of its collections, or the payload itself when it has none.
+ * No PLAINTORCH contract carries a collection with a meaningful `null` in it, so one found there is a cycle hole.
+ */
+function withoutCycleHoles(payload: object): object {
+	let repaired: Record<string, unknown> | undefined
+	for (const [field, value] of Object.entries(payload)) {
+		if (Array.isArray(value) && value.includes(null)) {
+			repaired ??= { ...payload }
+			repaired[field] = value.filter(item => item !== null)
+		}
+	}
+
+	return repaired ?? payload
 }
 
 /**
@@ -110,5 +134,8 @@ function isUnloadedReference(field: string, payload: Record<string, unknown>): b
 export const plaintorchEntityPolicy: EntityPolicy = {
 	identify,
 	models: plaintorchModels,
-	mergeableKeys: plaintorchMergeableKeys
+	mergeableKeys: plaintorchMergeableKeys,
+	// A removed entity leaves the listings and collections that held it at once, for every type. Almost every
+	// surface would rather lose the row than show one for something that no longer exists.
+	removal: "detach"
 }

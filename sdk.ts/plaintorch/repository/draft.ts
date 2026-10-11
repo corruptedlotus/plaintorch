@@ -1,7 +1,7 @@
 import type { EntityStore } from "./entityStore"
 import type { EntityKey, EntityTypeName } from "./identity"
 import type { InvalidationScheduler } from "./invalidation"
-import { runWrite } from "./mutation"
+import { runWrite, type WriteSuccess } from "./mutation"
 
 /** Persists a draft's committed changes. Receives the changed fields and the reconciled canonical entity. */
 export type DraftPersist<T> = (patch: Partial<T>, entity: T) => Promise<unknown>
@@ -34,7 +34,8 @@ export class EntityDraft<T extends object> {
 		private readonly typeName: EntityTypeName,
 		private readonly id: string,
 		canonical: T,
-		private readonly invalidation?: InvalidationScheduler
+		private readonly invalidation?: InvalidationScheduler,
+		private readonly succeeded?: WriteSuccess
 	) {
 		// Copied through the same construction absorption uses, so the draft is a real instance of its class
 		// (getters, methods, prototype) rather than a plain spread that would drop them.
@@ -94,7 +95,7 @@ export class EntityDraft<T extends object> {
 			this.typeName,
 			this.id,
 			async () => await persist(patch, entity),
-			{ rollbackTo: snapshot }
+			{ rollbackTo: snapshot, succeeded: this.succeeded }
 		)
 
 		return ok

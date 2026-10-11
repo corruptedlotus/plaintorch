@@ -30,6 +30,8 @@ export interface ChangeFeedSink {
 	acceptAuthority(typeName: string, id: string): void
 	/** Queues an entity, and what depends on it, for revalidation. */
 	invalidate(typeName: string, id: string): void
+	/** Records that an entity no longer exists. */
+	remove(typeName: string, id: string): void
 }
 
 /** Reads one event's data into a change, or `undefined` when it does not describe one. */
@@ -197,7 +199,15 @@ export class ChangeFeed {
 			this.sink.acceptAuthority(change.type, change.id)
 		}
 
+		// Queued before the removal: what depends on an entity is read off its canonical instance, which a
+		// removal is about to drop.
 		this.sink.invalidate(change.type, change.id)
+
+		if (change.operation === "Deleted") {
+			// Told at once rather than left to the refetch, so a surface showing the entity stops showing it
+			// now. The refetch that follows confirms it, or brings the entity back if the announcement was wrong.
+			this.sink.remove(change.type, change.id)
+		}
 	}
 }
 

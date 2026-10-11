@@ -11,6 +11,7 @@ import type { PreferenceView } from "../preferences/contracts"
 import type { EntityRepository } from "../repository/entityRepository"
 import type { DerivedRepository } from "../repository/derivedRepository"
 import { RepositorySet } from "../repository/repositorySet"
+import { answered, answeringSdks } from "./answered"
 import { PlaintorchChangeFeed } from "./changeFeed"
 import { plaintorchDependents } from "./dependents"
 
@@ -138,36 +139,39 @@ export class PlaintorchRepositories extends RepositorySet {
 
 	public constructor(client: PlaintorchCoreClient, options: PlaintorchRepositoriesOptions = {}) {
 		super(client.store, { dependents: plaintorchDependents })
+		// Every fetcher reads through these rather than through the client's own SDKs, so a read the core did not
+		// answer comes back as unresolved, and what is on screen is kept, instead of coming back as emptiness.
+		const read = answeringSdks(client)
 
-		this.objectives = this.entity("Objective", (id) => client.objectives.get(id))
-		this.fates = this.entity("Fate", (id) => client.declaratives.getFate(id))
-		this.decrees = this.entity("Decree", (id) => client.declaratives.getDecree(id))
-		this.directives = this.entity("StellarDirective", (id) => client.directives.get(id))
-		this.lunarDirectives = this.entity("LunarDirective", (id) => client.directives.get(id))
-		this.onrush = this.entity("OnrushSprint", (id) => client.onrush.get(id))
-		this.executiveOrders = this.entity("ExecutiveOrder", (id) => client.onrush.getExecutiveOrder(id))
-		this.polaris = this.entity("PolarisCycle", (id) => client.polaris.get(id))
-		this.lore = this.entity("LorePage", (id) => client.lore.get(id))
-		this.checkpoints = this.entity("Checkpoint", (id) => client.dependencies.getCheckpoint(id))
+		this.objectives = this.entity("Objective", (id) => answered(() => read.objectives.get(id)))
+		this.fates = this.entity("Fate", (id) => answered(() => read.declaratives.getFate(id)))
+		this.decrees = this.entity("Decree", (id) => answered(() => read.declaratives.getDecree(id)))
+		this.directives = this.entity("StellarDirective", (id) => answered(() => read.directives.get(id)))
+		this.lunarDirectives = this.entity("LunarDirective", (id) => answered(() => read.directives.get(id)))
+		this.onrush = this.entity("OnrushSprint", (id) => answered(() => read.onrush.get(id)))
+		this.executiveOrders = this.entity("ExecutiveOrder", (id) => answered(() => read.onrush.getExecutiveOrder(id)))
+		this.polaris = this.entity("PolarisCycle", (id) => answered(() => read.polaris.get(id)))
+		this.lore = this.entity("LorePage", (id) => answered(() => read.lore.get(id)))
+		this.checkpoints = this.entity("Checkpoint", (id) => answered(() => read.dependencies.getCheckpoint(id)))
 
-		this.directiveList = this.derived(async () => await client.directives.list())
-		this.objectiveList = this.derived(async () => await client.objectives.list())
-		this.fateList = this.derived(async () => await client.declaratives.listFates())
-		this.decreeList = this.derived(async () => await client.declaratives.listDecrees())
-		this.loreList = this.derived(async () => await client.lore.list())
+		this.directiveList = this.derived(() => answered(() => read.directives.list()))
+		this.objectiveList = this.derived(() => answered(() => read.objectives.list()))
+		this.fateList = this.derived(() => answered(() => read.declaratives.listFates()))
+		this.decreeList = this.derived(() => answered(() => read.declaratives.listDecrees()))
+		this.loreList = this.derived(() => answered(() => read.lore.list()))
 
-		this.dependencyList = this.derived(async () => await client.dependencies.list())
-		this.checkpointList = this.derived(async () => await client.dependencies.listCheckpoints())
-		this.onrushCurrent = this.derived(async () => await client.onrush.getCurrent())
-		this.onrushPlanning = this.derived(async () => await client.onrush.getPlanning())
-		this.agenda = this.derived(async () => await client.polaris.getAgenda())
-		this.activeTimeframes = this.derived(async () => await client.directives.listActiveTimeframes())
-		this.preferences = this.derived(async () => await client.preferences.list())
+		this.dependencyList = this.derived(() => answered(() => read.dependencies.list()))
+		this.checkpointList = this.derived(() => answered(() => read.dependencies.listCheckpoints()))
+		this.onrushCurrent = this.derived(() => answered(() => read.onrush.getCurrent()))
+		this.onrushPlanning = this.derived(() => answered(() => read.onrush.getPlanning()))
+		this.agenda = this.derived(() => answered(() => read.polaris.getAgenda()))
+		this.activeTimeframes = this.derived(() => answered(() => read.directives.listActiveTimeframes()))
+		this.preferences = this.derived(() => answered(() => read.preferences.list()))
 
 		const resolution = { freshnessMs: options.resolutionFreshnessMs }
-		this.briefing = this.derived(async () => await client.system.getBriefing())
-		this.noteResolution = this.derived(async (path) => await client.system.resolveNote(path), resolution)
-		this.entityResolution = this.derived(async (puck) => await client.system.resolveEntity(puck), resolution)
+		this.briefing = this.derived(() => answered(() => read.system.getBriefing()))
+		this.noteResolution = this.derived((path) => answered(() => read.system.resolveNote(path)), resolution)
+		this.entityResolution = this.derived((puck) => answered(() => read.system.resolveEntity(puck)), resolution)
 
 		this.changeFeed = new PlaintorchChangeFeed(client, this)
 	}

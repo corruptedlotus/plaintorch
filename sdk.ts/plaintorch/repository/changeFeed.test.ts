@@ -13,7 +13,8 @@ function harness(open: Open, options?: ChangeFeedOptions) {
 		invalidateAll: () => { calls.push("invalidateAll") },
 		revalidateObserved: async () => { calls.push("revalidateObserved") },
 		acceptAuthority: (typeName, id) => { calls.push(`accept ${typeName}:${id}`) },
-		invalidate: (typeName, id) => { calls.push(`invalidate ${typeName}:${id}`) }
+		invalidate: (typeName, id) => { calls.push(`invalidate ${typeName}:${id}`) },
+		remove: (typeName, id) => { calls.push(`remove ${typeName}:${id}`) }
 	}
 	const feed = new ChangeFeed({ open }, sink, options)
 	return { feed, calls }
@@ -142,10 +143,30 @@ describe("ChangeFeed — dispatch", () => {
 	})
 
 	it("gives up the local claim before invalidating when the change is critical", async () => {
-		expect(await dispatched(...event({ type: "Objective", id: "O1", operation: "Deleted", critical: true }))).toEqual([
+		expect(await dispatched(...event({ type: "Objective", id: "O1", operation: "Modified", critical: true }))).toEqual([
 			"accept Objective:O1",
 			"invalidate Objective:O1"
 		])
+	})
+
+	it("removes a deleted entity at once — after queueing its invalidation, which reads its relations off the instance", async () => {
+		expect(await dispatched(...event({ type: "Objective", id: "O1", operation: "Deleted", critical: true }))).toEqual([
+			"accept Objective:O1",
+			"invalidate Objective:O1",
+			"remove Objective:O1"
+		])
+		expect(await dispatched(...event({ type: "Objective", id: "O1", operation: "Deleted" }))).toEqual([
+			"invalidate Objective:O1",
+			"remove Objective:O1"
+		])
+	})
+
+	it("removes nothing for an addition, a modification, or an event that names no operation", async () => {
+		expect(await dispatched(
+			...event({ type: "Objective", id: "O1", operation: "Added" }),
+			...event({ type: "Objective", id: "O2", operation: "Modified" }),
+			...event({ type: "Objective", id: "O3" })
+		)).toEqual(["invalidate Objective:O1", "invalidate Objective:O2", "invalidate Objective:O3"])
 	})
 
 	it("dispatches each event of a burst in order", async () => {

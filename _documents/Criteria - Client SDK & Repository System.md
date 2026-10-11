@@ -194,6 +194,78 @@ The identity map is bounded by a reachability sweep. `collectEntityKeys` walks a
 | The read closes when the request or the parse throws | fault | ✅ | `read.test.ts` |
 | The ledger prunes when the read settles, but not while an older read is in flight | fault | ✅ | `read.test.ts` |
 
+## Data states & read outcomes — `states.test.ts`
+A fetcher answers with a value, with an authoritative nothing (`undefined`), or with `unresolved` when no trustworthy answer came back. The store keeps one of three data states per identity — `not-loaded`, `loaded`, `removed`. The overriding invariants: an outage must never read as emptiness or as a deletion, and a removed entity must never be brought back by a response older than its removal.
+
+| Behaviour / Invariant | Kind | Status | Test ref |
+|---|---|---|---|
+| An identity is `not-loaded` until absorbed, whether unheard of or merely observed | happy | ✅ | `states.test.ts` |
+| `remove` drops the instance, marks an observed identity `removed`, bumps its version and notifies | happy | ✅ | `states.test.ts` |
+| An observed identity that never loaded can be removed (the backend says it does not exist) | edge | ✅ | `states.test.ts` |
+| An unobserved identity leaves no record behind; removing twice or the unknown is a no-op | edge | ✅ | `states.test.ts` |
+| A removal notifies the type's observers, so a live collection drops the member | happy | ✅ | `states.test.ts` |
+| A removed identity absorbed again is `loaded`, as a new instance | happy | ✅ | `states.test.ts` |
+| A response issued before the removal does not bring the entity back; one issued after does | fault | ✅ | `states.test.ts` (resurrection guard) |
+| `snapshot` / `patch` / `touch` / `restore` are inert on a removed identity | edge | ✅ | `states.test.ts` |
+| A removed identity is swept once nothing observes it | edge | ✅ | `states.test.ts` |
+| `wasRemoved(instance)` is true for the instance canonical at removal, observed or not, and after the identity is absorbed again | fault | ✅ | `states.test.ts` (late-mount / single-reference guard) |
+| `wasRemoved` answers for a single reference detaching left in place; false for anything not a removed entity | edge | ✅ | `states.test.ts` |
+| Freshness stamps live on the record: only a held identity is stamped; evicted with it; cleared by removal | fault | ✅ | `states.test.ts` (stamp-leak regression) |
+| `unresolved` keeps a held entity and is not counted as a fresh resolution | fault | ✅ | `states.test.ts` (failed-read-as-fresh regression) |
+| `unresolved` for a never-loaded identity leaves it `not-loaded` | edge | ✅ | `states.test.ts` |
+| An answer of nothing removes a held entity; marks an observed never-loaded one `removed` | happy | ✅ | `states.test.ts` |
+| A removed identity is asked for again and comes back when the backend has it | edge | ✅ | `states.test.ts` |
+| An answer of nothing does not remove an entity absorbed or changed while the request was in flight | fault | ✅ | `states.test.ts` (older-answer guard) |
+| `revalidateObserved` refetches what the repository resolved, not what only arrived in a listing | edge | ✅ | `states.test.ts` |
+| An invalidated entity stays eligible for `revalidateObserved` | edge | ✅ | `states.test.ts` |
+| Write success is the repository's to declare: default rejects an absent result on every write path | fault | ✅ | `states.test.ts` |
+| A repository (or a whole set) that accepts absent results accepts them on `mutate`, `commit` and a draft's `commit` | happy | ✅ | `states.test.ts` (204-backend regression) |
+| A single `mutate` can override the repository's test | edge | ✅ | `states.test.ts` |
+| Derived: `unresolved` keeps the last value, notifies nobody, leaves the record stale | fault | ✅ | `states.test.ts` (outage-blanks-view regression) |
+| Derived: an answer of nothing empties the record and notifies | happy | ✅ | `states.test.ts` |
+| Derived: `isResolved` tells never resolved from resolved to nothing; an unanswered record recovers | edge | ✅ | `states.test.ts` |
+| Derived `prune` drops unobserved records that are expired, stale or never resolved; spares the in-flight | happy/edge | ✅ | `states.test.ts` |
+| A set's sweep prunes first, so an expired unobserved view no longer pins its entities; an observed one always does | fault | ✅ | `states.test.ts` |
+| `ChangeFeed`: a `Deleted` event removes at once, after queueing its invalidation; other operations remove nothing | happy | ✅ | `changeFeed.test.ts` |
+
+## Removal reach — `detach.test.ts`
+What still holds an entity once it is removed is the store's policy: `"detach"` (the default, and PLAINTORCH's) takes it out of every collection the store can reach; `"keep"` touches nothing else. The overriding invariant under detach is that an observer told of the removal already finds the entity gone from everything it reads.
+
+| Behaviour / Invariant | Kind | Status | Test ref |
+|---|---|---|---|
+| `detachFrom` returns a new array without the instance; the same value, unchanged, when nothing held it | happy/edge | ✅ | `detach.test.ts` |
+| Every occurrence is taken out; a collection that did not hold it keeps its reference | edge | ✅ | `detach.test.ts` |
+| A collection is replaced on its owner at any depth short of another entity; the walk stops at other entities | happy/edge | ✅ | `detach.test.ts` |
+| A single reference is left pointing at the instance | edge | ✅ | `detach.test.ts` (documented boundary) |
+| Terminates on a cycle; does not write to a frozen holder | fault | ✅ | `detach.test.ts` |
+| A removal takes the entity out of an owner's collection as a new array, bumps and notifies the owner, leaves it stale | happy | ✅ | `detach.test.ts` |
+| An entity that did not hold it is not notified, not replaced, not stale | edge | ✅ | `detach.test.ts` |
+| An observer of the removed entity already finds it gone from its owners when told | fault | ✅ | `detach.test.ts` |
+| The owners' type observers are told along with the removed entity's | happy | ✅ | `detach.test.ts` |
+| Under `"keep"` nothing but the identity itself is touched; the mode can be given per type; the default is detach | happy/edge | ✅ | `detach.test.ts` |
+| A listing loses the row at once, as a new array, and notifies — without a refetch | happy | ✅ | `detach.test.ts` |
+| A record that did not hold it is untouched; a nested collection in a view loses it; every key lets go | edge | ✅ | `detach.test.ts` |
+| A record that *was* the entity resolves to nothing and is left stale | edge | ✅ | `detach.test.ts` |
+| PLAINTORCH: a listing loses the row, a sprint loses the objective, the current-sprint record empties — none refetched | happy | ✅ | `repos/outcomes.test.ts` |
+
+## PLAINTORCH outcomes — `repos/outcomes.test.ts`
+The same guarantees through the real client over a scripted transport (`repos/test-utils.ts`), so the path is the application's: transport, client, reviver, store.
+
+| Behaviour / Invariant | Kind | Status | Test ref |
+|---|---|---|---|
+| `getJsonAnswer`: a success (empty included) and a not-found (404 / 410) are answers | happy | ✅ | `repos/outcomes.test.ts` |
+| `getJsonAnswer`: silence, a 5xx and any other refusal are not; `getJson` keeps its return-nothing contract | fault | ✅ | `repos/outcomes.test.ts` |
+| A listing keeps what it holds through silence and a 500, and asks again next time | fault | ✅ | `repos/outcomes.test.ts` |
+| A listing empties on an empty answer; is not loaded, rather than empty, when never answered | happy/edge | ✅ | `repos/outcomes.test.ts` |
+| A record with nothing to name (no current sprint) resolves to nothing rather than staying unloaded | edge | ✅ | `repos/outcomes.test.ts` |
+| A note resolution keeps its last answer through an outage | fault | ✅ | `repos/outcomes.test.ts` |
+| An entity is kept when the core does not answer or is failing (500 / 503 / 409), and is not stamped fresh | fault | ✅ | `repos/outcomes.test.ts` |
+| An entity is removed when the core answers that it does not exist; an observed unknown PUCK reads `removed` | happy | ✅ | `repos/outcomes.test.ts` |
+| A deletion announced on the feed removes the entity at once and refreshes the listing that held it | happy | ✅ | `repos/outcomes.test.ts` |
+| An entity first seen as a back-reference is adopted without the cycle hole; a partly truncated collection keeps its members | fault | ✅ | `repos/outcomes.test.ts` (hole-reaches-consumer regression) |
+| A truncated collection still never replaces one a fuller response loaded | fault | ✅ | `repos/outcomes.test.ts` |
+| Over the fetch transport a body is read exactly once; a refusal and a boolean write drain without failing | fault | ✅ | `repos/outcomes.test.ts` (double-read regression) |
+
 ## Repository contract / drift guard — `repos/contract.test.ts`
 | Behaviour / Invariant | Kind | Status | Test ref |
 |---|---|---|---|
@@ -231,7 +303,7 @@ The identity map is bounded by a reachability sweep. `collectEntityKeys` walks a
 | `coreClient` opens the read before the request leaves; the response absorbs to the canonical instance | happy | ✅ | `coreClient.test.ts` |
 | `coreClient` discards a response superseded in flight; an authoritative read applies; the read closes on nothing / empty / refusal / throw | fault | ✅ | `coreClient.test.ts` |
 | A boolean write is not a read and consumes its body | fault | ✅ | `coreClient.test.ts` |
-| The non-ok path consumes the body | fault | ⏳ | — (socket-pin regression) |
+| The non-ok path consumes the body | fault | ✅ | `repos/outcomes.test.ts` (socket-pin regression) |
 
 ## Tier 3 — transport integration (planned; real in-process socket/pipe)
 | Behaviour / Invariant | Kind | Status | Test ref |
@@ -261,4 +333,8 @@ The identity map is bounded by a reachability sweep. `collectEntityKeys` walks a
 - **Socket pinning** — an undrained response body over the keep-alive pool exhausts it and looks like the core hanging; to be guarded by the Tier-3 transport suite.
 - **Hung request / dedup poisoning** — an unanswered request must settle as a bounded failure rather than poisoning an identity's in-flight entry forever; Tier-3.
 - **Invalidation settling / overlap** — `settled()` must not resolve before the flush, and flushes must not overlap; guarded by `invalidation.test.ts`.
-- **Unbounded growth** — MikroORM's identity-map warning, one level down. `changedAt` prunes on a low-water mark of in-flight reads — a marker is spent once no read predates it — bounding the ledger without ever reverting an edit a slower read could clobber; guarded by `prune.test.ts`. Store-*entity* eviction is a reachability sweep (`PlaintorchRepositories.sweep`) that drops only records neither observed nor reachable from a live view, respecting the canonical-instance guarantee; guarded by `eviction.test.ts`. It runs on a host-started periodic interval this version; three other triggers (idle-detected, on-refresh, memory-threshold) are recorded in PEP106 for a later pass, and further gains would need bounding the derived caches themselves.
+- **Outage read as emptiness** — a request the core did not answer must leave what is held in place, still stale, rather than blank a listing or count as a fresh read; guarded by `states.test.ts` and `repos/outcomes.test.ts`.
+- **Deleted entity still shown** — an entity the core says does not exist must leave the store and tell its observers, never linger as the last instance fetched; guarded by `states.test.ts` and `repos/outcomes.test.ts`.
+- **Outage read as deletion** — the reverse: only an authoritative not-found removes, never silence or a failing core; guarded by `repos/outcomes.test.ts`.
+- **Resurrection by a stale response** — a listing issued before a removal must not bring the entity back; guarded by `states.test.ts`.
+- **Cycle hole reaching a consumer** — a collection truncated by `IgnoreCycles` must not be adopted with its `null` in it; guarded by `repos/outcomes.test.ts`.- **Unbounded growth** — MikroORM's identity-map warning, one level down. `changedAt` prunes on a low-water mark of in-flight reads — a marker is spent once no read predates it — bounding the ledger without ever reverting an edit a slower read could clobber; guarded by `prune.test.ts`. Store-*entity* eviction is a reachability sweep (`PlaintorchRepositories.sweep`) that drops only records neither observed nor reachable from a live view, respecting the canonical-instance guarantee; guarded by `eviction.test.ts`. It runs on a host-started periodic interval this version; three other triggers (idle-detected, on-refresh, memory-threshold) are recorded in PEP106 for a later pass, and further gains would need bounding the derived caches themselves.

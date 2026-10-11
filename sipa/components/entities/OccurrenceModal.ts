@@ -9,7 +9,8 @@ import {
 	type EventiveOccurrenceRef,
 	type EventiveUpdate
 } from "@pleiades/sdk"
-import { core, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, type IconName } from ".."
+import { core, EntityWatch, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, type IconName } from ".."
+import "./EntityAbsence"
 import type { EditablePart } from "../editing/EditableDataLink"
 import "../editing/EditableDate"
 import "../editing/EditableTime"
@@ -53,6 +54,15 @@ function occurrenceOwnerId(target: OccurrenceTarget): string | undefined {
 }
 
 /** The glyph and label of the owning incentive, for the "navigate" affordance. */
+/** The owner's instance, when the occurrence was handed one along with its id; `undefined` when only the id is known. */
+function occurrenceOwnerEntity(target: OccurrenceTarget | undefined): unknown {
+	if (!target) {
+		return undefined
+	}
+
+	return target.kind === 'attentive' ? target.attentive.decree : target.eventive.fate ?? target.eventive.objective
+}
+
 function occurrenceOwner(target: OccurrenceTarget): { icon: IconName, label: string } {
 	if (target.kind === 'attentive') {
 		return { icon: 'decree', label: 'decree' }
@@ -147,6 +157,13 @@ export function openOccurrenceModal(target: OccurrenceTarget, changed?: (updated
 export class OccurrenceEditor extends Component {
 	@property({ type: Object }) target?: OccurrenceTarget
 
+	/**
+	 * Observes the declarative the occurrence belongs to, when the target carries it. An occurrence is a child
+	 * record of its decree, fate or objective; once that owner is removed there is nothing to resolve any more,
+	 * and the editor says so.
+	 */
+	private readonly owner = new EntityWatch(this, () => occurrenceOwnerEntity(this.target))
+
 	static override get styles() {
 		return css`
 			:host {
@@ -210,6 +227,10 @@ export class OccurrenceEditor extends Component {
 	protected override get template() {
 		const target = this.target
 		if (!target) return html``
+
+		if (this.owner.removed) {
+			return html`<p7t-entity-absence state='removed' puck=${occurrenceOwnerId(target) ?? ''}></p7t-entity-absence>`
+		}
 
 		const owner = occurrenceOwner(target)
 		const ownerId = occurrenceOwnerId(target)
