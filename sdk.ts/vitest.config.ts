@@ -24,10 +24,17 @@ export default defineConfig({
 			}
 		}
 	],
-	// `@corruptedlotus/local-repo` is linked from `/local-repo`; its `source` condition resolves it to TypeScript, as the
-	// bundles do, so no build of the package is needed before the suites run.
+	// `@corruptedlotus/local-repo` is linked from the sibling repository (`../../local-repo`); its `source` condition resolves it to
+	// TypeScript, as the bundles do, so no build of the package is needed before the suites run. The suites run under Node,
+	// where Vite resolves with its server-side conditions, so the condition goes there as well as on the client side.
 	resolve: {
 		conditions: ["source"]
+	},
+	ssr: {
+		resolve: {
+			conditions: ["source", "module", "node", "development|production"],
+			externalConditions: ["source", "node"]
+		}
 	},
 	test: {
 		include: ["plaintorch/**/*.test.ts"],

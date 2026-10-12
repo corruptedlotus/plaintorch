@@ -24,7 +24,7 @@ export default defineConfig({
 		}
 	],
 	resolve: {
-		// The repository package is linked from `/local-repo` and resolved to its TypeScript, as the bundles do. Its Lit
+		// The repository package is linked from the sibling repository (`../../local-repo`) and resolved to its TypeScript, as the bundles do. Its Lit
 		// bindings import `@a11d/lit`, which must be the one copy SIPA itself uses: a second Lit runtime would register its
 		// own base classes and directives, so the package is deduplicated onto this project's copy.
 		conditions: ["source"],

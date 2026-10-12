@@ -5,7 +5,7 @@ A living catalogue of what the TypeScript client SDK (`sdk.ts/`) — above all t
 **Status legend:** ✅ tested · ⏳ planned/pending · 🔲 not yet planned
 **Kind:** _happy_ (nominal), _edge_ (boundary/unusual input), _fault_ (must fail safely / reject)
 
-Tests live beside their subject as `*.test.ts`. The generic repository system is the package `@corruptedlotus/local-repo` in `/local-repo` (`npm test` there); the suites about what PLAINTORCH declares to it (its identifier, its merge rules, its dependents, its repositories, its client) are under `sdk.ts/plaintorch/repos/` and `sdk.ts/plaintorch/` (`npm test` in `sdk.ts`). All run under **Vitest**. The reactive core is pure and in-memory, so a suite needs no core process, socket, or DOM — a real `EntityStore` and the fakes in the package's `testing.ts` (`@corruptedlotus/local-repo/testing`: `makeEntity`, `flushMicrotasks`, `countingFetcher`, `recordingInvalidationTarget`) are the whole kit. The package's Lit bindings have a suite of their own under happy-dom (`local-repo/lit/bindings.test.ts`), and SIPA's wrappers theirs (`npm test` in `sipa`).
+Tests live beside their subject as `*.test.ts`. The generic repository system is the package `@corruptedlotus/local-repo` in its own repository beside this one (`npm test` there); the suites about what PLAINTORCH declares to it (its identifier, its merge rules, its dependents, its repositories, its client) are under `sdk.ts/plaintorch/repos/` and `sdk.ts/plaintorch/` (`npm test` in `sdk.ts`). All run under **Vitest**. The reactive core is pure and in-memory, so a suite needs no core process, socket, or DOM — a real `EntityStore` and the fakes in the package's `testing.ts` (`@corruptedlotus/local-repo/testing`: `makeEntity`, `flushMicrotasks`, `countingFetcher`, `recordingInvalidationTarget`) are the whole kit. The package's Lit bindings have a suite of their own under happy-dom (`local-repo/lit/bindings.test.ts`), and SIPA's wrappers theirs (`npm test` in `sipa`).
 
 > **Toolchain note.** Vite 8's default transform is oxc, which does not apply the SDK's legacy `@model` registration decorators. `vitest.config.ts` therefore runs the project's own TypeScript through esbuild first (a `pre` plugin using `transformWithEsbuild`, which honours `experimentalDecorators`). `transformWithEsbuild` is deprecated in Vite 8; the long-term alternative is to convert the six `@model('X')` decorators to post-class `model('X')(Class)` calls (the form `directives/models.ts` already uses for its second registration), which every transformer handles natively and which would retire both the esbuild devDependency and the plugin.
 
@@ -315,7 +315,7 @@ The same guarantees through the real client over a scripted transport (`repos/te
 | A timed-out GET retries once; a POST/PUT/DELETE does not | edge | ⏳ | — |
 | `stream()` bounds only the connect; the feed never occupies a pool slot | edge | ⏳ | — |
 
-## Lit bindings — `local-repo/lit/bindings.test.ts`
+## Lit bindings — the package's `lit/bindings.test.ts`
 The package's own suite: real `@a11d/lit` hosts under happy-dom over a bookshop store, with a native `<input>` driving the binder. Under Node, Lit resolves to its server build, so the suite installs the default binding property of native inputs itself.
 
 | Behaviour / Invariant | Kind | Status | Test ref |
@@ -340,7 +340,7 @@ SIPA's wrappers (the toast on a rejected write, the installed core's store) over
 | `EntityRef` reads not-loaded (core unreachable) and removed (core says gone), re-rendering to say so | fault | ✅ | `bindings.test.ts` |
 | `EntityRef.commit` broadcasts an accepted edit; rolls back a rejected one with a toast | happy/fault | ✅ | `bindings.test.ts` |
 | `EntityRef.fork` yields a draft once resolved, none before | edge | ✅ | `bindings.test.ts` |
-| `EntityRef.binder` runs the snapshot → send → rollback cycle through a real element | happy/fault | ✅ | `local-repo/lit/bindings.test.ts` (a native `<input>`; a SIPA editable in the harness stays 🔲) |
+| `EntityRef.binder` runs the snapshot → send → rollback cycle through a real element | happy/fault | ✅ | the package's `lit/bindings.test.ts` (a native `<input>`; a SIPA editable in the harness stays 🔲) |
 | `EntityWatch` re-renders a host handed an entity; `publish` broadcasts an in-place edit | happy | ✅ | `bindings.test.ts` |
 | `EntityWatch.removed` and the `entity-removed` attribute, also for a host mounted after the removal | fault | ✅ | `bindings.test.ts` |
 | `QueryRef.items` filters + orders the live type; re-renders on a member change, a new member, a removal | happy | ✅ | `bindings.test.ts` |

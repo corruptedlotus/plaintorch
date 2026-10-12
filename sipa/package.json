@@ -30,7 +30,7 @@
 		"@3mo/slot-controller": "^0.3.6",
 		"@3mo/tooltip": "^0.11.1",
 		"@a11d/lit": "^0.11.1",
-		"@corruptedlotus/local-repo": "file:../local-repo",
+		"@corruptedlotus/local-repo": "file:../../local-repo",
 		"@dagrejs/dagre": "^1.1.4",
 		"@open-draft/deferred-promise": "^3.0.0",
 		"@pleiades/sdk": "file:../sdk.ts",
