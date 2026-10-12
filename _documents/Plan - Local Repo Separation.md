@@ -85,7 +85,7 @@ The transport suite (Tier 3: socket pinning, timeouts over a real pipe) stays on
 - [x] **Documents.** The README moves with the package and is rewritten in domain-neutral terms around the fixture. A `.GENESIS.md` for the package; `sdk.ts/.GENESIS.md`, [[Clarification - Local Repo System]] and the Placement section of [[PEP106 - Frontend Repository System]] updated; the [[Phase 3A]] box ticked. *All done, and [[Criteria - Client SDK & Repository System]] gained the package's binding suite.*
 
 # Reserved for the error system
-The error system (server-side validation, an error registry) is deferred. This plan only decides where a failure *passes through*, and keeps each of those places opaque, so that system can arrive later without reshaping the library.
+The error system (server-side validation, an error registry) is deferred; its plan is [[Plan - Error System]] (2026-10-12), towards package version 0.2. This plan only decides where a failure *passes through*, and keeps each of those places opaque, so that system can arrive later without reshaping the library.
 
 **What this plan fixes:**
 - A read can say "no answer" (the `unresolved` sentinel). That is a statement about reachability, not an error model.

@@ -2,9 +2,31 @@
 	"name": "@corruptedlotus/local-repo",
 	"version": "0.1.0",
 	"description": "An identity-keyed store of canonical entity instances, typed repositories over any backend, and Lit bindings that keep every surface showing an entity in step — the frontend side of a one-authority-many-observers boundary.",
-	"license": "MIT",
+	"license": "0BSD",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/corruptedlotus/plaintorch.git",
+		"directory": "local-repo"
+	},
+	"homepage": "https://github.com/corruptedlotus/plaintorch/tree/main/local-repo#readme",
+	"bugs": {
+		"url": "https://github.com/corruptedlotus/plaintorch/issues"
+	},
+	"keywords": [
+		"identity-map",
+		"repository",
+		"entity-store",
+		"lit",
+		"reactive",
+		"cache",
+		"invalidation",
+		"sse"
+	],
 	"type": "module",
 	"sideEffects": false,
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
@@ -31,7 +53,8 @@
 	},
 	"files": [
 		"dist",
-		"README.md"
+		"README.md",
+		"LICENSE"
 	],
 	"peerDependencies": {
 		"@a11d/lit": "^0.11.1"

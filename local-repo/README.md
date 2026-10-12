@@ -316,3 +316,8 @@ canonical-instance guarantee.
   removal, eviction — through the generic pieces alone. `policy.test.ts` guards that the core imports nothing
   from outside the package and the bindings nothing but `@a11d/lit`.
 - `.GENESIS.md` records how the package came to be and how it works inside.
+
+## Licence
+
+0BSD: use, copy, modify and distribute it for any purpose, commercially or not, with no attribution required. The
+package is licensed on its own; the repository it lives in is GPL-3.0.
