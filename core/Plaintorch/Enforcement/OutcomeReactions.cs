@@ -182,16 +182,29 @@ public sealed class OutcomeReactions(
 			// A fate whose temporal activation is off (stopped) generates nothing, so it has no upcoming occurrence; an
 			// active or opted-out fate keeps generating and caches its next (PEP103 patch 6).
 			fate.NextOccurrence = TemporalActivation.IsActive(fate.Status) && !string.IsNullOrWhiteSpace(fate.Orbit)
-				? await orbitService.ComputeNextOccurrenceAsync(fate, now, cancellationToken)
+				? await ComputeNextOccurrenceAsync(orbitService, fate, now, cancellationToken)
 				: null;
 		}
 
 		foreach (var decree in decrees)
 		{
 			decree.NextOccurrence = TemporalActivation.IsActive(decree.Status) && !string.IsNullOrWhiteSpace(decree.Orbit)
-				? await orbitService.ComputeNextOccurrenceAsync(decree, now, cancellationToken)
+				? await ComputeNextOccurrenceAsync(orbitService, decree, now, cancellationToken)
 				: null;
 		}
+	}
+
+	/// <summary>
+	/// Computes one declarative's next occurrence in isolation (PEP103 I-124): a stored orbit that no longer resolves is
+	/// logged and caches none, so it never fails a save that merely touches its declarative. A write that sets such an
+	/// orbit is still refused where its cursor is reset, before this runs.
+	/// </summary>
+	private static async Task<DateTime?> ComputeNextOccurrenceAsync(PlaintorchOrbitService orbitService, Incentive incentive, DateTimeOffset now, CancellationToken cancellationToken)
+	{
+		DateTime? next = null;
+		await orbitService.IsolateAsync(incentive, "next-occurrence caching", async () =>
+			next = await orbitService.ComputeNextOccurrenceAsync(incentive, now, cancellationToken));
+		return next;
 	}
 
 	/// <summary>

@@ -1629,11 +1629,13 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
 
 ## Migrations
 - **I-124 · Stored orbits changed meaning in dev/phase3a, with no migration.** *(new in dev/phase3a)* dev/phase3a changed the orbit notation without migrating stored orbits or their states:
-  - It narrowed the bound syntax. A stored orbit that no longer parses fails everything that re-parses it, and only timeframe matching catches the failure: the whole rolling pass every hour (so nothing is hardened for anyone), the agenda read, every save touching it (SH-07), and a cycle begin, which by then has committed its start but not its note (defect, by reading; whether such orbits exist depends on the data).
-  - Implicit cycles for top-level indices, `%1` stepping and `>t` as the origin now apply to existing notations, so a state persisted as exhausted under the old reading (a top-level `d{2,4,6,8}@2`) resumes exhausted and never hardens again, while previews keep projecting it (unverified).
+  - It narrowed the bound syntax. Since Patch103.8 a stored orbit that no longer parses fails only its own owner: the passes skip it and log it (I-197), and a save that merely touches it caches no next occurrence. Two writes still re-read it and fail: an API resume of its fate or decree, which fast-forwards the cursor through it (DE-08), and an interaction with one of its occurrences, which previews it (MA-05) (defect, by reading; whether such orbits exist depends on the data).
+  - Implicit cycles for top-level indices, `%1` stepping and `>t` as the origin now apply to existing notations. A resumed snapshot that carries the old running counters re-derives its exhaustion, but one without them does not. Such a snapshot, persisted as exhausted under the old reading, resumes exhausted and never hardens again, while previews keep projecting it (by reading). Two kinds carry no counters:
+    - a limit-free stream the old reading ended (a top-level `d{2,4,6,8}`)
+    - one written after `37f4981` dropped the counters and before `fcf4e33` bound indices to their cycles (a top-level `d{2,4,6,8}@2`)
 
-  *Systematic: an orbit data migration, plus per-item isolation in the passes.*
-  Rows: MA-01, MA-03, MA-06, MA-08, DM-26, DM-27. Where: `OrbitEngine.cs:150-164`, `222-261`, `867-872`; `OrbitParser.cs:399-414`; `OrbitDays.cs:304-317`, `392-405`; `ProximityMaterializationService.cs:166-206`; `RollingMaterializationService.cs:42-63`; `PlaintorchOrbitService.cs:471-495`; `PolarisCycleApiService.cs:85-89`; `OrbitCycles.cs:35-52`.
+  *Systematic: an orbit data migration.*
+  Rows: DE-08, MA-05, MA-08, DM-26, DM-27. Where: `OrbitEngine.cs:150-164`, `222-261`, `867-872`; `OrbitParser.cs:399-414`; `OrbitDays.cs:304-317`, `392-405`; `OrbitCycles.cs:35-52`; `PlaintorchOrbitService.cs:257-265`; `StructureReactions.cs:306`; `OccurrenceHardeningService.cs:209`.
 - **I-125 · Vaults that ran the purge as v4→v5 skip the retirement.** *(changed by dev/phase3a)* On the intrinsic branch, the purge was the v4→v5 step. Such a vault runs it again as v5→v6 (it finds nothing) and never runs the start/end retirement, so its directive notes drop those keys only at their next rewrite. *Systematic: migration numbering.*
   Rows: MG-06, MG-07. Where: `DirectiveStartEndRetirementMigration.cs:30-36`; `IntrinsicDependencyPurgeMigration.cs:27-33`; `.DISCUSSION.md:1782-1786`.
 - **I-126 · The nesting removal left two schemas.** *(changed by dev/phase3a)* Databases that ran the rewritten RemoveIncentiveNesting keep an always-null `ParentIncentiveId`, with its self-referencing key, until the next rebuild of `Incentives`. Databases that ran the earlier version have neither, under the same history row, and cannot run its Down. One `.DISCUSSION.md` passage still says the migration drops the column. *Systematic: migration mechanics.*
@@ -1660,6 +1662,14 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: SH-05, SH-06, MA-06, MA-07. Where: `TimeframeCandidateService.cs:74-97`; `PlaintorchOrbitService.cs:334-351`, `471-496`.
 - **I-136 · The active lore spine is computed three ways and cached without its date.** The cached spine stamps lore responses, the briefing computes it fresh, and an unmapped `ListActiveAsync` computes it again. The cache is keyed by session generation and dropped only on async lore saves, though the spine depends on today's date, so `IsActive` stamps go stale at a day rollover until the next lore write; the `ExecuteUpdate` re-key bypasses the drop too (I-010). Today is the UTC date (I-159). *Systematic: a cached read projection; engine point 5's clock could drive the drop.*
   Rows: SH-27, LO-07, LO-08, DM-14. Where: `LoreActiveCache.cs:26-55`; `SystemApiService.cs:624-632`; `LorePageApiService.cs:51-57`, `268-283`; `LoreIndex.cs:36-38`; `LoreActiveCacheInterceptor.cs:25-69`.
+- **I-197 · A faulty stored orbit fails out of sight.** *(new in Patch103.8)* Each pass now resolves every fate's, decree's and timeframe's orbit in isolation. One that no longer parses or builds is skipped with a warning in the host log, and that warning is all there is:
+  - the rolling pass hardens none of its occurrences and clears its cached next occurrence
+  - the agenda and the cycle inclusions project none
+  - a beginning cycle does not reflect it
+  - a timeframe reads as non-matching (I-135)
+
+  No issue is raised and no read says why, while its note and its API record look healthy. The user can neither see the failure nor track it, and nothing tells them to fix the orbit. *Engine 4: a background pass surfaces a violation as an issue, here a standing one per owner whose stored orbit no longer resolves, raised where the guard logs it and cleared once the orbit resolves again.*
+  Rows: SH-07, MA-01, MA-03, MA-06, MA-07. Where: `PlaintorchOrbitService.cs:90-137`, `548-572`; `ProximityMaterializationService.cs:91-99`, `186-209`, `226-242`; `AgendaProjectionService.cs:102-116`, `136-149`; `OutcomeReactions.cs:198-208`; `TimeframeCandidateService.cs:76`.
 
 ## Activation and hosting
 - **I-137 · A malformed config.json stops the host.** The coordinator reads config.json every 2 s with no guard. A JSON error (a hand edit, or a read racing another writer) escapes `ExecuteAsync`, and by default a faulted background service stops the host (defect, by reading). *Systematic: activation and hosting.*

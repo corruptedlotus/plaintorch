@@ -29,6 +29,14 @@ namespace Pleiades.Plaintorch;
 /// and are only ever previewed against a day (<see cref="MatchesTimeframeDayAsync"/>), always on the vault default
 /// calendar (<see cref="ResolveDefaultCalendar"/>).
 /// </para>
+/// <para>
+/// A stored orbit is re-parsed every time it is resolved, and one that no longer parses or builds (a notation the engine
+/// has since narrowed, or a value written past validation) throws. The passes that resolve every owner in one go — the
+/// rolling harden-on-time pass, the agenda projection, next-occurrence caching, cycle-begin reflection and timeframe
+/// candidates — therefore run each owner's orbit work inside <see cref="IsolateAsync"/> (or the timeframe matcher's own
+/// guard), so a faulty orbit is logged and skipped and every other owner carries on (PEP103 I-124, user ruling
+/// 2026-10-30). Writes that set an orbit are not guarded: their refusal stays the save's own.
+/// </para>
 /// </remarks>
 public sealed class PlaintorchOrbitService(
 	PlainfraContext context,
@@ -67,6 +75,66 @@ public sealed class PlaintorchOrbitService(
 	/// <summary>Reads an instant on the clock an incentive's orbit runs on: its zone's, or this host's when it floats.</summary>
 	public static DateTime ClockOf(Incentive incentive, DateTimeOffset instant)
 		=> OccurrenceZones.Clock(ResolveTimeZone(incentive), instant);
+
+	/// <summary>
+	/// Determines whether an exception is a fault of a stored orbit itself rather than of the code around it: what the
+	/// parser, the engine build and resume, and the snapshot reader throw for a notation or state they cannot read.
+	/// </summary>
+	/// <remarks>
+	/// The parser and the bound checks throw <see cref="FormatException"/>, and an overlong number escapes the parser's
+	/// <c>int.Parse</c> as an <see cref="OverflowException"/> (PEP103 I-003). A snapshot of an unknown version throws
+	/// <see cref="NotSupportedException"/>, an unreadable one a <see cref="System.Text.Json.JsonException"/>, and a date
+	/// the calendar arithmetic cannot represent an <see cref="ArgumentException"/>. A null argument is a caller's bug, not
+	/// an orbit's, and is never taken for one.
+	/// </remarks>
+	public static bool IsOrbitFault(Exception exception)
+		=> exception is FormatException or OverflowException or NotSupportedException or System.Text.Json.JsonException
+			or ArgumentException and not ArgumentNullException;
+
+	/// <summary>
+	/// Runs one fate's or decree's orbit work — a seek, a preview or a next-occurrence computation, with whatever the
+	/// caller does with its result — in isolation: an orbit fault (<see cref="IsOrbitFault"/>) is logged with the owner's
+	/// kind, id and orbit and swallowed, so a pass over many owners skips the faulty one and carries on. Any other exception
+	/// propagates. Returns <see langword="false"/> when the orbit faulted.
+	/// </summary>
+	/// <param name="owner">The fate or decree whose orbit is resolved.</param>
+	/// <param name="pass">What is resolving it, for the log (for example "the rolling harden-on-time pass").</param>
+	/// <param name="work">The orbit work. A seek raises its fault before it advances the cursor, so a faulted owner is left as it was.</param>
+	public async Task<bool> IsolateAsync(Incentive owner, string pass, Func<Task> work)
+	{
+		ArgumentNullException.ThrowIfNull(owner);
+		ArgumentNullException.ThrowIfNull(work);
+		var orbit = owner switch
+		{
+			Fate fate => fate.Orbit,
+			Decree decree => decree.Orbit,
+			_ => null,
+		};
+		try
+		{
+			await work();
+			return true;
+		}
+		catch (Exception exception) when (LogIfOrbitFault(exception, owner.GetType().Name, owner.Id, orbit, pass))
+		{
+			return false;
+		}
+	}
+
+	/// <summary>
+	/// The exception filter behind every orbit guard: logs an orbit fault (<see cref="IsOrbitFault"/>) with its owner and
+	/// reports whether it is one, so only orbit faults are caught.
+	/// </summary>
+	private bool LogIfOrbitFault(Exception exception, string ownerKind, object ownerId, string? orbit, string pass)
+	{
+		if (!IsOrbitFault(exception))
+		{
+			return false;
+		}
+
+		logger.LogWarning(exception, "{OwnerKind} {OwnerId} has an orbit '{Orbit}' that no longer resolves; {Pass} skips it.", ownerKind, ownerId, orbit, pass);
+		return true;
+	}
 
 	/// <summary>
 	/// Validates a fate orbit: it must parse. Fates may use any granularity, and span-format orbits
@@ -474,7 +542,8 @@ public sealed class PlaintorchOrbitService(
 
 	/// <summary>
 	/// Matches one orbit-bearing timeframe against a day from its already looked-up state, lazily creating (and adding)
-	/// the state when it has none. A malformed orbit or state is logged and reads as non-matching.
+	/// the state when it has none. A malformed orbit or state (an orbit fault, <see cref="IsOrbitFault"/>) is logged with
+	/// the timeframe's id and orbit and reads as non-matching, so the other timeframes are still matched.
 	/// </summary>
 	private bool MatchTimeframeDay(Timeframe timeframe, DateOnly day, TimeframeOrbitScheduleState? state, IOrbitCalendar calendar, Action<TimeframeOrbitScheduleState>? created)
 	{
@@ -496,9 +565,8 @@ public sealed class PlaintorchOrbitService(
 
 			return OrbitDays.MatchesDay(state.StateJson, day, calendar);
 		}
-		catch (Exception exception) when (exception is FormatException or ArgumentException or InvalidOperationException or System.Text.Json.JsonException)
+		catch (Exception exception) when (LogIfOrbitFault(exception, nameof(Timeframe), timeframe.Id, orbit, $"timeframe matching for {day:yyyy-MM-dd}"))
 		{
-			logger.LogWarning(exception, "Timeframe {TimeframeId} has an unreadable orbit '{Orbit}'; it is treated as not matching {Day}.", timeframe.Id, orbit, day);
 			return false;
 		}
 	}
