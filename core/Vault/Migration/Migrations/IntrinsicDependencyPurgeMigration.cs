@@ -15,7 +15,8 @@ namespace Pleiades.Vault.Migration.Migrations;
 /// finish). Dependencies are the slave of structure, so it is the stored edges that give way: of the contradicted
 /// ones, the one whose removal resolves the most (the newest on a tie), round by round until the graph orders
 /// cleanly; the redundant ones all at once. Nothing on disk changes — dependencies live only in the database — but
-/// the vault version is what gates the one-time pass.
+/// the vault version is what gates the one-time pass. The planning is <see cref="DependencyOrdering.PlanPurge"/>'s, so it
+/// orders as the walk does today: a loop through a checkpoint, refused since I-034, gives way in this pass too.
 /// </remarks>
 public sealed class IntrinsicDependencyPurgeMigration(
 	PlainfraContext context,

@@ -6,7 +6,7 @@ namespace Pleiades.Tests.Core;
 /// <summary>
 /// The temporal cycle rule as a pure walk (PEP102 patch 9): the same two-sided begin/finish state space the recursive
 /// CTE used to walk on the connection, now in memory so derived edges take part, the contradicting path is named, and
-/// the purge can ask it repeatedly.
+/// the purge can ask it repeatedly. A checkpoint is one point in it, its unlock, which edges both enter and leave (I-034).
 /// </summary>
 public sealed class DependencyOrderingTests
 {
@@ -38,17 +38,69 @@ public sealed class DependencyOrderingTests
 	}
 
 	[Fact]
-	public void A_checkpoint_is_a_dead_end()
+	public void A_loop_through_a_checkpoint_is_refused(/* I-034 */)
 	{
-		var edges = new[]
-		{
-			Edge(1, D("A"), C("gate")),
-			Edge(2, C("gate"), D("B")),
-		};
-		// A → gate → B carries no orderable constraint across the gate, so B.finish < A.begin is not contradicted.
-		Assert.Null(DependencyOrdering.FindContradiction(edges, D("B"), null, D("A"), null));
-		// And an edge onto or out of a checkpoint can never close a loop itself.
-		Assert.Null(DependencyOrdering.FindContradiction(edges, D("B"), null, C("gate"), null));
+		// X.finish < C is in force; C < X.begin would put X's begin after its own finish, so X could never start.
+		var into = Edge(1, D("X"), C("C"));
+		var path = DependencyOrdering.FindContradiction([into], C("C"), null, D("X"), null);
+		Assert.NotNull(path);
+		Assert.Same(into, Assert.Single(path));
+		Assert.Equal("Directive:X.finish → Checkpoint:C.unlock", DependencyOrdering.Describe(path));
+
+		// The same loop asked from the other end.
+		var outOf = Edge(2, C("C"), D("X"));
+		Assert.Same(outOf, Assert.Single(DependencyOrdering.FindContradiction([outOf], D("X"), null, C("C"), null)!));
+
+		// A chain through the checkpoint orders its ends like a chain through a work item: A.finish < C < B.begin forbids
+		// B.finish < A.begin, and B.finish < C closes the loop at the checkpoint itself.
+		var chain = new[] { Edge(3, D("A"), C("C")), Edge(4, C("C"), D("B")) };
+		Assert.Equal(2, DependencyOrdering.FindContradiction(chain, D("B"), null, D("A"), null)!.Count);
+		Assert.NotNull(DependencyOrdering.FindContradiction(chain, D("B"), null, C("C"), null));
+	}
+
+	[Fact]
+	public void A_loop_through_two_checkpoints_is_refused(/* I-034 */)
+	{
+		// Checkpoints chained to each other: X.finish < C1 < C2, so C2 < X.begin loops.
+		var checkpoints = new[] { Edge(1, D("X"), C("C1")), Edge(2, C("C1"), C("C2")) };
+		Assert.Equal(2, DependencyOrdering.FindContradiction(checkpoints, C("C2"), null, D("X"), null)!.Count);
+
+		// With a work item between them: X.finish < C1 < Y.begin < Y.finish < C2, so C2 < X.begin loops as well.
+		var spanned = new[] { Edge(1, D("X"), C("C1")), Edge(2, C("C1"), O("Y")), Edge(3, O("Y"), C("C2")) };
+		var path = DependencyOrdering.FindContradiction(spanned, C("C2"), null, D("X"), null);
+		Assert.NotNull(path);
+		Assert.Equal(spanned, path);
+
+		// Checkpoints alone: C1 < C2 forbids C2 < C1, which would hold both locked for good.
+		Assert.NotNull(DependencyOrdering.FindContradiction([Edge(1, C("C1"), C("C2"))], C("C2"), null, C("C1"), null));
+	}
+
+	[Fact]
+	public void A_checkpoint_is_one_point_that_orders_cleanly_when_nothing_loops(/* I-034 */)
+	{
+		// C < X.begin and Y.finish < C: Y.finish < C < X.begin is a plain chain.
+		Assert.Null(DependencyOrdering.FindContradiction([Edge(1, C("C"), D("X"))], O("Y"), null, C("C"), null));
+
+		// X.begin < C < X.finish fits inside X's own span: the checkpoint is a point, not a vector, but X is one.
+		var inside = new[] { Edge(1, D("X"), C("C"), DependencyTrigger.OnBegin) };
+		Assert.Null(DependencyOrdering.FindContradiction(inside, C("C"), null, D("X"), DependencyConstraint.ToFinish));
+
+		// Two items sharing one checkpoint impose nothing on each other beyond what runs through it: A.finish < C and
+		// B.finish < C leave A and B free, so A.finish < B.begin and B.begin < A.finish are each possible.
+		var shared = new[] { Edge(1, D("A"), C("C")), Edge(2, D("B"), C("C")) };
+		Assert.Null(DependencyOrdering.FindContradiction(shared, D("A"), null, D("B"), null));
+		Assert.Null(DependencyOrdering.FindContradiction(shared, D("B"), DependencyTrigger.OnBegin, D("A"), DependencyConstraint.ToFinish));
+	}
+
+	[Fact]
+	public void A_stored_loop_through_a_checkpoint_is_contradicted_and_planned_for_the_purge(/* I-034 */)
+	{
+		var older = Edge(1, D("X"), C("C"));
+		var newer = Edge(2, C("C"), D("X"));
+		var bystander = Edge(3, C("C"), D("B"));
+
+		Assert.Equal([older, newer], DependencyOrdering.Contradicted([older, newer, bystander]).Select(candidate => candidate.Edge));
+		Assert.Same(newer, Assert.Single(DependencyOrdering.PlanPurge([older, newer, bystander], candidates => candidates.Select(candidate => candidate.Edge))));
 	}
 
 	[Fact]

@@ -1358,8 +1358,6 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: SH-21, LC-02, DM-04, DM-05. Where: `AttentiveResolution.cs:6-20`; `EventiveResolution.cs:7-28`; `DeclarativeApiService.cs:437-440`, `480-483`; `EventiveLifecyclePhaseSource.cs:30-39`.
 
 ### Gates and dependencies
-- **I-034 · Dependency loops through a checkpoint are accepted.** The ordering walk treats a checkpoint as a dead end, so `X.finish → checkpoint → X.begin` is not refused, and it deadlocks X. *Engine 1: edge legality declared over checkpoints too.*
-  Rows: LC-14, DP-07. Where: `DependencyOrdering.cs:45-51`, `86-88`.
 - **I-035 · An eventive edge can name a slot that never resolves.** The service requires a slot but never checks it against the owner's orbit. When the slot is inexact, SH-17 hardens the day's first occurrence while the edge keeps the requested slot, and endpoint matching is exact. SH-17 also swallows a cancelled fate or an off-orbit day. Either way the edge can never be satisfied. *Engine 1: a valid-reference invariant on edges refuses it up front.*
   Rows: SH-17, LC-07, DP-02. Where: `DependencyApiService.cs:387-400`; `OccurrenceHardeningService.cs:105-144`, `156-157`, `219`; `DependencyEndpoints.cs:182-191`.
 - **I-037 · The condition switch and update disagree.** The switch refuses a checkpoint with no external condition. The generic update sets or clears it freely, including requiring and meeting it in one call. *Engine 1: one transition rule for the condition.*

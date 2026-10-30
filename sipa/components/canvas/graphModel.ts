@@ -123,15 +123,15 @@ export function isIntrinsic(dependency: Dependency): boolean {
 	return dependency.origin === DependencyOrigin.Intrinsic
 }
 
-/** A side of the begin/finish axis: 0 begin, 1 finish. A checkpoint has neither. */
-type Side = 0 | 1
+/** A side in the ordering walk: 0 a work item's begin, 1 its finish, 2 a checkpoint's unlock (its single point). */
+type Side = 0 | 1 | 2
 
-function triggerSide(ref: EndpointRef, trigger: DependencyTrigger | undefined): Side | undefined {
-	return ref.kind === DependencyEndpointKind.Checkpoint ? undefined : (trigger ?? DependencyTrigger.OnFinish) === DependencyTrigger.OnBegin ? 0 : 1
+function triggerSide(ref: EndpointRef, trigger: DependencyTrigger | undefined): Side {
+	return ref.kind === DependencyEndpointKind.Checkpoint ? 2 : (trigger ?? DependencyTrigger.OnFinish) === DependencyTrigger.OnBegin ? 0 : 1
 }
 
-function constraintSide(ref: EndpointRef, constraint: DependencyConstraint | undefined): Side | undefined {
-	return ref.kind === DependencyEndpointKind.Checkpoint ? undefined : (constraint ?? DependencyConstraint.ToBegin) === DependencyConstraint.ToFinish ? 1 : 0
+function constraintSide(ref: EndpointRef, constraint: DependencyConstraint | undefined): Side {
+	return ref.kind === DependencyEndpointKind.Checkpoint ? 2 : (constraint ?? DependencyConstraint.ToBegin) === DependencyConstraint.ToFinish ? 1 : 0
 }
 
 /**
@@ -142,7 +142,8 @@ function constraintSide(ref: EndpointRef, constraint: DependencyConstraint | und
  * asserts the source's triggering side comes before the target's constrained side; it is impossible when, walking
  * forward from the target's constrained side — along each edge from its source's triggering side to its target's
  * constrained side, and from any node's begin to its own finish — the source's triggering side is already reachable.
- * A checkpoint has no side, so it is a dead end. Strictly finer than node-level acyclicity: a loop whose begins and
+ * A checkpoint is a single point, its unlock, which edges both enter and leave, so a loop through it is refused like
+ * one through a work item (I-034). Strictly finer than node-level acyclicity: a loop whose begins and
  * finishes order out (a directive beginning before its own child begins, say) is allowed, and with the intrinsic
  * edges on the canvas that distinction is the everyday case.
  */
@@ -155,9 +156,6 @@ export function wouldContradict(
 ): boolean {
 	const originSide = triggerSide(source, trigger)
 	const seedSide = constraintSide(target, constraint)
-	if (originSide === undefined || seedSide === undefined) {
-		return false
-	}
 
 	const stateKey = (node: string, side: Side) => `${node}#${side}`
 	const origin = stateKey(endpointKey(source), originSide)
@@ -165,10 +163,6 @@ export function wouldContradict(
 	for (const edge of edges) {
 		const from = triggerSide(sourceRef(edge.dependency), edge.dependency.trigger ?? undefined)
 		const to = constraintSide(targetRef(edge.dependency), edge.dependency.constraint ?? undefined)
-		if (from === undefined || to === undefined) {
-			continue
-		}
-
 		const key = stateKey(edge.source, from)
 		const known = outgoing.get(key)
 		const next = { node: edge.target, side: to }

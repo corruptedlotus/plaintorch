@@ -8,20 +8,22 @@ namespace Pleiades.Orchestration;
 /// <remarks>
 /// An edge asserts <c>source.trigger</c> comes before <c>target.constraint</c>. It is impossible when the graph already
 /// orders them the other way: when, walking forward in time from the target's constrained side, the source's
-/// triggering side is reachable. The walk lives in a two-sided state space (each node a begin and a finish) over three
-/// steps: an edge carries its source's triggering side to its dependant's constrained side; a node's begin precedes its
-/// own finish; and the start is the target's constrained side. A checkpoint has no side — being one-shot, its only phase
-/// (its unlock, a finish) is implied, so its trigger and constraint are empty — so it is a dead end and drops out of the
-/// begin→finish step on its own. The walk does not yet order through a checkpoint's finish (PEP101 made that finish
-/// explicit; the walk predates it). This is strictly finer than
-/// node-level acyclicity: a node cycle whose begins and finishes order out (A.begin → B.begin → A.finish) is allowed.
-/// It used to run as a recursive CTE on the connection; it walks in memory now so derived edges take part and the
-/// contradicting path can be named.
+/// triggering side is reachable. The walk lives in a state space of sides over three steps: an edge carries its
+/// source's triggering side to its dependant's constrained side; a work item's begin precedes its own finish; and the
+/// start is the target's constrained side. A work item (an objective, a stellar directive, a fate, an eventive
+/// occurrence) is a vector of two sides, its begin leading to its finish. A checkpoint is a single point (user ruling,
+/// 2026-10-30): being one-shot, its only event is its unlock, so its trigger and constraint are empty and it is one
+/// state, the <em>unlock</em>, which the edges into it reach and the edges out of it leave. A loop through one or more
+/// checkpoints is therefore refused wherever the same loop through a work item would be: <c>X.finish → C → X.begin</c>
+/// orders X's begin after its own finish. This is strictly finer than node-level acyclicity: a node cycle whose begins
+/// and finishes order out (A.begin → B.begin → A.finish) is allowed. It used to run as a recursive CTE on the
+/// connection; it walks in memory now so derived edges take part and the contradicting path can be named.
 /// </remarks>
 public static class DependencyOrdering
 {
 	private const int Begin = 0;
 	private const int Finish = 1;
+	private const int Unlock = 2;
 
 	/// <summary>
 	/// Finds the ordering a prospective edge would contradict: the edges that already carry the target's constrained
@@ -30,9 +32,9 @@ public static class DependencyOrdering
 	/// </summary>
 	/// <param name="edges">The edges already in force, stored and derived.</param>
 	/// <param name="source">The prospective edge's prerequisite endpoint.</param>
-	/// <param name="trigger">Its trigger; <see langword="null"/> resolves to finish, and stays empty for a checkpoint.</param>
+	/// <param name="trigger">Its trigger; <see langword="null"/> resolves to finish, and is ignored for a checkpoint, which triggers on its unlock.</param>
 	/// <param name="target">The prospective edge's dependant endpoint.</param>
-	/// <param name="constraint">Its constraint; <see langword="null"/> resolves to begin, and stays empty for a checkpoint.</param>
+	/// <param name="constraint">Its constraint; <see langword="null"/> resolves to begin, and is ignored for a checkpoint, which is gated on its unlock.</param>
 	public static IReadOnlyList<Dependency>? FindContradiction(
 		IReadOnlyCollection<Dependency> edges,
 		EndpointRef source,
@@ -44,21 +46,11 @@ public static class DependencyOrdering
 
 		var origin = new State(source, TriggerSide(source, trigger));
 		var seed = new State(target, ConstraintSide(target, constraint));
-		// A checkpoint end has no side to reach or to start from, so the edge cannot close a temporal loop.
-		if (origin.Side is null || seed.Side is null)
-		{
-			return null;
-		}
 
 		var outgoing = new Dictionary<State, List<Dependency>>();
 		foreach (var edge in edges)
 		{
 			var from = new State(edge.Source, TriggerSide(edge.Source, edge.Trigger));
-			if (from.Side is null)
-			{
-				continue;
-			}
-
 			if (!outgoing.TryGetValue(from, out var list))
 			{
 				list = [];
@@ -84,14 +76,14 @@ public static class DependencyOrdering
 				foreach (var edge in edgesOut)
 				{
 					var next = new State(edge.Target, ConstraintSide(edge.Target, edge.Constraint));
-					// A checkpoint target is a dead end: nothing carries on from a side it does not have.
-					if (next.Side is not null && via.TryAdd(next, (current, edge)))
+					if (via.TryAdd(next, (current, edge)))
 					{
 						pending.Enqueue(next);
 					}
 				}
 			}
 
+			// Only a work item is a vector; a checkpoint's unlock is a single point and takes no step of its own.
 			if (current.Side == Begin)
 			{
 				var finish = current with { Side = Finish };
@@ -220,7 +212,7 @@ public static class DependencyOrdering
 			: $"{endpoint.Kind}:{endpoint.Id}";
 	}
 
-	private static string SideName(int? side) => side switch
+	private static string SideName(int side) => side switch
 	{
 		Begin => "begin",
 		Finish => "finish",
@@ -245,21 +237,22 @@ public static class DependencyOrdering
 		return path;
 	}
 
-	/// <summary>The side an edge's source triggers on: begin or finish, or none for a checkpoint.</summary>
-	private static int? TriggerSide(EndpointRef source, DependencyTrigger? trigger)
+	/// <summary>The side an edge's source triggers on: begin or finish, or a checkpoint's unlock.</summary>
+	private static int TriggerSide(EndpointRef source, DependencyTrigger? trigger)
 	{
 		return source.Kind == DependencyEndpointKind.Checkpoint
-			? null
+			? Unlock
 			: trigger == DependencyTrigger.OnBegin ? Begin : Finish;
 	}
 
-	/// <summary>The side an edge's target is gated on: begin or finish, or none for a checkpoint.</summary>
-	private static int? ConstraintSide(EndpointRef target, DependencyConstraint? constraint)
+	/// <summary>The side an edge's target is gated on: begin or finish, or a checkpoint's unlock.</summary>
+	private static int ConstraintSide(EndpointRef target, DependencyConstraint? constraint)
 	{
 		return target.Kind == DependencyEndpointKind.Checkpoint
-			? null
+			? Unlock
 			: constraint == DependencyConstraint.ToFinish ? Finish : Begin;
 	}
 
-	private readonly record struct State(EndpointRef Node, int? Side);
+	/// <summary>A state of the walk: a work item's begin or finish, or a checkpoint's unlock.</summary>
+	private readonly record struct State(EndpointRef Node, int Side);
 }

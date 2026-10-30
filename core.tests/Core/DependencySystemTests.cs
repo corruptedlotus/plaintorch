@@ -302,18 +302,72 @@ public sealed class DependencySystemTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Logical_possibility_does_not_trip_over_checkpoint_endpoints(/* PEP102 */)
+	public async Task Logical_possibility_orders_through_a_checkpoint_as_one_point(/* PEP102, I-034 */)
 	{
 		var a = await Directive(api => api.CreateStandaloneAsync("A", cancellationToken: Ct));
 		var b = await Directive(api => api.CreateStandaloneAsync("B", cancellationToken: Ct));
 		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Gate", cancellationToken: Ct));
 
-		// A checkpoint carries no side (its one phase, the unlock, is implied), so it is a dead end in the ordering walk: a
-		// chain A → gate → B carries no orderable constraint across the gate, and every edge is accepted rather than the
-		// null side aborting the query.
+		// A checkpoint is a single point, its unlock: a chain A.finish < gate < B.begin is accepted like any chain...
 		var into = await Deps(api => api.CreateAsync(DirectiveRef(a.Id), CheckpointRef(checkpoint.Id), cancellationToken: Ct));
 		var outOf = await Deps(api => api.CreateAsync(CheckpointRef(checkpoint.Id), DirectiveRef(b.Id), cancellationToken: Ct));
 		Assert.True(into.Id > 0 && outOf.Id > 0);
+
+		// ...and closing it back onto A is refused, the path naming the checkpoint's unlock.
+		var looping = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+			Deps(api => api.CreateAsync(DirectiveRef(b.Id), DirectiveRef(a.Id), cancellationToken: Ct)));
+		Assert.Contains("logically impossible", looping.Message);
+		Assert.Contains($"Checkpoint:{checkpoint.Id}.unlock", looping.Message);
+
+		// X.finish < checkpoint < X.begin would deadlock X, so it is refused too.
+		var x = await Directive(api => api.CreateStandaloneAsync("X", cancellationToken: Ct));
+		var loop = await Deps(api => api.CreateCheckpointAsync("Loop", cancellationToken: Ct));
+		await Deps(api => api.CreateAsync(DirectiveRef(x.Id), CheckpointRef(loop.Id), cancellationToken: Ct));
+		await Assert.ThrowsAsync<InvalidOperationException>(() =>
+			Deps(api => api.CreateAsync(CheckpointRef(loop.Id), DirectiveRef(x.Id), cancellationToken: Ct)));
+
+		// Through two checkpoints: X.finish < loop < relay, so relay < X.begin is refused.
+		var relay = await Deps(api => api.CreateCheckpointAsync("Relay", cancellationToken: Ct));
+		await Deps(api => api.CreateAsync(CheckpointRef(loop.Id), CheckpointRef(relay.Id), cancellationToken: Ct));
+		await Assert.ThrowsAsync<InvalidOperationException>(() =>
+			Deps(api => api.CreateAsync(CheckpointRef(relay.Id), DirectiveRef(x.Id), cancellationToken: Ct)));
+
+		// Not a loop: the gate's prerequisites gain another (Y.finish < gate < B.begin).
+		var y = await Directive(api => api.CreateStandaloneAsync("Y", cancellationToken: Ct));
+		var another = await Deps(api => api.CreateAsync(DirectiveRef(y.Id), CheckpointRef(checkpoint.Id), cancellationToken: Ct));
+		Assert.True(another.Id > 0);
+	}
+
+	[Fact]
+	public async Task A_stored_loop_through_a_checkpoint_is_purged_by_the_next_structural_save(/* PEP102.9, I-034 */)
+	{
+		var x = await Directive(api => api.CreateStandaloneAsync("X", cancellationToken: Ct));
+		var unrelated = await Directive(api => api.CreateStandaloneAsync("Unrelated", cancellationToken: Ct));
+		var checkpoint = await Deps(api => api.CreateCheckpointAsync("Gate", cancellationToken: Ct));
+
+		// Written straight to the table, as a vault stored them before I-034: X.finish < gate < X.begin.
+		var ids = await Vault.QueryAsync(async context =>
+		{
+			var older = new Dependency { SourceKind = DependencyEndpointKind.Directive, SourceId = x.Id, TargetKind = DependencyEndpointKind.Checkpoint, TargetId = checkpoint.Id };
+			var newer = new Dependency { SourceKind = DependencyEndpointKind.Checkpoint, SourceId = checkpoint.Id, TargetKind = DependencyEndpointKind.Directive, TargetId = x.Id };
+			context.Dependencies.Add(older);
+			await context.SaveChangesAsync(Ct);
+			context.Dependencies.Add(newer);
+			await context.SaveChangesAsync(Ct);
+			return (Older: older.Id, Newer: newer.Id);
+		});
+		Assert.Equal(2, await Vault.QueryAsync(context => context.Dependencies.CountAsync(Ct)));
+
+		// A status change anywhere in the backlog runs the purge, and with no contradicted edge touching what moved it
+		// falls back to every contradicted one: the newer edge of the loop goes, on the record.
+		await Directive(api => api.ShiftStellarWorkflowAsync(unrelated.Id, new StellarDirectiveWorkflowShift(DirectiveStatus.Active), Ct));
+
+		var remaining = await Vault.QueryAsync(context => context.Dependencies.AsNoTracking().Select(dependency => dependency.Id).ToListAsync(Ct));
+		Assert.Equal(ids.Older, Assert.Single(remaining));
+		var audit = await Vault.QueryAsync(context => context.AuditLogEntries.AsNoTracking()
+			.Where(entry => entry.Action == "dependency.purge")
+			.ToListAsync(Ct));
+		Assert.Equal(ids.Newer.ToString(System.Globalization.CultureInfo.InvariantCulture), Assert.Single(audit).SubjectId);
 	}
 
 	[Fact]
