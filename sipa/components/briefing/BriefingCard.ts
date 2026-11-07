@@ -53,9 +53,9 @@ export class BriefingCard<T> extends CardComponent {
 				filter: blur(1.5px);
 			}
 
-			p7t-rising-stars::part(stage) {
-				filter: blur(3.5px);
-				opacity: .25;
+			p7t-rising-stars.backdrop::part(stage) {
+				filter: blur(3px);
+				opacity: .3;
 			}
 
 			.mask {
@@ -177,13 +177,13 @@ export class BriefingCard<T> extends CardComponent {
 			case 'rising-stars':
 				return html`
 					<p7t-rising-stars class='backdrop'
-						bubble-size='20' wind='0' max-width='70' max-height='50' density='.4' pop-chance='.2'>
+						bubble-size='20' wind='3' max-width='80' max-height='25' density='.6' pop-chance='.2'>
 					</p7t-rising-stars>
 				`
 			case 'rising-embers':
 				return html`
 					<p7t-rising-embers class='backdrop'
-						wind='2' turbulence='.8' density='1.2' base-glow='0' max-width='70' max-height='50' ember-size='6' spark-chance='.08'>
+						wind='2' turbulence='.8' density='1.5' base-glow='0' max-width='80' max-height='25' ember-size='6' spark-chance='.08'>
 					</p7t-rising-embers>`
 			default:
 				return nothing

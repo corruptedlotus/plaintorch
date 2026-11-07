@@ -13,6 +13,7 @@ interface Particle {
 	readonly group: SVGGElement
 	readonly circle: SVGCircleElement
 	star?: SVGPathElement
+	star2?: SVGPathElement
 	/** Rising, or burst. */
 	burst: boolean
 	/** Milliseconds spent in the current phase. */
@@ -71,13 +72,26 @@ export class RisingStars extends ParticleStageBase {
 		return css`
 			${super.styles}
 
-			.dot, .star {
+			.dot {
+				--p7t-bubble-radiance: 0%;
+				fill: color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)), var(--background-modifier-form-field) var(--p7t-bubble-radiance));
+				stroke-width: 3;
+				stroke: var(--text-warning);
+				stroke-opacity: var(--p7t-bubble-glow);
+			}
+
+			.star {
+				fill: var(--background-modifier-form-field);
+			}
+
+			.star2 {
 				fill: var(--p7t-flare-accent, var(--interactive-accent));
 			}
 
 			.ring {
 				fill: none;
-				stroke: var(--p7t-flare-accent, var(--interactive-accent));
+				opacity: .2;
+				stroke: var(--text-warning);
 			}
 		`
 	}
@@ -141,12 +155,13 @@ export class RisingStars extends ParticleStageBase {
 		const largest = Math.max(smallest, setting(this.popMax, .5, 0, Infinity) * Math.sqrt(this.width * this.height) / 2)
 		particle.ringRadius = smallest + (largest - smallest) * u
 		particle.ringDuration = 380 + 420 * u
-		particle.ringStroke = (2.5 + 4 * u) * this.scale
+		particle.ringStroke = (3 + 5 * u) * this.scale
 		particle.tilt = random(52, 68)
 		particle.circle.setAttribute('class', 'ring')
 		particle.circle.setAttribute('r', '0')
 		particle.circle.setAttribute('stroke-width', particle.ringStroke.toFixed(2))
 		particle.star = svgElement('path', { class: 'star', d: star(particle.radius * 1.4 + (6 + 10 * u) * this.scale), opacity: 0 }, particle.group)
+		particle.star2 = svgElement('path', { class: 'star2', d: star(particle.radius * .5 + (6 + 10 * u) * this.scale), opacity: 0 }, particle.group)
 	}
 
 	/** Moves a particle on by a frame; false once it is spent and removed. */
@@ -158,6 +173,8 @@ export class RisingStars extends ParticleStageBase {
 		particle.group.setAttribute('transform', translate(particle.x + particle.drift, particle.startY + (particle.endY - particle.startY) * eased))
 		if (!particle.burst) {
 			particle.circle.setAttribute('r', Math.max(0, particle.radius * (1 - progress)).toFixed(2))
+			particle.circle.style.setProperty('--p7t-bubble-radiance', `${Math.max(0, progress * 100 - 30)}%`)
+			particle.circle.style.setProperty('--p7t-bubble-glow', `${Math.random()}`)
 			if (progress < 1) {
 				return true
 			}
@@ -195,8 +212,12 @@ export class RisingStars extends ParticleStageBase {
 		}
 
 		const angle = particle.tilt * (1 - Math.pow(1 - Math.min(1, elapsed / life), 3))
+		const sizef = size * 3 * Math.pow(1 - Math.min(1, elapsed / life), 3)
+		const sizex = size * (1 - Math.pow(1 - Math.min(1, elapsed / life), 3))
 		particle.star!.setAttribute('opacity', opacity.toFixed(3))
-		particle.star!.setAttribute('transform', `rotate(${angle.toFixed(2)}) scale(${size.toFixed(3)})`)
+		particle.star2!.setAttribute('opacity', opacity.toFixed(3))
+		particle.star!.setAttribute('transform', `rotate(${angle.toFixed(2)}) scale(${sizef.toFixed(3)})`)
+		particle.star2!.setAttribute('transform', `rotate(${(-8 * angle).toFixed(2)}) scale(${sizex.toFixed(3)})`)
 		if (elapsed >= life) {
 			particle.group.remove()
 			return false
