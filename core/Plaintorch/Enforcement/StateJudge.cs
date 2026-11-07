@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Pleiades.Orchestration;
 using Pleiades.Orchestration.Lifecycle;
+using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.State;
 using Pleiades.Puck;
 using Pleiades.Vault.Database;
@@ -29,7 +30,11 @@ namespace Pleiades.Plaintorch.Enforcement;
 /// <item><description>what a sprint or cycle that has ended holds is history (<c>onrush.ended</c>, <c>polaris.ended</c>):
 /// its executives, reflectives, executive orders and checkpoints are neither added, changed, moved nor removed, and nothing
 /// joins it;</description></item>
-/// <item><description>an executive works at an objective or a started decree (<c>polaris.incentive</c>).</description></item>
+/// <item><description>an executive works at an objective or a started decree (<c>polaris.incentive</c>);</description></item>
+/// <item><description>a dependency added names only an occurrence that resolves (<c>dependency.occurrence</c>, PEP103 I-035):
+/// each eventive endpoint resolves to a hardened row at exactly its slot, already stored or hardened by the save's structure
+/// phase (SH-17). A stopped fate, a fate with no orbit, or a slot its orbit starts no occurrence at would leave the edge
+/// unsatisfiable, gating its target for good.</description></item>
 /// </list>
 /// </para>
 /// <para>
@@ -175,6 +180,11 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 	/// </summary>
 	public const string IncentiveRule = "polaris.incentive";
 
+	/// <summary>
+	/// The rule keeping a dependency from naming an occurrence that resolves to no row at exactly its slot.
+	/// </summary>
+	public const string OccurrenceRule = "dependency.occurrence";
+
 	private static readonly IReadOnlyDictionary<Type, EndpointShape> Shapes = new Dictionary<Type, EndpointShape>
 	{
 		[typeof(Objective)] = new(DependencyEndpointKind.Objective, nameof(Objective.DirectiveId)),
@@ -197,6 +207,7 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 		await JudgeRunsAsync(context, judgement, cancellationToken);
 		await JudgeEndedAsync(context, judgement, cancellationToken);
 		await JudgeIncentivesAsync(context, judgement, cancellationToken);
+		await JudgeOccurrenceReferencesAsync(context, judgement, cancellationToken);
 
 		var changes = await ReadChangesAsync(context, cancellationToken);
 		var joins = await MembershipReactions.JoinsAsync(context, cancellationToken);
@@ -480,6 +491,38 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 					judgement.Refuse(IncentiveRule, subject, $"{Name(subject)} cannot be worked in a Polaris cycle; only objectives and decrees are.");
 					break;
 			}
+		}
+	}
+
+	/// <summary>
+	/// Every dependency the save adds names only occurrences that resolve (PEP103 I-035): each eventive endpoint must find a
+	/// row at exactly its slot, either stored or hardened by the structure phase (SH-17), which hardens only an exact, live
+	/// occurrence of a temporally active fate. Endpoints match exactly, so an edge naming a slot with no row could never be
+	/// satisfied and would gate its target for good; it is refused at every level, and the message says why. A stored edge
+	/// is not judged again: the v8→v9 vault migration settled those once.
+	/// </summary>
+	private static async Task JudgeOccurrenceReferencesAsync(PlainfraContext context, StateJudgement judgement, CancellationToken cancellationToken)
+	{
+		var endpoints = context.ChangeTracker.Entries<Dependency>()
+			.Where(entry => entry.State == EntityState.Added)
+			.SelectMany(entry => new[] { entry.Entity.Source, entry.Entity.Target })
+			.Where(endpoint => endpoint.Kind == DependencyEndpointKind.Eventive)
+			.Distinct()
+			.ToList();
+		foreach (var endpoint in endpoints)
+		{
+			if (endpoint.RecurrenceId is not null
+				&& await DependencyEndpoints.ResolveEntityAsync(context, endpoint, cancellationToken) is Eventive)
+			{
+				continue;
+			}
+
+			var fate = context.ChangeTracker.Entries<Fate>()
+				.FirstOrDefault(entry => entry.State != EntityState.Deleted && string.Equals(entry.Entity.Id, endpoint.Id, StringComparison.OrdinalIgnoreCase))?.Entity
+				?? await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == endpoint.Id, cancellationToken);
+			var (_, message) = OccurrenceHardeningService.DescribeUnresolvedReference(fate, endpoint);
+			var subject = fate is null ? new StateSubject(nameof(Fate), endpoint.Id) : SubjectOf(fate);
+			judgement.Refuse(OccurrenceRule, subject, message);
 		}
 	}
 
