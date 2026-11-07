@@ -3,6 +3,12 @@ status: accepted
 patches:
   - Patch103.1 - Lifecycle States and Enforcement Levels
   - Patch103.2 - The State Interceptor
+  - Patch103.3 - Onboard and the Moves on Joining
+  - Patch103.4 - Reopened Dependencies and How Cycles Run
+  - Patch103.5 - What Is Done Is Done
+  - Patch103.6 - Initial States and Temporal Activation
+  - Patch103.7 - Terminatives
+  - Patch103.8 - Closing Phase 3A
 assignee: Copilot 🤖
 phase: 3a
 ---
@@ -665,6 +671,103 @@ The vault needs no migration: occurrences are database-only.
 
 ### Open edges
 Every open edge of Patch103.2 still stands. An objective's, a directive's and a checkpoint's own banners do not show their terminative yet.
+
+## Patch103.8 - Closing Phase 3A
+The rulings that closed Phase 3A, built: loops through a checkpoint are refused, a faulty stored orbit fails alone, rewards follow one amount rule, an edge on an occurrence that never comes is refused, and a fate finishes by passing. Removed work keeping its rewards is the intended behaviour (I-042, settled). The engine then moved onto `dev/phase3a`, with the repository system as `@corruptedlotus/local-repo`.
+
+### Loops through a checkpoint (I-034)
+In loop detection a work item (an objective, a stellar directive, a fate, an eventive occurrence) is a vector, its begin leading to its finish, and a checkpoint is a single point: its unlock, which edges both enter and leave (user ruling). `DependencyOrdering` and the canvas's `wouldContradict` now refuse a loop through one or more checkpoints wherever the same loop through a work item would be refused, so the API and the canvas refuse edges they used to accept.
+
+A loop already stored is removed by the save-time purge, lazily: on the next save anywhere that changes a stellar directive's or an objective's parent or status, it gives up its newest edge, on the audit record. A vault upgrading from v5 loses its checkpoint loops in the v5→v6 pass, which shares the planning (`DependencyOrdering.PlanPurge`).
+
+### Orbit faults fail in isolation (I-124)
+A stored orbit that no longer parses or builds used to throw out of every pass over all owners: the hourly harden-on-time pass, the agenda and the cycle inclusions, the next-occurrence cache on save, and a cycle begin, which by then had committed its start. Each owner's orbit is now resolved in isolation, in the orbit projection engine, and the watcher is left alone (user ruling).
+- `PlaintorchOrbitService.IsolateAsync` wraps one fate's or decree's orbit work, and timeframe matching shares its filter. `IsOrbitFault` catches only orbit faults: a `FormatException`, the parser's `OverflowException` (I-003), the snapshot's `NotSupportedException` and `JsonException`, and an `ArgumentException` from calendar arithmetic.
+- A faulty owner is logged with its kind, id and orbit, and skipped. It keeps its cursor, hardens and projects nothing, and caches no next occurrence; the rolling pass clears a stale one.
+- Writes stay unguarded: setting a bad orbit still fails its save (I-003, I-072), and so do a resume's fast-forward and an interaction with one of its occurrences.
+- The fault is only logged, so the user can neither see nor track it (I-197).
+
+### Rewards (I-042, I-043)
+- **Refunds act on the transaction only** (user ruling). Taking a reward back removes the grant held under its key, whatever the work's amount is now, 0 included; only granting reads the amount. The per-reflective decree reward used to check for 0 before revoking, so a decree lowered to 0 left its grant behind; it now revokes first.
+- **A grant of 0 books no row**, settlement included. The settlement grants only on entering the finish from outside it, so a 0-amount row is no longer needed to mark it settled. An executed executive moved to another cycle takes its grant along and is never granted anew for the move.
+- **Removed work keeps its rewards** (user ruling). Work removed or deleted keeps what it earned, and a cycle whose remaining reflectives are all executed earns its collection reward. I-042 is settled in place.
+- A toll of 0 is a payment, not a refund, so the ruling does not reach it: the checkpoint stays locked until a 0 payment books a 0-amount debit row (I-043).
+
+### Occurrence slots that never resolve (I-035)
+An edge on an occurrence that never comes is refused (user ruling). It is built into the state engine, the one place every writer of a `Dependency` passes, as two pieces that move together:
+- **SH-17 hardens only exact slots.** `OccurrenceHardeningService.EnsureReferencedEventiveAsync` returns the row at exactly the named slot: one already hardened, or a new one when the fate is temporally active and its orbit starts an occurrence at exactly that moment, previewed without seeking. It no longer snaps to the day's first occurrence, and swallows nothing: a slot that resolves to nothing is left unresolved.
+- **The judge refuses the edge.** `dependency.occurrence` is a systemic rule, so every enforcement level refuses it, with 409 on the API. Every edge added in the save whose eventive endpoint resolves to no row at its slot is refused, saying why: the fate is stopped, it has no orbit, no occurrence starts at that time, or no fate has the id (`DescribeUnresolvedReference`).
+- **The API keeps shape checks only**: a slot is present and the owner is a fate.
+- **SH-18** also releases the edges naming the slot of any eventive row the save deletes on its own.
+
+The interaction path still snaps an occurrence addressed by its day alone: its one caller addresses it that way.
+
+### Fates pass (I-191)
+A fate never finished, so an edge from it under the default trigger (OnFinish) held its target for good. A fate's finish is now `FateStatus.Passed` (finished), both inferred and selected (user ruling).
+- **Inferred.** `FateReactions`, the last step of the structure phase, passes a running fate once it has fully passed: its orbit yields no occurrence whose window closes after now, and every hardened eventive, manual or orbit-born, has closed. It is evaluated on a save that creates a running fate, changes its orbit or status, or adds, changes or removes one of its eventives, and on the hourly rolling pass for fates that pass by time alone. An inference is the engine's own move, made only where `StateJudge.AllowsAsync` holds, so a finish edge into the fate keeps it running at every level.
+- **Coming back.** An inferred pass comes back when a manual occurrence still to come is added, or when the orbit changes so that it begets an occurrence still to close that no hardened row answers for. It returns to the started status it passed from, so an opted-out fate stays opted out. The comeback is judged as the edit's own move back: Auto cascades, Warn asks (409), Block refuses.
+- **Selected.** A selected pass acts like Stopped: nothing projects or hardens, and no next occurrence is cached. Only a new manual occurrence still to come brings it back; one wholly in the past is refused.
+- **Inferred or selected** is held in two database-only columns, `Fate.PassInferred` and `Fate.PassedFrom`, carried over a frontmatter sync by the watcher and cleared whenever the fate is not Passed.
+- **Before passing**, what time brought of the orbit hardens, so the fate's history stays as rows once its projection stops. Addressing an occurrence a switched-off fate already hardened finds that row before refusing.
+- **Records.** Passing records Finished, and coming back Started. A history kind created straight into a progress state records each state on the way. A fate's finish can now be planned.
+- **Compensations.** A fate's default finished status is Passed, so under Auto a compensation can select it; one moving a Passed fate back restores the status it passed from.
+
+### Migration
+- **Vault v8→v9** (`DependencyOccurrenceRepairMigration`) settles the stored edges on eventive slots once. Where a slot is an exact, live occurrence of an active fate, it hardens the row; it releases every other such edge. Each settled edge gets an audit row (`dependency.repair` or `dependency.release`, with the reason). It is a vault migration because hardening needs an orbit preview.
+- **The `FatePassedStatus` database migration** adds the two pass columns. Going down takes an inferred pass back to the status it left, and a selected one to Stopped.
+- **On the first rolling pass after the upgrade**, fates whose orbits ran out before Passed existed pass together, each recorded and its note rewritten with that save.
+
+### The client
+- **SDK.**
+  - `FateStatus.Passed`, and a fate's `passInferred` and `passedFrom`.
+  - The client answers state enforcement in its one exchange with the core, now that the repository system is `@corruptedlotus/local-repo`.
+- **SIPA.**
+  - The Passed status descriptor and a `state-passed` glyph. The state bubble reads the core's lifecycle table, so Passed can be selected with no change to it.
+  - The canvas refuses a loop through a checkpoint, as the core does.
+
+### Onto dev/phase3a
+The state system and these fixes merged onto `dev/phase3a` (`claude/phase3a-integration`), behind the local-repo branch.
+- `IsReflectionPausedAsync`, dev's replacement of `IsLunarHierarchyActiveAsync`, asks the lifecycle state, so only a started lunar directive lets reflection run (Patch103.6).
+- The agenda and the rolling pass take `TemporalActivation`'s statuses, and still leave reflect-decrees out.
+- Where dev's surfaces still opened the status picker, they open the state bubble.
+
+The inventory (§1–§12) and the entries' line numbers stay at the `b1697b9` baseline.
+
+### User rulings
+- In loop detection, work items are vectors (begin → finish) and a checkpoint is a single point, and the same rules follow from that.
+- Faulty stored orbits are solved in the orbit projection engine: each orbit resolves in isolation, so only the faulty one fails, and the watcher is left alone.
+- Reward refunds act on the Celestron transaction only, never on the work item's Celestron value.
+- Removed or deleted work keeps its rewards, and a cycle's remaining all-done reflectives still earn the collection reward: the intended behaviour.
+- An edge on an unresolvable occurrence slot is refused, in the most sensible and relevant pipeline while the validation pipeline is under scrutiny.
+- A fate's finish is "Passed", inferred and selected:
+  - it switches to Passed once all its eventives have fully passed;
+  - a manual occurrence added, or an orbit change that begets future instances, switches it back to active;
+  - selected by hand, it acts just like Stopped, except that a new manual occurrence added in the future can still revert it.
+
+### Calls made without a ruling
+- **Stored checkpoint loops are purged lazily**, at the next structural save; no new vault migration makes it eager.
+- **Faults are caught by kind**, and `InvalidOperationException` is no longer taken for a timeframe orbit fault, since EF raises it for real bugs.
+- **The judge reads no orbit** for `dependency.occurrence`: it looks only for the row SH-17 left, which is why the two move together. Stored edges are not judged again; the v9 migration settled them once.
+- **A row that already exists satisfies an edge whatever its fate is now**: stopping a fate stops what it still has to generate, not what has hardened.
+- **"Fully passed"** reads each window as an eventive's lifecycle reads it (`Epoch.ClosesAt`). A fate with neither an orbit nor an eventive never passes; one whose orbit yields nothing at all does.
+- **"Back to active"** is the started status the fate passed from; Active for one that passed from Stopped.
+- **An inferred pass also comes back** when an eventive change leaves it no longer fully passed, since the pass was inferred from those windows.
+- **A fully passed fate moved back by the user passes again in the same save**, which departs from Patch103.3's "a status the save sets itself wins"; the rolling pass would undo the move within the hour anyway.
+
+### Ledger
+- **Struck:** I-034, I-035.
+- **Trimmed to what still holds:** I-043, I-124, I-191.
+- **Settled:** I-042.
+- **New:** I-197.
+
+172 entries remain.
+
+### Open edges
+- Every open edge of Patch103.2 still stands.
+- A faulty stored orbit is only logged (I-197).
+- A move back the engine re-infers as Passed looks accepted to the client: the state bubble closes while the fate stays Passed, with no word of why.
+- The rolling pass skips a fate that still caches a next occurrence, so one whose next slot was hardened and moved into the past passes only once that slot's time has gone by, or on a save.
+- Each inference probes the judge, which reads the whole dependency graph; the first pass after an upgrade does so once per exhausted fate.
 
 # Inventory: state enforcement in the core
 Every piece of core logic that changes state the caller did not directly ask to change (**auto-mutation**), or that refuses, skips or silently drops an operation because of a state rule (**rejection**). Taken on 2026-10-02, and brought up to date on 2026-10-04 at `b1697b9`: the PEP101 state polish and the intrinsic dependencies, rebased onto `dev/phase3a`. Line numbers refer to that commit. Rules that dev/phase3a added are marked *(dev/phase3a)*. IDs are stable: a new rule takes the next free number in its prefix, wherever its row sits.
