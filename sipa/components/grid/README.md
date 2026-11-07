@@ -23,7 +23,8 @@ reaches the row unchanged, since a `GridRow` is the node spread with the grid's 
 | The **columns**: definitions, and what the user did to them (width, order, visibility) | the controller (`columns`) |
 | **Treegrid semantics** on the grid, the header and the rows (`role`, `aria-level`, `aria-setsize`, `aria-posinset`, `aria-expanded`, `columnheader`) | the controller, stamped onto the parts it is handed |
 | Rendering: the sticky header, the column tracks, the row elements, the FAB | `GridBase` |
-| A row's cells, bindings, entity watch, context menu, drag and drop, double-click | the row element (`GridItemBase` and its variants) |
+| The rows' tab stop, and moving the focus between rows | `GridBase` |
+| A row's cells, bindings, entity watch, context menu, drag and drop, double-click, its own keys | the row element (`GridItemBase` and its variants) |
 
 The builders emit a **tree of `GridNode`s**. A node's `children` hold its sub-nodes, and its `guides` name the
 lining of each indent lane, so the row can draw the lanes itself. The controller walks `children`. Its expansion
@@ -85,7 +86,7 @@ CSV export. They are inert here:
 - **Cell registration (`grid.cell`)**, and with it arrow-key cell navigation. The controller's cell keyboard
   grammar acts on any key event inside a registered cell. It turns Enter into a click on the cell, which swallows a
   focused button's activation. It also moves between cells on arrow keys and copies the whole cell on Ctrl+C, even
-  inside the text fields the cells are full of. Row-level keyboard navigation needs a design of its own. Cells carry
+  inside the text fields the cells are full of. The grid moves between rows instead (see "Keyboard"). Cells carry
   `role='gridcell'` themselves.
 - **Row reordering and selection.** Rows move by reparenting, through the row's own drag and drop (see
   `../transfer/README.md`) or the "Move to…" row of the entity's context menu, which opens the directive picker
@@ -126,7 +127,8 @@ icon, title and cells, but keeps its indent lanes and action columns at full str
 Double-clicking a row's open space opens its details: `GridItemBase.openDetails()`, which by default opens the entity's
 full banner in a modal (`openEntityEditor`, the context menu's **Edit**). A variant overrides `openDetails` to open
 something else or nothing. The world heading has no entity and opens nothing. The gesture itself is
-`DoubleClickController` (`../design/DoubleClickController.ts`), which any component can declare.
+`DoubleClickController` (`../design/DoubleClickController.ts`), which any component can declare. Enter on a focused row
+opens the same details (see "Keyboard").
 
 - **Open space** is anywhere no part of the row answers a press of its own: the indent lanes, a childless row's notch,
   the room around the title and in the cells, plain labels (lore's level), and the title itself while it is idle,
@@ -148,3 +150,26 @@ something else or nothing. The world heading has no entity and opens nothing. Th
   `dblclick` a web view may add afterwards is ignored. Rows set `touch-action: manipulation` so a double tap is not
   taken for a zoom. A long press (the context menu) and a press-and-hold (lifting for drag) make no click, so neither
   collides with it.
+
+## Keyboard
+
+The rows are reached the way a tree's are: one row in the tab order, and the arrows moving the focus between rows.
+
+- **One tab stop.** `GridBase` gives the row last focused or pressed `tabindex=0` and every other row `-1`, so Tab
+  reaches the grid's rows once rather than once per row. Before any row was focused or pressed, the first row holds
+  it. A press moves the tab stop without taking the focus, so the mouse behaves as before. Rows without an entity (the
+  world heading) are passed over and carry no `tabindex`.
+- **The row's own keys** (`GridItemBase.onKeyDown`): Enter opens its details (once, however long it is held), the right
+  arrow opens a closed row, and the left arrow closes an open one.
+- **The grid's keys** (`GridBase.onRowKeyDown`), for what the row leaves unanswered: Up and Down step to the row above
+  or below, Home and End to the first and last, the right arrow from an open row to its first child, and the left arrow
+  from a row that does not close to its parent. The left arrow never steps to the world heading. An arrow at either end
+  is still claimed, so the page does not scroll out from under the focused row.
+- **Only while a row itself has the focus.** A key pressed in a field or a control inside the row reaches that field
+  alone: the arrows inside a title being edited move its caret, and Enter commits it. Keys with a modifier are left
+  alone.
+- **The ring.** A row reached by keyboard wears an accented outline (`:focus-visible`); a focused row is scrolled clear
+  of the sticky heading row by its `scroll-margin-block-start`.
+- Not done: typeahead, PageUp and PageDown, and a key that starts editing the title. On a focused row the platform's
+  context-menu key (Shift+F10, the Menu key) is meant to raise the row's menu through `ContextMenuController`; that was
+  not verified, because the browser pane's synthetic keys do not raise it.

@@ -202,6 +202,21 @@ export abstract class InteractionBubbleBase<TData, TOptions extends InteractionB
 		return false
 	}
 
+	/**
+	 * Dismisses the bubble showing if it was raised from inside `container` (see {@link isRaisedFrom}), which resolves its
+	 * prompt with the starting data. Answers whether there was one. A trigger whose own second press cannot prompt again
+	 * (a field already busy with the bubble's edit) closes its bubble through this instead.
+	 */
+	static dismissRaisedFrom(container: Node): boolean {
+		const showing = InteractionBubbleBase.current
+		if (!showing || !InteractionBubbleBase.isRaisedFrom(container)) {
+			return false
+		}
+
+		showing.dismiss()
+		return true
+	}
+
 	/** What the bubble shows and, for an edit bubble, edits. Starts as the prompt's starting data, or the blank data. */
 	@property({ attribute: false }) data: TData
 	/** What the bubble was prompted with. A subclass reads its own options from here, each with a fallback. */
