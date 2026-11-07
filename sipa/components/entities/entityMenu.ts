@@ -1,8 +1,10 @@
-import { typeNameOf } from '@pleiades/sdk'
+import { typeNameOf, type Directive } from '@pleiades/sdk'
 import {
 	canMoveEntity, core, deleteConfirmation, moveEntity, navigateToEntity, removeConfirmation, type ContextMenuAction,
 	type ContextMenuEntry, type ContextMenuSpec, type GridEntity
 } from '..'
+import type { ContextMenuSubmenu } from '../design/ContextMenu'
+import { canCreateUnder, creationMenuEntries, directiveCreationKinds } from '../grid/entityActions'
 import { EntityEditModal } from './EntityEditModal'
 import { toast } from '../../host'
 
@@ -27,6 +29,16 @@ export const entityMenuEntries = {
 	/** Opens the note the entity is the authority for. */
 	openNote: (entity: InteractableEntity): ContextMenuAction =>
 		({ label: 'Open note', icon: 'lucide:file-text', run: () => navigateToEntity(entity.id) }),
+
+	/**
+	 * A submenu of what can be created beneath a directive, each choice creating it there. It offers what the
+	 * directive's grid row offers ({@link directiveCreationKinds}), with the same icons and labels.
+	 */
+	add: (directive: InteractableEntity): ContextMenuSubmenu => ({
+		label: 'Add',
+		icon: 'lucide:plus',
+		entries: creationMenuEntries(directive.id, directiveCreationKinds(directive as unknown as Directive))
+	}),
 
 	/** Moves the entity through the hierarchy, through the directive picker (see {@link moveEntity}). */
 	moveTo: (entity: InteractableEntity): ContextMenuAction =>
@@ -62,11 +74,11 @@ const kindEntries: Record<string, (entity: InteractableEntity) => ContextMenuEnt
 /**
  * Builds the context menu for an entity, whatever kind it is (an entity item, a grid row, a heading).
  *
- * Every entity offers to be edited and to open its note; a kind that sits in the hierarchy — a directive, an
- * incentive — offers to be moved through it; a kind with rows of its own adds them ({@link kindEntries}: an objective
- * in an Onrush offers to leave it); and any kind the SDK can delete offers deletion, set apart below a separator. A
- * kind with no delete call simply omits that row rather than offering one that would silently do nothing. Leaving the
- * Onrush and deleting both ask first.
+ * Every entity offers to be edited and to open its note; a directive offers an Add submenu of what can be created
+ * beneath it; a kind that sits in the hierarchy — a directive, an incentive — offers to be moved through it; a kind
+ * with rows of its own adds them ({@link kindEntries}: an objective in an Onrush offers to leave it); and any kind the
+ * SDK can delete offers deletion, set apart below a separator. A kind with no delete call simply omits that row rather
+ * than offering one that would silently do nothing. Leaving the Onrush and deleting both ask first.
  *
  * A surface whose row is not the entity itself — a cycle's activity, an occurrence, a canvas node — builds its own
  * menu from {@link entityMenuEntries} instead, adding and replacing rows as its row needs.
@@ -77,6 +89,10 @@ export function entityContextMenu(entity: InteractableEntity): ContextMenuSpec {
 		entityMenuEntries.edit(entity),
 		entityMenuEntries.openNote(entity)
 	]
+
+	if (canCreateUnder(typeName)) {
+		entries.push(entityMenuEntries.add(entity))
+	}
 
 	if (canMoveEntity(typeName)) {
 		entries.push(entityMenuEntries.moveTo(entity))

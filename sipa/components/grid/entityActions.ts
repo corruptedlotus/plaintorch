@@ -4,7 +4,8 @@ import {
 } from '@pleiades/sdk'
 import {
 	addObjectiveToPolaris, core, ExpandingAction, IconName, isArchivedStatus, isInactiveStatus, offerEstimation,
-	OnrushPickerModal, PromptTextModal, SelectDirectiveModal, type DirectiveChoice, type ScheduleValue, type Status
+	OnrushPickerModal, PromptTextModal, SelectDirectiveModal, type ContextMenuAction, type DirectiveChoice, type ScheduleValue,
+	type Status
 } from '..'
 import { host, toast } from '../../host'
 import type { GridEntity } from './entityTree'
@@ -460,14 +461,38 @@ export function creationActions(directiveId?: string, kinds?: readonly EntityKin
 }
 
 /**
- * The choices offered on a directive row.
- *
- * A child directive is always of the parent's own kind: a lunar hierarchy stays lunar, and a stellar one
- * stays stellar (PEP100).
+ * The same creation choices as {@link creationActions}, as context-menu rows: the same icons, labels and creation
+ * call, under the directive given (or at the top level without one).
  */
-export function directiveActions(directive: Directive): ExpandingAction[] {
+export function creationMenuEntries(directiveId: string | undefined, kinds: readonly EntityKind[]): ContextMenuAction[] {
+	return kinds.map(kind => ({
+		label: kindLabels[kind],
+		icon: kindIcons[kind],
+		run: () => void createEntity(kind, directiveId)
+	}))
+}
+
+/**
+ * What a directive offers to create beneath it: the three incentives, then a child directive of its own kind. A lunar
+ * hierarchy stays lunar, and a stellar one stays stellar (PEP100). This one list is behind both the directive row's
+ * actions and the Add submenu of the directive's context menu, so the two always offer the same choices.
+ */
+export function directiveCreationKinds(directive: Directive): EntityKind[] {
 	const ownKind: EntityKind = entityKindOf(directive) === 'lunar-directive' ? 'lunar-directive' : 'stellar-directive'
-	return creationActions(directive.id, ['objective', 'fate', 'decree', ownKind])
+	return ['objective', 'fate', 'decree', ownKind]
+}
+
+/** The runtime types things can be created beneath: the two directives. */
+const creationParentTypes = new Set(['StellarDirective', 'LunarDirective'])
+
+/** Whether things can be created beneath an entity of this runtime type, which is the show/hide test for an Add row. */
+export function canCreateUnder(typeName: string | undefined): boolean {
+	return !!typeName && creationParentTypes.has(typeName)
+}
+
+/** The choices offered on a directive row (see {@link directiveCreationKinds}). */
+export function directiveActions(directive: Directive): ExpandingAction[] {
+	return creationActions(directive.id, directiveCreationKinds(directive))
 }
 
 /** The choices offered on an objective row. */
