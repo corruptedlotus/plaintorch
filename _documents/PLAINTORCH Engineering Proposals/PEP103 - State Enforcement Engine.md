@@ -1383,7 +1383,7 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   - SH-01 and SH-02 removals
   - an objective delete
 
-  Removing work can even earn a reward: when a decree is deleted, SH-02 removes its unexecuted reflective in a live cycle, and SH-16 then grants the cycle's collection reward from the reflectives left. *Engine 1: reward existence declared on record state sees deletes too.*
+  Removing work can even earn a reward: when a decree is deleted, SH-02 removes its unexecuted reflective in a live cycle, and SH-16 then grants the cycle's collection reward from the reflectives left. *Settled: ruled on 2026-10-30 that this is the intended behaviour. Work removed or deleted keeps the rewards it earned, and a cycle whose remaining reflectives are all executed earns its collection reward.*
   Rows: SH-01, SH-02, SH-11, SH-12, SH-14, SH-15, SH-16, SH-29, OB-05, PO-13, PO-17. Where: `PlaintorchStatePolicyProcessor.cs:318`, `322-337`, `707-710`, `717-719`, `786-788`, `872-874`, `940-942`, `1001-1048`; `PolarisCycleApiService.cs:296-297`, `603`; `ObjectiveApiService.cs:213-216`.
 - **I-043 · A toll of 0 still asks to be paid.** *(trimmed 2026-10-30: the rewards follow one rule, by user ruling — only granting reads the amount, a grant of 0 books no row, and taking a reward back removes the grant held under its key whatever the amount is now)* A toll of 0 is still owed: the checkpoint stays locked until a 0 payment is made, and that payment books a 0-amount debit row. The ruling covers refunds of rewards, not payments, so this remains. *Engine 1: one declared amount rule, payments included.*
   Rows: SH-22, DP-13. Where: `DependencyReconciler.cs:24-25`, `40`; `DependencyApiService.cs:310-333`.
