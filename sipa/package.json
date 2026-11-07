@@ -7,7 +7,8 @@
 	"scripts": {
 		"index-assets": "node ./assets/indexer.mjs",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
-		"vendor-mitra": "node ./vendor/mitra/update.mjs"
+		"vendor-mitra": "node ./vendor/mitra/update.mjs",
+		"test": "vitest run"
 	},
 	"exports": {
 		".": "./index.ts",
@@ -15,7 +16,10 @@
 		"./hosts/sipa": "./hosts/sipa/index.ts"
 	},
 	"devDependencies": {
-		"typescript": "^5.9.3"
+		"esbuild": "^0.28.2",
+		"happy-dom": "^20.14.6",
+		"typescript": "^5.9.3",
+		"vitest": "^5.0.3"
 	},
 	"dependencies": {
 		"@3mo/data-grid": "^0.38.5",
@@ -30,6 +34,7 @@
 		"@3mo/slot-controller": "^0.3.6",
 		"@3mo/tooltip": "^0.11.1",
 		"@a11d/lit": "^0.13.3",
+		"@corruptedlotus/local-repo": "file:../../local-repo",
 		"@dagrejs/dagre": "^1.1.4",
 		"@leeoniya/ufuzzy": "^1.0.19",
 		"@open-draft/deferred-promise": "^3.0.0",

@@ -16,7 +16,9 @@ import { PlaintorchDependenciesSdk } from "./dependencies/dependenciesSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
 import { PlaintorchPreferencesSdk } from "./preferences/preferencesSdk"
 import { PlaintorchMediaSdk } from "./media/mediaSdk"
-import { createAbsorbingReviver, EntityStore, PlaintorchRepositories, type AbsorptionContext } from "./repository"
+import { EntityStore, type AbsorptionContext } from "@corruptedlotus/local-repo"
+import { plaintorchEntityPolicy } from "./repos/policy"
+import { PlaintorchRepositories } from "./repos/repositories"
 
 
 export interface PlaintorchCoreClientOptions {
@@ -71,7 +73,7 @@ export class PlaintorchCoreClient {
 				headers: options.headers
 			})
 		]
-		this.store = new EntityStore()
+		this.store = new EntityStore(plaintorchEntityPolicy)
 		this.system = new PlaintorchSystemSdk(this)
 		this.media = new PlaintorchMediaSdk(this)
 		this.directives = new PlaintorchDirectivesSdk(this)
@@ -107,55 +109,15 @@ export class PlaintorchCoreClient {
 	 * out.
 	 */
 	public async getJson<T>(path: string, context?: AbsorptionContext): Promise<T | undefined> {
-		// Opened before the request leaves, so a change made while it is in flight supersedes it; closed in the
-		// finally so the store can prune the change ledger once this response — and everything older — settles.
-		const issuedAt = this.store.beginRead()
-		try {
-			return await this.readJsonResponse<T>(
-				await this.send({
-					method: "GET",
-					path
-				}),
-				{ issuedAt, ...context }
-			)
-		}
-		finally {
-			this.store.endRead(issuedAt)
-		}
+		return await this.sendForJson<T>({ method: "GET", path }, context)
 	}
 
 	public async postForJson<T>(path: string, body: unknown): Promise<T | undefined> {
-		const issuedAt = this.store.beginRead()
-		try {
-			return await this.readJsonResponse<T>(
-				await this.send({
-					method: "POST",
-					path,
-					body
-				}),
-				{ issuedAt }
-			)
-		}
-		finally {
-			this.store.endRead(issuedAt)
-		}
+		return await this.sendForJson<T>({ method: "POST", path, body })
 	}
 
 	public async putForJson<T>(path: string, body: unknown): Promise<T | undefined> {
-		const issuedAt = this.store.beginRead()
-		try {
-			return await this.readJsonResponse<T>(
-				await this.send({
-					method: "PUT",
-					path,
-					body
-				}),
-				{ issuedAt }
-			)
-		}
-		finally {
-			this.store.endRead(issuedAt)
-		}
+		return await this.sendForJson<T>({ method: "PUT", path, body })
 	}
 
 	public async delete(path: string): Promise<boolean> {
@@ -198,7 +160,31 @@ export class PlaintorchCoreClient {
 		return undefined
 	}
 
+	/**
+	 * Like {@link getJson}, but also says whether the core answered at all.
+	 *
+	 * `answered` is true for a response the core stands behind — a success, including an empty one, and a
+	 * "not found", which carries no value — and false when nothing trustworthy came back: no transport reached
+	 * the core, the request timed out, or the core failed. {@link getJson} cannot make that distinction; it,
+	 * and the `?? []` the listing SDKs wrap it in, turn a failed request into the same emptiness as a real one.
+	 *
+	 * Interim. This exists so the repositories can keep what they hold through an outage; it carries no reason
+	 * for a failure, and is the piece a proper error model replaces.
+	 */
+	public async getJsonAnswer<T>(path: string, context?: AbsorptionContext): Promise<PlaintorchCoreAnswer<T>> {
+		return await this.exchangeForJson<T>({ method: "GET", path }, context)
+	}
+
 	protected async send(request: PlaintorchCoreRequest): Promise<PlaintorchCoreResponse | undefined> {
+		return (await this.exchange(request)).response
+	}
+
+	/**
+	 * Sends a request through the transports in turn until one is accepted. Reports the accepting response, or
+	 * the status the core last refused it with when a transport reached the core and it said no.
+	 */
+	private async exchange(request: PlaintorchCoreRequest): Promise<{ response?: PlaintorchCoreResponse, refusedWith?: number }> {
+		let refusedWith: number | undefined
 		for (const transport of this.transports) {
 			const response = await transport.send(request)
 			if (response?.ok) {
@@ -207,32 +193,41 @@ export class PlaintorchCoreClient {
 					this.lastWriteNotePendingFlag = response.header(noteReadyHeader) === "false"
 				}
 
-				Promise.resolve().then(async () => {
-					const payload = await response.text()
-					console.debug('PLAINTORCH called', request.path, payload ? JSON.parse(payload) : undefined)
-				}).catch(() => { })
-				return response
+				return { response }
+			}
+
+			if (response) {
+				refusedWith = response.status
+				// Drained for the same reason an accepted body is: a transport with a keep-alive pool does not
+				// release a connection until its response has been read.
+				await response.text().catch(() => undefined)
 			}
 		}
 
-		return undefined
+		return { refusedWith }
 	}
 
-	private async readJsonResponse<T>(
-		response: PlaintorchCoreResponse | undefined,
-		context?: AbsorptionContext
-	): Promise<T | undefined> {
-		if (!response) {
-			return undefined
-		}
+	/**
+	 * Sends a request whose response body is absorbed into the store — a GET, or a write that returns the
+	 * updated entity. The store runs it as a read, so a change made while it is in flight outranks it.
+	 */
+	private async sendForJson<T>(request: PlaintorchCoreRequest, context?: AbsorptionContext): Promise<T | undefined> {
+		return (await this.exchangeForJson<T>(request, context)).value
+	}
 
-		const payload = await response.text()
-		if (!payload || payload.trim().length === 0) {
-			return undefined
-		}
+	private async exchangeForJson<T>(request: PlaintorchCoreRequest, context?: AbsorptionContext): Promise<PlaintorchCoreAnswer<T>> {
+		return await this.store.read(async (parse) => {
+			const { response, refusedWith } = await this.exchange(request)
+			if (!response) {
+				return { answered: refusedWith !== undefined && notFoundStatuses.has(refusedWith), value: undefined }
+			}
 
-		// A reviver per response, because whether it may overwrite local state depends on when it was issued.
-		return JSON.parse(payload, createAbsorbingReviver(this.store, context)) as T
+			// Read exactly once: a body is a stream to some transports, and a second read of it fails.
+			const payload = await response.text()
+			const value = !payload || payload.trim().length === 0 ? undefined : parse<T>(payload)
+			console.debug("PLAINTORCH called", request.path, value)
+			return { answered: true, value }
+		}, context)
 	}
 
 	private async sendForSuccess(request: PlaintorchCoreRequest): Promise<boolean> {
@@ -242,6 +237,19 @@ export class PlaintorchCoreClient {
 		// answered with 200 and a payload, say — would otherwise pin a socket. The node transport already
 		// drains on its own; this covers any transport that does not.
 		await response?.text()
+		if (response) {
+			console.debug("PLAINTORCH called", request.path)
+		}
+
 		return response !== undefined
 	}
 }
+
+/** What {@link PlaintorchCoreClient.getJsonAnswer} reports: whether the core answered, and with what. */
+export interface PlaintorchCoreAnswer<T> {
+	readonly answered: boolean
+	readonly value: T | undefined
+}
+
+/** The refusals that are an answer in themselves: the core is saying there is nothing at that address. */
+const notFoundStatuses: ReadonlySet<number> = new Set([404, 410])

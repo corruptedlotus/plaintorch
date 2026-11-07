@@ -1,6 +1,6 @@
 import { Component, css, event, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
 import {
-	ContextMenuController, entityContextMenu, EntityWatch, ExpandingAction, IconName, ReactiveBinder,
+	ContextMenuController, entityContextMenu, EntityWatch, ExpandingAction, IconName, ReactiveBinder, removedEntityStyles,
 	tooltip, TransferController,
 	type ContextMenuSpec, type InteractableEntity
 } from '..'
@@ -95,6 +95,8 @@ export abstract class GridItemBase extends Component {
 
 	static override get styles() {
 		return css`
+			${removedEntityStyles}
+
 			:host {
 				display: grid;
 				grid-template-columns: subgrid;

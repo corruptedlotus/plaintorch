@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { EntityStore } from "./entityStore"
-import { createAbsorbingReviver } from "./absorption"
+import { createAbsorbingReviver, EntityStore } from "@corruptedlotus/local-repo"
+import { plaintorchEntityPolicy } from "./policy"
 // Imported for their @model registration side effect, so the reviver constructs real instances.
 import "../objectives/models"
 import "../directives/models"
@@ -24,7 +24,7 @@ function absorb<T>(store: EntityStore, value: unknown): T {
 
 describe("objective update — cyclic serialization of the whole entity", () => {
 	it("the canonical objective is a cyclic graph and cannot be a write body — why writes send partials", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		// A response cross-linking objective <-> directive, as the identity map does once both sides are seen.
 		absorb(store, {
 			"@type": "Objective", id: "O1", title: "Ship it", directiveId: "D1",
@@ -43,7 +43,7 @@ describe("objective update — cyclic serialization of the whole entity", () => 
 	})
 
 	it("a partial update body (only the changed field) has no cycle — the direction a fix takes", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		absorb(store, {
 			"@type": "Objective", id: "O1", title: "Ship it", directiveId: "D1",
 			directive: {
@@ -74,7 +74,7 @@ describe("onrush and Polaris updates — the whole entity reaches the objective 
 	}
 
 	it("a sprint whose members reach their directive is cyclic; its { title } patch is not", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		absorb(store, directivePayload)
 		absorb(store, { "@type": "OnrushSprint", id: "S1", title: "Sprint", objectives: [objectivePayload], checkpoints: [] })
 
@@ -88,7 +88,7 @@ describe("onrush and Polaris updates — the whole entity reaches the objective 
 	})
 
 	it("a Polaris cycle whose executives' objectives reach their directive is cyclic; its { title } patch is not", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		absorb(store, directivePayload)
 		absorb(store, {
 			"@type": "PolarisCycle", id: "P1", title: "Today", startTime: "2026-09-30T08:00:00Z", endTime: null,

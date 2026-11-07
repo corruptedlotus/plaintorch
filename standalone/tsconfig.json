@@ -20,6 +20,7 @@
 		"noUncheckedIndexedAccess": true,
 		"importHelpers": false,
 		"types": ["node"],
+		"customConditions": ["source"],
 		"paths": {
 			"@a11d/lit": ["../sipa/node_modules/@a11d/lit"]
 		}

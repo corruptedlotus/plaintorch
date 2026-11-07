@@ -4,6 +4,7 @@ import { IconName } from '../PleiadesIcon'
 import { EntityTypeName, isSuccessfulMutation, type EndpointRef } from '@pleiades/sdk'
 import { core, EntityRef } from '..'
 import '../entities/DependencyRouteItem'
+import '../entities/EntityAbsence'
 
 @component('p7t-entity-banner')
 export class EntityBanner<T extends { id: string, title: string }> extends CardComponent {
@@ -40,6 +41,12 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 	)
 
 	get entity(): T | undefined {
+		// A provided entity stands in only while the canonical one is on its way — never for one the core has
+		// removed, or the banner would go on showing a copy of something that no longer exists.
+		if (this.ref.removed || core.store.wasRemoved(this.providedEntity)) {
+			return undefined
+		}
+
 		return this.ref.value ?? this.providedEntity
 	}
 
@@ -291,9 +298,29 @@ export class EntityBanner<T extends { id: string, title: string }> extends CardC
 		return html`<p7t-icon class='icon' icon='${this.resolvedIcon}'></p7t-icon>`
 	}
 
+	/**
+	 * What the banner shows while it has no entity to show.
+	 *
+	 * Nothing, while the entity is on its way — a banner that flashed a notice before every first paint would be
+	 * worse than a moment of emptiness. But an entity the core says does not exist, and one the core could not
+	 * be asked for, each say so: the first so a banner left open over a deleted entity stops showing it, the
+	 * second so an outage reads as an outage (with a way to try again) rather than as a blank card.
+	 */
+	protected get absenceTemplate() {
+		if (this.ref.removed || core.store.wasRemoved(this.providedEntity)) {
+			return html`<p7t-entity-absence state='removed' puck=${this.puck || this.providedEntity?.id || ''}></p7t-entity-absence>`
+		}
+
+		if (this.ref.notLoaded && !this.ref.loading) {
+			return html`<p7t-entity-absence state='unavailable' puck=${this.puck} @retry=${() => void this.ref.refresh()}></p7t-entity-absence>`
+		}
+
+		return html``
+	}
+
 	protected override get template() {
 		const endpoint = this.dependencyEndpoint
-		return !this.entity ? html`` : html`
+		return !this.entity ? this.absenceTemplate : html`
 			${this.bannerImageTemplate}
 			<div class='render-grid'>
 				${this.iconTemplate}

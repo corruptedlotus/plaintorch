@@ -73,6 +73,9 @@ const shared = {
 	minify: production,
 	logLevel: "info",
 	define,
+	// SIPA and the repository package (`@corruptedlotus/local-repo`) are bundled from their TypeScript, which their `source`
+	// export condition selects.
+	conditions: ["source"],
 	// @a11d/lit installs its reactive accessors through legacy (experimental) decorators; class fields must NOT use
 	// define semantics or they shadow those accessors and reactivity silently dies (the view renders once, then never
 	// updates). Set here too so a build never depends on tsconfig auto-discovery.
@@ -81,13 +84,15 @@ const shared = {
 }
 
 // The renderers bundle the SIPA UI from source. Its lit runtime lives in the package's own node_modules, and the
-// renderers' own lit imports must resolve to that same copy — two lit runtimes would each register their own elements.
+// renderers' own lit imports — and the repository package's, whose Lit bindings sit beside their own copy — must resolve
+// to that same copy: two lit runtimes would each register their own elements.
 const renderer = {
 	...shared,
 	platform: "browser",
 	format: "iife",
 	target: "es2022",
-	nodePaths: [path.resolve("../sipa/node_modules")]
+	nodePaths: [path.resolve("../sipa/node_modules")],
+	alias: { "@a11d/lit": path.resolve("../sipa/node_modules/@a11d/lit") }
 }
 
 const contexts = await Promise.all([

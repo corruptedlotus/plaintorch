@@ -13,7 +13,7 @@
 - [ ] Fix humaniser for real this time
 # Infrastructure
 - [ ] Separate Orbit library
-- [ ] Separate Localrepo library
+- [x] Separate Localrepo library
 - [ ] Separate Watcher library
 # Grid View
 - [ ] Grid view search

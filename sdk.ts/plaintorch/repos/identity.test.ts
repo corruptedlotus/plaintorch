@@ -1,22 +1,7 @@
 import { describe, it, expect } from "vitest"
-import { entityKey, typeNameFromKey, typeNameOf, identify, isEntity } from "./identity"
+import { typeNameOf, identify, isEntity } from "./policy"
 
 const entity = (over: Record<string, unknown> = {}) => ({ "@type": "Objective", id: "O1", title: "Ship it", ...over })
-
-describe("entityKey / typeNameFromKey", () => {
-	it("builds and splits a key", () => {
-		expect(entityKey("Objective", "O1")).toBe("Objective:O1")
-		expect(typeNameFromKey("Objective:O1")).toBe("Objective")
-	})
-
-	it("splits on the first colon, so an id containing a colon keeps its type", () => {
-		expect(typeNameFromKey("Fate:A:weird:id")).toBe("Fate")
-	})
-
-	it("returns the whole string when there is no colon", () => {
-		expect(typeNameFromKey("bare")).toBe("bare")
-	})
-})
 
 describe("typeNameOf", () => {
 	it("reads the stamped @type", () => {

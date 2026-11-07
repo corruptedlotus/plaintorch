@@ -1,6 +1,7 @@
 import { Component, component, css, html, nothing, property, query, state } from "@a11d/lit"
 import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, isDecreeIncentive, isObjectiveIncentive, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
-import { core, objectiveStatusDescriptors, openEntityEditor, SelectStatusModal, SelectTimeframeModal } from ".."
+import { core, EntityWatch, objectiveStatusDescriptors, openEntityEditor, SelectStatusModal, SelectTimeframeModal } from ".."
+import "./EntityAbsence"
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 import type { EditablePart } from "../editing/EditableDataLink"
 import type { EditableTimeUnit } from "../editing/EditableTimeUnit"
@@ -46,6 +47,13 @@ export class ExecutiveEditor extends Component {
 		await this.updateComplete
 		setTimeout(() => this.trackedField?.startEditing())
 	}
+
+	/**
+	 * Observes the incentive the executive works at — the entity this editor is really about. An executive is a
+	 * work record and may outlive its objective or decree; once that is removed there is nothing left here to
+	 * edit, and the editor says so instead of offering allocations on something that no longer exists.
+	 */
+	private readonly incentive = new EntityWatch(this, () => this.executive?.incentive)
 
 	static override get styles() {
 		return css`
@@ -204,6 +212,10 @@ export class ExecutiveEditor extends Component {
 	protected override get template() {
 		const executive = this.executive
 		if (!executive) return html``
+
+		if (this.incentive.removed) {
+			return html`<p7t-entity-absence state='removed' puck=${executive.incentive?.id ?? ''}></p7t-entity-absence>`
+		}
 
 		// An executive works an objective or a decree (PEP111); only an objective carries a shiftable workflow status.
 		const incentive = executive.incentive

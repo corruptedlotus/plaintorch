@@ -3,6 +3,7 @@ import type { DeclarativeCalendar, EntityExistence } from '@pleiades/sdk/plainto
 import { core, DerivedRef, EntityRef } from './data'
 import { canDeleteEntity, deleteEntityByType } from './entities/entityMenu'
 import { confirmAction, deleteConfirmation } from './design/ConfirmationBubble'
+import './entities/EntityAbsence'
 import { canMaterializeKind, createEntityNote, openEntityNote } from './grid/entityActions'
 
 /** The minimal shape every entity a banner resolves shares — a PUCK identity and a title. */
@@ -154,7 +155,28 @@ export class FullBanner extends Component {
 		`
 	}
 
+	/**
+	 * Whether the entity this panel is for is known not to exist — deleted while the panel was open, or a PUCK
+	 * that names nothing.
+	 *
+	 * Asked of whichever path resolves the entity: the repository when the type is known, the PUCK lookup when it
+	 * is not. A lookup counts once it has been answered at all, in-flight refresh or not, so the panel does not
+	 * flicker between the notice and a banner each time the record is revalidated.
+	 */
+	private get removed(): boolean {
+		if (this.xtype) {
+			return this.ref.removed
+		}
+
+		return !!this.puck && !this.resolution.notLoaded && !this.resolution.value?.exists
+	}
+
 	protected override get template() {
+		if (this.removed) {
+			// The whole panel stands down, not only the banner: there is nothing left to open, edit or delete.
+			return html`<p7t-entity-absence state='removed' puck=${this.puck}></p7t-entity-absence>`
+		}
+
 		const kind = this.kind
 		if (!kind) {
 			// The resolve path is still waiting on the PUCK lookup; a resolved-but-unknown kind falls to the generic banner.
@@ -162,13 +184,21 @@ export class FullBanner extends Component {
 				return html`<div class='loading'>Loading…</div>`
 			}
 
+			// The lookup is over and was never answered: the core could not be asked what this PUCK is.
+			if (!this.xtype && this.resolution.notLoaded) {
+				return html`<p7t-entity-absence state='unavailable' puck=${this.puck} @retry=${() => void this.resolution.refresh()}></p7t-entity-absence>`
+			}
+
 			return this.fallbackBanner
 		}
 
+		// The typed banner says so itself when its entity could not be loaded. The actions and editors beneath it
+		// all need the core as well, so they wait for it rather than offering what cannot work.
+		const unavailable = !!this.xtype && this.ref.notLoaded && !this.ref.loading
 		return html`
 			${this.renderBanner(kind)}
-			${this.renderActions(kind)}
-			${this.renderEditors(kind)}
+			${unavailable ? nothing : this.renderActions(kind)}
+			${unavailable ? nothing : this.renderEditors(kind)}
 		`
 	}
 

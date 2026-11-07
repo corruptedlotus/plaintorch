@@ -1,5 +1,5 @@
 import { component, Component, css, html, HTMLTemplateResult, nothing, property, type PropertyValues } from '@a11d/lit'
-import { ContextMenuController, EntityWatch, type ContextMenuSpec } from '..'
+import { ContextMenuController, EntityWatch, removedEntityStyles, type ContextMenuSpec } from '..'
 import { entityContextMenu, openEntityEditor } from './entityMenu'
 import { itemLayoutStyles } from './itemStyles'
 
@@ -56,6 +56,7 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 	static override get styles() {
 		return css`
 			${itemLayoutStyles}
+			${removedEntityStyles}
 
 			.extra-action {
 				position: fixed;

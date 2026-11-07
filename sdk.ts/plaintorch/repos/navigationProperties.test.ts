@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { EntityStore } from "./entityStore"
-import { createAbsorbingReviver } from "./absorption"
+import { createAbsorbingReviver, EntityStore } from "@corruptedlotus/local-repo"
+import { plaintorchEntityPolicy } from "./policy"
 // Imported for their @model registration side effect, so the reviver constructs real instances.
 import "../objectives/models"
 import "../directives/models"
@@ -35,7 +35,7 @@ const objectiveWithDirective = {
 
 describe("updating an objective keeps its directive nav", () => {
 	it("keeps the populated directive when a lean update carries directive:null with the id still set", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		// The grid's listing populated the objective WITH its directive.
 		absorb(store, [objectiveWithDirective])
 		expect((store.peek<Bag>("Objective:O1")!.directive as Bag)?.id).toBe("D1")
@@ -49,7 +49,7 @@ describe("updating an objective keeps its directive nav", () => {
 	})
 
 	it("a lean response that OMITS the nav key also keeps it — omitted keys never merge", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		absorb(store, [objectiveWithDirective])
 		const directive = store.peek<Bag>("Objective:O1")!.directive
 
@@ -66,7 +66,7 @@ describe("a directive banner keeps its parent nav", () => {
 	}
 
 	it("keeps the populated parent when a summary carries parentDirective:null with the id still set", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		// The directive listing populated the parent nav (as the grid's list does).
 		absorb(store, [childWithParent])
 		expect((store.peek<Bag>("StellarDirective:D2")!.parentDirective as Bag)?.id).toBe("D1")
@@ -82,7 +82,7 @@ describe("a directive banner keeps its parent nav", () => {
 
 describe("single-reference navs are withheld like collections when unloaded", () => {
 	it("withholds a nested back-reference's null single-reference the same as its empty collection", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		// D2 populated with both a single-ref (parentDirective) and a collection (subdirectives).
 		absorb(store, {
 			"@type": "StellarDirective", id: "D2", title: "Child",
@@ -108,7 +108,7 @@ describe("a genuine clear still propagates — the scalar FK is the disambiguato
 	// genuine clear nulls `directiveId` too. The fix must keep this coherent clear working while withholding
 	// the incoherent unloaded case above.
 	it("clears the nav when the FK is nulled in the same payload", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		absorb(store, [objectiveWithDirective])
 		expect((store.peek<Bag>("Objective:O1")!.directive as Bag)?.id).toBe("D1")
 
@@ -122,7 +122,7 @@ describe("a genuine clear still propagates — the scalar FK is the disambiguato
 
 describe("ruling out the eviction hypothesis", () => {
 	it("keeps a subscribed objective's directive record — the sweep closure walks single-ref navs", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		absorb(store, objectiveWithDirective)
 		expect(store.has("StellarDirective:D1")).toBe(true)
 		store.subscribe("Objective:O1", () => {}) // a banner observes the objective, not the directive
@@ -134,7 +134,7 @@ describe("ruling out the eviction hypothesis", () => {
 	})
 
 	it("eviction removes records but never nulls a field on an instance still held", () => {
-		const store = new EntityStore()
+		const store = new EntityStore(plaintorchEntityPolicy)
 		const objective = absorb<Bag>(store, objectiveWithDirective)
 		const directive = objective.directive
 
