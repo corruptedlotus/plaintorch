@@ -1,4 +1,4 @@
-import { Component, css, event, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
+import { Component, css, event, eventListener, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
 import {
 	ContextMenuController, DoubleClickController, entityContextMenu, EntityWatch, ExpandingAction, IconName, openEntityEditor,
 	ReactiveBinder, removedEntityStyles, tooltip, TransferController,
@@ -25,7 +25,8 @@ import { MediaReference } from '@pleiades/sdk'
  * target for {@link takeTransfer}. A variant that says nothing stays inert.
  *
  * Double-clicking (or double-tapping) the row's open space — wherever no control, editable or handle of its own answers
- * the press, and never while anything in the row is being edited — opens its {@link openDetails | details}.
+ * the press, and never while anything in the row is being edited — opens its {@link openDetails | details}. So does Enter
+ * while the row itself has the focus (see {@link onKeyDown}).
  */
 export abstract class GridItemBase extends Component {
 	@property({ type: Object }) row?: GridRow
@@ -122,10 +123,23 @@ export abstract class GridItemBase extends Component {
 				padding-inline-end: .2em;
 				/* A double tap opens the row's details, so the platform must not take it for a zoom. */
 				touch-action: manipulation;
+				/* A row the keyboard moves to is scrolled clear of the grid's sticky heading row. */
+				scroll-margin-block-start: calc(var(--p7t-grid-header-top, var(--p7t-page-sticky-top, 0px)) + 2.5em);
 			}
 
 			:host(:hover) {
 				background-color: color-mix(in srgb, var(--text-normal) 8%, transparent);
+			}
+
+			/* The grid moves the focus between rows (see GridBase); a row reached by keyboard is ringed, a pressed one is not. */
+			:host(:focus) {
+				outline: none;
+			}
+
+			:host(:focus-visible) {
+				background-color: color-mix(in srgb, var(--text-normal) 8%, transparent);
+				outline: 1px solid var(--p7t-flare-accent, var(--interactive-accent));
+				outline-offset: -1px;
 			}
 
 			/* A row on the active lore spine keeps a subtle accented wash so the current era/chapter/act/phase reads
@@ -422,6 +436,45 @@ export abstract class GridItemBase extends Component {
 		if (this.row?.expandable) {
 			this.requestRowToggle.dispatch(this.row.key)
 		}
+	}
+
+	/**
+	 * The row's own keys, while the row itself has the focus: Enter opens its {@link openDetails | details}, the right
+	 * arrow opens a closed row and the left arrow closes an open one. A key pressed in a field or a control inside the row
+	 * stays that field's. What the row leaves unanswered (moving between rows, to a child or to the parent) the grid
+	 * answers, which hears the key next.
+	 */
+	@eventListener('keydown')
+	protected onKeyDown(event: KeyboardEvent) {
+		const row = this.row
+		if (!row?.entity || event.composedPath()[0] !== this || event.defaultPrevented
+			|| event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+			return
+		}
+
+		switch (event.key) {
+			case 'Enter':
+				if (!event.repeat) {
+					this.openDetails()
+				}
+				break
+			case 'ArrowRight':
+				if (!row.expandable || row.expanded) {
+					return
+				}
+				this.requestRowExpand.dispatch(row.key)
+				break
+			case 'ArrowLeft':
+				if (!row.expandable || !row.expanded) {
+					return
+				}
+				this.toggleExpansion()
+				break
+			default:
+				return
+		}
+
+		event.preventDefault()
 	}
 
 	/** Opens the note the row's entity is the authority for, in a new tab. */

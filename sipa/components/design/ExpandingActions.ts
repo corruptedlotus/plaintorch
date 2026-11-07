@@ -168,14 +168,13 @@ export class ExpandingActions extends Component {
 	}
 
 	private onTriggerClick(e: MouseEvent) {
-		// The grid row underneath treats a click as navigation, and the trigger is not that.
-		console.log('Trigger clicked', e)
 		if (this.actions.length === 0) {
 			return
 		}
-		
+
 		this.panelElement.showPopover()
 		this.place()
+		// Opening the panel is the trigger's whole answer: whatever holds it (a grid row, a card) must not take the click too.
 		e.stopPropagation()
 	}
 

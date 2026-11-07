@@ -1,6 +1,7 @@
 import { bindingDefaultProperty, Component, component, css, event, eventListener, html, nothing, property, type HTMLTemplateResult } from "@a11d/lit"
 import { IconName } from "../PleiadesIcon"
 import { defaultNullGlyph, nullGlyphStyle, nullGlyphTemplate } from "../design/nullGlyph"
+import { InteractionBubbleBase } from "../design/InteractionBubbleBase"
 
 /**
  * The root of every editable field — free text, numbers, dates, media, and the searching selects.
@@ -85,6 +86,12 @@ export class EditablePart<T> extends Component {
 	@eventListener({ type: 'click', target: this })
 	protected handleClick() {
 		if (this.editButton) {
+			return
+		}
+
+		// A second press of a field waiting on the bubble it raised closes that bubble, as a second press of any bubble's
+		// trigger does. The bubble leaves a press on its anchor to the anchor, and an edit under way refuses to begin again.
+		if (this.active && InteractionBubbleBase.dismissRaisedFrom(this)) {
 			return
 		}
 

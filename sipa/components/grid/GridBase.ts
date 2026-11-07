@@ -4,6 +4,9 @@ import type { EntitySubscription, EntityTypeName } from '@pleiades/sdk'
 import { ContextMenuController, core, ExpandingAction, type ContextMenuEntry, type ContextMenuSpec } from '..'
 import { gridTitleColumn, type GridNode, type GridRow } from './entityTree'
 
+/** A rendered row element, as the grid sees it: whatever variant draws it, it carries its {@link GridRow}. */
+type RowElement = HTMLElement & { readonly row?: GridRow }
+
 /**
  * The shared shell every grid variant renders into.
  *
@@ -82,6 +85,9 @@ export abstract class GridBase extends Component {
 	private readonly openedBySearch = new Set<string>()
 
 	private layoutRestored = false
+
+	/** The key of the row in the tab order (see {@link stampTabStop}); unset until a row is focused or pressed. */
+	private tabStopKey?: string
 
 	private storeSubscription?: EntitySubscription
 
@@ -295,6 +301,106 @@ export abstract class GridBase extends Component {
 	protected override updated(changedProperties: PropertyValues<this>) {
 		super.updated(changedProperties)
 		this.style.setProperty('--p7t-grid-columns', this.columnTracks)
+		this.stampTabStop()
+	}
+
+	/**
+	 * The rendered rows the keyboard moves through, in their order down the grid: every row with an entity. The world
+	 * heading has none, and is passed over.
+	 */
+	private get navigableRows(): RowElement[] {
+		return (this.grid.rows as RowElement[]).filter(element => element.isConnected && !!element.row?.entity)
+	}
+
+	/**
+	 * Puts one row in the tab order, so tabbing reaches the grid's rows once rather than once per row: the row last
+	 * focused or pressed while it is still on show, else the first. The others stay focusable by script and by press.
+	 */
+	private stampTabStop() {
+		const rows = this.navigableRows
+		const stop = rows.find(element => element.row!.key === this.tabStopKey) ?? rows[0]
+		for (const element of this.grid.rows as RowElement[]) {
+			if (rows.includes(element)) {
+				element.tabIndex = element === stop ? 0 : -1
+			} else {
+				element.removeAttribute('tabindex')
+			}
+		}
+	}
+
+	/** The navigable row an event happened in, if any. */
+	private rowOfEvent(event: Event): RowElement | undefined {
+		const rows = this.navigableRows
+		return event.composedPath().find((target): target is RowElement => rows.includes(target as RowElement))
+	}
+
+	/** The tab stop follows the row last focused, by keyboard or otherwise. */
+	@eventListener('focusin')
+	protected onRowFocusIn(event: FocusEvent) {
+		this.moveTabStopTo(this.rowOfEvent(event))
+	}
+
+	/** And the row last pressed, so tabbing back into the grid returns to where the reader was. */
+	@eventListener('pointerdown')
+	protected onRowPointerDown(event: PointerEvent) {
+		this.moveTabStopTo(this.rowOfEvent(event))
+	}
+
+	private moveTabStopTo(element: RowElement | undefined) {
+		const key = element?.row?.key
+		if (key !== undefined && key !== this.tabStopKey) {
+			this.tabStopKey = key
+			this.stampTabStop()
+		}
+	}
+
+	/**
+	 * Moves the focus between rows while a row itself has it (a key pressed in a field or a control inside a row stays
+	 * that field's): the vertical arrows step to the row above or below, Home and End to the first and last, the right
+	 * arrow from an open row to its first child, and the left arrow from a row that does not close to its parent. The row
+	 * answers its own keys first (Enter, opening and closing; see `GridItemBase.onKeyDown`).
+	 */
+	@eventListener('keydown')
+	protected onRowKeyDown(event: KeyboardEvent) {
+		if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+			return
+		}
+
+		const rows = this.navigableRows
+		const origin = event.composedPath()[0] as RowElement
+		const index = rows.indexOf(origin)
+		if (index < 0) {
+			return
+		}
+
+		let target: RowElement | undefined
+		switch (event.key) {
+			case 'ArrowDown': target = rows[index + 1]; break
+			case 'ArrowUp': target = rows[index - 1]; break
+			case 'Home': target = rows[0]; break
+			case 'End': target = rows[rows.length - 1]; break
+			case 'ArrowRight': target = origin.row!.expanded && (rows[index + 1]?.row?.depth ?? 0) > origin.row!.depth ? rows[index + 1] : undefined; break
+			case 'ArrowLeft': target = this.parentRowOf(origin); break
+			default: return
+		}
+
+		// Claimed even at either end, so an arrow on the last row does not scroll the page out from under it instead.
+		event.preventDefault()
+		target?.focus()
+	}
+
+	/** The row a row sits under, where it is one the keyboard can reach: the nearest row above it at a shallower depth. */
+	private parentRowOf(element: RowElement): RowElement | undefined {
+		const rendered = (this.grid.rows as RowElement[]).filter(candidate => candidate.isConnected)
+		const depth = element.row!.depth
+		for (let index = rendered.indexOf(element) - 1; index >= 0; index--) {
+			const candidate = rendered[index]
+			if (candidate && (candidate.row?.depth ?? 0) < depth) {
+				return candidate.row?.entity ? candidate : undefined
+			}
+		}
+
+		return undefined
 	}
 
 	@eventListener('requestRowToggle')
