@@ -1,7 +1,7 @@
 import { Component, css, event, html, HTMLTemplateResult, nothing, property } from '@a11d/lit'
 import {
-	ContextMenuController, entityContextMenu, EntityWatch, ExpandingAction, IconName, ReactiveBinder, removedEntityStyles,
-	tooltip, TransferController,
+	ContextMenuController, DoubleClickController, entityContextMenu, EntityWatch, ExpandingAction, IconName, openEntityEditor,
+	ReactiveBinder, removedEntityStyles, tooltip, TransferController,
 	type ContextMenuSpec, type InteractableEntity
 } from '..'
 import { openEntityNote } from './entityActions'
@@ -23,6 +23,9 @@ import { MediaReference } from '@pleiades/sdk'
  * A row also takes part in drag-and-drop transfers, as far as its variant lets it: one that names a
  * {@link transferKind} can be picked up by its kind icon, and one that answers {@link canTakeTransfer} is a drop
  * target for {@link takeTransfer}. A variant that says nothing stays inert.
+ *
+ * Double-clicking (or double-tapping) the row's open space — wherever no control, editable or handle of its own answers
+ * the press, and never while anything in the row is being edited — opens its {@link openDetails | details}.
  */
 export abstract class GridItemBase extends Component {
 	@property({ type: Object }) row?: GridRow
@@ -93,6 +96,14 @@ export abstract class GridItemBase extends Component {
 	protected readonly contextMenu = new ContextMenuController(this, (): ContextMenuSpec | undefined =>
 		this.row?.entity ? entityContextMenu(this.row.entity as InteractableEntity) : undefined)
 
+	/**
+	 * Opens the row's {@link openDetails | details} on a double-click, or a double tap, on its open space: the indent
+	 * lanes, a childless row's notch, the room around the title and in the cells, plain labels, the idle title itself (its
+	 * edit button is the way into editing it). Never on a control, an editable, the drag handle or the expanding notch,
+	 * and never while anything in the row is being edited.
+	 */
+	protected readonly doubleClick = new DoubleClickController(this, () => this.openDetails())
+
 	static override get styles() {
 		return css`
 			${removedEntityStyles}
@@ -109,6 +120,8 @@ export abstract class GridItemBase extends Component {
 				font-size: 1.1em;
 				padding-block: .2em;
 				padding-inline-end: .2em;
+				/* A double tap opens the row's details, so the platform must not take it for a zoom. */
+				touch-action: manipulation;
 			}
 
 			:host(:hover) {
@@ -319,6 +332,8 @@ export abstract class GridItemBase extends Component {
 				${row.guides.map(guide => html`<span class='lane' data-guide=${guide}></span>`)}
 				<div
 					class='notch ${row.expandable ? 'expandable' : ''} ${row.expanded ? 'open' : ''}'
+					role=${row.expandable ? 'button' : nothing}
+					aria-label=${!row.expandable ? nothing : row.expanded ? 'Collapse' : 'Expand'}
 					@click=${() => this.toggleExpansion()}>
 					${!row.expandable ? '' : html`
 						<p7t-icon class='chevron' icon=${row.expanded ? 'lucide:chevron-down' : 'lucide:chevron-right'}></p7t-icon>
@@ -412,5 +427,17 @@ export abstract class GridItemBase extends Component {
 	/** Opens the note the row's entity is the authority for, in a new tab. */
 	protected async open() {
 		await openEntityNote(this.row!.entity)
+	}
+
+	/**
+	 * What a double-click on the row's open space opens ({@link doubleClick}): by default the entity's details, its full
+	 * banner in a modal — what the context menu's Edit opens. A variant overrides it to open something else, or nothing.
+	 * A row without an entity (the world heading) opens nothing.
+	 */
+	protected openDetails(): void {
+		const entity = this.row?.entity
+		if (entity) {
+			openEntityEditor(entity as InteractableEntity)
+		}
 	}
 }

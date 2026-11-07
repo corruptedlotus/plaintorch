@@ -187,6 +187,21 @@ export abstract class InteractionBubbleBase<TData, TOptions extends InteractionB
 		})
 	}
 
+	/**
+	 * Whether the bubble showing, if any, was raised from inside `container`: its anchor is `container` or lies within it,
+	 * through shadow roots. A surface asks it to tell a press that will only dismiss one of its own bubbles from a press
+	 * meant for the surface; ask before the press reaches the document, where the bubble's light dismiss hears it.
+	 */
+	static isRaisedFrom(container: Node): boolean {
+		for (let node: Node | null = InteractionBubbleBase.current?.anchor ?? null; node; node = composedParent(node)) {
+			if (node === container) {
+				return true
+			}
+		}
+
+		return false
+	}
+
 	/** What the bubble shows and, for an edit bubble, edits. Starts as the prompt's starting data, or the blank data. */
 	@property({ attribute: false }) data: TData
 	/** What the bubble was prompted with. A subclass reads its own options from here, each with a fallback. */

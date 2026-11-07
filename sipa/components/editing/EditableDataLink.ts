@@ -59,6 +59,24 @@ export class EditablePart<T> extends Component {
 	/** The value the current edit started from — what {@link cancelEditing} returns to. */
 	protected valueAtFocus?: T
 
+	/**
+	 * Whether the field is being edited right now: holding the caret, showing its input, or waiting on its prompt. The
+	 * public face of `active`, for a surface around the field that must stay out of an edit's way (a grid row's
+	 * double-click).
+	 */
+	get editing(): boolean {
+		return this.active
+	}
+
+	/**
+	 * Whether a press on the field's content would act: begin an edit, or reach the one under way. False while the field
+	 * is {@link disabled}, and while it is idle behind its {@link editButton}, whose content is then free to be something
+	 * else.
+	 */
+	get answersPress(): boolean {
+		return !this.disabled && (!this.editButton || this.active)
+	}
+
 	/** Whether the value is absent. */
 	protected get isNull() {
 		return this.value === undefined || this.value === null
