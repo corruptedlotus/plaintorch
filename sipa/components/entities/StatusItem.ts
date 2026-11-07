@@ -37,6 +37,8 @@ export const statusDescriptors: Record<Status, StatusDescriptor> = {
 
 	Done: { icon: 'state-done', label: 'Done', terminal: 'finished' },
 	Fulfilled: { icon: 'state-done', label: 'Fulfilled', terminal: 'finished' },
+	// A fate's finish (PEP103 I-191): inferred once every occurrence has passed, or selected by hand.
+	Passed: { icon: 'state-passed', label: 'Passed', terminal: 'finished' },
 
 	Archived: { icon: 'state-archived', label: 'Archived', terminal: 'archived' },
 	Over: { icon: 'state-archived', label: 'Over', terminal: 'archived' },

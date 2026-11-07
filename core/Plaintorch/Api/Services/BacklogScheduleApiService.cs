@@ -57,8 +57,8 @@ public sealed class BacklogScheduleApiService(
 		}
 
 		var owner = await ResolveOwnerAsync(entityId, cancellationToken);
-		// Only a state the owner's kind passes through can be planned: a checkpoint never starts, and a fate, a decree or a
-		// lunar directive never finishes.
+		// Only a state the owner's kind passes through can be planned: a checkpoint never starts, and a decree never finishes.
+		// A fate's finish (its pass, PEP103 I-191) and a lunar directive's (going stale) can be planned.
 		if (!lifecycleResolver.StatesOf(owner.GetType()).Contains(state))
 		{
 			var milestone = state == LifecycleState.Started ? "start" : "finish";

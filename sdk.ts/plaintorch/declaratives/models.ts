@@ -6,12 +6,14 @@ import type { Executive } from "../polaris/models"
 
 /**
  * A fate's status (PEP100). Active and OptOut are both under way (started); Stopped sets the fate aside, and was named
- * Cancelled before PEP103 patch 6.
+ * Cancelled before PEP103 patch 6. Passed is its finish (PEP103 I-191): the core infers it once every occurrence has
+ * passed, and it can be selected by hand, when it acts like Stopped — {@link Fate.passInferred} tells the two apart.
  */
 export enum FateStatus {
 	Active = 0,
 	OptOut = 1,
-	Stopped = 2
+	Stopped = 2,
+	Passed = 3
 }
 
 export enum DecreeStatus {
@@ -146,6 +148,17 @@ export class Fate {
 	directiveId: string | undefined
 	directive?: Directive | undefined
 	status: FateStatus = FateStatus.Active
+	/**
+	 * Read-only: whether the core inferred the fate's {@link FateStatus.Passed} once every occurrence had passed, rather than
+	 * it being selected by hand (PEP103 I-191). An inferred pass comes back when its orbit begets an occurrence still to come;
+	 * either comes back for an occurrence still to come added by hand. Always false while the fate is not Passed.
+	 */
+	passInferred: boolean = false
+	/**
+	 * Read-only: the started status (Active or OptOut) the fate held when it passed, which coming back restores; undefined
+	 * while it is not Passed, or when it passed from Stopped (it then comes back Active).
+	 */
+	passedFrom: FateStatus | undefined
 	orbit: string | undefined
 	/**
 	 * The calendar the orbit resolves against (PEP111); undefined falls back to the vault's preferred calendar. A

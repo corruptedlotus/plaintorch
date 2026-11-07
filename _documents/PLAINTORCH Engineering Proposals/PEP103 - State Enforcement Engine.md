@@ -1369,8 +1369,12 @@ A frontmatter edit is saved through the hook only, so it skips every §4 rule on
   Rows: LC-08, LC-12, DP-05. Where: `DependencyApiService.cs:163-178`.
 - **I-039 · A raw delete leaves dangling edges.** Since Patch103.2 one release reaction covers every endpoint kind, a sprint's milestone included, on every save. But endpoints have no foreign key, so a delete by raw SQL still leaves dangling edges that the reconciler reads as unsatisfied forever. *Systematic: schema, or bulk writes forbidden on domain tables (engine point 2).*
   Rows: SH-18, ON-08, DP-12, DB-01. Where: `OnrushSprintApiService.cs:207-216`; `PlaintorchStatePolicyProcessor.cs:73-103`; `DependencyReconciler.cs:87-91`; `DependencyApiService.cs:285-292`; `PlainfraContextModelSnapshot.cs:149-196`.
-- **I-191 · An edge can hang off a state its kind never reaches.** *(new in Patch103.1)* Since fates stopped finishing, an edge from a fate is never satisfied: a null trigger means OnFinish, and nothing checks an edge's trigger or constraint against the states its endpoints pass through, neither when it is created nor for the edges already stored. Its target stays gated for good. *Engine 1: edge sides declared against the states each kind passes through, with defaults that fit the kind.*
-  Rows: LC-08, DP-05. Where: `DependencyApiService.cs:33-62`; `DependencyRules.cs:43-51`, `62-74`; `FateStatus.cs:9-27`.
+- **I-191 · An edge can hang off a state its kind never reaches.** *(new in Patch103.1)* Since Patch103.8 a fate finishes by passing, inferred once every occurrence has passed or selected by hand, so every endpoint kind reaches the states an edge can name, and a checkpoint side must stay empty. Two things remain:
+  - Nothing checks an edge's trigger or constraint against the states its endpoints pass through, neither when it is created nor for the edges already stored. No kind needs it today, but the next kind that skips a state would hang its edges again.
+  - A fate's default trigger is still OnFinish (the ruling left it). An edge from a fate whose orbit never runs out holds its target until the user selects Passed, and nothing says so when the edge is drawn.
+
+  *Engine 1: edge sides declared against the states each kind passes through, with defaults that fit the kind.*
+  Rows: LC-08, DP-05. Where: `DependencyApiService.cs:33-62`; `DependencyRules.cs:43-74`; `FateReactions.cs`.
 
 ### Rewards and settlements
 - **I-042 · Removed work keeps its rewards.** *(made worse by dev/phase3a)* SH-12, SH-14, SH-15 and SH-29 read only added and modified rows; only SH-16 reads deletes. So these keep settlement, attentive, decree-executive and per-reflective rewards in the ledger:

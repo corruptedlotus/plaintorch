@@ -257,9 +257,10 @@ public sealed class StructureReactions(EntityLifecycleResolver lifecycleResolver
 	}
 
 	/// <summary>
-	/// Resuming a set-aside fate or decree — out of a deferring status back onto its main line — seeks its cursor to now,
-	/// read on its zone's clock, so generation picks up from now with no backfill of the occurrences that elapsed while it
-	/// was set aside (PEP100, PEP111). A fate leaving OptOut seeks the same way: an opted-out fate is under way (PEP103
+	/// Resuming a fate or decree whose temporal activation was off — out of a deferring status, or a fate out of Passed (PEP103
+	/// I-191), back to a running one — seeks its cursor to now, read on its zone's clock, so generation picks up from now with
+	/// no backfill of the occurrences that elapsed while it was switched off (PEP100, PEP111). A Passed fate the engine brings
+	/// back seeks the same way, in <see cref="FateReactions"/>. A fate leaving OptOut seeks the same way: an opted-out fate is under way (PEP103
 	/// patch 6), but time hardens none of its occurrences unless the auto-materialise-optout preference says so, and those it
 	/// passed while opted out stay unhardened once it is taken back. Runs after the cursor resets, so a resume that also
 	/// changes the orbit seeks the fresh cursor; riding the save, a frontmatter <c>status:</c> edit resumes the same way as
@@ -286,8 +287,8 @@ public sealed class StructureReactions(EntityLifecycleResolver lifecycleResolver
 			var status = entry.Property(statusProperty.Name);
 			if (status.IsModified
 				&& status.OriginalValue is Enum previous
-				&& lifecycleResolver.StateOf((Enum)status.CurrentValue!) != LifecycleState.Deferred
-				&& (lifecycleResolver.StateOf(previous) == LifecycleState.Deferred
+				&& TemporalActivation.IsActive(lifecycleResolver.StateOf((Enum)status.CurrentValue!))
+				&& (!TemporalActivation.IsActive(lifecycleResolver.StateOf(previous))
 					|| (previous is FateStatus.OptOut && status.CurrentValue is not FateStatus.OptOut)))
 			{
 				resumed.Add((entry.Entity, scheduled));

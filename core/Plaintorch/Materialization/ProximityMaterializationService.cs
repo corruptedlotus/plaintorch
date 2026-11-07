@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
 using Pleiades.Orchestration.Lifecycle;
+using Pleiades.Plaintorch.Enforcement;
 using Pleiades.Plaintorch.Preferences;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
@@ -15,7 +16,9 @@ namespace Pleiades.Plaintorch.Materialization;
 /// cycle-bound reflectives of reflect-decrees (lunar reflection, PEP104). <see cref="MaterializeForNowAsync"/> is the
 /// rolling harden-on-time pass: when time is treated as an interaction it advances each schedule's cursor to
 /// <c>now</c> and hardens the occurrences whose time has arrived, so history becomes durable rows while every
-/// still-future occurrence stays a live projection (see <see cref="AgendaProjectionService"/>).
+/// still-future occurrence stays a live projection (see <see cref="AgendaProjectionService"/>). It is also where a fate
+/// passes by time alone (PEP103 I-191): every running fate that has fully passed takes Passed, wherever nothing blocks it
+/// (<see cref="FateReactions.PassElapsedAsync"/>).
 /// </summary>
 /// <remarks>
 /// An occurrence's RECURRENCE-ID (owner id + original date/time) is its identity, so an occurrence already
@@ -32,7 +35,8 @@ public sealed class ProximityMaterializationService(
 	MaterializationPolicyOptions policy,
 	IOptionsSnapshot<AgendaPreferences> agendaPreferences,
 	IOptionsSnapshot<ReflectionPreferences> reflectionPreferences,
-	VaultAuditLogService auditLogService)
+	VaultAuditLogService auditLogService,
+	FateReactions fateReactions)
 {
 	/// <summary>
 	/// Generates the cycle-bound reflectives for a beginning cycle (PEP104). Every live reflect-decree whose orbit
@@ -185,15 +189,7 @@ public sealed class ProximityMaterializationService(
 		{
 			var resolved = await orbitService.IsolateAsync(fate, "the rolling harden-on-time pass", async () =>
 			{
-				var optedOut = fate.Status == FateStatus.OptOut;
-				if (!optedOut || autoMaterialiseOptOut)
-				{
-					var resolution = optedOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
-					foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(fate, fate.Orbit!, now, cancellationToken))
-					{
-						created += await EnsureFateEventiveAsync(fate, occurrence, resolution, cancellationToken) ? 1 : 0;
-					}
-				}
+				created += await HardenElapsedAsync(fate, now, autoMaterialiseOptOut, cancellationToken);
 
 				// Advance the denormalized next occurrence as time passes; only touch the row when it actually rolls
 				// forward, so an idle tick writes nothing.
@@ -208,6 +204,11 @@ public sealed class ProximityMaterializationService(
 				fate.NextOccurrence = null;
 			}
 		}
+
+		// Every running fate that has fully passed by now passes where nothing blocks it (PEP103 I-191), on this unit of work, so
+		// the engine judges and records each move with the save below and the notes follow it. It reads the next occurrences
+		// just refreshed above.
+		var passed = await fateReactions.PassElapsedAsync(context, now, cancellationToken);
 
 		// Orbit decrees (non-reflect): seek through now, hardening crossed attentives. Reflect-decrees are
 		// cycle-bound wherever they sit; their schedule state is not advanced here.
@@ -253,14 +254,46 @@ public sealed class ProximityMaterializationService(
 
 		// The advanced orbit cursors persist even when no new rows were created.
 		await context.SaveChangesAsync(cancellationToken);
-		if (created > 0)
+		if (created > 0 || passed > 0)
 		{
 			await auditLogService.WriteAsync(
 				"daemon",
 				"rolling.materialize",
 				subjectType: nameof(PolarisCycle),
-				details: new { created, from = localNow.ToString("yyyy-MM-dd HH:mm") },
+				details: new { created, passed, from = localNow.ToString("yyyy-MM-dd HH:mm") },
 				cancellationToken: cancellationToken);
+		}
+
+		return created;
+	}
+
+	/// <summary>
+	/// Hardens what time has brought of one orbit fate's occurrences by <paramref name="now"/>, as the rolling pass does
+	/// (PEP103 I-191): its cursor is sought through the instant and each occurrence it passes hardens, Pending, or stamped
+	/// OptOut for an opted-out fate — which hardens by time only under the auto-materialise-optout preference, its cursor
+	/// otherwise waiting. Nothing hardens, and the cursor stays, when time is not treated as an interaction or the fate has no
+	/// orbit. The engine calls it before a fate passes, so the occurrences it went through stay as history rather than leaving
+	/// with its projection. An orbit fault propagates: the caller isolates it. Returns the number of rows hardened.
+	/// </summary>
+	public Task<int> HardenElapsedAsync(Fate fate, DateTimeOffset now, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(fate);
+		return HardenElapsedAsync(fate, now, agendaPreferences.Value.AutoMaterialiseOptOut, cancellationToken);
+	}
+
+	private async Task<int> HardenElapsedAsync(Fate fate, DateTimeOffset now, bool autoMaterialiseOptOut, CancellationToken cancellationToken)
+	{
+		var optedOut = fate.Status == FateStatus.OptOut;
+		if (!policy.TimeIsInteraction || string.IsNullOrWhiteSpace(fate.Orbit) || (optedOut && !autoMaterialiseOptOut))
+		{
+			return 0;
+		}
+
+		var created = 0;
+		var resolution = optedOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
+		foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(fate, fate.Orbit, now, cancellationToken))
+		{
+			created += await EnsureFateEventiveAsync(fate, occurrence, resolution, cancellationToken) ? 1 : 0;
 		}
 
 		return created;
@@ -307,9 +340,10 @@ public sealed class ProximityMaterializationService(
 			return false;
 		}
 
-		var exists = await context.Eventives.AnyAsync(
-			item => item.FateId == fate.Id && item.RecurrenceId == slot,
-			cancellationToken);
+		// One the unit of work already adds counts too: the engine catches a fate up inside a save that may harden the same
+		// occurrence by interaction.
+		var exists = context.Eventives.Local.Any(item => item.FateId == fate.Id && item.RecurrenceId == slot && context.Entry(item).State != EntityState.Deleted)
+			|| await context.Eventives.AnyAsync(item => item.FateId == fate.Id && item.RecurrenceId == slot, cancellationToken);
 		if (exists)
 		{
 			return false;

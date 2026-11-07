@@ -329,6 +329,19 @@ public static partial class OrbitDays
 	}
 
 	/// <summary>
+	/// PREVIEW: the first <paramref name="count"/> occurrences whose start is on or after <paramref name="start"/>, as defined
+	/// from the epoch, leaving the schedule state untouched. Unlike a window it has no horizon: fewer than
+	/// <paramref name="count"/> come back only when the schedule yields no more, however far ahead the next one lies.
+	/// </summary>
+	public static IReadOnlyList<OrbitOccurrenceInstance> PreviewOccurrencesFrom(
+		string state, DateOnly start, int count, IOrbitCalendar calendar)
+	{
+		var snapshot = OrbitSnapshot.FromJson(state);
+		var engine = ResumeForPreview(snapshot, calendar);
+		return ToOccurrences(engine.ResolveFrom(ToMs(start), count), calendar);
+	}
+
+	/// <summary>
 	/// PREVIEW: the moment of the earliest occurrence whose start is at or after <paramref name="from"/>, resolved
 	/// from the schedule state without advancing it, or <see langword="null"/> when none falls within the lookahead
 	/// horizon. This is the denormalized "next occurrence" the declarative caches.

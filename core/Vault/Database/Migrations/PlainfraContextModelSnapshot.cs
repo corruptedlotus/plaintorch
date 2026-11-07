@@ -1147,6 +1147,14 @@ namespace plaintorch.Vault.Database.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("Orbit");
 
+                    b.Property<bool>("PassInferred")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("FatePassInferred");
+
+                    b.Property<string>("PassedFrom")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("FatePassedFrom");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("TEXT")

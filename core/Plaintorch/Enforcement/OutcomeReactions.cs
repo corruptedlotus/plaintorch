@@ -18,6 +18,10 @@ namespace Pleiades.Plaintorch.Enforcement;
 /// <remarks>
 /// In order:
 /// <list type="number">
+/// <item><description>Every fate settles on the status the save leaves it in: its passage markers follow it (a pass not
+/// inferred is a selected one), and one the engine brought back from Passed seeks its cursor to now
+/// (<see cref="FateReactions.SettleAsync"/>, PEP103 I-191). It runs first, so the next occurrences below read the sought
+/// cursor.</description></item>
 /// <item><description>Every fate or decree in the save gets its cached next occurrence recomputed (SH-07).</description></item>
 /// <item><description>An active Polaris cycle supersedes the unstarted forecasts on or before its day (SH-11).</description></item>
 /// <item><description>Objectives settle their Celestron value on finishing (Done or Archived), and leaving the finish revokes
@@ -33,6 +37,7 @@ namespace Pleiades.Plaintorch.Enforcement;
 /// </remarks>
 public sealed class OutcomeReactions(
 	DependencyReconciler dependencyReconciler,
+	FateReactions fates,
 	TerminativeService terminativeService,
 	IOptionsSnapshot<ReflectionPreferences> reflectionPreferences,
 	IServiceProvider serviceProvider)
@@ -50,6 +55,7 @@ public sealed class OutcomeReactions(
 	{
 		ArgumentNullException.ThrowIfNull(pass);
 		var context = pass.Context;
+		await fates.SettleAsync(pass, cancellationToken);
 		await RefreshNextOccurrencesAsync(context, cancellationToken);
 		pass.Supersede(await SupersedeForecastsAsync(context, cancellationToken));
 		await ApplyObjectiveSettlementRulesAsync(context, cancellationToken);

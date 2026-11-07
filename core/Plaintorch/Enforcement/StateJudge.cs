@@ -68,13 +68,14 @@ namespace Pleiades.Plaintorch.Enforcement;
 /// <b>Compensations.</b> Each lifecycle conflict carries the moves that would resolve it: a dependency's source moved to the
 /// state its trigger needs, an open child finished, and, the other way, a target that relied on a reopened dependency moved
 /// back to the state before the one it gates, or a closed item stepped back to its open finish. Each item moves to the
-/// default status of its new state (<see cref="EntityLifecycleResolver.DefaultStatus"/>). A move is judged in
+/// default status of its new state (<see cref="EntityLifecycleResolver.DefaultStatus"/>) — a fate's finish is Passed, and a
+/// Passed fate moved back returns to the started status it passed from (PEP103 I-191). A move is judged in
 /// turn, as a requested one is, so a source that is gated itself brings the moves its own gates need, and a target moved
 /// back takes back what relied on it in turn, until nothing more is needed. A locked checkpoint is passed through to the
 /// dependencies holding it, when its toll and condition do not, and a checkpoint that relocks takes back what it held. A
 /// conflict nothing could resolve carries no compensation: a source that is set aside (taking it up again is the user's
-/// call), an occurrence (time moves it), a fate asked to finish (a fate never does) or to move back before its start (a fate
-/// has no open state), a checkpoint held by its toll or its condition or with nothing to wait for
+/// call), an occurrence (time moves it), a fate asked to move back before its start (a fate has no open state), a checkpoint
+/// held by its toll or its condition or with nothing to wait for
 /// (<see cref="DependencyReconciler.Unlocks"/>), or an endpoint with nothing behind it.
 /// </para>
 /// <para>
@@ -1036,7 +1037,7 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 
 			var back = gated == LifecycleState.Finished ? LifecycleState.Started : LifecycleState.Open;
 			var kind = resolved.Entity.GetType();
-			if (!Lifecycle.StatesOf(kind).Contains(back) || Lifecycle.DefaultStatus(kind, back) is not { } status)
+			if (!Lifecycle.StatesOf(kind).Contains(back) || BackStatus(resolved.Entity, back) is not { } status)
 			{
 				stuck.Add(target);
 				return;
@@ -1044,6 +1045,15 @@ public sealed class StateJudge(EntityLifecycleResolver lifecycleResolver, IEnume
 
 			moves.Add(new Move(resolved.Entity, target, state, back, status));
 		}
+
+		/// <summary>
+		/// The status an item moved back to <paramref name="back"/> takes: its kind's default, except that a Passed fate comes
+		/// back to the started status it passed from (PEP103 I-191), so an opted-out fate stays hidden.
+		/// </summary>
+		private Enum? BackStatus(object entity, LifecycleState back)
+			=> entity is Fate { Status: FateStatus.Passed, PassedFrom: { } from } && Lifecycle.StateOf(from) == back
+				? from
+				: Lifecycle.DefaultStatus(entity.GetType(), back);
 
 		/// <summary>
 		/// Judges one item's move: the gates of every state it enters, the open children of a directive that finishes, and,

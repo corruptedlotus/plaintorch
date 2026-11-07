@@ -295,6 +295,17 @@ public class PlainfraContext : DbContext
 			.HasConversion<string>()
 			.HasColumnName("FateStatus");
 
+		// How a fate passed (PEP103 I-191): whether the engine inferred its Passed, and the started status it left, by name
+		// like the status itself.
+		modelBuilder.Entity<Fate>()
+			.Property(x => x.PassInferred)
+			.HasColumnName("FatePassInferred");
+
+		modelBuilder.Entity<Fate>()
+			.Property(x => x.PassedFrom)
+			.HasConversion<string>()
+			.HasColumnName("FatePassedFrom");
+
 		modelBuilder.Entity<Decree>()
 			.Property(x => x.Status)
 			.HasConversion<string>()

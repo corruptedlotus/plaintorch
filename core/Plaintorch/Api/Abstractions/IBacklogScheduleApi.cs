@@ -28,7 +28,8 @@ public interface IBacklogScheduleApi
 	/// <exception cref="InvalidOperationException">
 	/// No incentive, directive or checkpoint has the id; the type is unknown; the state is not Started or Finished; the type
 	/// is <see cref="BacklogScheduleType.Record"/>, which only the core writes; or the owner's kind never reaches the state —
-	/// a checkpoint never starts, and a fate, a decree or a lunar directive never finishes.
+	/// a checkpoint never starts, and a decree never finishes (a fate finishes by passing, PEP103 I-191, and a lunar directive by
+	/// going stale).
 	/// </exception>
 	Task<BacklogSchedule> AddAsync(string entityId, BacklogScheduleType type, LifecycleState state, DateTime time, CancellationToken cancellationToken = default);
 

@@ -206,7 +206,14 @@ public sealed class OccurrenceHardeningService(
 		// A fate whose temporal activation is off (stopped, PEP103 patch 6) generates nothing and cannot be interacted
 		// with. An opted-out fate still honours the user-interaction rule (PEP100/PEP111): interacting with one of its
 		// occurrences hardens it, stamped OptOut so it stays hidden until the row is explicitly opted back in by setting it
-		// Pending.
+		// Pending. An occurrence it hardened before it was switched off stays and can still be resolved (user ruling, PEP103
+		// patch 6), so a row already hardened at exactly that slot is handed back first — a Passed fate's, which passing
+		// hardened, among them (PEP103 I-191).
+		if (!TemporalActivation.IsActive(fate.Status) && await FindEventiveAsync(fate.Id, recurrenceId, cancellationToken) is { } kept)
+		{
+			return kept;
+		}
+
 		if (!TemporalActivation.IsActive(fate.Status))
 		{
 			throw new InvalidOperationException($"Fate '{fate.Id}' is {fate.Status} and does not materialize eventives.");
