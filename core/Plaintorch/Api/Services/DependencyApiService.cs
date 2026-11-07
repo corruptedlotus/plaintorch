@@ -13,7 +13,8 @@ namespace Pleiades.Plaintorch.Api.Services;
 /// <see cref="DependencyRules"/> and the temporal cycle rule by <see cref="DependencyOrdering"/>, both over the whole
 /// graph — the stored edges and the intrinsic ones the structure implies (PEP102 patch 9), read through
 /// <see cref="DependencyGraphService"/>; endpoint existence and kind are validated here (they require resolving loose
-/// references). Satisfaction and checkpoint unlock are computed by <see cref="Enforcement.DependencyReconciler"/> on save; whether
+/// references). Whether an eventive endpoint's slot names a real occurrence is judged by the state engine on the save
+/// (<see cref="Enforcement.StateJudge.OccurrenceRule"/>), never here. Satisfaction and checkpoint unlock are computed by <see cref="Enforcement.DependencyReconciler"/> on save; whether
 /// an unsatisfied edge gates its target's next transition is stamped by <see cref="DependencyGateService"/> as it is served.
 /// </summary>
 public sealed class DependencyApiService(
@@ -396,6 +397,8 @@ public sealed class DependencyApiService(
 					throw new InvalidOperationException($"The {side} eventive owner '{endpoint.Id}' was not found (expected a fate).");
 				}
 
+				// Whether the slot resolves to an occurrence is the state engine's to judge, on every pathway: SH-17 hardens
+				// only an exact one, and the judge refuses the edge otherwise (dependency.occurrence, PEP103 I-035).
 				break;
 			default:
 				throw new InvalidOperationException($"The {side} endpoint kind '{endpoint.Kind}' is not supported.");

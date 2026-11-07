@@ -186,6 +186,7 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<IVaultMigration, IntrinsicDependencyPurgeMigration>();
 		services.AddScoped<IVaultMigration, ObjectiveOnboardStatusMigration>();
 		services.AddScoped<IVaultMigration, FateStoppedStatusMigration>();
+		services.AddScoped<IVaultMigration, DependencyOccurrenceRepairMigration>();
 		services.AddScoped<PlaintorchEngine>();
 		services.AddScoped<TimeframeAffinityResolver>();
 		services.AddScoped<TimeframeCandidateService>();

@@ -25,7 +25,7 @@ namespace Pleiades.Plaintorch.Enforcement;
 /// <item><description>A directive's availability never outlives its timeframe's role (SH-04).</description></item>
 /// <item><description>A changed orbit resets its schedule cursor, and resuming a set-aside fate or decree seeks its cursor to
 /// now (SH-05, SH-06, DE-08).</description></item>
-/// <item><description>A dependency added hardens the occurrences it names (SH-17).</description></item>
+/// <item><description>A dependency added hardens the occurrences it names, at exactly the slots it names (SH-17).</description></item>
 /// <item><description>Deleting an endpoint releases the stored edges naming it (SH-18, DP-12).</description></item>
 /// <item><description>A structural change purges the stored edges the structure now contradicts or restates (SH-19).</description></item>
 /// </list>
@@ -358,7 +358,10 @@ public sealed class StructureReactions(EntityLifecycleResolver lifecycleResolver
 	/// <summary>
 	/// Deep-interception enforcement (Strategy 1 / PEP101): a reference to an occurrence must harden it. Every dependency
 	/// added in this unit of work, whatever its pathway, has each of its eventive endpoints hardened into the same save, so
-	/// the judge and the reconciler resolve a real row rather than reading an absent projection as unsatisfied.
+	/// the judge and the reconciler resolve a real row rather than reading an absent projection as unsatisfied. Only the
+	/// exact slot an endpoint names hardens (<see cref="OccurrenceHardeningService.EnsureReferencedEventiveAsync"/>); a slot
+	/// that resolves to nothing is left as it is, and the judge refuses the edge (<see cref="StateJudge.OccurrenceRule"/>,
+	/// PEP103 I-035).
 	/// </summary>
 	private async Task HardenReferencedOccurrencesAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
@@ -382,9 +385,10 @@ public sealed class StructureReactions(EntityLifecycleResolver lifecycleResolver
 	/// <summary>
 	/// Dependencies are the slave of the entities they join (PEP102 patch 9): in the same unit of work that deletes a
 	/// directive, an objective, a fate or a checkpoint, every stored edge touching it — as an endpoint, or as the owner of an
-	/// occurrence endpoint — goes with it, so no edge is left naming an id that no longer exists. Riding the save covers every
-	/// pathway: the API deletes, a sprint's milestone going with its sprint, and the markdown watcher's delete-from-database
-	/// action.
+	/// occurrence endpoint — goes with it, so no edge is left naming an id that no longer exists. A hardened eventive row
+	/// deleted on its own takes the edges naming its slot with it too (PEP103 I-035): the slot would resolve to nothing, and
+	/// such an edge could never be satisfied. Riding the save covers every pathway: the API deletes, a sprint's milestone
+	/// going with its sprint, and the markdown watcher's delete-from-database action.
 	/// </summary>
 	private async Task ReleaseDeletedEndpointDependenciesAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
@@ -392,7 +396,11 @@ public sealed class StructureReactions(EntityLifecycleResolver lifecycleResolver
 			.Where(entry => entry.State == EntityState.Deleted && entry.Entity is StellarDirective or Objective or Fate or Checkpoint)
 			.Select(entry => ((IPuckNamedEntity)entry.Entity).Id)
 			.ToList();
-		if (deletedIds.Count == 0)
+		var deletedSlots = context.ChangeTracker.Entries<Eventive>()
+			.Where(entry => entry.State == EntityState.Deleted && entry.Entity.RecurrenceId is not null)
+			.Select(entry => new EndpointRef(DependencyEndpointKind.Eventive, entry.Entity.FateId, entry.Entity.RecurrenceId))
+			.ToList();
+		if (deletedIds.Count == 0 && deletedSlots.Count == 0)
 		{
 			return;
 		}
@@ -400,6 +408,18 @@ public sealed class StructureReactions(EntityLifecycleResolver lifecycleResolver
 		var edges = await context.Dependencies
 			.Where(dependency => deletedIds.Contains(dependency.SourceId) || deletedIds.Contains(dependency.TargetId))
 			.ToListAsync(cancellationToken);
+		if (deletedSlots.Count > 0)
+		{
+			var owners = deletedSlots.Select(slot => slot.Id).Distinct().ToList();
+			edges.AddRange((await context.Dependencies
+					.Where(dependency => (dependency.SourceKind == DependencyEndpointKind.Eventive && owners.Contains(dependency.SourceId))
+						|| (dependency.TargetKind == DependencyEndpointKind.Eventive && owners.Contains(dependency.TargetId)))
+					.ToListAsync(cancellationToken))
+				.Where(dependency => deletedSlots.Contains(dependency.Source) || deletedSlots.Contains(dependency.Target))
+				.Except(edges)
+				.ToList());
+		}
+
 		if (edges.Count == 0)
 		{
 			return;

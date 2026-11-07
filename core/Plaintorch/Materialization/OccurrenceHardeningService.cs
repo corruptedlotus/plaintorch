@@ -44,8 +44,7 @@ public sealed class OccurrenceHardeningService(
 
 		var fate = await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == ownerId, cancellationToken)
 			?? throw new InvalidOperationException($"No fate '{ownerId}' owns an eventive.");
-		var (eventive, _) = await EnsureFateEventiveIntoContextAsync(fate, recurrenceId, respectDependencyGate: true, cancellationToken);
-		return eventive;
+		return await EnsureFateEventiveIntoContextAsync(fate, recurrenceId, cancellationToken);
 	}
 
 	/// <summary>
@@ -122,41 +121,87 @@ public sealed class OccurrenceHardeningService(
 	/// <summary>
 	/// Ensures the eventive that a dependency endpoint references is hardened into the current unit of work
 	/// (no save — the ongoing <see cref="PlainfraContext.SaveChanges()"/> persists it), so a reference to a
-	/// projected occurrence makes it a durable row the reconciler can resolve. No-op for non-eventive endpoints
-	/// and already-hardened occurrences; an occurrence that cannot be hardened (locked, or off-phase for its
-	/// orbit) is left unresolved rather than failing the save.
+	/// projected occurrence makes it a durable row the reconciler can resolve.
 	/// </summary>
-	public async Task EnsureReferencedEventiveAsync(EndpointRef endpoint, CancellationToken cancellationToken = default)
+	/// <remarks>
+	/// A reference names one occurrence by its exact slot, and only that slot ever hardens (PEP103, I-035): an already
+	/// hardened row at it, or the occurrence of a temporally active fate whose orbit starts one at exactly that moment.
+	/// Unlike an interaction, a reference never snaps to the day's first occurrence, since the edge keeps the slot it was
+	/// given and endpoints match exactly. A slot that resolves to nothing is left unresolved, and the state judge refuses
+	/// the edge naming it (<c>dependency.occurrence</c>), wording why with <see cref="DescribeUnresolvedReference"/>. A
+	/// reference hardens the occurrence even when it is dependency-gated: the row must exist for the reference to resolve,
+	/// and the lock still applies to whether it can begin.
+	/// </remarks>
+	/// <returns>
+	/// The eventive the endpoint names, or <see langword="null"/> for a non-eventive endpoint and for a slot that resolves to
+	/// no occurrence.
+	/// </returns>
+	public async Task<Eventive?> EnsureReferencedEventiveAsync(EndpointRef endpoint, CancellationToken cancellationToken = default)
 	{
 		if (endpoint.Kind != DependencyEndpointKind.Eventive || endpoint.RecurrenceId is not { } recurrenceId)
 		{
-			return;
+			return null;
 		}
 
-		if (await FindEventiveAsync(endpoint.Id, recurrenceId, cancellationToken) is not null)
+		if (await FindEventiveAsync(endpoint.Id, recurrenceId, cancellationToken) is { } existing)
 		{
-			return;
+			return existing;
 		}
 
 		var fate = await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == endpoint.Id, cancellationToken);
-		if (fate is not null)
+		if (fate is null || !TemporalActivation.IsActive(fate.Status) || string.IsNullOrWhiteSpace(fate.Orbit))
 		{
-			try
-			{
-				// A reference hardens the occurrence even when it is dependency-gated: the row must exist for the
-				// reference to resolve; the lock still applies to whether it can begin.
-				await EnsureFateEventiveIntoContextAsync(fate, recurrenceId, respectDependencyGate: false, cancellationToken);
-			}
-			catch (InvalidOperationException)
-			{
-			}
-
-			return;
+			return null;
 		}
 
+		var dayOccurrences = await orbitService.PreviewDayOccurrencesAsync(fate, fate.Orbit, DateOnly.FromDateTime(recurrenceId), cancellationToken);
+		if (dayOccurrences.FirstOrDefault(item => item.Moment == recurrenceId) is not { } occurrence)
+		{
+			return null;
+		}
+
+		var eventive = NewEventive(fate, occurrence.Moment, occurrence);
+		context.Eventives.Add(eventive);
+		return eventive;
 	}
 
-	private async Task<(Eventive Eventive, bool Created)> EnsureFateEventiveIntoContextAsync(Fate fate, DateTime recurrenceId, bool respectDependencyGate, CancellationToken cancellationToken)
+	/// <summary>
+	/// Words why a dependency's eventive endpoint resolves to no row, as <see cref="EnsureReferencedEventiveAsync"/> leaves
+	/// it (PEP103, I-035). The state judge's <c>dependency.occurrence</c> refusal and the vault's one-time release of the
+	/// stored edges that never resolved share it, so both say the same thing.
+	/// </summary>
+	/// <param name="fate">The fate the endpoint names, or <see langword="null"/> when nothing has its id.</param>
+	/// <param name="endpoint">The eventive endpoint.</param>
+	/// <returns>
+	/// A short reason code (<c>owner-missing</c>, <c>no-slot</c>, <c>fate-stopped</c>, <c>no-orbit</c> or
+	/// <c>no-occurrence</c>) for the record, and a sentence for the user.
+	/// </returns>
+	public static (string Reason, string Message) DescribeUnresolvedReference(Fate? fate, EndpointRef endpoint)
+	{
+		const string never = "a dependency on it could never be satisfied.";
+		if (fate is null)
+		{
+			return ("owner-missing", $"A dependency cannot name an occurrence of '{endpoint.Id}': no fate has that id.");
+		}
+
+		var name = string.IsNullOrWhiteSpace(fate.Title) ? $"Fate '{fate.Id}'" : $"Fate '{fate.Title}'";
+		if (endpoint.RecurrenceId is not { } slot)
+		{
+			return ("no-slot", $"A dependency on an occurrence of {name} must name the occurrence's start; {never}");
+		}
+
+		var at = slot.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+		if (!TemporalActivation.IsActive(fate.Status))
+		{
+			return ("fate-stopped", $"{name} is {fate.Status}, so its occurrence at {at} never comes; {never}");
+		}
+
+		return string.IsNullOrWhiteSpace(fate.Orbit)
+			? ("no-orbit", $"{name} has no orbit, so nothing of it occurs at {at}; {never}")
+			: ("no-occurrence", $"{name} has no occurrence starting at {at}; {never}");
+	}
+
+	private async Task<Eventive> EnsureFateEventiveIntoContextAsync(Fate fate, DateTime recurrenceId, CancellationToken cancellationToken)
 	{
 		// A fate whose temporal activation is off (stopped, PEP103 patch 6) generates nothing and cannot be interacted
 		// with. An opted-out fate still honours the user-interaction rule (PEP100/PEP111): interacting with one of its
@@ -171,7 +216,7 @@ public sealed class OccurrenceHardeningService(
 		var slot = occurrence?.Moment ?? recurrenceId;
 
 		// PEP101: a locked whole-fate freezes all materialization; a locked single occurrence blocks just itself.
-		if (respectDependencyGate && await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, slot, cancellationToken))
+		if (await dependencyGate.IsFateMaterializationBlockedAsync(fate.Id, slot, cancellationToken))
 		{
 			throw new InvalidOperationException($"Fate '{fate.Id}' occurrence on {slot:yyyy-MM-dd} is blocked by unmet dependencies and cannot be materialized.");
 		}
@@ -179,24 +224,31 @@ public sealed class OccurrenceHardeningService(
 		var existing = await FindEventiveAsync(fate.Id, slot, cancellationToken);
 		if (existing is not null)
 		{
-			return (existing, false);
+			return existing;
 		}
 
-		var eventive = new Eventive
-		{
-			FateId = fate.Id,
-			Epoch = occurrence is not null ? PlaintorchOrbitService.EpochOf(fate, occurrence) : Epoch.FromSlot(slot, PlaintorchOrbitService.ResolveTimeZone(fate)),
-			RecurrenceId = slot,
-			Resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending,
-		};
+		var eventive = NewEventive(fate, slot, occurrence);
 		context.Eventives.Add(eventive);
-		return (eventive, true);
+		return eventive;
 	}
 
 	/// <summary>
-	/// Resolves, in preview mode, the orbit occurrence a RECURRENCE-ID addresses: the occurrence starting at exactly
-	/// that moment, or the day's first occurrence when none does. <see langword="null"/> when the declarative has
-	/// no orbit; throws when its orbit has no occurrence on that day.
+	/// Builds the row a fate's occurrence hardens into at <paramref name="slot"/>, positioned at the orbit occurrence when
+	/// there is one. An opted-out fate's rows are stamped OptOut, so they stay hidden until opted back in.
+	/// </summary>
+	private static Eventive NewEventive(Fate fate, DateTime slot, OrbitOccurrenceInstance? occurrence) => new()
+	{
+		FateId = fate.Id,
+		Epoch = occurrence is not null ? PlaintorchOrbitService.EpochOf(fate, occurrence) : Epoch.FromSlot(slot, PlaintorchOrbitService.ResolveTimeZone(fate)),
+		RecurrenceId = slot,
+		Resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending,
+	};
+
+	/// <summary>
+	/// Resolves, in preview mode, the orbit occurrence a RECURRENCE-ID addresses for an interaction: the occurrence
+	/// starting at exactly that moment, or the day's first occurrence when none does, so a client may address an
+	/// occurrence by its day alone. <see langword="null"/> when the declarative has no orbit; throws when its orbit has no
+	/// occurrence on that day. A dependency reference never snaps (<see cref="EnsureReferencedEventiveAsync"/>).
 	/// </summary>
 	private async Task<OrbitOccurrenceInstance?> ResolveSlotAsync(Incentive owner, string ownerKind, string? orbit, DateTime recurrenceId, CancellationToken cancellationToken)
 	{
