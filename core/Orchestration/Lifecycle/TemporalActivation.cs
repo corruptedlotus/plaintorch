@@ -9,7 +9,9 @@ namespace Pleiades.Orchestration.Lifecycle;
 /// What the gate switches off for an inactive item:
 /// <list type="bullet">
 /// <item><description>Orbit materialization: a fate's eventives and a decree's attentives are neither projected, hardened by
-/// time or by interaction, nor added by hand, and the cached next occurrence is cleared.</description></item>
+/// time or by interaction, nor added by hand, and the cached next occurrence is cleared. A Passed fate is the one exception
+/// to the last (PEP103 I-191): it takes an occurrence added by hand that is still to come, which brings it back, and one
+/// whose pass was inferred takes any (<c>FateReactions.TakesManualEventive</c>).</description></item>
 /// <item><description>Its due (<see cref="DueActs"/>): its terminative is neither projected nor hardened, and one already
 /// hardened is resolved (PEP103 patch 7).</description></item>
 /// <item><description>Lunar reflection: a decree that is not active is never drawn into a cycle.</description></item>

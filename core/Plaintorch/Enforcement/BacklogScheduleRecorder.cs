@@ -27,12 +27,14 @@ namespace Pleiades.Plaintorch.Enforcement;
 /// records themselves show, so resuming to where the item was changes nothing else.</description></item>
 /// </list>
 /// An entity created in a state counts as entering it. Only the states an owner's kind passes through are recorded: a
-/// checkpoint never starts, and a fate or a decree never finishes. A state that changes with time alone (a checkpoint whose
-/// due passes) reads the same stored and current, so it is recorded only once the engine's clock re-evaluates it.
+/// checkpoint never starts, and a decree never finishes. A state that changes with time alone (a checkpoint whose due passes)
+/// reads the same stored and current, so it is recorded only once the engine's clock re-evaluates it; a fate that passes by
+/// time is moved, and so recorded, by the rolling pass (PEP103 I-191).
 /// <para>
 /// A kind that keeps a history (<see cref="EntityLifecycleResolver.KeepsHistory"/>: a fate, a decree, a lunar directive)
 /// has no place on a main line to keep (PEP103 patch 6): every state it enters is recorded anew, at the save's moment, and
-/// nothing is withdrawn, so it may hold several records of one state.
+/// nothing is withdrawn, so it may hold several records of one state — a fate passing records its finish, and coming back a
+/// start. One created straight into a progress state records each it reaches on the way, as a jump does.
 /// </para>
 /// </description></item>
 /// <item><description>
@@ -93,9 +95,14 @@ public sealed class BacklogScheduleRecorder(EntityLifecycleResolver lifecycleRes
 
 			if (lifecycleResolver.KeepsHistory(kind))
 			{
-				if (states.Contains(after))
+				// One created straight into a progress state enters each on the way, as a jump does: a fate created already
+				// passed (PEP103 I-191) records its start and its finish.
+				IEnumerable<LifecycleState> reached = before is null && after is LifecycleState.Started or LifecycleState.Finished
+					? lifecycleResolver.Transition(kind, LifecycleState.Open, after).Entered
+					: states.Contains(after) ? [after] : [];
+				foreach (var state in reached)
 				{
-					var record = Record(entry.Entity, after, now);
+					var record = Record(entry.Entity, state, now);
 					entered.Add(record);
 					history.Add(record);
 				}

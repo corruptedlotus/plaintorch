@@ -415,7 +415,8 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		Assert.Equal(all, resolver.StatesOf(typeof(Objective)).Order());
 		Assert.Equal(all, resolver.StatesOf(typeof(StellarDirective)).Order());
 		Assert.Equal(all, resolver.StatesOf(typeof(Eventive)).Order());
-		Assert.Equal([LifecycleState.Deferred, LifecycleState.Started], resolver.StatesOf(typeof(Fate)).Order());
+		// A fate finishes by passing (PEP103 I-191).
+		Assert.Equal([LifecycleState.Deferred, LifecycleState.Started, LifecycleState.Finished], resolver.StatesOf(typeof(Fate)).Order());
 		Assert.Equal([LifecycleState.Deferred, LifecycleState.Started], resolver.StatesOf(typeof(Decree)).Order());
 		Assert.Equal([LifecycleState.Deferred, LifecycleState.Started, LifecycleState.Finished], resolver.StatesOf(typeof(LunarDirective)).Order());
 		Assert.Equal([LifecycleState.Deferred, LifecycleState.Open, LifecycleState.Finished], resolver.StatesOf(typeof(Checkpoint)).Order());
@@ -443,12 +444,13 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		Assert.Equal(DirectiveStatus.Planned, resolver.DefaultStatus(typeof(StellarDirective), LifecycleState.Open));
 		Assert.Equal(DirectiveStatus.Fulfilled, resolver.DefaultStatus(typeof(StellarDirective), LifecycleState.Finished));
 		Assert.Equal(FateStatus.Stopped, resolver.DefaultStatus(typeof(Fate), LifecycleState.Deferred));
+		Assert.Equal(FateStatus.Passed, resolver.DefaultStatus(typeof(Fate), LifecycleState.Finished));
 		Assert.Equal(LunarDirectiveStatus.Stale, resolver.DefaultStatus(typeof(LunarDirective), LifecycleState.Finished));
 		Assert.Equal(LunarDirectiveStatus.OnHold, resolver.DefaultStatus(typeof(LunarDirective), LifecycleState.Deferred));
 		Assert.Equal(EventiveResolution.Missed, resolver.DefaultStatus(typeof(Eventive), LifecycleState.Deferred));
 
 		// A state a kind never passes through, or reaches without a status of its own, has no default.
-		Assert.Null(resolver.DefaultStatus(typeof(Fate), LifecycleState.Finished));
+		Assert.Null(resolver.DefaultStatus(typeof(Fate), LifecycleState.Open));
 		Assert.Null(resolver.DefaultStatus(typeof(Eventive), LifecycleState.Started));
 		Assert.Null(resolver.DefaultStatus(typeof(Checkpoint), LifecycleState.Finished));
 		Assert.Equal(AttentiveResolution.Done, LifecycleDeclarations.DefaultStatus<AttentiveResolution>(LifecycleState.Finished));
@@ -465,7 +467,8 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		Assert.Equal(LifecycleState.Finished, resolver.NextGatedState(typeof(Objective), LifecycleState.Started));
 		Assert.Null(resolver.NextState(typeof(Objective), LifecycleState.Finished));
 		Assert.Equal(LifecycleState.Started, resolver.NextState(typeof(Fate), LifecycleState.Deferred));
-		Assert.Null(resolver.NextGatedState(typeof(Fate), LifecycleState.Started));
+		Assert.Equal(LifecycleState.Finished, resolver.NextGatedState(typeof(Fate), LifecycleState.Started));
+		Assert.Null(resolver.NextGatedState(typeof(Decree), LifecycleState.Started));
 		Assert.Equal(LifecycleState.Finished, resolver.NextGatedState(typeof(Checkpoint), LifecycleState.Deferred));
 
 		// A jump enters every progress state on the way; a move back leaves them, latest first; a shift within one state,
@@ -526,12 +529,15 @@ public sealed class BacklogScheduleTests : VaultTestBase
 		Assert.Equal(checkpoint.Id, checkpointPlan.CheckpointId);
 		Assert.Equal(new DateTime(2026, 11, 29), checkpointPlan.Time);
 
-		// A checkpoint never starts, so there is no start of it to plan; a fate never finishes, while a lunar directive does
-		// (Stale, PEP103 patch 6).
+		// A checkpoint never starts, so there is no start of it to plan; a decree never finishes, while a lunar directive does
+		// (Stale, PEP103 patch 6) and a fate does by passing (PEP103 I-191), so their finishes can be planned.
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(checkpoint.Id, BacklogScheduleType.Plan, LifecycleState.Started, new DateTime(2026, 11, 1), Ct)));
 		Assert.Null(Slot(await StoredAsync(checkpoint.Id), BacklogScheduleType.Plan, LifecycleState.Started));
-		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Solstice", Date: new DateOnly(2026, 12, 21)), Ct));
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(fate.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 11, 1), Ct)));
+		var decree = await Declarative(api => api.CreateDecreeAsync(new DecreePlan("Tidy up", DefaultLength: 10), Ct));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => Schedules(api => api.AddAsync(decree.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 11, 1), Ct)));
+		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Solstice", Date: new DateOnly(2027, 12, 21)), Ct));
+		await Schedules(api => api.AddAsync(fate.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2027, 12, 22), Ct));
+		Assert.Equal(fate.Id, Slot(await StoredAsync(fate.Id), BacklogScheduleType.Plan, LifecycleState.Finished)!.IncentiveId);
 		await Schedules(api => api.AddAsync(lunar.Id, BacklogScheduleType.Plan, LifecycleState.Finished, new DateTime(2026, 11, 1), Ct));
 	}
 

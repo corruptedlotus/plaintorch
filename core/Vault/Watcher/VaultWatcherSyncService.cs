@@ -307,6 +307,15 @@ public sealed class VaultWatcherSyncService(
 			await NormalizeStellarDirectiveForeignKeysAsync(existingStellar, candidate.VaultRelativePath, cancellationToken);
 		}
 
+		if (existing is Fate existingFate)
+		{
+			// How a fate passed — whether its Passed was inferred, and the started status it left — is database-only (PEP103
+			// I-191): a note reads `status: Passed` either way, so a frontmatter sync keeps them. The engine clears them once
+			// the status leaves Passed, and reads a pass the note itself selects as a selected one.
+			existingFate.PassInferred = existingEntry.OriginalValues.GetValue<bool>(nameof(Fate.PassInferred));
+			existingFate.PassedFrom = existingEntry.OriginalValues.GetValue<FateStatus?>(nameof(Fate.PassedFrom));
+		}
+
 		if (existing is Fate or Decree)
 		{
 			await NormalizeIncentiveDirectiveAsync((Incentive)existing, candidate.VaultRelativePath, cancellationToken);

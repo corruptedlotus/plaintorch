@@ -39,28 +39,14 @@ public sealed class EventiveLifecycleStateSource : ILifecycleStateSource
 			return LifecycleState.Deferred;
 		}
 
+		// The window closes at its moment advanced by the duration, or by one granularity unit when it has no explicit span,
+		// so an all-day occurrence finishes at the end of its day (Epoch.ClosesAt, the reading a fate's passing shares).
 		var now = DateTimeOffset.UtcNow;
-		if (OccurrenceEnd(eventive) <= now)
+		if (eventive.Epoch.ClosesAt() <= now)
 		{
 			return LifecycleState.Finished;
 		}
 
-		return OccurrenceStart(eventive) <= now ? LifecycleState.Started : LifecycleState.Open;
-	}
-
-	private static DateTimeOffset OccurrenceStart(Eventive eventive)
-	{
-		return eventive.Epoch.Instant ?? new DateTimeOffset(eventive.Epoch.Moment, TimeSpan.Zero);
-	}
-
-	private static DateTimeOffset OccurrenceEnd(Eventive eventive)
-	{
-		// The occurrence's end is its moment advanced by the duration, or by one granularity unit when it has
-		// no explicit span — so an all-day (day-granular) occurrence still finishes at the end of its day. An
-		// anchored one ends that span after the instant it names.
-		var epoch = eventive.Epoch;
-		return epoch.Instant is { } instant
-			? instant + (epoch.EndMoment - epoch.Moment)
-			: new DateTimeOffset(epoch.EndMoment, TimeSpan.Zero);
+		return eventive.Epoch.OpensAt() <= now ? LifecycleState.Started : LifecycleState.Open;
 	}
 }

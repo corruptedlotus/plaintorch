@@ -6,6 +6,7 @@ using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
+using Pleiades.Plaintorch.Enforcement;
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.State;
@@ -358,10 +359,14 @@ public sealed class DeclarativeApiService(
 			?? throw new InvalidOperationException($"Fate '{plan.FateId}' was not found.");
 		// A stopped fate takes no occurrences, as its temporal activation is off and it materializes none (PEP100, PEP103
 		// patch 6). An opted-out fate still accepts one: adding it by hand is the explicit interaction that opts that single
-		// occurrence in.
-		if (!TemporalActivation.IsActive(fate.Status))
+		// occurrence in. A Passed fate takes one still to close, which brings it back (judged by the engine as a move back), and
+		// a fate whose pass was inferred also takes one wholly past, staying Passed; a selected pass acts like Stopped for
+		// those (PEP103 I-191).
+		if (!FateReactions.TakesManualEventive(fate, epoch, DateTimeOffset.Now))
 		{
-			throw new InvalidOperationException($"Fate '{fate.Id}' is {fate.Status} and takes no eventives.");
+			throw new InvalidOperationException(fate.Status == FateStatus.Passed
+				? $"Fate '{fate.Id}' is {fate.Status}, so it takes only an eventive still to come, which brings it back."
+				: $"Fate '{fate.Id}' is {fate.Status} and takes no eventives.");
 		}
 
 		// PEP101: a locked whole-fate freezes all materialization. A manual occurrence has no slot, so no single

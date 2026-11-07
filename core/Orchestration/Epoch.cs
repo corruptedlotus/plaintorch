@@ -96,6 +96,23 @@ public sealed class Epoch
 	[NotMapped, JsonIgnore]
 	public DateTime LocalEndMoment => LocalMoment + (EndMoment - Moment);
 
+	/// <summary>
+	/// Reads when the occurrence's window opens, to compare with the current instant: <see cref="Instant"/> for an anchored
+	/// epoch, and <see cref="Moment"/> read naively as UTC for a floating or all-day one. This is the reading an eventive's
+	/// lifecycle state takes (<c>EventiveLifecycleStateSource</c>), so whatever asks whether an occurrence has begun agrees
+	/// with it.
+	/// </summary>
+	public DateTimeOffset OpensAt() => Instant ?? new DateTimeOffset(Moment, TimeSpan.Zero);
+
+	/// <summary>
+	/// Reads when the occurrence's window closes, in the reading <see cref="OpensAt"/> takes: the epoch's span after the
+	/// instant it names when anchored, and <see cref="EndMoment"/> read naively as UTC otherwise — so an all-day occurrence
+	/// closes at the end of its day. An occurrence has passed once this is at or before the current instant.
+	/// </summary>
+	public DateTimeOffset ClosesAt() => Instant is { } instant
+		? instant + (EndMoment - Moment)
+		: new DateTimeOffset(EndMoment, TimeSpan.Zero);
+
 	private static DateTimeOffset? AnchoredInstant(DateTime moment, string? timeZone)
 	{
 		if (OccurrenceZones.Find(timeZone) is not { } zone)

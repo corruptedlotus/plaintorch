@@ -18,10 +18,11 @@ namespace Pleiades.Plaintorch.Enforcement;
 /// <remarks>
 /// <list type="number">
 /// <item><description>
-/// <b>Structure</b> (<see cref="StructureReactions"/>, then <see cref="MembershipReactions"/>): what the requested change
-/// implies whatever the rules say — releases on delete, schedule cursors, occurrence hardening, purges of the edges the
-/// structure contradicts — and then the moves the engine makes of its own accord when an objective joins the active onrush
-/// sprint or Polaris cycle, wherever nothing blocks them.
+/// <b>Structure</b> (<see cref="StructureReactions"/>, then <see cref="MembershipReactions"/> and <see cref="FateReactions"/>):
+/// what the requested change implies whatever the rules say — releases on delete, schedule cursors, occurrence hardening,
+/// purges of the edges the structure contradicts — and then the moves the engine makes of its own accord: an objective
+/// joining the active onrush sprint or Polaris cycle, and a fate that has fully passed, wherever nothing blocks them; and a
+/// Passed fate the edit gives an occurrence still to close coming back, judged as the edit's own move back.
 /// </description></item>
 /// <item><description>
 /// <b>Judgement</b> (<see cref="StateJudge"/>, <see cref="StateDecisionService"/>, <see cref="StateCompensator"/>): the rules
@@ -51,6 +52,7 @@ namespace Pleiades.Plaintorch.Enforcement;
 public sealed class StateEngine(
 	StructureReactions structure,
 	MembershipReactions membership,
+	FateReactions fates,
 	StateJudge judge,
 	StateDecisionService decisions,
 	StateCompensator compensator,
@@ -72,6 +74,7 @@ public sealed class StateEngine(
 
 		await structure.ApplyAsync(pass, cancellationToken);
 		await membership.ApplyAsync(pass, cancellationToken);
+		await fates.ApplyAsync(pass, cancellationToken);
 
 		var judgement = await judge.JudgeAsync(context, cancellationToken);
 		var decision = decisions.Decide(judgement.Conflicts);

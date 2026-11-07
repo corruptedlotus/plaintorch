@@ -86,8 +86,8 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		// projected — stamped OptOut so the display agenda hides them while they can still be interacted with or
 		// opted back in (PEP100/PEP111). Each occurrence is stamped with its declarative's zone, and the preview keeps
 		// those that fall in the window on this host's clock. Only owners whose temporal activation is on are projected
-		// (PEP103 patch 6): a stopped fate and an abandoned decree project nothing, nor does the due of an item finished or
-		// set aside.
+		// (PEP103 patch 6): a stopped or passed fate (PEP103 I-191) and an abandoned decree project nothing, nor does the due of
+		// an item finished or set aside. The occurrences a fate hardened, passing ones included, still stand as hardened rows.
 		var activeFates = TemporalActivation.Statuses<FateStatus>();
 		var orbitFates = await context.Fates
 			.AsNoTracking()

@@ -334,6 +334,52 @@ public sealed class PlaintorchOrbitService(
 	}
 
 	/// <summary>
+	/// PREVIEW: whether the declarative's orbit, as its schedule state defines it, still yields an occurrence whose window
+	/// closes after <paramref name="now"/> (<see cref="Epoch.ClosesAt"/>, on the zone the orbit runs on) — begun and still
+	/// running, or yet to come. An occurrence whose slot is in <paramref name="hardenedSlots"/> does not count: the row that
+	/// slot hardened into answers for it, wherever it has since been moved. The state is never advanced; one is created,
+	/// anchored today, for an orbit that has never been resolved (as every preview does).
+	/// </summary>
+	/// <remarks>
+	/// An endless orbit answers from its next few occurrences, read with no horizon, so a rare schedule years ahead still
+	/// counts. Only when none of those counts are the occurrences that may still be running read too: those begun up to a
+	/// year-long period (and a zone's reach) before now.
+	/// </remarks>
+	/// <param name="incentive">The fate or decree.</param>
+	/// <param name="orbit">Its orbit.</param>
+	/// <param name="now">The instant compared with.</param>
+	/// <param name="hardenedSlots">The RECURRENCE-IDs of its hardened occurrences.</param>
+	/// <param name="cancellationToken">A token to cancel the state lookup.</param>
+	public async Task<bool> HasOpenOccurrenceAsync(
+		Incentive incentive, string orbit, DateTimeOffset now, IReadOnlySet<DateTime> hardenedSlots, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(incentive);
+		ArgumentNullException.ThrowIfNull(hardenedSlots);
+		var today = DateOnly.FromDateTime(ClockOf(incentive, now));
+		var state = await GetOrCreateStateAsync(incentive, orbit, today, cancellationToken);
+		var calendar = ResolveCalendar(incentive);
+		bool Open(OrbitOccurrenceInstance occurrence)
+			=> !hardenedSlots.Contains(occurrence.Moment) && EpochOf(incentive, occurrence).ClosesAt() > now;
+
+		// Everything from two days on is still to come, wherever the zone puts "now". Enough of them are read to get past
+		// every hardened slot among them, so one that is not hardened is always reached when it exists.
+		var ahead = today.AddDays(2);
+		var aheadMoment = ahead.ToDateTime(TimeOnly.MinValue);
+		var hardenedAhead = hardenedSlots.Count(slot => slot >= aheadMoment);
+		if (OrbitDays.PreviewOccurrencesFrom(state.StateJson, ahead, hardenedAhead + 1, calendar).Any(Open))
+		{
+			return true;
+		}
+
+		return OrbitDays.PreviewOccurrencesWithin(state.StateJson, today.AddDays(-OpenOccurrenceLookbackDays), ahead, calendar).Any(Open);
+	}
+
+	/// <summary>
+	/// How far before today an occurrence can have begun and still be running: a year-long period, and a zone's reach.
+	/// </summary>
+	private const int OpenOccurrenceLookbackDays = 366 + OccurrenceZones.ReachDays;
+
+	/// <summary>
 	/// Determines whether a directive lineage belongs to a Moonlight (lunar) hierarchy — i.e. the directive
 	/// itself or any ancestor is a lunar directive.
 	/// </summary>

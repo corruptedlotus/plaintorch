@@ -13,7 +13,8 @@ namespace Pleiades.Orchestration.Lifecycle;
 /// <para>
 /// Status enums declare the state of each member with <see cref="LifecycleStateAttribute"/>, and kinds whose state is not a
 /// plain status value supply it through an <see cref="ILifecycleStateSource"/>. A kind passes through only the states it
-/// declares: a fate is either running or set aside, and a checkpoint can finish or be deferred but never starts.
+/// declares: a fate is under way from its creation and is never open (it runs, is set aside, or passes), a decree never
+/// finishes, and a checkpoint can finish or be deferred but never starts.
 /// </para>
 /// </remarks>
 public enum LifecycleState

@@ -51,6 +51,7 @@ public sealed class PlaintorchModule : Module
 		// PEP103: the state enforcement engine, its four phases, and the one save interceptor that runs it on every save.
 		services.AddScoped<StructureReactions>();
 		services.AddScoped<MembershipReactions>();
+		services.AddScoped<FateReactions>();
 		services.AddScoped<StateJudge>();
 		services.AddScoped<StateCompensator>();
 		services.AddScoped<DependencyReconciler>();
