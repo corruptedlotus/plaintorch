@@ -35,7 +35,9 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 
 	/// <summary>
 	/// Projects the occurrences of every active schedule over <c>[startInclusive, endInclusive]</c>, unioned
-	/// with the hardened rows overlapping that window (hardened wins per recurrence-id).
+	/// with the hardened rows overlapping that window (hardened wins per recurrence-id). A fate or decree whose stored
+	/// orbit no longer parses or builds projects nothing and is logged (<see cref="PlaintorchOrbitService.IsolateAsync"/>);
+	/// its hardened rows still stand.
 	/// </summary>
 	public async Task<AgendaProjection> ProjectAsync(DateOnly startInclusive, DateOnly endInclusive, CancellationToken cancellationToken = default)
 	{
@@ -93,20 +95,24 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 			.Include(fate => fate.Directive)
 			.Where(fate => activeFates.Contains(fate.Status) && fate.Orbit != null)
 			.ToListAsync(cancellationToken);
+		// An owner whose orbit no longer resolves is logged and projects nothing; the rest of the agenda stands (PEP103 I-124).
 		foreach (var fate in orbitFates)
 		{
 			var resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
-			foreach (var occurrence in await orbitService.PreviewOccurrencesAsync(fate, fate.Orbit!, startInclusive, endExclusive, cancellationToken))
+			await orbitService.IsolateAsync(fate, "the agenda projection", async () =>
 			{
-				AddEventive(eventives, eventiveKeys, new Eventive
+				foreach (var occurrence in await orbitService.PreviewOccurrencesAsync(fate, fate.Orbit!, startInclusive, endExclusive, cancellationToken))
 				{
-					FateId = fate.Id,
-					Fate = fate,
-					Epoch = PlaintorchOrbitService.EpochOf(fate, occurrence),
-					RecurrenceId = occurrence.Moment,
-					Resolution = resolution,
-				});
-			}
+					AddEventive(eventives, eventiveKeys, new Eventive
+					{
+						FateId = fate.Id,
+						Fate = fate,
+						Epoch = PlaintorchOrbitService.EpochOf(fate, occurrence),
+						RecurrenceId = occurrence.Moment,
+						Resolution = resolution,
+					});
+				}
+			});
 		}
 
 		var terminatives = await ProjectTerminativesAsync(windowStart, windowEndExclusive, cancellationToken);
@@ -122,17 +128,20 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 			.ToListAsync(cancellationToken);
 		foreach (var decree in orbitDecrees)
 		{
-			foreach (var occurrence in await orbitService.PreviewOccurrencesAsync(decree, decree.Orbit!, startInclusive, endExclusive, cancellationToken))
+			await orbitService.IsolateAsync(decree, "the agenda projection", async () =>
 			{
-				var attentive = new Attentive
+				foreach (var occurrence in await orbitService.PreviewOccurrencesAsync(decree, decree.Orbit!, startInclusive, endExclusive, cancellationToken))
 				{
-					DecreeId = decree.Id,
-					Decree = decree,
-					Epoch = PlaintorchOrbitService.EpochOf(decree, occurrence),
-					RecurrenceId = occurrence.Moment,
-				};
-				AddAttentive(attentives, attentiveKeys, attentive);
-			}
+					var attentive = new Attentive
+					{
+						DecreeId = decree.Id,
+						Decree = decree,
+						Epoch = PlaintorchOrbitService.EpochOf(decree, occurrence),
+						RecurrenceId = occurrence.Moment,
+					};
+					AddAttentive(attentives, attentiveKeys, attentive);
+				}
+			});
 		}
 
 		// Ordered as they fall on this host's clock, so a zoned occurrence takes its place by the instant it names.

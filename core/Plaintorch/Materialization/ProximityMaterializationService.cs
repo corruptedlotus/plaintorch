@@ -44,7 +44,9 @@ public sealed class ProximityMaterializationService(
 	/// </summary>
 	/// <remarks>
 	/// A decree gets at most one reflective per cycle, so running this twice for the same cycle creates nothing new:
-	/// the orbit matches are already there, and pool decrees already reflected in the cycle count toward the draw.
+	/// the orbit matches are already there, and pool decrees already reflected in the cycle count toward the draw. A
+	/// reflect-decree whose stored orbit no longer resolves is logged and left out
+	/// (<see cref="PlaintorchOrbitService.IsolateAsync"/>), so a begin, whose start is committed by now, still completes.
 	/// </remarks>
 	public async Task<int> MaterializeForCycleAsync(PolarisCycle cycle, CancellationToken cancellationToken = default)
 	{
@@ -84,12 +86,16 @@ public sealed class ProximityMaterializationService(
 			// Orbit reflect-decrees resolve at day granularity against the cycle's start day. Seeking advances the
 			// schedule state so the same occurrence is not re-emitted; the rolling harden-on-time pass deliberately
 			// leaves reflect-decrees alone, so cycle begin is the only place their cursor advances. A paused decree is
-			// skipped above without seeking, and the days it missed are never generated afterwards.
-			var occurrences = await orbitService.SeekOccurrencesAsync(decree, decree.Orbit, startDay.AddDays(1), cancellationToken);
-			if (occurrences.Any(occurrence => occurrence.Date <= startDay && startDay < occurrence.PeriodEndExclusive))
+			// skipped above without seeking, and the days it missed are never generated afterwards. A decree whose orbit
+			// faults is logged and left out, so the begin, already committed, still reflects the others.
+			await orbitService.IsolateAsync(decree, "cycle-begin reflection", async () =>
 			{
-				selected.Add(decree);
-			}
+				var occurrences = await orbitService.SeekOccurrencesAsync(decree, decree.Orbit, startDay.AddDays(1), cancellationToken);
+				if (occurrences.Any(occurrence => occurrence.Date <= startDay && startDay < occurrence.PeriodEndExclusive))
+				{
+					selected.Add(decree);
+				}
+			});
 		}
 
 		var drawCount = Math.Max(0, reflectionPreferences.Value.BaseDailyReflectives)
@@ -144,6 +150,11 @@ public sealed class ProximityMaterializationService(
 	/// every due that acts hardens its terminative once its day is reached (PEP103 patch 7). Does nothing when time is not
 	/// treated as an interaction. Returns the number of rows hardened.
 	/// </summary>
+	/// <remarks>
+	/// Each fate and decree is resolved in isolation (<see cref="PlaintorchOrbitService.IsolateAsync"/>): one whose stored
+	/// orbit no longer parses or builds is logged, hardens nothing and caches no next occurrence, and the pass hardens every
+	/// other owner (PEP103 I-124).
+	/// </remarks>
 	public async Task<int> MaterializeForNowAsync(DateTimeOffset now, CancellationToken cancellationToken = default)
 	{
 		if (!policy.TimeIsInteraction)
@@ -168,24 +179,33 @@ public sealed class ProximityMaterializationService(
 			.IgnoreAutoIncludes()
 			.Where(fate => fate.Orbit != null && activeFates.Contains(fate.Status))
 			.ToListAsync(cancellationToken);
+		// Each owner's orbit work is isolated (PEP103 I-124): one whose orbit no longer resolves is logged and skipped, its
+		// cursor left where it was and its cached next occurrence cleared, and every other owner is still hardened.
 		foreach (var fate in orbitFates)
 		{
-			var optedOut = fate.Status == FateStatus.OptOut;
-			if (!optedOut || autoMaterialiseOptOut)
+			var resolved = await orbitService.IsolateAsync(fate, "the rolling harden-on-time pass", async () =>
 			{
-				var resolution = optedOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
-				foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(fate, fate.Orbit!, now, cancellationToken))
+				var optedOut = fate.Status == FateStatus.OptOut;
+				if (!optedOut || autoMaterialiseOptOut)
 				{
-					created += await EnsureFateEventiveAsync(fate, occurrence, resolution, cancellationToken) ? 1 : 0;
+					var resolution = optedOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
+					foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(fate, fate.Orbit!, now, cancellationToken))
+					{
+						created += await EnsureFateEventiveAsync(fate, occurrence, resolution, cancellationToken) ? 1 : 0;
+					}
 				}
-			}
 
-			// Advance the denormalized next occurrence as time passes; only touch the row when it actually rolls
-			// forward, so an idle tick writes nothing.
-			var next = await orbitService.ComputeNextOccurrenceAsync(fate, now, cancellationToken);
-			if (fate.NextOccurrence != next)
+				// Advance the denormalized next occurrence as time passes; only touch the row when it actually rolls
+				// forward, so an idle tick writes nothing.
+				var next = await orbitService.ComputeNextOccurrenceAsync(fate, now, cancellationToken);
+				if (fate.NextOccurrence != next)
+				{
+					fate.NextOccurrence = next;
+				}
+			});
+			if (!resolved && fate.NextOccurrence is not null)
 			{
-				fate.NextOccurrence = next;
+				fate.NextOccurrence = null;
 			}
 		}
 
@@ -198,15 +218,22 @@ public sealed class ProximityMaterializationService(
 			.ToListAsync(cancellationToken);
 		foreach (var decree in orbitDecrees)
 		{
-			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(decree, decree.Orbit!, now, cancellationToken))
+			var resolved = await orbitService.IsolateAsync(decree, "the rolling harden-on-time pass", async () =>
 			{
-				created += await EnsureDecreeAttentiveAsync(decree, occurrence, cancellationToken) ? 1 : 0;
-			}
+				foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(decree, decree.Orbit!, now, cancellationToken))
+				{
+					created += await EnsureDecreeAttentiveAsync(decree, occurrence, cancellationToken) ? 1 : 0;
+				}
 
-			var next = await orbitService.ComputeNextOccurrenceAsync(decree, now, cancellationToken);
-			if (decree.NextOccurrence != next)
+				var next = await orbitService.ComputeNextOccurrenceAsync(decree, now, cancellationToken);
+				if (decree.NextOccurrence != next)
+				{
+					decree.NextOccurrence = next;
+				}
+			});
+			if (!resolved && decree.NextOccurrence is not null)
 			{
-				decree.NextOccurrence = next;
+				decree.NextOccurrence = null;
 			}
 		}
 
