@@ -4,6 +4,7 @@ import { cpSync, mkdirSync, rmSync } from "node:fs"
 import path from "node:path"
 import { run } from "node:test"
 import electronPath from 'electron'
+import { localRepoFromSource } from "../sipa/bundling.mjs"
 
 let electronProcess = null;
 
@@ -73,9 +74,9 @@ const shared = {
 	minify: production,
 	logLevel: "info",
 	define,
-	// SIPA and the repository package (`@corruptedlotus/local-repo`) are bundled from their TypeScript, which their `source`
-	// export condition selects.
-	conditions: ["source"],
+	// SIPA is bundled from its TypeScript, and so is the repository package (`@corruptedlotus/local-repo`), through the
+	// plugin that selects only that package's `source` entries (see sipa/bundling.mjs).
+	plugins: [localRepoFromSource()],
 	// @a11d/lit installs its reactive accessors through legacy (experimental) decorators; class fields must NOT use
 	// define semantics or they shadow those accessors and reactivity silently dies (the view renders once, then never
 	// updates). Set here too so a build never depends on tsconfig auto-discovery.
@@ -105,7 +106,7 @@ const contexts = await Promise.all([
 		outfile: `${outputDirectory}/main.cjs`,
 		// Electron itself, and electron-updater which reads its own package files at runtime, stay external.
 		external: ["electron", "electron-updater"],
-		plugins: [copyStaticPlugin]
+		plugins: [localRepoFromSource(), copyStaticPlugin]
 	}),
 	esbuild.context({
 		...shared,
