@@ -214,6 +214,11 @@ public sealed class OutcomeReactions(
 	/// objective's status changes, its settlement is brought in line with where it stands, so a settlement booked before that
 	/// ruling for a failure is taken back once the objective next moves.
 	/// </summary>
+	/// <remarks>
+	/// One amount rule for every reward (PEP103 I-043, user ruling): only granting reads the amount, and a grant of 0 books
+	/// no row. Taking the settlement back removes the row that exists under its key, whatever the objective is worth now, and
+	/// a move from one finished status to another is no finishing, so it neither settles again nor reads the value anew.
+	/// </remarks>
 	private static async Task ApplyObjectiveSettlementRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
 		var objectiveEntries = context.ChangeTracker.Entries<Objective>()
@@ -248,17 +253,22 @@ public sealed class OutcomeReactions(
 
 			if (isTerminal)
 			{
-				if (existingTransactions.Count > 0)
+				if (existingTransactions.Count > 0 || (previousStatus is { } previous && IsSettlementStatus(previous)))
 				{
 					continue;
 				}
 
 				var isInActiveOnrush = !string.IsNullOrWhiteSpace(activeOnrushId)
 					&& string.Equals(activeOnrushId, current.OnrushSprintId, StringComparison.OrdinalIgnoreCase);
-				var multiplier = isInActiveOnrush ? 2 : 1;
+				var amount = current.CelestronValue * (isInActiveOnrush ? 2 : 1);
+				if (amount == 0)
+				{
+					continue;
+				}
+
 				context.CelestronLedger.Add(new CelestronTransaction
 				{
-					Amount = current.CelestronValue * multiplier,
+					Amount = amount,
 					SourcePuck = current.Id,
 					Description = $"{ObjectiveSettlementDescriptionPrefix} ({current.Status})",
 				});
@@ -277,7 +287,9 @@ public sealed class OutcomeReactions(
 	/// (PEP100). Completion time and reward are recorded when an attentive transitions to Done; both are
 	/// cleared or revoked when it leaves Done. Rewards are keyed by occurrence identity (its RECURRENCE-ID, plus
 	/// cycle when bound) so repeated occurrences of the same decree reward independently — and, unlike the row id,
-	/// that key is already available when an occurrence hardens and resolves in a single save.
+	/// that key is already available when an occurrence hardens and resolves in a single save. Only the grant reads the
+	/// decree's <see cref="Decree.ActiveCelestron"/>, and one of 0 books no row; the revocation removes the row held under
+	/// the key whatever the decree pays now (PEP103 I-043).
 	/// </summary>
 	private static async Task ApplyAttentiveResolutionRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
@@ -372,6 +384,9 @@ public sealed class OutcomeReactions(
 	/// cycle changes. An executed executive moved to another cycle takes its grant along, rekeyed and at the amount it was
 	/// granted; one reassigned to another decree gives its grant back and earns the new decree's; and one un-executed after
 	/// either gives back the grant it holds now, so nothing is left behind under an old key to be paid a second time.
+	/// Only granting reads the decree's amount, and one of 0 books no row (PEP103 I-043): a revocation removes the grant
+	/// held under the key whatever the decree pays now, and a move is no grant, so one executed while its decree paid 0
+	/// moves with nothing and earns nothing for the move.
 	/// </remarks>
 	private static async Task ApplyDecreeExecutiveRewardRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
@@ -407,7 +422,7 @@ public sealed class OutcomeReactions(
 				continue;
 			}
 
-			if (sameDecree && held.Count > 0)
+			if (sameDecree && wasExecuted)
 			{
 				foreach (var grant in held)
 				{
@@ -459,7 +474,9 @@ public sealed class OutcomeReactions(
 	/// Grants a decree-backed reflective's per-run Celestron reward (PEP104): executing a reflective generated from a
 	/// decree grants that decree's <see cref="Decree.ActiveCelestron"/>, on top of the cycle's collection reward, and
 	/// un-executing it revokes it. A reflective without a decree grants nothing here. Keyed by decree + cycle, since a
-	/// decree yields at most one reflective per cycle, so the ledger entry is stable and idempotent across re-saves.
+	/// decree yields at most one reflective per cycle, so the ledger entry is stable and idempotent across re-saves. Only
+	/// the grant reads the decree's amount, and one of 0 books no row; the revocation removes the row held under the key
+	/// whatever the decree pays now, so a reward lowered to 0 after execution is still taken back (PEP103 I-043).
 	/// </summary>
 	private static async Task ApplyReflectiveDecreeRewardRulesAsync(PlainfraContext context, CancellationToken cancellationToken)
 	{
@@ -481,6 +498,22 @@ public sealed class OutcomeReactions(
 				continue;
 			}
 
+			var description = $"{ReflectiveExecutionDescriptionPrefix} (cycle {current.PolarisCycleId})";
+			var existingTransactions = await context.CelestronLedger
+				.Where(item => item.SourcePuck == current.DecreeId && item.Description == description)
+				.ToListAsync(cancellationToken);
+
+			if (!current.Executed)
+			{
+				context.CelestronLedger.RemoveRange(existingTransactions);
+				continue;
+			}
+
+			if (existingTransactions.Count > 0)
+			{
+				continue;
+			}
+
 			var reward = await context.Decrees
 				.AsNoTracking()
 				.IgnoreAutoIncludes()
@@ -492,27 +525,12 @@ public sealed class OutcomeReactions(
 				continue;
 			}
 
-			var description = $"{ReflectiveExecutionDescriptionPrefix} (cycle {current.PolarisCycleId})";
-			var existingTransactions = await context.CelestronLedger
-				.Where(item => item.SourcePuck == current.DecreeId && item.Description == description)
-				.ToListAsync(cancellationToken);
-
-			if (current.Executed)
+			context.CelestronLedger.Add(new CelestronTransaction
 			{
-				if (existingTransactions.Count == 0)
-				{
-					context.CelestronLedger.Add(new CelestronTransaction
-					{
-						Amount = reward,
-						SourcePuck = current.DecreeId,
-						Description = description,
-					});
-				}
-			}
-			else if (existingTransactions.Count > 0)
-			{
-				context.CelestronLedger.RemoveRange(existingTransactions);
-			}
+				Amount = reward,
+				SourcePuck = current.DecreeId,
+				Description = description,
+			});
 		}
 	}
 
@@ -520,7 +538,8 @@ public sealed class OutcomeReactions(
 	/// Applies the reflective collection reward (PEP100, PEP104): once all reflectives of a single Polaris cycle are
 	/// done, the whole collection grants <paramref name="dailyReward"/> Celestron
 	/// (<see cref="ReflectionPreferences.DailyReward"/>), once. Un-executing a reflective revokes the cycle's collection
-	/// reward. A reward of 0 or less grants nothing.
+	/// reward. A reward of 0 or less grants nothing; a revocation removes the row held under the cycle's key whatever the
+	/// preference says now (PEP103 I-043).
 	/// </summary>
 	private static async Task ApplyReflectiveCollectionRewardRulesAsync(PlainfraContext context, int dailyReward, CancellationToken cancellationToken)
 	{
