@@ -235,13 +235,16 @@ An onrush now tracks **stellar directives** the way it tracks objectives. With i
 ### On the canvas
 An onrush context draws its directive members as nodes beside the objectives and checkpoints; the add-FAB offers **Add directive** (the cross-kind endpoint picker narrowed to directives) beside **Add objective**, and a directive's node menu removes it from the sprint through its own endpoint. The tray's tallies gain a directive count between the objectives and the checkpoints.
 
+### Joining from a context menu
+A stellar directive's context menu, wherever it is raised (a grid row, an item, a heading), offers **Add to Onrush** when it is in no sprint and *Remove from Onrush* when it is, and an objective's does the same. *Add to Onrush* opens the onrush picker, which serves both kinds: the active or the planning slot, each offered whether it exists yet or not (PEP103 patch 4). A lunar directive's menu offers neither.
+
 ### The briefing
 The onrush briefing card keeps listing objectives only: a directive member is not a row. Its dependency groups now **omit prerequisites that are themselves members** of the sprint — they are rows already, so they neither list under the member they hold back nor count toward its total.
 
 ## Patch102.11 - Canvas menus
 
 ### Joining a ghost to the Onrush
-A ghostly objective, a prerequisite outside the Onrush that holds a member back, now offers **Add to This Onrush** in its menu, where a member offers *Remove from Onrush*. It makes the blocker a member of the Onrush being graphed, so it is planned with the rest instead of only being shown. The add-FAB's picker leaves out every node already on the canvas, ghosts included, so this is the way a ghost joins. The core keeps an objective in one Onrush at a time and moves it out of any other, so a ghost that belongs to another Onrush asks first and names it. Other ghosts (a directive, a fate, a checkpoint) cannot join an Onrush, and keep their note.
+A ghostly objective, a prerequisite outside the Onrush that holds a member back, now offers **Add to This Onrush** in its menu, where a member offers *Remove from Onrush*. It makes the blocker a member of the Onrush being graphed, so it is planned with the rest instead of only being shown. The add-FAB's picker leaves out every node already on the canvas, ghosts included, so this is the way a ghost joins. The core keeps an objective in one Onrush at a time and moves it out of any other, so a ghost that belongs to another Onrush asks first and names it. A ghostly stellar directive joins the same way, through its own endpoint (Patch102.10), and asks the same question. Other ghosts (a lunar directive, a fate, a checkpoint, or a directive whose entity was never loaded, so its kind cannot be told) cannot join an Onrush, and keep their note.
 
 ### The backdrop's menu
 A right-click on the empty canvas opens a menu of quick actions. It is titled with the Onrush, or the mode in a global context:

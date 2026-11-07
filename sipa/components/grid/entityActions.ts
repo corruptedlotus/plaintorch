@@ -489,7 +489,7 @@ export function objectiveActions(objective: Objective): ExpandingAction[] {
 			icon: 'onrush',
 			label: 'Add to Onrush',
 			// The active or the planning sprint, each offered whether it exists yet or not (PEP103 patch 4).
-			run: () => new OnrushPickerModal(objective).open()
+			run: () => new OnrushPickerModal('objective', objective).open()
 		}
 	]
 }

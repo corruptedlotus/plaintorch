@@ -1,5 +1,5 @@
 import { Component, component, css, event, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
-import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
+import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, typeNameOf, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
 import { concludeConfirmation, ContextMenu, ContextMenuController, core, deleteConfirmation, DerivedRef, entityMenuEntries, removeConfirmation, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
 import { activatePlanningOnrush, addDirectiveToOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeDirectiveFromOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
@@ -1127,7 +1127,7 @@ export class DependencyCanvas extends Component {
 
 	/**
 	 * An Onrush node's menu: its note, its membership, and — set apart — deleting the entity. A member can leave the
-	 * Onrush; a ghostly objective can join it; any other ghost is only context.
+	 * Onrush; a ghostly objective or stellar directive can join it; any other ghost is only context.
 	 */
 	private entityNodeMenuEntries(node: CanvasNode): ContextMenuEntry[] {
 		// A directive and an objective leave the sprint through their own endpoints (PEP102 patch 10).
@@ -1148,27 +1148,33 @@ export class DependencyCanvas extends Component {
 	}
 
 	/**
-	 * Brings a ghostly objective into the Onrush being graphed, turning the outside blocker into a member. An objective
-	 * the core places in one Onrush at a time, so one that belongs to another Onrush asks before it is moved out of it.
-	 * None for any other kind of ghost, which no Onrush can hold.
+	 * Brings a ghostly objective or stellar directive into the Onrush being graphed, turning the outside blocker into a
+	 * member (PEP102 patch 10). The core places each in one Onrush at a time, so one that belongs to another Onrush asks
+	 * before it is moved out of it. None for any other kind of ghost — a lunar directive, a fate, a checkpoint — which no
+	 * Onrush can hold, nor for a directive ghost whose entity was never resolved, since its kind cannot be told.
 	 */
 	private joinOnrushEntry(node: CanvasNode): ContextMenuEntry | undefined {
 		const sprint = this.sprint
-		if (!sprint || node.ref.kind !== DependencyEndpointKind.Objective) {
+		const join = node.ref.kind === DependencyEndpointKind.Objective
+			? addObjectiveToOnrush
+			: node.ref.kind === DependencyEndpointKind.Directive && typeNameOf(node.entity) === 'StellarDirective'
+				? addDirectiveToOnrush
+				: undefined
+		if (!sprint || !join) {
 			return undefined
 		}
 
-		const objective = node.entity as { onrushSprintId?: string, onrushSprint?: { title: string } }
-		const elsewhere = !!objective.onrushSprintId && objective.onrushSprintId !== sprint.id
+		const member = node.entity as { onrushSprintId?: string, onrushSprint?: { title: string } }
+		const elsewhere = !!member.onrushSprintId && member.onrushSprintId !== sprint.id
 		return {
 			label: 'Add to This Onrush',
 			icon: 'onrush',
 			confirm: !elsewhere ? undefined : {
-				message: `"${node.entity.title}" is in ${objective.onrushSprint?.title ? `the Onrush "${objective.onrushSprint.title}"` : 'another Onrush'}. Move it into this one?`,
+				message: `"${node.entity.title}" is in ${member.onrushSprint?.title ? `the Onrush "${member.onrushSprint.title}"` : 'another Onrush'}. Move it into this one?`,
 				action: 'Move',
 				actionIcon: 'onrush'
 			},
-			run: () => addObjectiveToOnrush(node.entity.id, sprint)
+			run: () => join(node.entity.id, sprint)
 		}
 	}
 

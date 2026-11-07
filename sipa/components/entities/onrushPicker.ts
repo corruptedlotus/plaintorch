@@ -1,25 +1,51 @@
-import { OnrushSlot, type Objective, type OnrushSprint } from '@pleiades/sdk'
+import { OnrushSlot, typeNameOf, type OnrushSprint } from '@pleiades/sdk'
 import { createChild, SuggestModalBase, toast } from '../../host'
 import { confirmAction, core, removeConfirmation, type IconItem } from '..'
 
 /** The planning placeholder's id: the one sprint being planned. */
 const planningId = 'x0000'
 
-/** What the onrush picker offers: a slot to join, or `null` to leave the sprint the objective is in. */
+/**
+ * The two kinds an onrush sprint holds (PEP102 patch 10): an objective, and a stellar directive. A lunar directive never
+ * joins one, so it has no kind here.
+ */
+export type OnrushMemberKind = 'objective' | 'directive'
+
+/** What the onrush picker and the membership calls need of a member: its identity, its title and the sprint it is in. */
+export interface OnrushMember {
+	id: string
+	title: string
+	onrushSprintId?: string | undefined
+}
+
+/** What the onrush picker offers: a slot to join, or `null` to leave the sprint the member is in. */
 type OnrushChoice = OnrushSlot | null
 
 /**
- * Picks the onrush sprint an objective joins (PEP103 patch 4): the active one or the one being planned. Both are always
- * offered; one that does not exist yet says it will be made, and the core makes it — the active slot begins the plan, or
- * starts a sprint for today, and the planning slot plans one. A picker opened from a banner also offers "No Onrush", which
- * takes the objective out of its sprint once that is confirmed where the picker was opened.
+ * The membership kind of an entity, read off its runtime type: an objective or a stellar directive, or `undefined` for
+ * anything no sprint can hold (a lunar directive among them).
+ */
+export function onrushMemberKindOf(entity: unknown): OnrushMemberKind | undefined {
+	switch (typeNameOf(entity)) {
+		case 'Objective': return 'objective'
+		case 'StellarDirective': return 'directive'
+		default: return undefined
+	}
+}
+
+/**
+ * Picks the onrush sprint an objective or a stellar directive joins (PEP103 patch 4): the active one or the one being
+ * planned. Both are always offered; one that does not exist yet says it will be made, and the core makes it — the active
+ * slot begins the plan, or starts a sprint for today, and the planning slot plans one. A picker opened from a banner also
+ * offers "No Onrush", which takes the member out of its sprint once that is confirmed where the picker was opened.
  */
 export class OnrushPickerModal extends SuggestModalBase<OnrushChoice> {
 	private active?: OnrushSprint
 	private planning?: OnrushSprint
 
 	constructor(
-		private readonly objective: Pick<Objective, 'id' | 'title' | 'onrushSprintId'>,
+		private readonly kind: OnrushMemberKind,
+		private readonly member: OnrushMember,
 		private readonly options: { removable?: boolean, anchor?: HTMLElement } = {}
 	) {
 		super()
@@ -48,23 +74,41 @@ export class OnrushPickerModal extends SuggestModalBase<OnrushChoice> {
 		createChild(el, 'small', { text: sprint ? title : missing })
 	}
 
-	/** Joins the chosen slot; "No Onrush" takes the objective out of its sprint, which is confirmed first. */
+	/** Joins the chosen slot; "No Onrush" takes the member out of its sprint, which is confirmed first. */
 	override async onChooseSuggestion(choice: OnrushChoice) {
 		if (choice === null) {
-			await removeObjectiveFromOnrush(this.objective, this.options.anchor)
+			await this.removeFromOnrush()
 			return
 		}
 
-		await addObjectiveToOnrushSlot(this.objective, choice)
+		await addToOnrushSlot(this.kind, this.member, choice)
+	}
+
+	/** Takes the member out of its sprint, once the reader confirms it where the picker was opened. */
+	private async removeFromOnrush() {
+		if (!this.member.onrushSprintId) {
+			return
+		}
+
+		// The picker is gone by now, so the question is asked where it was opened from.
+		if (!await confirmAction(this.options.anchor ?? document.body, removeConfirmation(`Remove "${this.member.title}" from its Onrush?`, 'default'))) {
+			return
+		}
+
+		if (await leaveOnrush(this.kind, this.member.id)) {
+			toast('Removed from Onrush.', 'success')
+		}
 	}
 }
 
 /**
- * Puts an objective in the active or the planning sprint, which the core makes when it does not exist yet, and tells every
- * surface showing the objective or the sprints.
+ * Puts an objective or a stellar directive in the active or the planning sprint, which the core makes when it does not
+ * exist yet, and tells every surface showing the member or the sprints.
  */
-export async function addObjectiveToOnrushSlot(objective: Pick<Objective, 'id'>, slot: OnrushSlot): Promise<boolean> {
-	const added = await core.repos.objectives.mutate(objective.id, async () => await core.objectives.addToOnrush(objective.id, slot))
+export async function addToOnrushSlot(kind: OnrushMemberKind, member: Pick<OnrushMember, 'id'>, slot: OnrushSlot): Promise<boolean> {
+	const added = kind === 'objective'
+		? await core.repos.objectives.mutate(member.id, async () => await core.objectives.addToOnrush(member.id, slot))
+		: await core.repos.directives.mutate(member.id, async () => await core.directives.addToOnrush(member.id, slot))
 	toast(added
 		? `Added to ${slot === OnrushSlot.Active ? 'the active' : 'the planning'} Onrush.`
 		: 'Could not add to the Onrush.', added ? 'success' : 'error')
@@ -75,18 +119,12 @@ export async function addObjectiveToOnrushSlot(objective: Pick<Objective, 'id'>,
 	return added
 }
 
-/** Takes an objective out of its sprint, once the reader confirms it where the picker was opened. */
-async function removeObjectiveFromOnrush(objective: Pick<Objective, 'id' | 'title' | 'onrushSprintId'>, anchor?: HTMLElement) {
-	if (!objective.onrushSprintId) {
-		return
-	}
-
-	// The picker is gone by now, so the question is asked where it was opened from.
-	if (!await confirmAction(anchor ?? document.body, removeConfirmation(`Remove "${objective.title}" from its Onrush?`, 'default'))) {
-		return
-	}
-
-	if (await core.repos.objectives.mutate(objective.id, async () => await core.objectives.removeFromOnrush(objective.id))) {
-		toast('Removed from Onrush.', 'success')
-	}
+/**
+ * Takes an objective or a stellar directive out of whichever sprint holds it, through the member's own repository so
+ * every surface showing it learns it left. The member itself survives; reporting the outcome is the caller's.
+ */
+export async function leaveOnrush(kind: OnrushMemberKind, memberId: string): Promise<boolean> {
+	return kind === 'objective'
+		? await core.repos.objectives.mutate(memberId, async () => await core.objectives.removeFromOnrush(memberId))
+		: await core.repos.directives.mutate(memberId, async () => await core.directives.removeFromOnrush(memberId))
 }
