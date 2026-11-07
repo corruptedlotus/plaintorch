@@ -41,6 +41,14 @@ export class ContextMenuController extends Controller {
 
 		event.preventDefault()
 		event.stopPropagation()
-		ContextMenu.open(event.clientX, event.clientY, spec)
+		ContextMenu.open(event.clientX, event.clientY, spec, { keyboard: raisedByKeyboard(event) })
 	}
+}
+
+/**
+ * Whether a context-menu event came from the keyboard (the context-menu key, Shift+F10) rather than a pointer. Such an
+ * event is a pointer event with no pointer type (Pointer Events 3). A plain mouse event reads as a pointer's.
+ */
+function raisedByKeyboard(event: MouseEvent): boolean {
+	return (event as Partial<PointerEvent>).pointerType === ''
 }

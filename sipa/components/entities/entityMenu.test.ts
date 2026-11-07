@@ -1,25 +1,14 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
+import type { Directive } from '@pleiades/sdk'
 import { PlaintorchCoreClient, type PlaintorchCoreRequest, type PlaintorchCoreResponse, type PlaintorchCoreTransport } from '@pleiades/sdk/plaintorch'
 import { provideHost, type PlatformHost } from '../../host'
 import { provideCore } from '../data/coreProvider'
-import type { ContextMenuAction, ContextMenuEntry } from '..'
+import type { ContextMenuAction, ContextMenuEntry, ContextMenuSubmenu } from '../design/ContextMenu'
+import { directiveActions } from '../grid/entityActions'
 import { entityContextMenu } from './entityMenu'
 
 // The onrush rows of the generic context menu (PEP102 patch 10): the two kinds a sprint holds offer to join one or to
 // leave the one they are in, each through its own endpoint; a lunar directive offers neither.
-
-// The components barrel reaches 3MO, whose `source` entries the global Vitest condition selects and cannot load, so the
-// menu meets only the parts of it the onrush rows use: the real core, and inert confirmations and navigation.
-vi.mock('..', async () => ({
-	core: (await import('../data/coreProvider')).core,
-	canMoveEntity: () => false,
-	moveEntity: () => undefined,
-	navigateToEntity: () => undefined,
-	confirmAction: async () => true,
-	removeConfirmation: (message: string) => ({ message }),
-	deleteConfirmation: (message: string) => ({ message })
-}))
-vi.mock('./EntityEditModal', () => ({ EntityEditModal: { forEntity: () => undefined } }))
 
 const requests: string[] = []
 
@@ -79,5 +68,38 @@ describe('entityContextMenu onrush rows', () => {
 
 		expect(requests).toContain('DELETE /api/directives/stellar/e1/onrush')
 		expect(requests).toContain('DELETE /api/objectives/e1/onrush')
+	})
+})
+
+// The Add submenu of a directive's context menu: offered on both kinds of directive, nowhere else, and offering exactly
+// what the directive's grid row offers.
+
+const directive = (type: 'StellarDirective' | 'LunarDirective') => ({ '@type': type, id: `${type}-1`, title: 'A directive' })
+
+const addOf = (entries: ContextMenuEntry[]) =>
+	entries.find((entry): entry is ContextMenuSubmenu => 'entries' in entry && (entry as ContextMenuSubmenu).label === 'Add')
+
+describe('entityContextMenu Add submenu', () => {
+	it.each(['StellarDirective', 'LunarDirective'] as const)('offers what a %s row offers, with its icons and labels', type => {
+		const entity = directive(type)
+		const add = addOf(entityContextMenu(entity).entries)
+		expect(add).toBeDefined()
+
+		const row = directiveActions(entity as unknown as Directive)
+		expect(add!.entries.map(entry => 'label' in entry ? [entry.label, entry.icon] : undefined))
+			.toEqual(row.map(action => [action.label, action.icon]))
+	})
+
+	it('keeps a lunar hierarchy lunar and a stellar one stellar', () => {
+		const labels = (type: 'StellarDirective' | 'LunarDirective') =>
+			addOf(entityContextMenu(directive(type)).entries)!.entries.map(entry => 'label' in entry ? entry.label : undefined)
+
+		expect(labels('StellarDirective')).toEqual(['Objective', 'Fate', 'Decree', 'Stellar Directive'])
+		expect(labels('LunarDirective')).toEqual(['Objective', 'Fate', 'Decree', 'Lunar Directive'])
+	})
+
+	it('is not offered on an incentive', () => {
+		const objective = { '@type': 'Objective', id: 'o-1', title: 'An objective' }
+		expect(addOf(entityContextMenu(objective).entries)).toBeUndefined()
 	})
 })
