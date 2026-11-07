@@ -50,6 +50,11 @@ public interface IObjectiveApi
 	Task<Objective> AddToOnrushAsync(string objectiveId, string onrushSprintId, CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Adds an objective to the sprint in a slot, creating that sprint when it does not exist yet (PEP103 patch 4).
+	/// </summary>
+	Task<Objective> AddToOnrushAsync(string objectiveId, OnrushSlot slot, CancellationToken cancellationToken = default);
+
+	/// <summary>
 	/// Removes an objective from the onrush sprint it belongs to.
 	/// </summary>
 	Task<Objective> RemoveFromOnrushAsync(string objectiveId, CancellationToken cancellationToken = default);

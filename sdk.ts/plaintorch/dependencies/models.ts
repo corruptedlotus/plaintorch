@@ -13,6 +13,16 @@ export enum DependencyConstraint {
 	ToFinish = 1
 }
 
+/**
+ * Where a dependency edge comes from (PEP102 patch 9): drawn by a person and stored, or implied by the backlog's
+ * structure and derived as it is served — for now, a stellar directive's finish depending on the finish of each of its
+ * direct children. An intrinsic edge has no identity (`id` is 0), cannot be deleted, and goes away with the relation.
+ */
+export enum DependencyOrigin {
+	Explicit = 0,
+	Intrinsic = 1
+}
+
 /** The kind of entity at one end of a dependency edge (PEP101). Lunar directives are excluded. */
 export enum DependencyEndpointKind {
 	Directive = 0,
@@ -36,7 +46,10 @@ export interface EndpointRef {
 /** A directed blocking edge: the source (prerequisite) blocks the target (dependant) (PEP101). */
 @model('Dependency')
 export class Dependency {
+	/** The database identity of a stored edge; 0 for an intrinsic one, which has none. */
 	id!: number
+	/** Stored and drawn by a person, or derived from the structure (PEP102 patch 9). Read-only. */
+	origin: DependencyOrigin = DependencyOrigin.Explicit
 	sourceKind!: DependencyEndpointKind
 	sourceId!: string
 	/** The source occurrence's slot (RECURRENCE-ID) for an eventive source; undefined otherwise. */
@@ -56,6 +69,12 @@ export class Dependency {
 	 * for a gate on a transition the target has already made or is not yet up to. Read-only.
 	 */
 	gatesNextTransition: boolean = false
+	/**
+	 * Server-computed: whether the target already relies on this dependency (PEP103 patch 4) — it is satisfied and the
+	 * target has passed the state it gates. Its source moving back out of the state it needs would reopen it, which the core
+	 * judges like any rule. Read for objective, stellar directive and fate targets only.
+	 */
+	reliedOn: boolean = false
 
 	get source(): EndpointRef {
 		return { kind: this.sourceKind, id: this.sourceId, recurrenceId: this.sourceRecurrenceId }

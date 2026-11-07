@@ -45,6 +45,7 @@ public static class WatcherOperations
 	public const string VaultInaccessible = "vault-inaccessible";
 	public const string DuplicateIdentity = "duplicate-identity";
 	public const string DeleteBlocked = "delete-blocked";
+	public const string StateRefused = "state-refused";
 
 	/// <summary>
 	/// Describes a reason code: its diagnostic category, default severity, and the <see cref="WatcherMessages.Reasons"/>
@@ -90,6 +91,8 @@ public static class WatcherOperations
 		[FileInUse] = new("filesystem", OperationSeverity.Warning, nameof(WatcherMessages.Reasons.FileInUse)),
 		[RelocationFailed] = new("runtime", OperationSeverity.Warning, nameof(WatcherMessages.Reasons.RelocationFailed)),
 		[DeleteBlocked] = new("integrity", OperationSeverity.Error, nameof(WatcherMessages.Reasons.DeleteBlocked)),
+		// A note edit the backlog's state rules refuse (PEP103): it stands in the note until the note or what blocks it changes.
+		[StateRefused] = new("state", OperationSeverity.Error, nameof(WatcherMessages.Reasons.StateRefused)),
 	};
 
 	/// <summary>Every catalogued reason code (the keys of the descriptor table).</summary>

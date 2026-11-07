@@ -24,4 +24,7 @@ public static class PreferenceKeys
 
 	/// <summary>Backs <see cref="CalDavPreferences.FloatingRender"/>.</summary>
 	public const string CalDavFloatingRender = "caldav.floating-render";
+
+	/// <summary>Backs <see cref="BacklogPreferences.StateEnforcement"/>.</summary>
+	public const string BacklogStateEnforcement = "backlog.state-enforcement";
 }

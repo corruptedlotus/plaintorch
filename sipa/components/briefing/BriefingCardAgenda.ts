@@ -1,11 +1,24 @@
 import { component, css, eventListener, html, nothing, property } from "@a11d/lit"
+import { epochOnLocalClock, Terminative, type Eventive } from "@pleiades/sdk"
 import { CardComponent } from "../design"
 import { core, DerivedRef } from ".."
 
+/** One row of the agenda's upcoming group: an eventive, or the terminative of an item's due grouped beside it. */
+type UpcomingOccurrence = Eventive | Terminative
+
+/** Orders the upcoming group as it falls on this device's clock: by day, an all-day occurrence first within its day. */
+function compareUpcoming(left: UpcomingOccurrence, right: UpcomingOccurrence) {
+	const a = epochOnLocalClock(left.epoch)
+	const b = epochOnLocalClock(right.epoch)
+	return a.date.localeCompare(b.date) || (a.timeOfDay ?? '').localeCompare(b.timeOfDay ?? '')
+}
+
 /**
  * The day-level agenda, stacked above the Polaris cycle card. It surfaces unbound attentives requiring
- * attention (same-day/24h and previous unattended) and upcoming eventives (7 days) from `core.repos.agenda`,
- * which stays live over the feed like the briefing. Bound attentives live on the cycle card, not here.
+ * attention (same-day/24h and previous unattended) and, grouped together as upcoming, the eventives of the next 7 days
+ * and the terminatives of the dues still pending up to then, overdue ones included (PEP103 patch 7), from
+ * `core.repos.agenda`, which stays live over the feed like the briefing. Bound attentives live on the cycle card, not
+ * here.
  */
 @component('p7t-briefing-agenda')
 export class BriefingCardAgenda extends CardComponent {
@@ -107,8 +120,9 @@ export class BriefingCardAgenda extends CardComponent {
 	override get headingTemplate() {
 		const attCount = this.agenda?.attentives.length ?? 0
 		const attWarn = this.agenda?.attentives.some(x => x.isOverdue)
-		const evCount = this.agenda?.eventives.length ?? 0
-		const evWarn = this.agenda?.eventives.some(x => x.isOverdue)
+		const upcoming = this.upcoming
+		const evCount = upcoming.length
+		const evWarn = upcoming.some(x => x.isOverdue)
 
 		switch (this.mode) {
 
@@ -148,9 +162,15 @@ export class BriefingCardAgenda extends CardComponent {
 		}
 	}
 
+	/** The eventives and the terminatives, as one group in the order they fall. */
+	private get upcoming(): UpcomingOccurrence[] {
+		const agenda = this.agenda
+		return !agenda ? [] : [...agenda.eventives, ...(agenda.terminatives ?? [])].sort(compareUpcoming)
+	}
+
 	protected override get content() {
 		const attentives = this.mode !== 'eventives' ? this.agenda?.attentives ?? [] : []
-		const eventives = this.mode !== 'attentives' ? this.agenda?.eventives ?? [] : []
+		const eventives = this.mode !== 'attentives' ? this.upcoming : []
 
 		if (attentives.length === 0 && eventives.length === 0) {
 			return html`<span class='empty'>Nothing needs your attention.</span>`
@@ -171,9 +191,9 @@ export class BriefingCardAgenda extends CardComponent {
 				<div class='section'>
 					${this.mode === 'eventives' ? nothing : html`<span class='section-title'>Upcoming</span>`}
 					<div class='list'>
-						${eventives.map(eventive => html`
-							<p7t-eventive-item interactive .eventive=${eventive}></p7t-eventive-item>
-						`)}
+						${eventives.map(occurrence => occurrence instanceof Terminative
+							? html`<p7t-terminative-item interactive .terminative=${occurrence}></p7t-terminative-item>`
+							: html`<p7t-eventive-item interactive .eventive=${occurrence}></p7t-eventive-item>`)}
 					</div>
 				</div>
 			`}
@@ -183,6 +203,13 @@ export class BriefingCardAgenda extends CardComponent {
 	/** An attentive was resolved — a done occurrence drops out of the agenda, so refetch the record. */
 	@eventListener('attentivechange')
 	protected onAttentiveChange(e: Event) {
+		e.stopPropagation()
+		void this.agendaRef.refresh()
+	}
+
+	/** A terminative was ignored — it drops out of the agenda, so refetch the record. */
+	@eventListener('terminativechange')
+	protected onTerminativeChange(e: Event) {
 		e.stopPropagation()
 		void this.agendaRef.refresh()
 	}

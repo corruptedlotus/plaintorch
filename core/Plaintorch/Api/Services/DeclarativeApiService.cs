@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
@@ -17,7 +18,7 @@ namespace Pleiades.Plaintorch.Api.Services;
 /// </summary>
 /// <remarks>
 /// Declaratives are event-like: they are never acted on directly. Interacting with a single occurrence
-/// addresses it by its RECURRENCE-ID (an eventive for fates/objectives, an unbound attentive for decrees);
+/// addresses it by its RECURRENCE-ID (an eventive for fates, an unbound attentive for decrees);
 /// the occurrence is resolved into the same unit of work and the interaction applied, so a projected occurrence
 /// hardens as the guaranteed consequence of the single save rather than through a separate materialize verb.
 /// Instances resolved here are never Polaris-bound; binding only happens by manually adding a decree to a
@@ -25,7 +26,8 @@ namespace Pleiades.Plaintorch.Api.Services;
 /// addressed by its row id instead. Interaction with an orbit-scheduled occurrence is resolved through preview
 /// (non-seeking) resolution so a future instance never pushes the schedule state forward; its recurrence-id is
 /// its identity, so the later seeking pass recognizes it. A manual eventive — added to a fate by hand, outside its
-/// recurrence set — has no RECURRENCE-ID; it is born hardened and addressed by its row id.
+/// recurrence set — has no RECURRENCE-ID; it is born hardened and addressed by its row id. A terminative, the occurrence of
+/// an item's due (PEP103 patch 7), is addressed by its origin, and a user only raises or lowers its ignore flag.
 /// </remarks>
 public sealed class DeclarativeApiService(
 	PlainfraContext context,
@@ -81,11 +83,6 @@ public sealed class DeclarativeApiService(
 			Calendar = PinnedCalendarFor(orbit),
 		};
 
-		if (!string.IsNullOrWhiteSpace(plan.ParentIncentiveId))
-		{
-			await ApplyParentAsync(fate, plan.ParentIncentiveId, cancellationToken);
-		}
-
 		context.Fates.Add(fate);
 		await writeQueue.WriteAsync(fate, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "fate.create", subject: fate, cancellationToken: cancellationToken);
@@ -107,9 +104,8 @@ public sealed class DeclarativeApiService(
 			fate.Title = update.Title;
 		}
 
-		if (update.Status is not null && update.Status.Value != fate.Status)
+		if (update.Status is not null)
 		{
-			await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Fate, fate.Id), update.Status.Value, cancellationToken);
 			fate.Status = update.Status.Value;
 		}
 
@@ -119,18 +115,6 @@ public sealed class DeclarativeApiService(
 			var directiveId = string.IsNullOrWhiteSpace(update.DirectiveId.Value) ? null : update.DirectiveId.Value;
 			await EnsureDirectiveExistsAsync(directiveId, cancellationToken);
 			fate.DirectiveId = directiveId;
-		}
-
-		if (update.ParentIncentiveId.IsSet)
-		{
-			if (string.IsNullOrWhiteSpace(update.ParentIncentiveId.Value))
-			{
-				fate.ParentIncentiveId = null;
-			}
-			else
-			{
-				await ApplyParentAsync(fate, update.ParentIncentiveId.Value, cancellationToken);
-			}
 		}
 
 		if (update.Orbit is not null)
@@ -159,13 +143,6 @@ public sealed class DeclarativeApiService(
 			fate.TimeZone = ValidTimeZone(update.TimeZone.Value, nameof(update));
 		}
 
-		// Resuming a paused fate (cancelled or opted out → active) seeks its cursor to now, so generation picks up
-		// from now with no backfill of the occurrences that elapsed while it was paused (PEP100/PEP111).
-		if (previous.Status != FateStatus.Active && fate.Status == FateStatus.Active && !string.IsNullOrWhiteSpace(fate.Orbit))
-		{
-			await orbitService.FastForwardToNowAsync(fate, fate.Orbit!, DateTimeOffset.Now, cancellationToken);
-		}
-
 		// A fate is orbit-only (PEP111), so there is no fixed-date shape to reconcile here — the update above
 		// already set the orbit (and re-pinned the calendar). The write goes through the vault write queue (PEP110).
 		await writeQueue.WriteAsync(fate, previous, cancellationToken);
@@ -181,15 +158,8 @@ public sealed class DeclarativeApiService(
 	public async Task DeleteFateAsync(string fateId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(fateId);
-		var fate = await context.Fates
-			.Include(item => item.ChildIncentives)
-			.FirstOrDefaultAsync(item => item.Id == fateId, cancellationToken)
+		var fate = await context.Fates.FirstOrDefaultAsync(item => item.Id == fateId, cancellationToken)
 			?? throw new InvalidOperationException($"Fate '{fateId}' was not found.");
-
-		if (fate.ChildIncentives.Count > 0)
-		{
-			throw new InvalidOperationException("Fate cannot be deleted while other incentives still name it as their parent.");
-		}
 
 		var graveyardEntry = temporalDataService.StageEntityArchive(fate, "api-delete", Environment.UserName);
 		context.Fates.Remove(fate);
@@ -314,13 +284,6 @@ public sealed class DeclarativeApiService(
 		// Validate the resulting combination: reflecting decrees demand day-granularity orbits.
 		PlaintorchOrbitService.ValidateDecreeOrbit(decree.Orbit, decree.Reflect);
 
-		// Resuming an abandoned decree (→ active) seeks its cursor to now, so generation picks up from now with no
-		// backfill of the occurrences that elapsed while it was abandoned (PEP100/PEP111).
-		if (previous.Status != DecreeStatus.Active && decree.Status == DecreeStatus.Active && !string.IsNullOrWhiteSpace(decree.Orbit))
-		{
-			await orbitService.FastForwardToNowAsync(decree, decree.Orbit!, DateTimeOffset.Now, cancellationToken);
-		}
-
 		await writeQueue.WriteAsync(decree, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "decree.update", subject: decree, cancellationToken: cancellationToken);
 		return decree;
@@ -357,17 +320,12 @@ public sealed class DeclarativeApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<IReadOnlyList<Eventive>> ListEventivesAsync(string? fateId = null, string? objectiveId = null, CancellationToken cancellationToken = default)
+	public async Task<IReadOnlyList<Eventive>> ListEventivesAsync(string? fateId = null, CancellationToken cancellationToken = default)
 	{
 		var query = context.Eventives.AsNoTracking();
 		if (!string.IsNullOrWhiteSpace(fateId))
 		{
 			query = query.Where(item => item.FateId == fateId);
-		}
-
-		if (!string.IsNullOrWhiteSpace(objectiveId))
-		{
-			query = query.Where(item => item.ObjectiveId == objectiveId);
 		}
 
 		return await query
@@ -398,9 +356,10 @@ public sealed class DeclarativeApiService(
 
 		var fate = await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == plan.FateId, cancellationToken)
 			?? throw new InvalidOperationException($"Fate '{plan.FateId}' was not found.");
-		// A cancelled fate takes no occurrences, as it materializes none (PEP100). An opted-out fate still accepts one:
-		// adding it by hand is the explicit interaction that opts that single occurrence in.
-		if (fate.Status == FateStatus.Cancelled)
+		// A stopped fate takes no occurrences, as its temporal activation is off and it materializes none (PEP100, PEP103
+		// patch 6). An opted-out fate still accepts one: adding it by hand is the explicit interaction that opts that single
+		// occurrence in.
+		if (!TemporalActivation.IsActive(fate.Status))
 		{
 			throw new InvalidOperationException($"Fate '{fate.Id}' is {fate.Status} and takes no eventives.");
 		}
@@ -474,7 +433,7 @@ public sealed class DeclarativeApiService(
 			"eventive.update",
 			subjectType: nameof(Eventive),
 			subjectId: eventive.Id.ToString(CultureInfo.InvariantCulture),
-			details: new { eventive.FateId, eventive.ObjectiveId, resolution = eventive.Resolution.ToString(), date = eventive.Epoch.Date.ToString("yyyy-MM-dd") },
+			details: new { eventive.FateId, resolution = eventive.Resolution.ToString(), date = eventive.Epoch.Date.ToString("yyyy-MM-dd") },
 			cancellationToken: cancellationToken);
 		return eventive;
 	}
@@ -487,7 +446,7 @@ public sealed class DeclarativeApiService(
 
 		// An attentive is always an unbound occurrence, addressed by its decree + recurrence-id. Resolve it into the
 		// current unit of work without a save of its own; the single SaveChanges below persists the materialization
-		// together with this interaction, and the state-policy pass runs over it centrally.
+		// together with this interaction, and the state engine runs over it centrally.
 		if (string.IsNullOrWhiteSpace(occurrence.DecreeId) || occurrence.RecurrenceId is not DateTime recurrenceId)
 		{
 			throw new ArgumentException("An attentive occurrence must be addressed by decree and recurrence-id.", nameof(occurrence));
@@ -536,6 +495,69 @@ public sealed class DeclarativeApiService(
 			details: new { attentive.DecreeId, resolution = attentive.Resolution.ToString(), date = attentive.Epoch.Date.ToString("yyyy-MM-dd") },
 			cancellationToken: cancellationToken);
 		return attentive;
+	}
+
+	/// <inheritdoc />
+	public async Task<IReadOnlyList<Terminative>> ListTerminativesAsync(string? originId = null, CancellationToken cancellationToken = default)
+	{
+		var query = context.Terminatives
+			.AsNoTracking()
+			.Include(item => item.Objective)
+			.Include(item => item.Directive)
+			.Include(item => item.Checkpoint)
+			.AsQueryable();
+		if (!string.IsNullOrWhiteSpace(originId))
+		{
+			query = query.Where(item => item.ObjectiveId == originId || item.DirectiveId == originId || item.CheckpointId == originId);
+		}
+
+		return await query
+			.OrderBy(item => item.Epoch.Moment)
+			.ToListAsync(cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public async Task<Terminative> UpdateTerminativeAsync(TerminativeOccurrenceRef occurrence, TerminativeUpdate update, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(occurrence);
+		ArgumentNullException.ThrowIfNull(update);
+
+		// A projected terminative hardens into this save, as interacting with any occurrence does; the state engine then sets
+		// its resolution and keeps it on its origin's due.
+		Terminative terminative;
+		if (occurrence.Id is long id)
+		{
+			terminative = await context.Terminatives.FirstOrDefaultAsync(item => item.Id == id, cancellationToken)
+				?? throw new InvalidOperationException($"Terminative '{id}' was not found.");
+		}
+		else if (!string.IsNullOrWhiteSpace(occurrence.OriginId))
+		{
+			terminative = await hardeningService.EnsureTerminativeIntoContextAsync(occurrence.OriginId, cancellationToken);
+		}
+		else
+		{
+			throw new ArgumentException("A terminative must be addressed by its row id or by its origin.", nameof(occurrence));
+		}
+
+		if (update.Ignored is { } ignored)
+		{
+			terminative.Ignored = ignored;
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"terminative.update",
+			subjectType: nameof(Terminative),
+			subjectId: terminative.Id.ToString(CultureInfo.InvariantCulture),
+			details: new { origin = terminative.RecurrenceOwnerUid, terminative.Ignored, resolution = terminative.Resolution.ToString() },
+			cancellationToken: cancellationToken);
+		return await context.Terminatives
+			.AsNoTracking()
+			.Include(item => item.Objective)
+			.Include(item => item.Directive)
+			.Include(item => item.Checkpoint)
+			.FirstAsync(item => item.Id == terminative.Id, cancellationToken);
 	}
 
 	/// <summary>
@@ -653,8 +675,8 @@ public sealed class DeclarativeApiService(
 	/// own. A row id names a hardened row directly — the only address a manual eventive has. Otherwise the owner and
 	/// recurrence-id resolve it through the hardening service (evaluate the orbit, find the hardened twin, or build
 	/// the projected row), which addresses a projected occurrence and its hardened twin identically; the caller's
-	/// single SaveChanges then persists the materialization together with the interaction, and the state-policy pass
-	/// runs over it centrally.
+	/// single SaveChanges then persists the materialization together with the interaction, and the state engine runs over
+	/// it centrally.
 	/// </summary>
 	private async Task<Eventive> ResolveEventiveAsync(EventiveOccurrenceRef occurrence, CancellationToken cancellationToken)
 	{
@@ -670,18 +692,6 @@ public sealed class DeclarativeApiService(
 		}
 
 		return await hardeningService.EnsureEventiveIntoContextAsync(occurrence.OwnerId, recurrenceId, cancellationToken);
-	}
-
-	private async Task ApplyParentAsync(Incentive child, string parentIncentiveId, CancellationToken cancellationToken)
-	{
-		var parent = await context.Incentives
-			.AsNoTracking()
-			.IgnoreAutoIncludes()
-			.FirstOrDefaultAsync(item => item.Id == parentIncentiveId, cancellationToken)
-			?? throw new InvalidOperationException($"Parent incentive '{parentIncentiveId}' was not found.");
-
-		IncentiveParenting.EnsureValidParent(child, parent);
-		child.ParentIncentiveId = parent.Id;
 	}
 
 	private async Task EnsureDirectiveExistsAsync(string? directiveId, CancellationToken cancellationToken)
@@ -705,7 +715,6 @@ public sealed class DeclarativeApiService(
 			Id = fate.Id,
 			Title = fate.Title,
 			DirectiveId = fate.DirectiveId,
-			ParentIncentiveId = fate.ParentIncentiveId,
 			Status = fate.Status,
 			Orbit = fate.Orbit,
 		};

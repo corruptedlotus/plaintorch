@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 
@@ -9,13 +10,13 @@ namespace Pleiades.Plaintorch.Materialization;
 /// <summary>
 /// The centralized choke point that resolves a declarative occurrence into the current unit of work as a
 /// hardened row (Strategy 1 / soft agenda, PEP100/PEP101). Every interaction with — and every reference to —
-/// an occurrence routes through here, so a projected agenda item becomes a durable <see cref="Eventive"/>/
-/// <see cref="Attentive"/> the moment it is acted on.
+/// an occurrence routes through here, so a projected agenda item becomes a durable <see cref="Eventive"/>,
+/// <see cref="Attentive"/> or <see cref="Terminative"/> the moment it is acted on.
 /// </summary>
 /// <remarks>
 /// Every entry point is SAVE-FREE: it finds the already-hardened row or builds a new one and tracks it into the
 /// caller's <see cref="PlainfraContext"/>, and the single <see cref="PlainfraContext.SaveChanges()"/> is left to
-/// the caller — an interaction endpoint, or the state-policy save pass that guarantees a referenced occurrence
+/// the caller — an interaction endpoint, or the state engine's save pass that guarantees a referenced occurrence
 /// hardens. Materialization is thus never a standalone verb; it is the guaranteed consequence of touching an
 /// occurrence, enforced centrally on the save.
 /// <para>
@@ -28,33 +29,56 @@ namespace Pleiades.Plaintorch.Materialization;
 public sealed class OccurrenceHardeningService(
 	PlainfraContext context,
 	PlaintorchOrbitService orbitService,
-	DependencyGateService dependencyGate)
+	DependencyGateService dependencyGate,
+	TerminativeService terminativeService)
 {
 	/// <summary>
-	/// Resolves the eventive an owner (a fate or an objective, auto-detected) owns for an occurrence into the
-	/// current unit of work, returning the existing row when already hardened. The dependency gate is respected:
-	/// a locked occurrence refuses to harden (PEP101). No save — the caller's <see cref="PlainfraContext.SaveChanges()"/>
-	/// persists it. The entry point for interacting with a projected eventive by its recurrence-id.
+	/// Resolves the eventive a fate owns for an occurrence into the current unit of work, returning the existing row when
+	/// already hardened. The dependency gate is respected: a locked occurrence refuses to harden (PEP101). No save — the
+	/// caller's <see cref="PlainfraContext.SaveChanges()"/> persists it. The entry point for interacting with a projected
+	/// eventive by its recurrence-id.
 	/// </summary>
 	public async Task<Eventive> EnsureEventiveIntoContextAsync(string ownerId, DateTime recurrenceId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
 
-		var fate = await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == ownerId, cancellationToken);
-		if (fate is not null)
+		var fate = await context.Fates.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == ownerId, cancellationToken)
+			?? throw new InvalidOperationException($"No fate '{ownerId}' owns an eventive.");
+		var (eventive, _) = await EnsureFateEventiveIntoContextAsync(fate, recurrenceId, respectDependencyGate: true, cancellationToken);
+		return eventive;
+	}
+
+	/// <summary>
+	/// Resolves the terminative an item's due spawns (PEP103 patch 7) into the current unit of work, returning the existing
+	/// row when already hardened, whatever its origin's state now. A new one hardens only while the origin's due acts: an
+	/// item with no due, or finished or set aside, projects none to harden. No save — the caller's
+	/// <see cref="PlainfraContext.SaveChanges()"/> persists it, and the state engine sets its resolution. The entry point for
+	/// interacting with a projected terminative by its origin.
+	/// </summary>
+	public async Task<Terminative> EnsureTerminativeIntoContextAsync(string originId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(originId);
+
+		var origin = await terminativeService.FindOriginAsync(context, originId, cancellationToken)
+			?? throw new InvalidOperationException($"No objective, stellar directive or checkpoint '{originId}' carries a due.");
+		if ((await terminativeService.FindOfAsync(context, [origin], cancellationToken)).FirstOrDefault() is { } existing)
 		{
-			var (eventive, _) = await EnsureFateEventiveIntoContextAsync(fate, recurrenceId, respectDependencyGate: true, cancellationToken);
-			return eventive;
+			return existing;
 		}
 
-		var objective = await context.Objectives.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == ownerId, cancellationToken);
-		if (objective is not null)
+		if (origin.Due is null)
 		{
-			var (eventive, _) = await EnsureObjectiveEventiveIntoContextAsync(objective, recurrenceId, cancellationToken);
-			return eventive;
+			throw new InvalidOperationException($"{origin.GetType().Name} '{origin.Id}' has no due, so it has no terminative.");
 		}
 
-		throw new InvalidOperationException($"No fate or objective '{ownerId}' owns an eventive.");
+		if (!terminativeService.Acts(origin))
+		{
+			throw new InvalidOperationException($"{origin.GetType().Name} '{origin.Id}' is finished or set aside, and its due no longer spawns a terminative.");
+		}
+
+		var terminative = terminativeService.Spawn(origin);
+		context.Terminatives.Add(terminative);
+		return terminative;
 	}
 
 	/// <summary>
@@ -68,7 +92,7 @@ public sealed class OccurrenceHardeningService(
 
 		var decree = await context.Decrees.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == decreeId, cancellationToken)
 			?? throw new InvalidOperationException($"Decree '{decreeId}' was not found.");
-		if (decree.Status != DecreeStatus.Active)
+		if (!TemporalActivation.IsActive(decree.Status))
 		{
 			throw new InvalidOperationException($"Decree '{decreeId}' is {decree.Status} and does not materialize attentives.");
 		}
@@ -130,25 +154,15 @@ public sealed class OccurrenceHardeningService(
 			return;
 		}
 
-		var objective = await context.Objectives.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(item => item.Id == endpoint.Id, cancellationToken);
-		if (objective is not null)
-		{
-			try
-			{
-				await EnsureObjectiveEventiveIntoContextAsync(objective, recurrenceId, cancellationToken);
-			}
-			catch (InvalidOperationException)
-			{
-			}
-		}
 	}
 
 	private async Task<(Eventive Eventive, bool Created)> EnsureFateEventiveIntoContextAsync(Fate fate, DateTime recurrenceId, bool respectDependencyGate, CancellationToken cancellationToken)
 	{
-		// A cancelled fate generates nothing and cannot be interacted with. An opted-out fate still honours the
-		// user-interaction rule (PEP100/PEP111): interacting with one of its occurrences hardens it, stamped OptOut
-		// so it stays hidden until the row is explicitly opted back in by setting it Pending.
-		if (fate.Status == FateStatus.Cancelled)
+		// A fate whose temporal activation is off (stopped, PEP103 patch 6) generates nothing and cannot be interacted
+		// with. An opted-out fate still honours the user-interaction rule (PEP100/PEP111): interacting with one of its
+		// occurrences hardens it, stamped OptOut so it stays hidden until the row is explicitly opted back in by setting it
+		// Pending.
+		if (!TemporalActivation.IsActive(fate.Status))
 		{
 			throw new InvalidOperationException($"Fate '{fate.Id}' is {fate.Status} and does not materialize eventives.");
 		}
@@ -179,24 +193,6 @@ public sealed class OccurrenceHardeningService(
 		return (eventive, true);
 	}
 
-	private async Task<(Eventive Eventive, bool Created)> EnsureObjectiveEventiveIntoContextAsync(Objective objective, DateTime recurrenceId, CancellationToken cancellationToken)
-	{
-		var existing = await FindEventiveAsync(objective.Id, recurrenceId, cancellationToken);
-		if (existing is not null)
-		{
-			return (existing, false);
-		}
-
-		var eventive = new Eventive
-		{
-			ObjectiveId = objective.Id,
-			Epoch = Epoch.FromSlot(recurrenceId),
-			RecurrenceId = recurrenceId,
-		};
-		context.Eventives.Add(eventive);
-		return (eventive, true);
-	}
-
 	/// <summary>
 	/// Resolves, in preview mode, the orbit occurrence a RECURRENCE-ID addresses: the occurrence starting at exactly
 	/// that moment, or the day's first occurrence when none does. <see langword="null"/> when the declarative has
@@ -220,23 +216,20 @@ public sealed class OccurrenceHardeningService(
 	}
 
 	/// <summary>
-	/// Finds an eventive for an owner UID and RECURRENCE-ID, seeing both a row already added in the current unit
-	/// of work (so two references in one save do not duplicate it) and the database.
+	/// Finds a fate's eventive for a RECURRENCE-ID, seeing both a row already added in the current unit of work (so two
+	/// references in one save do not duplicate it) and the database.
 	/// </summary>
-	private async Task<Eventive?> FindEventiveAsync(string ownerUid, DateTime recurrenceId, CancellationToken cancellationToken)
+	private async Task<Eventive?> FindEventiveAsync(string fateId, DateTime recurrenceId, CancellationToken cancellationToken)
 	{
 		var tracked = context.ChangeTracker.Entries<Eventive>()
 			.FirstOrDefault(entry => entry.State == EntityState.Added
-				&& (entry.Entity.FateId == ownerUid || entry.Entity.ObjectiveId == ownerUid)
+				&& entry.Entity.FateId == fateId
 				&& entry.Entity.RecurrenceId == recurrenceId)?.Entity;
 		if (tracked is not null)
 		{
 			return tracked;
 		}
 
-		return await context.Eventives.FirstOrDefaultAsync(item =>
-			(item.FateId == ownerUid || item.ObjectiveId == ownerUid)
-			&& item.RecurrenceId == recurrenceId,
-			cancellationToken);
+		return await context.Eventives.FirstOrDefaultAsync(item => item.FateId == fateId && item.RecurrenceId == recurrenceId, cancellationToken);
 	}
 }

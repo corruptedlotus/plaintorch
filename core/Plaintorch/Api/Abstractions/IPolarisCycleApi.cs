@@ -75,6 +75,10 @@ public interface IPolarisCycleApi
 	/// nearest directive availability, else its college; none for a one-shot), <see langword="null"/> is none, and an
 	/// id is used as given. The returned executive carries the resolved <see cref="Executive.AffinityTimeframe"/>.
 	/// </summary>
+	/// <remarks>
+	/// The plan sets no status. An objective joining the active cycle moves to Polaris where nothing blocks it and keeps its
+	/// status where something does; one planned into a forecast moves once the forecast begins (Patch103.3).
+	/// </remarks>
 	/// <exception cref="InvalidOperationException">An explicit affinity names a timeframe that does not exist.</exception>
 	Task<PolarisExecutivePlanResult> PlanExecutiveAsync(PolarisExecutivePlan plan, string? polarisCycleId = null, CancellationToken cancellationToken = default);
 
@@ -84,10 +88,13 @@ public interface IPolarisCycleApi
 	Task<Executive> UpdateExecutiveAsync(long executiveId, ExecutiveUpdate update, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Defers an executive to the next day's Polaris cycle (PEP111), creating that day's forecast cycle when none
-	/// exists yet. The carried-forward work becomes the new allocation envelope — estimation, minimum, and maximum
+	/// Defers an executive to the next Polaris cycle that can still be begun (PEP111, PEP103 patch 4): the first day after
+	/// its own cycle's, and no earlier than today's cycle while today's has not begun, else a later day's. That day's forecast
+	/// cycle is created when none exists yet. The carried-forward work becomes the new allocation envelope — estimation, minimum, and maximum
 	/// are all set to the tracked (elapsed) minutes and the elapsed tally is reset to zero — so the next day starts
-	/// from a fresh estimate of what is left. Refused when the target cycle already holds the same incentive.
+	/// from a fresh estimate of what is left. Refused when the target cycle already holds the same incentive. An ended
+	/// cycle's record is history (PEP103 patch 5), so work moved on from one is carried by a new executive in the next cycle,
+	/// which is returned, and the old executive stays as it was worked.
 	/// </summary>
 	Task<Executive> MoveExecutiveToNextPolarisAsync(long executiveId, CancellationToken cancellationToken = default);
 

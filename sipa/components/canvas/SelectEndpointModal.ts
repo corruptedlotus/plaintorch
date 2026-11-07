@@ -36,13 +36,20 @@ export class SelectEndpointModal extends SuggestModalBase<EndpointHit> {
 	private endpoints?: Promise<EndpointHit[]>
 	/** The directive listing by id, for the codename a directive hit does not carry. */
 	private directives?: Promise<Map<string, Directive>>
+	private kinds?: readonly DependencyEndpointKind[]
 
-	/** Prompts for an endpoint, resolving to nothing when dismissed. `excluded` holds the `kind:id` keys already pinned. */
-	public static prompt(excluded: ReadonlySet<string> = new Set()): Promise<EndpointHit | undefined> {
+	/**
+	 * Prompts for an endpoint, resolving to nothing when dismissed. `excluded` holds the `kind:id` keys already
+	 * pinned; `kinds`, when given, narrows the offer to those kinds (an onrush takes directives, not fates).
+	 */
+	public static prompt(excluded: ReadonlySet<string> = new Set(), kinds?: readonly DependencyEndpointKind[]): Promise<EndpointHit | undefined> {
 		const modal = new SelectEndpointModal()
 		modal.excluded = excluded
+		modal.kinds = kinds
 		modal.dpe = createDeferredExecutor()
-		modal.setPlaceholder('Search directives, objectives, fates, checkpoints…')
+		modal.setPlaceholder(kinds
+			? `Search ${kinds.map(kind => kindLabels[kind].toLowerCase() + 's').join(', ')}…`
+			: 'Search directives, objectives, fates, checkpoints…')
 		modal.open()
 		return new Promise(modal.dpe)
 	}
@@ -56,7 +63,7 @@ export class SelectEndpointModal extends SuggestModalBase<EndpointHit> {
 		this.endpoints ??= core.dependencies.listEndpoints()
 		this.directives ??= core.repos.directiveList.get().then(directives => new Map((directives ?? []).map(directive => [directive.id, directive])))
 		const [endpoints, directives] = await Promise.all([this.endpoints, this.directives])
-		const offered = endpoints.filter(hit => !this.excluded.has(`${DependencyEndpointKind[hit.kind]}:${hit.id}`))
+		const offered = endpoints.filter(hit => (!this.kinds || this.kinds.includes(hit.kind)) && !this.excluded.has(`${DependencyEndpointKind[hit.kind]}:${hit.id}`))
 		return fuzzyFilter(query, offered, hit => hit.kind === DependencyEndpointKind.Directive
 			? directiveSearchText(directives.get(hit.id) ?? hit)
 			: hit.title)

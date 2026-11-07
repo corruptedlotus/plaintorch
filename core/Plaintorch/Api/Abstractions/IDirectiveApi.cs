@@ -57,7 +57,8 @@ public interface IDirectiveApi
 	Task<LunarDirective> CreateLunarAsync(string title, string? codename = null, string? parentDirectiveId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Applies an update to a stellar directive, including its scheduling dates.
+	/// Applies an update to a stellar directive, including its due date. Its planned begin and finish are backlog
+	/// schedules (PEP101), set through <see cref="IBacklogScheduleApi"/>.
 	/// </summary>
 	Task<StellarDirective> UpdateStellarAsync(string directiveId, StellarDirectiveUpdate update, CancellationToken cancellationToken = default);
 
@@ -75,6 +76,22 @@ public interface IDirectiveApi
 	/// Applies a moonlight workflow shift to a lunar directive.
 	/// </summary>
 	Task<LunarDirective> ShiftLunarWorkflowAsync(string directiveId, LunarDirectiveWorkflowShift shift, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Makes a stellar directive a member of an onrush sprint (PEP102 patch 10), moving it from whichever sprint held
+	/// it. Its workflow status is left as it is.
+	/// </summary>
+	Task<StellarDirective> AddToOnrushAsync(string directiveId, string onrushSprintId, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Adds a stellar directive to the sprint in a slot, creating that sprint when it does not exist yet (PEP103 patch 4).
+	/// </summary>
+	Task<StellarDirective> AddToOnrushAsync(string directiveId, OnrushSlot slot, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Takes a stellar directive out of whichever onrush sprint holds it (PEP102 patch 10). The directive itself survives.
+	/// </summary>
+	Task<StellarDirective> RemoveFromOnrushAsync(string directiveId, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Deletes a directive of either kind.

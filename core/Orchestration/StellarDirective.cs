@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations.Schema;
 using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Vault;
@@ -11,18 +12,24 @@ namespace Pleiades.Orchestration;
 /// <remarks>
 /// Stellar directives live as table siblings to <see cref="LunarDirective"/> records through a discriminator and
 /// share the <see cref="VaultLocationKeys.Directives"/> vault storage inherited from <see cref="Directive"/>.
-/// They follow the stellar lifecycle <see cref="Status"/> and carry optional scheduling dates.
+/// They follow the stellar lifecycle <see cref="Status"/> and carry an optional due date. When a directive is planned
+/// to begin or finish, and when it actually did, lives in its <see cref="BacklogSchedule"/> rows (PEP101), which
+/// replaced the former <c>startDate</c>/<c>endDate</c> frontmatter fields; a note still carrying those keys drops them
+/// on its next rewrite. Its due spawns its <see cref="Terminative"/> (<see cref="IDueOwner"/>, PEP103 patch 7), as a
+/// whole-day due.
 /// </remarks>
 [PuckEntity("stellar-directive")]
 [PuckFormat("A{S:8}")]
-public sealed class StellarDirective : Directive
+[RetiredMarkdownField("startDate")]
+[RetiredMarkdownField("endDate")]
+public sealed class StellarDirective : Directive, IDueOwner
 {
 	/// <summary>
 	/// Gets or sets the state of the stellar directive.
 	/// </summary>
 	[MarkdownField("status")]
 	[LifecycleStatus]
-	public DirectiveStatus Status { get; set; } = DirectiveStatus.Planned;
+	public DirectiveStatus Status { get; set; } = LifecycleDeclarations.InitialStatus<DirectiveStatus>();
 
 	/// <summary>
 	/// Gets or sets the optional due date.
@@ -30,15 +37,21 @@ public sealed class StellarDirective : Directive
 	[MarkdownField("due")]
 	public DateOnly? Due { get; set; }
 
-	/// <summary>
-	/// Gets or sets the optional directive start date.
-	/// </summary>
-	[MarkdownField("startDate")]
-	public DateOnly? StartDate { get; set; }
+	/// <inheritdoc />
+	/// <remarks>A stellar directive's due is a date, so it falls due as a whole day.</remarks>
+	Due? IDueOwner.Due => Due is { } date ? Orchestration.Due.On(date) : null;
 
 	/// <summary>
-	/// Gets or sets the optional directive end date.
+	/// Gets or sets the onrush sprint this directive is a member of, if any (PEP102 patch 10): an onrush tracks stellar
+	/// directives the way it tracks objectives. A frontmatter field like the objective's, so a note can name its sprint.
 	/// </summary>
-	[MarkdownField("endDate")]
-	public DateOnly? EndDate { get; set; }
+	[MarkdownField("onrush")]
+	public string? OnrushSprintId { get; set; }
+
+	[ForeignKey(nameof(OnrushSprintId))]
+	[InverseProperty(nameof(Orchestration.OnrushSprint.Directives))]
+	/// <summary>
+	/// Gets or sets the onrush sprint this directive is a member of.
+	/// </summary>
+	public OnrushSprint? OnrushSprint { get; set; }
 }

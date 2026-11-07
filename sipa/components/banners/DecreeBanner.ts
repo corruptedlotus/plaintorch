@@ -1,7 +1,7 @@
 import { component, css, html, live, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { Decree, DecreeStatus, DecreeUpdate, OrbitUnit, PolarisCycle } from '@pleiades/sdk'
-import { core, declarativeScheduleUpdate, IconName, followRenamedNote, offerEstimation, ReactiveBinder, SelectStatusModal, decreeStatusDescriptors } from ".."
+import { core, declarativeScheduleUpdate, editState, IconName, followRenamedNote, offerEstimation, ReactiveBinder } from ".."
 import type { ScheduleValue } from "../editing/EditableSchedule"
 import { toast } from '../../host'
 import { declarativeResolutionStyles, declarativeResolutionTemplate, type DeclarativeResolutionUpdate } from './declarativeResolution'
@@ -24,10 +24,8 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
 			const update: DecreeUpdate = {}
+			// The status is not bound: the state bubble saves a shift itself (editState).
 			switch (keyPath) {
-				case 'status':
-					update.status = entity.status
-					break
 				case 'activeCelestron':
 					update.activeCelestron = entity.activeCelestron
 					break
@@ -228,7 +226,7 @@ export class DecreeBanner extends EntityBanner<Decree> {
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${() => SelectStatusModal.prompt(decreeStatusDescriptors)} ${this.binder.bind('status')}>
+			<p7t-editable .value=${this.entity!.status} .doEdit=${(_: unknown, field: HTMLElement) => editState(field, this.entity)}>
 				<p7t-status-item
 					.status=${DecreeStatus[this.entity!.status] as keyof typeof DecreeStatus}>
 				</p7t-status-item>

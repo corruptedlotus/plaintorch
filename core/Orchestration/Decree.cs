@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using Pleiades.Puck;
 using Pleiades.Vault;
 using Pleiades.Vault.Markdown;
+using Pleiades.Orchestration.Lifecycle;
 
 namespace Pleiades.Orchestration;
 
@@ -11,7 +12,7 @@ namespace Pleiades.Orchestration;
 /// </summary>
 /// <remarks>
 /// Decrees are event-like: they are never acted on directly; each occurrence materializes an
-/// <see cref="Attentive"/> instead. Decrees are exempt from the incentive parent system.
+/// <see cref="Attentive"/> instead.
 /// </remarks>
 [PuckEntity("decree")]
 [PuckFormat("r{S:8}")]
@@ -28,7 +29,8 @@ public sealed class Decree : Declarative
 	/// Gets or sets the current decree state.
 	/// </summary>
 	[MarkdownField("status")]
-	public DecreeStatus Status { get; set; } = DecreeStatus.Active;
+	[LifecycleStatus(History = true)]
+	public DecreeStatus Status { get; set; } = LifecycleDeclarations.InitialStatus<DecreeStatus>();
 
 	/// <summary>
 	/// Gets or sets the optional Orbit scheduling notation that defines the decree's routine.

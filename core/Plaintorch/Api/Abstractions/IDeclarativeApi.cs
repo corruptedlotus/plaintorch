@@ -72,9 +72,9 @@ public interface IDeclarativeApi
 	Task<Decree> BeginDecreeBoundaryAsync(string decreeId, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Lists eventive occurrences, optionally filtered by owning fate or objective.
+	/// Lists eventive occurrences, optionally filtered by owning fate.
 	/// </summary>
-	Task<IReadOnlyList<Eventive>> ListEventivesAsync(string? fateId = null, string? objectiveId = null, CancellationToken cancellationToken = default);
+	Task<IReadOnlyList<Eventive>> ListEventivesAsync(string? fateId = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Lists attentive occurrences, optionally filtered by owning decree.
@@ -91,7 +91,7 @@ public interface IDeclarativeApi
 	/// <summary>
 	/// Applies a mutable update to an eventive occurrence addressed by its owner and RECURRENCE-ID. A
 	/// still-projected occurrence is resolved into the same save, so the materialization and the interaction
-	/// persist together and the state-policy pass enforces hardening centrally. A hardened row — the only kind a
+	/// persist together and the state engine enforces hardening centrally. A hardened row — the only kind a
 	/// manual eventive ever is — may instead be addressed by its row id.
 	/// </summary>
 	Task<Eventive> UpdateEventiveAsync(EventiveOccurrenceRef occurrence, EventiveUpdate update, CancellationToken cancellationToken = default);
@@ -102,4 +102,17 @@ public interface IDeclarativeApi
 	/// a Polaris-bound occurrence — which has no meaningful recurrence-id — is addressed by its row id.
 	/// </summary>
 	Task<Attentive> UpdateAttentiveAsync(AttentiveOccurrenceRef occurrence, AttentiveUpdate update, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Lists the hardened terminatives (PEP103 patch 7), optionally only the one of an origin — an objective, a stellar
+	/// directive or a checkpoint.
+	/// </summary>
+	Task<IReadOnlyList<Terminative>> ListTerminativesAsync(string? originId = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Applies the one change a user makes to a terminative: raising or lowering its ignore flag (PEP103 patch 7). A
+	/// still-projected terminative is addressed by its origin and hardened into the same save; a hardened one may also be
+	/// addressed by its row id. Its resolution and its place in time are the state engine's, read from its origin.
+	/// </summary>
+	Task<Terminative> UpdateTerminativeAsync(TerminativeOccurrenceRef occurrence, TerminativeUpdate update, CancellationToken cancellationToken = default);
 }

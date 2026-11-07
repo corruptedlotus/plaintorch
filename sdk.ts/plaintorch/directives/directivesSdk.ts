@@ -1,4 +1,5 @@
 import type { PlaintorchCoreClient } from "../coreClient"
+import type { OnrushSlot } from "../onrush/models"
 import type {
 	CreateDirectiveRequest,
 	CreateLunarDirectiveRequest,
@@ -16,7 +17,8 @@ import type {
 	TimeframeUpdate,
 	DirectiveIconRequest,
 	DirectiveBannerRequest,
-	DirectiveAvailabilityRequest
+	DirectiveAvailabilityRequest,
+	AddDirectiveToOnrushRequest
 } from "./contracts"
 
 export class PlaintorchDirectivesSdk {
@@ -125,6 +127,21 @@ export class PlaintorchDirectivesSdk {
 	public async setAvailability(directiveId: string, timeframeId: number | null): Promise<Directive | undefined> {
 		const request: DirectiveAvailabilityRequest = { timeframeId }
 		return await this.client.putForJson<Directive>(`/api/directives/${encodeURIComponent(directiveId)}/availability`, request)
+	}
+
+	/** Makes a stellar directive a member of an onrush sprint (PEP102 patch 10), shaped like the objective's. */
+	/**
+	 * Adds a stellar directive to a sprint: one named by id, or the active or planning one (an {@link OnrushSlot}), which
+	 * the core creates when it does not exist yet.
+	 */
+	public async addToOnrush(directiveId: string, target: string | OnrushSlot): Promise<boolean> {
+		const request: AddDirectiveToOnrushRequest = typeof target === 'string' ? { onrushSprintId: target } : { slot: target }
+		return (await this.client.postForJson<Directive>(`/api/directives/stellar/${encodeURIComponent(directiveId)}/onrush`, request)) !== null
+	}
+
+	/** Takes a stellar directive out of whichever onrush sprint holds it. */
+	public async removeFromOnrush(directiveId: string): Promise<boolean> {
+		return await this.client.delete(`/api/directives/stellar/${encodeURIComponent(directiveId)}/onrush`)
 	}
 
 	public async createLunar(request: CreateLunarDirectiveRequest): Promise<Directive | undefined> {

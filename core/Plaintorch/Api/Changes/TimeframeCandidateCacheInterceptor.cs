@@ -22,7 +22,8 @@ namespace Pleiades.Plaintorch.Api.Changes;
 /// <para>
 /// Triggers: any timeframe added, modified, or deleted; a Polaris cycle added or deleted, or with its start or end
 /// modified; any directive deleted (the database cascades a lunar directive's timeframes away without a tracked
-/// timeframe entry); and the default-calendar preference added, modified, or deleted (it changes how orbits read).
+/// timeframe entry); a lunar directive's status modified (a Stale one's timeframes do not act, PEP103 patch 6); and the
+/// default-calendar preference added, modified, or deleted (it changes how orbits read).
 /// The preference trigger fires before the in-memory preference store takes the new value, so
 /// <see cref="UserPreferenceService"/> invalidates once more after its store write; this hook still covers a
 /// preference row written by any other pathway.
@@ -118,6 +119,7 @@ public sealed class TimeframeCandidateCacheInterceptor(TimeframeCandidateCache c
 				|| (entry.State == EntityState.Modified
 					&& (entry.Property(item => item.StartTime).IsModified || entry.Property(item => item.EndTime).IsModified)))
 			|| tracker.Entries<Directive>().Any(entry => entry.State == EntityState.Deleted)
+			|| tracker.Entries<LunarDirective>().Any(entry => entry.State == EntityState.Modified && entry.Property(item => item.Status).IsModified)
 			|| tracker.Entries<UserPreferenceRecord>().Any(entry => (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
 				&& string.Equals(entry.Entity.Key, PreferenceKeys.DefaultCalendar, StringComparison.Ordinal));
 	}

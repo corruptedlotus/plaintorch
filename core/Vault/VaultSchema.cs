@@ -20,7 +20,11 @@ public static class VaultSchema
 	/// The vault schema version the current engine emits. A vault stored below this version is migrated at startup.
 	/// Version 2 introduces the PEP091 conventions (quiet objective identity, decoupled PUCK storage form). Version 3
 	/// renames the in-planning onrush placeholder from the bare sentinel <c>0</c> to the gate-passing PUCK <c>x0000</c>.
-	/// Version 4 folds a fate's legacy one-off date frontmatter into its orbit-only shape (PEP111).
+	/// Version 4 folds a fate's legacy one-off date frontmatter into its orbit-only shape (PEP111). Version 5 drops the
+	/// retired <c>startDate</c>/<c>endDate</c> keys from stellar directive notes, whose dates became backlog schedules
+	/// (PEP101). Version 6 purges the stored dependencies the intrinsic directive-children edges contradict or make
+	/// redundant (PEP102 patch 9). Version 7 renames the objective status <c>Onrush</c> to <c>Onboard</c> in objective notes
+	/// (PEP103 patch 3). Version 8 renames the fate status <c>Cancelled</c> to <c>Stopped</c> in fate notes (PEP103 patch 6).
 	/// </summary>
-	public const int CurrentVersion = 4;
+	public const int CurrentVersion = 8;
 }

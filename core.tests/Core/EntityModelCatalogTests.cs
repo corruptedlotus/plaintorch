@@ -109,8 +109,8 @@ public sealed class EntityModelCatalogTests : VaultTestBase
 			Status = DirectiveStatus.Active,
 			Tags = ["ops", "q3"],
 			Due = new DateOnly(2026, 8, 1),
-			StartDate = new DateOnly(2026, 7, 1),
-			EndDate = new DateOnly(2026, 9, 1),
+			Icon = "lucide:flag",
+			AvailabilityTimeframeId = 7,
 		};
 
 		var clone = await Vault.WithScopeAsync(services => Task.FromResult(
@@ -123,8 +123,8 @@ public sealed class EntityModelCatalogTests : VaultTestBase
 		Assert.Equal(stellar.Status, clone.Status);
 		Assert.Equal(stellar.Tags, clone.Tags);
 		Assert.Equal(stellar.Due, clone.Due);
-		Assert.Equal(stellar.StartDate, clone.StartDate);
-		Assert.Equal(stellar.EndDate, clone.EndDate);
+		Assert.Equal(stellar.Icon, clone.Icon);
+		Assert.Equal(stellar.AvailabilityTimeframeId, clone.AvailabilityTimeframeId);
 
 		// Snapshots stay stable when the source is updated by assignment.
 		stellar.Title = "Renamed";

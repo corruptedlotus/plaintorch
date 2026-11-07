@@ -74,14 +74,17 @@ public sealed class OnrushSprintModule : Module
 		group.MapPost("/start-new", async (OnrushSprintDateRequest request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.StartNewAsync(request.Date, cancellationToken)));
 
+		group.MapPost("/ensure", async (EnsureOnrushRequest request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.EnsureAsync(request.Slot, cancellationToken)));
+
 		group.MapPost("/{onrushSprintId}/begin", async (string onrushSprintId, OnrushSprintDateRequest request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.BeginAsync(onrushSprintId, request.Date, cancellationToken)));
 
 		group.MapPost("/{onrushSprintId}/end", async (string onrushSprintId, OnrushSprintDateRequest request, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.EndAsync(onrushSprintId, request.Date, cancellationToken)));
 
-		group.MapPost("/{onrushSprintId}/assign-onrush", async (string onrushSprintId, IOnrushSprintApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.AssignAllOnrushStateObjectivesToSelfAsync(onrushSprintId, cancellationToken)));
+		group.MapPost("/{onrushSprintId}/assign-onboard", async (string onrushSprintId, IOnrushSprintApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.AssignAllOnboardObjectivesToSelfAsync(onrushSprintId, cancellationToken)));
 
 		group.MapGet("/{onrushSprintId}/orders", async (string onrushSprintId, IOnrushSprintApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListExecutiveOrdersAsync(onrushSprintId, cancellationToken)));

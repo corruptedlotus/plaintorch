@@ -14,6 +14,11 @@ public interface ISystemApi
 	Task<SystemBriefing> GetBriefingAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
+	/// Describes how each kind's lifecycle reads (PEP103): its states, and each status with the state it stands for.
+	/// </summary>
+	IReadOnlyList<LifecycleKindDescription> GetLifecycles();
+
+	/// <summary>
 	/// Resolves the authoritative PLAINTORCH entity interpretation for a vault-relative markdown path.
 	/// </summary>
 	Task<EntityExistence> ResolveVaultNoteAsync(string vaultRelativePath, CancellationToken cancellationToken = default);

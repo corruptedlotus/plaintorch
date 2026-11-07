@@ -11,7 +11,7 @@ namespace Pleiades.Tests.Core;
 public sealed class ObjectiveWorkflowStateTests : VaultTestBase
 {
 	[Fact]
-	public async Task Failed_objective_settles_like_other_terminal_states()
+	public async Task Only_finishing_settles_an_objective(/* PEP103 patch 5, I-040 */)
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -23,17 +23,24 @@ public sealed class ObjectiveWorkflowStateTests : VaultTestBase
 			.GetRequiredService<IObjectiveApi>()
 			.UpdateAsync(objective.Id, new ObjectiveUpdate(CelestronValue: 7), cancellationToken));
 
-		await Vault.WithScopeAsync(services => services
-			.GetRequiredService<IObjectiveApi>()
-			.ShiftWorkflowAsync(objective.Id, new ObjectiveWorkflowShift(ObjectiveStatus.Failed), cancellationToken));
-
-		var transactions = await Vault.QueryAsync(context => context.CelestronLedger
+		Task<List<CelestronTransaction>> LedgerAsync() => Vault.QueryAsync(context => context.CelestronLedger
 			.Where(item => item.SourcePuck == objective.Id)
 			.ToListAsync(cancellationToken));
+		Task ShiftAsync(ObjectiveStatus status) => Vault.WithScopeAsync(services => services
+			.GetRequiredService<IObjectiveApi>()
+			.ShiftWorkflowAsync(objective.Id, new ObjectiveWorkflowShift(status), cancellationToken));
 
-		var transaction = Assert.Single(transactions);
-		Assert.True(transaction.Amount > 0);
-		Assert.Contains("Failed", transaction.Description);
+		// Failing sets the objective aside: neither begun nor finished, it earns nothing.
+		await ShiftAsync(ObjectiveStatus.Failed);
+		Assert.Empty(await LedgerAsync());
+
+		// Finishing settles once, Done or Archived alike, and leaving the finish takes it back.
+		await ShiftAsync(ObjectiveStatus.Done);
+		Assert.Equal(7, Assert.Single(await LedgerAsync()).Amount);
+		await ShiftAsync(ObjectiveStatus.Archived);
+		Assert.Single(await LedgerAsync());
+		await ShiftAsync(ObjectiveStatus.Failed);
+		Assert.Empty(await LedgerAsync());
 	}
 
 	[Fact]

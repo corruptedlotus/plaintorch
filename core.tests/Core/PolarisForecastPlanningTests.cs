@@ -97,8 +97,9 @@ public sealed class PolarisForecastPlanningTests : VaultTestBase
 		Assert.False(await CycleExistsAsync(forecast.Id));
 		Assert.False(await Vault.QueryAsync(context => context.Set<Executive>().AnyAsync(item => item.Id == planned.Executive.Id, Token)));
 		var objective = await Vault.QueryAsync(context => context.Objectives.AsNoTracking().FirstAsync(item => item.Id == planned.Objective!.Id, Token));
-		// Deleting the plan never walks state back: planning promoted the objective, and it stays promoted.
-		Assert.Equal(ObjectiveStatus.Polaris, objective.Status);
+		// A forecast moves its objectives only once it begins (Patch103.3), and deleting the plan never walks state back:
+		// the objective is as it was.
+		Assert.Equal(ObjectiveStatus.Standby, objective.Status);
 	}
 
 	[Fact]

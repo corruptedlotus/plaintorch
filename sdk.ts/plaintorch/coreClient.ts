@@ -13,12 +13,22 @@ import { PlaintorchPolarisSdk } from "./polaris/polarisSdk"
 import { PlaintorchActivitiesSdk } from "./activities/activitiesSdk"
 import { PlaintorchLoreSdk } from "./lore/loreSdk"
 import { PlaintorchDependenciesSdk } from "./dependencies/dependenciesSdk"
+import { PlaintorchSchedulesSdk } from "./schedules/schedulesSdk"
 import { PlaintorchSystemSdk } from "./system/systemSdk"
 import { PlaintorchPreferencesSdk } from "./preferences/preferencesSdk"
 import { PlaintorchMediaSdk } from "./media/mediaSdk"
 import { EntityStore, type AbsorptionContext } from "@corruptedlotus/local-repo"
 import { plaintorchEntityPolicy } from "./repos/policy"
 import { PlaintorchRepositories } from "./repos/repositories"
+import {
+	forceCompensationValue,
+	isStateEnforcementProblem,
+	StateDecisionOutcome,
+	stateEnforcementHeader,
+	type StateEnforcementHandler,
+	type StateEnforcementProblem,
+	type StateEnforcementScope
+} from "./enforcement/models"
 
 
 export interface PlaintorchCoreClientOptions {
@@ -35,6 +45,8 @@ const defaultLoopbackPort = 43118
 const defaultHost = "127.0.0.1"
 /** Response header the core sets to `false` when a write's note is still draining past the note-queue timeout (PEP110). */
 const noteReadyHeader = "X-Note-Ready"
+/** The status the core answers a change its state enforcement stopped with (PEP103). */
+const stateEnforcementStatus = 409
 export class PlaintorchCoreClient {
 	private readonly baseUrl: string
 	private readonly transports: PlaintorchCoreTransport[]
@@ -60,8 +72,18 @@ export class PlaintorchCoreClient {
 	public readonly activities: PlaintorchActivitiesSdk
 	public readonly lore: PlaintorchLoreSdk
 	public readonly dependencies: PlaintorchDependenciesSdk
+	/** Planned starts and finishes of backlog items, and the recorded states they reached (PEP101, PEP103). */
+	public readonly schedules: PlaintorchSchedulesSdk
 	/** Vault-bound user preferences (PEP116). */
 	public readonly preferences: PlaintorchPreferencesSdk
+	/**
+	 * Answers the core's state enforcement (PEP103): a write the core holds back for confirmation is put to it, and is
+	 * repeated forcing the compensations once it agrees; a refusal is told to it. Without one, a held-back write is
+	 * cancelled. Either way the call itself fails as a write the core turned down always has.
+	 */
+	public stateEnforcement: StateEnforcementHandler | undefined
+	/** The open {@link withStateEnforcement} scopes, innermost last. */
+	private readonly enforcementScopes: StateEnforcementScope[] = []
 	public constructor(options: PlaintorchCoreClientOptions = {}) {
 		const host = options.host ?? defaultHost
 		const loopbackPort = options.loopbackPort ?? defaultLoopbackPort
@@ -84,9 +106,32 @@ export class PlaintorchCoreClient {
 		this.activities = new PlaintorchActivitiesSdk(this)
 		this.lore = new PlaintorchLoreSdk(this)
 		this.dependencies = new PlaintorchDependenciesSdk(this)
+		this.schedules = new PlaintorchSchedulesSdk(this)
 		this.preferences = new PlaintorchPreferencesSdk(this)
 		// Constructed last: the repositories delegate to the SDKs above.
 		this.repos = new PlaintorchRepositories(this, { resolutionFreshnessMs: options.cacheTtlMs })
+	}
+
+	/**
+	 * Runs `run` with the writes it sends under `scope` (PEP103): forced, or answered by the caller instead of the
+	 * client-wide {@link stateEnforcement} handler. The scope covers the requests `run` sends before its first `await`.
+	 * Every SDK call sends its request synchronously, so wrapping the one call a scope is meant for is exact, and a write
+	 * made after awaiting something else is never caught by mistake:
+	 *
+	 * ```ts
+	 * let refusal: StateEnforcementProblem | undefined
+	 * const shifted = await client.withStateEnforcement({ answer: problem => refusal = problem },
+	 * 	() => client.objectives.shiftWorkflow(id, { status }))
+	 * ```
+	 */
+	public withStateEnforcement<T>(scope: StateEnforcementScope, run: () => Promise<T>): Promise<T> {
+		this.enforcementScopes.push(scope)
+		try {
+			return run()
+		}
+		finally {
+			this.enforcementScopes.pop()
+		}
 	}
 
 	public icon(icon: string): string {
@@ -181,12 +226,27 @@ export class PlaintorchCoreClient {
 
 	/**
 	 * Sends a request through the transports in turn until one is accepted. Reports the accepting response, or
-	 * the status the core last refused it with when a transport reached the core and it said no.
+	 * the status the core last refused it with when a transport reached the core and it said no. A write the core's
+	 * state enforcement stopped (PEP103) is answered before anything is reported, see {@link answerStateEnforcement}.
 	 */
-	private async exchange(request: PlaintorchCoreRequest): Promise<{ response?: PlaintorchCoreResponse, refusedWith?: number }> {
+	private async exchange(request: PlaintorchCoreRequest): Promise<PlaintorchCoreExchange> {
+		// Read before the first await: a scope covers only what is sent while it is open (see withStateEnforcement).
+		const scope = this.enforcementScopes[this.enforcementScopes.length - 1]
+		if (scope?.force && request.method !== "GET") {
+			request = { ...request, headers: { ...request.headers, [stateEnforcementHeader]: forceCompensationValue } }
+		}
+
 		let refusedWith: number | undefined
 		for (const transport of this.transports) {
 			const response = await transport.send(request)
+			if (response?.status === stateEnforcementStatus) {
+				// The core itself answered: another transport would only reach it again.
+				const problem = await readStateEnforcementProblem(response)
+				if (problem) {
+					return await this.answerStateEnforcement(request, problem, scope)
+				}
+			}
+
 			if (response?.ok) {
 				// A write records whether its note is still draining; reads leave the flag for the write before them.
 				if (request.method !== "GET") {
@@ -213,6 +273,31 @@ export class PlaintorchCoreClient {
 	 */
 	private async sendForJson<T>(request: PlaintorchCoreRequest, context?: AbsorptionContext): Promise<T | undefined> {
 		return (await this.exchangeForJson<T>(request, context)).value
+	}
+
+	/**
+	 * Answers a write the core's state enforcement stopped (PEP103): one held back for confirmation is put to the handler
+	 * and, once it agrees, sent again forcing the compensations; a refusal is told to the handler. A write that was already
+	 * forced is never put again. A write sent in a scope that answers for itself is handed back to that scope instead.
+	 * Whatever is not sent again is reported as refused with the enforcement status.
+	 */
+	private async answerStateEnforcement(request: PlaintorchCoreRequest, problem: StateEnforcementProblem, scope: StateEnforcementScope | undefined): Promise<PlaintorchCoreExchange> {
+		const refused = { refusedWith: stateEnforcementStatus }
+		if (scope?.answer) {
+			scope.answer(problem)
+			return refused
+		}
+
+		const forced = request.headers?.[stateEnforcementHeader] === forceCompensationValue
+		if (problem.outcome === StateDecisionOutcome.Confirm && !forced) {
+			const confirmed = await this.stateEnforcement?.confirm(problem).catch(() => false)
+			return confirmed
+				? await this.exchange({ ...request, headers: { ...request.headers, [stateEnforcementHeader]: forceCompensationValue } })
+				: refused
+		}
+
+		this.stateEnforcement?.refused?.(problem)
+		return refused
 	}
 
 	private async exchangeForJson<T>(request: PlaintorchCoreRequest, context?: AbsorptionContext): Promise<PlaintorchCoreAnswer<T>> {
@@ -245,6 +330,12 @@ export class PlaintorchCoreClient {
 	}
 }
 
+/** What one request came to: the response the core accepted it with, or the status it last refused it with. */
+interface PlaintorchCoreExchange {
+	readonly response?: PlaintorchCoreResponse
+	readonly refusedWith?: number
+}
+
 /** What {@link PlaintorchCoreClient.getJsonAnswer} reports: whether the core answered, and with what. */
 export interface PlaintorchCoreAnswer<T> {
 	readonly answered: boolean
@@ -253,3 +344,13 @@ export interface PlaintorchCoreAnswer<T> {
 
 /** The refusals that are an answer in themselves: the core is saying there is nothing at that address. */
 const notFoundStatuses: ReadonlySet<number> = new Set([404, 410])
+
+/** Reads the body of a 409 as a state enforcement answer, or nothing when it is a conflict of another kind. */
+async function readStateEnforcementProblem(response: PlaintorchCoreResponse): Promise<StateEnforcementProblem | undefined> {
+	try {
+		const body: unknown = JSON.parse(await response.text())
+		return isStateEnforcementProblem(body) ? body : undefined
+	} catch {
+		return undefined
+	}
+}

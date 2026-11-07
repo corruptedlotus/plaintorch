@@ -8,6 +8,7 @@ import type { LorePage } from "../lore/models"
 import type { Checkpoint, Dependency } from "../dependencies/models"
 import type { EntityExistence, SystemBriefing } from "../system/models"
 import type { PreferenceView } from "../preferences/contracts"
+import type { LifecycleKind } from "../lifecycle/models"
 import { type EntityRepository, type DerivedRepository, RepositorySet } from "@corruptedlotus/local-repo"
 import { answered, answeringSdks } from "./answered"
 import { PlaintorchChangeFeed } from "./changeFeed"
@@ -147,6 +148,8 @@ export class PlaintorchRepositories extends RepositorySet {
 	 * preference write on the change feed, which revalidates this while observed like every record.
 	 */
 	public readonly preferences: DerivedRepository<PreferenceView[]>
+	/** How each kind's lifecycle reads (PEP103), the core's declarations as served. They never change while it runs. */
+	public readonly lifecycles: DerivedRepository<LifecycleKind[]>
 
 	/** The system briefing, cached under {@link briefingRecordKey}. */
 	public readonly briefing: DerivedRepository<SystemBriefing>
@@ -187,6 +190,7 @@ export class PlaintorchRepositories extends RepositorySet {
 		this.lorePolaris = this.derived((lorePuck) => answered(() => read.polaris.listForLore(lorePuck)))
 		this.activeTimeframes = this.derived(() => answered(() => read.directives.listActiveTimeframes()))
 		this.preferences = this.derived(() => answered(() => read.preferences.list()))
+		this.lifecycles = this.derived(() => answered(() => read.system.getLifecycles()))
 
 		const resolution = { freshnessMs: options.resolutionFreshnessMs }
 		this.briefing = this.derived(() => answered(() => read.system.getBriefing()))

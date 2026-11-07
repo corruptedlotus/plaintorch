@@ -19,9 +19,16 @@ public interface IOnrushSprintApi
 	Task<OnrushSprint> BeginAsync(string onrushSprintId, DateOnly? startDate = null, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Creates and immediately begins a new onrush sprint.
+	/// Ensures a sprint is active (PEP103 patch 4): the running one is returned untouched, else the planning placeholder is
+	/// begun, else a new sprint is created and begun.
 	/// </summary>
 	Task<OnrushSprint> StartNewAsync(DateOnly? startDate = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Ensures the sprint in a slot exists and returns it (PEP103 patch 4): the active one as <see cref="StartNewAsync"/>
+	/// does, or the planning placeholder, planned under a default title when there is none.
+	/// </summary>
+	Task<OnrushSprint> EnsureAsync(OnrushSlot slot, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Ends an onrush sprint.
@@ -68,9 +75,10 @@ public interface IOnrushSprintApi
 	Task SetGraphLayoutAsync(string onrushSprintId, string? graphLayout, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Assigns all onrush-state objectives to the target sprint.
+	/// Assigns every objective whose status is Onboard to the target sprint, wherever it sits now: the sprint it came on board
+	/// may have ended, or it may be in none.
 	/// </summary>
-	Task<IReadOnlyList<Objective>> AssignAllOnrushStateObjectivesToSelfAsync(string onrushSprintId, CancellationToken cancellationToken = default);
+	Task<IReadOnlyList<Objective>> AssignAllOnboardObjectivesToSelfAsync(string onrushSprintId, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Issues a new executive order against an onrush sprint.

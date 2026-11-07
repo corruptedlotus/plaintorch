@@ -1,8 +1,8 @@
 import { Component, component, css, html, nothing, property, type PropertyValues } from '@a11d/lit'
 import type { Directive } from '@pleiades/sdk'
 import {
-	ContextMenuController, EntityWatch, LunarDirectiveModal, ReactiveBinder, SelectStatusModal,
-	entityContextMenu, lunarDirectiveStatusDescriptors
+	ContextMenuController, editState, EntityWatch, LunarDirectiveModal, ReactiveBinder,
+	entityContextMenu
 } from '..'
 import { directiveActions, entityStatusName, isInactiveEntity, saveEntityField } from '../grid/entityActions'
 
@@ -30,7 +30,8 @@ export class MoonlightHeading extends Component {
 	protected readonly binder = new ReactiveBinder<Directive>(this, 'directive', {
 		sourceUpdated: async (_, keyPath) => {
 			const directive = this.directive
-			if (!directive || (keyPath !== 'title' && keyPath !== 'status')) {
+			// The status is not bound: the state bubble saves a shift itself (editState).
+			if (!directive || keyPath !== 'title') {
 				return
 			}
 
@@ -155,7 +156,7 @@ export class MoonlightHeading extends Component {
 			<p7t-media class='crest' icon .media=${directive.iconMedia} default='directive-lunar'></p7t-media>
 			<div class='text'>
 				<p7t-editable-plaintext required class='title' label='Title' placeholder='Untitled' ${this.binder.bind('title')}></p7t-editable-plaintext>
-				<p7t-editable .doEdit=${() => SelectStatusModal.prompt(lunarDirectiveStatusDescriptors)} ${this.binder.bind('status')}>
+				<p7t-editable .value=${directive.status} .doEdit=${(_: unknown, field: HTMLElement) => editState(field, directive)}>
 					<p7t-status-item small .status=${entityStatusName(directive)}></p7t-status-item>
 				</p7t-editable>
 			</div>

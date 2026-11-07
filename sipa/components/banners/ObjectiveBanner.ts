@@ -2,9 +2,7 @@ import { component, css, html, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { DependencyEndpointKind, Objective, ObjectiveUpdate, PolarisCycle } from '@pleiades/sdk'
 import { ObjectiveCollege, ObjectiveStatus } from "@pleiades/sdk"
-import { OnrushSprint } from "@pleiades/sdk"
-import { addObjectiveToPolaris, confirmAction, core, IconItem, IconName, isObjectiveInCycle, followRenamedNote, objectiveStatusDescriptors, offerEstimation, removeConfirmation, SelectCollegeModal, SelectStatusModal } from ".."
-import { createChild, SuggestModalBase, toast } from '../../host'
+import { addObjectiveToPolaris, core, editState, IconName, isObjectiveInCycle, followRenamedNote, offerEstimation, OnrushPickerModal, SelectCollegeModal } from ".."
 
 @component('p7t-objective-banner')
 export class ObjectiveBanner extends EntityBanner<Objective> {
@@ -19,8 +17,8 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 		return this.entity ? { kind: DependencyEndpointKind.Objective, id: this.entity.id } : undefined
 	}
 
+	// The status is not bound: the state bubble saves a shift itself (editState).
 	protected binder = this.ref.binder('entity', {
-		status: (entity) => core.objectives.shiftWorkflow(entity.id, { status: entity.status }),
 		// Send only the changed field. The whole objective is cyclic (directive → objectives → this objective)
 		// once the identity map cross-links it, so serializing it throws; the update endpoint wants the one field.
 		'*': (entity, keyPath) => core.objectives.update(entity.id, { [keyPath]: entity[keyPath as keyof Objective] } as ObjectiveUpdate)
@@ -38,9 +36,14 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 		return !!this.entity && isObjectiveInCycle(this.entity.id, this.activePolaris)
 	}
 
-	/** Opens the Onrush picker; `button` is where a removal it leads to is confirmed, once the picker has closed. */
+	/**
+	 * Opens the Onrush picker: the active or the planning sprint, made when missing, or "No Onrush". `button` is where a
+	 * removal it leads to is confirmed, once the picker has closed.
+	 */
 	pickOnrush = (button?: HTMLElement) => {
-		new AddToOnrushModal(this, button).open()
+		if (this.entity) {
+			new OnrushPickerModal(this.entity, { removable: true, anchor: button ?? this }).open()
+		}
 	}
 
 	/** Plans the objective into the active Polaris cycle, then asks for its estimate beside `button`, where it was added. */
@@ -128,7 +131,7 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${() => SelectStatusModal.prompt(objectiveStatusDescriptors)} ${this.binder.bind('status')}>
+			<p7t-editable .value=${this.entity!.status} .doEdit=${(_: unknown, field: HTMLElement) => editState(field, this.entity)}>
 				<p7t-status-item
 					.status=${ObjectiveStatus[this.entity!.status] as keyof typeof ObjectiveStatus}>
 				</p7t-status-item>
@@ -169,54 +172,6 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 		college = college === 'Unspecified' ? 'None' : college
 		return `college-${college.toLowerCase()}` as IconName
 	}
-}
-
-class AddToOnrushModal extends SuggestModalBase<OnrushSprint | null> {
-	constructor(protected readonly objectiveBanner: ObjectiveBanner, private readonly button?: HTMLElement) {
-		super()
-	}
-
-	override async getSuggestions() {
-		return [...await core.onrush.available(), null]
-	}
-
-	renderSuggestion(sprint: OnrushSprint | null, el: HTMLElement) {
-		if (!sprint) {
-			const item = createChild(el, 'p7t-icon-item') as IconItem<OnrushSprint | null>
-			item.icon = 'lucide:circle-off'
-			item.text = 'No Onrush'
-			item.small = true
-			return
-		}
-		createChild(el, 'div', { text: sprint.title })
-		createChild(el, 'small', { text: (sprint.id === 'x0000' ? 'In-Planning' : 'Active') + ' Onrush' })
-	}
-
-	/** Moves the objective to the chosen sprint; "No Onrush" takes it out of its sprint, which is confirmed first. */
-	override async onChooseSuggestion(item: OnrushSprint | null) {
-		const objective = this.objectiveBanner.entity!
-		if (!item && (objective.onrushSprintId || objective.onrushSprint)) {
-			// The picker is gone by now, so the question is asked where it was opened from: the banner's Onrush button.
-			const removing = removeConfirmation(`Remove "${objective.title}" from its Onrush?`, 'default')
-			if (!await confirmAction(this.button ?? this.objectiveBanner, removing)) {
-				return
-			}
-		}
-
-		const objectiveId = objective.id
-		const succeeded = await core.repos.objectives.mutate(objectiveId, async () => !item
-			? await core.objectives.removeFromOnrush(objectiveId)
-			: await core.objectives.addToOnrush(objectiveId, item.id))
-
-		if (!succeeded) {
-			return
-		}
-
-		toast(!item
-			? 'Removed from Onrush.'
-			: `Added to ${(item.id === 'x0000' ? 'planning' : 'active')} Onrush.`, 'success')
-	}
-
 }
 
 declare global {

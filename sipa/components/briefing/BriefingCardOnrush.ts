@@ -225,7 +225,9 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 		const immediate = immediatePrerequisites(dependencies, memberKeys)
 
 		return members.flatMap(member => {
-			const refs = reachable.get(member.key)
+			// A prerequisite that is itself a member of the sprint is already a row above: it is not listed under the
+			// member it holds back, and it does not count either.
+			const refs = reachable.get(member.key)?.filter(ref => !memberKeys.has(endpointKey(ref)))
 			if (!refs || refs.length === 0) {
 				return []
 			}

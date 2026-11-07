@@ -1,7 +1,7 @@
 import { component, css, html, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { DependencyEndpointKind, Eventive, EventiveResolution, Fate, FateStatus, FateUpdate } from '@pleiades/sdk'
-import { core, declarativeScheduleUpdate, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, fateStatusDescriptors } from ".."
+import { core, declarativeScheduleUpdate, editState, IconName, followRenamedNote, ReactiveBinder } from ".."
 import { declarativeResolutionStyles, declarativeResolutionTemplate, type DeclarativeResolutionUpdate } from './declarativeResolution'
 import { occurrenceTime } from '../entities/occurrenceTime'
 import type { ScheduleValue } from "../editing/EditableSchedule"
@@ -24,10 +24,8 @@ export class FateBanner extends EntityBanner<Fate> {
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
 			const update: FateUpdate = {}
+			// The status is not bound: the state bubble saves a shift itself (editState).
 			switch (keyPath) {
-				case 'status':
-					update.status = entity.status
-					break
 				case 'orbit':
 					// Empty string clears the schedule server-side; undefined would be a no-op.
 					update.orbit = entity.orbit ?? ''
@@ -198,7 +196,8 @@ export class FateBanner extends EntityBanner<Fate> {
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${() => SelectStatusModal.prompt(fateStatusDescriptors)} ${this.binder.bind('status')}>
+			<p7t-editable .value=${this.entity!.status} .doEdit=${(_: unknown, field: HTMLElement) => editState(field, this.entity)}
+				@change=${() => this.entity && this.loadNextEventive(this.entity.id)}>
 				<p7t-status-item
 					.status=${FateStatus[this.entity!.status] as keyof typeof FateStatus}>
 				</p7t-status-item>

@@ -1,8 +1,7 @@
 namespace Pleiades.Orchestration;
 
 /// <summary>
-/// Enforces the structural rules of the dependency system (PEP101), mirroring how
-/// <see cref="IncentiveParenting"/> guards the incentive parent graph. Endpoint existence and kind validity
+/// Enforces the structural rules of the dependency system (PEP101). Endpoint existence and kind validity
 /// (which require resolving loose references) are enforced in the application layer; these rules are pure.
 /// </summary>
 public static class DependencyRules
@@ -14,16 +13,16 @@ public static class DependencyRules
 	/// <remarks>
 	/// These are the pure rules. Logical possibility — whether the edge contradicts the begin/finish ordering
 	/// the existing edges already impose — is a temporal reachability question over the whole graph and is
-	/// checked in the application layer against the database (PEP102), which also subsumes the plain
-	/// node-level acyclicity this used to enforce: a temporal contradiction is always a node cycle, but a node
-	/// cycle is not always a contradiction (a begin gating a begin gating the same node's finish is fine), so
-	/// the coarse check would forbid orderings the temporal one correctly allows.
+	/// <see cref="DependencyOrdering"/>'s (PEP102), which also subsumes the plain node-level acyclicity this
+	/// used to enforce: a temporal contradiction is always a node cycle, but a node cycle is not always a
+	/// contradiction (a begin gating a begin gating the same node's finish is fine), so the coarse check would
+	/// forbid orderings the temporal one correctly allows.
 	/// </remarks>
 	/// <param name="source">The source (blocking/prerequisite) endpoint.</param>
 	/// <param name="target">The target (blocked/dependant) endpoint.</param>
 	/// <param name="trigger">The source-side trigger, or <see langword="null"/>.</param>
 	/// <param name="constraint">The target-side constraint, or <see langword="null"/>.</param>
-	/// <param name="existing">The existing dependency edges.</param>
+	/// <param name="existing">The existing dependency edges, stored and derived (PEP102 patch 9).</param>
 	public static void EnsureValid(
 		EndpointRef source,
 		EndpointRef target,
@@ -43,12 +42,12 @@ public static class DependencyRules
 
 		if (source.Kind == DependencyEndpointKind.Checkpoint && trigger is not null)
 		{
-			throw new InvalidOperationException("A checkpoint source has no begin/finish, so its trigger must be empty.");
+			throw new InvalidOperationException("A checkpoint is one-shot: its only event is its unlock, so a checkpoint source's trigger must be empty.");
 		}
 
 		if (target.Kind == DependencyEndpointKind.Checkpoint && constraint is not null)
 		{
-			throw new InvalidOperationException("A checkpoint target has no begin/finish, so its constraint must be empty.");
+			throw new InvalidOperationException("A checkpoint is one-shot: its only transition is its unlock, so a checkpoint target's constraint must be empty.");
 		}
 
 		EnsureRecurrenceShape("source", source);
@@ -60,7 +59,7 @@ public static class DependencyRules
 	/// explicit <see cref="DependencyTrigger.OnFinish"/> count as the one relation. A checkpoint source leaves
 	/// it empty and has no default.
 	/// </summary>
-	private static DependencyTrigger? EffectiveTrigger(EndpointRef source, DependencyTrigger? trigger)
+	public static DependencyTrigger? EffectiveTrigger(EndpointRef source, DependencyTrigger? trigger)
 	{
 		return source.Kind == DependencyEndpointKind.Checkpoint ? null : trigger ?? DependencyTrigger.OnFinish;
 	}
@@ -69,9 +68,23 @@ public static class DependencyRules
 	/// The constraint an edge gates once the omitted default is resolved (begin-constraining). A checkpoint
 	/// target leaves it empty.
 	/// </summary>
-	private static DependencyConstraint? EffectiveConstraint(EndpointRef target, DependencyConstraint? constraint)
+	public static DependencyConstraint? EffectiveConstraint(EndpointRef target, DependencyConstraint? constraint)
 	{
 		return target.Kind == DependencyEndpointKind.Checkpoint ? null : constraint ?? DependencyConstraint.ToBegin;
+	}
+
+	/// <summary>
+	/// Whether two edges state the one relation: the same endpoints and the same resolved trigger and constraint,
+	/// whatever their origin.
+	/// </summary>
+	public static bool SameRelation(Dependency first, Dependency second)
+	{
+		ArgumentNullException.ThrowIfNull(first);
+		ArgumentNullException.ThrowIfNull(second);
+		return first.Source == second.Source
+			&& first.Target == second.Target
+			&& EffectiveTrigger(first.Source, first.Trigger) == EffectiveTrigger(second.Source, second.Trigger)
+			&& EffectiveConstraint(first.Target, first.Constraint) == EffectiveConstraint(second.Target, second.Constraint);
 	}
 
 	private static void EnsureNotDuplicate(
@@ -94,7 +107,9 @@ public static class DependencyRules
 				&& EffectiveTrigger(dependency.Source, dependency.Trigger) == effectiveTrigger
 				&& EffectiveConstraint(dependency.Target, dependency.Constraint) == effectiveConstraint)
 			{
-				throw new InvalidOperationException("An identical dependency already exists between these two endpoints.");
+				throw new InvalidOperationException(dependency.Origin == DependencyOrigin.Intrinsic
+					? "This dependency is already implied by the structure: a directive's finish depends on the finish of each of its direct children."
+					: "An identical dependency already exists between these two endpoints.");
 			}
 		}
 	}

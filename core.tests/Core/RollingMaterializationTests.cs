@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Pleiades.Orbits;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
@@ -162,10 +163,16 @@ public sealed class RollingMaterializationTests : VaultTestBase
 			.UpdateAsync(objective.Id, new ObjectiveUpdate(Due: Due.On(pastDue)), Ct));
 
 		await HardenNowAsync();
+		await HardenNowAsync();
 
-		var eventive = await Vault.QueryAsync(context => context.Eventives
-			.SingleAsync(item => item.ObjectiveId == objective.Id && item.RecurrenceId == pastDue.ToDateTime(TimeOnly.MinValue), Ct));
-		Assert.Equal(pastDue, eventive.Epoch.Date);
+		// Its due hardens its one terminative (PEP103 patch 7), pending while the objective is open; a second pass adds none.
+		var terminative = await Vault.QueryAsync(context => context.Terminatives
+			.SingleAsync(item => item.ObjectiveId == objective.Id, Ct));
+		Assert.Equal(pastDue.ToDateTime(TimeOnly.MinValue), terminative.RecurrenceId);
+		Assert.Equal(pastDue, terminative.Epoch.Date);
+		Assert.Equal(OrbitUnit.Day, terminative.Epoch.Granularity);
+		Assert.Equal(TerminativeResolution.Pending, terminative.Resolution);
+		Assert.Equal(0, await Vault.QueryAsync(context => context.Eventives.CountAsync(Ct)));
 	}
 
 	[Fact]

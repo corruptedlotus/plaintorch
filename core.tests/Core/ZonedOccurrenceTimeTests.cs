@@ -70,14 +70,13 @@ public sealed class ZonedOccurrenceTimeTests : VaultTestBase
 			FateId = "f",
 			Epoch = Timed(now.AddHours(2), "Pacific/Kiritimati", "1h"),
 		};
-		var phases = new EventiveLifecyclePhaseSource();
+		var source = new EventiveLifecycleStateSource();
 
-		Assert.True(phases.HasBegun(eventive));
-		Assert.True(phases.HasFinished(eventive));
+		Assert.Equal(LifecycleState.Finished, source.StateOf(eventive));
 
 		// Floating, the same wall time still reads as two hours ahead.
 		eventive.Epoch = Timed(now.AddHours(2), null, "1h");
-		Assert.False(phases.HasBegun(eventive));
+		Assert.Equal(LifecycleState.Open, source.StateOf(eventive));
 	}
 
 	[Fact]

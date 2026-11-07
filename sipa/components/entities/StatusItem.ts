@@ -11,7 +11,7 @@ export type Status =
 	| keyof typeof DecreeStatus
 /**
  * Where a terminal state leaves its item. Both kinds are done with, one way or another, and drawn dimmed wherever the
- * item shows. A `finished` item (done, fulfilled, failed, cancelled) stays in sight; an `archived` one is also put away,
+ * item shows. A `finished` item (done, fulfilled, failed, stopped) stays in sight; an `archived` one is also put away,
  * so the backlog hides it until a search asks for it.
  */
 export type StatusTerminal = 'finished' | 'archived'
@@ -32,7 +32,7 @@ export const statusDescriptors: Record<Status, StatusDescriptor> = {
 	Committed: { icon: 'state-commit', label: 'Committed' },
 
 	Active: { icon: 'state-active', label: 'Active' },
-	Onrush: { icon: 'state-onrush', label: 'Onrush' },
+	Onboard: { icon: 'state-onrush', label: 'Onboard' },
 	Polaris: { icon: 'state-polaris', label: 'Polaris' },
 
 	Done: { icon: 'state-done', label: 'Done', terminal: 'finished' },
@@ -41,11 +41,12 @@ export const statusDescriptors: Record<Status, StatusDescriptor> = {
 	Archived: { icon: 'state-archived', label: 'Archived', terminal: 'archived' },
 	Over: { icon: 'state-archived', label: 'Over', terminal: 'archived' },
 	Stale: { icon: 'state-archived', label: 'Stale', terminal: 'archived' },
-	OptOut: { icon: 'state-archived', label: 'Opted Out', terminal: 'archived' },
+	// An opted-out fate is still under way (PEP103 patch 6): live, its occurrences only hidden from the agenda.
+	OptOut: { icon: 'state-archived', label: 'Opted Out' },
 	Abandoned: { icon: 'state-archived', label: 'Abandoned', terminal: 'archived' },
 
 	Failed: { icon: 'state-failed', label: 'Failed', terminal: 'finished' },
-	Cancelled: { icon: 'state-failed', label: 'Cancelled', terminal: 'finished' },
+	Stopped: { icon: 'state-failed', label: 'Stopped', terminal: 'finished' },
 }
 
 /** Whether a state is terminal: its item is done with, one way or another, and is drawn dimmed wherever it shows. */

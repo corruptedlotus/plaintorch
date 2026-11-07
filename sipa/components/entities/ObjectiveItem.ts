@@ -1,9 +1,8 @@
 import { component, css, html, state } from "@a11d/lit"
 import { EntityItem } from "./EntityItem"
 import { DependencyEndpointKind, Objective, ObjectiveStatus, OnrushSprint } from "@pleiades/sdk"
-import { core, DerivedRef, isInactiveStatus, objectiveStatusDescriptors, SelectStatusModal, tooltip, type Status } from '..'
+import { core, DerivedRef, isInactiveStatus, shiftState, tooltip, type Status } from '..'
 import { dependencyRoute } from '../canvas/graphModel'
-import { toast } from '../../host'
 
 /**
  * An objective in a list. Its notch is its workflow state — or, while an unmet dependency holds its next transition
@@ -67,28 +66,13 @@ export class ObjectiveItem extends EntityItem<Objective> {
 		return this.entity !== undefined && isInactiveStatus(ObjectiveStatus[this.entity.status] as Status)
 	}
 
-	protected override async notchAction() {
-		const objective = this.objective
-		if (!objective) return
-
-		let status: ObjectiveStatus | undefined
-		try {
-			status = await SelectStatusModal.prompt(objectiveStatusDescriptors)
-		}
-		catch {
-			return
-		}
-
-		if (status === undefined) return
-
-		// The response is absorbed into the canonical instance on the way back, so every surface showing this
-		// objective updates without the picker telling any of them.
-		const shifted = await core.repos.objectives.mutate(objective.id, async () =>
-			await core.objectives.shiftWorkflow(objective.id, { status }))
-		if (shifted) {
-			toast(`${shifted.title}: ${ObjectiveStatus[status]}`, 'success')
-		} else {
-			toast('Failed to update objective status.', 'error')
+	/**
+	 * The notch shifts the objective's state through the state bubble, which saves it and shows what became of it. The
+	 * answer is absorbed into the canonical instance, so every surface showing the objective follows.
+	 */
+	protected override async notchAction(notch: HTMLElement) {
+		if (this.objective) {
+			await shiftState(notch, this.objective)
 		}
 	}
 

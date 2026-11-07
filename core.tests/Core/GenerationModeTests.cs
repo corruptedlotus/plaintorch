@@ -13,7 +13,7 @@ namespace Pleiades.Tests.Core;
 /// <summary>
 /// Covers the declarative generation modes (PEP100/PEP111). An OPTED-OUT fate keeps generating but its
 /// occurrences spawn hidden (<see cref="EventiveResolution.OptOut"/>) and are not hardened by time passage unless
-/// the preference opts in. A CANCELLED fate and an ABANDONED decree pause generation entirely; re-activating one
+/// the preference opts in. A STOPPED fate and an ABANDONED decree pause generation entirely; re-activating one
 /// seeks its schedule cursor to now, so the occurrences that elapsed while it was paused are never back-filled.
 /// </summary>
 public sealed class GenerationModeTests : VaultTestBase
@@ -78,12 +78,12 @@ public sealed class GenerationModeTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Cancelling_a_fate_pauses_generation_and_resuming_it_seeks_the_cursor_to_now_without_backfilling()
+	public async Task Stopping_a_fate_pauses_generation_and_resuming_it_seeks_the_cursor_to_now_without_backfilling()
 	{
 		var today = DateOnly.FromDateTime(DateTime.Today);
 
 		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Daily standup", Orbit: "d", EventDuration: 30), Ct));
-		await Declarative(api => api.UpdateFateAsync(fate.Id, new FateUpdate(Status: FateStatus.Cancelled), Ct));
+		await Declarative(api => api.UpdateFateAsync(fate.Id, new FateUpdate(Status: FateStatus.Stopped), Ct));
 
 		// Paused: an end-of-day pass hardens nothing, even though today's occurrence is already in the past.
 		var createdWhilePaused = await HardenAt(TodayAt(23));

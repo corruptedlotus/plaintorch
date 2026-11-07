@@ -75,6 +75,9 @@
   <data name="Reasons.DeleteBlocked" xml:space="preserve">
     <value>A note was deleted, but its entity cannot be removed while other records still reference it. Restore the note, or remove those records.</value>
   </data>
+  <data name="Reasons.StateRefused" xml:space="preserve">
+    <value>A note asks for a change the backlog's state rules refuse, so the database keeps the item as it was. Edit the note, settle what blocks the change, or change the state enforcement level.</value>
+  </data>
 
   <!-- Details: parameterised detail lines appended to a reason message. -->
   <data name="Details.DuplicateIdentity" xml:space="preserve">

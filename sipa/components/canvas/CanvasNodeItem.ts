@@ -290,7 +290,7 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 	 * wears its kind icon so the mix of kinds a global context holds reads apart at a glance.
 	 *
 	 * Only an objective carries a workflow the canvas can read off the entity behind an endpoint; a
-	 * checkpoint has no lifecycle at all, and the rest are told apart by what they are.
+	 * checkpoint has no status (its one-shot finish is its unlock), and the rest are told apart by what they are.
 	 */
 	protected get notchIcon(): IconName {
 		if (!this.typed && this.kind === DependencyEndpointKind.Objective) {

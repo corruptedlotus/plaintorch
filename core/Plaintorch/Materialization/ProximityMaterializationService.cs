@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Plaintorch.Preferences;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
@@ -27,6 +28,7 @@ public sealed class ProximityMaterializationService(
 	PlaintorchOrbitService orbitService,
 	DependencyGateService dependencyGate,
 	TimeframeAffinityResolver affinityResolver,
+	TerminativeService terminativeService,
 	MaterializationPolicyOptions policy,
 	IOptionsSnapshot<AgendaPreferences> agendaPreferences,
 	IOptionsSnapshot<ReflectionPreferences> reflectionPreferences,
@@ -53,9 +55,10 @@ public sealed class ProximityMaterializationService(
 		}
 
 		var startDay = DateOnly.FromDateTime(cycle.StartTime.Value.LocalDateTime);
+		var activeDecrees = TemporalActivation.Statuses<DecreeStatus>();
 		var reflectDecrees = await context.Decrees
 			.IgnoreAutoIncludes()
-			.Where(decree => decree.Status == DecreeStatus.Active && decree.Reflect)
+			.Where(decree => activeDecrees.Contains(decree.Status) && decree.Reflect)
 			.ToListAsync(cancellationToken);
 		var reflectedDecreeIds = (await context.Set<Reflective>()
 				.Where(item => item.PolarisCycleId == cycle.Id && item.DecreeId != null)
@@ -137,8 +140,8 @@ public sealed class ProximityMaterializationService(
 
 	/// <summary>
 	/// Harden-on-time: hardens every occurrence whose time has arrived at or before <paramref name="now"/>.
-	/// Orbit fates and decrees are seeked through the instant (their cursor advances to <paramref name="now"/>),
-	/// dated fates and due objectives harden once their occurrence is reached. Does nothing when time is not
+	/// Orbit fates and decrees are seeked through the instant (their cursor advances to <paramref name="now"/>), and
+	/// every due that acts hardens its terminative once its day is reached (PEP103 patch 7). Does nothing when time is not
 	/// treated as an interaction. Returns the number of rows hardened.
 	/// </summary>
 	public async Task<int> MaterializeForNowAsync(DateTimeOffset now, CancellationToken cancellationToken = default)
@@ -152,23 +155,29 @@ public sealed class ProximityMaterializationService(
 		var today = DateOnly.FromDateTime(localNow);
 		var created = 0;
 
-		// Orbit fates: seek through now (instant), hardening occurrences whose time has already arrived; the
-		// still-future occurrences of today are left for a later tick. Active fates harden as Pending; an opted-out
-		// fate keeps generating but its occurrences only harden — stamped OptOut so they stay hidden — when the
-		// user's auto-materialise-optout preference is enabled, so by default they remain projections (PEP111/PEP116).
+		// Orbit fates whose temporal activation is on (PEP103 patch 6): seek through now (instant), hardening occurrences
+		// whose time has already arrived; the still-future occurrences of today are left for a later tick. Active fates
+		// harden as Pending. An opted-out fate is under way too, but its occurrences only harden — stamped OptOut so they
+		// stay hidden — when the user's auto-materialise-optout preference is enabled; by default they remain projections
+		// and its cursor waits (PEP111/PEP116), so turning the preference on hardens what has elapsed. Its next occurrence
+		// still rolls forward, and taking it back to Active seeks its cursor to now (StructureReactions), hardening none of
+		// the occurrences it passed while opted out.
 		var autoMaterialiseOptOut = agendaPreferences.Value.AutoMaterialiseOptOut;
+		var activeFates = TemporalActivation.Statuses<FateStatus>();
 		var orbitFates = await context.Fates
 			.IgnoreAutoIncludes()
-			.Where(fate => fate.Orbit != null
-				&& (fate.Status == FateStatus.Active
-					|| (fate.Status == FateStatus.OptOut && autoMaterialiseOptOut)))
+			.Where(fate => fate.Orbit != null && activeFates.Contains(fate.Status))
 			.ToListAsync(cancellationToken);
 		foreach (var fate in orbitFates)
 		{
-			var resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
-			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(fate, fate.Orbit!, now, cancellationToken))
+			var optedOut = fate.Status == FateStatus.OptOut;
+			if (!optedOut || autoMaterialiseOptOut)
 			{
-				created += await EnsureFateEventiveAsync(fate, occurrence, resolution, cancellationToken) ? 1 : 0;
+				var resolution = optedOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
+				foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(fate, fate.Orbit!, now, cancellationToken))
+				{
+					created += await EnsureFateEventiveAsync(fate, occurrence, resolution, cancellationToken) ? 1 : 0;
+				}
 			}
 
 			// Advance the denormalized next occurrence as time passes; only touch the row when it actually rolls
@@ -182,9 +191,10 @@ public sealed class ProximityMaterializationService(
 
 		// Orbit decrees (non-reflect): seek through now, hardening crossed attentives. Reflect-decrees are
 		// cycle-bound wherever they sit; their schedule state is not advanced here.
+		var activeDecrees = TemporalActivation.Statuses<DecreeStatus>();
 		var orbitDecrees = await context.Decrees
 			.IgnoreAutoIncludes()
-			.Where(decree => decree.Status == DecreeStatus.Active && decree.Orbit != null && !decree.Reflect)
+			.Where(decree => activeDecrees.Contains(decree.Status) && decree.Orbit != null && !decree.Reflect)
 			.ToListAsync(cancellationToken);
 		foreach (var decree in orbitDecrees)
 		{
@@ -200,26 +210,17 @@ public sealed class ProximityMaterializationService(
 			}
 		}
 
-		// Due objectives whose due moment has arrived. An objective has a single due occurrence, so the presence of
-		// any eventive for it means it is already hardened.
+		// Every due that acts, on or before today, hardens its terminative (PEP103 patch 7): an item finished or set aside
+		// hardens none, and a checkpoint keeps acting past its due until it unlocks. An item has one terminative, so one that
+		// already has it is skipped; the state engine keeps it on the due and resolved from then on.
 		var tomorrowStart = today.AddDays(1).ToDateTime(TimeOnly.MinValue);
-		var dueObjectives = await context.Objectives
-			.AsNoTracking()
-			.IgnoreAutoIncludes()
-			.Where(objective => objective.Due != null && objective.Due.Moment < tomorrowStart
-				&& objective.Status != ObjectiveStatus.Done
-				&& objective.Status != ObjectiveStatus.Archived
-				&& objective.Status != ObjectiveStatus.Failed
-				&& !context.Eventives.Any(eventive => eventive.ObjectiveId == objective.Id))
-			.ToListAsync(cancellationToken);
-		foreach (var objective in dueObjectives)
+		var acting = await terminativeService.FindActingAsync(context, fromInclusive: null, tomorrowStart, tracking: false, cancellationToken);
+		var hardened = (await terminativeService.FindOfAsync(context, acting, cancellationToken))
+			.Select(item => item.RecurrenceOwnerUid)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		foreach (var origin in acting.Where(origin => !hardened.Contains(origin.Id)))
 		{
-			context.Eventives.Add(new Eventive
-			{
-				ObjectiveId = objective.Id,
-				Epoch = Epoch.From(objective.Due!.Date, timeOfDay: null, OrbitUnit.Day),
-				RecurrenceId = objective.Due!.Date.ToDateTime(TimeOnly.MinValue),
-			});
+			context.Terminatives.Add(terminativeService.Spawn(origin));
 			created++;
 		}
 

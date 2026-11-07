@@ -63,6 +63,11 @@ public class PlainfraContext : DbContext
 	public DbSet<Eventive> Eventives => Set<Eventive>();
 
 	/// <summary>
+	/// Gets the terminatives tracked in the database: the hardened occurrences of items' dues (PEP103 patch 7).
+	/// </summary>
+	public DbSet<Terminative> Terminatives => Set<Terminative>();
+
+	/// <summary>
 	/// Gets the directive-level timeframe definitions tracked in the database.
 	/// </summary>
 	public DbSet<Timeframe> Timeframes => Set<Timeframe>();
@@ -117,6 +122,12 @@ public class PlainfraContext : DbContext
 	/// Gets the dependency edges tracked in the database (PEP101).
 	/// </summary>
 	public DbSet<Dependency> Dependencies => Set<Dependency>();
+
+	/// <summary>
+	/// Gets the backlog schedules — planned and recorded begins and finishes of incentives, directives and
+	/// checkpoints — tracked in the database (PEP101).
+	/// </summary>
+	public DbSet<BacklogSchedule> BacklogSchedules => Set<BacklogSchedule>();
 
 	/// <summary>
 	/// Gets the issued PUCK registry entries tracked in the database.
@@ -349,6 +360,45 @@ public class PlainfraContext : DbContext
 			})
 			.IsUnique();
 
+		// PEP101 backlog schedules: the type and the lifecycle phase store as readable strings. Each owner kind is a real
+		// foreign key that cascades, so schedules die with their owner and never block its delete. A row names exactly
+		// one owner, and an owner holds one plan per phase: the state policy replaces the old row when a new one lands in
+		// the same slot, and the unique plan indexes are its backstop (SQLite counts each null as distinct, so a row owned
+		// through another column never collides). Records repeat for a kind that keeps a history.
+		modelBuilder.Entity<BacklogSchedule>(schedule =>
+		{
+			schedule.Property(x => x.Type).HasConversion<string>();
+			schedule.Property(x => x.State).HasConversion<string>();
+
+			schedule.HasOne(x => x.Incentive)
+				.WithMany()
+				.HasForeignKey(x => x.IncentiveId)
+				.OnDelete(DeleteBehavior.Cascade);
+
+			schedule.HasOne(x => x.Directive)
+				.WithMany()
+				.HasForeignKey(x => x.DirectiveId)
+				.OnDelete(DeleteBehavior.Cascade);
+
+			schedule.HasOne(x => x.Checkpoint)
+				.WithMany()
+				.HasForeignKey(x => x.CheckpointId)
+				.OnDelete(DeleteBehavior.Cascade);
+
+			// A kind that keeps a history (a fate, a decree, a lunar directive) may hold several records of one state
+			// (PEP103 patch 6), so only plans are unique to their slot; the owner indexes serve the lookups.
+			schedule.HasIndex(x => new { x.IncentiveId, x.Type, x.State });
+			schedule.HasIndex(x => new { x.DirectiveId, x.Type, x.State });
+			schedule.HasIndex(x => new { x.CheckpointId, x.Type, x.State });
+			schedule.HasIndex(x => new { x.IncentiveId, x.State }, "IX_BacklogSchedules_IncentivePlan").IsUnique().HasFilter("\"Type\" = 'Plan'");
+			schedule.HasIndex(x => new { x.DirectiveId, x.State }, "IX_BacklogSchedules_DirectivePlan").IsUnique().HasFilter("\"Type\" = 'Plan'");
+			schedule.HasIndex(x => new { x.CheckpointId, x.State }, "IX_BacklogSchedules_CheckpointPlan").IsUnique().HasFilter("\"Type\" = 'Plan'");
+
+			schedule.ToTable(table => table.HasCheckConstraint(
+				"CK_BacklogSchedules_SingleOwner",
+				"(\"IncentiveId\" IS NOT NULL) + (\"DirectiveId\" IS NOT NULL) + (\"CheckpointId\" IS NOT NULL) = 1"));
+		});
+
 		// PEP102 milestone binding: an onrush tracks checkpoints like objectives (its milestone one of them),
 		// and names one of them as its milestone. Both sides detach rather than cascade — deleting a sprint
 		// leaves its checkpoints, and a checkpoint that is a milestone is refused deletion in the service.
@@ -364,11 +414,22 @@ public class PlainfraContext : DbContext
 			.HasForeignKey(x => x.MilestoneCheckpointId)
 			.OnDelete(DeleteBehavior.SetNull);
 
+		// PEP102 patch 10: an onrush tracks stellar directives like objectives; a deleted sprint only frees them.
+		modelBuilder.Entity<StellarDirective>()
+			.HasOne(x => x.OnrushSprint)
+			.WithMany(x => x.Directives)
+			.HasForeignKey(x => x.OnrushSprintId)
+			.OnDelete(DeleteBehavior.SetNull);
+
 		modelBuilder.Entity<Attentive>()
 			.Property(x => x.Resolution)
 			.HasConversion<string>();
 
 		modelBuilder.Entity<Eventive>()
+			.Property(x => x.Resolution)
+			.HasConversion<string>();
+
+		modelBuilder.Entity<Terminative>()
 			.Property(x => x.Resolution)
 			.HasConversion<string>();
 
@@ -380,10 +441,17 @@ public class PlainfraContext : DbContext
 		modelBuilder.Entity<Eventive>()
 			.OwnsOne(x => x.Epoch, epoch => epoch.Property(e => e.Granularity).HasConversion<string>());
 
+		modelBuilder.Entity<Terminative>()
+			.OwnsOne(x => x.Epoch, epoch => epoch.Property(e => e.Granularity).HasConversion<string>());
+
 		// The RECURRENCE-ID is optional on the shared occurrence base only because a fate's eventive can be added by
-		// hand (a manual occurrence, outside any recurrence set). An attentive is always schedule-born, so its column
-		// stays required.
+		// hand (a manual occurrence, outside any recurrence set). An attentive is always schedule-born, and a terminative
+		// always sits on its due, so their columns stay required.
 		modelBuilder.Entity<Attentive>()
+			.Property(x => x.RecurrenceId)
+			.IsRequired();
+
+		modelBuilder.Entity<Terminative>()
 			.Property(x => x.RecurrenceId)
 			.IsRequired();
 
@@ -394,16 +462,38 @@ public class PlainfraContext : DbContext
 		modelBuilder.Entity<Checkpoint>().OwnsOne(x => x.Due);
 		modelBuilder.Entity<Checkpoint>().Navigation(x => x.Due).IsRequired(false);
 
-		// Eventive owners cascade: deleting a fate or an objective removes its materialized occurrences.
+		// Eventive owners cascade: deleting a fate removes its materialized occurrences.
 		modelBuilder.Entity<Eventive>()
 			.HasOne(x => x.Fate)
 			.WithMany(x => x.Eventives)
 			.OnDelete(DeleteBehavior.Cascade);
 
-		modelBuilder.Entity<Eventive>()
-			.HasOne(x => x.Objective)
-			.WithMany(x => x.Eventives)
-			.OnDelete(DeleteBehavior.Cascade);
+		// PEP103 patch 7: a terminative belongs to exactly one item carrying a due, and each item has at most one. Deleting
+		// the item deletes its terminative. The owners carry no navigation back, so reading an item never drags its
+		// terminative along.
+		modelBuilder.Entity<Terminative>(terminative =>
+		{
+			terminative.HasOne(x => x.Objective)
+				.WithMany()
+				.HasForeignKey(x => x.ObjectiveId)
+				.OnDelete(DeleteBehavior.Cascade);
+			terminative.HasOne(x => x.Directive)
+				.WithMany()
+				.HasForeignKey(x => x.DirectiveId)
+				.OnDelete(DeleteBehavior.Cascade);
+			terminative.HasOne(x => x.Checkpoint)
+				.WithMany()
+				.HasForeignKey(x => x.CheckpointId)
+				.OnDelete(DeleteBehavior.Cascade);
+
+			terminative.HasIndex(x => x.ObjectiveId).IsUnique();
+			terminative.HasIndex(x => x.DirectiveId).IsUnique();
+			terminative.HasIndex(x => x.CheckpointId).IsUnique();
+
+			terminative.ToTable(table => table.HasCheckConstraint(
+				"CK_Terminatives_SingleOwner",
+				"(\"ObjectiveId\" IS NOT NULL) + (\"DirectiveId\" IS NOT NULL) + (\"CheckpointId\" IS NOT NULL) = 1"));
+		});
 
 		// Removing a timeframe definition only clears the affinity references pointing at it.
 		modelBuilder.Entity<Executive>()

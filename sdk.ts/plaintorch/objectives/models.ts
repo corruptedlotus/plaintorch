@@ -1,11 +1,11 @@
 import { model } from "@a11d/api-dotnet"
 import type { Directive } from "../directives/models"
-import type { OnrushSprint } from "../onrush/models"
+import type { OnrushSlot, OnrushSprint } from "../onrush/models"
 import type { Executive } from "../polaris"
 export enum ObjectiveStatus {
 	'Standby' = 0,
 	'Blocked' = 1,
-	'Onrush' = 2,
+	'Onboard' = 2,
 	'Polaris' = 3,
 	'Done' = 4,
 	'Archived' = 5,
@@ -43,8 +43,6 @@ export class Objective {
 	title: string = ''
 	directiveId: string | undefined
 	directive?: Directive | undefined
-	/** Parent incentive per the PEP100 parent system: another objective (subtask) or a fate. */
-	parentIncentiveId: string | undefined
 	onrushSprintId: string | undefined
 	onrushSprint?: OnrushSprint | undefined
 	/** The optional deadline — a moment plus zone (PEP111), not just a date. */
@@ -79,14 +77,14 @@ export interface ObjectiveUpdate {
 	celestronValue?: number | undefined
 	/** Due moment (PEP111). Omit to keep, a value to set, `null` to clear. */
 	due?: Due | null | undefined
-	/** Parent incentive. Omit to keep, an id to set, `null` to clear. */
-	parentIncentiveId?: string | null | undefined
 }
 
 export interface ObjectiveWorkflowShift {
 	status: ObjectiveStatus
 }
 
+/** Joins a sprint by id, or a slot that is created when it does not exist yet (PEP103 patch 4). */
 export interface AddObjectiveToOnrushRequest {
-	onrushSprintId: string
+	onrushSprintId?: string | undefined
+	slot?: OnrushSlot | undefined
 }

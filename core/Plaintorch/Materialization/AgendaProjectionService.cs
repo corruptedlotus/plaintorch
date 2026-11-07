@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch.Materialization;
@@ -8,12 +9,12 @@ namespace Pleiades.Plaintorch.Materialization;
 /// <summary>
 /// The union of projected occurrences and hardened rows over a date window (Strategy 1 / soft agenda).
 /// </summary>
-public sealed record AgendaProjection(IReadOnlyList<Eventive> Eventives, IReadOnlyList<Attentive> Attentives);
+public sealed record AgendaProjection(IReadOnlyList<Eventive> Eventives, IReadOnlyList<Attentive> Attentives, IReadOnlyList<Terminative> Terminatives);
 
 /// <summary>
 /// The soft-agenda read model (Strategy 1 / PEP100). Computes the union of PROJECTED occurrences
 /// (preview-resolved from the live schedules, trace-free — nothing is persisted) and HARDENED rows (the
-/// persisted eventives/attentives, which under Strategy 1 exist only once interacted with or reached by time)
+/// persisted eventives/attentives/terminatives, which under Strategy 1 exist only once interacted with or reached by time)
 /// over a date window. A hardened row OVERRIDES its projected twin by RECURRENCE-ID, so an interacted, moved,
 /// or resolved occurrence shows its persisted state, while every untouched occurrence is a pure projection
 /// that always tracks the current orbit/date. This service never writes.
@@ -21,9 +22,10 @@ public sealed record AgendaProjection(IReadOnlyList<Eventive> Eventives, IReadOn
 /// <remarks>
 /// Eventives and attentives alike dedup by <c>(owner UID, RecurrenceId)</c> — the stable iCalendar identity of an
 /// <see cref="Occurrence"/> — so a moved occurrence still overrides its original projected slot. A manual eventive
-/// (no RecurrenceId) is always a hardened row with no projected twin, so it simply stands as itself.
+/// (no RecurrenceId) is always a hardened row with no projected twin, so it simply stands as itself. A terminative dedups
+/// by its origin alone, since an origin has one (PEP103 patch 7).
 /// </remarks>
-public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchOrbitService orbitService)
+public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchOrbitService orbitService, TerminativeService terminativeService)
 {
 	/// <summary>
 	/// The longest period one orbit occurrence spans: a year-granularity window. A hardened attentive that starts
@@ -49,7 +51,6 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		var hardenedEventives = await context.Eventives
 			.AsNoTracking()
 			.Include(item => item.Fate)
-			.Include(item => item.Objective)
 			.Where(item => item.Epoch.Moment >= windowStart.AddDays(-OccurrenceZones.ReachDays) && item.Epoch.Moment < windowEndExclusive.AddDays(OccurrenceZones.ReachDays))
 			.ToListAsync(cancellationToken);
 		var eventives = hardenedEventives
@@ -82,12 +83,15 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		// so the agenda can surface it (PEP100). An opted-out fate keeps generating, so its occurrences are still
 		// projected — stamped OptOut so the display agenda hides them while they can still be interacted with or
 		// opted back in (PEP100/PEP111). Each occurrence is stamped with its declarative's zone, and the preview keeps
-		// those that fall in the window on this host's clock.
+		// those that fall in the window on this host's clock. Only owners whose temporal activation is on are projected
+		// (PEP103 patch 6): a stopped fate and an abandoned decree project nothing, nor does the due of an item finished or
+		// set aside.
+		var activeFates = TemporalActivation.Statuses<FateStatus>();
 		var orbitFates = await context.Fates
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
 			.Include(fate => fate.Directive)
-			.Where(fate => (fate.Status == FateStatus.Active || fate.Status == FateStatus.OptOut) && fate.Orbit != null)
+			.Where(fate => activeFates.Contains(fate.Status) && fate.Orbit != null)
 			.ToListAsync(cancellationToken);
 		foreach (var fate in orbitFates)
 		{
@@ -105,36 +109,16 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 			}
 		}
 
-		// Due objectives: a single all-day occurrence on the due date.
-		var dueObjectives = await context.Objectives
-			.AsNoTracking()
-			.IgnoreAutoIncludes()
-			.Include(objective => objective.Directive)
-			.Where(objective => objective.Due != null
-				&& objective.Due.Moment >= windowStart && objective.Due.Moment < windowEndExclusive
-				&& objective.Status != ObjectiveStatus.Done
-				&& objective.Status != ObjectiveStatus.Archived
-				&& objective.Status != ObjectiveStatus.Failed)
-			.ToListAsync(cancellationToken);
-		foreach (var objective in dueObjectives)
-		{
-			var eventive = new Eventive
-			{
-				ObjectiveId = objective.Id,
-				Objective = objective,
-				Epoch = Epoch.From(objective.Due!.Date, timeOfDay: null, OrbitUnit.Day),
-				RecurrenceId = objective.Due!.Date.ToDateTime(TimeOnly.MinValue),
-			};
-			AddEventive(eventives, eventiveKeys, eventive);
-		}
+		var terminatives = await ProjectTerminativesAsync(windowStart, windowEndExclusive, cancellationToken);
 
 		// Orbit decrees materialize unbound attentives; reflect-decrees are cycle-bound (reflectives), not agenda
 		// attentives, so they are left out here.
+		var activeDecrees = TemporalActivation.Statuses<DecreeStatus>();
 		var orbitDecrees = await context.Decrees
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
 			.Include(decree => decree.Directive)
-			.Where(decree => decree.Status == DecreeStatus.Active && decree.Orbit != null && !decree.Reflect)
+			.Where(decree => activeDecrees.Contains(decree.Status) && decree.Orbit != null && !decree.Reflect)
 			.ToListAsync(cancellationToken);
 		foreach (var decree in orbitDecrees)
 		{
@@ -154,7 +138,80 @@ public sealed class AgendaProjectionService(PlainfraContext context, PlaintorchO
 		// Ordered as they fall on this host's clock, so a zoned occurrence takes its place by the instant it names.
 		eventives.Sort(static (left, right) => Compare(left.Epoch.LocalDate, left.Epoch.LocalTimeOfDay, right.Epoch.LocalDate, right.Epoch.LocalTimeOfDay));
 		attentives.Sort(static (left, right) => Compare(left.Epoch.LocalDate, left.Epoch.LocalTimeOfDay, right.Epoch.LocalDate, right.Epoch.LocalTimeOfDay));
-		return new AgendaProjection(eventives, attentives);
+		return new AgendaProjection(eventives, attentives, terminatives);
+	}
+
+	/// <summary>
+	/// Projects the terminatives of every due that acts and falls in <c>[windowStart, windowEndExclusive)</c> on this
+	/// host's clock — or anywhere before its end when <paramref name="windowStart"/> is <see langword="null"/>, as the agenda
+	/// reads overdue ones — unioned with the hardened terminatives there, a hardened one standing in for its origin's
+	/// projection (PEP103 patch 7). Each carries its origin, an objective with its directive and a stellar directive with its
+	/// parent, ordered as they fall.
+	/// </summary>
+	/// <remarks>
+	/// A projected terminative is pending, since only a due that acts projects. A hardened one shows as the engine keeps it:
+	/// on its origin's due, resolved once the origin is finished or set aside, and flagged when the user ignores it.
+	/// </remarks>
+	public async Task<List<Terminative>> ProjectTerminativesAsync(DateTime? windowStart, DateTime windowEndExclusive, CancellationToken cancellationToken = default)
+	{
+		// As with eventives, the store is read a zone's reach either side and the window decided on the local moment.
+		var hardenedQuery = context.Terminatives
+			.AsNoTracking()
+			.Include(item => item.Objective)
+			.Include(item => item.Directive)
+			.ThenInclude(directive => directive!.ParentDirective)
+			.Include(item => item.Checkpoint)
+			.Where(item => item.Epoch.Moment < windowEndExclusive.AddDays(OccurrenceZones.ReachDays));
+		if (windowStart is { } hardenedFrom)
+		{
+			hardenedQuery = hardenedQuery.Where(item => item.Epoch.Moment >= hardenedFrom.AddDays(-OccurrenceZones.ReachDays));
+		}
+
+		var hardened = await hardenedQuery.ToListAsync(cancellationToken);
+		var origins = hardened.Select(item => item.RecurrenceOwnerUid).ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var terminatives = hardened.ToList();
+
+		var acting = await terminativeService.FindActingAsync(
+			context,
+			windowStart?.AddDays(-OccurrenceZones.ReachDays),
+			windowEndExclusive.AddDays(OccurrenceZones.ReachDays),
+			tracking: false,
+			cancellationToken);
+		foreach (var origin in acting)
+		{
+			if (origins.Add(origin.Id))
+			{
+				terminatives.Add(Projected(origin));
+			}
+		}
+
+		return terminatives
+			.Where(item => item.Epoch.LocalMoment < windowEndExclusive && (windowStart is not { } from || item.Epoch.LocalMoment >= from))
+			.OrderBy(item => item.Epoch.LocalDate)
+			.ThenBy(item => item.Epoch.LocalTimeOfDay)
+			.ToList();
+	}
+
+	/// <summary>
+	/// The terminative an untracked origin projects, carrying the origin for the agenda to draw.
+	/// </summary>
+	private Terminative Projected(IDueOwner origin)
+	{
+		var terminative = terminativeService.Spawn(origin);
+		switch (origin)
+		{
+			case Objective objective:
+				terminative.Objective = objective;
+				break;
+			case StellarDirective directive:
+				terminative.Directive = directive;
+				break;
+			case Checkpoint checkpoint:
+				terminative.Checkpoint = checkpoint;
+				break;
+		}
+
+		return terminative;
 	}
 
 	private static void AddEventive(List<Eventive> list, HashSet<(string, DateTime?)> keys, Eventive eventive)

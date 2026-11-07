@@ -29,8 +29,8 @@ public sealed class Fate : Declarative
 	/// Gets or sets the current fate state.
 	/// </summary>
 	[MarkdownField("status")]
-	[LifecycleStatus]
-	public FateStatus Status { get; set; } = FateStatus.Active;
+	[LifecycleStatus(History = true)]
+	public FateStatus Status { get; set; } = LifecycleDeclarations.InitialStatus<FateStatus>();
 
 	/// <summary>
 	/// Gets or sets the Orbit scheduling notation that drives the fate's occurrences (PEP111). A recurring fate

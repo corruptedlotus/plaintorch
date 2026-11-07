@@ -1,4 +1,5 @@
 using Pleiades.Orchestration;
+using Pleiades.Plaintorch.Enforcement;
 
 namespace Pleiades.Plaintorch.Preferences;
 
@@ -19,6 +20,7 @@ public sealed class PreferenceCatalog
 		var agenda = new AgendaPreferences();
 		var reflection = new ReflectionPreferences();
 		var calDav = new CalDavPreferences();
+		var backlog = new BacklogPreferences();
 
 		Descriptors =
 		[
@@ -77,6 +79,16 @@ public sealed class PreferenceCatalog
 				Kind = PreferenceKind.Enum,
 				DefaultRaw = UserPreferenceSerializer.Serialize(calDav.FloatingRender),
 				Options = Enum.GetNames<CalDavFloatingRender>(),
+			},
+			new PreferenceDescriptor
+			{
+				Key = PreferenceKeys.BacklogStateEnforcement,
+				Label = "State enforcement",
+				Group = "Backlog",
+				Description = "What happens when a change breaks a lifecycle rule: Ignore lets it through, Auto adjusts the other items it needs, Warn asks first, Block refuses it. Structural problems are refused at every level.",
+				Kind = PreferenceKind.Enum,
+				DefaultRaw = UserPreferenceSerializer.Serialize(backlog.StateEnforcement),
+				Options = Enum.GetNames<BacklogStateEnforcementLevel>(),
 			},
 		];
 	}

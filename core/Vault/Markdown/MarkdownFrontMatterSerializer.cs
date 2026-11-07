@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Globalization;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -14,7 +15,12 @@ namespace Pleiades.Vault.Markdown;
 /// </summary>
 public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 {
-	private static readonly NullabilityInfoContext NullabilityContext = new();
+	/// <summary>
+	/// Per-property answers of <see cref="CanBeNull"/>, shared by every concurrent (de)serialization (watcher, API, tests).
+	/// It caches the result rather than a shared <see cref="NullabilityInfoContext"/>, which is not thread-safe: its internal
+	/// caches are plain dictionaries that concurrent first-time lookups corrupt.
+	/// </summary>
+	private static readonly ConcurrentDictionary<PropertyInfo, bool> NullableProperties = new();
 
 	/// <summary>
 	/// The frontmatter field name used to persist quiet PUCK identity.
@@ -43,6 +49,10 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		foreach (var property in GetAnnotatedProperties(model.GetType()))
 		{
 			var attribute = property.GetCustomAttribute<MarkdownFieldAttribute>()!;
+			// A declared key is the model's whether or not it has a value: a cleared field (an objective or directive
+			// that left its onrush, a due that was removed) is dropped from the note rather than resurrected from the
+			// preserved frontmatter below, which is for the keys the model does not know about.
+			emittedKeys.Add(attribute.Name);
 			var value = property.GetValue(model);
 			if (value is null)
 			{
@@ -50,14 +60,14 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 			}
 
 			lines.Add($"{attribute.Name}: {FormatScalar(value)}");
-			emittedKeys.Add(attribute.Name);
 		}
 
 		if (preservedFrontMatter is not null)
 		{
+			var retiredKeys = GetRetiredFieldNames(model.GetType());
 			foreach (var (key, value) in preservedFrontMatter)
 			{
-				if (string.IsNullOrWhiteSpace(key) || emittedKeys.Contains(key))
+				if (string.IsNullOrWhiteSpace(key) || emittedKeys.Contains(key) || retiredKeys.Contains(key))
 				{
 					continue;
 				}
@@ -75,6 +85,20 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		}
 
 		return string.Join(Environment.NewLine, lines) + Environment.NewLine;
+	}
+
+	/// <summary>
+	/// Gets the frontmatter keys a model type has retired (<see cref="RetiredMarkdownFieldAttribute"/>, inherited
+	/// declarations included). A rewrite drops them from the note instead of preserving them as unknown keys.
+	/// </summary>
+	/// <param name="modelType">The markdown-backed model type.</param>
+	/// <returns>The retired keys, compared ignoring case; empty when the type retires none.</returns>
+	public static IReadOnlySet<string> GetRetiredFieldNames(Type modelType)
+	{
+		ArgumentNullException.ThrowIfNull(modelType);
+		return modelType.GetCustomAttributes<RetiredMarkdownFieldAttribute>(inherit: true)
+			.Select(attribute => attribute.Name)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 	}
 
 	/// <summary>
@@ -421,7 +445,8 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 
 			if (propertyType.IsEnum)
 			{
-				if (!Enum.TryParse(propertyType, normalizedValue, true, out var enumValue) || !Enum.IsDefined(propertyType, enumValue!))
+				if ((!Enum.TryParse(propertyType, normalizedValue, true, out var enumValue) || !Enum.IsDefined(propertyType, enumValue!))
+					&& !TryParseEnumAlias(propertyType, normalizedValue, out enumValue))
 				{
 					convertedValue = null;
 					issue = new MarkdownValidationIssue(
@@ -477,6 +502,24 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		{
 			issues.Add(new MarkdownValidationIssue(fieldPath, MarkdownMessages.RelatedPuckInvalid(relationalId, relatedEntityType.Name, exception.Message), relationalId));
 		}
+	}
+
+	/// <summary>
+	/// Reads a name an enum member went by before it was renamed (<see cref="MarkdownEnumAliasAttribute"/>), ignoring case.
+	/// </summary>
+	private static bool TryParseEnumAlias(Type enumType, string value, out object? member)
+	{
+		foreach (var field in enumType.GetFields(BindingFlags.Public | BindingFlags.Static))
+		{
+			if (field.GetCustomAttributes<MarkdownEnumAliasAttribute>().Any(alias => string.Equals(alias.Name, value, StringComparison.OrdinalIgnoreCase)))
+			{
+				member = field.GetValue(null);
+				return true;
+			}
+		}
+
+		member = null;
+		return false;
 	}
 
 	private static bool TryConvertSimpleValue(Type propertyType, string normalizedValue, out object? convertedValue)
@@ -637,6 +680,12 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 		return Nullable.GetUnderlyingType(type) ?? type;
 	}
 
+	/// <summary>
+	/// Determines whether a frontmatter property accepts <see langword="null"/>: <see cref="Nullable{T}"/> value types do,
+	/// other value types do not, and reference types do unless their write state is annotated as not-null.
+	/// Thread-safe: reference-type answers are cached in <see cref="NullableProperties"/>, each computed on a fresh
+	/// <see cref="NullabilityInfoContext"/> so no context is ever shared across threads.
+	/// </summary>
 	private static bool CanBeNull(PropertyInfo property)
 	{
 		if (Nullable.GetUnderlyingType(property.PropertyType) is not null)
@@ -649,7 +698,9 @@ public sealed class MarkdownFrontMatterSerializer(PuckTokenizer puckTokenizer)
 			return false;
 		}
 
-		return NullabilityContext.Create(property).WriteState != NullabilityState.NotNull;
+		return NullableProperties.GetOrAdd(
+			property,
+			static candidate => new NullabilityInfoContext().Create(candidate).WriteState != NullabilityState.NotNull);
 	}
 
 	private static string UnwrapString(string rawValue)

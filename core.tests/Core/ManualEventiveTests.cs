@@ -216,11 +216,11 @@ public sealed class ManualEventiveTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task A_cancelled_fate_takes_no_manual_eventive()
+	public async Task A_stopped_fate_takes_no_manual_eventive()
 	{
 		var tomorrow = Today.AddDays(1).ToDateTime(TimeOnly.MinValue);
 		var fate = await CreateFateAsync(new FatePlan("Retired"));
-		await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>().UpdateFateAsync(fate.Id, new FateUpdate(Status: FateStatus.Cancelled), Ct));
+		await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>().UpdateFateAsync(fate.Id, new FateUpdate(Status: FateStatus.Stopped), Ct));
 
 		await Assert.ThrowsAsync<InvalidOperationException>(() => AddEventiveAsync(Plan(fate.Id, tomorrow, OrbitUnit.Day)));
 		await Assert.ThrowsAsync<InvalidOperationException>(() => AddEventiveAsync(Plan("no-such-fate", tomorrow, OrbitUnit.Day)));

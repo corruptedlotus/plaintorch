@@ -21,14 +21,11 @@ export const plaintorchDependents: DependentTable = {
 		key("StellarDirective", objective.directiveId),
 		key("LunarDirective", objective.directiveId),
 		key("OnrushSprint", objective.onrushSprintId),
-		key("Objective", objective.parentIncentiveId),
-		key("Fate", objective.parentIncentiveId),
 		...asArray(objective.executives).map((executive) => key("PolarisCycle", executive.polarisCycleId))
 	],
 	Fate: (fate) => [
 		key("StellarDirective", fate.directiveId),
-		key("LunarDirective", fate.directiveId),
-		key("Fate", fate.parentIncentiveId)
+		key("LunarDirective", fate.directiveId)
 	],
 	Decree: (decree) => [
 		key("StellarDirective", decree.directiveId),
@@ -37,7 +34,8 @@ export const plaintorchDependents: DependentTable = {
 	],
 	StellarDirective: (directive) => [
 		key("StellarDirective", directive.parentDirectiveId),
-		key("LunarDirective", directive.parentDirectiveId)
+		key("LunarDirective", directive.parentDirectiveId),
+		key("OnrushSprint", directive.onrushSprintId)
 	],
 	LunarDirective: (directive) => [
 		key("StellarDirective", directive.parentDirectiveId),

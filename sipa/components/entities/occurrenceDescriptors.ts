@@ -1,4 +1,4 @@
-import { AttentiveResolution, EventiveResolution, type Occurrence } from '@pleiades/sdk'
+import { AttentiveResolution, EventiveResolution, TerminativeResolution, type Occurrence } from '@pleiades/sdk'
 import type { IconName } from '../PleiadesIcon'
 
 /** How one occurrence state or source is named and drawn. */
@@ -28,12 +28,22 @@ export const eventiveStateDescriptors: Record<EventiveResolution, OccurrenceDesc
 }
 
 /**
- * Where an occurrence came from: generated from its owner's orbit, or added by hand. The orbit glyph is the one the
- * schedule control draws a recurring schedule with.
+ * How each {@link TerminativeResolution} reads and draws (PEP103 patch 7). The core sets it from the origin's lifecycle:
+ * resolved once the origin is finished or set aside.
+ */
+export const terminativeStateDescriptors: Record<TerminativeResolution, OccurrenceDescriptor> = {
+	[TerminativeResolution.Pending]: { label: 'Pending', icon: 'state-zero' },
+	[TerminativeResolution.Resolved]: { label: 'Resolved', icon: 'state-done' },
+}
+
+/**
+ * Where an occurrence came from: generated from its owner's orbit, added by hand, or spawned by an item's due (a
+ * terminative, PEP103 patch 7). The orbit glyph is the one the schedule control draws a recurring schedule with.
  */
 export const occurrenceSourceDescriptors = {
 	orbit: { label: 'Orbit', icon: 'lucide:repeat' },
 	manual: { label: 'Manual', icon: 'lucide:hand' },
+	due: { label: 'Due', icon: 'terminative' },
 } as const satisfies Record<string, OccurrenceDescriptor>
 
 /**

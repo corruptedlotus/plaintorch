@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Plaintorch.Preferences;
 using Pleiades.Vault.Database;
 
@@ -123,9 +124,13 @@ public sealed class PlaintorchOrbitService(
 	public async Task ResetStateAsync(Incentive incentive, string? orbit, DateOnly epoch, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
+		// A state added earlier in this unit of work is not in the database yet, so the tracked ones are swept too: a resume
+		// and an orbit change in one save would otherwise leave two states for one declarative.
 		var existing = await context.IncentiveOrbitScheduleStates
 			.Where(state => state.IncentiveId == incentive.Id)
 			.ToListAsync(cancellationToken);
+		existing.AddRange(context.IncentiveOrbitScheduleStates.Local
+			.Where(state => state.IncentiveId == incentive.Id && !existing.Contains(state)));
 		if (existing.Count > 0)
 		{
 			context.IncentiveOrbitScheduleStates.RemoveRange(existing);
@@ -262,9 +267,10 @@ public sealed class PlaintorchOrbitService(
 
 	/// <summary>
 	/// Determines whether lunar reflection is paused for a directive lineage (PEP104): some lunar directive on it, the
-	/// directive itself or an ancestor, is not <see cref="LunarDirectiveStatus.Active"/>. An On Hold or Stale lunar
-	/// directive pauses reflection for its whole subtree. The walk never looks at stellar directives' own states, so a
-	/// lineage with no lunar directive on it, stellar or none at all, is never paused.
+	/// directive itself or an ancestor, is not started (<see cref="LunarDirectiveStatus.Active"/>). An On Hold (set aside)
+	/// or Stale (finished) lunar directive pauses reflection for its whole subtree, and that is all its status governs
+	/// (user ruling, PEP103 patch 6). The walk never looks at stellar directives' own states, so a lineage with no lunar
+	/// directive on it, stellar or none at all, is never paused.
 	/// </summary>
 	public async Task<bool> IsReflectionPausedAsync(string? directiveId, CancellationToken cancellationToken = default)
 	{
@@ -280,7 +286,7 @@ public sealed class PlaintorchOrbitService(
 				break;
 			}
 
-			if (directive is LunarDirective { Status: not LunarDirectiveStatus.Active })
+			if (directive is LunarDirective lunar && LifecycleDeclarations.StateOf(lunar.Status) != LifecycleState.Started)
 			{
 				return true;
 			}
@@ -298,9 +304,11 @@ public sealed class PlaintorchOrbitService(
 	/// </summary>
 	private async Task<IncentiveOrbitScheduleState> GetOrCreateStateAsync(Incentive incentive, string orbit, DateOnly fallbackEpoch, CancellationToken cancellationToken)
 	{
-		var state = await context.IncentiveOrbitScheduleStates
-			.FirstOrDefaultAsync(item => item.IncentiveId == incentive.Id, cancellationToken);
-		if (state is not null)
+		// A state this unit of work already added (a reset just before) is the one to advance; a query would not see it.
+		var state = context.IncentiveOrbitScheduleStates.Local.FirstOrDefault(item => item.IncentiveId == incentive.Id)
+			?? await context.IncentiveOrbitScheduleStates
+				.FirstOrDefaultAsync(item => item.IncentiveId == incentive.Id, cancellationToken);
+		if (state is not null && context.Entry(state).State != EntityState.Deleted)
 		{
 			return state;
 		}

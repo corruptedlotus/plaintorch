@@ -39,14 +39,10 @@ public sealed class LunarReflectionTests : VaultTestBase
 	private async Task<LunarDirective> CreateLunarAsync(string title, LunarDirectiveStatus status = LunarDirectiveStatus.Active, string? parentId = null)
 	{
 		var lunar = await Directives(api => api.CreateLunarAsync(title, parentDirectiveId: parentId, cancellationToken: Ct));
-		if (status != LunarDirectiveStatus.OnHold)
+		if (status != LunarDirectiveStatus.Active)
 		{
-			// Lunar directives start On Hold; Stale is reached through Active, as the moonlight workflow allows.
-			await Directives(api => api.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Active), Ct));
-			if (status != LunarDirectiveStatus.Active)
-			{
-				await Directives(api => api.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(status), Ct));
-			}
+			// Lunar directives are created Active (PEP103 patch 6) and move at will to On Hold or Stale.
+			await Directives(api => api.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(status), Ct));
 		}
 
 		return lunar;

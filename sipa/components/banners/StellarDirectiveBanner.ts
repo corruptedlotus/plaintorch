@@ -1,7 +1,7 @@
 import { component, css, html } from "@a11d/lit"
 import { DirectiveBanner } from './DirectiveBanner'
 import { DependencyEndpointKind, Directive, DirectiveStatus, StellarDirectiveUpdate } from '@pleiades/sdk'
-import { core, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, directiveStatusDescriptors } from ".."
+import { core, editState, IconName, followRenamedNote, ReactiveBinder } from ".."
 
 /**
  * Banner for a Stellar directive (PEP100) — the classic lifecycle-driven directive kind. It
@@ -31,15 +31,12 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
-			if (keyPath !== 'status' && keyPath !== 'title' && keyPath !== 'codename' && keyPath !== 'due') {
+			// The status is not bound: the state bubble saves a shift itself (editState).
+			if (keyPath !== 'title' && keyPath !== 'codename' && keyPath !== 'due') {
 				return
 			}
 
 			const saved = await this.commitEntityEdit(async () => {
-				if (keyPath === 'status') {
-					return await core.directives.shiftStellarWorkflow(entity.id, { status: entity.status as DirectiveStatus })
-				}
-
 				// Codename and due are nullable: a cleared field commits as null (a clear), not undefined (a no-op).
 				const update: StellarDirectiveUpdate = {}
 				if (keyPath === 'title') update.title = entity.title
@@ -118,7 +115,7 @@ export class StellarDirectiveBanner extends DirectiveBanner {
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${() => SelectStatusModal.prompt(directiveStatusDescriptors)} ${this.binder.bind('status')}>
+			<p7t-editable .value=${this.entity!.status} .doEdit=${(_: unknown, field: HTMLElement) => editState(field, this.entity)}>
 				<p7t-status-item
 					.status=${DirectiveStatus[this.entity!.status as DirectiveStatus] as keyof typeof DirectiveStatus}>
 				</p7t-status-item>

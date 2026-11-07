@@ -7,8 +7,8 @@ import { Checkpoint } from '@pleiades/sdk'
  * A checkpoint on the dependency canvas (PEP102).
  *
  * Its own component rather than a variant of the entity node, because a checkpoint is a different thing: it
- * has no lifecycle, no note, and no begin or finish — so no status, and an edge to or from it leaves the
- * corresponding trigger or constraint empty. The milestone, the one checkpoint that stands for the onrush's
+ * has no note and no status, and it is one-shot — it cannot be started, and its unlock is its finish — so an edge
+ * to or from it leaves the corresponding trigger or constraint empty. The milestone, the one checkpoint that stands for the onrush's
  * completion, is flagged for a look that is meant to be taken much further later.
  */
 @component('p7t-canvas-checkpoint')

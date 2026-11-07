@@ -32,14 +32,14 @@ describe("plaintorchDependents", () => {
 		expect(recording.recordPasses).toBe(1)
 	})
 
-	it("names both directive kinds for a directive reference, and both incentive kinds for a parent", () => {
-		expect(resolve("Objective", { directiveId: "D1", parentIncentiveId: "I1" })).toEqual(
-			expect.arrayContaining(["StellarDirective:D1", "LunarDirective:D1", "Objective:I1", "Fate:I1"])
+	it("names both directive kinds for a directive reference, and a stellar directive's sprint", () => {
+		expect(resolve("Objective", { directiveId: "D1" })).toEqual(
+			expect.arrayContaining(["StellarDirective:D1", "LunarDirective:D1"])
 		)
-		expect(resolve("Fate", { directiveId: "D1", parentIncentiveId: "F0" })).toEqual(
-			["StellarDirective:D1", "LunarDirective:D1", "Fate:F0"]
+		expect(resolve("Fate", { directiveId: "D1" })).toEqual(["StellarDirective:D1", "LunarDirective:D1"])
+		expect(resolve("StellarDirective", { parentDirectiveId: "D0", onrushSprintId: "N1" })).toEqual(
+			["StellarDirective:D0", "LunarDirective:D0", "OnrushSprint:N1"]
 		)
-		expect(resolve("StellarDirective", { parentDirectiveId: "D0" })).toEqual(["StellarDirective:D0", "LunarDirective:D0"])
 		expect(resolve("LunarDirective", { parentDirectiveId: "D0" })).toEqual(["StellarDirective:D0", "LunarDirective:D0"])
 	})
 

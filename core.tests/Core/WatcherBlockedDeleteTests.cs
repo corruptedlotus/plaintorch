@@ -26,7 +26,9 @@ namespace Pleiades.Tests.Core;
 /// candidate discards whatever it staged, so it can never fail the rest of a sweep.
 ///
 /// Executives no longer block at all (a deleted item keeps its ended work and drops its live plans; see
-/// <see cref="IncentiveDeletionTests"/>), so the blocked objective here is one another incentive names as its parent.
+/// <see cref="IncentiveDeletionTests"/>) and incentives do not nest, so the blocked entity here is a directive whose
+/// incentive still names it — an objective that was never begun, so it lives only in the database and no note of its
+/// own can re-derive or drop the relation.
 /// </summary>
 public sealed class WatcherBlockedDeleteTests : VaultTestBase
 {
@@ -34,15 +36,16 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 
 	private static string NoteOf(string title) => $"Objectives/{title}.md";
 
-	/// <summary>Seeds a begun objective (its note on disk) that another objective names as its parent — a restricting relationship.</summary>
-	private async Task<Objective> SeedBegunObjectiveWithChildAsync(string title)
+	private static string DirectiveNoteOf(string title) => $"Directives/{title}/{title}.md";
+
+	/// <summary>Seeds a directive (its note on disk) holding an un-begun objective — a restricting relationship.</summary>
+	private async Task<StellarDirective> SeedDirectiveWithObjectiveAsync(string title)
 	{
-		var objective = await SeedBegunObjectiveAsync(title);
-		var child = await Vault.SeedStandaloneObjectiveAsync(title + " Child");
-		await Vault.QueryAsync(context => context.Incentives
-			.Where(item => item.Id == child.Id)
-			.ExecuteUpdateAsync(setters => setters.SetProperty(item => item.ParentIncentiveId, objective.Id), Token));
-		return objective;
+		var directive = await Vault.WithScopeAsync(services => services.GetRequiredService<IDirectiveApi>()
+			.CreateStandaloneAsync(title, cancellationToken: Token));
+		await Vault.WithScopeAsync(services => services.GetRequiredService<IObjectiveApi>()
+			.CreateFromDirectiveAsync(directive.Id, title + " Quest", cancellationToken: Token));
+		return directive;
 	}
 
 	private async Task<Objective> SeedBegunObjectiveAsync(string title)
@@ -52,21 +55,24 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 		return objective;
 	}
 
+	private Task<bool> DirectiveExistsAsync(string id)
+		=> Vault.QueryAsync(context => context.Directives.AnyAsync(item => item.Id == id, Token));
+
 	private Task<bool> ObjectiveExistsAsync(string id)
 		=> Vault.QueryAsync(context => context.Objectives.AnyAsync(item => item.Id == id, Token));
 
 	private Task<int> GraveyardEntriesForAsync(string id)
 		=> Vault.QueryAsync(context => context.DatabaseGraveyardEntries.CountAsync(item => item.EntityId == id, Token));
 
-	private Task<int> ChildrenOfAsync(string id)
-		=> Vault.QueryAsync(context => context.Incentives.CountAsync(item => item.ParentIncentiveId == id, Token));
+	private Task<int> IncentivesOfAsync(string directiveId)
+		=> Vault.QueryAsync(context => context.Incentives.CountAsync(item => item.DirectiveId == directiveId, Token));
 
-	private Task<int> ReleaseChildrenOfAsync(string id)
+	private Task<int> ReleaseIncentivesOfAsync(string directiveId)
 		=> Vault.QueryAsync(context => context.Incentives
-			.Where(item => item.ParentIncentiveId == id)
-			.ExecuteUpdateAsync(setters => setters.SetProperty(item => item.ParentIncentiveId, (string?)null), Token));
+			.Where(item => item.DirectiveId == directiveId)
+			.ExecuteUpdateAsync(setters => setters.SetProperty(item => item.DirectiveId, (string?)null), Token));
 
-	// A quiet note that is gone is found by identity, so its issues are keyed on the entity, not on a path.
+	// A note that is gone is found by identity, so its issues are keyed on the entity, not on a path.
 	private IReadOnlyList<OperationStatus> StatusesOf(string entityId)
 		=> Vault.GetSingleton<OperationStatusRegistry>()
 			.GetActiveStatuses()
@@ -74,37 +80,37 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 			.ToList();
 
 	[Fact] // Fixed — the removal is checked against the model's restricting relationships first; nothing is written when it is blocked.
-	public async Task Deleting_the_note_of_an_objective_with_child_incentives_writes_nothing_and_keeps_it()
+	public async Task Deleting_the_note_of_a_directive_with_incentives_writes_nothing_and_keeps_it()
 	{
-		var objective = await SeedBegunObjectiveWithChildAsync("Blocked");
-		var path = Vault.AbsolutePath(NoteOf("Blocked"));
+		var directive = await SeedDirectiveWithObjectiveAsync("Blocked");
+		var path = Vault.AbsolutePath(DirectiveNoteOf("Blocked"));
 		File.Delete(path);
 
 		// Two passes: the live delete event, then a later re-check of the same path.
 		await Vault.ReconcileWithIssuesAsync(path);
 		await Vault.ReconcileWithIssuesAsync(path);
 
-		Assert.True(await ObjectiveExistsAsync(objective.Id));
-		Assert.Equal(1, await ChildrenOfAsync(objective.Id));
-		Assert.Equal(0, await GraveyardEntriesForAsync(objective.Id));
+		Assert.True(await DirectiveExistsAsync(directive.Id));
+		Assert.Equal(1, await IncentivesOfAsync(directive.Id));
+		Assert.Equal(0, await GraveyardEntriesForAsync(directive.Id));
 	}
 
 	[Fact] // Fixed — a blocked delete is its own standing reason, raised once and refreshed, never re-queued by the retry sweep.
 	public async Task The_blocked_delete_surfaces_once_as_a_standing_status_the_retry_sweep_leaves_alone()
 	{
-		var objective = await SeedBegunObjectiveWithChildAsync("Blocked");
-		var path = Vault.AbsolutePath(NoteOf("Blocked"));
+		var directive = await SeedDirectiveWithObjectiveAsync("Blocked");
+		var path = Vault.AbsolutePath(DirectiveNoteOf("Blocked"));
 		File.Delete(path);
 
 		await Vault.ReconcileWithIssuesAsync(path);
 		await Vault.SweepWithIssuesAsync();
 
-		var status = Assert.Single(StatusesOf(objective.Id));
+		var status = Assert.Single(StatusesOf(directive.Id));
 		Assert.Equal(WatcherOperations.DeleteBlocked, status.ReasonCode);
 		Assert.Equal(WatcherOperations.Identity, status.OperationId);
-		Assert.Equal(Vault.AbsolutePath(NoteOf("Blocked")), Assert.Single(status.Files));
+		Assert.Equal(Vault.AbsolutePath(DirectiveNoteOf("Blocked")), Assert.Single(status.Files));
 		Assert.Equal(OperationSeverity.Error, status.Severity);
-		Assert.Equal(objective.Id, status.EntityId);
+		Assert.Equal(directive.Id, status.EntityId);
 		Assert.Contains("Incentive", status.Detail);
 		// The sweep refreshed the one status raised by the live event rather than raising another.
 		Assert.Equal(2, status.OccurrenceCount);
@@ -119,49 +125,50 @@ public sealed class WatcherBlockedDeleteTests : VaultTestBase
 	[Fact] // Fixed — restoring the note is a clean sync at the path, which clears the standing status.
 	public async Task Restoring_the_note_resolves_the_blocked_delete()
 	{
-		var objective = await SeedBegunObjectiveWithChildAsync("Blocked");
-		var note = NoteOf("Blocked");
+		var directive = await SeedDirectiveWithObjectiveAsync("Blocked");
+		var note = DirectiveNoteOf("Blocked");
 		var content = Vault.ReadVaultFile(note);
 		File.Delete(Vault.AbsolutePath(note));
 		await Vault.ReconcileWithIssuesAsync(Vault.AbsolutePath(note));
-		Assert.Single(StatusesOf(objective.Id));
+		Assert.Single(StatusesOf(directive.Id));
 
 		Vault.WriteVaultFile(note, content);
 		await Vault.ReconcileWithIssuesAsync(Vault.AbsolutePath(note));
 
-		Assert.Empty(StatusesOf(objective.Id));
-		Assert.True(await ObjectiveExistsAsync(objective.Id));
-		Assert.Equal(0, await GraveyardEntriesForAsync(objective.Id));
+		Assert.Empty(StatusesOf(directive.Id));
+		Assert.True(await DirectiveExistsAsync(directive.Id));
+		Assert.Equal(0, await GraveyardEntriesForAsync(directive.Id));
 	}
 
 	[Fact] // Fixed — once nothing references the entity, the next sweep removes it with exactly one graveyard entry.
 	public async Task Once_nothing_references_it_the_next_sweep_completes_the_removal()
 	{
-		var objective = await SeedBegunObjectiveWithChildAsync("Blocked");
-		File.Delete(Vault.AbsolutePath(NoteOf("Blocked")));
+		var directive = await SeedDirectiveWithObjectiveAsync("Blocked");
+		File.Delete(Vault.AbsolutePath(DirectiveNoteOf("Blocked")));
 		await Vault.SweepWithIssuesAsync();
-		Assert.Single(StatusesOf(objective.Id));
+		Assert.Single(StatusesOf(directive.Id));
 
-		await ReleaseChildrenOfAsync(objective.Id);
+		await ReleaseIncentivesOfAsync(directive.Id);
 		await Vault.SweepWithIssuesAsync();
 
-		Assert.False(await ObjectiveExistsAsync(objective.Id));
-		Assert.Equal(1, await GraveyardEntriesForAsync(objective.Id));
-		Assert.Empty(StatusesOf(objective.Id));
+		Assert.False(await DirectiveExistsAsync(directive.Id));
+		Assert.Equal(1, await GraveyardEntriesForAsync(directive.Id));
+		Assert.Empty(StatusesOf(directive.Id));
 	}
 
 	[Fact] // Fixed — the blocked delete sits beside an ordinary one in the same sweep, and only the blocked one is held back.
 	public async Task A_blocked_delete_does_not_hold_back_the_rest_of_the_sweep()
 	{
-		// Alpha sorts first, so its delete runs before Beta's in the sweep's one scope.
-		var alpha = await SeedBegunObjectiveWithChildAsync("Alpha");
+		// Both notes are gone by the time the sweep's one scope reconciles them; the blocked directive must not drag the
+		// objective's clean delete down with it whichever order they run in.
+		var alpha = await SeedDirectiveWithObjectiveAsync("Alpha");
 		var beta = await SeedBegunObjectiveAsync("Beta");
-		File.Delete(Vault.AbsolutePath(NoteOf("Alpha")));
+		File.Delete(Vault.AbsolutePath(DirectiveNoteOf("Alpha")));
 		File.Delete(Vault.AbsolutePath(NoteOf("Beta")));
 
 		await Vault.SweepWithIssuesAsync();
 
-		Assert.True(await ObjectiveExistsAsync(alpha.Id));
+		Assert.True(await DirectiveExistsAsync(alpha.Id));
 		Assert.Equal(0, await GraveyardEntriesForAsync(alpha.Id));
 		Assert.False(await ObjectiveExistsAsync(beta.Id));
 		Assert.Equal(1, await GraveyardEntriesForAsync(beta.Id));

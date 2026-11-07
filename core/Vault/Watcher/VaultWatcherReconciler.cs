@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Pleiades.Plaintorch.Enforcement;
 using Pleiades.Resources;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Policy;
@@ -245,9 +246,10 @@ public sealed class VaultWatcherReconciler(
 			// so if the file is later gone, no longer in violation, or the entity has changed, the recomputed decision
 			// resolves or supersedes the flag.
 			statusReporter.ReportSyncFailure(candidate, exception);
-			if (exception is VaultEntityDeleteBlockedException)
+			if (exception is VaultEntityDeleteBlockedException or StateEnforcementException)
 			{
-				// A refused delete is a standing status, not a failure to retry, and the sync service has already said why.
+				// A refused delete, or a change the state rules refuse (PEP103), is a standing status, not a failure to retry, and
+				// its issue already says why.
 				return;
 			}
 

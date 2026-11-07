@@ -76,4 +76,14 @@ public static class InclusionWindow
 		ArgumentNullException.ThrowIfNull(eventive);
 		return eventive.Epoch.LocalEndMoment >= windowStart && eventive.Epoch.LocalMoment < windowEnd;
 	}
+
+	/// <summary>
+	/// Determines whether a terminative collides with the inclusion window (PEP103 patch 7), as an eventive does: a
+	/// whole-day due spans its day, a timed one its minute.
+	/// </summary>
+	public static bool TerminativeIntersects(Terminative terminative, DateTime windowStart, DateTime windowEnd)
+	{
+		ArgumentNullException.ThrowIfNull(terminative);
+		return terminative.Epoch.LocalEndMoment >= windowStart && terminative.Epoch.LocalMoment < windowEnd;
+	}
 }

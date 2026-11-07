@@ -62,9 +62,16 @@ public sealed class ExecutiveOrderTests : VaultTestBase
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 
+		// Orders are issued while their sprint runs: an ended sprint's orders are history (PEP103 patch 5).
 		var firstSprint = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IOnrushSprintApi>()
 			.StartNewAsync(cancellationToken: cancellationToken));
+		var firstOrder = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IOnrushSprintApi>()
+			.IssueExecutiveOrderAsync(firstSprint.Id, new ExecutiveOrderPlan("First"), cancellationToken));
+		var secondOrder = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IOnrushSprintApi>()
+			.IssueExecutiveOrderAsync(firstSprint.Id, new ExecutiveOrderPlan("Second"), cancellationToken));
 		await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IOnrushSprintApi>()
 			.EndAsync(firstSprint.Id, cancellationToken: cancellationToken));
@@ -72,12 +79,6 @@ public sealed class ExecutiveOrderTests : VaultTestBase
 			.GetRequiredService<IOnrushSprintApi>()
 			.StartNewAsync(cancellationToken: cancellationToken));
 
-		var firstOrder = await Vault.WithScopeAsync(services => services
-			.GetRequiredService<IOnrushSprintApi>()
-			.IssueExecutiveOrderAsync(firstSprint.Id, new ExecutiveOrderPlan("First"), cancellationToken));
-		var secondOrder = await Vault.WithScopeAsync(services => services
-			.GetRequiredService<IOnrushSprintApi>()
-			.IssueExecutiveOrderAsync(firstSprint.Id, new ExecutiveOrderPlan("Second"), cancellationToken));
 		var otherSprintOrder = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IOnrushSprintApi>()
 			.IssueExecutiveOrderAsync(secondSprint.Id, new ExecutiveOrderPlan("Other"), cancellationToken));

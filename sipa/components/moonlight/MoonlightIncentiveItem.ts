@@ -1,10 +1,9 @@
 import { component, css, html } from '@a11d/lit'
-import { ObjectiveStatus, type Decree, type Fate, type Objective } from '@pleiades/sdk'
-import { core, objectiveStatusDescriptors, SelectStatusModal } from '..'
+import type { Decree, Fate, Objective } from '@pleiades/sdk'
+import { shiftState } from '..'
 import { EntityItem } from '../entities/EntityItem'
 import { entityIcon, entityKindLabel, entityKindOf, entityStatusName, isInactiveEntity } from '../grid/entityActions'
 import type { GridEntity } from '../grid/entityTree'
-import { toast } from '../../host'
 
 /**
  * An incentive — an objective, a fate or a decree — as one tile of a Moonlight section, drawn in the shape of a
@@ -122,29 +121,11 @@ export class MoonlightIncentiveItem extends EntityItem<GridEntity> {
 	}
 
 	/** An objective's notch shifts its state, the way it does in every objective list. */
-	protected override async notchAction() {
+	/** It goes through the state bubble, which saves the shift; every surface showing the objective follows. */
+	protected override async notchAction(notch: HTMLElement) {
 		const entity = this.entity
-		if (!entity || entityKindOf(entity) !== 'objective') {
-			return
-		}
-
-		let status: ObjectiveStatus | undefined
-		try {
-			status = await SelectStatusModal.prompt(objectiveStatusDescriptors)
-		}
-		catch {
-			return
-		}
-
-		if (status === undefined) {
-			return
-		}
-
-		// The response is absorbed into the canonical instance, so every surface showing the objective follows.
-		const shifted = await core.repos.objectives.mutate(entity.id, async () =>
-			await core.objectives.shiftWorkflow(entity.id, { status }))
-		if (!shifted) {
-			toast('Failed to update objective status.', 'error')
+		if (entity && entityKindOf(entity) === 'objective') {
+			await shiftState(notch, entity as Objective)
 		}
 	}
 }

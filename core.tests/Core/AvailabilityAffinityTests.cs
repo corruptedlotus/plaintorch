@@ -122,25 +122,6 @@ public sealed class AvailabilityAffinityTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Availability_never_inherits_through_a_parent_incentive()
-	{
-		var (availability, college) = await CreateTimeframesAsync();
-		var directive = await Directives(api => api.CreateStandaloneAsync("Raptor", cancellationToken: Ct));
-		await Directives(api => api.SetAvailabilityAsync(directive.Id, availability, Ct));
-		var parent = await Objectives(api => api.CreateFromDirectiveAsync(directive.Id, "Ship it", cancellationToken: Ct));
-		var subtask = await Objectives(api => api.CreateStandaloneAsync("Write the notes", cancellationToken: Ct));
-		subtask = await Objectives(api => api.UpdateAsync(subtask.Id, new ObjectiveUpdate(ParentIncentiveId: parent.Id), Ct));
-		Assert.Equal(parent.Id, subtask.ParentIncentiveId);
-		Assert.Null(subtask.DirectiveId);
-
-		var planned = await Polaris(api => api.PlanExecutiveAsync(new PolarisExecutivePlan(
-			PolarisExecutivePlanningMode.FromObjective, ObjectiveId: subtask.Id), cancellationToken: Ct));
-
-		// Only the directive lineage carries availability; the subtask has no directive, so its college decides.
-		Assert.Equal(college, planned.Executive.AffinityTimeframeId);
-	}
-
-	[Fact]
 	public async Task Availability_seeds_at_creation_only_and_never_rewrites_an_existing_executive()
 	{
 		var (availability, college) = await CreateTimeframesAsync();
@@ -161,14 +142,13 @@ public sealed class AvailabilityAffinityTests : VaultTestBase
 	}
 
 	[Theory]
-	[InlineData(LunarDirectiveStatus.OnHold)]
-	[InlineData(LunarDirectiveStatus.Stale)]
-	public async Task An_availability_applies_whatever_its_owning_lunar_directive_status(LunarDirectiveStatus status)
+	[InlineData(LunarDirectiveStatus.OnHold, true)]
+	[InlineData(LunarDirectiveStatus.Stale, false)]
+	public async Task An_availability_applies_until_its_owning_lunar_directive_is_stale(LunarDirectiveStatus status, bool applies)
 	{
 		var (availability, _) = await CreateTimeframesAsync();
 		var owner = await Vault.QueryAsync(context => context.Timeframes.AsNoTracking().Where(item => item.Id == availability).Select(item => item.DirectiveId).SingleAsync(Ct));
-		// Through Active first, so the owner really moves into the tested status (a new lunar directive starts on hold).
-		await Directives(api => api.ShiftLunarWorkflowAsync(owner, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Active), Ct));
+		// On Hold keeps its timeframes acting; a Stale lunar directive's timeframes lend nothing (PEP103 patch 6).
 		var shifted = await Directives(api => api.ShiftLunarWorkflowAsync(owner, new LunarDirectiveWorkflowShift(status), Ct));
 		Assert.Equal(status, shifted.Status);
 		var directive = await Directives(api => api.CreateStandaloneAsync("Raptor", cancellationToken: Ct));
@@ -177,6 +157,6 @@ public sealed class AvailabilityAffinityTests : VaultTestBase
 		var planned = await Polaris(api => api.PlanExecutiveAsync(new PolarisExecutivePlan(
 			PolarisExecutivePlanningMode.FromDirective, Title: "Draft", DirectiveId: directive.Id, College: ObjectiveCollege.Creation), cancellationToken: Ct));
 
-		Assert.Equal(availability, planned.Executive.AffinityTimeframeId);
+		Assert.Equal(applies, planned.Executive.AffinityTimeframeId == availability);
 	}
 }

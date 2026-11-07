@@ -1,13 +1,13 @@
 import { Component, component, css, event, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
 import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
 import { concludeConfirmation, ContextMenu, ContextMenuController, core, deleteConfirmation, DerivedRef, entityMenuEntries, removeConfirmation, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
-import { activatePlanningOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
+import { activatePlanningOnrush, addDirectiveToOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeDirectiveFromOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
 import { OnrushDetailModal } from './OnrushDetailModal'
 import { contextModeLabels, edgeEndpoints, globalContext, onrushContext, type CanvasContextMode, type EndpointResolver } from './graphContext'
 import { serializeGlobalContext } from './globalContextFile'
 import { edgeCurve, edgeEnds, edgeMidpoint, layoutGraph, linkCurve, parsePositions, serializePositions, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
-import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpointTypeNames, sourceRef, targetRef, wouldCycle, type CanvasEdge, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
+import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpointTypeNames, isIntrinsic, sourceRef, targetRef, wouldContradict, type CanvasEdge, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
 import { SelectObjectiveModal } from './SelectObjectiveModal'
 import { SelectEndpointModal } from './SelectEndpointModal'
 import type { CanvasNodePointer, NodeLock } from './CanvasNodeItem'
@@ -321,6 +321,11 @@ export class DependencyCanvas extends Component {
 			.edge.linking {
 				stroke: var(--p7t-flare-accent, var(--interactive-accent));
 				stroke-dasharray: 5 4;
+			}
+
+			/* Implied by the structure rather than drawn (PEP102 patch 9): dashed, so it reads as given, not made. */
+			.edge.intrinsic {
+				stroke-dasharray: 7 5;
 			}
 
 			/*
@@ -735,8 +740,8 @@ export class DependencyCanvas extends Component {
 	/**
 	 * The management tray, shown whenever a sprint is on screen (PEP102.5).
 	 *
-	 * Three tallies — objectives, checkpoints (the milestone among them), executive orders — sit above a row
-	 * that opens the sprint's own detail window and offers the lifecycle actions its mode admits.
+	 * Four tallies — objectives, stellar directives, checkpoints (the milestone among them), executive orders — sit
+	 * above a row that opens the sprint's own detail window and offers the lifecycle actions its mode admits.
 	 */
 	private get trayTemplate() {
 		const sprint = this.sprint
@@ -745,6 +750,7 @@ export class DependencyCanvas extends Component {
 				${!sprint ? nothing : html`
 					<div class='counts'>
 						<span class='count'><p7t-icon icon='objective'></p7t-icon>${sprint.objectives?.length ?? 0}</span>
+						<span class='count'><p7t-icon icon='directive'></p7t-icon>${sprint.directives?.length ?? 0}</span>
 						<span class='count'><p7t-icon icon='checkpoint'></p7t-icon>${sprint.checkpoints?.length ?? 0}</span>
 						<span class='count'><p7t-icon icon='exec-order'></p7t-icon>${sprint.executiveOrders?.length ?? 0}</span>
 					</div>
@@ -898,7 +904,7 @@ export class DependencyCanvas extends Component {
 	/**
 	 * The right node element for what the node stands for.
 	 *
-	 * A checkpoint gets its own component — no lifecycle, its milestone flagged — while everything else is an
+	 * A checkpoint gets its own component — one-shot, no status, its milestone flagged — while everything else is an
 	 * entity node. Both share the pointer contract the container drives them by.
 	 */
 	private nodeTemplate(node: CanvasNode, lock: NodeLock) {
@@ -962,7 +968,7 @@ export class DependencyCanvas extends Component {
 		const beginTriggered = effectiveTrigger(edge.dependency) === DependencyTrigger.OnBegin
 		return svg`
 			<path
-				class='edge ${satisfied ? 'satisfied' : 'pending'}'
+				class='edge ${satisfied ? 'satisfied' : 'pending'} ${isIntrinsic(edge.dependency) ? 'intrinsic' : ''}'
 				d=${path}
 				marker-end='url(#${satisfied ? 'arrow-satisfied' : 'arrow-pending'})'
 				marker-start=${beginTriggered ? 'url(#edge-begin)' : nothing}>
@@ -1037,10 +1043,18 @@ export class DependencyCanvas extends Component {
 	}
 
 	private edgeMenuSpec(edge: CanvasEdge): ContextMenuSpec {
+		// An intrinsic edge is the structure's, not the reader's: it has no identity to delete and no shape to change.
+		if (isIntrinsic(edge.dependency)) {
+			return {
+				title: 'Intrinsic dependency',
+				entries: [{ note: 'Finishing a directive depends on finishing each of its direct children. Implied by where the child sits; it cannot be changed or removed, and it goes when the child is moved out or fails.' }]
+			}
+		}
+
 		const trigger = effectiveTrigger(edge.dependency)
 		const constraint = effectiveConstraint(edge.dependency)
-		// A checkpoint has no begin or finish, so it offers no trigger on its source side and no constraint on
-		// its target side — those are empty by rule, not a choice, so the menu withholds them entirely.
+		// A checkpoint is one-shot — its only event is its unlock — so it offers no trigger on its source side and no
+		// constraint on its target side: those are empty by rule, not a choice, so the menu withholds them entirely.
 		const sourceIsCheckpoint = edge.dependency.sourceKind === DependencyEndpointKind.Checkpoint
 		const targetIsCheckpoint = edge.dependency.targetKind === DependencyEndpointKind.Checkpoint
 		const entries: ContextMenuEntry[] = []
@@ -1116,6 +1130,8 @@ export class DependencyCanvas extends Component {
 	 * Onrush; a ghostly objective can join it; any other ghost is only context.
 	 */
 	private entityNodeMenuEntries(node: CanvasNode): ContextMenuEntry[] {
+		// A directive and an objective leave the sprint through their own endpoints (PEP102 patch 10).
+		const remove = node.ref.kind === DependencyEndpointKind.Directive ? removeDirectiveFromOnrush : removeObjectiveFromOnrush
 		return [
 			entityMenuEntries.openNote(node.entity),
 			!node.ghostly
@@ -1123,7 +1139,7 @@ export class DependencyCanvas extends Component {
 					label: 'Remove from Onrush',
 					icon: 'onrush',
 					confirm: removeConfirmation(`Remove "${node.entity.title}" from this Onrush?`, 'default'),
-					run: () => removeObjectiveFromOnrush(node.entity.id)
+					run: () => remove(node.entity.id)
 				}
 				: this.joinOnrushEntry(node) ?? { note: 'A prerequisite outside this Onrush. It goes when the block is resolved.' },
 			{ separator: true },
@@ -1218,6 +1234,12 @@ export class DependencyCanvas extends Component {
 				icon: 'objective',
 				label: 'Add objective',
 				run: async () => await this.addObjective(at)
+			},
+			{
+				key: 'directive',
+				icon: 'directive',
+				label: 'Add directive',
+				run: async () => await this.addDirective(at)
 			}
 		]
 	}
@@ -1368,6 +1390,25 @@ export class DependencyCanvas extends Component {
 		if (objective) {
 			this.placeAt(endpointKey({ kind: DependencyEndpointKind.Objective, id: objective.id }), at)
 			await addObjectiveToOnrush(objective.id, sprint)
+		}
+	}
+
+	/**
+	 * Brings a stellar directive into the sprint (PEP102 patch 10), picked through the cross-kind endpoint search and
+	 * placed `at` a surface point when one is given.
+	 */
+	private async addDirective(at?: Point) {
+		const sprint = this.sprint
+		if (!sprint) {
+			toast(`There is no ${contextModeLabels[this.mode].toLowerCase()} to add to.`, 'warning')
+			return
+		}
+
+		const present = new Set(this.graph.nodes.map(node => node.key))
+		const hit = await SelectEndpointModal.prompt(present, [DependencyEndpointKind.Directive])
+		if (hit) {
+			this.placeAt(endpointKey({ kind: DependencyEndpointKind.Directive, id: hit.id }), at)
+			await addDirectiveToOnrush(hit.id, sprint)
 		}
 	}
 
@@ -1844,8 +1885,9 @@ export class DependencyCanvas extends Component {
 	/**
 	 * Finishes an edge drawn onto whatever node it was released over.
 	 *
-	 * Both refusals the core would make are made here first — a loop, and an edge that already exists — so
-	 * the gesture is answered where it happened rather than by a write coming back rejected.
+	 * Both refusals the core would make are made here first — an ordering the graph already contradicts, and an
+	 * edge that already exists — so the gesture is answered where it happened rather than by a write coming back
+	 * rejected.
 	 */
 	private async completeLink(sourceKey: string, clientX: number, clientY: number) {
 		const targetKey = this.nodeKeyAt(clientX, clientY)
@@ -1865,8 +1907,9 @@ export class DependencyCanvas extends Component {
 			return
 		}
 
-		if (wouldCycle(graph.edges, sourceKey, targetKey)) {
-			toast('That dependency would close a loop.', 'warning')
+		// The default shape a drawn edge takes: satisfied when the prerequisite finishes, gating the dependant's begin.
+		if (wouldContradict(graph.edges, source.ref, target.ref)) {
+			toast('That dependency would contradict the order already in place.', 'warning')
 			return
 		}
 

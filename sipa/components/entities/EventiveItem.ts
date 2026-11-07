@@ -8,8 +8,8 @@ import { occurrenceTime } from "./occurrenceTime"
 import { type ContextMenuSpec } from ".."
 
 /**
- * A single upcoming eventive — a per-occurrence instance of a fate or of an objective's due date. Eventives
- * happen rather than get done (PEP100), so the notch is display-only; the row surfaces the owner's title,
+ * A single upcoming eventive — a per-occurrence instance of a fate. Eventives happen rather than get done (PEP100), so
+ * the notch is display-only; the row surfaces the owner's title,
  * the owner's directive, and when the occurrence falls — read at the occurrence's granularity, on its fate's
  * calendar (PEP111), like the attentive rows beside it. As a {@link mini} line it reads its resolution, its time,
  * and whether it came from the fate's orbit or was added by hand.
@@ -20,11 +20,11 @@ export class EventiveItem extends OccurrenceItem {
 
 
 	protected override get heading() {
-		return this.eventive?.fate?.title ?? this.eventive?.objective?.title ?? 'Eventive'
+		return this.eventive?.fate?.title ?? 'Eventive'
 	}
 
 	protected override get directive() {
-		return this.eventive?.fate?.directive ?? this.eventive?.objective?.directive
+		return this.eventive?.fate?.directive
 	}
 
 	protected override get notchTemplate() {
@@ -73,7 +73,7 @@ export class EventiveItem extends OccurrenceItem {
 		this.dispatchEvent(new CustomEvent<OccurrenceTarget>('occurrencechange', { detail: updated, bubbles: true, composed: true }))
 	}
 
-	/** Its menu opens the editor, navigates to the fate/objective, and quick-sets each resolution. */
+	/** Its menu opens the editor, navigates to the fate, and quick-sets each resolution. */
 	protected override contextMenuSpec(): ContextMenuSpec | undefined {
 		const target = this.target
 		return this.interactive && target ? occurrenceMenu(target, this.applyChange) : undefined

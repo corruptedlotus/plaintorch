@@ -1,6 +1,6 @@
 import { Component, component, css, html, nothing, property, query, state } from "@a11d/lit"
 import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, isDecreeIncentive, isObjectiveIncentive, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
-import { core, EntityWatch, objectiveStatusDescriptors, openEntityEditor, SelectStatusModal, SelectTimeframeModal } from ".."
+import { core, editState, EntityWatch, openEntityEditor, SelectTimeframeModal } from ".."
 import "./EntityAbsence"
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 import type { EditablePart } from "../editing/EditableDataLink"
@@ -257,8 +257,8 @@ export class ExecutiveEditor extends Component {
 					${!objective ? nothing : html`
 						<p7t-editable
 							.value=${objective.status}
-							.doEdit=${() => SelectStatusModal.prompt(objectiveStatusDescriptors)}
-							@change=${(e: Event) => this.commitStatus(e)}>
+							.doEdit=${(_: unknown, field: HTMLElement) => editState(field, objective)}
+							@change=${(e: Event) => this.statusShifted(e)}>
 							<p7t-status-item
 								small
 								.status=${ObjectiveStatus[objective.status] as keyof typeof ObjectiveStatus}>
@@ -373,19 +373,17 @@ export class ExecutiveEditor extends Component {
 		}
 	}
 
-	private async commitStatus(e: Event) {
+	/**
+	 * The state bubble saved the objective's shift; the modal's copy of the executive takes the objective as the core now
+	 * has it, and the cycle is told.
+	 */
+	private statusShifted(e: Event) {
 		const status = (e.target as EditablePart<ObjectiveStatus>).value
 		const incentive = this.executive?.incentive
 		const objective = isObjectiveIncentive(incentive) ? incentive : undefined
 		if (status === undefined || !objective) return
 
-		const updated = await core.objectives.shiftWorkflow(objective.id, { status })
-		if (!updated) {
-			toast('Failed to update objective status.', 'error')
-			return
-		}
-
-		this.executive = { ...this.executive!, incentive: updated }
+		this.executive = { ...this.executive!, incentive: core.repos.objectives.peek(objective.id) ?? objective }
 		this.notifyChange()
 	}
 

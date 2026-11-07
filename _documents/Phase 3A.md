@@ -4,7 +4,7 @@
 - [ ] Mass-init + context-menu initialisation
 - [ ] Convert Directive ↔ Incentive
 - [ ] New PUCK notations
-- [ ] Directive intrinsic-dependency and add-to-onrush
+- [x] Directive intrinsic-dependency and add-to-onrush
 - [ ] Markdown parent override + solidify parent option/command (Patch for [[PEP083 - Parent Folder Partitioning]])
 - [ ] `boundaryStop` for Implicit notes.
 - [ ] Some issues should have special dismiss behaviour, reflected in the UI as well: be destroyed forever when dismissed and resolve its underlying ticker. (eg. `delete-blocked` when the note is already deleted, allowing the user to restore normal watcher function when there's basically no threat anymore)
