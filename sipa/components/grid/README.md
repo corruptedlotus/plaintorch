@@ -23,7 +23,7 @@ reaches the row unchanged, since a `GridRow` is the node spread with the grid's 
 | The **columns**: definitions, and what the user did to them (width, order, visibility) | the controller (`columns`) |
 | **Treegrid semantics** on the grid, the header and the rows (`role`, `aria-level`, `aria-setsize`, `aria-posinset`, `aria-expanded`, `columnheader`) | the controller, stamped onto the parts it is handed |
 | Rendering: the sticky header, the column tracks, the row elements, the FAB | `GridBase` |
-| A row's cells, bindings, entity watch, context menu, drag and drop | the row element (`GridItemBase` and its variants) |
+| A row's cells, bindings, entity watch, context menu, drag and drop, double-click | the row element (`GridItemBase` and its variants) |
 
 The builders emit a **tree of `GridNode`s**. A node's `children` hold its sub-nodes, and its `guides` name the
 lining of each indent lane, so the row can draw the lanes itself. The controller walks `children`. Its expansion
@@ -120,3 +120,31 @@ A row whose entity is in a terminal state is drawn dimmed: done, fulfilled, fail
 out, abandoned, stale (`isInactiveStatus`, set on the status table in `../entities/StatusItem.ts`). It dims its kind
 icon, title and cells, but keeps its indent lanes and action columns at full strength. A variant says so through
 `GridItemBase.inactive`; `GridItem` reads it off the entity with `isInactiveEntity`.
+
+## Double-clicking a row
+
+Double-clicking a row's open space opens its details: `GridItemBase.openDetails()`, which by default opens the entity's
+full banner in a modal (`openEntityEditor`, the context menu's **Edit**). A variant overrides `openDetails` to open
+something else or nothing. The world heading has no entity and opens nothing. The gesture itself is
+`DoubleClickController` (`../design/DoubleClickController.ts`), which any component can declare.
+
+- **Open space** is anywhere no part of the row answers a press of its own: the indent lanes, a childless row's notch,
+  the room around the title and in the cells, plain labels (lore's level), and the title itself while it is idle,
+  since its edit button is the way into editing it. What answers a press is excluded: buttons and other form
+  controls, anything with an interactive role (the expanding notch is `role=button`, the schedule chip too), anything
+  focusable, the drag handle (the kind icon), an editable a press would start editing (`EditablePart.answersPress`),
+  and anything whose cursor promises an interaction the row's own does not. Both presses must land on open space.
+- **Never mid-edit.** A press made while anything in the row is being edited does not count: an editable holding its
+  edit (`EditablePart.editing`), a focused field taking text, or a bubble raised from inside the row
+  (`InteractionBubbleBase.isRaisedFrom`). That press commits or dismisses, as it always did. The state is read on the
+  window's capturing `pointerdown`, before the bubble's light dismiss and the field's blur get to it. Edits elsewhere
+  (the backlog's search box, another row) do not hold a row back.
+- **No selection.** The second press of a double-click on open space has its default prevented, so the word under it
+  is not selected. Inside a field being edited, a double-click still selects the word.
+- **Mouse and pen** use the platform's `dblclick`, timed by the system's setting. The dependency canvas times its
+  clicks itself because its first click changes what the second lands on; a press on a row's open space changes
+  nothing, so that concern does not apply here.
+- **Touch** has no reliable `dblclick`, so two taps on open space within 450ms and 24px count instead, and the
+  `dblclick` a web view may add afterwards is ignored. Rows set `touch-action: manipulation` so a double tap is not
+  taken for a zoom. A long press (the context menu) and a press-and-hold (lifting for drag) make no click, so neither
+  collides with it.

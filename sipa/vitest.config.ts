@@ -33,6 +33,14 @@ export default defineConfig({
 	test: {
 		include: ["components/**/*.test.ts"],
 		// The bindings are Lit controllers: they need a document to mount hosts into.
-		environment: "happy-dom"
+		environment: "happy-dom",
+		server: {
+			deps: {
+				// 3MO's packages are ESM that default-import CommonJS (`@3mo/localization` takes `intl-format-cache`'s
+				// function as its default), which Node's own loader hands over as a namespace object. Run through Vite,
+				// the import gets the function, as it does in the bundles.
+				inline: [/@3mo\//]
+			}
+		}
 	}
 })
