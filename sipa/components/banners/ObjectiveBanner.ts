@@ -42,7 +42,7 @@ export class ObjectiveBanner extends EntityBanner<Objective> {
 	 */
 	pickOnrush = (button?: HTMLElement) => {
 		if (this.entity) {
-			new OnrushPickerModal(this.entity, { removable: true, anchor: button ?? this }).open()
+			new OnrushPickerModal('objective', this.entity, { removable: true, anchor: button ?? this }).open()
 		}
 	}
 

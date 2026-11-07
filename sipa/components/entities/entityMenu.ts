@@ -4,6 +4,7 @@ import {
 	type ContextMenuEntry, type ContextMenuSpec, type GridEntity
 } from '..'
 import { EntityEditModal } from './EntityEditModal'
+import { leaveOnrush, OnrushPickerModal, type OnrushMember, type OnrushMemberKind } from './onrushPicker'
 import { toast } from '../../host'
 
 /** The minimal shape every interactable entity shares — a PUCK identity and a title. */
@@ -32,12 +33,19 @@ export const entityMenuEntries = {
 	moveTo: (entity: InteractableEntity): ContextMenuAction =>
 		({ label: 'Move to…', icon: 'lucide:folder-symlink', run: () => void moveEntity(entity as unknown as GridEntity) }),
 
-	/** Takes an objective out of whichever Onrush holds it, asking first; the objective itself survives. */
-	removeFromOnrush: (entity: InteractableEntity): ContextMenuAction => ({
+	/**
+	 * Opens the onrush picker for an objective or a stellar directive, to join the active or the planning sprint (see
+	 * {@link OnrushPickerModal}).
+	 */
+	addToOnrush: (entity: InteractableEntity, kind: OnrushMemberKind): ContextMenuAction =>
+		({ label: 'Add to Onrush', icon: 'onrush', run: () => new OnrushPickerModal(kind, entity).open() }),
+
+	/** Takes an objective or a stellar directive out of whichever Onrush holds it, asking first; the member survives. */
+	removeFromOnrush: (entity: InteractableEntity, kind: OnrushMemberKind): ContextMenuAction => ({
 		label: 'Remove from Onrush',
 		icon: 'onrush',
 		confirm: removeConfirmation(`Remove "${entity.title}" from its Onrush?`, 'default'),
-		run: () => removeFromOnrush(entity.id)
+		run: () => removeFromOnrush(kind, entity.id)
 	}),
 
 	/** Deletes the entity, asking first — the one destructive row, drawn in the destructive colour. */
@@ -56,7 +64,18 @@ export const entityMenuEntries = {
  * heading all raise the same menu for the same entity.
  */
 const kindEntries: Record<string, (entity: InteractableEntity) => ContextMenuEntry[]> = {
-	Objective: entity => (entity as { onrushSprintId?: string }).onrushSprintId ? [entityMenuEntries.removeFromOnrush(entity)] : []
+	Objective: entity => onrushEntries(entity, 'objective'),
+	StellarDirective: entity => onrushEntries(entity, 'directive')
+}
+
+/**
+ * The onrush row of a kind a sprint can hold (PEP102 patch 10): a member offers to leave its Onrush, anything else to
+ * join one. A lunar directive is no such kind, so it gets neither.
+ */
+function onrushEntries(entity: InteractableEntity, kind: OnrushMemberKind): ContextMenuEntry[] {
+	return (entity as OnrushMember).onrushSprintId
+		? [entityMenuEntries.removeFromOnrush(entity, kind)]
+		: [entityMenuEntries.addToOnrush(entity, kind)]
 }
 
 /**
@@ -64,7 +83,7 @@ const kindEntries: Record<string, (entity: InteractableEntity) => ContextMenuEnt
  *
  * Every entity offers to be edited and to open its note; a kind that sits in the hierarchy — a directive, an
  * incentive — offers to be moved through it; a kind with rows of its own adds them ({@link kindEntries}: an objective
- * in an Onrush offers to leave it); and any kind the SDK can delete offers deletion, set apart below a separator. A
+ * or a stellar directive offers to join an Onrush, or to leave the one it is in); and any kind the SDK can delete offers deletion, set apart below a separator. A
  * kind with no delete call simply omits that row rather than offering one that would silently do nothing. Leaving the
  * Onrush and deleting both ask first.
  *
@@ -153,9 +172,9 @@ function deleteByType(typeName: string | undefined, id: string): Promise<boolean
 	}
 }
 
-/** Takes an objective out of whichever sprint holds it; the objective itself survives. */
-async function removeFromOnrush(objectiveId: string): Promise<void> {
-	const removed = await core.repos.objectives.mutate(objectiveId, async () => await core.objectives.removeFromOnrush(objectiveId))
+/** Takes an objective or a stellar directive out of whichever sprint holds it; the member itself survives. */
+async function removeFromOnrush(kind: OnrushMemberKind, memberId: string): Promise<void> {
+	const removed = await leaveOnrush(kind, memberId)
 	toast(removed ? 'Removed from the Onrush.' : 'Could not remove from the Onrush.', removed ? 'success' : 'error')
 	if (removed) {
 		await refreshAfterEntityChange()
