@@ -2,6 +2,7 @@ import {
 	DependencyConstraint,
 	DependencyEndpointKind,
 	DependencyTrigger,
+	entityKey,
 	type Checkpoint,
 	type DependencyEndpointRequest,
 	type EndpointHit,
@@ -10,8 +11,8 @@ import {
 } from '@pleiades/sdk'
 import { core, PromptTextModal } from '..'
 import { host, toast } from '../../host'
-import { effectiveConstraint, effectiveTrigger, sourceRef, targetRef, type CanvasEdge, type CanvasNode } from './graphModel'
-import type { CanvasContextMode } from './graphContext'
+import { effectiveConstraint, effectiveTrigger, endpointTypeNames, sourceRef, targetRef, type CanvasEdge, type CanvasEntity, type CanvasNode } from './graphModel'
+import { neighbourPins, pinKey, type CanvasContextMode } from './graphContext'
 import { serializeGlobalContext } from './globalContextFile'
 
 /**
@@ -382,6 +383,60 @@ export async function saveGlobalContextToFile(pinned: readonly EndpointHit[], la
 
 	if (saved) {
 		toast(`Saved global context to ${saved.path}.`, 'success')
+	}
+}
+
+/**
+ * The entity an endpoint names, when some surface has already loaded it into the store — under each runtime type an
+ * endpoint of that kind may be ({@link endpointTypeNames}). Never fetches: a miss is for the caller to fill.
+ */
+export function peekEndpoint(kind: DependencyEndpointKind, id: string): CanvasEntity | undefined {
+	for (const typeName of endpointTypeNames(kind)) {
+		const stored = core.store.peek<CanvasEntity>(entityKey(typeName, id))
+		if (stored) {
+			return stored
+		}
+	}
+
+	return undefined
+}
+
+/**
+ * Whether a stellar directive can be opened in a planning view of its own here: the host can pop a planning view out
+ * (see {@link openInPlanning}), and the entity is a stellar directive — a lunar one is never a dependency endpoint.
+ */
+export function canOpenInPlanning(typeName: string | undefined): boolean {
+	return !!host.canvasPopOut && typeName === 'StellarDirective'
+}
+
+/**
+ * Opens a stellar directive in a new global planning view — a window in the standalone shell, a tab in Obsidian — with
+ * its direct neighbours pinned beside it: every endpoint one edge away in either direction, what it depends on and what
+ * depends on it, intrinsic edges included, so its open children and the parent it feeds come too ({@link neighbourPins}).
+ * Not the chain beyond them.
+ *
+ * The view opens unsaved, as a popped-out global context does, and lays itself out. Each neighbour is titled from the
+ * store, else from the endpoint listing, so the pins read as names before the view has loaded anything. Reports a
+ * failure to open; a host with no pop-out offers no such entry, so the call does nothing there.
+ */
+export async function openInPlanning(directive: { readonly id: string, readonly title: string }): Promise<boolean> {
+	const popOut = host.canvasPopOut
+	if (!popOut) {
+		return false
+	}
+
+	const self = { kind: DependencyEndpointKind.Directive, id: directive.id, title: directive.title }
+	const [dependencies, endpoints] = await Promise.all([core.dependencies.list(directive.id), core.dependencies.listEndpoints()])
+	const listed = new Map(endpoints.map(hit => [pinKey(hit), hit]))
+	const neighbours = neighbourPins(dependencies, self, new Set(), (kind, id) => peekEndpoint(kind, id) ?? listed.get(pinKey({ kind, id })))
+
+	try {
+		await popOut.popOut({ mode: 'global', text: serializeGlobalContext([self, ...neighbours], undefined) })
+		return true
+	}
+	catch {
+		toast(`PLAINTORCH could not open "${directive.title}" in planning.`, 'error')
+		return false
 	}
 }
 

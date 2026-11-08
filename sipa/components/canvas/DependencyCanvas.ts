@@ -1,13 +1,13 @@
 import { Component, component, css, event, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
-import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, typeNameOf, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
+import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, typeNameOf, type Dependency, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
 import { concludeConfirmation, ContextMenu, ContextMenuController, core, deleteConfirmation, DerivedRef, entityMenuEntries, removeConfirmation, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
-import { activatePlanningOnrush, addDirectiveToOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeDirectiveFromOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
+import { activatePlanningOnrush, addDirectiveToOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, peekEndpoint, removeDirectiveFromOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
 import { OnrushDetailModal } from './OnrushDetailModal'
-import { contextModeLabels, edgeEndpoints, globalContext, onrushContext, type CanvasContextMode, type EndpointResolver } from './graphContext'
+import { contextModeLabels, expandableKeys, globalContext, neighbourPins, onrushContext, pinKey, type CanvasContextMode, type EndpointResolver } from './graphContext'
 import { serializeGlobalContext } from './globalContextFile'
-import { edgeCurve, edgeEnds, edgeMidpoint, layoutGraph, linkCurve, parsePositions, serializePositions, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
-import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpointTypeNames, isIntrinsic, sourceRef, targetRef, wouldContradict, type CanvasEdge, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
+import { edgeCurve, edgeEnds, edgeMidpoint, freeSlotNear, layoutDefaults, layoutGraph, linkCurve, parsePositions, serializePositions, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
+import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, isIntrinsic, sourceRef, targetRef, wouldContradict, type CanvasEdge, type CanvasGraph, type CanvasNode } from './graphModel'
 import { SelectObjectiveModal } from './SelectObjectiveModal'
 import { SelectEndpointModal } from './SelectEndpointModal'
 import type { CanvasNodePointer, NodeLock } from './CanvasNodeItem'
@@ -81,6 +81,25 @@ function isMouseWheel(e: WheelEvent): boolean {
 	const legacy = e as WheelEvent & { readonly wheelDeltaX?: number, readonly wheelDeltaY?: number }
 	const wheelDelta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? legacy.wheelDeltaX : legacy.wheelDeltaY
 	return wheelDelta !== undefined && wheelDelta !== 0 && wheelDelta % 120 === 0
+}
+
+/**
+ * How far to pan along one axis so that spans of the surface (their `starts` and `ends`, in surface units) show in a
+ * viewport `extent` pixels long, {@link framePadding} kept clear: nothing when they already show, the least that shows
+ * them all when they fit, and centred on them when they do not.
+ */
+function revealShift(starts: readonly number[], ends: readonly number[], pan: number, scale: number, extent: number): number {
+	const low = pan + Math.min(...starts) * scale
+	const high = pan + Math.max(...ends) * scale
+	if (high - low > extent - 2 * framePadding) {
+		return (extent - (high - low)) / 2 - low
+	}
+
+	if (low < framePadding) {
+		return framePadding - low
+	}
+
+	return high > extent - framePadding ? extent - framePadding - high : 0
 }
 
 /**
@@ -179,6 +198,12 @@ export class DependencyCanvas extends Component {
 	/** The node set the observer is currently watching, so it is re-pointed only when that set changes. */
 	private observedSignature?: string
 	private layoutCache?: { readonly signature: string, readonly layout: CanvasLayout }
+	/** The {@link expandable} set, with the edge listing and pin set it was worked out from. */
+	private expandableCache?: {
+		readonly dependencies: readonly Dependency[] | undefined
+		readonly pinned: readonly EndpointHit[]
+		readonly keys: ReadonlySet<string>
+	}
 	private framed = false
 	/**
 	 * The pan and zoom the last framing left, which tells a resize whether the reader has panned or zoomed since (every
@@ -509,11 +534,9 @@ export class DependencyCanvas extends Component {
 	 * leaves the blocker to be labelled by its id, which is enough to say what is holding a member back.
 	 */
 	private readonly resolveEndpoint: EndpointResolver = (kind, id) => {
-		for (const typeName of endpointTypeNames(kind)) {
-			const stored = core.store.peek<CanvasEntity>(entityKey(typeName, id))
-			if (stored) {
-				return stored
-			}
+		const stored = peekEndpoint(kind, id)
+		if (stored) {
+			return stored
 		}
 
 		switch (kind) {
@@ -523,6 +546,22 @@ export class DependencyCanvas extends Component {
 			case DependencyEndpointKind.Fate: return this.fateList.value?.find(fate => fate.id === id)
 			default: return undefined
 		}
+	}
+
+	/**
+	 * The keys of the global nodes with a neighbour not shown yet, which are the ones offered "Expand Connections"
+	 * ({@link expandableKeys}). Every node's menu is rebuilt on every render, panning included, so the set is worked out
+	 * once per edge listing and pin set rather than per node: both are replaced, never changed in place, when they change.
+	 */
+	private get expandable(): ReadonlySet<string> {
+		const dependencies = this.dependencies.value
+		const cache = this.expandableCache
+		if (cache?.dependencies !== dependencies || cache?.pinned !== this.pinned) {
+			const present = new Set(this.pinned.map(pinKey))
+			this.expandableCache = { dependencies, pinned: this.pinned, keys: expandableKeys(dependencies ?? [], present) }
+		}
+
+		return this.expandableCache!.keys
 	}
 
 	private get loading() {
@@ -1108,12 +1147,17 @@ export class DependencyCanvas extends Component {
 	 * A global node's menu: removing only *hides* it, whichever kind it is.
 	 *
 	 * The edge it carried is untouched and reappears when the node is pinned again — that is the whole of what
-	 * global add and remove do. Deleting the entity is a separate, destructive step kept behind a separator.
+	 * global add and remove do. Expanding is the opposite: it shows the node's neighbours, offered only while one of
+	 * them is not shown yet. Deleting the entity is a separate, destructive step kept behind a separator.
 	 */
 	private globalMenuEntries(node: CanvasNode): ContextMenuEntry[] {
 		const entries: ContextMenuEntry[] = []
 		if (node.ref.kind !== DependencyEndpointKind.Checkpoint) {
 			entries.push(entityMenuEntries.openNote(node.entity))
+		}
+
+		if (this.expandable.has(node.key)) {
+			entries.push({ label: 'Expand Connections', icon: 'lucide:git-branch-plus', run: () => this.expandConnections(node) })
 		}
 
 		entries.push(
@@ -1448,41 +1492,116 @@ export class DependencyCanvas extends Component {
 	 * Pins a node into the global context, optionally pulling its dependency neighbours in with it.
 	 *
 	 * A pin is a `kind:id` key; the picker excludes what is already pinned. With `withDependencies`, every
-	 * endpoint one hop away along an edge touching the new node is pinned too, resolved to a title from the
-	 * edge itself so it draws before anything is fetched. The chosen node is placed `at` a surface point when one is
-	 * given; its neighbours take their laid-out places.
+	 * endpoint one hop away along an edge touching the new node is pinned too ({@link neighbourPins}), named from what
+	 * is loaded so it draws as a title before anything is fetched. The chosen node is placed `at` a surface point when
+	 * one is given; its neighbours take their laid-out places.
 	 */
 	private async addEndpoint(withDependencies = false, at?: Point) {
-		const present = new Set(this.pinned.map(hit => endpointKey({ kind: hit.kind, id: hit.id })))
+		const present = new Set(this.pinned.map(pinKey))
 		const hit = await SelectEndpointModal.prompt(present)
 		if (!hit) {
 			return
 		}
 
-		this.placeAt(endpointKey({ kind: hit.kind, id: hit.id }), at)
-		const additions = new Map<string, EndpointHit>()
-		additions.set(endpointKey({ kind: hit.kind, id: hit.id }), hit)
+		this.placeAt(pinKey(hit), at)
+		const neighbours = withDependencies ? neighbourPins(this.dependencies.value ?? [], hit, present, this.resolveEndpoint) : []
+		this.pinned = [...this.pinned, hit, ...neighbours]
+		this.emitContextChanged()
+	}
 
-		if (withDependencies) {
-			const key = endpointKey({ kind: hit.kind, id: hit.id })
-			for (const dependency of this.dependencies.value ?? []) {
-				const ends = edgeEndpoints(dependency)
-				const sourceKey = endpointKey(sourceRef(dependency))
-				const targetKey = endpointKey(targetRef(dependency))
-				const neighbour = sourceKey === key ? { key: targetKey, hit: ends.target }
-					: targetKey === key ? { key: sourceKey, hit: ends.source }
-						: undefined
-				if (neighbour && !present.has(neighbour.key) && !additions.has(neighbour.key)) {
-					// The edge only knows the neighbour's id; name it from what is loaded so the pin — and the file it
-					// may be saved to — carries a title rather than a PUCK.
-					const entity = this.resolveEndpoint(neighbour.hit.kind, neighbour.hit.id)
-					additions.set(neighbour.key, entity ? { ...neighbour.hit, title: entity.title } : neighbour.hit)
-				}
+	/**
+	 * Brings a node's direct neighbours onto the global context, those not on it yet: what it depends on and what depends
+	 * on it, intrinsic edges included ({@link neighbourPins}). Only the global context offers it: there a node is only
+	 * shown, where in an onrush it is a membership, and pulling one in would join it to the sprint.
+	 *
+	 * Where the reader placed the node (dragged there, or kept from a saved layout), the neighbours are placed beside it
+	 * ({@link placeBeside}). Otherwise the layout places them, and its left-to-right ranks already put each beside the
+	 * node it joins. Either way the view follows ({@link followExpansion}), so the node and its new neighbours are in
+	 * sight.
+	 */
+	private expandConnections(node: CanvasNode) {
+		const dependencies = this.dependencies.value ?? []
+		const neighbours = neighbourPins(dependencies, node.ref, new Set(this.pinned.map(pinKey)), this.resolveEndpoint)
+		if (neighbours.length === 0) {
+			return
+		}
+
+		const pinned = [...this.pinned, ...neighbours]
+		const next = globalContext(pinned, dependencies, this.resolveEndpoint)
+		const before = this.boxesFor(this.layoutFor(this.graph)).get(node.key)
+		if (this.overrides.has(node.key)) {
+			this.placeBeside(node, neighbours, next)
+		}
+
+		this.followExpansion(node, neighbours, before, next)
+		this.pinned = pinned
+		this.emitContextChanged()
+	}
+
+	/**
+	 * Moves the view after an expansion: first by however far the layout moved the node as it made room, so the node
+	 * stays where the reader saw it, then by as little as brings its new neighbours into view too (centring the group when
+	 * it is wider or taller than the view). Following an expansion is not the reader panning: a view still framed as it
+	 * was counts as framed afterwards, and goes on following the viewport's size.
+	 */
+	private followExpansion(node: CanvasNode, neighbours: readonly EndpointHit[], before: NodeBox | undefined, next: CanvasGraph) {
+		const boxes = this.boxesFor(this.layoutFor(next))
+		const after = boxes.get(node.key)
+		if (!after) {
+			return
+		}
+
+		const scale = this.scale
+		let pan = before ? { x: this.pan.x - (after.x - before.x) * scale, y: this.pan.y - (after.y - before.y) * scale } : this.pan
+		const rect = this.viewportElement?.getBoundingClientRect()
+		if (rect && rect.width > 0 && rect.height > 0) {
+			const group = [after, ...neighbours.flatMap(hit => boxes.get(pinKey(hit)) ?? [])]
+			pan = {
+				x: pan.x + revealShift(group.map(box => box.x), group.map(box => box.x + box.width), pan.x, scale, rect.width),
+				y: pan.y + revealShift(group.map(box => box.y), group.map(box => box.y + box.height), pan.y, scale, rect.height)
 			}
 		}
 
-		this.pinned = [...this.pinned, ...additions.values()]
-		this.emitContextChanged()
+		if (pan.x === this.pan.x && pan.y === this.pan.y) {
+			return
+		}
+
+		const untouched = this.framedView?.pan === this.pan && this.framedView.scale === this.scale
+		this.pan = pan
+		if (untouched) {
+			this.framedView = { pan, scale }
+		}
+	}
+
+	/**
+	 * Places neighbours just brought in beside the node they came from, as if dragged there: its prerequisites in a column
+	 * one rank before it and its dependants one rank after, as the flow runs left to right. Each takes the free place
+	 * nearest the node's middle in its column ({@link freeSlotNear}), free of every other node of `next`, the graph about
+	 * to be shown, wherever the layout or the reader puts it.
+	 */
+	private placeBeside(node: CanvasNode, neighbours: readonly EndpointHit[], next: CanvasGraph) {
+		const boxes = this.boxesFor(this.layoutFor(next))
+		const anchor = boxes.get(node.key)
+		if (!anchor) {
+			return
+		}
+
+		const prerequisites = new Set((this.dependencies.value ?? [])
+			.filter(dependency => endpointKey(targetRef(dependency)) === node.key)
+			.map(dependency => pinKey(sourceRef(dependency))))
+		const incoming = new Set(neighbours.map(pinKey))
+		const taken = [...boxes].filter(([key]) => !incoming.has(key)).map(([, box]) => box)
+		const { nodeWidth: width, nodeHeight: height, rankSeparation, nodeSeparation } = layoutDefaults
+		const y = anchor.y + (anchor.height - height) / 2
+		const overrides = new Map(this.overrides)
+		for (const neighbour of neighbours) {
+			const x = prerequisites.has(pinKey(neighbour)) ? anchor.x - rankSeparation - width : anchor.x + anchor.width + rankSeparation
+			const slot = freeSlotNear({ x, y, width, height }, taken, nodeSeparation)
+			taken.push(slot)
+			overrides.set(pinKey(neighbour), { x: slot.x, y: slot.y })
+		}
+
+		this.overrides = overrides
 	}
 
 	/**
@@ -2018,10 +2137,17 @@ export class DependencyCanvas extends Component {
 		}
 
 		// Framed once, when there is finally something to frame and somewhere to frame it, and never again —
-		// refitting on every change would move the graph out from under someone reading it.
-		if (!this.framed && this.layoutCache && this.layoutCache.layout.nodes.size > 0) {
+		// refitting on every change would move the graph out from under someone reading it. Not before the edges have
+		// answered, though: they decide the ranks, and nodes framed without them stand in one column that spreads off
+		// screen once they arrive — every pinned set opened without saved positions did so.
+		if (!this.framed && this.edgesAnswered && this.layoutCache && this.layoutCache.layout.nodes.size > 0) {
 			this.framed = this.frame(this.layoutCache.layout)
 		}
+	}
+
+	/** Whether the edge listing has answered, or could not be asked — so a canvas without one still frames its nodes. */
+	private get edgesAnswered(): boolean {
+		return !this.dependencies.notLoaded || this.dependencies.error !== undefined
 	}
 
 	/**

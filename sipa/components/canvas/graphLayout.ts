@@ -29,7 +29,8 @@ export interface LayoutOptions {
 	readonly margin?: number
 }
 
-const defaults = {
+/** The nominal node size and spacing the layout places with, for a placement made beside it by hand to match. */
+export const layoutDefaults: Required<LayoutOptions> = {
 	nodeWidth: 240,
 	nodeHeight: 76,
 	rankSeparation: 110,
@@ -58,7 +59,7 @@ export function layoutGraph(graph: CanvasGraph, options: LayoutOptions = {}): Ca
 		return emptyLayout
 	}
 
-	const settings = { ...defaults, ...options }
+	const settings = { ...layoutDefaults, ...options }
 	// Multigraph so each edge can carry its own key: two objectives can be joined by more than one dependency
 	// (a different trigger or constraint), and without names the second would overwrite the first in the
 	// layout model — and naming an edge at all is rejected unless the graph is a multigraph.
@@ -109,6 +110,35 @@ export function layoutGraph(graph: CanvasGraph, options: LayoutOptions = {}): Ca
 		width: width + settings.margin,
 		height: height + settings.margin
 	}
+}
+
+/**
+ * The free place nearest a wanted box, straight below or above it: the wanted box itself when it keeps `gap` clear of
+ * every taken box, else the nearest one a whole step (its height plus the gap) at a time, below before above. A
+ * placement made by hand, beside the layout rather than through it, so a node brought in never lands on another.
+ */
+export function freeSlotNear(wanted: NodeBox, taken: readonly NodeBox[], gap: number): NodeBox {
+	const step = wanted.height + gap
+	const clear = (candidate: NodeBox) => !taken.some(box => overlaps(candidate, box, gap))
+	// A taken box blocks fewer than its own height in steps plus two, so this many tries below is always enough to find a
+	// place none of them blocks.
+	const reach = taken.reduce((steps, box) => steps + Math.ceil(box.height / step) + 2, 0)
+	for (let distance = 0; distance <= reach; distance++) {
+		for (const direction of distance === 0 ? [0] : [1, -1]) {
+			const candidate = { ...wanted, y: wanted.y + direction * distance * step }
+			if (clear(candidate)) {
+				return candidate
+			}
+		}
+	}
+
+	return wanted
+}
+
+/** Whether two boxes come closer than `gap` to each other on both axes — what reads as one covering the other. */
+function overlaps(a: NodeBox, b: NodeBox, gap: number): boolean {
+	return a.x < b.x + b.width + gap && b.x < a.x + a.width + gap
+		&& a.y < b.y + b.height + gap && b.y < a.y + a.height + gap
 }
 
 /**

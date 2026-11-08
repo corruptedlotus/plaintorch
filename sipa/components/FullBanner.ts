@@ -1,6 +1,7 @@
 import { Component, component, css, html, nothing, property } from '@a11d/lit'
 import type { DeclarativeCalendar, EntityExistence } from '@pleiades/sdk/plaintorch'
 import { core, DerivedRef, EntityRef } from './data'
+import { canOpenInPlanning, openInPlanning } from './canvas/canvasActions'
 import { canDeleteEntity, deleteEntityByType } from './entities/entityMenu'
 import { confirmAction, deleteConfirmation } from './design/ConfirmationBubble'
 import './entities/EntityAbsence'
@@ -265,6 +266,8 @@ export class FullBanner extends Component {
 	 * Open and Create are the two faces of one thing: an entity with a note opens it; an implicit one with none offers to
 	 * begin it. When note state is not yet known (the type-known path skipped resolution) both are offered and the click
 	 * handlers self-correct — opening reports "no note yet", creating resolves first and never begins a second time.
+	 * A stellar directive also offers to open in a planning view of its own with its direct neighbours, where the host
+	 * can pop one out ({@link openInPlanning}), as its context menu does.
 	 */
 	private renderActions(kind: string) {
 		const record = this.noteRecord
@@ -275,6 +278,7 @@ export class FullBanner extends Component {
 		const canDelete = canDeleteEntity(typeNameByKind[kind])
 		const canOpen = exists && (hasNote || !known)
 		const canCreate = canMaterializeKind(kind) && exists && !hasNote
+		const canPlan = exists && canOpenInPlanning(typeNameByKind[kind])
 
 		return html`
 			<div class='full-banner-actions'>
@@ -283,6 +287,9 @@ export class FullBanner extends Component {
 				`}
 				${!canCreate ? nothing : html`
 					<p7t-button ghost icon='lucide:file-plus' @click=${() => this.createNote(kind)}><span>Create note</span></p7t-button>
+				`}
+				${!canPlan ? nothing : html`
+					<p7t-button ghost icon='lucide:network' @click=${() => void openInPlanning({ id: this.puck, title: this.title || this.puck })}><span>Open in Planning</span></p7t-button>
 				`}
 				${!canDelete ? nothing : html`
 					<p7t-button ghost danger icon='lucide:trash-2' @click=${(e: Event) => this.deleteEntity(kind, e)}><span>Delete</span></p7t-button>

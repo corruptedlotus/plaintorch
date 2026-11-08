@@ -1,7 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import type { Directive } from '@pleiades/sdk'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { DependencyEndpointKind, DependencyOrigin, type Directive } from '@pleiades/sdk'
 import { PlaintorchCoreClient, type PlaintorchCoreRequest, type PlaintorchCoreResponse, type PlaintorchCoreTransport } from '@pleiades/sdk/plaintorch'
-import { provideHost, type PlatformHost } from '../../host'
+import { provideHost, type CanvasPopOut, type PlatformHost } from '../../host'
+import { openInPlanning } from '../canvas/canvasActions'
+import { parseGlobalContext } from '../canvas/globalContextFile'
 import { provideCore } from '../data/coreProvider'
 import type { ContextMenuAction, ContextMenuEntry, ContextMenuSubmenu } from '../design/ContextMenu'
 import { directiveActions } from '../grid/entityActions'
@@ -78,6 +80,98 @@ const directive = (type: 'StellarDirective' | 'LunarDirective') => ({ '@type': t
 
 const addOf = (entries: ContextMenuEntry[]) =>
 	entries.find((entry): entry is ContextMenuSubmenu => 'entries' in entry && (entry as ContextMenuSubmenu).label === 'Add')
+
+// "Open in Planning": a stellar directive opens in a planning view of its own with its direct neighbours pinned beside
+// it — only where the host can pop a planning view out, and never on a lunar directive or another kind.
+
+const popOutHost = (popOut: (context: CanvasPopOut) => Promise<void> = async () => undefined) =>
+	({ toast: () => undefined, canvasPopOut: { label: 'Open in a new window', popOut } }) as unknown as PlatformHost
+
+const served = (path: string): unknown => {
+	if (path.startsWith('/api/dependencies/endpoints')) {
+		return [
+			{ kind: DependencyEndpointKind.Objective, id: 'o1', title: 'A prerequisite' },
+			{ kind: DependencyEndpointKind.Directive, id: 'd0', title: 'The parent' }
+		]
+	}
+
+	if (path.startsWith('/api/dependencies?entityId=e1')) {
+		const end = (kind: DependencyEndpointKind, id: string) => ({ kind, id, recurrenceId: null })
+		const served = (source: ReturnType<typeof end>, target: ReturnType<typeof end>, origin: DependencyOrigin) => ({
+			'@type': 'Dependency', id: origin === DependencyOrigin.Intrinsic ? 0 : 1, origin,
+			sourceKind: source.kind, sourceId: source.id, sourceRecurrenceId: null,
+			targetKind: target.kind, targetId: target.id, targetRecurrenceId: null,
+			satisfied: false
+		})
+		return [
+			served(end(DependencyEndpointKind.Objective, 'o1'), end(DependencyEndpointKind.Directive, 'e1'), DependencyOrigin.Explicit),
+			served(end(DependencyEndpointKind.Directive, 'e1'), end(DependencyEndpointKind.Directive, 'd0'), DependencyOrigin.Intrinsic),
+			served(end(DependencyEndpointKind.Directive, 'e1'), end(DependencyEndpointKind.Checkpoint, 'c1'), DependencyOrigin.Explicit)
+		]
+	}
+
+	return undefined
+}
+
+describe('entityContextMenu Open in Planning', () => {
+	beforeEach(() => {
+		const transport: PlaintorchCoreTransport = {
+			async send(request: PlaintorchCoreRequest): Promise<PlaintorchCoreResponse | undefined> {
+				const body = served(request.path)
+				return { ok: body !== undefined, status: body !== undefined ? 200 : 404, text: async () => JSON.stringify(body ?? null), header: () => undefined }
+			}
+		}
+		provideCore(new PlaintorchCoreClient({ transports: [transport] }))
+	})
+
+	it('is offered on a stellar directive where the host can pop a planning view out', () => {
+		provideHost(popOutHost())
+		expect(labels(entityContextMenu(entity('StellarDirective')).entries)).toContain('Open in Planning')
+		expect(labels(entityContextMenu(entity('StellarDirective', { onrushSprintId: 's1' })).entries)).toContain('Open in Planning')
+	})
+
+	it('is not offered where the host cannot pop one out', () => {
+		provideHost({ toast: () => undefined } as unknown as PlatformHost)
+		expect(labels(entityContextMenu(entity('StellarDirective')).entries)).not.toContain('Open in Planning')
+	})
+
+	it('is not offered on a lunar directive, which is never a dependency endpoint, nor on another kind', () => {
+		provideHost(popOutHost())
+		for (const type of ['LunarDirective', 'Objective', 'Fate', 'Decree']) {
+			expect(labels(entityContextMenu(entity(type)).entries)).not.toContain('Open in Planning')
+		}
+	})
+
+	it('opens an unsaved global view holding the directive and its direct neighbours, titled', async () => {
+		const opened: CanvasPopOut[] = []
+		provideHost(popOutHost(async context => void opened.push(context)))
+
+		await row(entityContextMenu(entity('StellarDirective')).entries, 'Open in Planning')!.run({ x: 0, y: 0 } as never)
+		await vi.waitFor(() => expect(opened).toHaveLength(1))
+
+		const context = opened[0]!
+		expect(context.mode).toBe('global')
+		const { pinned, layout } = parseGlobalContext((context as { text: string }).text)
+		expect(pinned).toEqual([
+			{ kind: DependencyEndpointKind.Directive, id: 'e1', title: 'Entity' },
+			{ kind: DependencyEndpointKind.Objective, id: 'o1', title: 'A prerequisite' },
+			{ kind: DependencyEndpointKind.Directive, id: 'd0', title: 'The parent' },
+			{ kind: DependencyEndpointKind.Checkpoint, id: 'c1', title: 'c1' }
+		])
+		expect(layout).toBeUndefined()
+	})
+
+	it('reports a pop-out that fails', async () => {
+		const toasts: string[] = []
+		provideHost({
+			toast: (message: string) => void toasts.push(message),
+			canvasPopOut: { label: 'Open in a new window', popOut: async () => { throw new Error('no window') } }
+		} as unknown as PlatformHost)
+
+		expect(await openInPlanning({ id: 'e1', title: 'Entity' })).toBe(false)
+		expect(toasts).toEqual(['PLAINTORCH could not open "Entity" in planning.'])
+	})
+})
 
 describe('entityContextMenu Add submenu', () => {
 	it.each(['StellarDirective', 'LunarDirective'] as const)('offers what a %s row offers, with its icons and labels', type => {

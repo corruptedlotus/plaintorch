@@ -3,6 +3,7 @@ import {
 	canMoveEntity, core, deleteConfirmation, moveEntity, navigateToEntity, removeConfirmation, type ContextMenuAction,
 	type ContextMenuEntry, type ContextMenuSpec, type GridEntity
 } from '..'
+import { canOpenInPlanning, openInPlanning } from '../canvas/canvasActions'
 import type { ContextMenuSubmenu } from '../design/ContextMenu'
 import { canCreateUnder, creationMenuEntries, directiveCreationKinds } from '../grid/entityActions'
 import { EntityEditModal } from './EntityEditModal'
@@ -52,6 +53,13 @@ export const entityMenuEntries = {
 	addToOnrush: (entity: InteractableEntity, kind: OnrushMemberKind): ContextMenuAction =>
 		({ label: 'Add to Onrush', icon: 'onrush', run: () => new OnrushPickerModal(kind, entity).open() }),
 
+	/**
+	 * Opens a stellar directive in a new planning view — a window in the standalone shell, a tab in Obsidian — with its
+	 * direct dependencies and dependants beside it, intrinsic ones included (see {@link openInPlanning}).
+	 */
+	openInPlanning: (directive: InteractableEntity): ContextMenuAction =>
+		({ label: 'Open in Planning', icon: 'lucide:network', run: () => void openInPlanning(directive) }),
+
 	/** Takes an objective or a stellar directive out of whichever Onrush holds it, asking first; the member survives. */
 	removeFromOnrush: (entity: InteractableEntity, kind: OnrushMemberKind): ContextMenuAction => ({
 		label: 'Remove from Onrush',
@@ -77,7 +85,16 @@ export const entityMenuEntries = {
  */
 const kindEntries: Record<string, (entity: InteractableEntity) => ContextMenuEntry[]> = {
 	Objective: entity => onrushEntries(entity, 'objective'),
-	StellarDirective: entity => onrushEntries(entity, 'directive')
+	StellarDirective: entity => [...onrushEntries(entity, 'directive'), ...planningEntries(entity)]
+}
+
+/**
+ * The planning row of a stellar directive: open it in a planning view of its own. None where the host cannot pop a
+ * planning view out, since the row would do nothing there; and a lunar directive, never a dependency endpoint, never
+ * reaches here.
+ */
+function planningEntries(entity: InteractableEntity): ContextMenuEntry[] {
+	return canOpenInPlanning(typeNameOf(entity)) ? [entityMenuEntries.openInPlanning(entity)] : []
 }
 
 /**
@@ -96,7 +113,8 @@ function onrushEntries(entity: InteractableEntity, kind: OnrushMemberKind): Cont
  * Every entity offers to be edited and to open its note; a directive offers an Add submenu of what can be created
  * beneath it; a kind that sits in the hierarchy — a directive, an incentive — offers to be moved through it; a kind
  * with rows of its own adds them ({@link kindEntries}: an objective or a stellar directive offers to join an Onrush, or
- * to leave the one it is in); and any kind the SDK can delete offers deletion, set apart below a separator. A kind with
+ * to leave the one it is in, and a stellar directive to open in a planning view of its own); and any kind the SDK can
+ * delete offers deletion, set apart below a separator. A kind with
  * no delete call simply omits that row rather than offering one that would silently do nothing. Leaving the Onrush and
  * deleting both ask first.
  *
