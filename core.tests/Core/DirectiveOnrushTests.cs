@@ -47,6 +47,24 @@ public sealed class DirectiveOnrushTests : VaultTestBase
 	}
 
 	[Fact]
+	public async Task A_stellar_directive_joining_a_slot_with_no_sprint_creates_it()
+	{
+		// The directive is the first thing to ask for either slot, so nothing has made a sprint for it to land in.
+		var planned = await Directive(api => api.CreateStandaloneAsync("Campaign", cancellationToken: Ct));
+		var front = await Directive(api => api.CreateFromParentAsync(planned.Id, "Front", cancellationToken: Ct));
+
+		var inPlan = await Directive(api => api.AddToOnrushAsync(planned.Id, OnrushSlot.Planning, Ct));
+		Assert.Equal(OnrushSprint.PlanningPlaceholderId, inPlan.OnrushSprintId);
+
+		// The active slot begins the plan, so the first directive rides along into the sprint the second one joins.
+		var active = await Directive(api => api.AddToOnrushAsync(front.Id, OnrushSlot.Active, Ct));
+		Assert.NotEqual(OnrushSprint.PlanningPlaceholderId, active.OnrushSprintId);
+		var current = await Onrush(api => api.GetAsync(cancellationToken: Ct));
+		Assert.Equal(active.OnrushSprintId, current!.Id);
+		Assert.Equal([front.Id, planned.Id], current.Directives.Select(directive => directive.Id).Order(StringComparer.Ordinal));
+	}
+
+	[Fact]
 	public async Task A_directive_member_rides_the_begin_onto_the_real_sprint_and_is_freed_by_the_delete()
 	{
 		var planning = await Onrush(api => api.PlanAsync(new OnrushSprintPlan("Sprint"), Ct));

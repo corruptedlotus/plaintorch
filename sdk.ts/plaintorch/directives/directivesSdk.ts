@@ -129,14 +129,14 @@ export class PlaintorchDirectivesSdk {
 		return await this.client.putForJson<Directive>(`/api/directives/${encodeURIComponent(directiveId)}/availability`, request)
 	}
 
-	/** Makes a stellar directive a member of an onrush sprint (PEP102 patch 10), shaped like the objective's. */
 	/**
-	 * Adds a stellar directive to a sprint: one named by id, or the active or planning one (an {@link OnrushSlot}), which
-	 * the core creates when it does not exist yet.
+	 * Makes a stellar directive a member of a sprint (PEP102 patch 10), shaped like the objective's: one named by id, or
+	 * the active or planning one (an {@link OnrushSlot}), which the core creates when it does not exist yet. Reports
+	 * whether the core accepted it; a refused or unanswered request reports `false`.
 	 */
 	public async addToOnrush(directiveId: string, target: string | OnrushSlot): Promise<boolean> {
 		const request: AddDirectiveToOnrushRequest = typeof target === 'string' ? { onrushSprintId: target } : { slot: target }
-		return (await this.client.postForJson<Directive>(`/api/directives/stellar/${encodeURIComponent(directiveId)}/onrush`, request)) !== null
+		return (await this.client.postForJson<Directive>(`/api/directives/stellar/${encodeURIComponent(directiveId)}/onrush`, request)) !== undefined
 	}
 
 	/** Takes a stellar directive out of whichever onrush sprint holds it. */

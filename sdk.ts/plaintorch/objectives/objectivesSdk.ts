@@ -47,14 +47,15 @@ export class PlaintorchObjectivesSdk {
 
 	/**
 	 * Adds an objective to a sprint: one named by id, or the active or planning one (an {@link OnrushSlot}), which the core
-	 * creates when it does not exist yet.
+	 * creates when it does not exist yet. Reports whether the core accepted it; a refused or unanswered request reports
+	 * `false`.
 	 */
 	public async addToOnrush(objectiveId: string, target: string | OnrushSlot): Promise<boolean> {
 		const request: AddObjectiveToOnrushRequest = typeof target === 'string' ? { onrushSprintId: target } : { slot: target }
 		return (await this.client.postForJson<Objective>(
 			`/api/objectives/${encodeURIComponent(objectiveId)}/onrush`,
 			request
-		)) !== null
+		)) !== undefined
 	}
 
 	public async removeFromOnrush(objectiveId: string): Promise<boolean> {

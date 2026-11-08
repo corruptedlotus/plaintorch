@@ -259,16 +259,18 @@ export interface DirectiveBannerRequest {
 }
 
 /**
- * Sets or clears a directive's availability (PEP100 patch 2). The core refuses an unknown timeframe and one that is
- * not in {@link TimeframeInclusion.Availability Availability} mode.
+ * Payload to make a stellar directive a member of an onrush sprint (PEP102 patch 10): a sprint by id, or a slot that is
+ * created when it does not exist yet (PEP103 patch 4).
  */
-/** Payload to make a stellar directive a member of an onrush sprint (PEP102 patch 10). */
-/** Joins a sprint by id, or a slot that is created when it does not exist yet (PEP103 patch 4). */
 export interface AddDirectiveToOnrushRequest {
 	onrushSprintId?: string | undefined
 	slot?: OnrushSlot | undefined
 }
 
+/**
+ * Sets or clears a directive's availability (PEP100 patch 2). The core refuses an unknown timeframe and one that is
+ * not in {@link TimeframeInclusion.Availability Availability} mode.
+ */
 export interface DirectiveAvailabilityRequest {
 	/** The Availability-mode timeframe to make the directive available in, or `null` to clear it. */
 	timeframeId: number | null
