@@ -9,10 +9,19 @@ export type Status =
 	| keyof typeof LunarDirectiveStatus
 	| keyof typeof FateStatus
 	| keyof typeof DecreeStatus
+/**
+ * Where a terminal state leaves its item. Both kinds are done with, one way or another, and drawn dimmed wherever the
+ * item shows. A `finished` item (done, fulfilled, failed, stopped) stays in sight; an `archived` one is also put away,
+ * so the backlog hides it until a search asks for it.
+ */
+export type StatusTerminal = 'finished' | 'archived'
+
 type StatusDescriptor = {
 	icon: IconName,
 	label: string,
 	colour?: CSSResult,
+	/** Set on a terminal state only; a live state (still to be worked or watched) leaves it unset. */
+	terminal?: StatusTerminal,
 }
 
 export const statusDescriptors: Record<Status, StatusDescriptor> = {
@@ -23,20 +32,33 @@ export const statusDescriptors: Record<Status, StatusDescriptor> = {
 	Committed: { icon: 'state-commit', label: 'Committed' },
 
 	Active: { icon: 'state-active', label: 'Active' },
-	Onrush: { icon: 'state-onrush', label: 'Onrush' },
+	Onboard: { icon: 'state-onrush', label: 'Onboard' },
 	Polaris: { icon: 'state-polaris', label: 'Polaris' },
 
-	Done: { icon: 'state-done', label: 'Done' },
-	Fulfilled: { icon: 'state-done', label: 'Fulfilled' },
+	Done: { icon: 'state-done', label: 'Done', terminal: 'finished' },
+	Fulfilled: { icon: 'state-done', label: 'Fulfilled', terminal: 'finished' },
+	// A fate's finish (PEP103 I-191): inferred once every occurrence has passed, or selected by hand.
+	Passed: { icon: 'state-passed', label: 'Passed', terminal: 'finished' },
 
-	Archived: { icon: 'state-archived', label: 'Archived' },
-	Over: { icon: 'state-archived', label: 'Over' },
-	Stale: { icon: 'state-archived', label: 'Stale' },
+	Archived: { icon: 'state-archived', label: 'Archived', terminal: 'archived' },
+	Over: { icon: 'state-archived', label: 'Over', terminal: 'archived' },
+	Stale: { icon: 'state-archived', label: 'Stale', terminal: 'archived' },
+	// An opted-out fate is still under way (PEP103 patch 6): live, its occurrences only hidden from the agenda.
 	OptOut: { icon: 'state-archived', label: 'Opted Out' },
-	Abandoned: { icon: 'state-archived', label: 'Abandoned' },
+	Abandoned: { icon: 'state-archived', label: 'Abandoned', terminal: 'archived' },
 
-	Failed: { icon: 'state-failed', label: 'Failed' },
-	Cancelled: { icon: 'state-failed', label: 'Cancelled' },
+	Failed: { icon: 'state-failed', label: 'Failed', terminal: 'finished' },
+	Stopped: { icon: 'state-failed', label: 'Stopped', terminal: 'finished' },
+}
+
+/** Whether a state is terminal: its item is done with, one way or another, and is drawn dimmed wherever it shows. */
+export function isInactiveStatus(status: Status | undefined): boolean {
+	return status !== undefined && statusDescriptors[status]?.terminal !== undefined
+}
+
+/** Whether a state also puts its item away, so the backlog keeps the item out of sight until a search asks for it. */
+export function isArchivedStatus(status: Status | undefined): boolean {
+	return status !== undefined && statusDescriptors[status]?.terminal === 'archived'
 }
 
 @component('p7t-status-item')

@@ -47,7 +47,11 @@ public sealed class OccurrenceRecurrenceIdMigrationTests : IDisposable
 		Assert.Equal("7d", week.Epoch.Duration);
 
 		Assert.Equal(1, await context.Eventives.IgnoreAutoIncludes().CountAsync(item => item.FateId == "e-timed" && item.RecurrenceId == new DateTime(2026, 7, 20, 9, 0, 0), Ct));
-		Assert.Equal(1, await context.Eventives.IgnoreAutoIncludes().CountAsync(item => item.ObjectiveId == "j-due" && item.RecurrenceId == new DateTime(2026, 7, 22), Ct));
+		// An objective's due eventive is outside the model since PEP103 patch 7 (its due is a terminative), so it is read
+		// straight from the table.
+		var connection = context.Database.GetDbConnection();
+		await connection.OpenAsync(Ct);
+		Assert.Equal("1", await ScalarAsync(connection, "SELECT COUNT(*) FROM Eventives WHERE ObjectiveId = 'j-due' AND RecurrenceId = '2026-07-22 00:00:00'"));
 
 		// Each dependency side keeps its own slot: a source slot stays the source's, a target slot the target's.
 		var fromOccurrence = await context.Dependencies.SingleAsync(item => item.SourceId == "e-timed", Ct);

@@ -25,12 +25,12 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 
 		Assert.StartsWith("LUNA", lunar.Id);
 		Assert.Equal(7, lunar.Id.Length);
-		Assert.Equal(LunarDirectiveStatus.OnHold, lunar.Status);
+		Assert.Equal(LunarDirectiveStatus.Active, lunar.Status);
 
 		var shifted = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IDirectiveApi>()
-			.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Active), cancellationToken));
-		Assert.Equal(LunarDirectiveStatus.Active, shifted.Status);
+			.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.OnHold), cancellationToken));
+		Assert.Equal(LunarDirectiveStatus.OnHold, shifted.Status);
 
 		// The stellar workflow does not apply to lunar directives, and vice versa.
 		await Assert.ThrowsAsync<InvalidOperationException>(() => Vault.WithScopeAsync(services => services
@@ -160,42 +160,6 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Parent_system_accepts_valid_kinds_and_exempts_decrees()
-	{
-		var cancellationToken = TestContext.Current.CancellationToken;
-
-		var parentFate = await WithApi(api => api.CreateFateAsync(new FatePlan("Season"), cancellationToken));
-		var childFate = await WithApi(api => api.CreateFateAsync(new FatePlan("Festival", ParentIncentiveId: parentFate.Id), cancellationToken));
-		Assert.Equal(parentFate.Id, childFate.ParentIncentiveId);
-
-		var objective = await Vault.WithScopeAsync(services => services
-			.GetRequiredService<IObjectiveApi>()
-			.CreateStandaloneAsync("Prepare booth", cancellationToken: cancellationToken));
-		var parented = await Vault.WithScopeAsync(services => services
-			.GetRequiredService<IObjectiveApi>()
-			.UpdateAsync(objective.Id, new ObjectiveUpdate(ParentIncentiveId: parentFate.Id), cancellationToken));
-		Assert.Equal(parentFate.Id, parented.ParentIncentiveId);
-
-		var subtask = await Vault.WithScopeAsync(services => services
-			.GetRequiredService<IObjectiveApi>()
-			.CreateStandaloneAsync("Order supplies", cancellationToken: cancellationToken));
-		var subtasked = await Vault.WithScopeAsync(services => services
-			.GetRequiredService<IObjectiveApi>()
-			.UpdateAsync(subtask.Id, new ObjectiveUpdate(ParentIncentiveId: objective.Id), cancellationToken));
-		Assert.Equal(objective.Id, subtasked.ParentIncentiveId);
-
-		// Fates cannot parent under objectives, and decrees stay exempt in both directions.
-		var decree = await WithApi(api => api.CreateDecreeAsync(new DecreePlan("Routine"), cancellationToken));
-		await Assert.ThrowsAsync<InvalidOperationException>(() =>
-			WithApi(api => api.UpdateFateAsync(parentFate.Id, new FateUpdate(ParentIncentiveId: objective.Id), cancellationToken)));
-		await Assert.ThrowsAsync<InvalidOperationException>(() =>
-			WithApi(api => api.UpdateFateAsync(parentFate.Id, new FateUpdate(ParentIncentiveId: decree.Id), cancellationToken)));
-		await Assert.ThrowsAsync<InvalidOperationException>(() => Vault.WithScopeAsync(services => services
-			.GetRequiredService<IObjectiveApi>()
-			.UpdateAsync(objective.Id, new ObjectiveUpdate(ParentIncentiveId: decree.Id), cancellationToken)));
-	}
-
-	[Fact]
 	public async Task Interaction_materializes_instances_without_binding_them()
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
@@ -305,12 +269,26 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 
+		// Two orbit-less reflect-decrees under an active lunar directive: a cycle draws both as it begins (PEP104).
+		var lunar = await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.CreateLunarAsync("Moon Law", cancellationToken: cancellationToken));
+		await Vault.WithScopeAsync(services => services
+			.GetRequiredService<IDirectiveApi>()
+			.ShiftLunarWorkflowAsync(lunar.Id, new LunarDirectiveWorkflowShift(LunarDirectiveStatus.Active), cancellationToken));
+		foreach (var title in new[] { "Gratitude", "Dreams" })
+		{
+			await WithApi(api => api.CreateDecreeAsync(new DecreePlan(title, DirectiveId: lunar.Id, Reflect: true), cancellationToken));
+		}
+
 		var cycle = await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
 			.StartNewAsync(cancellationToken: cancellationToken));
-		var reflectives = await Vault.WithScopeAsync(services => services
-			.GetRequiredService<IPolarisCycleApi>()
-			.DrawReflectivesAsync(new ReflectiveDrawRequest(Count: 2), cancellationToken));
+		var reflectives = await Vault.QueryAsync(context => context.Set<Reflective>()
+			.AsNoTracking()
+			.Where(item => item.PolarisCycleId == cycle.Id)
+			.ToListAsync(cancellationToken));
+		Assert.Equal(2, reflectives.Count);
 
 		await Vault.WithScopeAsync(services => services
 			.GetRequiredService<IPolarisCycleApi>()
@@ -374,7 +352,7 @@ public sealed class DeclarativeEcosystemTests : VaultTestBase
 			.GetRequiredService<IPolarisCycleApi>()
 			.GetInclusionsAsync(null, cancellationToken));
 		Assert.Contains(inclusions.Eventives, item => item.FateId == fate.Id);
-		Assert.Contains(inclusions.Eventives, item => item.ObjectiveId == objective.Id);
+		Assert.Contains(inclusions.Terminatives, item => item.ObjectiveId == objective.Id);
 		Assert.Contains(inclusions.Attentives, item => item.DecreeId == decree.Id);
 	}
 

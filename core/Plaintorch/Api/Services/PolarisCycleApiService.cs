@@ -7,6 +7,7 @@ using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.State;
+using Pleiades.Saga;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Media;
 
@@ -26,13 +27,23 @@ public sealed class PolarisCycleApiService(
 	IServiceScopeFactory scopeFactory,
 	AgendaProjectionService projectionService,
 	VaultAuditLogService auditLogService,
+	VaultTemporalDataService temporalDataService,
 	ILogger<PolarisCycleApiService> logger) : IPolarisCycleApi
 {
 	/// <inheritdoc />
 	public async Task<PolarisCycle> PlanAsync(DateOnly forecastReference, int daysAhead, string? body = null, CancellationToken cancellationToken = default)
 	{
+		// Checked before an id is minted for the day, as the lifecycle would only refuse it afterwards.
+		ArgumentOutOfRangeException.ThrowIfNegative(daysAhead);
 		var targetDate = forecastReference.AddDays(daysAhead);
-		var id = puckCreationService.CreateIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: targetDate)]);
+		// A day holds one cycle (its id IS the day), so a second plan for it is refused before anything is minted.
+		var dayId = puckCreationService.ComposeIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: targetDate)]);
+		if (await context.PolarisCycles.AnyAsync(item => item.Id == dayId, cancellationToken))
+		{
+			throw new InvalidOperationException($"{targetDate:yyyy-MM-dd} already has a Polaris cycle ('{dayId}').");
+		}
+
+		var id = await MintDayIdAsync(targetDate, cancellationToken);
 		var cycle = lifecycle.PlanForecast(forecastReference, daysAhead, id);
 
 		context.PolarisCycles.Add(cycle);
@@ -94,8 +105,8 @@ public sealed class PolarisCycleApiService(
 	/// </remarks>
 	private async Task WarmCandidatesAsync(PolarisCycle cycle, CancellationToken cancellationToken)
 	{
-		// The lifecycle keeps an existing end time, so re-beginning an ended cycle leaves it ended; only a cycle that is
-		// now strictly active has candidates worth warming.
+		// Only a cycle that is now strictly active has candidates worth warming (an ended one never begins again: the state
+		// engine refuses it, PEP103 patch 4).
 		if (cycle.StartTime is null || cycle.EndTime is not null)
 		{
 			return;
@@ -144,8 +155,8 @@ public sealed class PolarisCycleApiService(
 
 		var created = new PolarisCycle
 		{
-			// No cycle exists for the day, so mint (register) the id now.
-			Id = puckCreationService.CreateIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: targetDate)]),
+			// No cycle exists for the day, so mint (register) the id now — or reuse it, when a deleted cycle held it.
+			Id = await MintDayIdAsync(targetDate, cancellationToken),
 			Title = PlaintorchDefaultTitleFactory.CreatePolarisTitle(targetDate),
 		};
 		context.PolarisCycles.Add(created);
@@ -230,6 +241,119 @@ public sealed class PolarisCycleApiService(
 	}
 
 	/// <inheritdoc />
+	public async Task<IReadOnlyList<PolarisCycle>> ListByDayAsync(DateOnly from, DateOnly? to = null, CancellationToken cancellationToken = default)
+	{
+		// A cycle's day is its id (a Pleiadean date stamp), which SQL cannot compare as a date, so the range is resolved
+		// over the ids first: one small column, a row per planned or worked day.
+		var ids = (await context.PolarisCycles
+				.AsNoTracking()
+				.Select(cycle => cycle.Id)
+				.ToListAsync(cancellationToken))
+			.Where(id => PolarisCycle.TryParseDay(id, out var day) && day >= from && (to is null || day <= to))
+			.ToList();
+
+		if (ids.Count == 0)
+		{
+			return [];
+		}
+
+		// The same shape GetAsync serves, so a cycle absorbed from this listing never overwrites a richer copy of it
+		// (the briefing's current cycle, say) with less.
+		var cycles = await context.PolarisCycles
+			.AsNoTracking()
+			.Include(item => item.Executives)
+				.ThenInclude(executive => executive.Incentive)
+					.ThenInclude(incentive => incentive!.Directive)
+			.Include(item => item.Executives)
+				.ThenInclude(executive => executive.AffinityTimeframe)
+			.Include(item => item.Reflectives)
+				.ThenInclude(reflective => reflective.Decree)
+					.ThenInclude(decree => decree!.Directive)
+			.Where(cycle => ids.Contains(cycle.Id))
+			.ToListAsync(cancellationToken);
+
+		return cycles.OrderBy(cycle => cycle.Day).ToList();
+	}
+
+	/// <inheritdoc />
+	public async Task<LorePolarisCycles?> ListForLoreAsync(string lorePuck, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(lorePuck);
+		var pages = await context.LorePages.AsNoTracking().ToListAsync(cancellationToken);
+		var page = pages.FirstOrDefault(item => item.Id == lorePuck);
+		if (page is null)
+		{
+			return null;
+		}
+
+		if (LorePage.ResolveActivePeriod(page, pages) is not { } period)
+		{
+			return new LorePolarisCycles(null, null, null, []);
+		}
+
+		// Cycle days are this host's local days, so a running period reaches the local today.
+		var through = period.Through(DateOnly.FromDateTime(DateTime.Today));
+		IReadOnlyList<PolarisCycle> cycles = through < period.Beginning ? [] : await ListByDayAsync(period.Beginning, through, cancellationToken);
+		return new LorePolarisCycles(period.Beginning, period.EndingExclusive, through, cycles);
+	}
+
+	/// <inheritdoc />
+	public async Task DeleteAsync(string polarisCycleId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(polarisCycleId);
+		var cycle = await context.PolarisCycles
+			.Include(item => item.Executives)
+			.Include(item => item.Reflectives)
+			.FirstOrDefaultAsync(item => item.Id == polarisCycleId, cancellationToken)
+			?? throw new InvalidOperationException($"Polaris cycle '{polarisCycleId}' was not found.");
+
+		// Only a plan can be taken back: a begun cycle — active or ended — is the record of a day as it was worked.
+		if (cycle.StartTime is not null)
+		{
+			throw new InvalidOperationException($"Polaris cycle '{cycle.Id}' has begun; only a cycle that has not begun can be deleted.");
+		}
+
+		// The executives and reflectives ARE the plan, so they go with it. The objectives and decrees behind them stay as
+		// they are, state included — the core never walks backlog state back (see RemoveExecutiveAsync).
+		var removedExecutives = cycle.Executives.Count;
+		context.RemoveRange(cycle.Executives);
+		context.RemoveRange(cycle.Reflectives);
+		// The graveyard keeps the cycle's own record; a scalar snapshot, as the loaded plan hangs off the tracked one.
+		var graveyardEntry = temporalDataService.StageEntityArchive(Clone(cycle), "api-delete", Environment.UserName);
+		context.PolarisCycles.Remove(cycle);
+		await writeQueue.RecordRemoveAsync(cycle, cancellationToken);
+		await context.SaveChangesAsync(cancellationToken);
+		await writeQueue.DrainRemoveAsync(cycle, cancellationToken);
+		await auditLogService.WriteAsync(
+			"api",
+			"polaris.delete",
+			subjectType: nameof(PolarisCycle),
+			subjectId: cycle.Id,
+			subjectTitle: cycle.Title,
+			details: new { removedExecutives },
+			temporalKind: "database",
+			temporalEntryKey: graveyardEntry.EntryKey,
+			temporalEntityType: graveyardEntry.EntityType,
+			temporalEntityId: graveyardEntry.EntityId,
+			temporalEntityTitle: graveyardEntry.EntityTitle,
+			cancellationToken: cancellationToken);
+	}
+
+	/// <summary>
+	/// The id of the cycle for <paramref name="date"/>, registering it with PUCK only the first time. A cycle's id IS its
+	/// day, so a day whose cycle was deleted — a forecast taken back, its note removed — still holds that id in the PUCK
+	/// registry, and minting it a second time would collide with the entry. The registered id is reused instead.
+	/// </summary>
+	private async Task<string> MintDayIdAsync(DateOnly date, CancellationToken cancellationToken)
+	{
+		var segments = new[] { new PuckSegmentInput(Date: date) };
+		var id = puckCreationService.ComposeIdFor<PolarisCycle>(systemSegments: segments);
+		return await context.PuckRegistryEntries.AnyAsync(entry => entry.Id == id, cancellationToken)
+			? id
+			: puckCreationService.CreateIdFor<PolarisCycle>(systemSegments: segments);
+	}
+
+	/// <inheritdoc />
 	public async Task<PolarisExecutivePlanResult> PlanExecutiveAsync(PolarisExecutivePlan plan, string? polarisCycleId = null, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(plan);
@@ -282,7 +406,6 @@ public sealed class PolarisCycleApiService(
 					objective.OnrushSprintId = plan.OnrushSprintId;
 				}
 
-				objective.Status = ObjectiveStatus.Polaris;
 				executiveTitle = plan.ExecutiveTitle ?? objective.Title;
 				break;
 
@@ -307,8 +430,18 @@ public sealed class PolarisCycleApiService(
 		};
 		executive.NormalizeTimeAllocations();
 
+		// Joining the active cycle moves the objective to Polaris where nothing blocks it: the state engine does that on the
+		// save (Patch103.3). An existing objective's note follows its planned fields and whatever status the engine sets.
 		context.Add(executive);
-		await context.SaveChangesAsync(cancellationToken);
+		if (plan.Mode == PolarisExecutivePlanningMode.FromObjective)
+		{
+			await writeQueue.WriteAsync(objective!, cancellationToken: cancellationToken);
+		}
+		else
+		{
+			await context.SaveChangesAsync(cancellationToken);
+		}
+
 		await LoadAffinityAsync(executive, cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
@@ -333,7 +466,8 @@ public sealed class PolarisCycleApiService(
 		}
 
 		// The executive's incentive can be reassigned but never cleared — an executive without an incentive has
-		// nothing to work at.
+		// nothing to work at. Reassigning follows the rules of adding (PEP103 patch 5): the state engine takes an objective
+		// or a started decree only, and a closed objective joining the active cycle is the enforcement level's call.
 		if (!string.IsNullOrWhiteSpace(update.ObjectiveId) && update.ObjectiveId != executive.IncentiveId)
 		{
 			await EnsureIncentiveNotInCycleAsync(executive.PolarisCycleId, update.ObjectiveId, cancellationToken);
@@ -418,7 +552,7 @@ public sealed class PolarisCycleApiService(
 			?? throw new InvalidOperationException($"Executive '{executiveId}' was not found.");
 
 		var currentDate = ResolveCycleDate(executive.PolarisCycle);
-		var next = await EnsureNextForecastCycleAsync(currentDate, cancellationToken);
+		var next = await EnsureNextStartableCycleAsync(currentDate, cancellationToken);
 
 		// A cycle holds at most one executive per incentive (PEP111).
 		if (!string.IsNullOrWhiteSpace(executive.IncentiveId))
@@ -427,42 +561,69 @@ public sealed class PolarisCycleApiService(
 		}
 
 		// Carry the tracked work forward as the fresh allocation envelope — the day starts from an estimate of
-		// what was actually worked so far — and restart tracking from zero.
+		// what was actually worked so far — and restart tracking from zero. An ended cycle's record is history (PEP103
+		// patch 5), so work moved on from one is carried by a new executive in the next cycle, and the old one stays as it
+		// was worked.
 		var carried = executive.Elapsed;
-		executive.PolarisCycleId = next.Id;
-		executive.Estimation = carried;
-		executive.Minimum = carried;
-		executive.Maximum = carried;
-		executive.Elapsed = 0;
-		executive.NormalizeTimeAllocations();
+		var fromCycleId = executive.PolarisCycleId;
+		var moved = executive;
+		if (executive.PolarisCycle?.EndTime is not null)
+		{
+			moved = new Executive
+			{
+				PolarisCycleId = next.Id,
+				IncentiveId = executive.IncentiveId,
+				AffinityTimeframeId = executive.AffinityTimeframeId,
+			};
+			context.Add(moved);
+		}
+
+		moved.PolarisCycleId = next.Id;
+		moved.Estimation = carried;
+		moved.Minimum = carried;
+		moved.Maximum = carried;
+		moved.Elapsed = 0;
+		moved.NormalizeTimeAllocations();
 
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
 			"polaris.move-executive-next",
 			subjectType: nameof(Executive),
-			subjectId: executive.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-			details: new { toCycleId = next.Id, incentiveId = executive.IncentiveId, carried },
+			subjectId: moved.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+			details: new { fromCycleId, fromExecutiveId = executive.Id, toCycleId = next.Id, incentiveId = moved.IncentiveId, carried },
 			cancellationToken: cancellationToken);
-		return executive;
+		return moved;
 	}
 
 	/// <summary>
-	/// Finds the cycle for the day after <paramref name="currentDate"/>, or plans and persists a forecast one
-	/// (a one-day-ahead forecast anchored on <paramref name="currentDate"/>).
+	/// Finds or plans the next cycle work can move on to (PEP103 patch 4): the first day after <paramref name="currentDate"/>
+	/// whose cycle can still be begun — today's while it has not begun, else a later day's. Work moved on from an old cycle
+	/// so lands where it can be worked, never in a past forecast that the active cycle would supersede.
 	/// </summary>
-	private async Task<PolarisCycle> EnsureNextForecastCycleAsync(DateOnly currentDate, CancellationToken cancellationToken)
+	private async Task<PolarisCycle> EnsureNextStartableCycleAsync(DateOnly currentDate, CancellationToken cancellationToken)
 	{
-		var nextDate = currentDate.AddDays(1);
-		var existingId = puckCreationService.ComposeIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: nextDate)]);
-		var existing = await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == existingId, cancellationToken);
-		if (existing is not null)
+		var today = DateOnly.FromDateTime(DateTime.Today);
+		var day = currentDate.AddDays(1) > today ? currentDate.AddDays(1) : today;
+		while (true)
 		{
-			return existing;
+			var dayId = puckCreationService.ComposeIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: day)]);
+			var existing = await context.PolarisCycles.FirstOrDefaultAsync(item => item.Id == dayId, cancellationToken);
+			if (existing is null)
+			{
+				break;
+			}
+
+			if (existing.StartTime is null)
+			{
+				return existing;
+			}
+
+			day = day.AddDays(1);
 		}
 
-		var id = puckCreationService.CreateIdFor<PolarisCycle>(systemSegments: [new PuckSegmentInput(Date: nextDate)]);
-		var forecast = lifecycle.PlanForecast(currentDate, 1, id);
+		var id = await MintDayIdAsync(day, cancellationToken);
+		var forecast = lifecycle.PlanForecast(today, day.DayNumber - today.DayNumber, id);
 		context.PolarisCycles.Add(forecast);
 		// A Polaris cycle is vault-backed, so its creation goes through the write queue (PEP110), like PlanAsync.
 		await writeQueue.WriteAsync(forecast, cancellationToken: cancellationToken);
@@ -518,7 +679,7 @@ public sealed class PolarisCycleApiService(
 
 		if (cycle.StartTime is null)
 		{
-			return new PolarisCycleInclusions([], []);
+			return new PolarisCycleInclusions([], [], []);
 		}
 
 		var (windowStart, windowEnd) = InclusionWindow.Resolve(cycle);
@@ -533,7 +694,8 @@ public sealed class PolarisCycleApiService(
 
 		return new PolarisCycleInclusions(
 			projection.Eventives.Where(item => InclusionWindow.EventiveIntersects(item, windowStart, windowEnd)).ToList(),
-			projection.Attentives.Where(item => InclusionWindow.AttentiveIntersects(item, windowStart, windowEnd)).ToList());
+			projection.Attentives.Where(item => InclusionWindow.AttentiveIntersects(item, windowStart, windowEnd)).ToList(),
+			projection.Terminatives.Where(item => InclusionWindow.TerminativeIntersects(item, windowStart, windowEnd)).ToList());
 	}
 
 	/// <inheritdoc />
@@ -552,13 +714,16 @@ public sealed class PolarisCycleApiService(
 		// while interacted/resolved ones carry their persisted state.
 		var projection = await projectionService.ProjectAsync(today, horizon, cancellationToken);
 
-		// Overdue pending attentives sit before the projected window (a direct query over hardened rows).
-		var overdueAttentives = await context.Attentives
+		// Overdue pending attentives sit before the projected window (a direct query over hardened rows). "Before today"
+		// is on this host's clock, so a zoned attentive is admitted a zone's reach early and decided by its local moment.
+		var overdueAttentives = (await context.Attentives
 			.AsNoTracking()
 			.Include(item => item.Decree)
-			.Where(item => item.Epoch.Moment < todayStart
+			.Where(item => item.Epoch.Moment < todayStart.AddDays(OccurrenceZones.ReachDays)
 				&& item.Resolution == AttentiveResolution.Pending)
-			.ToListAsync(cancellationToken);
+			.ToListAsync(cancellationToken))
+			.Where(item => item.Epoch.LocalMoment < todayStart)
+			.ToList();
 
 		// Recently-resolved attentives are retained for an hour regardless of their date, so they are fetched
 		// independently of the projection window. SQLite lacks reliable translated DateTimeOffset comparison, so the
@@ -569,22 +734,32 @@ public sealed class PolarisCycleApiService(
 			.Where(item => item.ResolvedOn != null)
 			.ToListAsync(cancellationToken);
 
+		// A pending period (week/month/year) attentive that began before today but still spans it is both overdue and
+		// projected — its period reaches into the window — so it is listed once, from the projection.
+		var projectedIds = projection.Attentives.Where(item => item.Id != 0).Select(item => item.Id).ToHashSet();
 		var attentives = projection.Attentives
-			.Concat(overdueAttentives)
+			.Concat(overdueAttentives.Where(item => !projectedIds.Contains(item.Id)))
 			.Where(item => item.Resolution == AttentiveResolution.Pending
-				&& item.Epoch.Date <= attentiveThrough)
+				&& item.Epoch.LocalDate <= attentiveThrough)
 			.Concat(recentlyResolved.Where(item => item.ResolvedOn >= resolvedSince && item.ResolvedOn <= now))
-			.OrderBy(item => item.Epoch.Moment)
+			.OrderBy(item => item.Epoch.LocalMoment)
 			.ToList();
 
+		// Days are this host's: a zoned eventive falls on the day its instant does here.
 		var eventives = projection.Eventives
 			.Where(item => item.Resolution == EventiveResolution.Pending
-				&& item.Epoch.Date >= today
-				&& item.Epoch.Date <= horizon)
-			.OrderBy(item => item.Epoch.Moment)
+				&& item.Epoch.LocalDate >= today
+				&& item.Epoch.LocalDate <= horizon)
+			.OrderBy(item => item.Epoch.LocalMoment)
 			.ToList();
 
-		return new PolarisAgenda(attentives, eventives);
+		// The dues still pending up to the horizon, overdue ones included (PEP103 patch 7): a terminative stays on the agenda
+		// until its origin is finished or set aside, or the user ignores it.
+		var terminatives = (await projectionService.ProjectTerminativesAsync(windowStart: null, horizon.AddDays(1).ToDateTime(TimeOnly.MinValue), cancellationToken))
+			.Where(item => item.Resolution == TerminativeResolution.Pending && !item.Ignored)
+			.ToList();
+
+		return new PolarisAgenda(attentives, eventives, terminatives);
 	}
 
 	/// <inheritdoc />
@@ -598,12 +773,10 @@ public sealed class PolarisCycleApiService(
 			? await ResolveCreationAffinityAsync(request.AffinityTimeframeId, null, null, cancellationToken)
 			: null;
 		var cycle = await ResolveOrStartCurrentAsync(polarisCycleId, cancellationToken);
+		// A decree that is not started cannot be worked: the state engine refuses it on the save, as it refuses reassigning an
+		// executive to one (PEP103 patch 5, polaris.incentive).
 		var decree = await context.Decrees.AsNoTracking().FirstOrDefaultAsync(item => item.Id == request.DecreeId, cancellationToken)
 			?? throw new InvalidOperationException($"Decree '{request.DecreeId}' was not found.");
-		if (decree.Status != DecreeStatus.Active)
-		{
-			throw new InvalidOperationException($"Decree '{decree.Id}' is {decree.Status} and cannot be added to a Polaris cycle.");
-		}
 
 		// A decree occupies a cycle as an executive, at most once — the cycle is the temporal context (PEP111).
 		await EnsureIncentiveNotInCycleAsync(cycle.Id, decree.Id, cancellationToken);
@@ -690,46 +863,6 @@ public sealed class PolarisCycleApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<IReadOnlyList<Reflective>> DrawReflectivesAsync(ReflectiveDrawRequest request, CancellationToken cancellationToken = default)
-	{
-		ArgumentNullException.ThrowIfNull(request);
-		if (request.Count < 1)
-		{
-			throw new ArgumentOutOfRangeException(nameof(request), "At least one reflective must be requested.");
-		}
-
-		var cycle = await ResolveOrStartCurrentAsync(request.PolarisCycleId, cancellationToken);
-
-		var existingCount = await context.Set<Reflective>()
-			.CountAsync(item => item.PolarisCycleId == cycle.Id, cancellationToken);
-
-		var created = new List<Reflective>();
-		for (var index = 0; index < request.Count; index++)
-		{
-			var reflective = new Reflective
-			{
-				Description = $"Reflective prompt {existingCount + index + 1} for {cycle.Title}",
-				PolarisCycleId = cycle.Id,
-				Executed = false,
-			};
-
-			context.Add(reflective);
-			created.Add(reflective);
-		}
-
-		await context.SaveChangesAsync(cancellationToken);
-		await auditLogService.WriteAsync(
-			"api",
-			"polaris.draw-reflectives",
-			subjectType: nameof(PolarisCycle),
-			subjectId: cycle.Id,
-			subjectTitle: cycle.Title,
-			details: new { count = created.Count },
-			cancellationToken: cancellationToken);
-		return created;
-	}
-
-	/// <inheritdoc />
 	public async Task<Reflective> UpdateReflectiveAsync(long reflectiveId, ReflectiveUpdate update, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(update);
@@ -811,7 +944,6 @@ public sealed class PolarisCycleApiService(
 			OnrushSprintId = onrushSprintId,
 			College = college ?? ObjectiveCollege.Unspecified,
 			CelestronValue = celestronValue ?? 0,
-			Status = ObjectiveStatus.Polaris,
 		};
 
 		context.Objectives.Add(objective);

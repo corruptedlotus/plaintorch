@@ -1,23 +1,35 @@
 import { component, css, html, nothing, property } from "@a11d/lit"
 import { ExecutiveOrder, SystemBriefing } from "@pleiades/sdk";
-import { toRomanNumeral } from "@pleiades/sdk/helpers";
 import { CardComponent, tooltip } from "../design"
+import '../lore/ActiveLore'
 import './ExecutiveOrderDetails'
 
+/**
+ * The briefing's hero: today's date under "Pleiades Today", the active lore beside its glyph, the banked starfire and the
+ * executive orders in effect, over the star.
+ *
+ * {@link ducked}, it keeps only the date and the starfire, on one short strip: the rest folds away (its space closing
+ * as it fades) and the hero shrinks with it. The briefing ducks it on every page but the throne room. The fold takes
+ * `--p7t-hero-duck-duration` (320ms by default; 0 to fold at once).
+ */
 @component('p7t-briefing-hero')
 export class BriefingHero extends CardComponent {
 	override preHeading = 'Pleiades Today';
 
 	@property({ type: Object }) briefing?: SystemBriefing
+	/** Keeps only the date and the starfire, folding the rest away. */
+	@property({ type: Boolean, reflect: true }) ducked = false
 
 	static override get styles() {
 		return css`
 			${super.styles}
 
 			:host {
+				--_duck: var(--p7t-hero-duck-duration, 320ms) cubic-bezier(.4, 0, .2, 1);
 				padding: 0;
 				background: none;
 				background-blend-mode: color, luminosity;
+				interpolate-size: allow-keywords;
 			}
 
 			.grid {
@@ -32,58 +44,7 @@ export class BriefingHero extends CardComponent {
 			}
 
 			.lore {
-				display: flex;
-				align-items: center;
-				gap: 10px;
-				align-items: center;
 				grid-area: lore;
-
-				& p7t-icon {
-					width: 64px;
-					height: 64px;
-				}
-
-				& .info {
-					display: flex;
-					flex-direction: column;
-				}
-
-				& .chapter {
-					font-size: 1em;
-					opacity: .6;
-					font-weight: 500;
-					margin-bottom: -.2em;
-				}
-
-				& .act {
-					font-size: 1.4em;
-					font-weight: 300;
-
-					& :first-child {
-						opacity: .6;
-						margin-inline-end: .1ch;
-					}
-				}
-
-				& .phase {
-					margin-top: .05em;
-					font-family: 'Georgia', serif;
-					font-size: .9em;
-					color: color-mix(in srgb, var(--text-normal) 80%, transparent);
-					font-style: italic;
-					font-weight: 300;
-
-					& :first-child {
-						font-family: var(--font-text);
-						background-color: color-mix(in srgb, var(--text-normal) 15%, transparent);
-						color: var(--text-normal);
-						padding: 0 .8ch;
-						font-style: normal;
-						font-weight: 800;
-						margin-inline-end: .8ch;
-						border-radius: .6em;
-					}
-				}
 			}
 
 			.extra {
@@ -103,7 +64,7 @@ export class BriefingHero extends CardComponent {
 				font-size: .9em;
 				font-weight: 400;
 				font-family: var(--font-text);
-				background-color: color-mix(in srgb, var(--text-normal) 15%, transparent);
+				background-color: color-mix(in srgb, var(--text-accent) 6%, transparent);
 				border-radius: 8px;
 				padding-inline: .6em .4em;
 				padding-block: .2em;
@@ -173,7 +134,93 @@ export class BriefingHero extends CardComponent {
 			:host::part(header) {
 				grid-area: header;
 			}
+
+			/*
+			 * The duck. Each part that goes folds its own space away as it fades (its height to nothing, and the gap it held
+			 * open with it), so the hero shrinks smoothly around what stays: the date at the start of the strip, the starfire
+			 * at its end.
+			 */
+			.pre-heading, .lore, .exec-orders {
+				transition:
+					height var(--_duck),
+					margin var(--_duck),
+					opacity var(--_duck),
+					visibility var(--_duck);
+			}
+
+			.pre-heading {
+				display: block;
+			}
+
+			.mask {
+				transition: opacity var(--_duck);
+			}
+
+			.grid {
+				transition: row-gap var(--_duck);
+			}
+
+			:host([ducked]) {
+				.pre-heading, .lore, .exec-orders {
+					height: 0;
+					overflow: clip;
+					opacity: 0;
+					visibility: hidden;
+				}
+
+				/*
+				 * The gaps the folded parts held open: the header's above the date and the extra column's above the orders,
+				 * taken back by a negative margin; the grid's above the lore, closed outright (a grid track does not shrink
+				 * below nothing for an item's negative margin).
+				 */
+				.pre-heading { margin-bottom: -.4em; }
+				.exec-orders { margin-top: -.8rem; }
+
+				.grid {
+					row-gap: 0;
+					align-items: center;
+				}
+
+				.mask {
+					opacity: 0;
+				}
+			}
+
+			@media (prefers-reduced-motion: reduce) {
+				.pre-heading, .lore, .exec-orders {
+					transition-property: opacity, visibility;
+				}
+			}
+
+			.mtick {
+				transform-origin: 50% 43.6%;
+				stroke: #82fff9;
+				opacity: .6;
+				stroke-width: 1px;
+			}
+
+			.xtick {
+				transform-origin: 50% 43.6%;
+				stroke: #21d3ca;
+				stroke-width: 2px;
+			}
+
+			@keyframes stars-align {
+				0% { transform: rotate(12deg); }
+				10% { transform: rotate(0deg); }
+				100% { transform: rotate(12deg); }
+			}
+
+			@keyframes stars-orbit {
+				0% { transform: rotate(0deg); }
+				100% { transform: rotate(360deg); }
+			}
 		`
+	}
+
+	protected override get preHeadingTemplate() {
+		// Its own box rather than the bare text, so the duck can fold it.
+		return html`<span class='pre-heading'>${this.preHeading}</span>`
 	}
 
 	/**
@@ -185,9 +232,6 @@ export class BriefingHero extends CardComponent {
 	}
 
 	override get template() {
-		const chapter = this.briefing?.activeLorePages.find(page => page.level === 'Cha')
-		const act = this.briefing?.activeLorePages.find(page => page.level === 'Act')
-		const phase = this.briefing?.activeLorePages.find(page => page.level === 'p')
 		return html`
 			<svg class="mask" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 275.45 200.57">
 				<path
@@ -199,31 +243,46 @@ export class BriefingHero extends CardComponent {
 				<path
 					d="M145.94,82.05,156,86.61a.83.83,0,0,1,0,1.51l-10.09,4.55A5.87,5.87,0,0,0,143,95.59l-4.55,10.08a.83.83,0,0,1-1.51,0l-4.56-10.08a5.83,5.83,0,0,0-2.91-2.92l-10.09-4.55a.83.83,0,0,1,0-1.51l10.09-4.56a5.77,5.77,0,0,0,2.91-2.91L137,69.05a.83.83,0,0,1,1.51,0L143,79.14A5.81,5.81,0,0,0,145.94,82.05Z"
 					style="fill:#82fff9; filter: blur(20px)" />
-			</svg>
+				<!--<g style='animation: 2s linear stars-align infinite; transform-origin: 50% 43.6%; opacity: .6'>
+					<g style='animation: stars-orbit 60s steps(30, end) infinite; transform-origin: 50% 43.6%;filter: blur(4px)'>
+						<line class='xtick' x1='50%' x2='50%' y1='15%' y2='25%' style='transform: rotate(0deg);'></line>
+						<line class='xtick' x1='50%' x2='50%' y1='15%' y2='25%' style='transform: rotate(180deg);'></line>
+					</g>
+					<line class='mtick' id='mtick' x1='50%' x2='50%' y1='15%' y2='19%'></line>
+					<use class='mtick' href='#mtick' style='transform: rotate(12deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(24deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(36deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(48deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(60deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(72deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(84deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(96deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(108deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(120deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(132deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(144deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(156deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(168deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(180deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(192deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(204deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(216deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(228deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(240deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(252deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(264deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(276deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(288deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(300deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(312deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(324deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(336deg);' />
+					<use class='mtick' href='#mtick' style='transform: rotate(348deg);' />
+				</g>
+			</svg>-->
 			<div class='grid'>
 				${this.headerTemplate}
-				<div class='lore'>
-					<p7t-icon icon="lorepage"></p7t-icon>
-					<div class='info'>
-						${!chapter ? nothing : html`
-							<span class='chapter'>
-								${chapter?.title}
-							</span>
-						`}
-						${!act ? nothing : html`
-							<span class='act'>
-								<span>${act?.overrideIdentifier ?? `Act ${toRomanNumeral(act?.act ?? 0)}`}:</span>
-								${act?.title}
-							</span>
-						`}
-						${!phase ? nothing : html`
-							<span class='phase'>
-								<span>${phase?.overrideIdentifier ?? phase?.phase}</span>
-								"${phase?.title}"
-							</span>
-						`}
-					</div>
-				</div>
+				<p7t-active-lore class='lore' glyph .pages=${this.briefing?.activeLorePages}></p7t-active-lore>
 				<div class='extra'>
 					<div class='info-chip'>
 						<span>${this.briefing?.celestronBanked ?? 0}</span>

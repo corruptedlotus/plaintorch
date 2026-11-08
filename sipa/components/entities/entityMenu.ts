@@ -1,6 +1,13 @@
-import { typeNameOf } from '@pleiades/sdk'
-import { core, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec } from '..'
+import { typeNameOf, type Directive } from '@pleiades/sdk'
+import {
+	canMoveEntity, core, deleteConfirmation, moveEntity, navigateToEntity, removeConfirmation, type ContextMenuAction,
+	type ContextMenuEntry, type ContextMenuSpec, type GridEntity
+} from '..'
+import { canOpenInPlanning, openInPlanning } from '../canvas/canvasActions'
+import type { ContextMenuSubmenu } from '../design/ContextMenu'
+import { canCreateUnder, creationMenuEntries, directiveCreationKinds } from '../grid/entityActions'
 import { EntityEditModal } from './EntityEditModal'
+import { leaveOnrush, OnrushPickerModal, type OnrushMember, type OnrushMemberKind } from './onrushPicker'
 import { toast } from '../../host'
 
 /** The minimal shape every interactable entity shares — a PUCK identity and a title. */
@@ -13,25 +20,126 @@ export interface InteractableEntity {
 const deletableTypes = new Set(['Objective', 'StellarDirective', 'LunarDirective', 'Fate', 'Decree', 'LorePage'])
 
 /**
- * Builds the context menu for an entity, whatever kind it is (an entity item, a grid row).
+ * The rows of an entity's menu, each built here and nowhere else, so a surface composing a menu of its own — the
+ * canvas's node menu, the activity menu of a cycle's row — borrows the row rather than redrawing it.
+ */
+export const entityMenuEntries = {
+	/** Opens the entity's editing modal (its banner). */
+	edit: (entity: InteractableEntity): ContextMenuAction =>
+		({ label: 'Edit', icon: 'lucide:pencil', run: () => openEntityEditor(entity) }),
+
+	/** Opens the note the entity is the authority for. */
+	openNote: (entity: InteractableEntity): ContextMenuAction =>
+		({ label: 'Open note', icon: 'lucide:file-text', run: () => navigateToEntity(entity.id) }),
+
+	/**
+	 * A submenu of what can be created beneath a directive, each choice creating it there. It offers what the
+	 * directive's grid row offers ({@link directiveCreationKinds}), with the same icons and labels.
+	 */
+	add: (directive: InteractableEntity): ContextMenuSubmenu => ({
+		label: 'Add',
+		icon: 'lucide:plus',
+		entries: creationMenuEntries(directive.id, directiveCreationKinds(directive as unknown as Directive))
+	}),
+
+	/** Moves the entity through the hierarchy, through the directive picker (see {@link moveEntity}). */
+	moveTo: (entity: InteractableEntity): ContextMenuAction =>
+		({ label: 'Move to…', icon: 'lucide:folder-symlink', run: () => void moveEntity(entity as unknown as GridEntity) }),
+
+	/**
+	 * Opens the onrush picker for an objective or a stellar directive, to join the active or the planning sprint (see
+	 * {@link OnrushPickerModal}).
+	 */
+	addToOnrush: (entity: InteractableEntity, kind: OnrushMemberKind): ContextMenuAction =>
+		({ label: 'Add to Onrush', icon: 'onrush', run: () => new OnrushPickerModal(kind, entity).open() }),
+
+	/**
+	 * Opens a stellar directive in a new planning view — a window in the standalone shell, a tab in Obsidian — with its
+	 * direct dependencies and dependants beside it, intrinsic ones included (see {@link openInPlanning}).
+	 */
+	openInPlanning: (directive: InteractableEntity): ContextMenuAction =>
+		({ label: 'Open in Planning', icon: 'lucide:network', run: () => void openInPlanning(directive) }),
+
+	/** Takes an objective or a stellar directive out of whichever Onrush holds it, asking first; the member survives. */
+	removeFromOnrush: (entity: InteractableEntity, kind: OnrushMemberKind): ContextMenuAction => ({
+		label: 'Remove from Onrush',
+		icon: 'onrush',
+		confirm: removeConfirmation(`Remove "${entity.title}" from its Onrush?`, 'default'),
+		run: () => removeFromOnrush(kind, entity.id)
+	}),
+
+	/** Deletes the entity, asking first — the one destructive row, drawn in the destructive colour. */
+	delete: (entity: InteractableEntity): ContextMenuAction => ({
+		label: 'Delete',
+		icon: 'lucide:trash-2',
+		danger: true,
+		confirm: deleteConfirmation(`Delete "${entity.title}"?`),
+		run: () => deleteEntity(entity)
+	})
+}
+
+/**
+ * What each kind adds to the rows every entity gets, by runtime type name. A kind not listed here adds nothing; a kind
+ * with more to offer adds its rows here rather than in the item that draws it, so a grid row, a list item and a
+ * heading all raise the same menu for the same entity.
+ */
+const kindEntries: Record<string, (entity: InteractableEntity) => ContextMenuEntry[]> = {
+	Objective: entity => onrushEntries(entity, 'objective'),
+	StellarDirective: entity => [...onrushEntries(entity, 'directive'), ...planningEntries(entity)]
+}
+
+/**
+ * The planning row of a stellar directive: open it in a planning view of its own. None where the host cannot pop a
+ * planning view out, since the row would do nothing there; and a lunar directive, never a dependency endpoint, never
+ * reaches here.
+ */
+function planningEntries(entity: InteractableEntity): ContextMenuEntry[] {
+	return canOpenInPlanning(typeNameOf(entity)) ? [entityMenuEntries.openInPlanning(entity)] : []
+}
+
+/**
+ * The onrush row of a kind a sprint can hold (PEP102 patch 10): a member offers to leave its Onrush, anything else to
+ * join one. A lunar directive is no such kind, so it gets neither.
+ */
+function onrushEntries(entity: InteractableEntity, kind: OnrushMemberKind): ContextMenuEntry[] {
+	return (entity as OnrushMember).onrushSprintId
+		? [entityMenuEntries.removeFromOnrush(entity, kind)]
+		: [entityMenuEntries.addToOnrush(entity, kind)]
+}
+
+/**
+ * Builds the context menu for an entity, whatever kind it is (an entity item, a grid row, a heading).
  *
- * Every entity offers to be edited and to open its note; an objective that sits in an Onrush offers to leave it; and
- * any kind the SDK can delete offers deletion, set apart below a separator and in the destructive colour. A kind
- * with no delete call simply omits that row rather than offering one that would silently do nothing.
+ * Every entity offers to be edited and to open its note; a directive offers an Add submenu of what can be created
+ * beneath it; a kind that sits in the hierarchy — a directive, an incentive — offers to be moved through it; a kind
+ * with rows of its own adds them ({@link kindEntries}: an objective or a stellar directive offers to join an Onrush, or
+ * to leave the one it is in, and a stellar directive to open in a planning view of its own); and any kind the SDK can
+ * delete offers deletion, set apart below a separator. A kind with
+ * no delete call simply omits that row rather than offering one that would silently do nothing. Leaving the Onrush and
+ * deleting both ask first.
+ *
+ * A surface whose row is not the entity itself — a cycle's activity, an occurrence, a canvas node — builds its own
+ * menu from {@link entityMenuEntries} instead, adding and replacing rows as its row needs.
  */
 export function entityContextMenu(entity: InteractableEntity): ContextMenuSpec {
 	const typeName = typeNameOf(entity)
 	const entries: ContextMenuEntry[] = [
-		{ label: 'Edit', icon: 'lucide:pencil', run: () => openEntityEditor(entity) },
-		{ label: 'Open note', icon: 'lucide:file-text', run: () => navigateToEntity(entity.id) }
+		entityMenuEntries.edit(entity),
+		entityMenuEntries.openNote(entity)
 	]
 
-	if (typeName === 'Objective' && (entity as { onrushSprintId?: string }).onrushSprintId) {
-		entries.push({ label: 'Remove from Onrush', icon: 'onrush', run: () => removeFromOnrush(entity.id) })
+	if (canCreateUnder(typeName)) {
+		entries.push(entityMenuEntries.add(entity))
 	}
 
+	if (canMoveEntity(typeName)) {
+		entries.push(entityMenuEntries.moveTo(entity))
+	}
+
+	entries.push(...kindEntries[typeName ?? '']?.(entity) ?? [])
+
 	if (canDeleteEntity(typeName)) {
-		entries.push({ separator: true }, { label: 'Delete', icon: 'lucide:trash-2', danger: true, run: () => deleteEntity(entity) })
+		entries.push({ separator: true }, entityMenuEntries.delete(entity))
 	}
 
 	return { title: entity.title, entries }
@@ -99,9 +207,9 @@ function deleteByType(typeName: string | undefined, id: string): Promise<boolean
 	}
 }
 
-/** Takes an objective out of whichever sprint holds it; the objective itself survives. */
-async function removeFromOnrush(objectiveId: string): Promise<void> {
-	const removed = await core.repos.objectives.mutate(objectiveId, async () => await core.objectives.removeFromOnrush(objectiveId))
+/** Takes an objective or a stellar directive out of whichever sprint holds it; the member itself survives. */
+async function removeFromOnrush(kind: OnrushMemberKind, memberId: string): Promise<void> {
+	const removed = await leaveOnrush(kind, memberId)
 	toast(removed ? 'Removed from the Onrush.' : 'Could not remove from the Onrush.', removed ? 'success' : 'error')
 	if (removed) {
 		await refreshAfterEntityChange()

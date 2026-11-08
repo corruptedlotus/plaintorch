@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-import { ipc, type BridgeRequest, type BridgeResponse, type BridgeStreamLine, type PlaintorchBridge, type ShellStatus, type WindowFrameState } from "../shared/contracts"
+import { ipc, type BridgeRequest, type BridgeResponse, type BridgeStreamLine, type PlaintorchBridge, type PlanningSaveOutcome, type PlanningWindowContent, type ShellStatus, type WindowFrameState } from "../shared/contracts"
 
 /** The streams this document has open, by id: where their lines and their end go. */
 const streams = new Map<string, { onLine: (line: string) => void, onEnd: () => void }>()
@@ -19,8 +19,9 @@ ipcRenderer.on(ipc.coreStreamEnd, (_: Electron.IpcRendererEvent, id: string) => 
 
 /**
  * The only door between the sandboxed renderer and the main process. Every window shares it: the splash uses the
- * status subscription, the status and briefing windows everything, including the core transport the renderer's SDK
- * client sends through, the change feed it streams, and the window their own title bars drive.
+ * status subscription, the status, briefing and planning windows everything, including the core transport the
+ * renderer's SDK client sends through, the change feed it streams, and the window their own title bars drive; a
+ * planning window also reads and writes its file through it.
  */
 const bridge: PlaintorchBridge = {
 	getStatus: () => ipcRenderer.invoke(ipc.getStatus) as Promise<ShellStatus>,
@@ -72,6 +73,17 @@ const bridge: PlaintorchBridge = {
 		minimize: () => ipcRenderer.invoke(ipc.frameMinimize) as Promise<void>,
 		toggleMaximize: () => ipcRenderer.invoke(ipc.frameToggleMaximize) as Promise<void>,
 		close: () => ipcRenderer.invoke(ipc.frameClose) as Promise<void>
+	},
+	planning: {
+		read: () => ipcRenderer.invoke(ipc.planningRead) as Promise<PlanningWindowContent | undefined>,
+		write: text => ipcRenderer.invoke(ipc.planningWrite, text) as Promise<void>,
+		onChanged: listener => {
+			const handler = (_: Electron.IpcRendererEvent, content: PlanningWindowContent) => listener(content)
+			ipcRenderer.on(ipc.planningChanged, handler)
+			return () => ipcRenderer.removeListener(ipc.planningChanged, handler)
+		},
+		saveAs: text => ipcRenderer.invoke(ipc.planningSaveAs, text) as Promise<PlanningSaveOutcome | undefined>,
+		popOut: context => ipcRenderer.invoke(ipc.planningPopOut, context) as Promise<void>
 	}
 }
 

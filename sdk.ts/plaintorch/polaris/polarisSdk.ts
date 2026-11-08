@@ -2,6 +2,7 @@ import type { PlaintorchCoreClient } from "../coreClient"
 import type {
 	Executive,
 	ExecutiveUpdate,
+	LorePolarisCycles,
 	PolarisAgenda,
 	PolarisDecreeAdd,
 	PolarisCycle,
@@ -12,7 +13,6 @@ import type {
 	PolarisExecutivePlan,
 	PolarisExecutivePlanResult,
 	Reflective,
-	ReflectiveDrawRequest,
 	ReflectiveUpdate
 } from "./contracts"
 export class PlaintorchPolarisSdk {
@@ -28,6 +28,33 @@ export class PlaintorchPolarisSdk {
 
 	public async listForecasts(): Promise<PolarisCycle[]> {
 		return (await this.client.getJson<PolarisCycle[]>("/api/polaris/forecasts")) ?? []
+	}
+
+	/**
+	 * The cycles of the days from `from` through `to` (ISO dates; unbounded ahead when `to` is omitted) — forecast,
+	 * active and ended alike — in day order, each with its executives and reflectives. Resolves to `undefined` when
+	 * the core could not answer, so a caller can tell a failed read from an empty range.
+	 */
+	public async listByDay(from: string, to?: string): Promise<PolarisCycle[] | undefined> {
+		const query = new URLSearchParams({ from, ...(to ? { to } : {}) })
+		return await this.client.getJson<PolarisCycle[]>(`/api/polaris/days?${query}`)
+	}
+
+	/**
+	 * The cycles of a lore page's active period, named by the page's PUCK (`Era1/Cha2`). Resolves to `undefined` when
+	 * the core could not answer or knows no such page.
+	 */
+	public async listForLore(lorePuck: string): Promise<LorePolarisCycles | undefined> {
+		const query = new URLSearchParams({ puck: lorePuck })
+		return await this.client.getJson<LorePolarisCycles>(`/api/polaris/lore?${query}`)
+	}
+
+	/**
+	 * Deletes a cycle that has not begun — a forecast — with its plan (its executives and reflectives). The
+	 * objectives and decrees behind them stay. A begun cycle is never deleted; the core refuses it.
+	 */
+	public async delete(polarisCycleId: string): Promise<boolean> {
+		return await this.client.delete(`/api/polaris/${encodeURIComponent(polarisCycleId)}`)
 	}
 
 	public async update(polarisCycleId: string, update: PolarisCycleUpdate): Promise<PolarisCycle | undefined> {
@@ -89,22 +116,6 @@ export class PlaintorchPolarisSdk {
 				mode: 3,
 				objectiveId
 			})) !== undefined
-		)
-	}
-
-	public async drawReflectives(request: ReflectiveDrawRequest = {}): Promise<Reflective[]> {
-		return (await this.client.postForJson<Reflective[]>("/api/polaris/current/reflectives/draw", request)) ?? []
-	}
-
-	public async drawReflectivesForCycle(
-		polarisCycleId: string,
-		request: ReflectiveDrawRequest = {}
-	): Promise<Reflective[]> {
-		return (
-			(await this.client.postForJson<Reflective[]>(
-				`/api/polaris/${encodeURIComponent(polarisCycleId)}/reflectives/draw`,
-				request
-			)) ?? []
 		)
 	}
 

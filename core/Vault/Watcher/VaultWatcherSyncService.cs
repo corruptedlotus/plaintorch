@@ -158,6 +158,11 @@ public sealed class VaultWatcherSyncService(
 			await NormalizeObjectiveForeignKeysAsync(objective, candidate.VaultRelativePath, cancellationToken);
 		}
 
+		if (model is StellarDirective stellar)
+		{
+			await NormalizeStellarDirectiveForeignKeysAsync(stellar, candidate.VaultRelativePath, cancellationToken);
+		}
+
 		if (model is Fate or Decree)
 		{
 			await NormalizeIncentiveDirectiveAsync((Incentive)model, candidate.VaultRelativePath, cancellationToken);
@@ -279,17 +284,11 @@ public sealed class VaultWatcherSyncService(
 			await NormalizeObjectiveForeignKeysAsync(objective, candidate.VaultRelativePath, cancellationToken);
 		}
 
-		if (existing is Incentive existingIncentive)
-		{
-			// Parenting is not markdown-mapped, so a frontmatter sync must never clear it.
-			existingIncentive.ParentIncentiveId = existingEntry.OriginalValues.GetValue<string?>(nameof(Incentive.ParentIncentiveId));
-		}
-
 		if (existing is OnrushSprint existingSprint)
 		{
 			// The milestone binding and the graph layout are database-only state (PEP102), never written to the
-			// sprint's frontmatter, so a frontmatter sync must never clear them the way SetValues otherwise does —
-			// the same reasoning as parenting above. Losing the milestone id detaches a sprint from its milestone
+			// sprint's frontmatter, so a frontmatter sync must never clear them the way SetValues otherwise does.
+			// Losing the milestone id detaches a sprint from its milestone
 			// (it then reads as an ordinary checkpoint); losing the layout discards the saved canvas arrangement.
 			existingSprint.MilestoneCheckpointId = existingEntry.OriginalValues.GetValue<string?>(nameof(OnrushSprint.MilestoneCheckpointId));
 			existingSprint.GraphLayout = existingEntry.OriginalValues.GetValue<string?>(nameof(OnrushSprint.GraphLayout));
@@ -299,8 +298,22 @@ public sealed class VaultWatcherSyncService(
 		{
 			// A directive's availability timeframe is database-only (PEP100 patch 2) — a timeframe id is a row id, not
 			// a PUCK, so it never reaches frontmatter — and a frontmatter sync must not clear it, for the same reason
-			// as parenting and the sprint fields above.
+			// as the sprint fields above.
 			existingDirective.AvailabilityTimeframeId = existingEntry.OriginalValues.GetValue<long?>(nameof(Directive.AvailabilityTimeframeId));
+		}
+
+		if (existing is StellarDirective existingStellar)
+		{
+			await NormalizeStellarDirectiveForeignKeysAsync(existingStellar, candidate.VaultRelativePath, cancellationToken);
+		}
+
+		if (existing is Fate existingFate)
+		{
+			// How a fate passed — whether its Passed was inferred, and the started status it left — is database-only (PEP103
+			// I-191): a note reads `status: Passed` either way, so a frontmatter sync keeps them. The engine clears them once
+			// the status leaves Passed, and reads a pass the note itself selects as a selected one.
+			existingFate.PassInferred = existingEntry.OriginalValues.GetValue<bool>(nameof(Fate.PassInferred));
+			existingFate.PassedFrom = existingEntry.OriginalValues.GetValue<FateStatus?>(nameof(Fate.PassedFrom));
 		}
 
 		if (existing is Fate or Decree)
@@ -436,6 +449,32 @@ public sealed class VaultWatcherSyncService(
 					vaultRelativePath);
 				objective.OnrushSprintId = null;
 			}
+		}
+	}
+
+	/// <summary>
+	/// Normalizes a stellar directive's onrush relation (PEP102 patch 10) when the sprint its frontmatter names does
+	/// not exist, as the objective's is normalized: the note keeps saying what it says, the row does not reference
+	/// a sprint that is not there.
+	/// </summary>
+	private async Task NormalizeStellarDirectiveForeignKeysAsync(StellarDirective directive, string vaultRelativePath, CancellationToken cancellationToken)
+	{
+		if (string.IsNullOrWhiteSpace(directive.OnrushSprintId))
+		{
+			return;
+		}
+
+		var onrushExists = await context.OnrushSprints
+			.AsNoTracking()
+			.AnyAsync(item => item.Id == directive.OnrushSprintId, cancellationToken);
+		if (!onrushExists)
+		{
+			logger.LogWarning(
+				"Watcher normalized missing onrush sprint relation '{OnrushSprintId}' on directive '{DirectiveId}' from '{Path}'.",
+				directive.OnrushSprintId,
+				directive.Id,
+				vaultRelativePath);
+			directive.OnrushSprintId = null;
 		}
 	}
 
@@ -657,8 +696,8 @@ public sealed class VaultWatcherSyncService(
 			return;
 		}
 
-		// Rows that still reference the entity through a restricting relationship (a directive's children, an incentive's
-		// child incentives) make the database refuse the removal — and the API refuses the same deletes. Attempting it
+		// Rows that still reference the entity through a restricting relationship (a directive's subdirectives and
+		// incentives) make the database refuse the removal — and the API refuses the same deletes. Attempting it
 		// anyway failed on every retry, so the blocked delete is reported as such and nothing is written. An incentive's
 		// executives do not block: the save-time state rule releases them in the removing save.
 		var blockers = await entityGateway.FindDeleteBlockersAsync(existing, cancellationToken);

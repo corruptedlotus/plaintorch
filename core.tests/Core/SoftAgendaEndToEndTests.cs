@@ -68,8 +68,8 @@ public sealed class SoftAgendaEndToEndTests : VaultTestBase
 
 		// 2. Forecast forward: the agenda projects the upcoming occurrences with nothing persisted yet.
 		var forecast = await Agenda();
-		Assert.Contains(forecast.Attentives, item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId) == new TimeOnly(9, 0));
-		Assert.Contains(forecast.Eventives, item => item.FateId == fate.Id && TimeOnly.FromDateTime(item.RecurrenceId) == new TimeOnly(15, 0));
+		Assert.Contains(forecast.Attentives, item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId!.Value) == new TimeOnly(9, 0));
+		Assert.Contains(forecast.Eventives, item => item.FateId == fate.Id && TimeOnly.FromDateTime(item.RecurrenceId!.Value) == new TimeOnly(15, 0));
 		var persistedBefore = await Vault.QueryAsync(context => context.Attentives.CountAsync(Ct));
 		Assert.Equal(0, persistedBefore);
 
@@ -112,10 +112,10 @@ public sealed class SoftAgendaEndToEndTests : VaultTestBase
 		// 5c. The forecast now shows only NEW-orbit (17:00) occurrences plus the hardened old-orbit ones: every
 		//     remaining 09:00 occurrence is a hardened row (Id > 0); no un-hardened old-orbit projection survives.
 		var projection = await Project(today, today.AddDays(30));
-		Assert.Contains(projection.Attentives, item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId) == new TimeOnly(17, 0));
+		Assert.Contains(projection.Attentives, item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId!.Value) == new TimeOnly(17, 0));
 		Assert.Contains(projection.Attentives, item => item.DecreeId == decree.Id && item.RecurrenceId == At(farAttentiveDay, 9));
 		var oldOrbitOccurrences = projection.Attentives
-			.Where(item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId) == new TimeOnly(9, 0))
+			.Where(item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId!.Value) == new TimeOnly(9, 0))
 			.ToList();
 		Assert.NotEmpty(oldOrbitOccurrences);
 		Assert.All(oldOrbitOccurrences, item => Assert.True(item.Id > 0));

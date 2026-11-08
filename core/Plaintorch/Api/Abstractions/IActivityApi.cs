@@ -14,7 +14,8 @@ public interface IActivityApi
 	Task<IReadOnlyList<Activity>> ListAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Finds activities — objectives and decrees — using a free-text query, just like the objective search.
+	/// Finds activities — objectives and decrees — using a free-text query, matched just like the objective search;
+	/// the take caps the merged, title-ordered result.
 	/// </summary>
 	Task<IReadOnlyList<Activity>> FindAsync(SearchRequest search, CancellationToken cancellationToken = default);
 }

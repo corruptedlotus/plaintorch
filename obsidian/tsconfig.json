@@ -43,7 +43,10 @@
 			"@": [
 				"src"
 			]
-		}
+		},
+		"customConditions": [
+			"source"
+		]
 	},
 	"include": [
 		"src/**/*.ts",

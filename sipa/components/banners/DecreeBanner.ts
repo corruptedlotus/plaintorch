@@ -1,14 +1,16 @@
-import { component, css, html, nothing, state } from "@a11d/lit"
+import { component, css, html, live, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { Decree, DecreeStatus, DecreeUpdate, PolarisCycle } from '@pleiades/sdk'
-import { core, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, decreeStatusDescriptors } from ".."
+import { Decree, DecreeStatus, DecreeUpdate, OrbitUnit, PolarisCycle } from '@pleiades/sdk'
+import { core, declarativeScheduleUpdate, editState, IconName, followRenamedNote, offerEstimation, ReactiveBinder } from ".."
+import type { ScheduleValue } from "../editing/EditableSchedule"
 import { toast } from '../../host'
+import { declarativeResolutionStyles, declarativeResolutionTemplate, type DeclarativeResolutionUpdate } from './declarativeResolution'
 
 /**
  * Banner for a Decree declarative (PEP100). Decrees are enduring routines: the banner shows
  * their Orbit definition above the actions, exposes the two decree-appropriate actions
- * (add to Polaris, and the per-run Celestron reward), and — only inside a Moonlight (lunar)
- * hierarchy — a toggleable Lunar Reflection row.
+ * (add to Polaris, and the per-run Celestron reward), and a toggleable Lunar Reflection row,
+ * which every decree has, lunar, stellar or top-level (PEP104).
  */
 @component('p7t-decree-banner')
 export class DecreeBanner extends EntityBanner<Decree> {
@@ -22,14 +24,8 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
 			const update: DecreeUpdate = {}
+			// The status is not bound: the state bubble saves a shift itself (editState).
 			switch (keyPath) {
-				case 'status':
-					update.status = entity.status
-					break
-				case 'orbit':
-					// Empty string clears the schedule server-side; undefined would be a no-op.
-					update.orbit = entity.orbit ?? ''
-					break
 				case 'activeCelestron':
 					update.activeCelestron = entity.activeCelestron
 					break
@@ -60,7 +56,7 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		this.activePolaris = await core.polaris.getCurrent()
 	}
 
-	/** A decree participates in Moonlight reflection only when its directive is lunar (PEP100). */
+	/** Whether the decree's directive is lunar, which names it a Moonlight decree rather than a Pleiades one. */
 	protected get isLunarHierarchy() {
 		return this.entity!.directive?.isLunar ?? false
 	}
@@ -71,20 +67,29 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		return this.activePolaris.executives.some(executive => executive.incentiveId === this.entity!.id)
 	}
 
-	addToPolaris = async () => {
+	/**
+	 * Adds the decree to the active Polaris cycle, then asks for its estimate beside `button`, where it was added —
+	 * starting from the decree's default length, which the core seeds.
+	 */
+	addToPolaris = async (button?: HTMLElement) => {
 		if (this.isInActivePolaris) return
-		const decreeId = this.entity!.id
-		const executive = await core.repos.decrees.mutate(decreeId, async () =>
-			await core.polaris.addDecreeExecutive({ decreeId }))
+		const decree = this.entity!
+		const executive = await core.repos.decrees.mutate(decree.id, async () =>
+			await core.polaris.addDecreeExecutive({ decreeId: decree.id }))
 		if (executive) {
 			toast('Added to active Polaris cycle.', 'success')
 			this.activePolaris = await core.polaris.getCurrent()
+			// The cycle comes back as the canonical instance, merged in place: the same object, so assigning it redraws nothing.
+			this.requestUpdate()
+			void offerEstimation({ ...executive, incentive: executive.incentive ?? decree }, button ?? this)
 		}
 	}
 
 	static override get styles() {
 		return css`
 			${super.styles}
+
+			${declarativeResolutionStyles}
 
 			:host {
 				padding-inline: 1.2em;
@@ -144,12 +149,12 @@ export class DecreeBanner extends EntityBanner<Decree> {
 
 	protected override get secondary() {
 		return html`
-			<p7t-directive-item .directive=${this.entity!.directive}></p7t-directive-item>
-			${!this.isLunarHierarchy ? nothing : this.reflectionRow}
+			<p7t-editable-hierarchy .entity=${this.entity}></p7t-editable-hierarchy>
+			${this.reflectionRow}
 		`
 	}
 
-	/** Editable Lunar Reflection toggle; shown only inside a lunar hierarchy. */
+	/** Editable Lunar Reflection toggle; any decree may reflect, whichever hierarchy it sits in. */
 	protected get reflectionRow() {
 		return html`
 			<p7t-editable-toggle
@@ -163,12 +168,39 @@ export class DecreeBanner extends EntityBanner<Decree> {
 		`
 	}
 
+	/**
+	 * The decree's orbit, edited in a bubble as notation or as a one-shot `Z{…}` literal. A decree's orbit stays granular,
+	 * its lengths coming from its default length, so a one-shot carries no duration; a reflecting decree's is a whole day.
+	 * `live` puts back an orbit the core refused, which the editable had already shown.
+	 */
 	protected override get info() {
+		const entity = this.entity!
 		return html`
 			<div class='schedule'>
-				<p7t-editable-orbit .calendar=${this.entity?.calendar} ${this.binder.bind('orbit')}></p7t-editable-orbit>
+				<p7t-editable-schedule
+					.calendar=${entity.calendar}
+					.orbit=${live(entity.orbit)}
+					.oneShotUnits=${entity.reflect ? [OrbitUnit.Day] : undefined}
+					.oneShotDuration=${false}
+					@schedulechange=${(e: CustomEvent<ScheduleValue>) => void this.saveSchedule(e.detail)}>
+				</p7t-editable-schedule>
 			</div>
+			${declarativeResolutionTemplate(entity, update => void this.saveResolution(update))}
 		`
+	}
+
+	/** Persists an orbit chosen in the schedule's bubble, with the calendar a one-shot literal was written on. */
+	private async saveSchedule(value: ScheduleValue) {
+		const entity = this.entity!
+		this.beginEntityEdit()
+		await this.commitEntityEdit(async () => await core.declaratives.updateDecree(entity.id, declarativeScheduleUpdate(value)))
+	}
+
+	/** Persists a calendar or time zone chosen in the resolution row. */
+	private async saveResolution(update: DeclarativeResolutionUpdate) {
+		const entity = this.entity!
+		this.beginEntityEdit()
+		await this.commitEntityEdit(async () => await core.declaratives.updateDecree(entity.id, update))
 	}
 
 	protected override get actions() {
@@ -178,7 +210,7 @@ export class DecreeBanner extends EntityBanner<Decree> {
 				<p7t-editable-starfire ${this.binder.bind('activeCelestron')}></p7t-editable-starfire>
 				<span class='switcher'>per run</span>
 			</div>
-			<p7t-button ?disabled=${inPolaris} large icon='polaris' @click=${() => this.addToPolaris()}>
+			<p7t-button ?disabled=${inPolaris} large icon='polaris' @click=${(e: Event) => this.addToPolaris(e.currentTarget as HTMLElement)}>
 				${!inPolaris ? html`<span>Add to Polaris</span>` : html`
 					<p7t-icon class='marker-icon' icon='lucide:check'></p7t-icon>
 				`}
@@ -194,7 +226,7 @@ export class DecreeBanner extends EntityBanner<Decree> {
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${() => SelectStatusModal.prompt(decreeStatusDescriptors)} ${this.binder.bind('status')}>
+			<p7t-editable .value=${this.entity!.status} .doEdit=${(_: unknown, field: HTMLElement) => editState(field, this.entity)}>
 				<p7t-status-item
 					.status=${DecreeStatus[this.entity!.status] as keyof typeof DecreeStatus}>
 				</p7t-status-item>

@@ -14,26 +14,39 @@
 // does not step — and `@x` caps its emission per period of its written parent (in all, at the top level). Where a
 // limit can be said as a plainer selection it becomes one: `d{5}%3*4` is the 5th, 8th, 11th and 14th, `w[d*3]` the
 // first 3 days of every week, and an `@x` on a nested list keeps its first x values (`d[h{9,12,15,18}@2]` is 09:00 and
-// 12:00). A `%` on a weekday or a month is spelled out the same way, since it names a handful of values.
+// 12:00). A `%` on a weekday or a month is spelled out the same way, since it names a handful of values. Any explicit
+// `%N` steps an index, `%1` included (`d{5}%1*4` is the 5th through 8th); on a bare unit `%1` is every one, as without.
+//
+// A spelled-out expansion names at most four values, or any number of consecutive ones as a range. Past that it is
+// said as declared instead: its starts and its step, with a `*x` read as a cap per parent period (`y[w{1}%2*20]` is
+// every other week from calendar week 1, up to 20 times a year).
 
-import type { ASTNode, DateTimeLiteralNode, DurationPart, IndexSpec, LimitSpec, TimeUnit, TimeUnitNode } from './ast'
+import type { ASTNode, CalendarMoment, DateTimeLiteralNode, DurationPart, IndexSpec, LimitSpec, TimeUnit, TimeUnitNode } from './ast'
 import type { CalendarSystem } from './calendar'
+import { bindImplicitCycles } from './cycles'
 import {
-	Bound, Branches, CalendarUnit, ClockStep, ClockTime, Frame, NamedValue, ScheduleModel, Selection,
+	Bound, Branches, CalendarDate, CalendarUnit, ClockCycle, ClockStep, ClockTime, Frame, NamedValue, ScheduleModel, Selection,
 	isClockUnit, naturalParent,
 } from './scheduleModel'
 
 /** A shape this first pass does not model yet; the caller falls back to the legacy humaniser for it. */
 export class UnsupportedShapeError extends Error {}
 
-/** Reads an Orbit AST into its meaning. Throws {@link UnsupportedShapeError} for shapes not yet modelled. */
+/**
+ * Reads an Orbit AST into its meaning, each indexed global bound to its implicit cycle first, as the engine binds it
+ * (`m{15}` reads as `h[m{15}]`). Throws {@link UnsupportedShapeError} for shapes not yet modelled.
+ */
 export function normalizeSchedule(node: ASTNode, calendar: CalendarSystem): ScheduleModel {
+	return readSchedule(bindImplicitCycles(node), calendar)
+}
+
+function readSchedule(node: ASTNode, calendar: CalendarSystem): ScheduleModel {
 	if (node.kind === 'SetOperationNode') {
 		return {
 			kind: 'compound',
 			operator: node.operator,
-			left: normalizeSchedule(node.left, calendar),
-			right: normalizeSchedule(node.right, calendar),
+			left: readSchedule(node.left, calendar),
+			right: readSchedule(node.right, calendar),
 		}
 	}
 	if (node.kind === 'DateTimeLiteralNode') {
@@ -58,7 +71,7 @@ function normalizeBranch(node: ASTNode, enclosing: CalendarUnit, calendar: Calen
 	if (node.kind === 'DateTimeLiteralNode') {
 		// A time-only z{h:m} is a clock under the frame; a dated literal cannot sit inside a chain.
 		if (node.year !== undefined) throw new UnsupportedShapeError('dated literal inside a chain')
-		const bounds = windowBounds(node.limits)
+		const bounds = windowBounds(node.limits, calendar)
 		const span = node.duration && node.duration.length > 0 ? node.duration : undefined
 		return { kind: 'simple', frames: [], time: readLiteralClock(node, enclosing, bounds), span, bounds }
 	}
@@ -70,13 +83,13 @@ function normalizeBranch(node: ASTNode, enclosing: CalendarUnit, calendar: Calen
  * (`z{h:m}`, no date) is just a daily clock — a frameless simple schedule with only a `time`.
  */
 function normalizeLiteral(node: DateTimeLiteralNode, calendar: CalendarSystem): ScheduleModel {
-	const bounds = windowBounds(node.limits)
+	const bounds = windowBounds(node.limits, calendar)
 	const span = node.duration && node.duration.length > 0 ? node.duration : undefined
 
 	if (node.year !== undefined) {
 		// A dated literal's modifiers ride on its year, a single moment: an index `%` does not step, so its `*x` means
 		// nothing, and its `@x` caps what already fires once.
-		const time = node.hour === undefined ? undefined : { hours: [node.hour], minutes: [node.minute ?? 0], seconds: node.second !== undefined ? [node.second] : [] }
+		const time = clockAt(node.hour, node.minute, node.second)
 		return { kind: 'instant', year: node.year, month: named(node.month!, 'M', 'y', calendar), day: node.day!, time, span, bounds }
 	}
 	return { kind: 'simple', frames: [], time: readLiteralClock(node, undefined, bounds), span, bounds }
@@ -108,7 +121,7 @@ function normalizeChain(root: TimeUnitNode, calendar: CalendarSystem, enclosing?
 		}
 
 		// Window bounds and the span can hang off any node in the spine; gather them wherever they are.
-		bounds.push(...windowBounds(node.limits))
+		bounds.push(...windowBounds(node.limits, calendar))
 		if (node.duration && node.duration.length > 0) span = node.duration
 
 		if (node.kind === 'DateTimeLiteralNode') {
@@ -122,7 +135,7 @@ function normalizeChain(root: TimeUnitNode, calendar: CalendarSystem, enclosing?
 			// The h/m/s tail is the time of day; nothing calendar follows it. Its minute and second nodes can carry
 			// window bounds and a span too, gathered like the spine's.
 			time = readClock(node, enclosing, bounds, clockNode => {
-				bounds.push(...windowBounds(clockNode.limits))
+				bounds.push(...windowBounds(clockNode.limits, calendar))
 				if (clockNode.duration && clockNode.duration.length > 0) span = clockNode.duration
 			})
 			break
@@ -148,15 +161,31 @@ function readFrame(node: TimeUnitNode, unit: CalendarUnit, parent: CalendarUnit 
 	const emit = limitOf(node.limits, 'instances')
 	if (repeat === 0 || emit === 0) throw new UnsupportedShapeError('a limit that lets nothing fire')
 	const leaf = !node.child
-	const frame: Frame = { unit, parent, interval: node.interval, selection: toSelection(node.indices, unit, parent, calendar) }
-	const stepped = (frame.interval ?? 1) > 1
+	const interval = stepInterval(node)
+	const frame: Frame = { unit, parent, interval, selection: toSelection(node.indices, unit, parent, calendar) }
+	const stepped = interval !== undefined
 	const values = staticValues(node.indices)
+	// Whether this node's `@x` has been read into its selection already, so it is not capped a second time below.
+	let emitRead = false
 
 	if (values && stepped && (repeat !== undefined || isNamedDomain(unit, parent, calendar) || (emit !== undefined && leaf && written !== undefined))) {
 		// A stepped index keeps the first x steps of each run (`d{5}%3*4`); a stepped weekday or month names its runs
-		// outright (`w[d{1}%2]` is Monday, Wednesday, Friday and Sunday). Either way it reads as the values it lands on.
-		frame.selection = listOf(expandRuns(values, frame.interval!, repeat, unitCeiling(unit, parent, calendar)), unit, parent, calendar)
-		frame.interval = undefined
+		// outright (`w[d{1}%2]` is Monday, Wednesday, Friday and Sunday). Either way it reads as the values it lands on —
+		// unless they are too many to name, when the run is said as declared and its `*x` caps it per parent period.
+		const capped = emit !== undefined && leaf && written !== undefined
+		let runs = expandRuns(values, interval, repeat, unitCeiling(unit, parent, calendar))
+		if (capped) runs = runs.slice(0, Math.max(0, emit))
+		const spelled = spelledOut(runs, unit, parent, calendar)
+		if (spelled) {
+			frame.selection = spelled
+			frame.interval = undefined
+			emitRead = capped
+		} else if (repeat !== undefined) {
+			// Each start's run keeps x steps, so the period holds up to x per start (fewer where runs meet).
+			const times = Math.min(repeat * values.length, capped ? emit : Number.POSITIVE_INFINITY)
+			bounds.push(parent === undefined ? { kind: 'count', times } : { kind: 'count', times, per: parent })
+			emitRead = capped
+		}
 	} else if (!node.indices && repeat !== undefined) {
 		if (written === undefined) frame.repeat = repeat
 		else if (!stepped) frame.selection = firstOf(repeat, unit, parent, calendar)
@@ -167,7 +196,7 @@ function readFrame(node: TimeUnitNode, unit: CalendarUnit, parent: CalendarUnit 
 	}
 	// Any other `*x` sits on an index `%` does not step: a run of one value, so it means nothing.
 
-	if (emit !== undefined) {
+	if (emit !== undefined && !emitRead) {
 		const listed = staticSelectionValues(frame.selection)
 		if (written !== undefined && leaf && listed && !frame.interval) {
 			// A nested list's first x values are the ones that fire in every period; a run of them reads as a range.
@@ -179,7 +208,7 @@ function readFrame(node: TimeUnitNode, unit: CalendarUnit, parent: CalendarUnit 
 			frame.selection = firstOf(emit, unit, parent, calendar)
 		} else if (written !== undefined && leaf && frame.selection.kind === 'first' && !frame.interval) {
 			frame.selection = firstOf(Math.min(emit, frame.selection.count), unit, parent, calendar)
-		} else {
+		} else if (written === undefined || !emitCannotBind(node, emit)) {
 			bounds.push(written === undefined ? { kind: 'count', times: emit } : { kind: 'count', times: emit, per: written })
 		}
 	}
@@ -187,13 +216,29 @@ function readFrame(node: TimeUnitNode, unit: CalendarUnit, parent: CalendarUnit 
 }
 
 /** The window bounds (`<t >t`) among a node's limits; `*x` and `@x` belong to their node and are read with it. */
-function windowBounds(limits: LimitSpec[]): Bound[] {
+function windowBounds(limits: LimitSpec[], calendar: CalendarSystem): Bound[] {
 	const bounds: Bound[] = []
 	for (const limit of limits) {
-		if (limit.type === 'after') bounds.push({ kind: 'after', at: limit.timestamp })
-		if (limit.type === 'before') bounds.push({ kind: 'before', at: limit.timestamp })
+		if (limit.type !== 'after' && limit.type !== 'before') continue
+		bounds.push(limit.moment
+			? { kind: limit.type, at: limit.timestamp, date: calendarDate(limit.moment, calendar) }
+			: { kind: limit.type, at: limit.timestamp })
 	}
 	return bounds
+}
+
+/** A `y/M/d[Th:m[:s]]` bound's date, its month named by the calendar. */
+function calendarDate(moment: CalendarMoment, calendar: CalendarSystem): CalendarDate {
+	const date: CalendarDate = { year: moment.year, month: named(moment.month, 'M', 'y', calendar), day: moment.day }
+	const time = clockAt(moment.hour, moment.minute, moment.second)
+	if (time) date.time = time
+	return date
+}
+
+/** The single time of day a dated moment pins, when it has a `T` part. */
+function clockAt(hour: number | undefined, minute: number | undefined, second: number | undefined): ClockTime | undefined {
+	if (hour === undefined) return undefined
+	return { hours: [hour], minutes: [minute ?? 0], seconds: second !== undefined ? [second] : [] }
 }
 
 /** A node's tightest limit of one kind, as the engine reads a repeated `*x`/`@x`. */
@@ -225,15 +270,17 @@ function readLiteralClock(node: DateTimeLiteralNode, written: CalendarUnit | und
 
 /**
  * Reads an `h{…}[m{…}[s{…}]]` clock tail into a {@link ClockTime}, handing each minute and second node to `gather`
- * for its window bounds and span. The hours must be listed. A minute or second node may be listed or bare, and a
- * `%N` on any of the three becomes the time's {@link ClockStep}; a bare minute or second streams, so it must be the
- * finest unit. Each node's `*x`/`@x` is read against it (see {@link readClockValues}). Any other shape — a bare or
- * ranged hour, a ranged or random minute, a second clock step — is deferred rather than read partly, since reading it
- * partly would drop what it says.
+ * for its window bounds and span. The hours must be listed, or the tail is a cycle (see {@link readClockCycle}). A
+ * minute or second node may be listed or bare, and a `%N` on any of the three becomes the time's {@link ClockStep}; a
+ * bare minute or second streams, so it must be the finest unit. Each node's `*x`/`@x` is read against it (see
+ * {@link readClockValues}). Any other shape — a ranged hour, a minute or second straight under a calendar unit, a ranged
+ * or random minute, a second clock step — is deferred rather than read partly, since reading it partly would drop what
+ * it says.
  */
 function readClock(hNode: TimeUnitNode, written: CalendarUnit | undefined, bounds: Bound[], gather: (node: TimeUnitNode) => void): ClockTime {
-	if (!hNode.indices || hNode.indices.type !== 'list') {
-		// A bare `h` (hourly) or a fancy hour index is a selection, not a wall-clock reading — defer it.
+	if (!hNode.indices && hNode.child) return readClockCycle(hNode, written, bounds, gather)
+	if (hNode.unit !== 'h' || !hNode.indices || hNode.indices.type !== 'list') {
+		// A bare `h` (hourly), a fancy hour index, or a minute of the day is a selection, not a wall-clock reading.
 		throw new UnsupportedShapeError('non-clock time unit')
 	}
 
@@ -267,6 +314,65 @@ function readClock(hNode: TimeUnitNode, written: CalendarUnit | undefined, bound
 	return time
 }
 
+/**
+ * A clock recurring in a bare hour or minute that names no value of it — `h[m{15}]`, every hour at :15, or `m[s{30}]`,
+ * every minute at second 30 — the shape an indexed minute or second takes, bound to its implicit cycle. The values
+ * under the cycle must be listed; one of them may step (`h[m{10}%15]`, every 15 minutes from :10 to the end of every
+ * hour). The cycle's own `@x` caps it per period of its written parent, or in all at the top level; its `*x` runs a
+ * top-level schedule for x of its periods, and is deferred on a nested cycle, whose first x hours no reading here says.
+ */
+function readClockCycle(cycle: TimeUnitNode, written: CalendarUnit | undefined, bounds: Bound[], gather: (node: TimeUnitNode) => void): ClockTime {
+	const repeat = limitOf(cycle.limits, 'iterations')
+	const emit = limitOf(cycle.limits, 'instances')
+	if (repeat === 0 || emit === 0) throw new UnsupportedShapeError('a limit that lets nothing fire')
+	if (cycle.unit === 's' || (repeat !== undefined && written !== undefined)) throw new UnsupportedShapeError('a clock cycle this pass does not read')
+	if (emit !== undefined) bounds.push(written === undefined ? { kind: 'count', times: emit } : { kind: 'count', times: emit, per: written })
+	const steps: ClockStep[] = []
+	let minutes: number[] = []
+	let seconds: number[] = []
+	let current: ASTNode | undefined = cycle.child
+	if (cycle.unit === 'h') {
+		const minuteNode = clockChild(current!, 'm')
+		gather(minuteNode)
+		minutes = readClockValues(minuteNode, 'h', bounds, steps)
+		current = minuteNode.child
+		if (minutes.length === 0) throw new UnsupportedShapeError('streaming minutes in an hour cycle')
+	}
+	if (current) {
+		const secondNode = clockChild(current, 's')
+		gather(secondNode)
+		seconds = readClockValues(secondNode, 'm', bounds, steps)
+		current = secondNode.child
+		if (seconds.length === 0) throw new UnsupportedShapeError('streaming seconds in a clock cycle')
+	}
+	if (current) throw new UnsupportedShapeError('a node below the seconds')
+	if (steps.length > 1) throw new UnsupportedShapeError('more than one clock step')
+
+	const clockCycle: ClockCycle = { unit: cycle.unit as ClockCycle['unit'], interval: cycle.interval ?? 1 }
+	if (repeat !== undefined) clockCycle.run = repeat
+	const time: ClockTime = { hours: [], minutes, seconds, cycle: clockCycle }
+	if (steps.length === 1) time.step = steps[0]
+	return time
+}
+
+/**
+ * Whether a nested node's `@x` is at least as many instances as it can fire in a period of its parent — every value
+ * down its chain fixed (a list or range no `%` steps) — so the cap never binds and says nothing.
+ */
+function emitCannotBind(node: TimeUnitNode, emit: number): boolean {
+	const most = fixedInstances(node)
+	return most !== undefined && most <= emit
+}
+
+/** The most instances a node fires per period of its parent when every value down its chain is fixed; else undefined. */
+function fixedInstances(node: ASTNode | undefined): number | undefined {
+	if (!node) return 1
+	if (node.kind !== 'TimeUnitNode' || stepInterval(node) !== undefined) return undefined
+	const values = staticValues(node.indices)
+	const below = fixedInstances(node.child)
+	return values && below !== undefined ? values.length * below : undefined
+}
+
 /** The node under an hour or minute, which must be the next finer clock unit on its own (not a set-operation). */
 function clockChild(node: ASTNode, unit: 'm' | 's'): TimeUnitNode {
 	if (node.kind !== 'TimeUnitNode' || node.unit !== unit) throw new UnsupportedShapeError(`unmodelled clock child`)
@@ -276,7 +382,8 @@ function clockChild(node: ASTNode, unit: 'm' | 's'): TimeUnitNode {
 /**
  * An hour, minute or second node's listed values, pushing its step onto `steps`: a listed node steps on a `%N`, and a
  * bare node always streams (every 1 of the unit, or every N with a `%N`), reading as no listed values. Its `*x` keeps
- * the first x steps of each run (a stepped list is spelled out; a streaming unit carries it as the step's `times`),
+ * the first x steps of each run (a stepped list is spelled out, up to four values, else capped per period of the unit
+ * above it; a streaming unit carries it as the step's `times`),
  * and its `@x` keeps the first x values when it is the finest unit under a written parent, else caps it per period of
  * `per` (in all at the top level).
  */
@@ -291,14 +398,28 @@ function readClockValues(node: TimeUnitNode, per: TimeUnit | undefined, bounds: 
 
 	if (node.indices?.type === 'list') {
 		let values = [...new Set(node.indices.values)].sort((a, b) => a - b)
-		let stepped = interval > 1
-		if (stepped && (repeat !== undefined || (emit !== undefined && leaf && per !== undefined))) {
-			values = expandRuns(values, interval, repeat, ceiling)
-			stepped = false
+		// A listed clock value steps under any explicit `%N`, `%1` included (`h{9}%1` is every hour from 09:00).
+		let stepped = stepInterval(node) !== undefined
+		let emitRead = false
+		const capped = emit !== undefined && leaf && per !== undefined
+		if (stepped && (repeat !== undefined || capped)) {
+			let runs = expandRuns(values, interval, repeat, ceiling)
+			if (capped) runs = runs.slice(0, Math.max(0, emit))
+			if (runs.length <= SPELL_OUT_LIMIT) {
+				values = runs
+				stepped = false
+				emitRead = capped
+			} else if (repeat !== undefined) {
+				// Too many times to name: the run is said as declared, each start's run keeping x steps per period of the
+				// unit above (the day, for an hour at the top level).
+				const times = Math.min(repeat * values.length, capped ? emit : Number.POSITIVE_INFINITY)
+				bounds.push({ kind: 'count', times, per: per ?? coarserClockUnit(unit) })
+				emitRead = capped
+			}
 		}
-		if (emit !== undefined) {
+		if (emit !== undefined && !emitRead) {
 			if (leaf && per !== undefined && !stepped) values = values.slice(0, Math.max(0, emit))
-			else bounds.push(per === undefined ? { kind: 'count', times: emit } : { kind: 'count', times: emit, per })
+			else if (per === undefined || !emitCannotBind(node, emit)) bounds.push(per === undefined ? { kind: 'count', times: emit } : { kind: 'count', times: emit, per })
 		}
 		if (stepped) steps.push({ unit, interval })
 		return values
@@ -313,6 +434,11 @@ function readClockValues(node: TimeUnitNode, per: TimeUnit | undefined, bounds: 
 		return []
 	}
 	throw new UnsupportedShapeError(`unmodelled ${unit} selection`)
+}
+
+/** The unit a clock unit's values sit within: an hour within the day, a minute within the hour, a second within the minute. */
+function coarserClockUnit(unit: ClockStep['unit']): TimeUnit {
+	return unit === 's' ? 'm' : unit === 'm' ? 'h' : 'd'
 }
 
 function toSelection(indices: IndexSpec | undefined, unit: CalendarUnit, parent: CalendarUnit | undefined, calendar: CalendarSystem): Selection {
@@ -348,6 +474,34 @@ function staticSelectionValues(selection: Selection): number[] | undefined {
 		return values
 	}
 	return undefined
+}
+
+/**
+ * The step a node's `%N` gives it, or undefined when it does not step. On an index any explicit `%N` steps, `%1`
+ * included — from each value, every value after it — as the engine resolves it. On a bare unit `%1` takes every value,
+ * as no `%` does, so only a larger step counts. (A `%0` steps nothing in the engine either.)
+ */
+function stepInterval(node: TimeUnitNode): number | undefined {
+	const interval = node.interval
+	if (interval === undefined || interval < 1) return undefined
+	return node.indices || interval > 1 ? interval : undefined
+}
+
+/** The most values a reading names one by one; an expansion past it is said as declared instead. */
+const SPELL_OUT_LIMIT = 4
+
+/**
+ * The values an expansion lands on, as a selection a reader takes in at a glance: three or more consecutive values as a
+ * range ("the 5th through 13th", "Monday through Sunday"), however many; otherwise each value named, up to
+ * {@link SPELL_OUT_LIMIT} of them. Undefined past that, for the caller to say the expansion as declared.
+ */
+function spelledOut(values: number[], unit: CalendarUnit, parent: CalendarUnit | undefined, calendar: CalendarSystem): Selection | undefined {
+	const first = values[0]
+	const last = values[values.length - 1]
+	if (first !== undefined && last !== undefined && values.length >= 3 && last - first === values.length - 1) {
+		return { kind: 'range', start: named(first, unit, parent, calendar), end: named(last, unit, parent, calendar) }
+	}
+	return values.length <= SPELL_OUT_LIMIT ? listOf(values, unit, parent, calendar) : undefined
 }
 
 /** Every run of a stepped index — from each value b: b, b+N, … up to `ceiling`, the first `times` of each — merged and sorted. */

@@ -9,6 +9,8 @@
 		<AssemblyTitle>PLAINTORCH CLI</AssemblyTitle>
 		<Product>PLAINTORCH</Product>
 		<Company>Pleiades</Company>
+		<!-- In step with the core's version (core/plaintorch.csproj). -->
+		<Version>0.3.0</Version>
 	</PropertyGroup>
 
 	<ItemGroup>

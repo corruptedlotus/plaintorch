@@ -23,8 +23,9 @@ public enum DependencyEndpointKind
 	Fate,
 
 	/// <summary>
-	/// A single occurrence of a fate or objective, referenced by the owner PUCK id (iCalendar <c>UID</c>) plus
-	/// its original occurrence slot (iCalendar <c>RECURRENCE-ID</c>).
+	/// A single occurrence of a fate, referenced by the fate's PUCK id (iCalendar <c>UID</c>) plus its original occurrence
+	/// slot (iCalendar <c>RECURRENCE-ID</c>). An item's due is a terminative, which is no endpoint: an edge names the item
+	/// itself (PEP103 patch 7).
 	/// </summary>
 	Eventive,
 

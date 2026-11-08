@@ -1,6 +1,6 @@
 import { component, css, event, html, property, PropertyValues } from '@a11d/lit'
 import { DependencyEndpointKind, Directive, DirectiveStatus, ObjectiveStatus } from '@pleiades/sdk'
-import { EntityItem, IconName, statusDescriptors, tooltip } from '..'
+import { EntityItem, IconName, isInactiveEntity, statusDescriptors, tooltip } from '..'
 import type { CanvasEntity } from './graphModel'
 
 /** What each endpoint kind is drawn with, matching the icons the grid and banners already use. */
@@ -43,8 +43,10 @@ export type NodeLock = 'none' | 'blocked' | 'raced'
  * An entity item with the affordances a graph needs rather than a component of its own: the card, the notch,
  * the title and — through the base's own {@link EntityItem} watch — the reactivity that makes a node follow
  * an edit made in a banner or the grid, all come from the derivation. What is added here is what a canvas
- * requires and a list does not: the two connection handles an edge is drawn from, and the states a node can
- * be in while the graph is being edited around it.
+ * requires and a list does not: the two connection handles an edge is drawn from, and the states a node can be in
+ * while the graph is being edited around it. Both handles draw an edge *out of* the node: the leading one is its
+ * out-pin, and the trailing one — where incoming edges arrive — works as a rear out-pin, so an edge can be pulled
+ * from whichever side faces the node it should reach.
  */
 @component('p7t-canvas-node')
 export class CanvasNodeItem extends EntityItem<CanvasEntity> {
@@ -163,6 +165,7 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 				transition: opacity .2s ease, background-color .2s ease;
 				touch-action: none;
 				z-index: 2;
+				cursor: crosshair;
 			}
 
 			.handle-in {
@@ -171,7 +174,6 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 
 			.handle-out {
 				inset-inline-end: -.4em;
-				cursor: crosshair;
 			}
 
 			:host(:hover) .handle,
@@ -180,7 +182,7 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 				opacity: 1;
 			}
 
-			.handle-out:hover {
+			.handle:hover {
 				background-color: var(--p7t-flare-accent, var(--interactive-accent));
 			}
 
@@ -229,7 +231,11 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 
 	protected override get template() {
 		return html`
-			<div class='handle handle-in' part='handle-in'></div>
+			<div
+				class='handle handle-in'
+				part='handle-in'
+				@pointerdown=${(e: PointerEvent) => this.onLinkStart(e)}>
+			</div>
 			${super.template}
 			<div
 				class='handle handle-out'
@@ -284,7 +290,7 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 	 * wears its kind icon so the mix of kinds a global context holds reads apart at a glance.
 	 *
 	 * Only an objective carries a workflow the canvas can read off the entity behind an endpoint; a
-	 * checkpoint has no lifecycle at all, and the rest are told apart by what they are.
+	 * checkpoint has no status (its one-shot finish is its unlock), and the rest are told apart by what they are.
 	 */
 	protected get notchIcon(): IconName {
 		if (!this.typed && this.kind === DependencyEndpointKind.Objective) {
@@ -297,6 +303,15 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 		}
 
 		return kindIcons[this.kind]
+	}
+
+	/**
+	 * A node done with is dimmed, like any item — unless it is {@link finished}, which the card already shows in green.
+	 * So this dims the other terminal states: an archived or failed objective, a failed directive, a fate opted out of
+	 * or cancelled.
+	 */
+	override get disabled() {
+		return isInactiveEntity(this.entity) && !this.finished
 	}
 
 	/**
@@ -328,6 +343,7 @@ export class CanvasNodeItem extends EntityItem<CanvasEntity> {
 		this.toggleAttribute('finished', this.finished)
 	}
 
+	/** Either pin starts an edge out of this node; the canvas draws it to wherever it is dropped. */
 	private onLinkStart(e: PointerEvent) {
 		// The handle owns this gesture outright: letting it reach the card would start a node drag underneath.
 		e.preventDefault()

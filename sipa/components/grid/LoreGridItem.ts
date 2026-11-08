@@ -6,13 +6,21 @@ import { GridItemBase } from './GridItemBase'
 import { loreLevelIcon, loreLevelLabel, loreOwnIndex, loreRowActions } from './loreActions'
 import { toast } from '../../host'
 
+/** The lore grid's columns besides the title, by key. */
+export enum LoreGridColumn {
+	/** When the lore period begins. */
+	Beginning = 'beginning',
+	/** Whether the page is on the active lore spine. */
+	Active = 'active'
+}
+
 /**
  * One line of the lore grid: an Era, Chapter, Act, or Phase.
  *
  * The shared {@link GridItemBase} draws the indent lanes, the editable name, and the trailing open-note/add columns.
- * This variant fills the leading label (the level and its editable index), the two middle cells (the editable
- * beginning date and a read-only "active" marker), draws the level's icon, offers creation of its successive level,
- * and writes name/beginning edits through the lore SDK.
+ * This variant fills the leading label (the level and its editable index), its two columns (the editable beginning
+ * date and a read-only "active" marker), draws the level's icon, offers creation of its successive level, and writes
+ * name/beginning edits through the lore SDK.
  */
 @component('p7t-lore-grid-item')
 export class LoreGridItem extends GridItemBase {
@@ -98,8 +106,12 @@ export class LoreGridItem extends GridItemBase {
 		await core.repos.loreList.refresh()
 	}
 
-	protected override get middleCells(): (HTMLTemplateResult | typeof nothing)[] {
-		return [this.beginningCell, this.activeCell]
+	protected override cellContent(column: string): HTMLTemplateResult | typeof nothing {
+		switch (column) {
+			case LoreGridColumn.Beginning: return this.beginningCell
+			case LoreGridColumn.Active: return this.activeCell
+			default: return nothing
+		}
 	}
 
 	/** The lore period's start date, edited in place and written straight through to frontmatter. */

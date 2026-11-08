@@ -216,24 +216,33 @@ export abstract class InfoItem extends Component {
 	}
 
 	/**
-	 * The visible chip content. The default is the shared icon-text layout built from {@link iconTemplate} and
-	 * {@link bulletText}; a chip with a non-bullet shape overrides this wholesale (and may still call `super.content`
-	 * for its plain rows).
+	 * The {@link tooltip} as an element directive, or `nothing` when the chip has none: what ties the tooltip to the
+	 * element that shows it. The default {@link content} attaches it to its bullet; a chip that draws its own face
+	 * must attach it to that face itself — `<span ${this.tooltipAttachment}>…</span>` — or its tooltip is built and
+	 * never shown.
 	 */
-	protected get content() {
+	protected get tooltipAttachment() {
 		const tip = this.tooltip
 		const hasTooltip = typeof tip === 'string' ? tip.length > 0 : (tip !== nothing && tip !== undefined && tip !== null)
+		return hasTooltip ? tooltip(() => tip as string | HTMLTemplateResult) : nothing
+	}
 
+	/**
+	 * The visible chip content. The default is the shared icon-text layout built from {@link iconTemplate} and
+	 * {@link bulletText}, its tooltip attached; a chip with a non-bullet shape overrides this wholesale (and may still
+	 * call `super.content` for its plain rows), attaching its tooltip through {@link tooltipAttachment}.
+	 */
+	protected get content() {
 		const iconTemplate = this.iconTemplate()
 		if (this.textHidden) {
-			return html`<span ${hasTooltip ? tooltip(() => tip as string | HTMLTemplateResult) : nothing} class='info-bullet'>${iconTemplate}</span>`
+			return html`<span ${this.tooltipAttachment} class='info-bullet'>${iconTemplate}</span>`
 		}
 
 		const textTemplate = html`<span class='info-text'>${this.bulletText}</span>`
 		const chipsTemplate = this.showChips ? html`<span class='chips' part='chips'>${this.chipsTemplate}</span>` : nothing
 
 		return html`
-			<span class='info-bullet' ${hasTooltip ? tooltip(() => tip as string | HTMLTemplateResult) : nothing}>
+			<span class='info-bullet' ${this.tooltipAttachment}>
 				${this.iconTrailing ? html`${textTemplate}${iconTemplate}` : html`${iconTemplate}${textTemplate}`}
 				${chipsTemplate}
 			</span>

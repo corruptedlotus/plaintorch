@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Plaintorch.Preferences;
 using Pleiades.Vault.Database;
 
@@ -28,6 +29,14 @@ namespace Pleiades.Plaintorch;
 /// and are only ever previewed against a day (<see cref="MatchesTimeframeDayAsync"/>), always on the vault default
 /// calendar (<see cref="ResolveDefaultCalendar"/>).
 /// </para>
+/// <para>
+/// A stored orbit is re-parsed every time it is resolved, and one that no longer parses or builds (a notation the engine
+/// has since narrowed, or a value written past validation) throws. The passes that resolve every owner in one go — the
+/// rolling harden-on-time pass, the agenda projection, next-occurrence caching, cycle-begin reflection and timeframe
+/// candidates — therefore run each owner's orbit work inside <see cref="IsolateAsync"/> (or the timeframe matcher's own
+/// guard), so a faulty orbit is logged and skipped and every other owner carries on (PEP103 I-124, user ruling
+/// 2026-10-30). Writes that set an orbit are not guarded: their refusal stays the save's own.
+/// </para>
 /// </remarks>
 public sealed class PlaintorchOrbitService(
 	PlainfraContext context,
@@ -49,6 +58,82 @@ public sealed class PlaintorchOrbitService(
 			: agendaPreferences.Value.DefaultCalendar;
 
 		return calendar == DeclarativeCalendar.Pleiadean ? OrbitDays.Pleiadean : OrbitDays.Gregorian;
+	}
+
+	/// <summary>
+	/// Resolves the time zone an incentive's orbit runs on: a declarative's own <see cref="Declarative.TimeZone"/>, or
+	/// <see langword="null"/> (floating). An orbit resolves civil times, so this is the clock they are meant on: every
+	/// occurrence it yields is stamped with it (<see cref="EpochOf"/>), and "now" is read on it wherever the orbit is
+	/// sought or counted from (<see cref="ClockOf"/>).
+	/// </summary>
+	public static string? ResolveTimeZone(Incentive incentive) => (incentive as Declarative)?.TimeZone;
+
+	/// <summary>Builds the epoch of one of an incentive's orbit occurrences, anchored in the zone its orbit runs on.</summary>
+	public static Epoch EpochOf(Incentive incentive, OrbitOccurrenceInstance occurrence)
+		=> Epoch.For(occurrence, ResolveTimeZone(incentive));
+
+	/// <summary>Reads an instant on the clock an incentive's orbit runs on: its zone's, or this host's when it floats.</summary>
+	public static DateTime ClockOf(Incentive incentive, DateTimeOffset instant)
+		=> OccurrenceZones.Clock(ResolveTimeZone(incentive), instant);
+
+	/// <summary>
+	/// Determines whether an exception is a fault of a stored orbit itself rather than of the code around it: what the
+	/// parser, the engine build and resume, and the snapshot reader throw for a notation or state they cannot read.
+	/// </summary>
+	/// <remarks>
+	/// The parser and the bound checks throw <see cref="FormatException"/>, and an overlong number escapes the parser's
+	/// <c>int.Parse</c> as an <see cref="OverflowException"/> (PEP103 I-003). A snapshot of an unknown version throws
+	/// <see cref="NotSupportedException"/>, an unreadable one a <see cref="System.Text.Json.JsonException"/>, and a date
+	/// the calendar arithmetic cannot represent an <see cref="ArgumentException"/>. A null argument is a caller's bug, not
+	/// an orbit's, and is never taken for one.
+	/// </remarks>
+	public static bool IsOrbitFault(Exception exception)
+		=> exception is FormatException or OverflowException or NotSupportedException or System.Text.Json.JsonException
+			or ArgumentException and not ArgumentNullException;
+
+	/// <summary>
+	/// Runs one fate's or decree's orbit work — a seek, a preview or a next-occurrence computation, with whatever the
+	/// caller does with its result — in isolation: an orbit fault (<see cref="IsOrbitFault"/>) is logged with the owner's
+	/// kind, id and orbit and swallowed, so a pass over many owners skips the faulty one and carries on. Any other exception
+	/// propagates. Returns <see langword="false"/> when the orbit faulted.
+	/// </summary>
+	/// <param name="owner">The fate or decree whose orbit is resolved.</param>
+	/// <param name="pass">What is resolving it, for the log (for example "the rolling harden-on-time pass").</param>
+	/// <param name="work">The orbit work. A seek raises its fault before it advances the cursor, so a faulted owner is left as it was.</param>
+	public async Task<bool> IsolateAsync(Incentive owner, string pass, Func<Task> work)
+	{
+		ArgumentNullException.ThrowIfNull(owner);
+		ArgumentNullException.ThrowIfNull(work);
+		var orbit = owner switch
+		{
+			Fate fate => fate.Orbit,
+			Decree decree => decree.Orbit,
+			_ => null,
+		};
+		try
+		{
+			await work();
+			return true;
+		}
+		catch (Exception exception) when (LogIfOrbitFault(exception, owner.GetType().Name, owner.Id, orbit, pass))
+		{
+			return false;
+		}
+	}
+
+	/// <summary>
+	/// The exception filter behind every orbit guard: logs an orbit fault (<see cref="IsOrbitFault"/>) with its owner and
+	/// reports whether it is one, so only orbit faults are caught.
+	/// </summary>
+	private bool LogIfOrbitFault(Exception exception, string ownerKind, object ownerId, string? orbit, string pass)
+	{
+		if (!IsOrbitFault(exception))
+		{
+			return false;
+		}
+
+		logger.LogWarning(exception, "{OwnerKind} {OwnerId} has an orbit '{Orbit}' that no longer resolves; {Pass} skips it.", ownerKind, ownerId, orbit, pass);
+		return true;
 	}
 
 	/// <summary>
@@ -107,9 +192,13 @@ public sealed class PlaintorchOrbitService(
 	public async Task ResetStateAsync(Incentive incentive, string? orbit, DateOnly epoch, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
+		// A state added earlier in this unit of work is not in the database yet, so the tracked ones are swept too: a resume
+		// and an orbit change in one save would otherwise leave two states for one declarative.
 		var existing = await context.IncentiveOrbitScheduleStates
 			.Where(state => state.IncentiveId == incentive.Id)
 			.ToListAsync(cancellationToken);
+		existing.AddRange(context.IncentiveOrbitScheduleStates.Local
+			.Where(state => state.IncentiveId == incentive.Id && !existing.Contains(state)));
 		if (existing.Count > 0)
 		{
 			context.IncentiveOrbitScheduleStates.RemoveRange(existing);
@@ -143,32 +232,34 @@ public sealed class PlaintorchOrbitService(
 
 	/// <summary>
 	/// SEEKING to an instant: resolves and consumes every pending occurrence of the declarative's orbit strictly
-	/// before <paramref name="endExclusive"/> (an instant, not a whole day), advancing and persisting the
-	/// schedule state. This is the harden-on-time catch-up — it hardens occurrences whose time has already
-	/// arrived without consuming the still-future occurrences of the same day.
+	/// before <paramref name="endExclusive"/> (an instant, not a whole day, read on the orbit's clock — see
+	/// <see cref="ClockOf"/>), advancing and persisting the schedule state. This is the harden-on-time catch-up — it
+	/// hardens occurrences whose time has already arrived without consuming the still-future occurrences of the same day.
 	/// </summary>
 	public async Task<IReadOnlyList<OrbitOccurrenceInstance>> SeekOccurrencesThroughInstantAsync(
-		Incentive incentive, string orbit, DateTime endExclusive, CancellationToken cancellationToken = default)
+		Incentive incentive, string orbit, DateTimeOffset endExclusive, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
-		var state = await GetOrCreateStateAsync(incentive, orbit, DateOnly.FromDateTime(DateTime.Today), cancellationToken);
-		var (occurrences, advanced) = OrbitDays.SeekOccurrencesThroughInstant(state.StateJson, endExclusive, ResolveCalendar(incentive));
+		var clock = ClockOf(incentive, endExclusive);
+		var state = await GetOrCreateStateAsync(incentive, orbit, DateOnly.FromDateTime(clock), cancellationToken);
+		var (occurrences, advanced) = OrbitDays.SeekOccurrencesThroughInstant(state.StateJson, clock, ResolveCalendar(incentive));
 		state.StateJson = advanced;
 		state.UpdatedUtc = DateTimeOffset.UtcNow;
 		return occurrences;
 	}
 
 	/// <summary>
-	/// FAST-FORWARD: advances and persists the declarative's schedule cursor to <paramref name="now"/> WITHOUT
-	/// emitting the occurrences it passes. This is the resume-from-pause seek (PEP100): re-activating a cancelled
-	/// fate or an abandoned decree picks generation up from now forward, so the occurrences that elapsed while it
-	/// was paused are skipped rather than back-filled by the next harden-on-time pass.
+	/// FAST-FORWARD: advances and persists the declarative's schedule cursor to <paramref name="now"/> (read on the
+	/// orbit's clock) WITHOUT emitting the occurrences it passes. This is the resume-from-pause seek (PEP100):
+	/// re-activating a cancelled fate or an abandoned decree picks generation up from now forward, so the occurrences
+	/// that elapsed while it was paused are skipped rather than back-filled by the next harden-on-time pass.
 	/// </summary>
-	public async Task FastForwardToNowAsync(Incentive incentive, string orbit, DateTime now, CancellationToken cancellationToken = default)
+	public async Task FastForwardToNowAsync(Incentive incentive, string orbit, DateTimeOffset now, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
-		var state = await GetOrCreateStateAsync(incentive, orbit, DateOnly.FromDateTime(DateTime.Today), cancellationToken);
-		var (_, advanced) = OrbitDays.SeekOccurrencesThroughInstant(state.StateJson, now, ResolveCalendar(incentive));
+		var clock = ClockOf(incentive, now);
+		var state = await GetOrCreateStateAsync(incentive, orbit, DateOnly.FromDateTime(clock), cancellationToken);
+		var (_, advanced) = OrbitDays.SeekOccurrencesThroughInstant(state.StateJson, clock, ResolveCalendar(incentive));
 		state.StateJson = advanced;
 		state.UpdatedUtc = DateTimeOffset.UtcNow;
 	}
@@ -198,30 +289,40 @@ public sealed class PlaintorchOrbitService(
 	}
 
 	/// <summary>
-	/// PREVIEW: the declarative's orbit occurrences whose period overlaps <c>[startInclusive, endExclusive)</c>,
-	/// resolved from the epoch without pushing the schedule state forward. A super-day occurrence whose period
-	/// began before the window is included, so weekly/monthly instances that merely span the window are caught.
+	/// PREVIEW: the declarative's orbit occurrences whose period overlaps the days <c>[startInclusive, endExclusive)</c>
+	/// on this host's clock, resolved from the epoch without pushing the schedule state forward. A super-day occurrence
+	/// whose period began before the window is included, so weekly/monthly instances that merely span the window are
+	/// caught.
 	/// </summary>
+	/// <remarks>
+	/// A zoned orbit's civil times are on its zone's clock, up to a day off this host's: its occurrences are resolved
+	/// <see cref="OccurrenceZones.ReachDays"/> either side of the window and a timed one is kept by the day its instant
+	/// falls on here (<see cref="Epoch.LocalDate"/>). A floating or all-day occurrence names its day wherever it is read.
+	/// </remarks>
 	public async Task<IReadOnlyList<OrbitOccurrenceInstance>> PreviewOccurrencesAsync(
 		Incentive incentive, string orbit, DateOnly startInclusive, DateOnly endExclusive, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
 		var today = DateOnly.FromDateTime(DateTime.Today);
+		var reach = OccurrenceZones.Find(ResolveTimeZone(incentive)) is null ? 0 : OccurrenceZones.ReachDays;
 		// Look back far enough that a super-day period starting earlier can still cover the window.
 		var lookbackStart = startInclusive.AddDays(-400);
 		var state = await GetOrCreateStateAsync(incentive, orbit, lookbackStart < today ? lookbackStart : today, cancellationToken);
-		return OrbitDays.PreviewOccurrencesWithin(state.StateJson, lookbackStart, endExclusive, ResolveCalendar(incentive))
-			.Where(occurrence => occurrence.Date < endExclusive && occurrence.PeriodEndExclusive > startInclusive)
+		return OrbitDays.PreviewOccurrencesWithin(state.StateJson, lookbackStart, endExclusive.AddDays(reach), ResolveCalendar(incentive))
+			.Where(occurrence => EpochOf(incentive, occurrence) is { Instant: not null } anchored
+				? anchored.LocalDate >= startInclusive && anchored.LocalDate < endExclusive
+				: occurrence.Date < endExclusive && occurrence.PeriodEndExclusive > startInclusive)
 			.ToList();
 	}
 
 	/// <summary>
-	/// Computes the declarative's next upcoming occurrence at or after <paramref name="from"/> from its persisted
-	/// schedule state, without advancing it — the value cached in <see cref="Declarative.NextOccurrence"/>. Returns
-	/// <see langword="null"/> when the declarative has no schedule state (unscheduled) or no occurrence within the
-	/// lookahead horizon. Sees a state added earlier in the current unit of work, so it is correct mid-save.
+	/// Computes the declarative's next upcoming occurrence at or after <paramref name="from"/> (read on the orbit's
+	/// clock) from its persisted schedule state, without advancing it — the value cached in
+	/// <see cref="Declarative.NextOccurrence"/>. Returns <see langword="null"/> when the declarative has no schedule state
+	/// (unscheduled) or no occurrence within the lookahead horizon. Sees a state added earlier in the current unit of
+	/// work, so it is correct mid-save.
 	/// </summary>
-	public async Task<DateTime?> ComputeNextOccurrenceAsync(Incentive incentive, DateTime from, CancellationToken cancellationToken = default)
+	public async Task<DateTime?> ComputeNextOccurrenceAsync(Incentive incentive, DateTimeOffset from, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(incentive);
 		var tracked = context.ChangeTracker.Entries<IncentiveOrbitScheduleState>()
@@ -229,14 +330,63 @@ public sealed class PlaintorchOrbitService(
 				&& entry.Entity.IncentiveId == incentive.Id)?.Entity;
 		var state = tracked
 			?? await context.IncentiveOrbitScheduleStates.FirstOrDefaultAsync(item => item.IncentiveId == incentive.Id, cancellationToken);
-		return state is null ? null : OrbitDays.NextOccurrence(state.StateJson, from, ResolveCalendar(incentive));
+		return state is null ? null : OrbitDays.NextOccurrence(state.StateJson, ClockOf(incentive, from), ResolveCalendar(incentive));
 	}
 
 	/// <summary>
-	/// Determines whether a directive lineage belongs to a Moonlight (lunar) hierarchy — i.e. the directive
-	/// itself or any ancestor is a lunar directive.
+	/// PREVIEW: whether the declarative's orbit, as its schedule state defines it, still yields an occurrence whose window
+	/// closes after <paramref name="now"/> (<see cref="Epoch.ClosesAt"/>, on the zone the orbit runs on) — begun and still
+	/// running, or yet to come. An occurrence whose slot is in <paramref name="hardenedSlots"/> does not count: the row that
+	/// slot hardened into answers for it, wherever it has since been moved. The state is never advanced; one is created,
+	/// anchored today, for an orbit that has never been resolved (as every preview does).
 	/// </summary>
-	public async Task<bool> IsInLunarHierarchyAsync(string? directiveId, CancellationToken cancellationToken = default)
+	/// <remarks>
+	/// An endless orbit answers from its next few occurrences, read with no horizon, so a rare schedule years ahead still
+	/// counts. Only when none of those counts are the occurrences that may still be running read too: those begun up to a
+	/// year-long period (and a zone's reach) before now.
+	/// </remarks>
+	/// <param name="incentive">The fate or decree.</param>
+	/// <param name="orbit">Its orbit.</param>
+	/// <param name="now">The instant compared with.</param>
+	/// <param name="hardenedSlots">The RECURRENCE-IDs of its hardened occurrences.</param>
+	/// <param name="cancellationToken">A token to cancel the state lookup.</param>
+	public async Task<bool> HasOpenOccurrenceAsync(
+		Incentive incentive, string orbit, DateTimeOffset now, IReadOnlySet<DateTime> hardenedSlots, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(incentive);
+		ArgumentNullException.ThrowIfNull(hardenedSlots);
+		var today = DateOnly.FromDateTime(ClockOf(incentive, now));
+		var state = await GetOrCreateStateAsync(incentive, orbit, today, cancellationToken);
+		var calendar = ResolveCalendar(incentive);
+		bool Open(OrbitOccurrenceInstance occurrence)
+			=> !hardenedSlots.Contains(occurrence.Moment) && EpochOf(incentive, occurrence).ClosesAt() > now;
+
+		// Everything from two days on is still to come, wherever the zone puts "now". Enough of them are read to get past
+		// every hardened slot among them, so one that is not hardened is always reached when it exists.
+		var ahead = today.AddDays(2);
+		var aheadMoment = ahead.ToDateTime(TimeOnly.MinValue);
+		var hardenedAhead = hardenedSlots.Count(slot => slot >= aheadMoment);
+		if (OrbitDays.PreviewOccurrencesFrom(state.StateJson, ahead, hardenedAhead + 1, calendar).Any(Open))
+		{
+			return true;
+		}
+
+		return OrbitDays.PreviewOccurrencesWithin(state.StateJson, today.AddDays(-OpenOccurrenceLookbackDays), ahead, calendar).Any(Open);
+	}
+
+	/// <summary>
+	/// How far before today an occurrence can have begun and still be running: a year-long period, and a zone's reach.
+	/// </summary>
+	private const int OpenOccurrenceLookbackDays = 366 + OccurrenceZones.ReachDays;
+
+	/// <summary>
+	/// Determines whether lunar reflection is paused for a directive lineage (PEP104): some lunar directive on it, the
+	/// directive itself or an ancestor, is not started (<see cref="LunarDirectiveStatus.Active"/>). An On Hold (set aside)
+	/// or Stale (finished) lunar directive pauses reflection for its whole subtree, and that is all its status governs
+	/// (user ruling, PEP103 patch 6). The walk never looks at stellar directives' own states, so a lineage with no lunar
+	/// directive on it, stellar or none at all, is never paused.
+	/// </summary>
+	public async Task<bool> IsReflectionPausedAsync(string? directiveId, CancellationToken cancellationToken = default)
 	{
 		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var currentId = directiveId;
@@ -247,10 +397,10 @@ public sealed class PlaintorchOrbitService(
 				.FirstOrDefaultAsync(item => item.Id == currentId, cancellationToken);
 			if (directive is null)
 			{
-				return false;
+				break;
 			}
 
-			if (directive is LunarDirective)
+			if (directive is LunarDirective lunar && LifecycleDeclarations.StateOf(lunar.Status) != LifecycleState.Started)
 			{
 				return true;
 			}
@@ -268,9 +418,11 @@ public sealed class PlaintorchOrbitService(
 	/// </summary>
 	private async Task<IncentiveOrbitScheduleState> GetOrCreateStateAsync(Incentive incentive, string orbit, DateOnly fallbackEpoch, CancellationToken cancellationToken)
 	{
-		var state = await context.IncentiveOrbitScheduleStates
-			.FirstOrDefaultAsync(item => item.IncentiveId == incentive.Id, cancellationToken);
-		if (state is not null)
+		// A state this unit of work already added (a reset just before) is the one to advance; a query would not see it.
+		var state = context.IncentiveOrbitScheduleStates.Local.FirstOrDefault(item => item.IncentiveId == incentive.Id)
+			?? await context.IncentiveOrbitScheduleStates
+				.FirstOrDefaultAsync(item => item.IncentiveId == incentive.Id, cancellationToken);
+		if (state is not null && context.Entry(state).State != EntityState.Deleted)
 		{
 			return state;
 		}
@@ -401,7 +553,8 @@ public sealed class PlaintorchOrbitService(
 
 	/// <summary>
 	/// Matches one orbit-bearing timeframe against a day from its already looked-up state, lazily creating (and adding)
-	/// the state when it has none. A malformed orbit or state is logged and reads as non-matching.
+	/// the state when it has none. A malformed orbit or state (an orbit fault, <see cref="IsOrbitFault"/>) is logged with
+	/// the timeframe's id and orbit and reads as non-matching, so the other timeframes are still matched.
 	/// </summary>
 	private bool MatchTimeframeDay(Timeframe timeframe, DateOnly day, TimeframeOrbitScheduleState? state, IOrbitCalendar calendar, Action<TimeframeOrbitScheduleState>? created)
 	{
@@ -423,9 +576,8 @@ public sealed class PlaintorchOrbitService(
 
 			return OrbitDays.MatchesDay(state.StateJson, day, calendar);
 		}
-		catch (Exception exception) when (exception is FormatException or ArgumentException or InvalidOperationException or System.Text.Json.JsonException)
+		catch (Exception exception) when (LogIfOrbitFault(exception, nameof(Timeframe), timeframe.Id, orbit, $"timeframe matching for {day:yyyy-MM-dd}"))
 		{
-			logger.LogWarning(exception, "Timeframe {TimeframeId} has an unreadable orbit '{Orbit}'; it is treated as not matching {Day}.", timeframe.Id, orbit, day);
 			return false;
 		}
 	}

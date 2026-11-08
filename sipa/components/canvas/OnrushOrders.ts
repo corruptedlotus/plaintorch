@@ -1,6 +1,6 @@
 import { Component, component, css, html, nothing, property, PropertyValues, repeat, state } from '@a11d/lit'
 import { ExecutiveOrder, ExecutiveOrderUpdate } from '@pleiades/sdk'
-import { core } from '..'
+import { confirmAction, core, removeConfirmation } from '..'
 import type { EditablePart } from '../editing/EditableDataLink'
 import { toast } from '../../host'
 
@@ -168,7 +168,7 @@ export class OnrushOrders extends Component {
 						@change=${(e: Event) => this.saveOrder(order.id, { effectiveUntil: (e.target as EditablePart<string>).value })}>
 					</p7t-editable-date>
 				</div>
-				<p7t-button ghost danger icon='lucide:trash-2' label='Remove order' @click=${() => this.removeOrder(order)}></p7t-button>
+				<p7t-button ghost danger icon='lucide:trash-2' label='Remove order' @click=${(e: Event) => this.removeOrder(order, e)}></p7t-button>
 				<p7t-editable-plaintext
 					class='summary'
 					multiline
@@ -200,7 +200,12 @@ export class OnrushOrders extends Component {
 		await this.refresh()
 	}
 
-	private async removeOrder(order: ExecutiveOrder) {
+	/** Takes an order out of the sprint — deleting it — once confirmed beside its button. */
+	private async removeOrder(order: ExecutiveOrder, e: Event) {
+		if (!await confirmAction(e, removeConfirmation(`Remove the order "${order.title}" from this Onrush?`))) {
+			return
+		}
+
 		const removed = await core.onrush.deleteExecutiveOrder(order.id)
 		if (!removed) {
 			toast('PLAINTORCH could not remove that order.', 'error')

@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Pleiades.Orbits;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
+using Pleiades.Plaintorch.Enforcement;
 using Pleiades.Plaintorch.Preferences;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
@@ -11,10 +13,12 @@ namespace Pleiades.Plaintorch.Materialization;
 /// <summary>
 /// Hardens declarative occurrences into persisted rows on the two non-interactive triggers (Strategy 1 / soft
 /// agenda, PEP100). <see cref="MaterializeForCycleAsync"/> runs at Polaris cycle begin and generates the
-/// cycle-bound reflectives of matching lunar reflect-decrees. <see cref="MaterializeForNowAsync"/> is the
+/// cycle-bound reflectives of reflect-decrees (lunar reflection, PEP104). <see cref="MaterializeForNowAsync"/> is the
 /// rolling harden-on-time pass: when time is treated as an interaction it advances each schedule's cursor to
 /// <c>now</c> and hardens the occurrences whose time has arrived, so history becomes durable rows while every
-/// still-future occurrence stays a live projection (see <see cref="AgendaProjectionService"/>).
+/// still-future occurrence stays a live projection (see <see cref="AgendaProjectionService"/>). It is also where a fate
+/// passes by time alone (PEP103 I-191): every running fate that has fully passed takes Passed, wherever nothing blocks it
+/// (<see cref="FateReactions.PassElapsedAsync"/>).
 /// </summary>
 /// <remarks>
 /// An occurrence's RECURRENCE-ID (owner id + original date/time) is its identity, so an occurrence already
@@ -27,15 +31,27 @@ public sealed class ProximityMaterializationService(
 	PlaintorchOrbitService orbitService,
 	DependencyGateService dependencyGate,
 	TimeframeAffinityResolver affinityResolver,
+	TerminativeService terminativeService,
 	MaterializationPolicyOptions policy,
 	IOptionsSnapshot<AgendaPreferences> agendaPreferences,
-	VaultAuditLogService auditLogService)
+	IOptionsSnapshot<ReflectionPreferences> reflectionPreferences,
+	VaultAuditLogService auditLogService,
+	FateReactions fateReactions)
 {
 	/// <summary>
-	/// Generates the cycle-bound reflectives for a beginning cycle from its matching lunar reflect-decrees. The
-	/// cycle's other inclusions are projected on read, so nothing else is hardened here. Returns the number of
-	/// reflectives created.
+	/// Generates the cycle-bound reflectives for a beginning cycle (PEP104). Every live reflect-decree whose orbit
+	/// resolves onto the cycle's start day is taken, and <see cref="ReflectionPreferences.BaseDailyReflectives"/> more
+	/// are drawn at random from the live reflect-decrees that have no orbit. A reflect-decree is live when it is active
+	/// and no lunar directive on its lineage pauses it (<see cref="PlaintorchOrbitService.IsReflectionPausedAsync"/>),
+	/// whether it sits in a lunar hierarchy, a stellar one, or none. The cycle's other inclusions are projected on read,
+	/// so nothing else is hardened here. Returns the number of reflectives created.
 	/// </summary>
+	/// <remarks>
+	/// A decree gets at most one reflective per cycle, so running this twice for the same cycle creates nothing new:
+	/// the orbit matches are already there, and pool decrees already reflected in the cycle count toward the draw. A
+	/// reflect-decree whose stored orbit no longer resolves is logged and left out
+	/// (<see cref="PlaintorchOrbitService.IsolateAsync"/>), so a begin, whose start is committed by now, still completes.
+	/// </remarks>
 	public async Task<int> MaterializeForCycleAsync(PolarisCycle cycle, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(cycle);
@@ -45,33 +61,60 @@ public sealed class ProximityMaterializationService(
 		}
 
 		var startDay = DateOnly.FromDateTime(cycle.StartTime.Value.LocalDateTime);
-		var created = 0;
-
-		// Lunar reflect-decrees resolve at day granularity against the cycle's start day and bind their
-		// reflective to the cycle. Seeking advances the schedule state so the same occurrence is not re-emitted;
-		// the rolling harden-on-time pass deliberately leaves reflect-decrees alone, so cycle begin is the only
-		// place their cursor advances.
+		var activeDecrees = TemporalActivation.Statuses<DecreeStatus>();
 		var reflectDecrees = await context.Decrees
 			.IgnoreAutoIncludes()
-			.Where(decree => decree.Status == DecreeStatus.Active && decree.Orbit != null && decree.Reflect)
+			.Where(decree => activeDecrees.Contains(decree.Status) && decree.Reflect)
 			.ToListAsync(cancellationToken);
+		var reflectedDecreeIds = (await context.Set<Reflective>()
+				.Where(item => item.PolarisCycleId == cycle.Id && item.DecreeId != null)
+				.Select(item => item.DecreeId!)
+				.ToListAsync(cancellationToken))
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+		var selected = new List<Decree>();
+		var pool = new List<Decree>();
 		foreach (var decree in reflectDecrees)
 		{
-			if (!await orbitService.IsInLunarHierarchyAsync(decree.DirectiveId, cancellationToken))
+			if (await orbitService.IsReflectionPausedAsync(decree.DirectiveId, cancellationToken))
 			{
 				continue;
 			}
 
-			var occurrences = await orbitService.SeekOccurrencesAsync(decree, decree.Orbit!, startDay.AddDays(1), cancellationToken);
-			if (!occurrences.Any(occurrence => occurrence.Date <= startDay && startDay < occurrence.PeriodEndExclusive))
+			if (string.IsNullOrWhiteSpace(decree.Orbit))
 			{
+				pool.Add(decree);
 				continue;
 			}
 
-			var reflectiveExists = await context.Set<Reflective>()
-				.AnyAsync(item => item.PolarisCycleId == cycle.Id && item.DecreeId == decree.Id, cancellationToken);
-			if (reflectiveExists)
+			// Orbit reflect-decrees resolve at day granularity against the cycle's start day. Seeking advances the
+			// schedule state so the same occurrence is not re-emitted; the rolling harden-on-time pass deliberately
+			// leaves reflect-decrees alone, so cycle begin is the only place their cursor advances. A paused decree is
+			// skipped above without seeking, and the days it missed are never generated afterwards. A decree whose orbit
+			// faults is logged and left out, so the begin, already committed, still reflects the others.
+			await orbitService.IsolateAsync(decree, "cycle-begin reflection", async () =>
+			{
+				var occurrences = await orbitService.SeekOccurrencesAsync(decree, decree.Orbit, startDay.AddDays(1), cancellationToken);
+				if (occurrences.Any(occurrence => occurrence.Date <= startDay && startDay < occurrence.PeriodEndExclusive))
+				{
+					selected.Add(decree);
+				}
+			});
+		}
+
+		var drawCount = Math.Max(0, reflectionPreferences.Value.BaseDailyReflectives)
+			- pool.Count(decree => reflectedDecreeIds.Contains(decree.Id));
+		if (drawCount > 0)
+		{
+			var candidates = pool.Where(decree => !reflectedDecreeIds.Contains(decree.Id)).ToArray();
+			Random.Shared.Shuffle(candidates);
+			selected.AddRange(candidates.Take(drawCount));
+		}
+
+		var created = 0;
+		foreach (var decree in selected)
+		{
+			if (!reflectedDecreeIds.Add(decree.Id))
 			{
 				continue;
 			}
@@ -107,10 +150,15 @@ public sealed class ProximityMaterializationService(
 
 	/// <summary>
 	/// Harden-on-time: hardens every occurrence whose time has arrived at or before <paramref name="now"/>.
-	/// Orbit fates and decrees are seeked through the instant (their cursor advances to <paramref name="now"/>),
-	/// dated fates and due objectives harden once their occurrence is reached. Does nothing when time is not
+	/// Orbit fates and decrees are seeked through the instant (their cursor advances to <paramref name="now"/>), and
+	/// every due that acts hardens its terminative once its day is reached (PEP103 patch 7). Does nothing when time is not
 	/// treated as an interaction. Returns the number of rows hardened.
 	/// </summary>
+	/// <remarks>
+	/// Each fate and decree is resolved in isolation (<see cref="PlaintorchOrbitService.IsolateAsync"/>): one whose stored
+	/// orbit no longer parses or builds is logged, hardens nothing and caches no next occurrence, and the pass hardens every
+	/// other owner (PEP103 I-124).
+	/// </remarks>
 	public async Task<int> MaterializeForNowAsync(DateTimeOffset now, CancellationToken cancellationToken = default)
 	{
 		if (!policy.TimeIsInteraction)
@@ -122,92 +170,130 @@ public sealed class ProximityMaterializationService(
 		var today = DateOnly.FromDateTime(localNow);
 		var created = 0;
 
-		// Orbit fates: seek through now (instant), hardening occurrences whose time has already arrived; the
-		// still-future occurrences of today are left for a later tick. Active fates harden as Pending; an opted-out
-		// fate keeps generating but its occurrences only harden — stamped OptOut so they stay hidden — when the
-		// user's auto-materialise-optout preference is enabled, so by default they remain projections (PEP111/PEP116).
+		// Orbit fates whose temporal activation is on (PEP103 patch 6): seek through now (instant), hardening occurrences
+		// whose time has already arrived; the still-future occurrences of today are left for a later tick. Active fates
+		// harden as Pending. An opted-out fate is under way too, but its occurrences only harden — stamped OptOut so they
+		// stay hidden — when the user's auto-materialise-optout preference is enabled; by default they remain projections
+		// and its cursor waits (PEP111/PEP116), so turning the preference on hardens what has elapsed. Its next occurrence
+		// still rolls forward, and taking it back to Active seeks its cursor to now (StructureReactions), hardening none of
+		// the occurrences it passed while opted out.
 		var autoMaterialiseOptOut = agendaPreferences.Value.AutoMaterialiseOptOut;
+		var activeFates = TemporalActivation.Statuses<FateStatus>();
 		var orbitFates = await context.Fates
 			.IgnoreAutoIncludes()
-			.Where(fate => fate.Orbit != null
-				&& (fate.Status == FateStatus.Active
-					|| (fate.Status == FateStatus.OptOut && autoMaterialiseOptOut)))
+			.Where(fate => fate.Orbit != null && activeFates.Contains(fate.Status))
 			.ToListAsync(cancellationToken);
+		// Each owner's orbit work is isolated (PEP103 I-124): one whose orbit no longer resolves is logged and skipped, its
+		// cursor left where it was and its cached next occurrence cleared, and every other owner is still hardened.
 		foreach (var fate in orbitFates)
 		{
-			var resolution = fate.Status == FateStatus.OptOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
-			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(fate, fate.Orbit!, localNow, cancellationToken))
+			var resolved = await orbitService.IsolateAsync(fate, "the rolling harden-on-time pass", async () =>
 			{
-				created += await EnsureFateEventiveAsync(fate, occurrence, resolution, cancellationToken) ? 1 : 0;
-			}
+				created += await HardenElapsedAsync(fate, now, autoMaterialiseOptOut, cancellationToken);
 
-			// Advance the denormalized next occurrence as time passes; only touch the row when it actually rolls
-			// forward, so an idle tick writes nothing.
-			var next = await orbitService.ComputeNextOccurrenceAsync(fate, localNow, cancellationToken);
-			if (fate.NextOccurrence != next)
+				// Advance the denormalized next occurrence as time passes; only touch the row when it actually rolls
+				// forward, so an idle tick writes nothing.
+				var next = await orbitService.ComputeNextOccurrenceAsync(fate, now, cancellationToken);
+				if (fate.NextOccurrence != next)
+				{
+					fate.NextOccurrence = next;
+				}
+			});
+			if (!resolved && fate.NextOccurrence is not null)
 			{
-				fate.NextOccurrence = next;
+				fate.NextOccurrence = null;
 			}
 		}
 
+		// Every running fate that has fully passed by now passes where nothing blocks it (PEP103 I-191), on this unit of work, so
+		// the engine judges and records each move with the save below and the notes follow it. It reads the next occurrences
+		// just refreshed above.
+		var passed = await fateReactions.PassElapsedAsync(context, now, cancellationToken);
+
 		// Orbit decrees (non-reflect): seek through now, hardening crossed attentives. Reflect-decrees are
-		// cycle-bound; their schedule state is not advanced here.
+		// cycle-bound wherever they sit; their schedule state is not advanced here.
+		var activeDecrees = TemporalActivation.Statuses<DecreeStatus>();
 		var orbitDecrees = await context.Decrees
 			.IgnoreAutoIncludes()
-			.Where(decree => decree.Status == DecreeStatus.Active && decree.Orbit != null)
+			.Where(decree => activeDecrees.Contains(decree.Status) && decree.Orbit != null && !decree.Reflect)
 			.ToListAsync(cancellationToken);
 		foreach (var decree in orbitDecrees)
 		{
-			if (decree.Reflect && await orbitService.IsInLunarHierarchyAsync(decree.DirectiveId, cancellationToken))
+			var resolved = await orbitService.IsolateAsync(decree, "the rolling harden-on-time pass", async () =>
 			{
-				continue;
-			}
+				foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(decree, decree.Orbit!, now, cancellationToken))
+				{
+					created += await EnsureDecreeAttentiveAsync(decree, occurrence, cancellationToken) ? 1 : 0;
+				}
 
-			foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(decree, decree.Orbit!, localNow, cancellationToken))
+				var next = await orbitService.ComputeNextOccurrenceAsync(decree, now, cancellationToken);
+				if (decree.NextOccurrence != next)
+				{
+					decree.NextOccurrence = next;
+				}
+			});
+			if (!resolved && decree.NextOccurrence is not null)
 			{
-				created += await EnsureDecreeAttentiveAsync(decree, occurrence, cancellationToken) ? 1 : 0;
-			}
-
-			var next = await orbitService.ComputeNextOccurrenceAsync(decree, localNow, cancellationToken);
-			if (decree.NextOccurrence != next)
-			{
-				decree.NextOccurrence = next;
+				decree.NextOccurrence = null;
 			}
 		}
 
-		// Due objectives whose due moment has arrived. An objective has a single due occurrence, so the presence of
-		// any eventive for it means it is already hardened.
+		// Every due that acts, on or before today, hardens its terminative (PEP103 patch 7): an item finished or set aside
+		// hardens none, and a checkpoint keeps acting past its due until it unlocks. An item has one terminative, so one that
+		// already has it is skipped; the state engine keeps it on the due and resolved from then on.
 		var tomorrowStart = today.AddDays(1).ToDateTime(TimeOnly.MinValue);
-		var dueObjectives = await context.Objectives
-			.AsNoTracking()
-			.IgnoreAutoIncludes()
-			.Where(objective => objective.Due != null && objective.Due.Moment < tomorrowStart
-				&& objective.Status != ObjectiveStatus.Done
-				&& objective.Status != ObjectiveStatus.Archived
-				&& objective.Status != ObjectiveStatus.Failed
-				&& !context.Eventives.Any(eventive => eventive.ObjectiveId == objective.Id))
-			.ToListAsync(cancellationToken);
-		foreach (var objective in dueObjectives)
+		var acting = await terminativeService.FindActingAsync(context, fromInclusive: null, tomorrowStart, tracking: false, cancellationToken);
+		var hardened = (await terminativeService.FindOfAsync(context, acting, cancellationToken))
+			.Select(item => item.RecurrenceOwnerUid)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		foreach (var origin in acting.Where(origin => !hardened.Contains(origin.Id)))
 		{
-			context.Eventives.Add(new Eventive
-			{
-				ObjectiveId = objective.Id,
-				Epoch = Epoch.From(objective.Due!.Date, timeOfDay: null, OrbitUnit.Day),
-				RecurrenceId = objective.Due!.Date.ToDateTime(TimeOnly.MinValue),
-			});
+			context.Terminatives.Add(terminativeService.Spawn(origin));
 			created++;
 		}
 
 		// The advanced orbit cursors persist even when no new rows were created.
 		await context.SaveChangesAsync(cancellationToken);
-		if (created > 0)
+		if (created > 0 || passed > 0)
 		{
 			await auditLogService.WriteAsync(
 				"daemon",
 				"rolling.materialize",
 				subjectType: nameof(PolarisCycle),
-				details: new { created, from = localNow.ToString("yyyy-MM-dd HH:mm") },
+				details: new { created, passed, from = localNow.ToString("yyyy-MM-dd HH:mm") },
 				cancellationToken: cancellationToken);
+		}
+
+		return created;
+	}
+
+	/// <summary>
+	/// Hardens what time has brought of one orbit fate's occurrences by <paramref name="now"/>, as the rolling pass does
+	/// (PEP103 I-191): its cursor is sought through the instant and each occurrence it passes hardens, Pending, or stamped
+	/// OptOut for an opted-out fate — which hardens by time only under the auto-materialise-optout preference, its cursor
+	/// otherwise waiting. Nothing hardens, and the cursor stays, when time is not treated as an interaction or the fate has no
+	/// orbit. The engine calls it before a fate passes, so the occurrences it went through stay as history rather than leaving
+	/// with its projection. An orbit fault propagates: the caller isolates it. Returns the number of rows hardened.
+	/// </summary>
+	public Task<int> HardenElapsedAsync(Fate fate, DateTimeOffset now, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(fate);
+		return HardenElapsedAsync(fate, now, agendaPreferences.Value.AutoMaterialiseOptOut, cancellationToken);
+	}
+
+	private async Task<int> HardenElapsedAsync(Fate fate, DateTimeOffset now, bool autoMaterialiseOptOut, CancellationToken cancellationToken)
+	{
+		var optedOut = fate.Status == FateStatus.OptOut;
+		if (!policy.TimeIsInteraction || string.IsNullOrWhiteSpace(fate.Orbit) || (optedOut && !autoMaterialiseOptOut))
+		{
+			return 0;
+		}
+
+		var created = 0;
+		var resolution = optedOut ? EventiveResolution.OptOut : EventiveResolution.Pending;
+		foreach (var occurrence in await orbitService.SeekOccurrencesThroughInstantAsync(fate, fate.Orbit, now, cancellationToken))
+		{
+			created += await EnsureFateEventiveAsync(fate, occurrence, resolution, cancellationToken) ? 1 : 0;
 		}
 
 		return created;
@@ -232,7 +318,7 @@ public sealed class ProximityMaterializationService(
 		var attentive = new Attentive
 		{
 			DecreeId = decree.Id,
-			Epoch = Epoch.For(occurrence),
+			Epoch = PlaintorchOrbitService.EpochOf(decree, occurrence),
 			RecurrenceId = slot,
 		};
 		context.Attentives.Add(attentive);
@@ -254,9 +340,10 @@ public sealed class ProximityMaterializationService(
 			return false;
 		}
 
-		var exists = await context.Eventives.AnyAsync(
-			item => item.FateId == fate.Id && item.RecurrenceId == slot,
-			cancellationToken);
+		// One the unit of work already adds counts too: the engine catches a fate up inside a save that may harden the same
+		// occurrence by interaction.
+		var exists = context.Eventives.Local.Any(item => item.FateId == fate.Id && item.RecurrenceId == slot && context.Entry(item).State != EntityState.Deleted)
+			|| await context.Eventives.AnyAsync(item => item.FateId == fate.Id && item.RecurrenceId == slot, cancellationToken);
 		if (exists)
 		{
 			return false;
@@ -265,7 +352,7 @@ public sealed class ProximityMaterializationService(
 		var eventive = new Eventive
 		{
 			FateId = fate.Id,
-			Epoch = Epoch.For(occurrence),
+			Epoch = PlaintorchOrbitService.EpochOf(fate, occurrence),
 			RecurrenceId = slot,
 			Resolution = resolution,
 		};

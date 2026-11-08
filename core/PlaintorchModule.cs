@@ -5,8 +5,10 @@ using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Saga;
 using Pleiades.Diagnostics;
+using Pleiades.Plaintorch.Api;
 using Pleiades.Plaintorch.Api.Changes;
 using Pleiades.Plaintorch.Diagnostics;
+using Pleiades.Plaintorch.Enforcement;
 using Pleiades.Plaintorch.Hosting;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.Media;
@@ -40,11 +42,24 @@ public sealed class PlaintorchModule : Module
 			serviceProvider.GetService<VaultOptions>() is { } vaultOptions
 				? new VaultLayout(vaultOptions)
 				: new VaultLayout());
-		services.AddScoped<DependencyReconciler>();
 		services.AddScoped<DependencyGateService>();
-		services.AddScoped<PlaintorchStatePolicyProcessor>();
-		services.AddScoped<PlaintorchStatePolicyFileSyncService>();
-		services.AddScoped<PlaintorchStatePolicyInterceptor>();
+		// The one reading of the dependency graph — stored edges plus the intrinsic edges each rule derives (PEP102
+		// patch 9) — shared by the lock readings, the API and the purge. The judge derives the same intrinsic edges, and
+		// the reconciler reads only the stored ones.
+		services.AddScoped<DependencyGraphService>();
+		services.AddScoped<IIntrinsicDependencyRule, DirectiveChildrenIntrinsicRule>();
+		// PEP103: the state enforcement engine, its four phases, and the one save interceptor that runs it on every save.
+		services.AddScoped<StructureReactions>();
+		services.AddScoped<MembershipReactions>();
+		services.AddScoped<FateReactions>();
+		services.AddScoped<StateJudge>();
+		services.AddScoped<StateCompensator>();
+		services.AddScoped<DependencyReconciler>();
+		services.AddScoped<OutcomeReactions>();
+		services.AddScoped<BacklogScheduleRecorder>();
+		services.AddScoped<StateEngine>();
+		services.AddScoped<StateNoteSyncService>();
+		services.AddScoped<StateInterceptor>();
 		services.AddSingleton<PlaintorchChangeBroker>();
 		services.AddScoped<PlaintorchChangeFeedInterceptor>();
 		// The active lore spine, cached once per vault session and stamped onto responses by a filter rather
@@ -57,20 +72,22 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<TimeframeCandidateCacheInterceptor>();
 		services.AddDbContext<PlainfraContext>((serviceProvider, options) =>
 		{
-			var layout = serviceProvider.GetRequiredService<VaultLayout>();
-			Directory.CreateDirectory(layout.MetadataRoot);
-			options.UseSqlite($"Data Source={layout.DatabasePath}");
-			// Sets WAL and a busy timeout on every connection so the concurrent reads a client fires around a
-			// write do not meet a whole-file lock with no timeout. Stateless, so a fresh instance per context.
-			options.AddInterceptors(new SqlitePragmaConnectionInterceptor());
-			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchStatePolicyInterceptor>());
-			// Registered after the state policy, so the changes it announces are the ones policy left
-			// behind rather than what the caller originally asked for.
+			// The store, with WAL and a busy timeout on every connection so the concurrent reads a client fires around a
+			// write do not meet a whole-file lock with no timeout — shared with the bare contexts PUCK issuance uses.
+			PlainfraStoreContextFactory.ConfigureStore(options, serviceProvider.GetRequiredService<VaultLayout>());
+			// The one place the backlog's state is enforced (PEP103), on synchronous and asynchronous saves alike: structure,
+			// judgement through the enforcement level, outcomes and records, in one pass before anything is written.
+			options.AddInterceptors(serviceProvider.GetRequiredService<StateInterceptor>());
+			// Registered after the state interceptor, so the changes it announces are the ones the engine left behind rather
+			// than what the caller originally asked for.
 			options.AddInterceptors(serviceProvider.GetRequiredService<PlaintorchChangeFeedInterceptor>());
 			options.AddInterceptors(serviceProvider.GetRequiredService<LoreActiveCacheInterceptor>());
 			options.AddInterceptors(serviceProvider.GetRequiredService<TimeframeCandidateCacheInterceptor>());
 		});
 
+		// Bare contexts over the same store, with none of the save hooks above: PUCK issuance registers its ids on one of
+		// its own, so minting an id never saves what the caller's context has pending.
+		services.AddSingleton<PlainfraStoreContextFactory>();
 		services.AddScoped<PlainfraContextInitializer>();
 		services.AddScoped<VaultBootstrapper>();
 		services.AddScoped<PlaintorchRepository>();
@@ -83,7 +100,8 @@ public sealed class PlaintorchModule : Module
 		services.AddSingleton<PuckNotationParser>();
 		services.AddSingleton<PuckRuntimeCompilationCatalog>();
 		services.AddSingleton<VaultEntityModelCatalog>();
-		services.AddSingleton<ILifecyclePhaseSource, EventiveLifecyclePhaseSource>();
+		services.AddSingleton<ILifecycleStateSource, EventiveLifecycleStateSource>();
+		services.AddSingleton<ILifecycleStateSource, CheckpointLifecycleStateSource>();
 		services.AddSingleton<EntityLifecycleResolver>();
 		services.AddScoped<VaultEntityGateway>();
 		services.AddScoped<Pleiades.Plaintorch.Api.Services.VaultEntityLifecycleService>();
@@ -123,10 +141,23 @@ public sealed class PlaintorchModule : Module
 			preferences.AutoMaterialiseOptOut = store.Get(PreferenceKeys.AutoMaterialiseOptOut, preferences.AutoMaterialiseOptOut);
 			preferences.DefaultCalendar = store.Get(PreferenceKeys.DefaultCalendar, preferences.DefaultCalendar);
 		});
+		services.AddOptions<ReflectionPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
+		{
+			preferences.BaseDailyReflectives = store.Get(PreferenceKeys.BaseDailyReflectives, preferences.BaseDailyReflectives);
+			preferences.DailyReward = store.Get(PreferenceKeys.ReflectionDailyReward, preferences.DailyReward);
+		});
 		services.AddOptions<CalDavPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
 		{
 			preferences.FloatingRender = store.Get(PreferenceKeys.CalDavFloatingRender, preferences.FloatingRender);
 		});
+		services.AddOptions<BacklogPreferences>().Configure<UserPreferenceStore>((preferences, store) =>
+		{
+			preferences.StateEnforcement = store.Get(PreferenceKeys.BacklogStateEnforcement, preferences.StateEnforcement);
+		});
+		// PEP103 state enforcement: the request-wide API flags (set by the API, defaulted elsewhere) and the one place a
+		// requested change is judged against the backlog state enforcement level.
+		services.AddScoped<PlaintorchRequestFlags>();
+		services.AddScoped<StateDecisionService>();
 		services.AddSingleton<WatcherStatusReporter>();
 		services.AddSingleton<WatcherRetryScheduler>();
 		services.AddSingleton<VaultStorageTopologyValidator>();
@@ -152,10 +183,16 @@ public sealed class PlaintorchModule : Module
 		services.AddScoped<IVaultMigration, ObjectiveQuietCanonicalizationMigration>();
 		services.AddScoped<IVaultMigration, OnrushPlanningPlaceholderRenameMigration>();
 		services.AddScoped<IVaultMigration, FateOrbitOnlyMigration>();
+		services.AddScoped<IVaultMigration, DirectiveStartEndRetirementMigration>();
+		services.AddScoped<IVaultMigration, IntrinsicDependencyPurgeMigration>();
+		services.AddScoped<IVaultMigration, ObjectiveOnboardStatusMigration>();
+		services.AddScoped<IVaultMigration, FateStoppedStatusMigration>();
+		services.AddScoped<IVaultMigration, DependencyOccurrenceRepairMigration>();
 		services.AddScoped<PlaintorchEngine>();
 		services.AddScoped<TimeframeAffinityResolver>();
 		services.AddScoped<TimeframeCandidateService>();
 		services.AddSingleton<MaterializationPolicyOptions>();
+		services.AddSingleton<TerminativeService>();
 		services.AddScoped<OccurrenceHardeningService>();
 		services.AddScoped<AgendaProjectionService>();
 		services.AddScoped<ProximityMaterializationService>();

@@ -19,7 +19,7 @@ public sealed class SerializerRoundTripTests : VaultTestBase
 			Id = "j12345678",
 			Title = "Ship it",
 			College = ObjectiveCollege.Lore,
-			Status = ObjectiveStatus.Onrush,
+			Status = ObjectiveStatus.Onboard,
 			CelestronValue = 7,
 		};
 
@@ -34,7 +34,7 @@ public sealed class SerializerRoundTripTests : VaultTestBase
 		Assert.Empty(result.Issues);
 		Assert.Equal("j12345678", result.Model.Id);
 		Assert.Equal(ObjectiveCollege.Lore, result.Model.College);
-		Assert.Equal(ObjectiveStatus.Onrush, result.Model.Status);
+		Assert.Equal(ObjectiveStatus.Onboard, result.Model.Status);
 		Assert.Equal(7, result.Model.CelestronValue);
 	}
 
@@ -75,6 +75,31 @@ public sealed class SerializerRoundTripTests : VaultTestBase
 		var markdown = serializer.Serialize(objective, string.Empty, preserved);
 
 		Assert.Contains("customKey: customValue", markdown);
+	}
+
+	[Fact]
+	public void Retired_frontmatter_keys_are_dropped_while_unknown_ones_are_kept(/* PEP101 */)
+	{
+		// A stellar directive no longer maps startDate/endDate (its dates became backlog schedules). Left as unknown keys,
+		// they would linger in every note that ever carried them; retired, they go on the next rewrite. Matching ignores
+		// case, as frontmatter parsing does.
+		var serializer = Vault.GetSingleton<MarkdownFrontMatterSerializer>();
+		var directive = new StellarDirective { Id = "A12345678", Title = "Campaign", Status = DirectiveStatus.Active };
+		var preserved = new Dictionary<string, string>
+		{
+			["startDate"] = "2026-07-01",
+			["ENDDATE"] = "2026-09-01",
+			["mood"] = "bright",
+		};
+
+		var markdown = serializer.Serialize(directive, string.Empty, preserved);
+
+		Assert.DoesNotContain("startDate", markdown, StringComparison.OrdinalIgnoreCase);
+		Assert.DoesNotContain("endDate", markdown, StringComparison.OrdinalIgnoreCase);
+		Assert.Contains("mood: bright", markdown);
+		Assert.Contains("status: Active", markdown);
+		Assert.Equal(["endDate", "startDate"], MarkdownFrontMatterSerializer.GetRetiredFieldNames(typeof(StellarDirective)).Order(StringComparer.Ordinal));
+		Assert.Empty(MarkdownFrontMatterSerializer.GetRetiredFieldNames(typeof(LunarDirective)));
 	}
 
 	[Fact]

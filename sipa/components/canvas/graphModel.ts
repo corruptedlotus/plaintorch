@@ -1,4 +1,4 @@
-import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, type Dependency, type EndpointRef } from '@pleiades/sdk'
+import { DependencyConstraint, DependencyEndpointKind, DependencyOrigin, DependencyTrigger, type Dependency, type EndpointRef } from '@pleiades/sdk'
 
 /** The minimum a canvas asks of whatever entity a node stands for. */
 export interface CanvasEntity {
@@ -43,7 +43,7 @@ export function endpointTypeNames(kind: DependencyEndpointKind): readonly string
 
 /** One dependency edge, resolved onto the nodes it joins. */
 export interface CanvasEdge {
-	/** Stable across rebuilds, from the edge's own database identity. */
+	/** Stable across rebuilds: a stored edge's own database identity, or an intrinsic edge's two ends. */
 	readonly key: string
 	readonly dependency: Dependency
 	/** Key of the prerequisite node — the end that blocks. */
@@ -61,8 +61,8 @@ export interface CanvasGraph {
 /**
  * Identifies a node, and therefore an endpoint.
  *
- * Kind is part of the identity rather than decoration: the core addresses an occurrence of an objective as an
- * eventive carrying that objective's own id, so the id alone does not tell two endpoints apart.
+ * Kind is part of the identity rather than decoration: the core addresses an occurrence of a fate as an eventive
+ * carrying that fate's own id, so the id alone does not tell two endpoints apart.
  */
 export function endpointKey(ref: EndpointRef): string {
 	const kind = DependencyEndpointKind[ref.kind]
@@ -109,50 +109,90 @@ export function resolveEdges(dependencies: readonly Dependency[], nodeKeys: Read
 		const source = endpointKey(sourceRef(dependency))
 		const target = endpointKey(targetRef(dependency))
 		if (nodeKeys.has(source) && nodeKeys.has(target)) {
-			edges.push({ key: `dependency:${dependency.id}`, dependency, source, target })
+			// An intrinsic edge has no identity of its own; its two ends are what make it the same edge next time.
+			const key = isIntrinsic(dependency) ? `intrinsic:${source}->${target}` : `dependency:${dependency.id}`
+			edges.push({ key, dependency, source, target })
 		}
 	}
 
 	return edges
 }
 
-/**
- * Determines whether joining two nodes would close a loop.
- *
- * Mirrors `DependencyRules.EnsureNoCycle` in the core, which is the authority — this only spares the
- * round-trip, and refuses the gesture where it happens rather than after a write comes back rejected. The
- * adjacency runs dependant → prerequisite, so the new edge closes a loop exactly when the prospective target
- * is already a prerequisite of the prospective source.
- */
-export function wouldCycle(edges: readonly CanvasEdge[], source: string, target: string): boolean {
-	if (source === target) {
-		return true
-	}
+/** Whether an edge is implied by the structure rather than drawn (PEP102 patch 9): dashed, and not up for editing. */
+export function isIntrinsic(dependency: Dependency): boolean {
+	return dependency.origin === DependencyOrigin.Intrinsic
+}
 
-	const prerequisites = new Map<string, string[]>()
+/** A side in the ordering walk: 0 a work item's begin, 1 its finish, 2 a checkpoint's unlock (its single point). */
+type Side = 0 | 1 | 2
+
+function triggerSide(ref: EndpointRef, trigger: DependencyTrigger | undefined): Side {
+	return ref.kind === DependencyEndpointKind.Checkpoint ? 2 : (trigger ?? DependencyTrigger.OnFinish) === DependencyTrigger.OnBegin ? 0 : 1
+}
+
+function constraintSide(ref: EndpointRef, constraint: DependencyConstraint | undefined): Side {
+	return ref.kind === DependencyEndpointKind.Checkpoint ? 2 : (constraint ?? DependencyConstraint.ToBegin) === DependencyConstraint.ToFinish ? 1 : 0
+}
+
+/**
+ * Determines whether a prospective edge would contradict the begin/finish ordering the edges already impose.
+ *
+ * Mirrors `DependencyOrdering.FindContradiction` in the core, which is the authority — this only spares the
+ * round-trip, and refuses the gesture where it happens rather than after a write comes back rejected. The new edge
+ * asserts the source's triggering side comes before the target's constrained side; it is impossible when, walking
+ * forward from the target's constrained side — along each edge from its source's triggering side to its target's
+ * constrained side, and from any node's begin to its own finish — the source's triggering side is already reachable.
+ * A checkpoint is a single point, its unlock, which edges both enter and leave, so a loop through it is refused like
+ * one through a work item (I-034). Strictly finer than node-level acyclicity: a loop whose begins and
+ * finishes order out (a directive beginning before its own child begins, say) is allowed, and with the intrinsic
+ * edges on the canvas that distinction is the everyday case.
+ */
+export function wouldContradict(
+	edges: readonly CanvasEdge[],
+	source: EndpointRef,
+	target: EndpointRef,
+	trigger: DependencyTrigger | undefined = undefined,
+	constraint: DependencyConstraint | undefined = undefined
+): boolean {
+	const originSide = triggerSide(source, trigger)
+	const seedSide = constraintSide(target, constraint)
+
+	const stateKey = (node: string, side: Side) => `${node}#${side}`
+	const origin = stateKey(endpointKey(source), originSide)
+	const outgoing = new Map<string, { node: string, side: Side }[]>()
 	for (const edge of edges) {
-		const known = prerequisites.get(edge.target)
+		const from = triggerSide(sourceRef(edge.dependency), edge.dependency.trigger ?? undefined)
+		const to = constraintSide(targetRef(edge.dependency), edge.dependency.constraint ?? undefined)
+		const key = stateKey(edge.source, from)
+		const known = outgoing.get(key)
+		const next = { node: edge.target, side: to }
 		if (known) {
-			known.push(edge.source)
+			known.push(next)
 		}
 		else {
-			prerequisites.set(edge.target, [edge.source])
+			outgoing.set(key, [next])
 		}
 	}
 
-	const visited = new Set<string>()
-	const pending = [source]
+	const seed = { node: endpointKey(target), side: seedSide }
+	const visited = new Set<string>([stateKey(seed.node, seed.side)])
+	const pending = [seed]
 	while (pending.length > 0) {
-		const current = pending.pop()
-		if (current === undefined || !visited.add(current)) {
-			continue
-		}
-
-		if (current === target) {
+		const current = pending.pop()!
+		const key = stateKey(current.node, current.side)
+		if (key === origin) {
 			return true
 		}
 
-		pending.push(...prerequisites.get(current) ?? [])
+		for (const next of outgoing.get(key) ?? []) {
+			if (visited.add(stateKey(next.node, next.side))) {
+				pending.push(next)
+			}
+		}
+
+		if (current.side === 0 && visited.add(stateKey(current.node, 1))) {
+			pending.push({ node: current.node, side: 1 })
+		}
 	}
 
 	return false
@@ -163,8 +203,8 @@ export function wouldCycle(edges: readonly CanvasEdge[], source: string, target:
  *
  * Only the edges that still block are followed — a `satisfied` edge is left out of the adjacency, so the walk
  * stops at a met dependency: a prerequisite already satisfied holds nothing back, and whatever blocked *it* is
- * no longer part of what blocks the root. The adjacency runs dependant → prerequisite, the same direction
- * {@link wouldCycle} walks, so from a member the walk reaches the blocker, then the blocker's own blocker, and
+ * no longer part of what blocks the root. The adjacency runs dependant → prerequisite, against the forward walk of
+ * {@link wouldContradict}, so from a member the walk reaches the blocker, then the blocker's own blocker, and
  * on down the unmet chain.
  *
  * Returned per root, so a surface can attribute each prerequisite to the member it ultimately holds back (the
@@ -204,8 +244,10 @@ export function unresolvedPrerequisites(
 					collected.set(key, source)
 				}
 
-				// Descend into each prerequisite once, so its own unmet prerequisites join the chain.
-				if (visited.add(key)) {
+				// Descend into each prerequisite once, so its own unmet prerequisites join the chain. (`Set.add` returns the
+				// set, not whether it grew, so membership is tested first — else a loop of prerequisites never ends.)
+				if (!visited.has(key)) {
+					visited.add(key)
 					pending.push(key)
 				}
 			}
@@ -237,12 +279,18 @@ export function immediatePrerequisites(dependencies: readonly Dependency[], root
 
 /** One side of an entity's {@link DependencyRoute}: its unmet edges that way, and the entities at their far ends. */
 export interface RouteSide {
-	/** The unmet dependency edges on this side. */
+	/** The unmet dependency edges on this side, the intrinsic ones included. */
 	readonly dependencies: readonly Dependency[]
-	/** The endpoints at the far ends of those edges, once each, the ones gating a next transition first. */
+	/** The endpoints at the far ends of the stored edges, once each, the ones gating a next transition first. */
 	readonly endpoints: readonly EndpointRef[]
 	/** Keys of the {@link endpoints} none of whose edges here gates a next transition — in the way, but not now. */
 	readonly nonImmediate: ReadonlySet<string>
+	/**
+	 * How many of this side's unmet edges are intrinsic (PEP102 patch 9) — on a directive's blocked-by side, its open
+	 * children. Counted rather than listed: the children are the directive's own contents, and a list of them would
+	 * only repeat what its grid already shows.
+	 */
+	readonly intrinsic: number
 }
 
 /** An entity's place in the dependency graph, as its banner reads it: what blocks it, what it blocks. */
@@ -274,7 +322,13 @@ export function dependencyRoute(dependencies: readonly Dependency[], endpoint: E
 
 function routeSide(dependencies: readonly Dependency[], farEnd: (dependency: Dependency) => EndpointRef): RouteSide {
 	const endpoints = new Map<string, { ref: EndpointRef, immediate: boolean }>()
+	let intrinsic = 0
 	for (const dependency of dependencies) {
+		if (isIntrinsic(dependency)) {
+			intrinsic++
+			continue
+		}
+
 		const ref = farEnd(dependency)
 		const key = endpointKey(ref)
 		const known = endpoints.get(key)
@@ -286,6 +340,7 @@ function routeSide(dependencies: readonly Dependency[], farEnd: (dependency: Dep
 		dependencies,
 		endpoints: ordered.map(([, entry]) => entry.ref),
 		nonImmediate: new Set(ordered.filter(([, entry]) => !entry.immediate).map(([key]) => key)),
+		intrinsic,
 	}
 }
 
@@ -301,6 +356,10 @@ export function effectiveConstraint(dependency: Dependency): DependencyConstrain
 
 /** Names what an edge does, in the terms the dependency system uses. */
 export function describeEdge(dependency: Dependency): string {
+	if (isIntrinsic(dependency)) {
+		return 'child blocks the finish until it finishes'
+	}
+
 	const trigger = effectiveTrigger(dependency) === DependencyTrigger.OnBegin ? 'begins' : 'finishes'
 	const constraint = effectiveConstraint(dependency) === DependencyConstraint.ToFinish ? 'finish' : 'begin'
 	return `blocks the ${constraint} until it ${trigger}`

@@ -1,5 +1,5 @@
 import { AsyncDirective, directive, nothing, PartType, type ElementPart, type PartInfo, type ReactiveElement } from "@a11d/lit"
-import { subscribeTick, type TickClock } from "./globalTick"
+import { subscribeElementTick, type TickClock } from "./globalTick"
 
 /**
  * Keeps the element it is attached to re-rendering on the app-wide clock, without that element having to declare a
@@ -13,7 +13,8 @@ import { subscribeTick, type TickClock } from "./globalTick"
  * On each tick it calls `requestUpdate()` on the attached element, so any custom element that renders a time-relative
  * value stays fresh from the outside in. It subscribes only while attached and connected — unsubscribing when the
  * element leaves the DOM and resubscribing if it returns — and shares the one underlying timer (see
- * {@link subscribeTick}), so a `60s` binding samples the same clock every 60th tick rather than owning an interval.
+ * {@link subscribeElementTick}), so a `60s` binding samples the same clock every 60th tick rather than owning an
+ * interval, and an element that is hidden (a dormant page) skips its ticks until it shows again.
  *
  * It must sit on an element (`html\`<el ${timebound()}>\``), and that element must be a reactive custom element —
  * a plain `<div>` has nothing to re-render.
@@ -61,7 +62,8 @@ class TimeboundDirective extends AsyncDirective {
 
 	private subscribe(): void {
 		this.unsubscribe?.()
-		this.unsubscribe = subscribeTick(() => this.element?.requestUpdate(), this.clock)
+		const element = this.element
+		this.unsubscribe = element === undefined ? undefined : subscribeElementTick(element, () => element.requestUpdate(), this.clock)
 	}
 }
 

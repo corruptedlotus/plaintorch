@@ -5,7 +5,6 @@ using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Plaintorch.Materialization;
-using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch.Api.Services;
@@ -18,9 +17,9 @@ public sealed class ObjectiveApiService(
 	PuckCreationService puckCreationService,
 	VaultWriteQueue writeQueue,
 	VaultTemporalDataService temporalDataService,
-	DependencyGateService dependencyGate,
 	VaultEntityLifecycleService lifecycleService,
-	VaultAuditLogService auditLogService) : IObjectiveApi
+	VaultAuditLogService auditLogService,
+	IOnrushSprintApi onrushApi) : IObjectiveApi
 {
 	/// <inheritdoc />
 	public Task<Objective?> GetAsync(string objectiveId, CancellationToken cancellationToken = default)
@@ -47,18 +46,17 @@ public sealed class ObjectiveApiService(
 		ArgumentNullException.ThrowIfNull(search);
 		ArgumentException.ThrowIfNullOrWhiteSpace(search.Query);
 
-		var query = context.Objectives
+		IQueryable<Objective> query = context.Objectives
 			.AsNoTracking()
-			.Where(objective => objective.Id.Contains(search.Query) || objective.Title.Contains(search.Query));
+			.WhereMatchesSearch(search.Query, objective => objective.Id, objective => objective.Title)
+			.OrderBy(objective => objective.Title);
 
 		if (search.Take is > 0)
 		{
 			query = query.Take(search.Take.Value);
 		}
 
-		return await query
-			.OrderBy(objective => objective.Title)
-			.ToListAsync(cancellationToken);
+		return await query.ToListAsync(cancellationToken);
 	}
 
 	/// <inheritdoc />
@@ -130,24 +128,6 @@ public sealed class ObjectiveApiService(
 			objective.Due = update.Due.Value;
 		}
 
-		if (update.ParentIncentiveId.IsSet)
-		{
-			if (string.IsNullOrWhiteSpace(update.ParentIncentiveId.Value))
-			{
-				objective.ParentIncentiveId = null;
-			}
-			else
-			{
-				var parent = await context.Incentives
-					.AsNoTracking()
-					.IgnoreAutoIncludes()
-					.FirstOrDefaultAsync(item => item.Id == update.ParentIncentiveId.Value, cancellationToken)
-					?? throw new InvalidOperationException($"Parent incentive '{update.ParentIncentiveId.Value}' was not found.");
-				IncentiveParenting.EnsureValidParent(objective, parent);
-				objective.ParentIncentiveId = parent.Id;
-			}
-		}
-
 		await writeQueue.WriteAsync(objective, previous, cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.update", subject: objective, cancellationToken: cancellationToken);
 		return objective;
@@ -162,7 +142,11 @@ public sealed class ObjectiveApiService(
 		var objective = await context.Objectives.FirstOrDefaultAsync(item => item.Id == objectiveId, cancellationToken)
 			?? throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
 
-		await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Objective, objective.Id), shift.Status, cancellationToken);
+		// A shift to the status it already has changes nothing, so nothing is written (PEP103 patch 4).
+		if (objective.Status == shift.Status)
+		{
+			return objective;
+		}
 
 		var previous = Clone(objective);
 
@@ -187,11 +171,26 @@ public sealed class ObjectiveApiService(
 			throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
 		}
 
+		// Coming on board the active sprint makes the objective Onboard where nothing blocks it; the state engine does it, on
+		// every pathway (Patch103.3). Joining the planning sprint moves nothing until it begins.
 		objective.OnrushSprintId = onrushSprintId;
-		objective.Status = IsAutoPromotableToOnrush(objective.Status) ? ObjectiveStatus.Onrush : objective.Status;
 		await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.add-to-onrush", subject: objective, cancellationToken: cancellationToken);
 		return objective;
+	}
+
+	/// <inheritdoc />
+	public async Task<Objective> AddToOnrushAsync(string objectiveId, OnrushSlot slot, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(objectiveId);
+		if (!await context.Objectives.AnyAsync(item => item.Id == objectiveId, cancellationToken))
+		{
+			throw new InvalidOperationException($"Objective '{objectiveId}' was not found.");
+		}
+
+		// The slot's sprint is created when it does not exist yet, as adding to the current Polaris cycle starts one.
+		var sprint = await onrushApi.EnsureAsync(slot, cancellationToken);
+		return await AddToOnrushAsync(objectiveId, sprint.Id, cancellationToken);
 	}
 
 	public async Task<Objective> RemoveFromOnrushAsync(string objectiveId, CancellationToken cancellationToken = default)
@@ -205,11 +204,6 @@ public sealed class ObjectiveApiService(
 		await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
 		await auditLogService.WriteAsync("api", "objective.remove-from-onrush", subject: objective, cancellationToken: cancellationToken);
 		return objective;
-	}
-
-	private static bool IsAutoPromotableToOnrush(ObjectiveStatus status)
-	{
-		return status is ObjectiveStatus.Standby or ObjectiveStatus.Blocked;
 	}
 
 	/// <inheritdoc />

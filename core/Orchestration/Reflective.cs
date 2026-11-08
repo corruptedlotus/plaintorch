@@ -38,14 +38,15 @@ public sealed class Reflective
 	public bool Executed { get; set; }
 
 	/// <summary>
-	/// Gets or sets the optional time of day for the reflective (PEP100). Further reflective behavior
-	/// belongs to the PEP104 generation engine.
+	/// Gets or sets the optional time of day for the reflective (PEP100).
 	/// </summary>
 	public TimeOnly? Time { get; set; }
 
 	/// <summary>
-	/// Gets or sets the originating decree identifier when the reflective was generated through lunar
-	/// reflection (PEP100). Manual/drawn reflectives carry no decree.
+	/// Gets or sets the originating decree identifier. Every reflective is generated through lunar reflection
+	/// (PEP100/PEP104), either by its decree's orbit landing on the cycle's day or by the cycle's draw from the
+	/// orbit-less pool, and executing it also grants its decree's per-run reward. The reference is cleared only when
+	/// the decree is deleted and the reflective is kept as a record of an ended cycle.
 	/// </summary>
 	public string? DecreeId { get; set; }
 

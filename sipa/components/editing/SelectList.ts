@@ -18,8 +18,9 @@ export interface SelectListRow {
  * shadow styles reaches it, the same isolation the tooltip works under.
  *
  * It is a dumb list: the select owns the search, the highlight and the choice, and hands them in as `rows`,
- * `highlighted` and `loading`; the list reports `rowchoose` and `rowhighlight` with the row's index. A press on
- * it is kept from taking focus, so the select's input keeps the caret while a row is clicked.
+ * `highlighted` and `loading` (with an optional `heading` above the rows and an `emptyNote` for when there are none);
+ * the list reports `rowchoose` and `rowhighlight` with the row's index. A press on it is kept from taking focus, so
+ * the select's input keeps the caret while a row is clicked. The search box's drawer is one too.
  *
  * The popover machinery's click handling is switched off — it would toggle the list on a click of the anchor
  * and light-dismiss it on any other, and the select decides both.
@@ -29,6 +30,10 @@ export class SelectList extends MoPopover {
 	@property({ attribute: false }) rows: readonly SelectListRow[] = []
 	@property({ type: Number }) highlighted = 0
 	@property({ type: Boolean }) loading = false
+	/** A small heading above the rows, naming what they are ("Filter by Status"). None by default. */
+	@property() heading?: string
+	/** What the list says when it has no rows and is not loading. */
+	@property() emptyNote = 'Nothing found.'
 
 	static override get styles() {
 		return css`
@@ -78,12 +83,22 @@ export class SelectList extends MoPopover {
 				opacity: .55;
 				font-size: .9em;
 			}
+
+			.heading {
+				padding: .35em .5em .3em;
+				color: var(--text-muted);
+				font-size: .72em;
+				font-weight: 500;
+				letter-spacing: .06em;
+				text-transform: uppercase;
+			}
 		`
 	}
 
 	protected override get template() {
 		return html`
 			<div class='rows' @pointerdown=${(e: Event) => e.preventDefault()}>
+				${!this.heading ? nothing : html`<div class='heading'>${this.heading}</div>`}
 				${this.rows.map((row, index) => html`
 					<div
 						class='row ${index === this.highlighted ? 'highlighted' : ''} ${row.disabled ? 'disabled' : ''}'
@@ -92,7 +107,7 @@ export class SelectList extends MoPopover {
 						${row.template}
 					</div>
 				`)}
-				${this.rows.length > 0 ? nothing : html`<div class='note'>${this.loading ? 'Searching…' : 'Nothing found.'}</div>`}
+				${this.rows.length > 0 ? nothing : html`<div class='note'>${this.loading ? 'Searching…' : this.emptyNote}</div>`}
 			</div>
 		`
 	}

@@ -6,11 +6,14 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<!-- The executable's icon and version resources — what Task Manager and Explorer show for the daemon. The icon
-		     is generated from the PLAINTORCH mark by standalone/scripts/make-icons.mjs. -->
+		     is generated from the PLAINTORCH mark by standalone/scripts/make-icons.mjs. The version moves in step with
+		     the CLI and the TypeScript packages (sdk.ts, sipa, obsidian, standalone); it stamps the file and product
+		     versions, and the product version carries the source commit. -->
 		<ApplicationIcon>..\branding\plaintorch.ico</ApplicationIcon>
 		<AssemblyTitle>PLAINTORCH Core</AssemblyTitle>
 		<Product>PLAINTORCH</Product>
 		<Company>Pleiades</Company>
+		<Version>0.3.0</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -41,9 +44,6 @@
 
 	<ItemGroup>
 		<Content Include="Assets\**\*">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</Content>
-		<Content Include="DevUser\**\*">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
 	</ItemGroup>

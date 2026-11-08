@@ -1,7 +1,9 @@
 import { component, css, html, state } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
 import { DependencyEndpointKind, Eventive, EventiveResolution, Fate, FateStatus, FateUpdate } from '@pleiades/sdk'
-import { core, fateScheduleToOrbit, IconName, followRenamedNote, ReactiveBinder, SelectStatusModal, fateStatusDescriptors } from ".."
+import { core, declarativeScheduleUpdate, editState, IconName, followRenamedNote, ReactiveBinder } from ".."
+import { declarativeResolutionStyles, declarativeResolutionTemplate, type DeclarativeResolutionUpdate } from './declarativeResolution'
+import { occurrenceTime } from '../entities/occurrenceTime'
 import type { ScheduleValue } from "../editing/EditableSchedule"
 
 /**
@@ -22,10 +24,8 @@ export class FateBanner extends EntityBanner<Fate> {
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
 			const update: FateUpdate = {}
+			// The status is not bound: the state bubble saves a shift itself (editState).
 			switch (keyPath) {
-				case 'status':
-					update.status = entity.status
-					break
 				case 'orbit':
 					// Empty string clears the schedule server-side; undefined would be a no-op.
 					update.orbit = entity.orbit ?? ''
@@ -69,13 +69,13 @@ export class FateBanner extends EntityBanner<Fate> {
 	}
 
 	/**
-	 * Persists a schedule edited through the unified control. A fate is orbit-only (PEP111): a recurring orbit
-	 * passes through, and a one-off date (with its event window) is folded into a `Z{…}` literal, so only ever an
-	 * orbit is sent.
+	 * Persists a schedule edited through the schedule's bubble. A fate is orbit-only (PEP111): a recurrence passes
+	 * through, and a one-shot `Z{…}` literal comes with the calendar it was written on, sent along so the core reads the
+	 * literal on it.
 	 */
 	private async onScheduleChange(value: ScheduleValue) {
 		const entity = this.entity!
-		const update: FateUpdate = { orbit: fateScheduleToOrbit(value) }
+		const update: FateUpdate = declarativeScheduleUpdate(value)
 
 		this.beginEntityEdit()
 		const saved = await this.commitEntityEdit(async () => await core.declaratives.updateFate(entity.id, update))
@@ -87,6 +87,8 @@ export class FateBanner extends EntityBanner<Fate> {
 	static override get styles() {
 		return css`
 			${super.styles}
+
+			${declarativeResolutionStyles}
 
 			:host {
 				padding-inline: 1.2em;
@@ -126,10 +128,6 @@ export class FateBanner extends EntityBanner<Fate> {
 				opacity: .85;
 			}
 
-			.schedule p7t-editable-orbit {
-				font-size: 1em;
-			}
-
 			.time {
 				font-variant-numeric: tabular-nums;
 				opacity: .8;
@@ -139,32 +137,46 @@ export class FateBanner extends EntityBanner<Fate> {
 
 	protected override get secondary() {
 		return html`
-			<p7t-directive-item .directive=${this.entity!.directive}></p7t-directive-item>
+			<p7t-editable-hierarchy .entity=${this.entity}></p7t-editable-hierarchy>
 		`
 	}
 
 	protected override get info() {
-		if (!this.nextEventive) return html``
+		const next = this.nextEventive
+		// A zoned eventive reads on this device's clock, its own wall time in the tooltip.
+		const time = next ? occurrenceTime(next.epoch) : undefined
 		return html`
-			<div class='next-eventive'>
-				<span class='label'>Next</span>
-				<p7t-datetime-view
-					.date=${this.nextEventive.epoch.date}
-					.time=${this.nextEventive.epoch.timeOfDay}
-					.granularity=${this.nextEventive.epoch.granularity}
-					.calendar=${this.entity!.calendar}>
-				</p7t-datetime-view>
-			</div>
+			${!next || !time ? html`` : html`
+				<div class='next-eventive'>
+					<span class='label'>Next</span>
+					<p7t-datetime-view
+						.date=${time.date}
+						.time=${time.time}
+						.anchor=${time.anchor?.label}
+						.granularity=${next.epoch.granularity}
+						.calendar=${this.entity!.calendar}>
+					</p7t-datetime-view>
+				</div>
+			`}
+			${declarativeResolutionTemplate(this.entity!, update => void this.saveResolution(update))}
 		`
 	}
 
+	/** Persists a calendar or time zone chosen in the resolution row; a one-off fate's literal is rewritten by the core. */
+	private async saveResolution(update: DeclarativeResolutionUpdate) {
+		const entity = this.entity!
+		this.beginEntityEdit()
+		const saved = await this.commitEntityEdit(async () => await core.declaratives.updateFate(entity.id, update))
+		if (saved) {
+			await this.loadNextEventive(entity.id)
+		}
+	}
+
 	protected override get actions() {
-		// One unified control for both shapes: a recurring orbit, or a one-off date with an event-time range that
-		// is folded into a `Z{…}` literal on save (a fate is orbit-only, PEP111). The stored orbit seeds it; a
-		// one-off shows as its literal in orbit mode, and the datetime mode stays available for fresh entry.
+		// The fate's orbit, edited in a bubble as notation or as a one-shot moment written as a `Z{…}` literal (a fate is
+		// orbit-only, PEP111); a stored one-shot opens on its moment.
 		return html`
 			<p7t-editable-schedule
-				range
 				.calendar=${this.entity!.calendar}
 				.orbit=${this.entity!.orbit}
 				@schedulechange=${(e: CustomEvent<ScheduleValue>) => void this.onScheduleChange(e.detail)}>
@@ -184,7 +196,8 @@ export class FateBanner extends EntityBanner<Fate> {
 
 	protected override get subHeadingTemplate() {
 		return html`
-			<p7t-editable .doEdit=${() => SelectStatusModal.prompt(fateStatusDescriptors)} ${this.binder.bind('status')}>
+			<p7t-editable .value=${this.entity!.status} .doEdit=${(_: unknown, field: HTMLElement) => editState(field, this.entity)}
+				@change=${() => this.entity && this.loadNextEventive(this.entity.id)}>
 				<p7t-status-item
 					.status=${FateStatus[this.entity!.status] as keyof typeof FateStatus}>
 				</p7t-status-item>
@@ -193,12 +206,14 @@ export class FateBanner extends EntityBanner<Fate> {
 	}
 }
 
-/** Earliest still-pending eventive on or after today; undefined when none is upcoming. */
+/** Earliest still-pending eventive on or after today, as they fall on this device's clock; undefined when none is upcoming. */
 function pickNextEventive(eventives: Eventive[]): Eventive | undefined {
 	const today = todayKey()
 	return eventives
-		.filter(eventive => eventive.resolution === EventiveResolution.Pending && eventive.epoch.date >= today)
-		.sort((a, b) => a.epoch.date.localeCompare(b.epoch.date) || (a.epoch.timeOfDay ?? '').localeCompare(b.epoch.timeOfDay ?? ''))[0]
+		.map(eventive => ({ eventive, time: occurrenceTime(eventive.epoch) }))
+		.filter(({ eventive, time }) => eventive.resolution === EventiveResolution.Pending && time.date >= today)
+		.sort((a, b) => a.time.date.localeCompare(b.time.date) || (a.time.time ?? '').localeCompare(b.time.time ?? ''))[0]
+		?.eventive
 }
 
 function todayKey(): string {

@@ -54,7 +54,11 @@ public sealed class ObjectiveModule : Module
 			Results.Ok(await api.ShiftWorkflowAsync(objectiveId, request, cancellationToken)));
 
 		group.MapPost("/{objectiveId}/onrush", async (string objectiveId, AddObjectiveToOnrushRequest request, IObjectiveApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.AddToOnrushAsync(objectiveId, request.OnrushSprintId, cancellationToken)));
+			request.Slot is { } slot
+				? Results.Ok(await api.AddToOnrushAsync(objectiveId, slot, cancellationToken))
+				: string.IsNullOrWhiteSpace(request.OnrushSprintId)
+					? Results.BadRequest("Name an onrush sprint, or the active or planning one.")
+					: Results.Ok(await api.AddToOnrushAsync(objectiveId, request.OnrushSprintId, cancellationToken)));
 
 		group.MapDelete("/{objectiveId}/onrush", async (string objectiveId, IObjectiveApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.RemoveFromOnrushAsync(objectiveId, cancellationToken)));

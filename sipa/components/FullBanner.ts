@@ -1,7 +1,10 @@
 import { Component, component, css, html, nothing, property } from '@a11d/lit'
 import type { DeclarativeCalendar, EntityExistence } from '@pleiades/sdk/plaintorch'
 import { core, DerivedRef, EntityRef } from './data'
+import { canOpenInPlanning, openInPlanning } from './canvas/canvasActions'
 import { canDeleteEntity, deleteEntityByType } from './entities/entityMenu'
+import { confirmAction, deleteConfirmation } from './design/ConfirmationBubble'
+import './entities/EntityAbsence'
 import { canMaterializeKind, createEntityNote, openEntityNote } from './grid/entityActions'
 
 /** The minimal shape every entity a banner resolves shares — a PUCK identity and a title. */
@@ -153,7 +156,28 @@ export class FullBanner extends Component {
 		`
 	}
 
+	/**
+	 * Whether the entity this panel is for is known not to exist — deleted while the panel was open, or a PUCK
+	 * that names nothing.
+	 *
+	 * Asked of whichever path resolves the entity: the repository when the type is known, the PUCK lookup when it
+	 * is not. A lookup counts once it has been answered at all, in-flight refresh or not, so the panel does not
+	 * flicker between the notice and a banner each time the record is revalidated.
+	 */
+	private get removed(): boolean {
+		if (this.xtype) {
+			return this.ref.removed
+		}
+
+		return !!this.puck && !this.resolution.notLoaded && !this.resolution.value?.exists
+	}
+
 	protected override get template() {
+		if (this.removed) {
+			// The whole panel stands down, not only the banner: there is nothing left to open, edit or delete.
+			return html`<p7t-entity-absence state='removed' puck=${this.puck}></p7t-entity-absence>`
+		}
+
 		const kind = this.kind
 		if (!kind) {
 			// The resolve path is still waiting on the PUCK lookup; a resolved-but-unknown kind falls to the generic banner.
@@ -161,13 +185,21 @@ export class FullBanner extends Component {
 				return html`<div class='loading'>Loading…</div>`
 			}
 
+			// The lookup is over and was never answered: the core could not be asked what this PUCK is.
+			if (!this.xtype && this.resolution.notLoaded) {
+				return html`<p7t-entity-absence state='unavailable' puck=${this.puck} @retry=${() => void this.resolution.refresh()}></p7t-entity-absence>`
+			}
+
 			return this.fallbackBanner
 		}
 
+		// The typed banner says so itself when its entity could not be loaded. The actions and editors beneath it
+		// all need the core as well, so they wait for it rather than offering what cannot work.
+		const unavailable = !!this.xtype && this.ref.notLoaded && !this.ref.loading
 		return html`
 			${this.renderBanner(kind)}
-			${this.renderActions(kind)}
-			${this.renderEditors(kind)}
+			${unavailable ? nothing : this.renderActions(kind)}
+			${unavailable ? nothing : this.renderEditors(kind)}
 		`
 	}
 
@@ -203,7 +235,17 @@ export class FullBanner extends Component {
 
 	/** A declarative's own calendar (PEP111), when the resolved entity is one that names it. */
 	private get declarativeCalendar(): DeclarativeCalendar | undefined {
-		return (this.entity as { calendar?: DeclarativeCalendar } | undefined)?.calendar
+		return (this.entity as { calendar?: DeclarativeCalendar | null } | undefined)?.calendar ?? undefined
+	}
+
+	/** A declarative's own time zone, when the resolved entity is one that names it. */
+	private get declarativeTimeZone(): string | undefined {
+		return (this.entity as { timeZone?: string | null } | undefined)?.timeZone ?? undefined
+	}
+
+	/** A lore page's beginning, when the resolved entity is one that has begun; a page without one has no period. */
+	private get loreBeginning(): string | undefined {
+		return (this.entity as { beginning?: string | null } | undefined)?.beginning ?? undefined
 	}
 
 	/** The special in-place editors an entity carries beneath its banner, handed the owner's PUCK (and a declarative its calendar). */
@@ -211,8 +253,9 @@ export class FullBanner extends Component {
 		switch (kind) {
 			case 'lunar-directive': return html`<p7t-timeframes-editor class='editor' .directiveId=${this.puck}></p7t-timeframes-editor>`
 			case 'onrush-sprint': return html`<p7t-onrush-orders class='editor' .onrushId=${this.puck}></p7t-onrush-orders>`
-			case 'fate': return html`<p7t-declarative-agenda class='editor' .fateId=${this.puck} .calendar=${this.declarativeCalendar}></p7t-declarative-agenda>`
-			case 'decree': return html`<p7t-declarative-agenda class='editor' .decreeId=${this.puck} .calendar=${this.declarativeCalendar}></p7t-declarative-agenda>`
+			case 'fate': return html`<p7t-declarative-agenda class='editor' .fateId=${this.puck} .calendar=${this.declarativeCalendar} .timeZone=${this.declarativeTimeZone}></p7t-declarative-agenda>`
+			case 'decree': return html`<p7t-declarative-agenda class='editor' .decreeId=${this.puck} .calendar=${this.declarativeCalendar} .timeZone=${this.declarativeTimeZone}></p7t-declarative-agenda>`
+			case 'lore-page': return !this.loreBeginning ? nothing : html`<p7t-lore-cycles class='editor' .lorePuck=${this.puck}></p7t-lore-cycles>`
 			default: return nothing
 		}
 	}
@@ -223,6 +266,8 @@ export class FullBanner extends Component {
 	 * Open and Create are the two faces of one thing: an entity with a note opens it; an implicit one with none offers to
 	 * begin it. When note state is not yet known (the type-known path skipped resolution) both are offered and the click
 	 * handlers self-correct — opening reports "no note yet", creating resolves first and never begins a second time.
+	 * A stellar directive also offers to open in a planning view of its own with its direct neighbours, where the host
+	 * can pop one out ({@link openInPlanning}), as its context menu does.
 	 */
 	private renderActions(kind: string) {
 		const record = this.noteRecord
@@ -233,6 +278,7 @@ export class FullBanner extends Component {
 		const canDelete = canDeleteEntity(typeNameByKind[kind])
 		const canOpen = exists && (hasNote || !known)
 		const canCreate = canMaterializeKind(kind) && exists && !hasNote
+		const canPlan = exists && canOpenInPlanning(typeNameByKind[kind])
 
 		return html`
 			<div class='full-banner-actions'>
@@ -242,8 +288,11 @@ export class FullBanner extends Component {
 				${!canCreate ? nothing : html`
 					<p7t-button ghost icon='lucide:file-plus' @click=${() => this.createNote(kind)}><span>Create note</span></p7t-button>
 				`}
+				${!canPlan ? nothing : html`
+					<p7t-button ghost icon='lucide:network' @click=${() => void openInPlanning({ id: this.puck, title: this.title || this.puck })}><span>Open in Planning</span></p7t-button>
+				`}
 				${!canDelete ? nothing : html`
-					<p7t-button ghost danger icon='lucide:trash-2' @click=${() => this.deleteEntity(kind)}><span>Delete</span></p7t-button>
+					<p7t-button ghost danger icon='lucide:trash-2' @click=${(e: Event) => this.deleteEntity(kind, e)}><span>Delete</span></p7t-button>
 				`}
 			</div>
 		`
@@ -257,8 +306,11 @@ export class FullBanner extends Component {
 		void createEntityNote({ id: this.puck }, kind)
 	}
 
-	private deleteEntity(kind: string) {
-		void deleteEntityByType(typeNameByKind[kind], this.puck, this.title)
+	/** Deletes the entity once confirmed beside the button. */
+	private async deleteEntity(kind: string, e: Event) {
+		if (await confirmAction(e, deleteConfirmation(`Delete "${this.title}"?`))) {
+			await deleteEntityByType(typeNameByKind[kind], this.puck, this.title)
+		}
 	}
 }
 

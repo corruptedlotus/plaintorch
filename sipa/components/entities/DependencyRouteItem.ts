@@ -1,4 +1,4 @@
-import { Component, component, css, html, property } from '@a11d/lit'
+import { Component, component, css, html, nothing, property } from '@a11d/lit'
 import type { EndpointRef } from '@pleiades/sdk'
 import { core, DerivedRef } from '../data'
 import { tooltip } from '../design/Tooltip'
@@ -63,6 +63,22 @@ export class DependencyRouteItem extends Component {
 				color: var(--text-muted);
 				font-style: italic;
 			}
+
+			/* The side's heading when nothing but children is on it, matching the endpoint list's own. */
+			.heading {
+				font-weight: bold;
+				color: var(--text-muted);
+				text-transform: uppercase;
+				font-size: .8em;
+			}
+
+			/* A directive's open children, counted under whatever else blocks it rather than listed one by one. */
+			.children {
+				display: block;
+				color: var(--text-muted);
+				font-size: .9em;
+				margin-top: .35em;
+			}
 		`
 	}
 
@@ -85,11 +101,21 @@ export class DependencyRouteItem extends Component {
 		`
 	}
 
-	/** One side's entities, headed, with the ones not in the way of a next transition drawn faint; a note when empty. */
+	/**
+	 * One side's entities, headed, with the ones not in the way of a next transition drawn faint; a note when empty.
+	 * The intrinsic edges — a directive's open children (PEP102 patch 9) — are counted on one line rather than listed.
+	 */
 	private sideTemplate(side: RouteSide, heading: string, empty: string) {
-		return side.endpoints.length === 0
-			? html`<span class='none'>${empty}</span>`
-			: html`<p7t-endpoint-list .endpoints=${side.endpoints} .nonImmediate=${side.nonImmediate}>${heading}</p7t-endpoint-list>`
+		const children = side.intrinsic === 0
+			? nothing
+			: html`<span class='children'>${side.intrinsic} open ${side.intrinsic === 1 ? 'child' : 'children'}</span>`
+		if (side.endpoints.length === 0) {
+			return side.intrinsic === 0
+				? html`<span class='none'>${empty}</span>`
+				: html`<div class='heading'>${heading}</div>${children}`
+		}
+
+		return html`<p7t-endpoint-list .endpoints=${side.endpoints} .nonImmediate=${side.nonImmediate}>${heading}</p7t-endpoint-list>${children}`
 	}
 }
 

@@ -1,4 +1,5 @@
 using Pleiades.Diagnostics;
+using Pleiades.Plaintorch.Enforcement;
 using Pleiades.Resources;
 using Pleiades.Vault.Markdown;
 
@@ -302,7 +303,8 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter, Oper
 	/// <summary>
 	/// Reports that a candidate's sync execution threw, classified to a concrete cause. A delete the database would
 	/// refuse (<see cref="VaultEntityDeleteBlockedException"/>) is the standing <see cref="WatcherOperations.DeleteBlocked"/>
-	/// status, which the retry sweep leaves alone; anything else is a retryable failure. The two sync-only reasons are
+	/// status, and a change the backlog's state rules refuse (<see cref="StateEnforcementException"/>) the standing
+	/// <see cref="WatcherOperations.StateRefused"/>, which the retry sweep leaves alone; anything else is a retryable failure. The two sync-only reasons are
 	/// reported as one outcome, so whichever this attempt raised supersedes the other rather than leaving a stale
 	/// <see cref="WatcherOperations.SyncFailed"/> to keep re-queuing a path that is now known to be blocked.
 	/// </summary>
@@ -311,6 +313,23 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter, Oper
 		ArgumentNullException.ThrowIfNull(candidate);
 		ArgumentNullException.ThrowIfNull(exception);
 		var path = candidate.AbsolutePath;
+		if (exception is StateEnforcementException refused)
+		{
+			// The note keeps its edit and the database its state (PEP103). The detail says what blocks the change, never
+			// which items do. The same refusal is the same problem across passes and restarts — the rules it breaks and the
+			// items they concern, never the message — so an Instance dismissal holds until what blocks the edit changes.
+			var refusal = Fingerprint(refused.Decision.Conflicts
+				.Select(static conflict => $"{conflict.Rule}:{conflict.Subject.Kind}:{conflict.Subject.Id}")
+				.Order(StringComparer.Ordinal));
+			Report(
+				WatcherOperations.Reconcile,
+				path,
+				Pass(WatcherOperations.SyncFailed),
+				Pass(WatcherOperations.DeleteBlocked),
+				Check(WatcherOperations.StateRefused, failed: true, refused.Message, files: [path], entityId: candidate.PathId, refusal));
+			return;
+		}
+
 		if (exception is VaultEntityDeleteBlockedException blocked)
 		{
 			// The same blocked delete is the same problem across passes and restarts — the entity and which relationships
@@ -326,6 +345,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter, Oper
 				WatcherOperations.Reconcile,
 				path,
 				Pass(WatcherOperations.SyncFailed),
+				Pass(WatcherOperations.StateRefused),
 				Check(WatcherOperations.DeleteBlocked, failed: true, blocked.Message, files: [path], entityId: candidate.PathId, fingerprint));
 			return;
 		}
@@ -335,6 +355,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter, Oper
 			WatcherOperations.Reconcile,
 			path,
 			Pass(WatcherOperations.DeleteBlocked),
+			Pass(WatcherOperations.StateRefused),
 			Check(reason, failed: true, exception.Message, files: [path], entityId: candidate.PathId, fingerprint: exception.GetType().Name));
 	}
 
@@ -353,6 +374,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter, Oper
 		WatcherOperations.ForeignFile,
 		WatcherOperations.SyncFailed,
 		WatcherOperations.DeleteBlocked,
+		WatcherOperations.StateRefused,
 	];
 
 	// The reasons about reading and applying a file, which any successful sync clears — a refused delete included: the
@@ -364,6 +386,7 @@ public sealed class WatcherStatusReporter(OperationStatusReporter reporter, Oper
 		WatcherOperations.FileInUse,
 		WatcherOperations.SyncFailed,
 		WatcherOperations.DeleteBlocked,
+		WatcherOperations.StateRefused,
 	];
 
 	// The reasons a sync that enforced the content (a rewrite or a purge) clears: every reason but foreign-file. A foreign

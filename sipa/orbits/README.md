@@ -3,7 +3,7 @@
 `ast.ts`, `calendar.ts`, `parser.ts` and `humanizer.ts` are copied **verbatim** from the
 [`@pleiades/orbits`](../../../orbit-scheduler) package (`packages/node/src/*`). They power
 the human-readable rendering of Orbit notation in the plugin — most visibly the
-`p7t-editable-orbit` editable and the Fate/Decree banners.
+`p7t-editable-schedule` editable (and its orbit bubble) and the Fate/Decree banners.
 
 They are vendored (rather than depended on) because `orbit-scheduler` is a sibling
 repository outside `plaintorch`, is not published, and is not npm-linked into the plugin's
@@ -57,7 +57,8 @@ the long child-first one:
 | `z{12:00}` | Every day at 12:00 | Daily @12:00 |
 
 Conventions: weekday/month names clip to three letters; `at HH:MM` becomes `@HH:MM`; unit words
-abbreviate (`yr mo wk day hr min sec`); lists join with `&`; set operators render as `+ & − ^`.
+abbreviate (`yr mo wk day hr min sec`); lists join with `&`, saying a unit prefix once (`CW1&3&5`); set operators
+render as `+ & − ^`.
 Phrases are lower-cased internally and only the first letter is capitalized by `humanizeOrbit`, so
 a nested reading stays correct ("Day 2–4 of every wk"). Anything the compact serializer cannot
 shorten cleanly it throws on, and `humanizeOrbit` falls back to the **full** phrase (never the raw
@@ -87,15 +88,24 @@ drop `limits` `*x @x <t >t` and `duration` `=<dur>`), and they are two hand-sync
   them: a `*x` on an inner bare unit becomes a `first` selection ("the first 3 days of every week"), on the outermost
   frame the schedule's run (`Frame.repeat`, "for 10 weeks"); on a `%`-stepped index it keeps each run's first x steps,
   spelled out as the values they land on (`d{5}%3*4` is the 5th, 8th, 11th and 14th); on any other index it means
-  nothing and is dropped. An `@x` keeps a nested list's first x values (`d[h{9,12,15,18}@2]` is 09:00 and 12:00), else it
+  nothing and is dropped. A spelled-out expansion names at most four values, and a consecutive one of any length reads
+  as a range (`M[d{5}%1*20]` is the 5th through 24th); past that it is said as declared, its starts and step with the
+  `*x` as a count per parent (`y[w{1}%2*20]` is "every other week from calendar week 1, up to 20 times a year"). Any
+  explicit `%N` steps an index, `%1` included (`M[d{5}%1]` is every day from the 5th); on a bare unit `%1` is no step. An `@x` keeps a nested list's first x values (`d[h{9,12,15,18}@2]` is 09:00 and 12:00), else it
   becomes a `count` bound per period of the node's written parent ("up to 7 times a month"), or in all at the top level.
   A `%` on a weekday or month is spelled out too (`w[d{1}%2]` is Monday, Wednesday, Friday and Sunday), bounded by the
-  values the calendar names. A set operation nested under the frames (`M[d{15}+d{4}%4]`) becomes the schedule's
+  values the calendar names and by the same four-value cap. A set operation nested under the frames (`M[d{15}+d{4}%4]`) becomes the schedule's
   `branches`: each side is a schedule of its own, read relative to the frame above it. A dated `Z{…}` becomes an `instant`; a bare `z{h:m}` a
   frameless daily clock. Throws `UnsupportedShapeError` for shapes not yet modelled (a set-op nested mid-chain,
   a non-clock time unit, a clock shape it cannot express) so the caller can fall back. A `%N` on a clock unit
   becomes the clock time's `step`: `h{9}%2` runs from 09:00 to the end of the day, `h{9}[m{10}%15]` to the end
-  of the hour, and a bare `h{9}[m%15]` streams within the 09:00 hour. Before the step it was dropped outright.
+  of the hour, and a bare `h{9}[m%15]` streams within the 09:00 hour. Before the step it was dropped outright. A
+  `<t`/`>t` bound that names a calendar date (`>2026/7/15`, written as `Z{…}` is) carries it as `Bound.date`, read
+  like an instant ("from the 15th of July 2026", `>15/Jul 2026`); an ISO bound, the older form, reads as written.
+  Before reading, each indexed global is bound to its implicit cycle as the engine binds it (`cycles.ts`, vendored):
+  `m{15}` reads as `h[m{15}]`, "every hour at :15". A clock under a bare hour or minute is a `ClockTime.cycle`
+  ("every hour at :00 and :30", `hourly @:00&:30`; "every minute at second 30"), and a nested `@x` that can never
+  bind (`z{09:00}@3`, bound to its day) says nothing.
 - `scheduleRealizer.ts` — ScheduleModel → phrase, in **two registers over the same model**. Idioms cover the
   weekday of a month's week ("the 1st Monday of every month", "the first 2 Mondays of every month") and the weekdays of
   each week of a month, which a month counts from its first complete week ("every Monday, Wednesday, Friday, and Sunday

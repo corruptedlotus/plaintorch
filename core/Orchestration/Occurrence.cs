@@ -4,16 +4,16 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace Pleiades.Orchestration;
 
 /// <summary>
-/// The non-hierarchical base of a declarative's materialized occurrences (PEP111): an <see cref="Eventive"/> of a
-/// fate or of an objective's due, or an <see cref="Attentive"/> of a decree. It carries what every occurrence
-/// shares — its row identity, its position in time (<see cref="Epoch"/>), and its iCalendar identity (owner UID +
-/// <see cref="RecurrenceId"/>) — so the agenda projection, orbit dedup, and dependency references address either
-/// kind uniformly and reschedule-independently.
+/// The non-hierarchical base of materialized occurrences (PEP111): an <see cref="Eventive"/> of a fate, an
+/// <see cref="Attentive"/> of a decree, or a <see cref="Terminative"/> of an item's due (PEP103 patch 7). It carries what
+/// every occurrence shares — its row identity, its position in time (<see cref="Epoch"/>), and its iCalendar identity
+/// (owner UID + <see cref="RecurrenceId"/>) — so the agenda projection, orbit dedup, and dependency references address
+/// every kind uniformly and reschedule-independently.
 /// </summary>
 /// <remarks>
 /// Non-hierarchical: a plain CLR base, never an EF inheritance hierarchy. It is not part of the model (no
 /// <c>DbSet</c>, no navigation typed to it), so each occurrence kind keeps its own table and these members map as
-/// that table's own columns. Resolution stays on the subclasses, since the two kinds resolve differently.
+/// that table's own columns. Resolution stays on the subclasses, since each kind resolves differently.
 /// </remarks>
 public abstract class Occurrence
 {
@@ -38,11 +38,25 @@ public abstract class Occurrence
 	/// set, so orbit dedup, the agenda projection, and dependency references resolve the same occurrence after it
 	/// moves. A civil (wall-clock) moment, like <see cref="Epoch.Moment"/>; an all-day slot sits at midnight.
 	/// </summary>
-	public DateTime RecurrenceId { get; set; }
+	/// <remarks>
+	/// <see langword="null"/> for a <b>manual</b> occurrence (see <see cref="IsManual"/>): one added by hand rather than
+	/// born of its owner's schedule. Like a standalone iCalendar instance it belongs to no recurrence set, so it has
+	/// no projected twin to dedup against and is addressed by its row <see cref="Id"/> alone. Only a fate's eventive
+	/// can be manual; a decree's attentive and a terminative always carry one. A terminative's is its due's moment, and
+	/// moves with the due (<see cref="Terminative.Follow"/>).
+	/// </remarks>
+	public DateTime? RecurrenceId { get; set; }
 
 	/// <summary>
-	/// Gets the owning declarative's UID: the fate or objective id for an eventive, the decree id for an
-	/// attentive.
+	/// Gets whether the occurrence was added by hand rather than generated from its owner's schedule — it carries no
+	/// <see cref="RecurrenceId"/>. Server-computed.
+	/// </summary>
+	[NotMapped]
+	public bool IsManual => RecurrenceId is null;
+
+	/// <summary>
+	/// Gets the owner's UID: the fate id for an eventive, the decree id for an attentive, and the origin's id for a
+	/// terminative.
 	/// </summary>
 	[NotMapped]
 	public abstract string RecurrenceOwnerUid { get; }

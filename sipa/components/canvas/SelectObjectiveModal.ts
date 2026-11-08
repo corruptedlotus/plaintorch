@@ -2,13 +2,14 @@ import { createDeferredExecutor, DeferredPromiseExecutor } from '@open-draft/def
 import type { Objective } from '@pleiades/sdk'
 import { createChild, sleep, SuggestModalBase } from '../../host'
 import { core } from '..'
+import { fuzzyFilter } from '../editing/fuzzy'
 
 /**
  * Asks for an objective by title.
  *
- * Searches the core rather than a listing, so an objective that no surface has loaded is still reachable —
- * the point of the picker is to bring something onto the canvas that is not on it yet. An empty query falls
- * back to the full listing, which is what makes the modal useful before anything has been typed.
+ * Matches against the core's full objective listing rather than what any surface has loaded, so an objective
+ * that is not on the canvas yet is still reachable — the point of the picker is to bring it there. The listing
+ * is matched by {@link fuzzyFilter}; an empty query offers all of it, so the modal is useful before typing.
  */
 export class SelectObjectiveModal extends SuggestModalBase<Objective> {
 	private dpe?: DeferredPromiseExecutor<Objective | undefined>
@@ -25,10 +26,8 @@ export class SelectObjectiveModal extends SuggestModalBase<Objective> {
 	}
 
 	override async getSuggestions(query: string): Promise<Objective[]> {
-		const found = query.trim().length === 0
-			? await core.repos.objectiveList.get() ?? []
-			: await core.objectives.search(query)
-		return found.filter(objective => !this.excluded.has(objective.id))
+		const offered = (await core.repos.objectiveList.get() ?? []).filter(objective => !this.excluded.has(objective.id))
+		return fuzzyFilter(query, offered, objective => objective.title)
 	}
 
 	override renderSuggestion(objective: Objective, el: HTMLElement) {

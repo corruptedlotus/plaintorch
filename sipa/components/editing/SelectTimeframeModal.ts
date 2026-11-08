@@ -1,8 +1,10 @@
 import { DirectiveTimeframeRecord, TimeframeInclusion } from "@pleiades/sdk"
 import { createChild, sleep, SuggestModalBase } from "../../host"
-import { core, resolveMediaIcon } from ".."
+import { core } from ".."
 import { IconName } from "../PleiadesIcon"
 import { createDeferredExecutor, DeferredPromiseExecutor } from "@open-draft/deferred-promise"
+import { fuzzyFilter } from "./fuzzy"
+import { timeframeSearchText } from "../entities/directiveSearch"
 
 /**
  * A chosen timeframe, or `null` for an explicit none: it clears an executive's affinity or a directive's availability
@@ -59,26 +61,26 @@ export class SelectTimeframeModal extends SuggestModalBase<TimeframeChoice> {
 		return new Promise(modal.dpe)
 	}
 
-	/** The leading `null` row, then the timeframes whose title or directive title holds the query. */
+	/** The leading `null` row, then the timeframes whose title or directive title fuzzily match the query, best first. */
 	override getSuggestions(query: string): TimeframeChoice[] {
-		const q = query.trim().toLowerCase()
-		const matches = this.timeframes.filter(timeframe =>
-			!q || timeframe.title.toLowerCase().includes(q) || timeframe.directiveTitle.toLowerCase().includes(q))
+		const matches = fuzzyFilter(query, this.timeframes, timeframeSearchText)
 		return [null, ...matches]
 	}
 
-	/** Draws the `null` row with its clearing label, and a timeframe as its glyph, title and owning directive. */
+	/** Draws the `null` row with its clearing label, and a timeframe as its chip, its owning directive chipped beside it. */
 	renderSuggestion(choice: TimeframeChoice, el: HTMLElement) {
-		const item = createChild(el, 'p7t-icon-item')
 		if (choice === null) {
+			const item = createChild(el, 'p7t-icon-item')
 			item.icon = 'lucide:x' as IconName
 			item.text = this.nullText
 			return
 		}
 
-		item.data = choice
-		item.icon = resolveMediaIcon(choice.iconMedia, 'lucide:clock') as IconName
-		item.text = `${choice.title} · ${choice.directiveTitle}`
+		// The timeframe chip itself, chipped with its owning directive — the same row a timeframe select lists, where
+		// two directives may each have a "Morning" — and its full details on hover.
+		const item = createChild(el, 'p7t-timeframe-item')
+		item.timeframe = choice
+		item.chipped = true
 	}
 
 	/** Resolves the pending prompt with the choice, `null` included. */

@@ -31,6 +31,12 @@ export interface PlatformHost {
 	 * it out, and the canvas then offers no "Save to file".
 	 */
 	readonly globalContexts?: GlobalContextHost
+
+	/**
+	 * Popping a dependency canvas's context out on its own — a window in the standalone shell, a tab in Obsidian.
+	 * Optional: without it the canvas offers no pop-out.
+	 */
+	readonly canvasPopOut?: CanvasPopOutHost
 }
 
 /** What a {@link PlatformHost.toast | toast} reports. */
@@ -87,8 +93,38 @@ export interface IconHost {
 /** File-backed global dependency contexts (the `.p7tpx` files). */
 export interface GlobalContextHost {
 	/**
-	 * Creates `fileName` at the vault root holding `text` and opens it in its file-backed view. A name already taken
-	 * is refused — nothing is written — and reported as `created: false`. `path` is the normalised path either way.
+	 * Saves `text` — a serialised global context — as a new planning graph file and opens it in its file-backed view.
+	 * Where the file goes is the host's to ask: Obsidian asks for a name and creates it at the vault root, refusing a
+	 * name already taken; the standalone shell shows a save dialog, which may put it anywhere and confirms replacing a
+	 * file. A host reports its own refusals.
+	 *
+	 * `origin` is the element that asked. Saved from a popped-out global context (see {@link CanvasPopOutHost}), the
+	 * file opens where that context was — its window or tab becomes the file's — rather than somewhere new; a host
+	 * that knows the asker otherwise (the shell, by the window that sent the request) may ignore it.
+	 *
+	 * Resolves the path the file was saved to, as the user knows it (vault-relative inside the vault), or undefined
+	 * when nothing was saved — the user backed out, or the host refused. Rejects when the file could not be written.
 	 */
-	createAndOpen(fileName: string, text: string): Promise<{ readonly created: boolean, readonly path: string }>
+	saveAndOpen(text: string, origin?: HTMLElement): Promise<{ readonly path: string } | undefined>
+}
+
+/**
+ * A dependency canvas context to pop out: an onrush, by which one — the one under way or the one being planned — or a
+ * global context, as the text a planning graph file would hold.
+ */
+export type CanvasPopOut =
+	| { readonly mode: 'onrush-active' | 'onrush-planning' }
+	| { readonly mode: 'global', readonly text: string }
+
+/** Dependency canvas contexts popped out on their own: the standalone shell's planning windows, Obsidian's tabs. */
+export interface CanvasPopOutHost {
+	/** What the pop-out button says it does, as its tooltip: "Open in a new window", "Open in a new tab". */
+	readonly label: string
+
+	/**
+	 * Opens a context on its own, as a planning graph file opens. An onrush has one window or tab, brought forward when
+	 * it is already open; a global context opens a new one that holds it unsaved until it is saved to a file. Rejects
+	 * when nothing could be opened.
+	 */
+	popOut(context: CanvasPopOut): Promise<void>
 }

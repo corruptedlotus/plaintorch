@@ -38,6 +38,14 @@ public sealed class PlaintorchCoreService(
 	private readonly SemaphoreSlim _reconcileSignal = new(0, int.MaxValue);
 	private string? _activeVaultPath;
 	private string? _failedVaultPath;
+
+	/// <summary>
+	/// Whether <see cref="_failedVaultPath"/> failed only for not being initialized. That failure ends the moment the
+	/// folder is initialized (the desktop shell initializes a vault it is asked to activate), so it is retried then,
+	/// whereas an activation that failed stays failed until the vault is reconfigured.
+	/// </summary>
+	private bool _failedVaultUninitialized;
+
 	private PlaintorchVaultLockHandle? _lockHandle;
 
 	/// <inheritdoc />
@@ -116,20 +124,30 @@ public sealed class PlaintorchCoreService(
 		if (string.IsNullOrWhiteSpace(configuredPath))
 		{
 			_failedVaultPath = null;
+			_failedVaultUninitialized = false;
 			return null;
 		}
 
 		var fullPath = Path.GetFullPath(configuredPath);
+		var isFailedPath = string.Equals(fullPath, _failedVaultPath, StringComparison.OrdinalIgnoreCase);
 		if (!activationService.IsInitialized(fullPath))
 		{
-			if (!string.Equals(fullPath, _failedVaultPath, StringComparison.OrdinalIgnoreCase))
+			if (!isFailedPath || !_failedVaultUninitialized)
 			{
 				logger.LogWarning("Configured active vault '{VaultPath}' is not initialized. PLAINTORCH core will remain idle.", fullPath);
 				hostState.Report(PlaintorchHostPhase.Failed, "The configured vault is not initialized for PLAINTORCH.", fullPath);
 			}
 
 			_failedVaultPath = fullPath;
+			_failedVaultUninitialized = true;
 			return null;
+		}
+
+		if (isFailedPath && _failedVaultUninitialized)
+		{
+			logger.LogInformation("Configured active vault '{VaultPath}' has been initialized since. Activating it.", fullPath);
+			_failedVaultPath = null;
+			_failedVaultUninitialized = false;
 		}
 
 		return fullPath;
@@ -168,6 +186,7 @@ public sealed class PlaintorchCoreService(
 			session.MarkReady(vaultPath);
 			_activeVaultPath = vaultPath;
 			_failedVaultPath = null;
+			_failedVaultUninitialized = false;
 			ScheduleSweepBackstop(vaultPath);
 
 			logger.LogInformation("PLAINTORCH core is now serving vault '{VaultPath}'.", vaultPath);
@@ -183,6 +202,7 @@ public sealed class PlaintorchCoreService(
 			// carries it as is and the log skips the stack trace.
 			await ReleaseVaultAsync();
 			_failedVaultPath = vaultPath;
+			_failedVaultUninitialized = false;
 			hostState.Report(PlaintorchHostPhase.Failed, exception.Message, vaultPath);
 			logger.LogError(
 				"Refused to activate vault '{VaultPath}': its database has migrations this core does not contain ({UnknownMigrations}). PLAINTORCH core will remain idle until it is updated or the vault is reconfigured.",
@@ -193,6 +213,7 @@ public sealed class PlaintorchCoreService(
 		{
 			await ReleaseVaultAsync();
 			_failedVaultPath = vaultPath;
+			_failedVaultUninitialized = false;
 			hostState.Report(PlaintorchHostPhase.Failed, $"Failed to activate vault '{vaultPath}'.{Environment.NewLine}{exception.Message}", vaultPath);
 			logger.LogError(exception, "Failed to activate vault '{VaultPath}'. PLAINTORCH core will remain idle until the vault is reconfigured.", vaultPath);
 		}

@@ -31,7 +31,7 @@ export class Splash extends Component {
 				background: url(${unsafeCSS(splashArtwork)}) center / cover no-repeat;
 				background-color: transparent;
 				/*box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);*/
-				font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+				font-family: "Space Grotesk Variable", "Space Grotesk", "Segoe UI", system-ui, sans-serif;
 			}
 			.message {
 				position: absolute;

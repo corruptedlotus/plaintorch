@@ -7,6 +7,11 @@ patches:
   - Patch102.4 - Graph Deep Editability
   - Patch102.5 - Onrush Management UI
   - Patch102.6 - Global Planning Mode
+  - Patch102.7 - Canvas input
+  - Patch102.8 - Dependency Routes on Banners
+  - Patch102.9 - Intrinsic Dependencies
+  - Patch102.10 - Directives in Onrush
+  - Patch102.11 - Canvas menus
 assignee: Soraya 🧙‍♀️
 phase: 2a
 ---
@@ -147,6 +152,12 @@ Unlike an onrush, a global context has **no database home** — an onrush stores
 
 The canvas emits a `contextChanged` snapshot (pins + positions) on every change. In the scratch tab nobody listens; a `.p7tpx` file is hosted by `PlaintorchGlobalFileView` (a `TextFileView` bound to the extension via `registerExtensions`), which persists the snapshot back to the file. **Save to file…** in the scratch tab's toolbar graduates it into a `.p7tpx` and opens it; the **New global planning** command opens a fresh scratch context in a new leaf; opening any `.p7tpx` (file explorer, link, anywhere) routes to its view automatically.
 
+The standalone shell (SIPA) opens the same files in a **planning window** of their own: the installer associates `.p7tpx` with the app, a launch (or a second launch, handed to the running shell) naming one opens it, and the window hosts the same file-backed canvas. There the main process owns the file — reads it, writes the `contextChanged` snapshots back, and follows changes made on disk elsewhere, such as by Obsidian showing the same file (see `standalone/README.md`, *Planning files*).
+
+Where **Save to file…** puts the file is the host's to ask (`GlobalContextHost.saveAndOpen`): Obsidian asks for a name and creates the file at the vault root, refusing a name already taken, since it opens only the vault's own files; the shell shows a native save dialog, starting in the served vault, which may put the file anywhere and confirms replacing one, and opens the result in a planning window.
+
+The canvas also **pops out** (`PlatformHost.canvasPopOut`): the context on screen opens on its own as if it were a file — a planning window in the shell, a tab in Obsidian (`PlaintorchPlanningView`). An onrush, active or planning, gets one window or tab each, and the vault keeps both views current. A scratch global context moves into a window or tab of its own, marked *Unsaved* until its **Save to file…** makes that same window or tab the file's (`saveAndOpen`'s `origin` tells Obsidian which tab asked). In Obsidian the unsaved context is the tab's view state, so the workspace keeps it across a reload. A popped-out canvas is `singleContext` (no mode switcher), so moving to the other onrush from inside it pops that onrush out instead.
+
 ### Open edges
 - **Eventive occurrence nodes** are deferred — the search returns whole fates; pinning a specific `RECURRENCE-ID` occurrence is a follow-up over the same recurrence mechanism dependency edges already use.
 - The endpoint search is a bounded three-table title match, not a real global search index; a proper search service is later work, and a better picker UI can sit on top of it.
@@ -185,3 +196,66 @@ The endpoint list takes a `nonImmediate` set and draws those endpoints faint, af
 ### Open edges
 - A fate's or objective's occurrence-level edges are not rolled up into its banner's route.
 - An eventive's phase is temporal, so its begin and finish arrive with the clock. The listing only revalidates on a write, so a stamp on an eventive endpoint can trail the moment it passes, the same as `satisfied` already does.
+
+## Patch102.9 - Intrinsic Dependencies
+Some dependencies are not drawn; they follow from where things sit. The first: **finishing a stellar directive depends on finishing each of its direct children** — its stellar subdirectives and its objectives. Nobody writes that edge, and nobody can delete it. This patch adds the mechanism (an *intrinsic* dependency, derived from structure and never stored) with that rule as its first case, and makes the cycle rule see it.
+
+### Derived, not stored
+An intrinsic edge is computed as it is read, from the parent columns (`ParentDirectiveId`, `DirectiveId`) and the statuses at both ends, so it cannot drift from the structure and needs no backfill. It is the same `Dependency` shape as a stored edge — finish-triggered, finish-constraining, with its `satisfied` computed on the spot — under a new `origin` (`Explicit` | `Intrinsic`) and with `id` 0. A rule is an `IIntrinsicDependencyRule` (`DirectiveChildrenIntrinsicRule` is the one so far); `DependencyGraphService` reads the stored edges and every rule's derived ones as **one graph**, and the gate, the reconciler, the API and the purge all read that graph. The listing, the lock view and a banner's route serve intrinsic edges beside the stored ones, and the canvas draws them **dashed**, with a note where a stored edge has its menu.
+
+Only stellar directives take part: a lunar directive has no finish, so an objective filed under one implies nothing. Fates and decrees are never a directive's work. Objectives no longer nest (removed ahead of this patch), so "direct child" has one meaning.
+
+### Failed, Fulfilled, Over
+- **Failed is not a finish.** `[LifecyclePhase(Failed)]` marks it on both status enums: a failed entity reads as open and *not begun*. A failed prerequisite therefore keeps blocking what it explicitly blocks (before, it satisfied the edge), and a failed end **switches its intrinsic edges off**: a failed child neither holds its parent back nor counts as done, and a failed parent is held back by nothing. Disabled edges are omitted from what is served.
+- **Archived and Over** are the finalised Done and Fulfilled; both finish.
+- **Over means over — unless work arrives.** An Over directive that receives an open child (created under it, moved in, or reopened from a finish) is bumped back to **Fulfilled**, the finish that tolerates open children; going Over again is a finish the children gate. The bump is a state-policy rule of the save hook, so every pathway gets it, and the note follows the row: a reconcile intent is recorded in the same save and drained once it commits. A child *failing* bumps nothing.
+
+### The cycle rule walks in memory
+The temporal probe — the two-sided begin/finish state space the recursive CTE walked on the connection — is now `DependencyOrdering.FindContradiction`, a C# walk with the same semantics (an orderable begin/finish loop is allowed; a checkpoint is a dead end). It moved so the derived edges take part, so the contradicting path can be **named** in the refusal ("Directive:A.finish → Objective:x.begin (intrinsic)"), and so the purge can ask it repeatedly. Two shapes become impossible that were not before: a directive's finish gating anything in its own subtree, and a cross-tree pair (`A.finish → b.begin`, `B.finish → a.begin` with `a` under `A` and `b` under `B`). A directive's *begin* before its child's begin stays the natural order and is allowed. A stored edge restating an intrinsic one is refused as a duplicate.
+
+### Dependencies are the slave of structure
+A reparent cannot be refused for the sake of an edge — least of all a folder move the watcher sees after the fact. So when a directive or objective moves, or an end leaves or enters Failed, the stored edges the structure now contradicts are **purged** in the same save, on the audit record (`dependency.purge`), and so are the ones the intrinsic edges make redundant. Which of several goes: those touching the moved subtree are preferred; among them, the one whose removal leaves the fewest edges contradicted, the newest on a tie; one per round until the graph orders. Purging every contradicted edge at once would take innocent ones with the loop's true cause. A loop of intrinsic edges alone (a hand-edited parent chain that loops) has nothing to give up. The same slave rule releases every stored edge naming an entity that is deleted.
+
+The **v5→v6 vault migration** runs the same purge over the whole graph once, with no subtree preference, so an existing vault sets itself right on activation. (It was v4→v5 until it merged behind PEP101's directive start/end retirement, which took v5.)
+
+### Batching
+Stamping and reconciling no longer resolve endpoints one query at a time: `DependencyEndpoints.ResolveLifecyclesAsync` loads each kind in one query (`Contains` over the ids, the tracker overlaid), and the directive-children rule reads the whole structure in two projections that carry both ends' state, so deriving costs no further lookups.
+
+### Open edges
+- Purges are on the audit log only. Their visibility to the user is a job for a **core status system** the operation-status framework (a watcher concern today) does not yet cover.
+- Enforcement is unchanged: the gate holds only the API's status shifts; a frontmatter `status:` edit bypasses it as before. PEP103 owns that.
+- Counts on a banner are edges, so a directive with many open children shows many blockers; the route tooltip collapses them into "N open children". A canvas badge rides every unmet intrinsic edge, as on any finish gate.
+
+## Patch102.10 - Directives in Onrush
+An onrush now tracks **stellar directives** the way it tracks objectives. With intrinsic dependencies in place (Patch102.9), a directive on the canvas is a node its member children feed — dashed — so a sprint can hold the thing being finished as well as the pieces that finish it.
+
+### Membership
+`StellarDirective.OnrushSprintId` (`onrush:` in frontmatter, like the objective's) and `OnrushSprint.Directives`. A directive joins and leaves through `POST`/`DELETE /api/directives/stellar/{id}/onrush`; joining changes nothing about its workflow status. A lunar directive cannot join. Membership rides the placeholder's begin onto the dated sprint, and a deleted sprint frees its directives as it frees its objectives — they survive, detached, their notes re-saved. The watcher normalizes a note naming a sprint that does not exist, as it does for objectives. The `AddStellarDirectiveOnrush` database migration adds the column.
+
+### On the canvas
+An onrush context draws its directive members as nodes beside the objectives and checkpoints; the add-FAB offers **Add directive** (the cross-kind endpoint picker narrowed to directives) beside **Add objective**, and a directive's node menu removes it from the sprint through its own endpoint. The tray's tallies gain a directive count between the objectives and the checkpoints.
+
+### Joining from a context menu
+A stellar directive's context menu, wherever it is raised (a grid row, an item, a heading), offers **Add to Onrush** when it is in no sprint and *Remove from Onrush* when it is, and an objective's does the same. *Add to Onrush* opens the onrush picker, which serves both kinds: the active or the planning slot, each offered whether it exists yet or not (PEP103 patch 4). A lunar directive's menu offers neither.
+
+### The briefing
+The onrush briefing card keeps listing objectives only: a directive member is not a row. Its dependency groups now **omit prerequisites that are themselves members** of the sprint — they are rows already, so they neither list under the member they hold back nor count toward its total.
+
+## Patch102.11 - Canvas menus
+
+### Joining a ghost to the Onrush
+A ghostly objective, a prerequisite outside the Onrush that holds a member back, now offers **Add to This Onrush** in its menu, where a member offers *Remove from Onrush*. It makes the blocker a member of the Onrush being graphed, so it is planned with the rest instead of only being shown. The add-FAB's picker leaves out every node already on the canvas, ghosts included, so this is the way a ghost joins. The core keeps an objective in one Onrush at a time and moves it out of any other, so a ghost that belongs to another Onrush asks first and names it. A ghostly stellar directive joins the same way, through its own endpoint (Patch102.10), and asks the same question. Other ghosts (a lunar directive, a fate, a checkpoint, or a directive whose entity was never loaded, so its kind cannot be told) cannot join an Onrush, and keep their note.
+
+### The backdrop's menu
+A right-click on the empty canvas opens a menu of quick actions. It is titled with the Onrush, or the mode in a global context:
+- what the two FABs offer, the add-FAB's *Add to Canvas* choices and *New checkpoint*. What they add or create lands **where the menu was raised**, as if dragged there, and the arrangement is saved like a drag. Through a FAB the layout still places the node;
+- *Fit to view*, which frames the nodes where they are and keeps their positions, unlike *Reset layout*;
+- the tray's *Reset layout*, then *Onrush details*, or *Save to file* for a scratch global context.
+
+With no Onrush to show, it offers the empty state's way to one (*Start now*, *Go to planning*, *Create new*). While the graph loads it offers nothing. It answers only a press on the backdrop itself, the same test a pan starts by. A node raises its own menu; the tray, the FABs and an edge are left alone.
+
+### Nothing on the canvas selects
+A pan that swept over the tray's tallies or the toolbar's readout selected their text and interrupted the drag. The whole canvas is now `user-select: none`, as its nodes already were.
+
+### Membership redraws at once
+The canvas observed its node kinds but not the sprint. A sprint is a canonical entity, so a refetch that changes its members updates it in place, and its derived record never reports a change. A node joining or leaving therefore showed only when some objective notification happened to arrive after the sprint's. The canvas now observes `OnrushSprint` too, so an add or a removal, from a menu or the FAB, redraws as soon as the sprint is refetched.

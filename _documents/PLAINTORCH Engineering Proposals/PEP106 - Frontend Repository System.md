@@ -95,6 +95,8 @@ The repository system lives in the SDK, not in the Obsidian plugin. Identity, ab
 
 The plugin becomes one consumer of the system rather than the place it is implemented.
 
+*Since 2026-10-11* ([[Plan - Local Repo Separation]]): the system is the package `@corruptedlotus/local-repo` (its own repository since 2026-10-12), with the Lit controllers as its `/lit` entry. The SDK consumes and re-exports it, keeping only PLAINTORCH's declarations to it (`sdk.ts/plaintorch/repos/`: the policy, the dependents, the feed, the repository set); SIPA's components bind through two thin subclasses that add the toast and the installed store. The store takes an `EntityPolicy` rather than assuming the shape above, which is now PLAINTORCH's policy.
+
 # Consequences
 The system replaces, rather than supplements:
 - the per-component entity copies and the manual refetch lines that maintain them;

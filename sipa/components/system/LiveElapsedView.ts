@@ -1,6 +1,7 @@
 /**
  * A view that shows the elapsed time from a given epoch, updating every second off the app-wide {@link TickController}
- * (one shared timer, not a per-view interval).
+ * (one shared timer, not a per-view interval). Without a valid epoch — none yet, as for a cycle that has not begun —
+ * it shows nothing, never the time since the unix epoch a `null` would otherwise stand for.
  */
 
 import { Component, component, css, html, nothing, property } from "@a11d/lit";
@@ -8,7 +9,8 @@ import { TickController } from "./globalTick";
 
 @component('p7t-elapsed-view')
 export class LiveElapsedView extends Component {
-	@property({ type: Object }) epoch = new Date()
+	/** The moment counted from: a date or an ISO string. `null`, `undefined` or an unparsable value shows nothing. */
+	@property({ type: Object }) epoch: Date | string | null | undefined = new Date()
 	@property({ type: Boolean }) showDays = false
 	@property({ type: Boolean }) absolute = false
 
@@ -29,7 +31,13 @@ export class LiveElapsedView extends Component {
 	}
 
 	protected override get template() {
-		const elapsedSecondsRaw = Math.floor((Date.now() - new Date(this.epoch).getTime()) / 1000)
+		// `new Date(null)` is the unix epoch, so an absent epoch is ruled out before it can be parsed as one.
+		const epoch = this.epoch === null || this.epoch === undefined ? NaN : new Date(this.epoch).getTime()
+		if (Number.isNaN(epoch)) {
+			return html``
+		}
+
+		const elapsedSecondsRaw = Math.floor((Date.now() - epoch) / 1000)
 		const elapsedSeconds = Math.abs(elapsedSecondsRaw)
 		const elapsedMinutes = Math.floor(elapsedSeconds / 60)
 		const elapsedHoursRaw = Math.floor(elapsedMinutes / 60)

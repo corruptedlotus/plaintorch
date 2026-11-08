@@ -1,13 +1,15 @@
-import { component, css, html, nothing } from "@a11d/lit"
+import { component, css, html, nothing, state } from "@a11d/lit"
 import { BriefingCard } from "./BriefingCard"
-import { DependencyEndpointKind, Objective, ObjectiveStatus, OnrushSprint } from "@pleiades/sdk"
-import { core, DerivedRef, tooltip, TransferController } from ".."
+import { DependencyEndpointKind, Objective, ObjectiveStatus, OnrushSprint, type EndpointRef } from "@pleiades/sdk"
+import { concludeConfirmation, confirmAction, core, DerivedRef, tooltip, TransferController } from ".."
 import { endpointKey, immediatePrerequisites, unresolvedPrerequisites } from "../canvas/graphModel"
+import { fuzzyFilter } from "../editing/fuzzy"
 import { createChild, SuggestModalBase } from "../../host"
 
 @component('p7t-briefing-onrush')
 export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 	override readonly icon = 'onrush'
+	override readonly backdrop = 'rising-embers'
 	override readonly preHeading = 'Active Onrush'
 
 	/**
@@ -30,12 +32,31 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 	private readonly dependencies = new DerivedRef(this, core.repos.dependencyList)
 	private readonly objectiveList = new DerivedRef(this, core.repos.objectiveList)
 
+	/** The members whose dependency group is unfolded, by endpoint key; every group starts folded. */
+	@state() private expandedGroups: ReadonlySet<string> = new Set()
+
 	static override get styles() {
 		return css`
 			${super.styles}
 
 			:host {
 				--p7t-flare-accent: var(--p7t-accent-onrush);
+			}
+
+			.dependency-group-heading {
+				cursor: pointer;
+				user-select: none;
+
+				&:hover {
+					opacity: .9;
+				}
+			}
+
+			.dependency-group-chevron {
+				width: 1em;
+				height: 1em;
+				flex: 0 0 auto;
+				margin-inline-start: -.3em;
 			}
 
 			.add-button {
@@ -47,12 +68,18 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 				}
 			}
 
+			.dependency-group {
+				margin-block: 0 .5em;
+				margin-inline: 1em;
+			}
+
 			.dependency-group-heading {
 				display: flex;
 				align-items: center;
 				gap: .6ch;
-				margin-block: .8em .3em;
+				margin-block: 0 .1em;
 				padding-inline: 1.2em;
+				padding-block: .3em;
 				font-size: .82em;
 				opacity: .65;
 				border-inline-start: 2px solid color-mix(in srgb, var(--p7t-flare-accent, var(--interactive-accent)) 50%, transparent);
@@ -77,6 +104,11 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 				text-decoration: underline dotted;
 				text-underline-offset: 2px;
 			}
+
+			hr {
+				width: calc(100% - 4em);
+				opacity: .16;
+			}
 		`
 	}
 
@@ -91,60 +123,86 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 		return html`<span>${this.data!.title}</span>`
 	}
 
+	/**
+	 * The members, each followed by its own dependency group when it has one, then the groups of the members that
+	 * have no row here (the sprint's checkpoints).
+	 */
 	protected override get listContent() {
+		const groups = this.unresolvedGroups
+		const byMember = new Map(groups.map(group => [group.key, group]))
+		const placed = new Set<string>()
 		return html`
-			${this.data!.objectives.map(objective => html`
-				<p7t-objective-item interactive .currentOnrush=${this.data} .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
-			`)}
+			${this.data!.objectives.map(objective => {
+				const key = endpointKey({ kind: DependencyEndpointKind.Objective, id: objective.id })
+				const group = byMember.get(key)
+				if (group) {
+					placed.add(key)
+				}
+
+				return html`
+					<p7t-objective-item interactive .currentOnrush=${this.data} .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
+					${group ? this.dependencyGroupTemplate(group, true) : nothing}
+				`
+			})}
 			<!--<p7t-button @click=${() => this.addObjective()} icon='lucide:plus' class='add-button'>Add Objective</p7t-button>-->
-			${this.dependencySection}
+			${groups.some(group => !placed.has(group.key)) ? html`<hr />` : nothing}
+			${groups.filter(group => !placed.has(group.key)).map(group => this.dependencyGroupTemplate(group))}
 		`
 	}
 
 	/**
-	 * The onrush's unresolved dependencies, grouped under the member each holds back.
+	 * One member's unresolved dependencies, under a heading that folds them away — folded by default, the heading
+	 * still reading the member and the count, and unfolded per member for as long as the card lives.
 	 *
-	 * A group appears for every objective or checkpoint with at least one unmet prerequisite, walked
+	 * A group exists for every objective or checkpoint with at least one unmet prerequisite, walked
 	 * recursively down the blocking chain. The count is the true total across every kind of prerequisite;
 	 * the rows are the objective ones — the other kinds (checkpoints, directives, fates) count but do not
 	 * list, so a group can read a higher number than the rows beneath it. In the count's tooltip, a prerequisite that is
 	 * not holding the member's next transition back right now — one reached only through a gate on a later transition,
 	 * or on one already made — is drawn faint.
 	 */
-	private get dependencySection() {
-		const groups = this.unresolvedGroups
-		if (groups.length === 0) {
-			return nothing
-		}
-
+	private dependencyGroupTemplate(group: DependencyGroup, parentPresent = false) {
+		const expanded = this.expandedGroups.has(group.key)
 		return html`
-			${groups.map(group => html`
-				<div class='dependency-group'>
-					<div class='dependency-group-heading'>
-						<p7t-icon-item small icon='lucide:route-off' class='dependency-group-title'>${group.title}</p7t-icon-item>
-						<span
-							class='dependency-count'
-							?data-detail=${group.nonObjectiveCount > 0}
-							${group.nonObjectiveCount > 0
-								? tooltip(() => html`
-									<p7t-endpoint-list .endpoints=${group.refs} .nonImmediate=${group.nonImmediate} filter='non-objective'>
-										Blocked by
-									</p7t-endpoint-list>
-								`)
-								: nothing}
-						>${group.total}</span>
-					</div>
+			<div class='dependency-group' ?data-expanded=${expanded}>
+				<div class='dependency-group-heading' role='button' aria-expanded=${expanded} @click=${() => this.toggleGroup(group.key)}>
+					<p7t-icon class='dependency-group-chevron' icon=${expanded ? 'lucide:chevron-down' : 'lucide:chevron-right'}></p7t-icon>
+					<p7t-icon-item small icon='lucide:route-off' class='dependency-group-title'>${!parentPresent ? group.title : 'Depends on'}</p7t-icon-item>
+					<span
+						class='dependency-count'
+						?data-detail=${group.nonObjectiveCount > 0}
+						@click=${(e: Event) => e.stopPropagation()}
+						${group.nonObjectiveCount > 0
+							? tooltip(() => html`
+								<p7t-endpoint-list .endpoints=${group.refs} .nonImmediate=${group.nonImmediate} filter='non-objective'>
+									Blocked by
+								</p7t-endpoint-list>
+							`)
+							: nothing}
+					>${group.total}</span>
+				</div>
+				${!expanded ? nothing : html`
 					<div class='dependency-group-objectives'>
-						${group.objectives.map(objective => html`
+						${group.objectives.map(objective => objective.onrushSprintId === this.data?.id ? nothing : html`
 							<p7t-objective-item interactive .entity=${objective} ${this.transfer.draggable(objective)}></p7t-objective-item>
 						`)}
 					</div>
-				</div>
-			`)}
+				`}
+			</div>
 		`
 	}
 
-	private get unresolvedGroups() {
+	/** Folds or unfolds one member's group. */
+	private toggleGroup(key: string) {
+		const expanded = new Set(this.expandedGroups)
+		if (!expanded.delete(key)) {
+			expanded.add(key)
+		}
+
+		this.expandedGroups = expanded
+	}
+
+	private get unresolvedGroups(): DependencyGroup[] {
 		const sprint = this.data
 		if (!sprint) {
 			return []
@@ -167,7 +225,9 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 		const immediate = immediatePrerequisites(dependencies, memberKeys)
 
 		return members.flatMap(member => {
-			const refs = reachable.get(member.key)
+			// A prerequisite that is itself a member of the sprint is already a row above: it is not listed under the
+			// member it holds back, and it does not count either.
+			const refs = reachable.get(member.key)?.filter(ref => !memberKeys.has(endpointKey(ref)))
 			if (!refs || refs.length === 0) {
 				return []
 			}
@@ -179,7 +239,7 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 			const nonObjectiveCount = refs.filter(ref => ref.kind !== DependencyEndpointKind.Objective).length
 			const holding = immediate.get(member.key)
 			const nonImmediate = new Set(refs.map(endpointKey).filter(key => !holding?.has(key)))
-			return [{ title: member.title, total: refs.length, objectives, refs, nonObjectiveCount, nonImmediate }]
+			return [{ key: member.key, title: member.title, total: refs.length, objectives, refs, nonObjectiveCount, nonImmediate }]
 		})
 	}
 
@@ -209,14 +269,19 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 			?? this.objectiveList.value?.find(objective => objective.id === id)
 	}
 
+	/** The sprint's day, 1 on its start date; undefined while it is in planning and has no start date yet. */
+	private get currentDay() {
+		const start = this.data?.startDate ? Date.parse(this.data.startDate) : NaN
+		return Number.isNaN(start) ? undefined : Math.floor((Date.now() - start) / (1000 * 60 * 60 * 24)) + 1
+	}
+
 	protected override get footer() {
-		const timespan = Date.now() - new Date(Date.parse(this.data!.startDate!)).getTime()
-		const currentDay = Math.floor(timespan / (1000 * 60 * 60 * 24)) + 1
+		const currentDay = this.currentDay
 		return html`
 			<p7t-value-progress icon='starfire' value=${this.currentStarfire} max=${this.maxStarfire}>
-				<span>Day ${currentDay}</span>
+				<span>${currentDay === undefined ? 'In Planning' : `Day ${currentDay}`}</span>
 			</p7t-value-progress>
-			<p7t-button @click=${() => this.conclude()}>Conclude</p7t-button>
+			<p7t-button @click=${(e: Event) => this.conclude(e)}>Conclude</p7t-button>
 		`
 	}
 
@@ -233,8 +298,10 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 		core.onrush.startNew().then(sprint => this.data = sprint)
 	}
 
-	private conclude() {
+	/** Concludes the running sprint now, once confirmed beside the button. */
+	private async conclude(e: Event) {
 		if (!this.data) return
+		if (!await confirmAction(e, concludeConfirmation(`Conclude the Onrush "${this.data.title}"? It ends now.`)) || !this.data) return
 		core.onrush.end(this.data.id).then(sprint => {
 			if (!!sprint) this.data = undefined
 		})
@@ -246,19 +313,35 @@ export class BriefingCardOnrush extends BriefingCard<OnrushSprint> {
 	}
 }
 
+/** One member's unresolved prerequisites, as the card draws them (see `dependencyGroupTemplate`). */
+interface DependencyGroup {
+	/** The member's endpoint key — what the group is placed beneath, and folded or unfolded by. */
+	key: string
+	title: string
+	total: number
+	objectives: Objective[]
+	refs: EndpointRef[]
+	nonObjectiveCount: number
+	nonImmediate: ReadonlySet<string>
+}
+
 /** Guards a collection that travelled here inside another entity's payload against a gap or a stub. */
 function hasId<T extends { id?: string }>(value: T | undefined | null): value is T {
 	return !!value && typeof value.id === 'string' && value.id.length > 0
 }
 
+/** Picks a live objective to add to the sprint, matching the objective listing — fetched once per opening — by {@link fuzzyFilter}. */
 class AddObjectiveModal extends SuggestModalBase<Objective> {
+	private objectives?: Promise<Objective[]>
+
 	constructor(protected readonly host: BriefingCardOnrush) {
 		super()
 	}
 
 	override async getSuggestions(query: string) {
-		const results = query.length > 2 ? await core.objectives.search(query) : await core.objectives.list()
-		return results.filter(objective => objective.status < ObjectiveStatus.Archived)
+		this.objectives ??= core.objectives.list()
+		const live = (await this.objectives).filter(objective => objective.status < ObjectiveStatus.Archived)
+		return fuzzyFilter(query, live, objective => objective.title)
 	}
 
 	renderSuggestion(objective: Objective, el: HTMLElement) {

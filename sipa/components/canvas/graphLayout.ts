@@ -29,7 +29,8 @@ export interface LayoutOptions {
 	readonly margin?: number
 }
 
-const defaults = {
+/** The nominal node size and spacing the layout places with, for a placement made beside it by hand to match. */
+export const layoutDefaults: Required<LayoutOptions> = {
 	nodeWidth: 240,
 	nodeHeight: 76,
 	rankSeparation: 110,
@@ -58,7 +59,7 @@ export function layoutGraph(graph: CanvasGraph, options: LayoutOptions = {}): Ca
 		return emptyLayout
 	}
 
-	const settings = { ...defaults, ...options }
+	const settings = { ...layoutDefaults, ...options }
 	// Multigraph so each edge can carry its own key: two objectives can be joined by more than one dependency
 	// (a different trigger or constraint), and without names the second would overwrite the first in the
 	// layout model — and naming an edge at all is rejected unless the graph is a multigraph.
@@ -109,6 +110,35 @@ export function layoutGraph(graph: CanvasGraph, options: LayoutOptions = {}): Ca
 		width: width + settings.margin,
 		height: height + settings.margin
 	}
+}
+
+/**
+ * The free place nearest a wanted box, straight below or above it: the wanted box itself when it keeps `gap` clear of
+ * every taken box, else the nearest one a whole step (its height plus the gap) at a time, below before above. A
+ * placement made by hand, beside the layout rather than through it, so a node brought in never lands on another.
+ */
+export function freeSlotNear(wanted: NodeBox, taken: readonly NodeBox[], gap: number): NodeBox {
+	const step = wanted.height + gap
+	const clear = (candidate: NodeBox) => !taken.some(box => overlaps(candidate, box, gap))
+	// A taken box blocks fewer than its own height in steps plus two, so this many tries below is always enough to find a
+	// place none of them blocks.
+	const reach = taken.reduce((steps, box) => steps + Math.ceil(box.height / step) + 2, 0)
+	for (let distance = 0; distance <= reach; distance++) {
+		for (const direction of distance === 0 ? [0] : [1, -1]) {
+			const candidate = { ...wanted, y: wanted.y + direction * distance * step }
+			if (clear(candidate)) {
+				return candidate
+			}
+		}
+	}
+
+	return wanted
+}
+
+/** Whether two boxes come closer than `gap` to each other on both axes — what reads as one covering the other. */
+function overlaps(a: NodeBox, b: NodeBox, gap: number): boolean {
+	return a.x < b.x + b.width + gap && b.x < a.x + a.width + gap
+		&& a.y < b.y + b.height + gap && b.y < a.y + a.height + gap
 }
 
 /**
@@ -178,6 +208,26 @@ export function sideAnchor(box: NodeBox, side: Side): Point {
 		case 'top': return { x: box.x + box.width / 2, y: box.y }
 		case 'bottom': return { x: box.x + box.width / 2, y: box.y + box.height }
 	}
+}
+
+/** Which way an edge runs at the side it meets: leaving the box by it, or arriving at the box through it. */
+export type EdgeRole = 'out' | 'in'
+
+/** How far apart, along a side, the edges leaving it and the edges arriving at it converge. */
+export const convergenceGap = 12
+
+/**
+ * Where the edges of one role meet a side: either side of its middle, {@link convergenceGap} apart — the
+ * leaving edges before the middle (above it on a left or right side, left of it on a top or bottom side), the
+ * arriving ones after it. Kept apart so a side both sending and receiving edges shows two bundles, not one knot
+ * whose direction cannot be read.
+ */
+export function convergencePoint(box: NodeBox, side: Side, role: EdgeRole): Point {
+	const middle = sideAnchor(box, side)
+	const offset = (role === 'out' ? -1 : 1) * convergenceGap / 2
+	return side === 'left' || side === 'right'
+		? { x: middle.x, y: middle.y + offset }
+		: { x: middle.x + offset, y: middle.y }
 }
 
 function centre(box: NodeBox): Point {
@@ -275,7 +325,7 @@ export interface EdgeEnds {
  */
 export function edgeEnds(source: NodeBox, target: NodeBox): EdgeEnds {
 	const [fromSide, toSide] = chooseSides(source, faceMidpoint(target, source))
-	return { from: sideAnchor(source, fromSide), fromSide, to: sideAnchor(target, toSide), toSide }
+	return { from: convergencePoint(source, fromSide, 'out'), fromSide, to: convergencePoint(target, toSide, 'in'), toSide }
 }
 
 function chooseSides(origin: NodeBox, aim: Point): [Side, Side] {
@@ -348,5 +398,5 @@ export function edgeMidpoint(from: Point, fromSide: Side, to: Point, toSide: Sid
 export function linkCurve(source: NodeBox, pointer: Point): string {
 	// The pointer is a point, not a box: it is its own face midpoint, and the sides are chosen as for a target.
 	const [fromSide, toSide] = chooseSides(source, pointer)
-	return edgeCurve(sideAnchor(source, fromSide), fromSide, pointer, toSide)
+	return edgeCurve(convergencePoint(source, fromSide, 'out'), fromSide, pointer, toSide)
 }

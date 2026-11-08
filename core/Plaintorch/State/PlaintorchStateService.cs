@@ -51,7 +51,9 @@ public sealed class PlaintorchStateService(
 	}
 
 	/// <summary>
-	/// Gets the currently active Polaris cycle, when one exists.
+	/// Gets the current Polaris cycle: the running one, else today's cycle while it has not concluded — a forecast
+	/// planned for today, which a client shows planned and offers to begin. Today's cycle once concluded is not
+	/// current: the day's work is done, and a client showing it would time it as if it still ran.
 	/// </summary>
 	public async Task<PolarisCycle?> GetActivePolarisCycleAsync(CancellationToken cancellationToken = default)
 	{
@@ -71,7 +73,7 @@ public sealed class PlaintorchStateService(
 		var todayId = PuckDateStampCodec.Format(DateOnly.FromDateTime(DateTime.Today), PuckDateStampKind.Pleiadean);
 		return await context.PolarisCycles
 			.AsNoTracking()
-			.FirstOrDefaultAsync(cycle => cycle.Id == todayId, cancellationToken);
+			.FirstOrDefaultAsync(cycle => cycle.Id == todayId && cycle.EndTime == null, cancellationToken);
 	}
 
 	/// <summary>

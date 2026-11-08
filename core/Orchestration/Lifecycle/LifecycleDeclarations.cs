@@ -1,0 +1,172 @@
+using System.Collections.Concurrent;
+using System.Globalization;
+using System.Reflection;
+
+namespace Pleiades.Orchestration.Lifecycle;
+
+/// <summary>
+/// Reads the lifecycle declarations of status enums (PEP103): the <see cref="LifecycleState"/> each member stands for, the
+/// states an enum covers, and the member the core sets for a state of its own accord. Every rule that needs to know what a
+/// status means reads it here, so no status is named outside its declaration. Each enum is read once and cached.
+/// </summary>
+public static class LifecycleDeclarations
+{
+	private static readonly ConcurrentDictionary<Type, EnumLifecycle> Enums = new();
+
+	/// <summary>
+	/// Gets the state a status member declares.
+	/// </summary>
+	/// <exception cref="InvalidOperationException">The member declares no state, or is not a member of its enum.</exception>
+	public static LifecycleState StateOf(Enum status)
+	{
+		ArgumentNullException.ThrowIfNull(status);
+		return Of(status.GetType()).States.TryGetValue(status.ToString(), out var state)
+			? state
+			: throw new InvalidOperationException($"Lifecycle status '{status.GetType().Name}.{status}' declares no {nameof(LifecycleState)}.");
+	}
+
+	/// <summary>
+	/// Gets the states the members of a status enum declare between them.
+	/// </summary>
+	public static IReadOnlySet<LifecycleState> StatesOf(Type statusType) => Of(statusType).Covered;
+
+	/// <summary>
+	/// Gets every member of a status enum that declares a state, in value order, with the state it declares — what a client
+	/// is served so it reads a status as the core does (PEP103).
+	/// </summary>
+	public static IReadOnlyList<(Enum Status, LifecycleState State)> MembersOf(Type statusType) => Of(statusType).Members;
+
+	/// <summary>
+	/// Gets the status the core sets when it moves an item to <paramref name="state"/> of its own accord: the member with the
+	/// lowest value among those that declare the state, which for these enums is the first one declared. Returns
+	/// <see langword="null"/> when no member declares the state.
+	/// </summary>
+	public static Enum? DefaultStatus(Type statusType, LifecycleState state)
+		=> Of(statusType).Defaults.GetValueOrDefault(state);
+
+	/// <inheritdoc cref="DefaultStatus(Type, LifecycleState)"/>
+	public static TStatus? DefaultStatus<TStatus>(LifecycleState state)
+		where TStatus : struct, Enum
+		=> DefaultStatus(typeof(TStatus), state) is TStatus status ? status : null;
+
+	/// <summary>
+	/// Gets the status an item of the kind is created in (<see cref="LifecycleStateAttribute.Initial"/>, PEP103 patch 6): the
+	/// member declared initial, else the lowest-valued member. Entities take it as their status's starting value, so the
+	/// initial state is declared with the lifecycle rather than in a property initialiser.
+	/// </summary>
+	public static Enum InitialStatus(Type statusType) => Of(statusType).Initial;
+
+	/// <inheritdoc cref="InitialStatus(Type)"/>
+	public static TStatus InitialStatus<TStatus>()
+		where TStatus : struct, Enum
+		=> (TStatus)InitialStatus(typeof(TStatus));
+
+	/// <summary>
+	/// Gets whether a status member closes its item (<see cref="LifecycleStateAttribute.Closed"/>, PEP103 patch 5): a finished
+	/// status that stands only while everything the item depends on holds.
+	/// </summary>
+	public static bool IsClosed(Enum status)
+	{
+		ArgumentNullException.ThrowIfNull(status);
+		return Of(status.GetType()).Closed.Contains(status.ToString());
+	}
+
+	/// <summary>
+	/// Validates a lifecycle status enum: every member declares a state, and at least one member is on the main line, since a
+	/// kind that can only be deferred has no lifecycle to defer from.
+	/// </summary>
+	/// <exception cref="InvalidOperationException">The enum is incomplete or covers no main-line state.</exception>
+	public static void Validate(Type statusType)
+	{
+		var lifecycle = Of(statusType);
+		if (lifecycle.Undeclared.Count > 0)
+		{
+			throw new InvalidOperationException(
+				$"Lifecycle status '{statusType.Name}' declares no {nameof(LifecycleState)} for {string.Join(", ", lifecycle.Undeclared.Select(member => $"'{member}'"))}.");
+		}
+
+		if (!lifecycle.Covered.Any(state => state != LifecycleState.Deferred))
+		{
+			throw new InvalidOperationException($"Lifecycle status '{statusType.Name}' declares no {nameof(LifecycleState.Open)}, {nameof(LifecycleState.Started)} or {nameof(LifecycleState.Finished)} member.");
+		}
+
+		var strayClosed = lifecycle.Closed.Where(member => lifecycle.States[member] != LifecycleState.Finished).ToList();
+		if (strayClosed.Count > 0)
+		{
+			throw new InvalidOperationException(
+				$"Lifecycle status '{statusType.Name}' closes with {string.Join(", ", strayClosed.Select(member => $"'{member}'"))}, which {(strayClosed.Count == 1 ? "is" : "are")} not {nameof(LifecycleState.Finished)}.");
+		}
+
+		if (lifecycle.Closed.Count > 0 && lifecycle.Defaults.TryGetValue(LifecycleState.Finished, out var finished) && lifecycle.Closed.Contains(finished.ToString()))
+		{
+			throw new InvalidOperationException($"Lifecycle status '{statusType.Name}' closes with its default finished status '{finished}'; a closed item needs an open finish to step back to.");
+		}
+
+		if (lifecycle.InitialCount > 1)
+		{
+			throw new InvalidOperationException($"Lifecycle status '{statusType.Name}' declares {lifecycle.InitialCount} initial members; an item is created in one.");
+		}
+	}
+
+	private static EnumLifecycle Of(Type statusType)
+	{
+		ArgumentNullException.ThrowIfNull(statusType);
+		return Enums.GetOrAdd(statusType, Build);
+	}
+
+	private static EnumLifecycle Build(Type enumType)
+	{
+		if (!enumType.IsEnum)
+		{
+			throw new InvalidOperationException($"Lifecycle status type '{enumType.Name}' must be an enum.");
+		}
+
+		var states = new Dictionary<string, LifecycleState>(StringComparer.Ordinal);
+		var closed = new HashSet<string>(StringComparer.Ordinal);
+		var defaults = new Dictionary<LifecycleState, Enum>();
+		Enum? initial = null;
+		var initialCount = 0;
+		var members = new List<(Enum Status, LifecycleState State)>();
+		var undeclared = new List<string>();
+		// Read in value order, so the first member met for a state is its default.
+		var fields = enumType.GetFields(BindingFlags.Public | BindingFlags.Static)
+			.OrderBy(field => Convert.ToInt64(field.GetRawConstantValue(), CultureInfo.InvariantCulture));
+		foreach (var field in fields)
+		{
+			if (field.GetCustomAttribute<LifecycleStateAttribute>() is not { } declaration)
+			{
+				undeclared.Add(field.Name);
+				continue;
+			}
+
+			states[field.Name] = declaration.State;
+			if (declaration.Closed)
+			{
+				closed.Add(field.Name);
+			}
+
+			if (declaration.Initial)
+			{
+				initial ??= (Enum)field.GetValue(null)!;
+				initialCount++;
+			}
+
+			members.Add(((Enum)field.GetValue(null)!, declaration.State));
+			defaults.TryAdd(declaration.State, (Enum)field.GetValue(null)!);
+		}
+
+		// An enum with no member at all has no initial status either; validation reports it as undeclared.
+		initial ??= members.Count > 0 ? members[0].Status : (Enum)Enum.ToObject(enumType, 0);
+		return new EnumLifecycle(states, closed, initial, initialCount, states.Values.ToHashSet(), defaults, members, undeclared);
+	}
+
+	private sealed record EnumLifecycle(
+		IReadOnlyDictionary<string, LifecycleState> States,
+		IReadOnlySet<string> Closed,
+		Enum Initial,
+		int InitialCount,
+		IReadOnlySet<LifecycleState> Covered,
+		IReadOnlyDictionary<LifecycleState, Enum> Defaults,
+		IReadOnlyList<(Enum Status, LifecycleState State)> Members,
+		IReadOnlyList<string> Undeclared);
+}

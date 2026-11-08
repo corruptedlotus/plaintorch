@@ -1,6 +1,6 @@
 import { Component, component, css, html, live, nothing, property, PropertyValues, repeat, state } from '@a11d/lit'
-import { ObjectiveCollege, Timeframe, TimeframeInclusion, TimeframeUpdate } from '@pleiades/sdk'
-import { core, SelectCollegeModal, SelectInclusionModal } from '..'
+import { ObjectiveCollege, OrbitUnit, Timeframe, TimeframeInclusion, TimeframeUpdate } from '@pleiades/sdk'
+import { confirmAction, core, deleteConfirmation, SelectCollegeModal, SelectInclusionModal, type ScheduleValue } from '..'
 import type { EditablePart } from '../editing/EditableDataLink'
 import type { EditableToggle } from '../editing/EditableToggle'
 import { inclusionDescriptorOf } from './inclusionDescriptors'
@@ -209,7 +209,7 @@ export class TimeframesEditor extends Component {
 						.value=${timeframe.title}
 						@change=${(e: Event) => this.saveTimeframe(timeframe.id, { title: (e.target as EditablePart<string>).value ?? '' })}>
 					</p7t-editable-plaintext>
-					<p7t-button ghost danger icon='lucide:trash-2' label='Remove timeframe' @click=${() => this.removeTimeframe(timeframe)}></p7t-button>
+					<p7t-button ghost danger icon='lucide:trash-2' label='Remove timeframe' @click=${(e: Event) => this.removeTimeframe(timeframe, e)}></p7t-button>
 				</div>
 				<div class='fields'>
 					<div class='field'>
@@ -226,10 +226,13 @@ export class TimeframesEditor extends Component {
 					</div>
 					<div class='field'>
 						<span class='caption'>Orbit</span>
-						<p7t-editable-orbit
-							.value=${timeframe.orbit}
-							@change=${(e: Event) => this.saveTimeframe(timeframe.id, { orbit: (e.target as EditablePart<string>).value ?? '' })}>
-						</p7t-editable-orbit>
+						<!-- A timeframe's orbit selects days: a one-shot is a whole day with no span, read on the vault's calendar. -->
+						<p7t-editable-schedule
+							.orbit=${live(timeframe.orbit)}
+							.oneShotUnits=${[OrbitUnit.Day]}
+							.oneShotDuration=${false}
+							@schedulechange=${(e: CustomEvent<ScheduleValue>) => this.saveTimeframe(timeframe.id, { orbit: e.detail.orbit ?? '' })}>
+						</p7t-editable-schedule>
 					</div>
 					<div class='field'>
 						<span class='caption'>Exclusive</span>
@@ -365,7 +368,12 @@ export class TimeframesEditor extends Component {
 		await this.refresh()
 	}
 
-	private async removeTimeframe(timeframe: Timeframe) {
+	/** Deletes a timeframe once confirmed beside its button. */
+	private async removeTimeframe(timeframe: Timeframe, e: Event) {
+		if (!await confirmAction(e, deleteConfirmation(`Delete the timeframe "${timeframe.title}"?`))) {
+			return
+		}
+
 		const removed = await core.directives.deleteTimeframe(timeframe.id)
 		if (!removed) {
 			toast('PLAINTORCH could not remove that timeframe.', 'error')

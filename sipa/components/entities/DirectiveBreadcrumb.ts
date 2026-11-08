@@ -1,6 +1,7 @@
 import { Component, component, css, html, nothing, property, repeat } from '@a11d/lit'
 import { Directive } from '@pleiades/sdk'
 import { core, DerivedRef, navigateToEntity } from '..'
+import { directiveChain } from './directiveLineage'
 
 /**
  * A reverse breadcrumb of a directive's ancestry: `owner/parent ‹ parent's-parent ‹ …`, each crumb a
@@ -26,28 +27,7 @@ export class DirectiveBreadcrumb extends Component {
 
 	/** The chain from {@link rootId} up to the root ancestor, resolved against the loaded directive listing. */
 	private get chain(): Directive[] {
-		const all = this.directives.value
-		if (!this.rootId || !all) {
-			return []
-		}
-
-		const byId = new Map(all.map(directive => [directive.id, directive]))
-		const chain: Directive[] = []
-		const seen = new Set<string>()
-		let id: string | undefined = this.rootId
-		// Guarded against a cycle in the parent chain — a corrupt hierarchy must not loop forever.
-		while (id && !seen.has(id)) {
-			seen.add(id)
-			const directive = byId.get(id)
-			if (!directive) {
-				break
-			}
-
-			chain.push(directive)
-			id = directive.parentDirectiveId
-		}
-
-		return chain
+		return directiveChain(this.rootId, this.directives.value ?? [])
 	}
 
 	static override get styles() {

@@ -32,6 +32,16 @@ extraResources:
 
 artifactName: ${productName}-${env.PLAINTORCH_FLAVOR}-${version}-${os}-${arch}.${ext}
 
+# Planning graph files (saved global planning contexts, PEP102) open in a planning window of their own: the shell is
+# launched with the file's path, or hands it to the shell already running on the profile. `name` is the Windows ProgID;
+# with no p7tpx.ico in buildResources the files take the app's icon.
+fileAssociations:
+  - ext: p7tpx
+    name: PLAINTORCH.PlanningGraph
+    description: PLAINTORCH Planning Graph
+    mimeType: application/x-plaintorch-planning-graph
+    role: Editor
+
 publish:
   provider: generic
   url: https://updates.pleiades.example/plaintorch/${env.PLAINTORCH_FLAVOR}

@@ -14,11 +14,23 @@ export type IndexSpec =
 	| { type: 'range'; start: number; end: number }
 	| { type: 'random'; count: number }
 
+// A calendar date as `Z{…}` writes one, `y/M/d` with an optional `Th:m[:s]`, read in the orbit's own calendar.
+export interface CalendarMoment {
+	year: number;
+	month: number;
+	day: number;
+	hour?: number;
+	minute?: number;
+	second?: number;
+}
+
+// A bound's `timestamp` is the text as written. A `y/M/d` bound carries its `moment`; without one, the timestamp is
+// an ISO instant (`2026-07-15`, UTC), the form bounds were written in before.
 export type LimitSpec =
 	| { type: 'iterations'; count: number }  // *x
 	| { type: 'instances'; count: number }   // @x
-	| { type: 'before'; timestamp: string }  // <t
-	| { type: 'after'; timestamp: string }  // >t
+	| { type: 'before'; timestamp: string; moment?: CalendarMoment }  // <t
+	| { type: 'after'; timestamp: string; moment?: CalendarMoment }  // >t
 
 // One component of a span duration, e.g. `2h` -> { unit: 'h', count: 2 }.
 export interface DurationPart {

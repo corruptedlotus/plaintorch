@@ -8,9 +8,15 @@ namespace Pleiades.Plaintorch.Api.Abstractions;
 public interface ISystemApi
 {
 	/// <summary>
-	/// Gets the richer system briefing payload for dashboard-like surfaces.
+	/// Gets the richer system briefing payload for dashboard-like surfaces. Its onrush sprint (the active one, else the
+	/// one in planning), Polaris cycle and active lore pages are the ones their own services serve, loaded alike.
 	/// </summary>
 	Task<SystemBriefing> GetBriefingAsync(CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Describes how each kind's lifecycle reads (PEP103): its states, and each status with the state it stands for.
+	/// </summary>
+	IReadOnlyList<LifecycleKindDescription> GetLifecycles();
 
 	/// <summary>
 	/// Resolves the authoritative PLAINTORCH entity interpretation for a vault-relative markdown path.

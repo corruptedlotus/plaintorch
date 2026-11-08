@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using Pleiades.Orbits;
 
 namespace Pleiades.Orchestration;
@@ -60,6 +61,74 @@ public sealed class Epoch
 	[NotMapped]
 	public DateTime EndMoment => OccurrenceDurations.Apply(Moment, Duration, Granularity);
 
+	/// <summary>
+	/// Gets the absolute instant a timed (sub-day) epoch anchored in a <see cref="TimeZone"/> names: <see cref="Moment"/>
+	/// read on that zone's clock, in UTC. <see langword="null"/> for a floating epoch (no zone, or one this host does
+	/// not know) and for a day-or-coarser one, whose date names a day wherever it is read, as an iCalendar date value
+	/// carries no zone. Server-computed.
+	/// </summary>
+	/// <remarks>
+	/// A wall time the zone skips (a spring-forward gap) is read with the offset in force before the gap, so it lands
+	/// that much later; a wall time the zone repeats (a fall-back hour) is read as its first, earlier occurrence. This is
+	/// the iCalendar and Temporal "compatible" disambiguation.
+	/// </remarks>
+	[NotMapped]
+	public DateTimeOffset? Instant => IsAllDay ? null : AnchoredInstant(Moment, TimeZone);
+
+	/// <summary>
+	/// Gets the moment on this host's clock: <see cref="Instant"/> in the host's own zone when the epoch is anchored,
+	/// else <see cref="Moment"/> itself, as floating time is read on whatever clock reads it. What the agenda, the
+	/// Polaris inclusion window and every comparison with "now" or "today" read. Never stored; filter EF queries on
+	/// <see cref="Moment"/>, widened by a day, then on this.
+	/// </summary>
+	[NotMapped, JsonIgnore]
+	public DateTime LocalMoment => Instant is { } instant ? TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.Local).DateTime : Moment;
+
+	/// <summary>Gets the calendar day of <see cref="LocalMoment"/>: the day the occurrence falls on, on this host.</summary>
+	[NotMapped, JsonIgnore]
+	public DateOnly LocalDate => DateOnly.FromDateTime(LocalMoment);
+
+	/// <summary>Gets the time of day of <see cref="LocalMoment"/> for a sub-day occurrence; <see langword="null"/> when all-day.</summary>
+	[NotMapped, JsonIgnore]
+	public TimeOnly? LocalTimeOfDay => IsAllDay ? null : TimeOnly.FromDateTime(LocalMoment);
+
+	/// <summary>Gets the exclusive end on this host's clock: <see cref="LocalMoment"/> plus the epoch's nominal span.</summary>
+	[NotMapped, JsonIgnore]
+	public DateTime LocalEndMoment => LocalMoment + (EndMoment - Moment);
+
+	/// <summary>
+	/// Reads when the occurrence's window opens, to compare with the current instant: <see cref="Instant"/> for an anchored
+	/// epoch, and <see cref="Moment"/> read naively as UTC for a floating or all-day one. This is the reading an eventive's
+	/// lifecycle state takes (<c>EventiveLifecycleStateSource</c>), so whatever asks whether an occurrence has begun agrees
+	/// with it.
+	/// </summary>
+	public DateTimeOffset OpensAt() => Instant ?? new DateTimeOffset(Moment, TimeSpan.Zero);
+
+	/// <summary>
+	/// Reads when the occurrence's window closes, in the reading <see cref="OpensAt"/> takes: the epoch's span after the
+	/// instant it names when anchored, and <see cref="EndMoment"/> read naively as UTC otherwise — so an all-day occurrence
+	/// closes at the end of its day. An occurrence has passed once this is at or before the current instant.
+	/// </summary>
+	public DateTimeOffset ClosesAt() => Instant is { } instant
+		? instant + (EndMoment - Moment)
+		: new DateTimeOffset(EndMoment, TimeSpan.Zero);
+
+	private static DateTimeOffset? AnchoredInstant(DateTime moment, string? timeZone)
+	{
+		if (OccurrenceZones.Find(timeZone) is not { } zone)
+		{
+			return null;
+		}
+
+		var civil = DateTime.SpecifyKind(moment, DateTimeKind.Unspecified);
+		var offset = zone.IsInvalidTime(civil)
+			? zone.GetUtcOffset(civil.AddDays(-1))
+			: zone.IsAmbiguousTime(civil)
+				? zone.GetAmbiguousTimeOffsets(civil).Max()
+				: zone.GetUtcOffset(civil);
+		return new DateTimeOffset(civil, offset).ToUniversalTime();
+	}
+
 	/// <summary>Builds an epoch from a resolved occurrence's day/time-of-day, granularity, and whole-minute length.</summary>
 	public static Epoch From(DateOnly date, TimeOnly? timeOfDay, OrbitUnit granularity, int? durationMinutes = null, string? timeZone = null) => new()
 	{
@@ -71,14 +140,15 @@ public sealed class Epoch
 
 	/// <summary>
 	/// Builds the epoch of a resolved orbit occurrence: its moment and granularity, with its span as the duration —
-	/// or, for a super-day occurrence (week/month/year), its whole period in days.
+	/// or, for a super-day occurrence (week/month/year), its whole period in days — anchored in
+	/// <paramref name="timeZone"/>, the zone the orbit runs on (its declarative's), or floating when none.
 	/// </summary>
 	/// <remarks>
 	/// The period is resolved on the declarative's own calendar, so storing it as the duration keeps a Pleiadean
 	/// month's 60/61-day period exact, where the one-unit fallback of <see cref="EndMoment"/> adds a nominal
 	/// (Gregorian) month. A day-or-finer occurrence spans at most its own window and keeps a null duration.
 	/// </remarks>
-	public static Epoch For(OrbitOccurrenceInstance occurrence)
+	public static Epoch For(OrbitOccurrenceInstance occurrence, string? timeZone = null)
 	{
 		ArgumentNullException.ThrowIfNull(occurrence);
 		var periodDays = occurrence.PeriodEndExclusive.DayNumber - occurrence.Date.DayNumber;
@@ -86,14 +156,16 @@ public sealed class Epoch
 			occurrence.Date,
 			occurrence.StartTime,
 			occurrence.Granularity,
-			occurrence.DurationMinutes ?? (periodDays > 1 ? periodDays * 24 * 60 : null));
+			occurrence.DurationMinutes ?? (periodDays > 1 ? periodDays * 24 * 60 : null),
+			timeZone);
 	}
 
 	/// <summary>
 	/// Builds the epoch of an occurrence known only by its slot moment — one with no orbit to resolve its shape:
-	/// a midnight slot is an all-day (day-granular) occurrence, any other a minute-granular timed one.
+	/// a midnight slot is an all-day (day-granular) occurrence, any other a minute-granular timed one, anchored in
+	/// <paramref name="timeZone"/> when given.
 	/// </summary>
-	public static Epoch FromSlot(DateTime slot) => slot.TimeOfDay == TimeSpan.Zero
-		? From(DateOnly.FromDateTime(slot), timeOfDay: null, OrbitUnit.Day)
-		: From(DateOnly.FromDateTime(slot), TimeOnly.FromDateTime(slot), OrbitUnit.Minute);
+	public static Epoch FromSlot(DateTime slot, string? timeZone = null) => slot.TimeOfDay == TimeSpan.Zero
+		? From(DateOnly.FromDateTime(slot), timeOfDay: null, OrbitUnit.Day, timeZone: timeZone)
+		: From(DateOnly.FromDateTime(slot), TimeOnly.FromDateTime(slot), OrbitUnit.Minute, timeZone: timeZone);
 }

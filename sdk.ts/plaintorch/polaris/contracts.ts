@@ -1,6 +1,7 @@
 export type {
 	Executive,
 	ExecutiveUpdate,
+	LorePolarisCycles,
 	PolarisAgenda,
 	PolarisDecreeAdd,
 	PolarisCycle,
@@ -13,6 +14,5 @@ export type {
 	PolarisExecutivePlanResult,
 	PolarisForecast,
 	Reflective,
-	ReflectiveDrawRequest,
 	ReflectiveUpdate
 } from "./models"

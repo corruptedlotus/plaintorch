@@ -19,7 +19,8 @@ public interface IObjectiveApi
 	Task<IReadOnlyList<Objective>> ListAsync(CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Finds objectives using a free-text query.
+	/// Finds objectives using a free-text query over id and title, ordered by title. Case and accents are ignored and
+	/// every word of the query must turn up, in either field; the take caps the result.
 	/// </summary>
 	Task<IReadOnlyList<Objective>> FindAsync(SearchRequest search, CancellationToken cancellationToken = default);
 
@@ -47,6 +48,11 @@ public interface IObjectiveApi
 	/// Assigns an objective to an onrush sprint.
 	/// </summary>
 	Task<Objective> AddToOnrushAsync(string objectiveId, string onrushSprintId, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Adds an objective to the sprint in a slot, creating that sprint when it does not exist yet (PEP103 patch 4).
+	/// </summary>
+	Task<Objective> AddToOnrushAsync(string objectiveId, OnrushSlot slot, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Removes an objective from the onrush sprint it belongs to.

@@ -1,6 +1,7 @@
 import esbuild from "esbuild";
 import { copyFile, mkdir } from "node:fs/promises";
 import path from "node:path";
+import { localRepoFromSource } from "../sipa/bundling.mjs";
 
 const production = process.argv.includes("production");
 const watch = !production;
@@ -29,9 +30,15 @@ const context = await esbuild.context({
   loader: {
 	".svg": "dataurl",
 	".png": "dataurl",
+	".webp": "dataurl",
   },
   format: "cjs",
   target: "es2020",
+  // SIPA is bundled from its TypeScript, and so is the repository package (`@corruptedlotus/local-repo`), through the
+  // plugin that selects only that package's `source` entries (see sipa/bundling.mjs). The package's Lit bindings import
+  // `@a11d/lit`; that must be the one copy SIPA itself uses — a second Lit runtime would register its own element bases
+  // and directives — so it is aliased here.
+  alias: { "@a11d/lit": path.resolve("../sipa/node_modules/@a11d/lit") },
   logLevel: "info",
   define: {
     // Bake the dev-profile flag directly into the bundle as a literal (compile-time substitution, not a runtime
@@ -41,7 +48,7 @@ const context = await esbuild.context({
   },
   sourcemap: production ? false : "inline",
   outfile: `${outputDirectory}/main.js`,
-  plugins: [copyManifestPlugin],
+  plugins: [localRepoFromSource(), copyManifestPlugin],
   external: [
     "obsidian",
     "electron",

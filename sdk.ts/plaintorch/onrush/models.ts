@@ -1,6 +1,7 @@
 import { model } from "@a11d/api-dotnet"
 import type { Objective } from "../objectives/models"
 import type { Checkpoint } from "../dependencies/models"
+import type { Directive } from "../directives/models"
 @model('OnrushSprint')
 export class OnrushSprint {
 	id: string = ''
@@ -8,6 +9,8 @@ export class OnrushSprint {
 	startDate: string | undefined
 	endDate: string | undefined
 	objectives: Objective[] = []
+	/** The stellar directives this sprint tracks (PEP102 patch 10), members beside its objectives. */
+	directives: Directive[] = []
 	executiveOrders: ExecutiveOrder[] = []
 	/** The checkpoints this sprint tracks, its milestone among them (PEP102). */
 	checkpoints: Checkpoint[] = []
@@ -57,6 +60,19 @@ export interface OnrushSprintPlan {
 
 export interface OnrushSprintDateRequest {
 	date?: string | undefined
+}
+
+/**
+ * Which onrush sprint something joins when no sprint is named (PEP103 patch 4). Either is created when it does not exist
+ * yet: the active one begins the plan, or starts a sprint for today; the planning one is planned under a default title.
+ */
+export enum OnrushSlot {
+	Active = 0,
+	Planning = 1,
+}
+
+export interface EnsureOnrushRequest {
+	slot: OnrushSlot
 }
 
 /** Payload that persists a sprint's dependency-canvas layout; a null layout forgets it (PEP102). */

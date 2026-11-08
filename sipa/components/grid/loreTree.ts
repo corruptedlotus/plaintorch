@@ -1,15 +1,15 @@
 import { identify, type LorePage } from '@pleiades/sdk'
-import type { GridRow } from './entityTree'
+import type { GridNode } from './entityTree'
 
 /**
- * Flattens the lore pages into the rows the grid renders, mirroring {@link buildGridRows} for the backlog.
+ * Builds the tree of lore pages the lore grid renders, mirroring {@link buildEntityTree} for the backlog.
  *
  * Lore is a strict Era → Chapter → Act → Phase hierarchy of one entity, so the shape comes entirely from each page's
  * `parentId`. Siblings are ordered by narrative index, and a page whose parent is missing is surfaced as a root
- * rather than dropped. Whether a row is {@link GridRow.active} is read from the page's `isActive` flag, which the API
+ * rather than dropped. Whether a node is {@link GridNode.active} is read from the page's `isActive` flag, which the API
  * stamps from the one active definition (the core's LoreIndex) — the grid no longer re-derives its own spine.
  */
-export function buildLoreRows(pages: readonly LorePage[], toggled: ReadonlySet<string>, expandedByDefault = false): GridRow[] {
+export function buildLoreTree(pages: readonly LorePage[]): GridNode[] {
 	const known = new Set(pages.map(page => page.id))
 	const roots: LorePage[] = []
 	const byParent = new Map<string, LorePage[]>()
@@ -28,40 +28,33 @@ export function buildLoreRows(pages: readonly LorePage[], toggled: ReadonlySet<s
 		siblings.sort(compareNarrative)
 	}
 
-	const rows: GridRow[] = []
-	const emit = (page: LorePage, guides: string[]) => {
-		const children = byParent.get(page.id) ?? []
-		const expandable = children.length > 0
-		const key = loreRowKey(page)
-		// Lore is a small narrative hierarchy meant to be read as a whole, so it renders expanded by default: the
-		// toggled set then tracks which rows the user has collapsed rather than which they have opened.
-		const isExpanded = expandable && (expandedByDefault ? !toggled.has(key) : toggled.has(key))
+	// A page nested under its own descendant would otherwise recurse forever; page paths make that unlikely, but the
+	// vault is hand-editable.
+	const visiting = new Set<string>()
+	const node = (page: LorePage, guides: string[]): GridNode | undefined => {
+		if (visiting.has(page.id)) {
+			return undefined
+		}
 
-		rows.push({
-			key,
+		visiting.add(page.id)
+		const children = (byParent.get(page.id) ?? [])
+			.map(child => node(child, [...guides, 'lore']))
+			.filter(child => child !== undefined)
+		visiting.delete(page.id)
+
+		return {
+			id: loreRowKey(page),
 			entity: page,
 			kind: 'lore',
-			depth: guides.length,
 			guides,
-			expandable,
-			expanded: isExpanded,
+			children,
 			active: page.isActive ?? false
-		})
-
-		if (!isExpanded) {
-			return
-		}
-
-		for (const child of children) {
-			emit(child, [...guides, 'lore'])
 		}
 	}
 
-	for (const era of roots) {
-		emit(era, [])
-	}
-
-	return rows
+	return roots
+		.map(era => node(era, []))
+		.filter(era => era !== undefined)
 }
 
 /** Identifies a lore row, and the page behind it, in the entity store. */

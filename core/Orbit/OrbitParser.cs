@@ -5,7 +5,7 @@ namespace Pleiades.Orbits;
 /// <summary>
 /// Parses orbit notation strings into AST nodes.
 /// </summary>
-public sealed class OrbitParser(string input)
+public sealed partial class OrbitParser(string input)
 {
 	private int _pos;
 	private readonly string _input = input ?? throw new ArgumentNullException(nameof(input));
@@ -202,42 +202,16 @@ public sealed class OrbitParser(string input)
 			throw new FormatException("Expected '{' after 'Z' shorthand");
 		}
 
-		var year = ParseNumber();
-		if (!Match('/'))
-		{
-			throw new FormatException("Expected '/' after year in 'Z' shorthand");
-		}
-
-		var month = ParseNumber();
-		if (!Match('/'))
-		{
-			throw new FormatException("Expected '/' after month in 'Z' shorthand");
-		}
-
-		var day = ParseNumber();
-
-		int? hour = null, minute = null, second = null;
-		if (Match('T'))
-		{
-			hour = ParseNumber();
-			if (!Match(':'))
-			{
-				throw new FormatException("Expected ':' in 'Z' time part");
-			}
-
-			minute = ParseNumber();
-			if (Match(':'))
-			{
-				second = ParseNumber();
-			}
-		}
-
+		var moment = ParseMoment("'Z' shorthand");
 		if (!Match('}'))
 		{
 			throw new FormatException("Expected '}' closing 'Z' shorthand");
 		}
 
-		var node = new OrbitDateTimeLiteralNode { Year = year, Month = month, Day = day, Hour = hour, Minute = minute, Second = second };
+		var node = new OrbitDateTimeLiteralNode
+		{
+			Year = moment.Year, Month = moment.Month, Day = moment.Day, Hour = moment.Hour, Minute = moment.Minute, Second = moment.Second,
+		};
 		ParseModifiers(node);
 		return node;
 	}
@@ -306,11 +280,11 @@ public sealed class OrbitParser(string input)
 			}
 			else if (Match('<'))
 			{
-				node.Limits.Add(new OrbitLimitSpec { Kind = OrbitLimitKind.Before, Timestamp = ParseTimestamp() });
+				node.Limits.Add(ParseBound(OrbitLimitKind.Before));
 			}
 			else if (Match('>'))
 			{
-				node.Limits.Add(new OrbitLimitSpec { Kind = OrbitLimitKind.After, Timestamp = ParseTimestamp() });
+				node.Limits.Add(ParseBound(OrbitLimitKind.After));
 			}
 			else if (Match('='))
 			{
@@ -383,27 +357,61 @@ public sealed class OrbitParser(string input)
 		return int.Parse(_input[start.._pos], System.Globalization.CultureInfo.InvariantCulture);
 	}
 
-	private string ParseTimestamp()
+	// y/M/d[Th:m[:s]] -> a calendar date, as Z{…} writes one and a bound does.
+	private OrbitCalendarMoment ParseMoment(string context)
+	{
+		var year = ParseNumber();
+		if (!Match('/'))
+		{
+			throw new FormatException($"Expected '/' after year in {context}");
+		}
+
+		var month = ParseNumber();
+		if (!Match('/'))
+		{
+			throw new FormatException($"Expected '/' after month in {context}");
+		}
+
+		var day = ParseNumber();
+
+		int? hour = null, minute = null, second = null;
+		if (Match('T'))
+		{
+			hour = ParseNumber();
+			if (!Match(':'))
+			{
+				throw new FormatException($"Expected ':' in the time part of {context}");
+			}
+
+			minute = ParseNumber();
+			if (Match(':'))
+			{
+				second = ParseNumber();
+			}
+		}
+
+		return new OrbitCalendarMoment(year, month, day, hour, minute, second);
+	}
+
+	// <t / >t -> a bound, a calendar date written as Z{…} writes one (>2026/7/15, <2026/7/15T12:30). An ISO timestamp
+	// (>2026-07-15, >2026-07-15T12:30:00Z), the older form, still reads as a UTC instant; it ends with its last ISO
+	// field, so a '-' right after it is the set difference.
+	private OrbitLimitSpec ParseBound(OrbitLimitKind kind)
 	{
 		var start = _pos;
-		// Timestamps read until they hit an operator or structural character.
-		// NOTE: '-' is intentionally NOT a stop char so ISO dates like 2026-07-15
-		// (and 2026-07-15T12:30:00Z) parse. A '-' exclusion directly after a
-		// timestamp must therefore be whitespace-separated (e.g. "d>2026-01-01 - d{1}").
-		while (_pos < _input.Length
-			&& Peek() is not ('%' or '*' or '@' or '<' or '>' or '=' or '+' or '&' or '^' or '[' or ']' or '(' or ')' or '{' or '}')
-			&& !char.IsWhiteSpace(Peek()))
+		var iso = IsoBound().Match(_input, _pos);
+		if (iso.Success)
 		{
-			_pos++;
+			_pos += iso.Length;
+			return new OrbitLimitSpec { Kind = kind, Timestamp = iso.Value };
 		}
 
-		if (_pos == start)
-		{
-			throw new FormatException($"Expected timestamp at position {_pos}");
-		}
-
-		return _input[start.._pos];
+		var moment = ParseMoment("a bound");
+		return new OrbitLimitSpec { Kind = kind, Timestamp = _input[start.._pos], Moment = moment };
 	}
+
+	[System.Text.RegularExpressions.GeneratedRegex(@"\G[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]+)?)?(Z|[+-][0-9]{2}:?[0-9]{2})?)?")]
+	private static partial System.Text.RegularExpressions.Regex IsoBound();
 
 	private void SkipWhitespace()
 	{

@@ -6,7 +6,6 @@ using Pleiades.Plaintorch.Api.Contracts;
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Plaintorch.Materialization;
 using Pleiades.Plaintorch.Media;
-using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
 using Pleiades.Vault.Markdown;
 using Pleiades.Vault.Media;
@@ -25,11 +24,11 @@ public sealed class DirectiveApiService(
 	VaultEntityLifecycleService lifecycleService,
 	VaultTemporalDataService temporalDataService,
 	VaultAuditLogService auditLogService,
-	DependencyGateService dependencyGate,
 	VaultMediaService mediaService,
 	MediaAssetFolderResolver folderResolver,
 	VaultEntityGateway entityGateway,
-	TimeframeCandidateService candidateService) : IDirectiveApi
+	TimeframeCandidateService candidateService,
+	IOnrushSprintApi onrushApi) : IDirectiveApi
 {
 	/// <inheritdoc />
 	public async Task<Directive?> GetAsync(string directiveId, CancellationToken cancellationToken = default)
@@ -85,22 +84,17 @@ public sealed class DirectiveApiService(
 		ArgumentNullException.ThrowIfNull(search);
 		ArgumentException.ThrowIfNullOrWhiteSpace(search.Query);
 
-		var query = context.Directives
+		IQueryable<Directive> query = context.Directives
 			.AsNoTracking()
-			.Where(directive =>
-				directive.Id.Contains(search.Query)
-				|| directive.Title.Contains(search.Query)
-				|| (directive.Codename != null && directive.Codename.Contains(search.Query)));
+			.WhereMatchesSearch(search.Query, directive => directive.Id, directive => directive.Title, directive => directive.Codename)
+			.OrderBy(directive => directive.Title);
 
 		if (search.Take is > 0)
 		{
 			query = query.Take(search.Take.Value);
 		}
 
-		var directives = await query
-			.OrderBy(directive => directive.Title)
-			.ToListAsync(cancellationToken);
-		return directives;
+		return await query.ToListAsync(cancellationToken);
 	}
 
 	/// <inheritdoc />
@@ -166,16 +160,6 @@ public sealed class DirectiveApiService(
 		if (update.Due.IsSet)
 		{
 			stellar.Due = update.Due.Value;
-		}
-
-		if (update.StartDate.IsSet)
-		{
-			stellar.StartDate = update.StartDate.Value;
-		}
-
-		if (update.EndDate.IsSet)
-		{
-			stellar.EndDate = update.EndDate.Value;
 		}
 
 		await writeQueue.WriteAsync(stellar, previous, cancellationToken);
@@ -297,7 +281,11 @@ public sealed class DirectiveApiService(
 			throw new InvalidOperationException($"Directive '{directiveId}' is a lunar directive; shift its moonlight state through the lunar workflow instead.");
 		}
 
-		await dependencyGate.EnsureCanTransitionAsync(new EndpointRef(DependencyEndpointKind.Directive, stellar.Id), shift.Status, cancellationToken);
+		// A shift to the status it already has changes nothing, so nothing is written (PEP103 patch 4).
+		if (stellar.Status == shift.Status)
+		{
+			return stellar;
+		}
 
 		var previousStatus = stellar.Status;
 		stellar.Status = shift.Status;
@@ -309,6 +297,60 @@ public sealed class DirectiveApiService(
 			details: new { from = previousStatus.ToString(), to = stellar.Status.ToString() },
 			cancellationToken: cancellationToken);
 		return stellar;
+	}
+
+	/// <inheritdoc />
+	public async Task<StellarDirective> AddToOnrushAsync(string directiveId, string onrushSprintId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
+		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
+
+		var stellar = await FindStellarAsync(directiveId, "join an onrush", cancellationToken);
+		if (!await context.OnrushSprints.AnyAsync(sprint => sprint.Id == onrushSprintId, cancellationToken))
+		{
+			throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
+		}
+
+		stellar.OnrushSprintId = onrushSprintId;
+		await writeQueue.WriteAsync(stellar, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync("api", "directive.add-to-onrush", subject: stellar, details: new { onrushSprintId }, cancellationToken: cancellationToken);
+		return stellar;
+	}
+
+	/// <inheritdoc />
+	public async Task<StellarDirective> AddToOnrushAsync(string directiveId, OnrushSlot slot, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
+		await FindStellarAsync(directiveId, "join an onrush", cancellationToken);
+
+		// The slot's sprint is created when it does not exist yet, as adding to the current Polaris cycle starts one.
+		var sprint = await onrushApi.EnsureAsync(slot, cancellationToken);
+		return await AddToOnrushAsync(directiveId, sprint.Id, cancellationToken);
+	}
+
+	/// <inheritdoc />
+	public async Task<StellarDirective> RemoveFromOnrushAsync(string directiveId, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(directiveId);
+
+		var stellar = await FindStellarAsync(directiveId, "leave an onrush", cancellationToken);
+		var previous = stellar.OnrushSprintId;
+		stellar.OnrushSprintId = null;
+		await writeQueue.WriteAsync(stellar, cancellationToken: cancellationToken);
+		await auditLogService.WriteAsync("api", "directive.remove-from-onrush", subject: stellar, details: new { previous }, cancellationToken: cancellationToken);
+		return stellar;
+	}
+
+	/// <summary>
+	/// Loads a stellar directive for an action only a stellar directive can take, naming the action in the refusal
+	/// when the id turns out to be lunar.
+	/// </summary>
+	private async Task<StellarDirective> FindStellarAsync(string directiveId, string action, CancellationToken cancellationToken)
+	{
+		var directive = await context.Directives.FirstOrDefaultAsync(item => item.Id == directiveId, cancellationToken)
+			?? throw new InvalidOperationException($"Directive '{directiveId}' was not found.");
+		return directive as StellarDirective
+			?? throw new InvalidOperationException($"Directive '{directiveId}' is a lunar directive and cannot {action}.");
 	}
 
 	/// <inheritdoc />
@@ -328,7 +370,7 @@ public sealed class DirectiveApiService(
 
 		var snapshot = Clone(directive);
 		var databaseGraveyard = temporalDataService.StageEntityArchive(snapshot, "api-delete", Environment.UserName);
-		// A lunar directive's timeframes go by the database cascade; the state-policy save hook clears the availabilities
+		// A lunar directive's timeframes go by the database cascade; the state interceptor clears the availabilities
 		// pointing at them, tracked, in this same save (PEP100 patch 2, D9).
 		context.Directives.Remove(directive);
 		await writeQueue.RecordRemoveAsync(snapshot, cancellationToken);
@@ -475,6 +517,11 @@ public sealed class DirectiveApiService(
 		if (directive is not LunarDirective lunar)
 		{
 			throw new InvalidOperationException($"Directive '{directiveId}' is a stellar directive and has no moonlight state; use the regular workflow shift instead.");
+		}
+
+		if (lunar.Status == shift.Status)
+		{
+			return lunar;
 		}
 
 		var previousStatus = lunar.Status;
@@ -674,7 +721,7 @@ public sealed class DirectiveApiService(
 			timeframe.Icon = string.IsNullOrWhiteSpace(update.Icon.Value) ? null : update.Icon.Value.Trim();
 		}
 
-		// Leaving Availability mode clears the directives pointing at this timeframe in the state-policy save hook
+		// Leaving Availability mode clears the directives pointing at this timeframe in the state interceptor
 		// (PEP100 patch 2, D9), on every write pathway.
 		if (update.AutoInclusion is not null)
 		{
@@ -714,7 +761,7 @@ public sealed class DirectiveApiService(
 		var timeframe = await context.Timeframes.FirstOrDefaultAsync(item => item.Id == timeframeId, cancellationToken)
 			?? throw new InvalidOperationException($"Timeframe '{timeframeId}' was not found.");
 
-		// The state-policy save hook clears the directive availabilities pointing at it, tracked (PEP100 patch 2, D9).
+		// The state interceptor clears the directive availabilities pointing at it, tracked (PEP100 patch 2, D9).
 		context.Timeframes.Remove(timeframe);
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(

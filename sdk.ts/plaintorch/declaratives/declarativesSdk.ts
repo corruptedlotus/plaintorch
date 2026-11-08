@@ -8,10 +8,14 @@ import type {
 	DecreeUpdate,
 	Eventive,
 	EventiveOccurrenceRef,
+	EventivePlan,
 	EventiveUpdate,
 	Fate,
 	FatePlan,
-	FateUpdate
+	FateUpdate,
+	Terminative,
+	TerminativeOccurrenceRef,
+	TerminativeUpdate
 } from "./contracts"
 export class PlaintorchDeclarativesSdk {
 	public constructor(private readonly client: PlaintorchCoreClient) { }
@@ -70,15 +74,8 @@ export class PlaintorchDeclarativesSdk {
 		return await this.client.postForJson<Decree>(`/api/decrees/${encodeURIComponent(decreeId)}/begin`, {})
 	}
 
-	public async listEventives(fateId?: string, objectiveId?: string): Promise<Eventive[]> {
-		const query = new URLSearchParams()
-		if (fateId) {
-			query.set("fateId", fateId)
-		}
-		if (objectiveId) {
-			query.set("objectiveId", objectiveId)
-		}
-		const suffix = query.size > 0 ? `?${query.toString()}` : ""
+	public async listEventives(fateId?: string): Promise<Eventive[]> {
+		const suffix = fateId ? `?fateId=${encodeURIComponent(fateId)}` : ""
 		return (await this.client.getJson<Eventive[]>(`/api/eventives${suffix}`)) ?? []
 	}
 
@@ -87,11 +84,33 @@ export class PlaintorchDeclarativesSdk {
 		return (await this.client.getJson<Attentive[]>(`/api/attentives${suffix}`)) ?? []
 	}
 
+	/**
+	 * Adds a manual eventive to a fate — one added by hand rather than generated from its orbit. It is born hardened
+	 * with no RECURRENCE-ID, so it is addressed by its row id from then on.
+	 */
+	public async createEventive(plan: EventivePlan): Promise<Eventive | undefined> {
+		return await this.client.postForJson<Eventive>("/api/eventives", plan)
+	}
+
 	public async updateEventive(occurrence: EventiveOccurrenceRef, update: EventiveUpdate): Promise<Eventive | undefined> {
 		return await this.client.putForJson<Eventive>(`/api/eventives`, { occurrence, update })
 	}
 
 	public async updateAttentive(occurrence: AttentiveOccurrenceRef, update: AttentiveUpdate): Promise<Attentive | undefined> {
 		return await this.client.putForJson<Attentive>(`/api/attentives`, { occurrence, update })
+	}
+
+	/** Lists the hardened terminatives (PEP103 patch 7), or only the one of an origin. */
+	public async listTerminatives(originId?: string): Promise<Terminative[]> {
+		const suffix = originId ? `?originId=${encodeURIComponent(originId)}` : ""
+		return (await this.client.getJson<Terminative[]>(`/api/terminatives${suffix}`)) ?? []
+	}
+
+	/**
+	 * Raises or lowers a terminative's ignore flag, the one change a user makes to it (PEP103 patch 7). A projected
+	 * terminative hardens into the same save; the response carries its origin.
+	 */
+	public async updateTerminative(occurrence: TerminativeOccurrenceRef, update: TerminativeUpdate): Promise<Terminative | undefined> {
+		return await this.client.putForJson<Terminative>(`/api/terminatives`, { occurrence, update })
 	}
 }

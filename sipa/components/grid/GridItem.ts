@@ -1,15 +1,20 @@
-import { component, css, html, HTMLTemplateResult, nothing, property, PropertyValues } from '@a11d/lit'
-import { DecreeStatus, DirectiveStatus, FateStatus, LunarDirectiveStatus, ObjectiveStatus, Directive, Objective, typeNameOf, type DeclarativeCalendar } from '@pleiades/sdk'
+import { component, css, html, HTMLTemplateResult, live, nothing, property, PropertyValues } from '@a11d/lit'
+import { Directive, Objective, OrbitUnit, typeNameOf, type DeclarativeCalendar } from '@pleiades/sdk'
+import { editState, IconName, type ScheduleValue, type StatefulEntity } from '..'
 import {
-	IconName, LunarDirectiveModal, type AnyStatus, type ScheduleValue,
-	SelectStatusModal, objectiveStatusDescriptors, directiveStatusDescriptors, lunarDirectiveStatusDescriptors
-} from '..'
-import {
-	directiveActions, entityIcon, entityKindLabel, entityKindOf, isDirectiveKind,
-	objectiveActions, reparentEntity, reparentRefusal, saveEntityField, saveFateSchedule, type EditableField
+	directiveActions, entityIcon, entityKindLabel, entityKindOf, entityStatusName, isDirectiveKind, isInactiveEntity,
+	objectiveActions, reparentEntity, reparentRefusal, saveDecreeSchedule, saveEntityField, saveFateSchedule, type EditableField
 } from './entityActions'
 import { GridItemBase } from './GridItemBase'
 import type { GridEntity } from './entityTree'
+
+/** The backlog grid's columns besides the title, by key. */
+export enum EntityGridColumn {
+	/** A kind's own quantity or schedule: an objective's Celestron, a declarative's timing. */
+	Measure = 'measure',
+	/** A kind's workflow state. */
+	Status = 'status'
+}
 
 /**
  * One line of the backlog entity grid: a directive, or an incentive it owns.
@@ -82,8 +87,10 @@ export class GridItem extends GridItemBase {
 				display: inline;
 			}
 			
+			/* The heading names a group rather than filling columns, so it runs the whole width of the row. */
 			.root {
-				
+				grid-column: 1 / -1;
+
 				& .title {
 					font-weight: 500;
 					font-size: .85em;
@@ -98,6 +105,11 @@ export class GridItem extends GridItemBase {
 
 	protected override get kindName() {
 		return entityKindLabel(entityKindOf(this.row!.entity as GridEntity))
+	}
+
+	/** A directive or incentive done with is dimmed; the world heading carries no entity, and so no state. */
+	protected override get inactive() {
+		return this.row?.kind !== 'root' && isInactiveEntity(this.row?.entity)
 	}
 
 	protected override get entityIcon() {
@@ -142,12 +154,16 @@ export class GridItem extends GridItemBase {
 	}
 
 	/**
-	 * The first middle cell holds whatever quantity or schedule a kind carries, the second its workflow state.
+	 * The measure column holds whatever quantity or schedule a kind carries, the status column its workflow state.
 	 * Splitting them this way is what the shared tracks are for: every kind's state lands in one column, so a run of
 	 * mixed rows can be read straight down.
 	 */
-	protected override get middleCells(): (HTMLTemplateResult | typeof nothing)[] {
-		return [this.measureCell, this.statusCell]
+	protected override cellContent(column: string): HTMLTemplateResult | typeof nothing {
+		switch (column) {
+			case EntityGridColumn.Measure: return this.measureCell
+			case EntityGridColumn.Status: return this.statusCell
+			default: return nothing
+		}
 	}
 
 	/** The kind's own quantity or schedule: an objective's Celestron, a declarative's timing. */
@@ -157,68 +173,52 @@ export class GridItem extends GridItemBase {
 			case 'objective':
 				return html`<p7t-editable-starfire ${this.binder.bind('celestronValue')}></p7t-editable-starfire>`
 			case 'fate': {
-				// A fate is scheduled either way — a recurring Orbit or a fixed date/time — and the editable
-				// lets the user switch and clears whichever it is not.
-				const fate = entity as { orbit?: string, date?: string, startTime?: string, calendar?: DeclarativeCalendar }
+				// A fate is orbit-only (PEP111): a recurrence, or a one-shot `Z{…}` literal the editable's bubble writes.
+				const fate = entity as { orbit?: string, calendar?: DeclarativeCalendar }
 				return html`<p7t-editable-schedule
-					shortOrbit
+					short
 					.calendar=${fate.calendar}
 					.orbit=${fate.orbit}
-					.date=${fate.date}
-					.time=${fate.startTime}
 					@schedulechange=${(e: CustomEvent<ScheduleValue>) => saveFateSchedule(entity, e.detail)}>
 				</p7t-editable-schedule>`
 			}
-			case 'decree':
-				return html`<p7t-editable-orbit short .calendar=${(entity as { calendar?: DeclarativeCalendar }).calendar} ${this.binder.bind('orbit')}></p7t-editable-orbit>`
-			case 'lunar-directive':
-				// A lunar directive carries no measure of its own, so its otherwise-empty column hosts the button
-				// that opens its editing modal — the one place its timeframes are managed (PEP100 patch).
-				return html`
-					<p7t-button ghost icon='lucide:clock' label='Edit timeframes' @click=${() => this.openLunarEditor()}></p7t-button>
-				`
+			case 'decree': {
+				// The same bubble as the banner's: a decree's one-shot takes no duration, and a reflecting decree's a whole day.
+				const decree = entity as { orbit?: string, calendar?: DeclarativeCalendar, reflect?: boolean }
+				return html`<p7t-editable-schedule
+					short
+					.calendar=${decree.calendar}
+					.orbit=${live(decree.orbit)}
+					.oneShotUnits=${decree.reflect ? [OrbitUnit.Day] : undefined}
+					.oneShotDuration=${false}
+					@schedulechange=${(e: CustomEvent<ScheduleValue>) => saveDecreeSchedule(entity, e.detail)}>
+				</p7t-editable-schedule>`
+			}
 			default:
 				return nothing
 		}
-	}
-
-	/** Opens the lunar directive's editing modal, where its timeframes are defined. */
-	protected openLunarEditor() {
-		new LunarDirectiveModal(this.row!.entity as Directive).open()
 	}
 
 	/** The workflow state, for the kinds that carry a lifecycle worth shifting from here. */
 	protected get statusCell(): HTMLTemplateResult | typeof nothing {
 		const entity = this.row!.entity as GridEntity
 		const kind = entityKindOf(entity)
-		const descriptors = kind === 'objective' ? objectiveStatusDescriptors
-			: kind === 'stellar-directive' ? directiveStatusDescriptors
-			: kind === 'lunar-directive' ? lunarDirectiveStatusDescriptors
-			: undefined
-		const prompt = descriptors && (() => SelectStatusModal.prompt<AnyStatus>(descriptors))
+		if (kind !== 'objective' && kind !== 'stellar-directive' && kind !== 'lunar-directive') {
+			return nothing
+		}
 
-		return !prompt ? nothing : html`
-			<p7t-editable .doEdit=${prompt} ${this.binder.bind('status')}>
+		// Not bound: the state bubble saves a shift itself, and the row moves only once the core has accepted it.
+		const stateful = entity as unknown as StatefulEntity
+		return html`
+			<p7t-editable .value=${stateful.status} .doEdit=${(_: unknown, field: HTMLElement) => editState(field, stateful)}>
 				<p7t-status-item .status=${this.statusName}></p7t-status-item>
 			</p7t-editable>
 		`
 	}
 
-	/**
-	 * The descriptor name of the entity's state.
-	 *
-	 * Every kind numbers its own state enum from zero, so the value alone is ambiguous — a directive's `2`
-	 * is Active while an objective's is Onrush. The kind has to pick the enum.
-	 */
+	/** The descriptor name of the entity's state; see {@link entityStatusName}. */
 	protected get statusName() {
-		const status = (this.row!.entity as { status?: number }).status ?? 0
-		switch (entityKindOf(this.row!.entity as GridEntity)) {
-			case 'lunar-directive': return LunarDirectiveStatus[status] ?? 'OnHold'
-			case 'stellar-directive': return DirectiveStatus[status] ?? 'Planned'
-			case 'fate': return FateStatus[status] ?? 'Active'
-			case 'decree': return DecreeStatus[status] ?? 'Active'
-			default: return ObjectiveStatus[status] ?? 'Standby'
-		}
+		return entityStatusName(this.row!.entity as GridEntity)
 	}
 
 	/** What the row's add button offers, which depends on what the row holds. */
@@ -238,7 +238,7 @@ export class GridItem extends GridItemBase {
 
 	override get template() {
 		return this.row?.kind !== 'root' ? super.template : html`
-			<div class='cell lead root'>
+			<div class='cell lead root' role='gridcell'>
 				<p7t-icon class='notch' icon='lucide:astroid'></p7t-icon>
 				<div class='leading'>${this.leadingCell}</div>
 				<span class='title'>World Quests & Events</span>

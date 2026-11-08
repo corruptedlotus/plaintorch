@@ -32,23 +32,31 @@ public sealed record OrbitSpanEntry(long StartMs, long EndMs, OrbitUnit Granular
 /// <remarks>
 /// How the limits read (the notation's contract, resolved structurally by the solver):
 /// <list type="bullet">
+/// <item>An indexed node written at the top level is bound to its implicit cycle (see <see cref="OrbitCycles"/>):
+/// <c>m{15}</c> is <c>h[m{15}]</c>, <c>h{11}</c> is <c>d[h{11}]</c>, <c>d{1}</c> is <c>M[d{1}]</c>, <c>w{12}</c> is
+/// <c>y[w{12}]</c>. Only a year, and a bare unit, are top-level as written.</item>
 /// <item>A node's <b>life</b> is one period of its written parent — each parent period gives it a fresh life. A
 /// top-level node (the root, or an operand of a top-level set operation) has a single life, from its first complete
-/// period at or after the stream start (the anchor, snapped to the schedule's granularity and advanced past any
-/// <c>&gt;t</c>). The period the stream starts in is complete unless one of the node's instances in it falls before
-/// the start; an incomplete one is skipped whole, so a schedule never begins partway through one of its own
-/// periods.</item>
+/// period at or after the schedule's origin. The period the origin falls in is complete unless one of the node's
+/// instances in it falls before the origin; an incomplete one is skipped whole, so a schedule never begins partway
+/// through one of its own periods.</item>
+/// <item>The <b>origin</b> is the schedule's latest <c>&gt;t</c> bound when it has one, else the anchor (snapped to the
+/// schedule's granularity, a mid-period bound to the next period). A continuous <c>%N</c> is phased from it too, so
+/// <c>d%2&gt;2026/1/1</c> fires on 1, 3, 5 January and <c>d%2&gt;2026/1/2</c> on 2, 4, 6, whenever the stream is
+/// anchored; the anchor only decides where the stream is joined (the later of the anchor and the bound), while what has
+/// fired since the origin still counts.</item>
 /// <item><c>*x</c> limits a node's <b>repetition</b>. A bare unit is a single run from the start of its life, one
-/// value after another (or every N-th under a continuous <c>%N</c>); an index is a run of one value, unless <c>%N</c>
-/// steps it (b, b+N, … to the end of the parent period). Each run keeps its first x values — so <c>d*5</c> is five
-/// days, <c>w[d*3]</c> the first three days of every week, <c>d{5}%3*4</c> the 5th, 8th, 11th and 14th, and <c>*x</c>
-/// on an index <c>%</c> does not step (a list or a range) does nothing. A repetition counts whether or not the node's
-/// children fire in it.</item>
+/// value after another (or every N-th under a continuous <c>%N</c>); an index is a run of one value, unless an
+/// explicit <c>%N</c> steps it (b, b+N, … to the end of the parent period — <c>%1</c> included, so <c>d{5}%1</c> runs on
+/// from the 5th every day). Each run keeps its first x values — so <c>d*5</c> is five days, <c>w[d*3]</c> the first
+/// three days of every week, <c>d{5}%3*4</c> the 5th, 8th, 11th and 14th, <c>d{5}%1*4</c> the 5th to the 8th, and
+/// <c>*x</c> on an index no <c>%</c> steps (a list or a range) does nothing. A repetition counts whether or not the
+/// node's children fire in it.</item>
 /// <item><c>@x</c> limits a node's <b>emission</b>: its own instances (what its subtree produces, before any enclosing
 /// set operation acts on them) are counted per life in time order, and only the first x fire — so
-/// <c>M[w[d{1}%2]@7]</c> fires up to seven times a month, and a top-level <c>d{2,4,6,8}@2</c> fires twice in all.</item>
-/// <item>A week inside a month (written, or implied by a top-level week index) or inside a written year (a calendar
-/// week) is numbered from that cycle's first complete week: the week the cycle starts in belongs to it only when every
+/// <c>M[w[d{1}%2]@7]</c> fires up to seven times a month, and <c>M[d{2,4,6,8}]@2</c> twice in all (where
+/// <c>d{2,4,6,8}@2</c>, bound to its month, fires on the 2nd and 4th of every month).</item>
+/// <item>A week inside a month or inside a year (a calendar week, as a top-level week index is) is numbered from that cycle's first complete week: the week the cycle starts in belongs to it only when every
 /// instance the week node asks for falls inside the cycle, so <c>M[w{1}[d{1}]]</c> is the first Monday of every month
 /// and <c>y[w{1}[d{1}]]</c> the first of every year. The weeks run to the one the cycle ends in, whose days past its end
 /// are cut off. A bare top-level week (<c>w[d{1,5}]</c>) belongs to no cycle: it runs week after week across months. A
@@ -78,6 +86,12 @@ public sealed class OrbitEngine
 	private readonly OrbitAstNode _ast;
 	private readonly IOrbitCalendar _calendar;
 	private readonly long _anchor;
+
+	// Where the schedule's initial state is counted from: its latest >t bound when it has one, else the anchor.
+	// Interval phases run from the origin, and a top-level node's life (its first complete period, and the limits
+	// counted in it) from the origin's first period, _lifeOrigin; the anchor only decides where the stream is joined.
+	private readonly long _origin;
+	private readonly long _lifeOrigin;
 	private long _cursor;
 	private readonly OrbitUnit _globalGranularity;
 
@@ -134,7 +148,8 @@ public sealed class OrbitEngine
 		// Desugar z/Z datetime literals into their equivalent nested time-unit chain up
 		// front, so every downstream pass (limits, normalize, span-building) only ever sees
 		// OrbitTimeUnitNode / OrbitSetOperationNode and needs no literal awareness.
-		var source = ExpandLiterals(ast);
+		// Then bind each indexed global to its implicit cycle (m{15} -> h[m{15}]), which is written.
+		var source = OrbitCycles.Bind(ExpandLiterals(ast));
 		// Record each node's written parent BEFORE normalization adds synthetic y>M>...
 		// wrappers, then normalize.
 		IndexNodes(source, null);
@@ -144,6 +159,9 @@ public sealed class OrbitEngine
 		_seed = seed ?? (uint)Random.Shared.NextInt64(0x1_0000_0000L);
 		_globalGranularity = CalcGranularity(_ast);
 		_limits = CollectLimits(_ast);
+		var bound = _limits.Where(limit => limit.Kind == OrbitLimitKind.After).Select(limit => (long?)limit.At).Max();
+		_origin = bound ?? _anchor;
+		_lifeOrigin = bound is { } at ? PeriodFrom(at) : _calendar.SnapToStart(_anchor, _globalGranularity);
 		_cursor = SeededStart();
 
 		_spanFormat = !granularOnly && HasDuration(source);
@@ -158,7 +176,7 @@ public sealed class OrbitEngine
 	/// <summary>The engine's RNG seed.</summary>
 	public uint Seed => _seed;
 
-	// The epoch-snapped search origin, advanced past any '>t' (after) lower bound so
+	// Where the stream is joined: the epoch, snapped, advanced past any '>t' (after) lower bound so
 	// we don't waste iterations solving-then-rejecting everything before it.
 	private long SeededStart()
 	{
@@ -167,11 +185,19 @@ public sealed class OrbitEngine
 		{
 			if (limit.Kind == OrbitLimitKind.After && limit.At > start)
 			{
-				start = _calendar.SnapToStart(limit.At, _globalGranularity);
+				start = PeriodFrom(limit.At);
 			}
 		}
 
 		return start;
+	}
+
+	// The first period of the stream's granularity that starts at or after `at`. A lower bound inside a period skips
+	// that period, whose start falls before the bound.
+	private long PeriodFrom(long at)
+	{
+		var start = _calendar.SnapToStart(at, _globalGranularity);
+		return start < at ? _calendar.Add(start, _globalGranularity, 1) : start;
 	}
 
 	// --- Construction / persistence ---
@@ -915,7 +941,7 @@ public sealed class OrbitEngine
 				// ">t": skip anything before the lower bound and jump the cursor to it.
 				if (matchTime < limit.At)
 				{
-					_cursor = _calendar.SnapToStart(limit.At, _globalGranularity);
+					_cursor = PeriodFrom(limit.At);
 					return LimitVerdict.Skip;
 				}
 			}
@@ -1095,7 +1121,7 @@ public sealed class OrbitEngine
 		var lifeStart = long.MinValue;
 		if (!_continuing)
 		{
-			var start = SeededStart();
+			var start = _lifeOrigin;
 			var period = _calendar.SnapToStart(start, node.Unit);
 			var periodEnd = _calendar.Add(period, node.Unit, 1);
 			lifeStart = period;
@@ -1162,11 +1188,13 @@ public sealed class OrbitEngine
 		var bases = ResolveBases(node, cursor.Ms, parentUnit);
 		_nodes.TryGetValue(node, out var info);
 		var repeat = _lifeSetAside.Contains(node) ? null : info?.Repeat;
+		// An index steps under any explicit %N, %1 included: d{5}%1 runs on from the 5th, every day.
+		var stepped = node.Interval is >= 1;
 
 		// Fast path: pure whitelist. Jump straight to the next allowed value
 		// >= currentVal instead of scanning every value. (A *x changes nothing
-		// here: an index % does not step is a run of one value.)
-		if (interval == 1 && bases is not null)
+		// here: an index no % steps is a run of one value.)
+		if (!stepped && bases is not null)
 		{
 			foreach (var b in bases)
 			{
@@ -1205,7 +1233,7 @@ public sealed class OrbitEngine
 		{
 			// Local offset loop (e.g. h{4}%3 -> every 3h starting from hour 4); a *x
 			// keeps each run's first x values.
-			if (interval > 1 && bases is not null)
+			if (stepped && bases is not null)
 			{
 				var matched = false;
 				foreach (var b in bases)
@@ -1223,11 +1251,11 @@ public sealed class OrbitEngine
 				}
 			}
 
-			// Continuous global interval (e.g. M[d%2] -> every 2 days from anchor).
+			// Continuous global interval (e.g. M[d%2] -> every 2 days from the origin).
 			if (interval > 1 && bases is null)
 			{
 				var projected = NodeSet(node, cursor.Ms, val, parentUnit);
-				if (Math.Abs(_calendar.Delta(projected, _anchor, unit)) % interval != 0)
+				if (Math.Abs(_calendar.Delta(projected, _origin, unit)) % interval != 0)
 				{
 					continue;
 				}
@@ -1257,7 +1285,7 @@ public sealed class OrbitEngine
 		var first = minVal;
 		if (interval > 1)
 		{
-			while (first <= maxVal && Math.Abs(_calendar.Delta(NodeSet(node, cursorMs, first, parentUnit), _anchor, node.Unit)) % interval != 0)
+			while (first <= maxVal && Math.Abs(_calendar.Delta(NodeSet(node, cursorMs, first, parentUnit), _origin, node.Unit)) % interval != 0)
 			{
 				first++;
 			}
@@ -1515,8 +1543,8 @@ public sealed class OrbitEngine
 	// A week inside a month or a year is numbered from that cycle's first complete week (see WeekOffset), and a day inside
 	// a year is its day of the year; every other node reads its unit as the parent-aware unit helpers below do.
 
-	// The cycle a week node is counted within: a month — written, or the one a top-level week index addresses — or a
-	// written year (a calendar week). A bare top-level week has none: it runs week after week.
+	// The cycle a week node is counted within: a written month, or a year (a calendar week, written or the cycle a
+	// top-level week index is bound to). A bare top-level week has none: it runs week after week.
 	private OrbitUnit? WeekCycle(OrbitTimeUnitNode node, OrbitUnit? parentUnit)
 	{
 		if (node.Unit != OrbitUnit.Week || !_nodes.TryGetValue(node, out var info))
@@ -1524,24 +1552,14 @@ public sealed class OrbitEngine
 			return null;
 		}
 
-		if (parentUnit == OrbitUnit.Year && info.Parent == OrbitUnit.Year)
-		{
-			return OrbitUnit.Year;
-		}
-
-		if (parentUnit == OrbitUnit.Month && (info.Parent is not null || node.Indices is not null))
-		{
-			return OrbitUnit.Month;
-		}
-
-		return null;
+		return info.Parent is OrbitUnit.Month or OrbitUnit.Year && info.Parent == parentUnit ? info.Parent : null;
 	}
 
-	// Whether a node is a bare top-level week: it runs week after week, so the month it is implicitly wrapped in does not
-	// cut it, and a week that straddles two months keeps its days in both. (Cut there, the days past the seam were lost:
-	// stepping on to the next week lands in the new month's second week.)
+	// Whether a node is a bare top-level week (an indexed one is bound to its year): it runs week after week, so the
+	// month it is implicitly wrapped in does not cut it, and a week that straddles two months keeps its days in both.
+	// (Cut there, the days past the seam were lost: stepping on to the next week lands in the new month's second week.)
 	private bool RunsAcrossMonths(OrbitTimeUnitNode node, OrbitUnit? parentUnit)
-		=> node.Unit == OrbitUnit.Week && parentUnit == OrbitUnit.Month && _nodes.TryGetValue(node, out var info) && info.Parent is null && node.Indices is null;
+		=> node.Unit == OrbitUnit.Week && parentUnit == OrbitUnit.Month && _nodes.TryGetValue(node, out var info) && info.Parent is null;
 
 	// Whether a node is a day counted within a written year: its day of the year.
 	private static bool IsDayOfYear(OrbitTimeUnitNode node, OrbitUnit? parentUnit)
@@ -1738,7 +1756,7 @@ public sealed class OrbitEngine
 		return result;
 	}
 
-	private static List<ResolvedLimit> CollectLimits(OrbitAstNode node)
+	private List<ResolvedLimit> CollectLimits(OrbitAstNode node)
 	{
 		var output = new List<ResolvedLimit>();
 		void Visit(OrbitAstNode n)
@@ -1755,7 +1773,11 @@ public sealed class OrbitEngine
 			{
 				if (limit.Kind is OrbitLimitKind.Before or OrbitLimitKind.After)
 				{
-					if (JsDate.TryParseIso(limit.Timestamp, out var at))
+					if (limit.Moment is { } moment)
+					{
+						output.Add(new ResolvedLimit(limit.Kind, MomentTime(moment, limit.Timestamp), unitNode.Unit));
+					}
+					else if (JsDate.TryParseIso(limit.Timestamp, out var at))
 					{
 						output.Add(new ResolvedLimit(limit.Kind, at, unitNode.Unit));
 					}
@@ -1772,6 +1794,42 @@ public sealed class OrbitEngine
 
 		Visit(node);
 		return output;
+	}
+
+	// A bound's calendar date as an instant, composed in this engine's calendar as Z{…} is matched in it: the start of
+	// the written day, or of its written time. A date the calendar does not have (a 30th of February) is an error.
+	private long MomentTime(OrbitCalendarMoment moment, string written)
+	{
+		(OrbitUnit Unit, int? Value)[] parts =
+		[
+			(OrbitUnit.Year, moment.Year), (OrbitUnit.Month, moment.Month), (OrbitUnit.Day, moment.Day),
+			(OrbitUnit.Hour, moment.Hour), (OrbitUnit.Minute, moment.Minute), (OrbitUnit.Second, moment.Second),
+		];
+		var missing = $"The bound '{written}' names a date its calendar does not have.";
+		var date = _calendar.SnapToStart(_anchor, OrbitUnit.Year);
+		foreach (var (unit, value) in parts)
+		{
+			if (value is not { } target)
+			{
+				break;
+			}
+
+			try
+			{
+				date = _calendar.SnapToStart(_calendar.Set(date, unit, target), unit);
+			}
+			catch (ArgumentException exception)
+			{
+				throw new FormatException(missing, exception);
+			}
+
+			if (_calendar.Get(date, unit) != target)
+			{
+				throw new FormatException(missing);
+			}
+		}
+
+		return date;
 	}
 
 	// Walks the RAW (un-normalized) AST recording every written node's parent unit (null for a top-level node) and

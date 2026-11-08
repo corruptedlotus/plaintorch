@@ -52,9 +52,10 @@ export const sipaStyles: CSSResult = css`
 		--color-orange: var(--p7t-critical);
 		--color-red: var(--p7t-bad);
 
-		--font-interface: "Outfit", "Segoe UI", system-ui, sans-serif;
-		--font-text: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
-		--font-monospace: "Cascadia Code", Consolas, ui-monospace, monospace;
+		/* The "… Variable" families are the faces the standalone shell embeds; the installed names back them up. */
+		--font-interface: "Outfit Variable", "Outfit", "Segoe UI", system-ui, sans-serif;
+		--font-text: "Space Grotesk Variable", "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+		--font-monospace: "Cascadia Code Variable", "Cascadia Code", Consolas, ui-monospace, monospace;
 
 		--modal-radius: 12px;
 		--dialog-width: 560px;

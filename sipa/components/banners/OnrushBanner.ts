@@ -1,6 +1,6 @@
 import { component, css, html, nothing } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { OnrushSprint } from '@pleiades/sdk'
+import { OnrushSprint, type OnrushSprintUpdate } from '@pleiades/sdk'
 import { core, followRenamedNote, ReactiveBinder } from ".."
 
 @component('p7t-onrush-banner')
@@ -19,7 +19,15 @@ export class OnrushBanner extends EntityBanner<OnrushSprint> {
 		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
-			const saved = await this.commitEntityEdit(async () => await core.onrush.update(entity.id, entity))
+			// Only the changed field travels. The whole sprint is a cyclic graph once the identity map cross-links it (its
+			// objectives reach their directive, whose objectives reach them), and a cyclic body cannot be serialized.
+			const key = keyPath as keyof OnrushSprint | undefined
+			if (!key) {
+				return
+			}
+
+			const update = { [key]: entity[key] } as OnrushSprintUpdate
+			const saved = await this.commitEntityEdit(async () => await core.onrush.update(entity.id, update))
 			if (!saved) {
 				return
 			}

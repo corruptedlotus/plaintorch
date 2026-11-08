@@ -1,6 +1,4 @@
-using System.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
@@ -12,8 +10,11 @@ namespace Pleiades.Plaintorch.Api.Services;
 
 /// <summary>
 /// Implements the dependency-facing PLAINTORCH application API (PEP101). Structural rules are enforced by
-/// <see cref="DependencyRules"/>; endpoint existence and kind are validated here (they require resolving loose
-/// references). Satisfaction and checkpoint unlock are computed by <see cref="DependencyReconciler"/> on save; whether
+/// <see cref="DependencyRules"/> and the temporal cycle rule by <see cref="DependencyOrdering"/>, both over the whole
+/// graph — the stored edges and the intrinsic ones the structure implies (PEP102 patch 9), read through
+/// <see cref="DependencyGraphService"/>; endpoint existence and kind are validated here (they require resolving loose
+/// references). Whether an eventive endpoint's slot names a real occurrence is judged by the state engine on the save
+/// (<see cref="Enforcement.StateJudge.OccurrenceRule"/>), never here. Satisfaction and checkpoint unlock are computed by <see cref="Enforcement.DependencyReconciler"/> on save; whether
 /// an unsatisfied edge gates its target's next transition is stamped by <see cref="DependencyGateService"/> as it is served.
 /// </summary>
 public sealed class DependencyApiService(
@@ -21,9 +22,13 @@ public sealed class DependencyApiService(
 	PuckCreationService puckCreationService,
 	PlaintorchStateService stateService,
 	DependencyGateService gateService,
+	DependencyGraphService graphService,
 	VaultAuditLogService auditLogService) : IDependencyApi
 {
 	private const string CheckpointTollDescriptionPrefix = "PLAINTORCH checkpoint toll";
+
+	// How many hits of each endpoint kind a search returns when the caller names no cap.
+	private const int DefaultEndpointHitsPerKind = 50;
 
 	/// <inheritdoc />
 	public async Task<Dependency> CreateAsync(EndpointRef source, EndpointRef target, DependencyTrigger? trigger = null, DependencyConstraint? constraint = null, CancellationToken cancellationToken = default)
@@ -31,9 +36,16 @@ public sealed class DependencyApiService(
 		await ValidateEndpointAsync("source", source, cancellationToken);
 		await ValidateEndpointAsync("target", target, cancellationToken);
 
-		var existing = await context.Dependencies.AsNoTracking().ToListAsync(cancellationToken);
-		DependencyRules.EnsureValid(source, target, trigger, constraint, existing);
-		await EnsureLogicallyPossibleAsync(source, target, trigger, constraint, cancellationToken);
+		// The intrinsic edges take part in both rules: one that restates a child's finish gating its parent's finish
+		// is a duplicate, and one that orders against the structure is impossible.
+		var graph = await graphService.LoadGraphAsync(cancellationToken);
+		DependencyRules.EnsureValid(source, target, trigger, constraint, graph.All);
+		if (DependencyOrdering.FindContradiction(graph.All, source, trigger, target, constraint) is { } contradiction)
+		{
+			throw new InvalidOperationException(
+				"This dependency is logically impossible: it would contradict the begin/finish ordering the existing dependencies already impose ("
+				+ DependencyOrdering.Describe(contradiction) + ").");
+		}
 
 		var dependency = new Dependency
 		{
@@ -64,57 +76,63 @@ public sealed class DependencyApiService(
 	public async Task<IReadOnlyList<Dependency>> ListAsync(string? entityId = null, CancellationToken cancellationToken = default)
 	{
 		var query = context.Dependencies.AsNoTracking();
+		var intrinsic = await graphService.DeriveIntrinsicAsync(cancellationToken);
 		if (!string.IsNullOrWhiteSpace(entityId))
 		{
 			query = query.Where(dependency => dependency.SourceId == entityId || dependency.TargetId == entityId);
+			intrinsic = intrinsic
+				.Where(dependency => string.Equals(dependency.SourceId, entityId, StringComparison.Ordinal) || string.Equals(dependency.TargetId, entityId, StringComparison.Ordinal))
+				.ToList();
 		}
 
-		var dependencies = await query.OrderBy(dependency => dependency.Id).ToListAsync(cancellationToken);
+		// Stored edges first, in their own order; the intrinsic ones after, as they carry no identity to order by.
+		var dependencies = (await query.OrderBy(dependency => dependency.Id).ToListAsync(cancellationToken)).Concat(intrinsic).ToList();
 		await gateService.StampNextTransitionAsync(dependencies, cancellationToken);
 		return dependencies;
 	}
 
 	/// <inheritdoc />
-	public async Task<IReadOnlyList<EndpointHit>> SearchEndpointsAsync(SearchRequest search, CancellationToken cancellationToken = default)
+	public Task<IReadOnlyList<EndpointHit>> ListEndpointsAsync(CancellationToken cancellationToken = default)
+		=> CollectEndpointsAsync(search: null, perKind: null, cancellationToken);
+
+	/// <inheritdoc />
+	public Task<IReadOnlyList<EndpointHit>> SearchEndpointsAsync(SearchRequest search, CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(search);
+		ArgumentException.ThrowIfNullOrWhiteSpace(search.Query);
 
-		// The same title/id substring match the objective and directive finders use, run over each endpoint
-		// kind and unioned. An empty query returns a bounded slice rather than everything, so the picker opens
-		// usefully before anything is typed. Only stellar directives take part — the OfType filter is what
-		// excludes lunar directives — and decrees and Polaris-level records are simply never queried.
-		// Checkpoints take part too, whichever sprint (or none) they belong to: a global context may pin one.
-		var query = search.Query?.Trim();
-		var hasQuery = !string.IsNullOrWhiteSpace(query);
-		var perKind = search.Take is > 0 ? search.Take.Value : hasQuery ? 50 : 20;
+		return CollectEndpointsAsync(search.Query, search.Take is > 0 ? search.Take.Value : DefaultEndpointHitsPerKind, cancellationToken);
+	}
 
-		var directives = context.Directives
-			.OfType<StellarDirective>()
-			.AsNoTracking()
-			.Where(directive => !hasQuery || directive.Id.Contains(query!) || directive.Title.Contains(query!))
-			.OrderBy(directive => directive.Title)
-			.Take(perKind)
+	// Each endpoint kind is matched, title-ordered and capped on its own, then the kinds are unioned. Only stellar
+	// directives take part — the OfType filter is what excludes lunar directives — and decrees and Polaris-level
+	// records are simply never queried. Checkpoints take part too, whichever sprint (or none) they belong to: a
+	// global context may pin one.
+	private async Task<IReadOnlyList<EndpointHit>> CollectEndpointsAsync(string? search, int? perKind, CancellationToken cancellationToken)
+	{
+		var directives = Capped(context.Directives
+				.OfType<StellarDirective>()
+				.AsNoTracking()
+				.WhereMatchesSearch(search, directive => directive.Id, directive => directive.Title, directive => directive.Codename)
+				.OrderBy(directive => directive.Title), perKind)
 			.Select(directive => new EndpointHit(DependencyEndpointKind.Directive, directive.Id, directive.Title));
 
-		var objectives = context.Objectives
-			.AsNoTracking()
-			.Where(objective => !hasQuery || objective.Id.Contains(query!) || objective.Title.Contains(query!))
-			.OrderBy(objective => objective.Title)
-			.Take(perKind)
+		var objectives = Capped(context.Objectives
+				.AsNoTracking()
+				.WhereMatchesSearch(search, objective => objective.Id, objective => objective.Title)
+				.OrderBy(objective => objective.Title), perKind)
 			.Select(objective => new EndpointHit(DependencyEndpointKind.Objective, objective.Id, objective.Title));
 
-		var fates = context.Fates
-			.AsNoTracking()
-			.Where(fate => !hasQuery || fate.Id.Contains(query!) || fate.Title.Contains(query!))
-			.OrderBy(fate => fate.Title)
-			.Take(perKind)
+		var fates = Capped(context.Fates
+				.AsNoTracking()
+				.WhereMatchesSearch(search, fate => fate.Id, fate => fate.Title)
+				.OrderBy(fate => fate.Title), perKind)
 			.Select(fate => new EndpointHit(DependencyEndpointKind.Fate, fate.Id, fate.Title));
 
-		var checkpoints = context.Checkpoints
-			.AsNoTracking()
-			.Where(checkpoint => !hasQuery || checkpoint.Id.Contains(query!) || checkpoint.Title.Contains(query!))
-			.OrderBy(checkpoint => checkpoint.Title)
-			.Take(perKind)
+		var checkpoints = Capped(context.Checkpoints
+				.AsNoTracking()
+				.WhereMatchesSearch(search, checkpoint => checkpoint.Id, checkpoint => checkpoint.Title)
+				.OrderBy(checkpoint => checkpoint.Title), perKind)
 			.Select(checkpoint => new EndpointHit(DependencyEndpointKind.Checkpoint, checkpoint.Id, checkpoint.Title));
 
 		var hits = new List<EndpointHit>();
@@ -123,6 +141,8 @@ public sealed class DependencyApiService(
 		hits.AddRange(await fates.ToListAsync(cancellationToken));
 		hits.AddRange(await checkpoints.ToListAsync(cancellationToken));
 		return hits;
+
+		static IQueryable<T> Capped<T>(IQueryable<T> query, int? take) => take is { } count ? query.Take(count) : query;
 	}
 
 	/// <inheritdoc />
@@ -149,6 +169,8 @@ public sealed class DependencyApiService(
 			.Where(dependency => dependency.TargetId == entityId && !dependency.Satisfied)
 			.OrderBy(dependency => dependency.Id)
 			.ToListAsync(cancellationToken);
+		unsatisfied.AddRange((await graphService.DeriveIntrinsicAsync(cancellationToken))
+			.Where(dependency => string.Equals(dependency.TargetId, entityId, StringComparison.Ordinal) && !dependency.Satisfied));
 		await gateService.StampNextTransitionAsync(unsatisfied, cancellationToken);
 
 		var blockedBegin = unsatisfied.Any(dependency => dependency.Constraint is null or DependencyConstraint.ToBegin);
@@ -261,12 +283,12 @@ public sealed class DependencyApiService(
 			throw new InvalidOperationException("A sprint's milestone checkpoint cannot be deleted on its own.");
 		}
 
-		var edges = await context.Dependencies
-			.Where(dependency =>
+		// Its edges go with it: the state engine releases the edges of a deleted endpoint, on every pathway.
+		var removedEdges = await context.Dependencies
+			.CountAsync(dependency =>
 				(dependency.SourceKind == DependencyEndpointKind.Checkpoint && dependency.SourceId == checkpointId)
-				|| (dependency.TargetKind == DependencyEndpointKind.Checkpoint && dependency.TargetId == checkpointId))
-			.ToListAsync(cancellationToken);
-		context.Dependencies.RemoveRange(edges);
+				|| (dependency.TargetKind == DependencyEndpointKind.Checkpoint && dependency.TargetId == checkpointId),
+				cancellationToken);
 		context.Checkpoints.Remove(checkpoint);
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(
@@ -275,7 +297,7 @@ public sealed class DependencyApiService(
 			subjectType: nameof(Checkpoint),
 			subjectId: checkpointId,
 			subjectTitle: checkpoint.Title,
-			details: new { removedEdges = edges.Count },
+			details: new { removedEdges },
 			cancellationToken: cancellationToken);
 	}
 
@@ -342,123 +364,6 @@ public sealed class DependencyApiService(
 		return checkpoint;
 	}
 
-	/// <summary>
-	/// Whether the target's side (constraint, or a checkpoint's empty side) is on the shared begin/finish axis.
-	/// </summary>
-	private static object SideOf(DependencyEndpointKind kind, DependencyConstraint? constraint)
-	{
-		return kind == DependencyEndpointKind.Checkpoint
-			? DBNull.Value
-			: constraint == DependencyConstraint.ToFinish ? 1 : 0;
-	}
-
-	/// <inheritdoc cref="SideOf(DependencyEndpointKind, DependencyConstraint?)"/>
-	private static object SideOf(DependencyEndpointKind kind, DependencyTrigger? trigger)
-	{
-		return kind == DependencyEndpointKind.Checkpoint
-			? DBNull.Value
-			: trigger == DependencyTrigger.OnBegin ? 0 : 1;
-	}
-
-	/// <summary>
-	/// Rejects a dependency the existing graph makes logically impossible (PEP102).
-	/// </summary>
-	/// <remarks>
-	/// The new edge asserts <c>source.trigger</c> comes before <c>target.constraint</c>. Impossible if the
-	/// graph already orders them the other way — if, walking forward in time from the target's constrained
-	/// side, the source's triggering side is already reachable. The walk lives in a two-sided state space
-	/// (each node a begin=0 and a finish=1) over three steps: a dependency carries its source's triggering
-	/// side to its dependant's constrained side; a node's begin precedes its own finish; and the start is the
-	/// target's constrained side. A checkpoint has no side — its trigger and constraint are null — so it is a
-	/// dead end here and drops out of the begin→finish step on its own, which is the intended handling.
-	///
-	/// This is temporal-cycle detection, and it is the whole of the cycle rule: it is strictly finer than the
-	/// node-level acyclicity it replaced, since it permits the begin/finish cycles that are actually orderable.
-	/// The trigger and constraint are stored as text and on different vocabularies, so both the stored edges
-	/// and the prospective one are normalised to the shared begin/finish axis, resolving an omitted trigger to
-	/// finish and an omitted constraint to begin, exactly as the engine reads them.
-	/// </remarks>
-	private async Task EnsureLogicallyPossibleAsync(EndpointRef source, EndpointRef target, DependencyTrigger? trigger, DependencyConstraint? constraint, CancellationToken cancellationToken)
-	{
-		// A recursive CTE run directly on the connection rather than through the query pipeline: the pipeline
-		// wraps a raw statement as a subquery, and a top-level WITH cannot be wrapped that way.
-		const string sql = @"
-WITH RECURSIVE
-edges(src, dst, sside, dside) AS (
-    SELECT
-        SourceKind || '|' || SourceId || '|' || COALESCE(SourceRecurrenceId, ''),
-        TargetKind || '|' || TargetId || '|' || COALESCE(TargetRecurrenceId, ''),
-        CASE WHEN SourceKind = 'Checkpoint' THEN NULL WHEN ""Trigger"" = 'OnBegin' THEN 0 ELSE 1 END,
-        CASE WHEN TargetKind = 'Checkpoint' THEN NULL WHEN ""Constraint"" = 'ToFinish' THEN 1 ELSE 0 END
-    FROM Dependencies
-),
-origin(node, side) AS (
-    SELECT $sourceKind || '|' || $sourceId || '|' || COALESCE($sourceSlot, ''), $sourceSide
-),
-seed(node, side) AS (
-    SELECT $targetKind || '|' || $targetId || '|' || COALESCE($targetSlot, ''), $targetSide
-),
-path(node, side) AS (
-    SELECT node, side FROM seed
-    UNION
-    SELECT e.dst, e.dside
-        FROM path p JOIN edges e ON e.src = p.node AND e.sside = p.side
-        WHERE p.node != (SELECT node FROM origin) OR p.side != (SELECT side FROM origin)
-    UNION
-    SELECT x.node, 1 FROM path x WHERE x.side = 0
-)
-SELECT NOT EXISTS (
-    SELECT 1 FROM path JOIN origin ON path.node = origin.node AND path.side = origin.side
-)";
-
-		var connection = context.Database.GetDbConnection();
-		await using var command = connection.CreateCommand();
-		command.CommandText = sql;
-		command.Transaction = context.Database.CurrentTransaction?.GetDbTransaction();
-		// A slot binds as a DateTime, which the SQLite provider renders in the same text form EF stores the
-		// RecurrenceId columns in, so the concatenated node keys compare equal.
-		AddParameter(command, "$sourceKind", source.Kind.ToString());
-		AddParameter(command, "$sourceId", source.Id);
-		AddParameter(command, "$sourceSlot", (object?)source.RecurrenceId ?? DBNull.Value);
-		AddParameter(command, "$targetKind", target.Kind.ToString());
-		AddParameter(command, "$targetId", target.Id);
-		AddParameter(command, "$targetSlot", (object?)target.RecurrenceId ?? DBNull.Value);
-		AddParameter(command, "$sourceSide", SideOf(source.Kind, trigger));
-		AddParameter(command, "$targetSide", SideOf(target.Kind, constraint));
-
-		var opened = false;
-		if (connection.State != ConnectionState.Open)
-		{
-			await connection.OpenAsync(cancellationToken);
-			opened = true;
-		}
-
-		try
-		{
-			var possible = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
-			if (possible == 0)
-			{
-				throw new InvalidOperationException(
-					"This dependency is logically impossible: it would contradict the begin/finish ordering the existing dependencies already impose.");
-			}
-		}
-		finally
-		{
-			if (opened)
-			{
-				await connection.CloseAsync();
-			}
-		}
-	}
-
-	private static void AddParameter(System.Data.Common.DbCommand command, string name, object value)
-	{
-		var parameter = command.CreateParameter();
-		parameter.ParameterName = name;
-		parameter.Value = value;
-		command.Parameters.Add(parameter);
-	}
-
 	private async Task ValidateEndpointAsync(string side, EndpointRef endpoint, CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(endpoint.Id);
@@ -486,13 +391,14 @@ SELECT NOT EXISTS (
 					throw new InvalidOperationException($"The {side} eventive endpoint requires an occurrence date (RECURRENCE-ID).");
 				}
 
-				var ownerExists = await context.Fates.AnyAsync(item => item.Id == endpoint.Id, cancellationToken)
-					|| await context.Objectives.AnyAsync(item => item.Id == endpoint.Id, cancellationToken);
-				if (!ownerExists)
+				// Only a fate owns eventives: an item's due is a terminative, which no edge names (PEP103 patch 7).
+				if (!await context.Fates.AnyAsync(item => item.Id == endpoint.Id, cancellationToken))
 				{
-					throw new InvalidOperationException($"The {side} eventive owner '{endpoint.Id}' was not found (expected a fate or objective).");
+					throw new InvalidOperationException($"The {side} eventive owner '{endpoint.Id}' was not found (expected a fate).");
 				}
 
+				// Whether the slot resolves to an occurrence is the state engine's to judge, on every pathway: SH-17 hardens
+				// only an exact one, and the judge refuses the edge otherwise (dependency.occurrence, PEP103 I-035).
 				break;
 			default:
 				throw new InvalidOperationException($"The {side} endpoint kind '{endpoint.Kind}' is not supported.");

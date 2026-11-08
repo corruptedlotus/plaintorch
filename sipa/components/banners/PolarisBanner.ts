@@ -1,6 +1,6 @@
 import { component, css, html } from "@a11d/lit"
 import { EntityBanner } from './EntityBanner'
-import { PolarisCycle } from '@pleiades/sdk'
+import { PolarisCycle, type PolarisCycleUpdate } from '@pleiades/sdk'
 import { core, followRenamedNote, ReactiveBinder } from ".."
 
 @component('p7t-polaris-banner')
@@ -19,7 +19,15 @@ export class PolarisBanner extends EntityBanner<PolarisCycle> {
 		sourceUpdate: () => this.beginEntityEdit(),
 		sourceUpdated: async (_, keyPath) => {
 			const entity = this.entity!
-			const saved = await this.commitEntityEdit(async () => await core.polaris.update(entity.id, entity))
+			// Only the changed field travels. The whole cycle is a cyclic graph once the identity map cross-links it (its
+			// executives' objectives reach their directive, whose objectives reach them), and a cyclic body cannot be serialized.
+			const key = keyPath as keyof PolarisCycle | undefined
+			if (!key) {
+				return
+			}
+
+			const update = { [key]: entity[key] } as PolarisCycleUpdate
+			const saved = await this.commitEntityEdit(async () => await core.polaris.update(entity.id, update))
 			if (!saved) {
 				return
 			}

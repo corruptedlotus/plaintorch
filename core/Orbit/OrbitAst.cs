@@ -97,11 +97,17 @@ public enum OrbitLimitKind
 	/// parent when nested (<c>M[w[d{1}%2]@7]</c> fires up to seven times a month), once in all at the top level.
 	/// </summary>
 	Instances,
-	/// <summary><c>&lt;t</c>: until before a timestamp.</summary>
+	/// <summary><c>&lt;t</c>: only what falls before a moment.</summary>
 	Before,
-	/// <summary><c>&gt;t</c>: since after a timestamp.</summary>
+	/// <summary><c>&gt;t</c>: only what falls at or after a moment.</summary>
 	After,
 }
+
+/// <summary>
+/// A calendar date as <c>Z{…}</c> writes one, <c>y/M/d</c> with an optional <c>Th:m[:s]</c>, read in the orbit's own
+/// calendar.
+/// </summary>
+public sealed record OrbitCalendarMoment(int Year, int Month, int Day, int? Hour = null, int? Minute = null, int? Second = null);
 
 /// <summary>
 /// A limit attached to a time-unit node.
@@ -110,7 +116,15 @@ public sealed class OrbitLimitSpec
 {
 	public required OrbitLimitKind Kind { get; init; }
 	public int Count { get; init; }
+
+	/// <summary>A bound's text as written.</summary>
 	public string Timestamp { get; init; } = string.Empty;
+
+	/// <summary>
+	/// A <c>y/M/d</c> bound's calendar date. An ISO bound (<c>2026-07-15</c>, the form bounds were written in before)
+	/// has none: its <see cref="Timestamp"/> is a UTC instant.
+	/// </summary>
+	public OrbitCalendarMoment? Moment { get; init; }
 }
 
 /// <summary>

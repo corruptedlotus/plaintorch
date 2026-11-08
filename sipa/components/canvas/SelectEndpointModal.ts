@@ -1,7 +1,9 @@
 import { createDeferredExecutor, DeferredPromiseExecutor } from '@open-draft/deferred-promise'
-import { DependencyEndpointKind, type EndpointHit } from '@pleiades/sdk'
+import { DependencyEndpointKind, type Directive, type EndpointHit } from '@pleiades/sdk'
 import { createChild, sleep, SuggestModalBase } from '../../host'
 import { core, type IconName } from '..'
+import { fuzzyFilter } from '../editing/fuzzy'
+import { directiveSearchText } from '../entities/directiveSearch'
 
 /** The type icon each endpoint kind is drawn with, matching the canvas nodes. */
 const kindIcons: Record<DependencyEndpointKind, IconName> = {
@@ -23,35 +25,58 @@ const kindLabels: Record<DependencyEndpointKind, string> = {
 /**
  * Asks for an endpoint to bring onto a global context — a directive, objective, or fate, whatever kind.
  *
- * Backed by the cross-kind endpoint search rather than a single listing, since a global context draws from
+ * Backed by the cross-kind endpoint listing rather than a single kind's, since a global context draws from
  * anywhere in the backlog; the type icon on each row is what tells the kinds apart, the same distinction the
- * global nodes themselves draw. An empty query opens on a bounded slice so the modal is useful before typing.
+ * global nodes themselves draw. The listing is fetched once per opening and matched by title with
+ * {@link fuzzyFilter}; an empty query offers all of it, so the modal is useful before typing.
  */
 export class SelectEndpointModal extends SuggestModalBase<EndpointHit> {
 	private dpe?: DeferredPromiseExecutor<EndpointHit | undefined>
 	private excluded: ReadonlySet<string> = new Set()
+	private endpoints?: Promise<EndpointHit[]>
+	/** The directive listing by id, for the codename a directive hit does not carry. */
+	private directives?: Promise<Map<string, Directive>>
+	private kinds?: readonly DependencyEndpointKind[]
 
-	/** Prompts for an endpoint, resolving to nothing when dismissed. `excluded` holds the `kind:id` keys already pinned. */
-	public static prompt(excluded: ReadonlySet<string> = new Set()): Promise<EndpointHit | undefined> {
+	/**
+	 * Prompts for an endpoint, resolving to nothing when dismissed. `excluded` holds the `kind:id` keys already
+	 * pinned; `kinds`, when given, narrows the offer to those kinds (an onrush takes directives, not fates).
+	 */
+	public static prompt(excluded: ReadonlySet<string> = new Set(), kinds?: readonly DependencyEndpointKind[]): Promise<EndpointHit | undefined> {
 		const modal = new SelectEndpointModal()
 		modal.excluded = excluded
+		modal.kinds = kinds
 		modal.dpe = createDeferredExecutor()
-		modal.setPlaceholder('Search directives, objectives, fates, checkpoints…')
+		modal.setPlaceholder(kinds
+			? `Search ${kinds.map(kind => kindLabels[kind].toLowerCase() + 's').join(', ')}…`
+			: 'Search directives, objectives, fates, checkpoints…')
 		modal.open()
 		return new Promise(modal.dpe)
 	}
 
+	/**
+	 * The hits matching the query. A directive hit carries only its title, so its codename is read off the directive
+	 * listing — read alongside the endpoints — and a directive is found by either, as everywhere else directives are
+	 * searched ({@link directiveSearchText}).
+	 */
 	override async getSuggestions(query: string): Promise<EndpointHit[]> {
-		const found = await core.dependencies.searchEndpoints(query.trim() || undefined)
-		return found.filter(hit => !this.excluded.has(`${DependencyEndpointKind[hit.kind]}:${hit.id}`))
+		this.endpoints ??= core.dependencies.listEndpoints()
+		this.directives ??= core.repos.directiveList.get().then(directives => new Map((directives ?? []).map(directive => [directive.id, directive])))
+		const [endpoints, directives] = await Promise.all([this.endpoints, this.directives])
+		const offered = endpoints.filter(hit => (!this.kinds || this.kinds.includes(hit.kind)) && !this.excluded.has(`${DependencyEndpointKind[hit.kind]}:${hit.id}`))
+		return fuzzyFilter(query, offered, hit => hit.kind === DependencyEndpointKind.Directive
+			? directiveSearchText(directives.get(hit.id) ?? hit)
+			: hit.title)
 	}
 
+	/** A row is the endpoint's title behind its kind icon, its kind chipped beside it for the kinds that share an icon. */
 	override renderSuggestion(hit: EndpointHit, el: HTMLElement) {
 		const item = createChild(el, 'p7t-icon-item')
 		item.data = hit
 		item.icon = kindIcons[hit.kind]
-		// The kind icon tells them apart at a glance; the label follows for the kinds that share an icon.
-		item.text = `${hit.title} · ${kindLabels[hit.kind]}`
+		item.text = hit.title
+		item.chipped = true
+		createChild(item, 'span', { text: kindLabels[hit.kind] }).slot = 'chips'
 	}
 
 	override async onClose() {

@@ -6,6 +6,7 @@ using Pleiades.Calendar;
 using Pleiades.Diagnostics;
 using Pleiades.Plaintorch.Diagnostics;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Puck;
 using Pleiades.Saga;
 using Pleiades.Vault;
@@ -19,6 +20,12 @@ namespace Pleiades.Plaintorch.Api.Services;
 /// <summary>
 /// Implements the system-facing PLAINTORCH application API.
 /// </summary>
+/// <remarks>
+/// The briefing's sprint, cycle and lore pages are composed from the services that own them, never loaded here: a
+/// briefing's copy of an entity carries exactly what that entity's own endpoint serves, so a field added to one is in
+/// both. (A loader of its own once served the sprint without its checkpoints, and every dependency the Onrush card
+/// walks from the milestone went missing.)
+/// </remarks>
 public sealed class SystemApiService(
 	PlaintorchStateService stateService,
 	PlainfraContext context,
@@ -28,27 +35,54 @@ public sealed class SystemApiService(
 	OperationStatusDismissalService dismissalService,
 	PuckEntityResolutionService puckEntityResolutionService,
 	MarkdownFrontMatterSerializer markdownSerializer,
+	IOnrushSprintApi onrushApi,
+	IPolarisCycleApi polarisApi,
+	ILorePageApi loreApi,
+	EntityLifecycleResolver lifecycleResolver,
 	ILogger<SystemApiService> logger) : ISystemApi
 {
+	/// <summary>The kinds whose lifecycle a client is served, each under its runtime type name.</summary>
+	private static readonly Type[] LifecycleKinds =
+	[
+		typeof(Objective),
+		typeof(StellarDirective),
+		typeof(LunarDirective),
+		typeof(Fate),
+		typeof(Decree),
+		typeof(Attentive),
+		typeof(Eventive),
+		typeof(Terminative),
+		typeof(Checkpoint),
+	];
+
+	/// <inheritdoc />
+	public IReadOnlyList<LifecycleKindDescription> GetLifecycles()
+		=> LifecycleKinds.Select(Describe).ToList();
+
+	private LifecycleKindDescription Describe(Type kind)
+	{
+		var statuses = lifecycleResolver.StatusTypeOf(kind) is { } statusType
+			? LifecycleDeclarations.MembersOf(statusType)
+				.Select(member => new LifecycleStatusDescription(
+					Convert.ToInt32(member.Status, System.Globalization.CultureInfo.InvariantCulture),
+					member.Status.ToString(),
+					member.State,
+					Equals(LifecycleDeclarations.DefaultStatus(statusType, member.State), member.Status),
+					LifecycleDeclarations.IsClosed(member.Status)))
+				.ToList()
+			: [];
+		return new LifecycleKindDescription(kind.Name, lifecycleResolver.StatesOf(kind).Order().ToList(), statuses);
+	}
+
 	/// <inheritdoc />
 	public async Task<SystemBriefing> GetBriefingAsync(CancellationToken cancellationToken = default)
 	{
-		var activeOnrush = await stateService.GetActiveOnrushSprintAsync(cancellationToken);
-		var onrushSelectionMode = activeOnrush is not null ? "active" : "planning";
-		var briefingOnrush = activeOnrush is not null
-			? await LoadOnrushSprintAsync(activeOnrush.Id, cancellationToken)
-			: await LoadPlanningOnrushSprintAsync(cancellationToken);
-		if (briefingOnrush is null)
-		{
-			onrushSelectionMode = null;
-		}
+		var activeOnrush = await onrushApi.GetAsync(cancellationToken: cancellationToken);
+		var planningOnrush = activeOnrush is null ? await onrushApi.GetPlanningAsync(cancellationToken) : null;
+		var onrushSelectionMode = activeOnrush is not null ? "active" : planningOnrush is not null ? "planning" : null;
 
-		var activePolaris = await stateService.GetActivePolarisCycleAsync(cancellationToken);
-		var briefingPolaris = activePolaris is null
-			? null
-			: await LoadPolarisCycleAsync(activePolaris.Id, cancellationToken);
-
-		var activeLorePages = await LoadActiveLorePagesAsync(cancellationToken);
+		var briefingPolaris = await polarisApi.GetAsync(cancellationToken: cancellationToken);
+		var activeLorePages = await loreApi.ListActiveAsync(cancellationToken);
 		var watcherStatus = MapHealthStatus(statusRegistry.GetHealth());
 		// Dismissed statuses (PEP108 dismiss feature) are excluded from the briefing counts, matching the health rollup.
 		var watcherIssues = statusRegistry.GetActiveStatusesWithDismissal()
@@ -68,7 +102,7 @@ public sealed class SystemApiService(
 			watcherIssues.Count,
 			watcherIssues.Count,
 			onrushSelectionMode,
-			briefingOnrush,
+			activeOnrush ?? planningOnrush,
 			briefingPolaris,
 			activeLorePages);
 	}
@@ -587,46 +621,6 @@ public sealed class SystemApiService(
 		var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 		return string.Equals(fullPath, fullRoot, StringComparison.OrdinalIgnoreCase)
 			|| fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-	}
-
-	private async Task<OnrushSprint?> LoadPlanningOnrushSprintAsync(CancellationToken cancellationToken)
-	{
-		var planned = await stateService.GetPlanningOnrushSprintAsync(cancellationToken);
-		return planned is null ? null : await LoadOnrushSprintAsync(planned.Id, cancellationToken);
-	}
-
-	private async Task<OnrushSprint?> LoadOnrushSprintAsync(string sprintId, CancellationToken cancellationToken)
-	{
-		var sprint = await context.OnrushSprints
-			.AsNoTracking()
-			.Include(item => item.Objectives)
-			.Include(item => item.ExecutiveOrders)
-			.FirstOrDefaultAsync(item => item.Id == sprintId, cancellationToken);
-
-		return sprint;
-	}
-
-	private async Task<PolarisCycle?> LoadPolarisCycleAsync(string cycleId, CancellationToken cancellationToken)
-	{
-		var cycle = await context.PolarisCycles
-			.AsNoTracking()
-			.Include(item => item.Executives)
-				.ThenInclude(item => item.Incentive)
-			.Include(item => item.Reflectives)
-				.ThenInclude(item => item.Decree)
-			.FirstOrDefaultAsync(item => item.Id == cycleId, cancellationToken);
-
-		return cycle;
-	}
-
-	private async Task<IReadOnlyList<LorePage>> LoadActiveLorePagesAsync(CancellationToken cancellationToken)
-	{
-		var today = DateOnly.FromDateTime(DateTime.UtcNow);
-		var lorePages = await context.LorePages
-			.AsNoTracking()
-			.ToLoreIndexAsync(cancellationToken);
-
-		return lorePages.ActivePages;
 	}
 
 	private static int GetLoreLevelOrder(string level)

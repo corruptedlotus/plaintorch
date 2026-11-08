@@ -7,7 +7,7 @@ import { refreshWatcherReport, type WatcherIssueRecord, type WatcherIssueReport 
 /**
  * The watcher's issues (PEP108), worst first as the core sorts them: each live one with its severity badge — info
  * muted, warning and error yellow, critical orange, fatal red (a fatal issue puts the watcher on standby) — message,
- * detail and file, then a "Dismissed" section. An issue short of fatal can be dismissed — snoozed until a different
+ * detail and file, then a "Dismissed" section, collapsed until its small title is clicked. An issue short of fatal can be dismissed — snoozed until a different
  * problem arises — and a dismissed one restored; either way the report is fetched again, so every surface showing it
  * agrees. A fatal issue offers no dismissal: the core refuses one, since the watcher cannot run until it clears. With
  * no report it says the core is offline, and with nothing to list, that the watcher is on standby or that there are no
@@ -17,6 +17,8 @@ import { refreshWatcherReport, type WatcherIssueRecord, type WatcherIssueReport 
 export class WatcherIssueList extends Component {
 	@property({ attribute: false }) report?: WatcherIssueReport
 	@state() private busyKeys: ReadonlySet<string> = new Set()
+	/** Whether the dismissed issues are shown. They start folded away: snoozed on purpose, they are the list's least urgent part. */
+	@state() private dismissedExpanded = false
 
 	static override get styles() {
 		return css`
@@ -59,14 +61,37 @@ export class WatcherIssueList extends Component {
 			.detail { grid-column: 2; font-size: .86em; color: var(--text-muted); }
 
 			.dismissed-header {
-				margin-top: .1em;
-				padding-top: .5em;
+				display: flex;
+				align-items: center;
+				gap: .3em;
+				width: 100%;
+				margin: .1em 0 0;
+				padding: .5em 0 0;
+				border: none;
 				border-top: 1px solid color-mix(in srgb, var(--text-normal) 12%, transparent);
+				background: none;
+				font: inherit;
 				font-size: .78em;
 				text-transform: uppercase;
 				letter-spacing: .04em;
 				color: var(--text-faint);
+				text-align: start;
+				cursor: pointer;
+				transition: color .2s ease;
+
+				&:hover, &:focus-visible { color: var(--text-muted); }
+				&:focus-visible { outline: 1px solid var(--interactive-accent); outline-offset: 2px; }
 			}
+
+			.dismissed-header .chevron {
+				width: 1.3em;
+				height: 1.3em;
+				transition: transform .2s ease;
+			}
+
+			.dismissed-header[aria-expanded="true"] .chevron { transform: rotate(90deg); }
+
+			.dismissed-count { opacity: .8; }
 		`
 	}
 
@@ -79,8 +104,15 @@ export class WatcherIssueList extends Component {
 			${live.map(issue => this.renderIssue(issue))}
 			${dismissed.length > 0
 				? html`
-					<div class="dismissed-header">Dismissed · ${dismissed.length}</div>
-					${dismissed.map(issue => this.renderIssue(issue))}
+					<button
+						class="dismissed-header"
+						aria-expanded=${this.dismissedExpanded ? "true" : "false"}
+						@click=${() => this.dismissedExpanded = !this.dismissedExpanded}>
+						<p7t-icon class="chevron" icon="lucide:chevron-right"></p7t-icon>
+						<span>Dismissed</span>
+						<span class="dismissed-count">· ${dismissed.length}</span>
+					</button>
+					${this.dismissedExpanded ? dismissed.map(issue => this.renderIssue(issue)) : nothing}
 				`
 				: nothing}
 		`

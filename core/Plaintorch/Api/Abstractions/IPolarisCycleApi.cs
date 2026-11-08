@@ -9,9 +9,35 @@ namespace Pleiades.Plaintorch.Api.Abstractions;
 public interface IPolarisCycleApi
 {
 	/// <summary>
-	/// Plans a forecast Polaris cycle.
+	/// Plans a forecast Polaris cycle for the day <paramref name="daysAhead"/> days after
+	/// <paramref name="forecastReference"/> — zero plans the reference day itself. A day holds one cycle, so planning a
+	/// day that already has one is refused.
 	/// </summary>
+	/// <exception cref="InvalidOperationException">The day already has a Polaris cycle.</exception>
 	Task<PolarisCycle> PlanAsync(DateOnly forecastReference, int daysAhead, string? body = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Lists the Polaris cycles of the days from <paramref name="from"/> through <paramref name="to"/> (unbounded when
+	/// omitted) — forecast, active and ended alike — in day order, each with its executives and reflectives as
+	/// <see cref="GetAsync"/> serves them. The day of a cycle is <see cref="PolarisCycle.Day"/>.
+	/// </summary>
+	Task<IReadOnlyList<PolarisCycle>> ListByDayAsync(DateOnly from, DateOnly? to = null, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Lists the Polaris cycles that fall in a lore page's active period (<see cref="Saga.LorePage.ResolveActivePeriod"/>):
+	/// from its beginning until its next sibling begins, capped by its ancestors' periods, or through today while nothing
+	/// has ended it. Returns <see langword="null"/> when no lore page has the PUCK, and an empty, undated listing for a
+	/// page with no beginning.
+	/// </summary>
+	Task<LorePolarisCycles?> ListForLoreAsync(string lorePuck, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Deletes a Polaris cycle that has not begun — a forecast — together with its plan: its executives and reflectives.
+	/// The objectives and decrees behind them stay, in whatever state they have. A begun cycle, active or ended, is the
+	/// record of a worked day and is never deleted.
+	/// </summary>
+	/// <exception cref="InvalidOperationException">The cycle does not exist, or it has begun.</exception>
+	Task DeleteAsync(string polarisCycleId, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Begins a Polaris cycle.
@@ -49,6 +75,10 @@ public interface IPolarisCycleApi
 	/// nearest directive availability, else its college; none for a one-shot), <see langword="null"/> is none, and an
 	/// id is used as given. The returned executive carries the resolved <see cref="Executive.AffinityTimeframe"/>.
 	/// </summary>
+	/// <remarks>
+	/// The plan sets no status. An objective joining the active cycle moves to Polaris where nothing blocks it and keeps its
+	/// status where something does; one planned into a forecast moves once the forecast begins (Patch103.3).
+	/// </remarks>
 	/// <exception cref="InvalidOperationException">An explicit affinity names a timeframe that does not exist.</exception>
 	Task<PolarisExecutivePlanResult> PlanExecutiveAsync(PolarisExecutivePlan plan, string? polarisCycleId = null, CancellationToken cancellationToken = default);
 
@@ -58,10 +88,13 @@ public interface IPolarisCycleApi
 	Task<Executive> UpdateExecutiveAsync(long executiveId, ExecutiveUpdate update, CancellationToken cancellationToken = default);
 
 	/// <summary>
-	/// Defers an executive to the next day's Polaris cycle (PEP111), creating that day's forecast cycle when none
-	/// exists yet. The carried-forward work becomes the new allocation envelope — estimation, minimum, and maximum
+	/// Defers an executive to the next Polaris cycle that can still be begun (PEP111, PEP103 patch 4): the first day after
+	/// its own cycle's, and no earlier than today's cycle while today's has not begun, else a later day's. That day's forecast
+	/// cycle is created when none exists yet. The carried-forward work becomes the new allocation envelope — estimation, minimum, and maximum
 	/// are all set to the tracked (elapsed) minutes and the elapsed tally is reset to zero — so the next day starts
-	/// from a fresh estimate of what is left. Refused when the target cycle already holds the same incentive.
+	/// from a fresh estimate of what is left. Refused when the target cycle already holds the same incentive. An ended
+	/// cycle's record is history (PEP103 patch 5), so work moved on from one is carried by a new executive in the next cycle,
+	/// which is returned, and the old executive stays as it was worked.
 	/// </summary>
 	Task<Executive> MoveExecutiveToNextPolarisAsync(long executiveId, CancellationToken cancellationToken = default);
 
@@ -92,11 +125,6 @@ public interface IPolarisCycleApi
 	/// </summary>
 	/// <exception cref="InvalidOperationException">An explicit affinity names a timeframe that does not exist.</exception>
 	Task<Executive> AddDecreeExecutiveAsync(PolarisDecreeAdd request, string? polarisCycleId = null, CancellationToken cancellationToken = default);
-
-	/// <summary>
-	/// Draws reflectives for a Polaris cycle.
-	/// </summary>
-	Task<IReadOnlyList<Reflective>> DrawReflectivesAsync(ReflectiveDrawRequest request, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Applies an update to a reflective record.

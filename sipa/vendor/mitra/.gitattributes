@@ -1,0 +1,2 @@
+# The vendored bundle is a build artifact: kept byte for byte (no line-ending conversion), never diffed line by line.
+embed.js -text -diff linguist-generated=true

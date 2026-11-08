@@ -7,7 +7,14 @@ namespace Pleiades.Puck;
 /// <summary>
 /// Issues concrete PUCK identifiers and records their registry and sequence state.
 /// </summary>
-public sealed class PuckIdService(PlainfraContext context, PuckNotationParser notationParser, PuckRuntimeCompilationCatalog compilationCatalog)
+/// <remarks>
+/// Issuance runs on a bare context of its own (<see cref="PlainfraStoreContextFactory"/>), never the caller's. An id is
+/// identity infrastructure rather than part of the caller's unit of work, and saving its registry row on the caller's
+/// context would also save whatever that context has pending, past every save hook the caller's own save runs (the state
+/// policy, backlog records, the change feed). Its registry and sequence rows therefore commit on their own, before the
+/// entity that takes the id is saved; an id whose entity is never saved stays issued, like any spent sequence value.
+/// </remarks>
+public sealed class PuckIdService(PlainfraStoreContextFactory contextFactory, PuckNotationParser notationParser, PuckRuntimeCompilationCatalog compilationCatalog)
 {
 	private readonly Random _random = Random.Shared;
 
@@ -47,6 +54,7 @@ public sealed class PuckIdService(PlainfraContext context, PuckNotationParser no
 		var inputs = segments ?? [];
 		var renderedSegments = new List<string>();
 
+		using var context = contextFactory.Create();
 		using var transaction = context.Database.BeginTransaction();
 		for (var index = 0; index < notation.Segments.Count; index++)
 		{

@@ -21,8 +21,14 @@ public sealed class PlaintorchApiModule : Module
 	}
 
 	/// <inheritdoc />
+	/// <remarks>
+	/// Reads the request-wide flags before any endpoint runs, and answers a change that state enforcement stops with 409
+	/// Conflict and the decision (PEP103).
+	/// </remarks>
 	public override void ConfigureApplication(WebApplication application)
 	{
+		application.UseMiddleware<PlaintorchRequestFlagsMiddleware>();
+		application.UseMiddleware<StateEnforcementResponseMiddleware>();
 	}
 
 	/// <inheritdoc />

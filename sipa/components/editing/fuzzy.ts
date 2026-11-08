@@ -1,57 +1,66 @@
+import uFuzzy from '@leeoniya/ufuzzy'
+
 /**
- * Scores how well a query matches a text, case-insensitively, as a subsequence: every query character must
- * appear in the text in order, but need not be adjacent — "plr" finds "Polaris", "sky q" finds "Sky Quest".
- *
- * Higher is better; `undefined` is no match. A contiguous run, a hit at the start of a word, and a hit near the
- * start of the text all score up, so "pol" ranks "Polaris" above "Interpolation" and an exact substring above a
- * scattered one. An empty query matches everything at zero.
+ * uFuzzy's universal variant, so a Persian or Cyrillic title splits into words and matches the way a Latin one does.
+ * Texts are folded (see {@link foldSearchText}) before they get here, so case and accents are already out of the way.
  */
-export function fuzzyScore(query: string, text: string): number | undefined {
-	const needle = query.trim().toLowerCase()
-	if (needle.length === 0) {
-		return 0
-	}
-
-	const haystack = text.toLowerCase()
-	let score = 0
-	let position = 0
-	let previous = -2
-	for (const character of needle) {
-		const found = haystack.indexOf(character, position)
-		if (found < 0) {
-			return undefined
-		}
-
-		score += 1
-		if (found === previous + 1) {
-			score += 2
-		}
-
-		if (found === 0 || /[\s\-_./:]/.test(haystack[found - 1] ?? '')) {
-			score += 1.5
-		}
-
-		score -= found * 0.01
-		previous = found
-		position = found + 1
-	}
-
-	// A near-exact substring of the text is the strongest signal of all.
-	if (haystack.includes(needle)) {
-		score += needle.length
-	}
-
-	return score
+const universal: uFuzzy.Options = {
+	unicode: true,
+	interSplit: "[^\\p{L}\\d']+",
+	intraSplit: "\\p{Ll}\\p{Lu}",
+	intraBound: "\\p{L}\\d|\\d\\p{L}|\\p{Ll}\\p{Lu}",
+	intraChars: "[\\p{L}\\d']",
+	intraContr: "'\\p{L}{1,2}\\b",
+	// Equally good matches keep the order the items came in, rather than falling back to alphabetical.
+	compare: () => 0,
 }
 
 /**
- * Filters and orders items by their fuzzy match against a query, best first, keeping the given order for ties.
- * With an empty query every item is kept in its given order.
+ * Each typed word forgives one slip after its first letter — a wrong, missing, extra or swapped letter, so "polaros"
+ * and "wathcer" still land. Words of four letters or fewer are held stricter, so a short word does not match noise.
+ */
+const forgiving = new uFuzzy({ ...universal, intraMode: 1 })
+
+/** Each typed word's letters in order inside one word of the text, however far apart — "plr" finds "Polaris". */
+const abbreviating = new uFuzzy({ ...universal, intraIns: Infinity })
+
+/** Typed words are tried in every order up to this many, so "quest sky" finds "Sky Quest"; past it they match unranked. */
+const anyOrderWords = 5
+
+/**
+ * Folds a text for matching: decomposed, stripped of combining marks, and lower-cased, so "Café" reads as "cafe" and
+ * "Xuntaš" as "xuntas". The core folds its server-side search the same way.
+ */
+export function foldSearchText(text: string): string {
+	return text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
+}
+
+/**
+ * Filters and orders items by how well their text matches a query, best first, ignoring case and accents.
+ *
+ * Every typed word must turn up in the text, in any order, each forgiving a typo; quoting a phrase demands it
+ * verbatim, and a `-word` excludes what holds it. When nothing matches that way, a word may instead be
+ * abbreviated — its letters in order within one word of the text. Equally good matches keep the given order,
+ * and an empty query keeps every item in it.
  */
 export function fuzzyFilter<T>(query: string, items: readonly T[], text: (item: T) => string): T[] {
-	return items
-		.map((item, index) => ({ item, index, score: fuzzyScore(query, text(item)) }))
-		.filter((entry): entry is { item: T, index: number, score: number } => entry.score !== undefined)
-		.sort((a, b) => b.score - a.score || a.index - b.index)
-		.map(entry => entry.item)
+	const needle = foldSearchText(query.trim())
+	if (needle.length === 0) {
+		return [...items]
+	}
+
+	const haystack = items.map(item => foldSearchText(text(item)))
+	const found = rank(forgiving, haystack, needle)
+	return (found.length > 0 ? found : rank(abbreviating, haystack, needle)).map(index => items[index]!)
+}
+
+/** The haystack indexes a matcher finds for the needle, best first. */
+function rank(matcher: uFuzzy, haystack: string[], needle: string): number[] {
+	// An infinite ranking threshold: the lists searched here are small enough to always rank in full.
+	const [indexes, info, order] = matcher.search(haystack, needle, anyOrderWords, Infinity)
+	if (!indexes) {
+		return []
+	}
+
+	return info && order ? order.map(position => info.idx[position]!) : indexes
 }

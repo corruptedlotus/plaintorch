@@ -1,5 +1,6 @@
 import type { PlaintorchCoreClient } from "../coreClient"
 import type { EntityExistence, HealthStatus, SystemBriefing, WatcherIssueReport } from "./contracts"
+import type { LifecycleKind } from "../lifecycle/models"
 
 export class PlaintorchSystemSdk {
 	public constructor(private readonly client: PlaintorchCoreClient) { }
@@ -19,6 +20,14 @@ export class PlaintorchSystemSdk {
 
 	public async getBriefing(): Promise<SystemBriefing | undefined> {
 		return await this.client.getJson<SystemBriefing>("/api/system/briefing")
+	}
+
+	/**
+	 * How each kind's lifecycle reads (PEP103): its states, and each status with the state it stands for. Uncached here;
+	 * `repos.lifecycles` holds it for the session.
+	 */
+	public async getLifecycles(): Promise<LifecycleKind[] | undefined> {
+		return await this.client.getJson<LifecycleKind[]>("/api/system/lifecycles")
 	}
 
 	public async resolveEntity(puck: string): Promise<EntityExistence | undefined> {

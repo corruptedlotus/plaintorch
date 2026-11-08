@@ -13,8 +13,8 @@ namespace Pleiades.Vault.Watcher;
 /// Only per-path reconcile issues are retryable. Global-scope conditions (a structural vault failure, a failed tick)
 /// are driven by the watcher's own supervision loop, not by re-queuing a path. Two kinds of reason are deliberately
 /// excluded, because re-checking the path on a timer can never resolve them and would only churn: the
-/// <em>content</em> reasons (invalid markdown, a PUCK or policy violation, a foreign file), which stand in the user's file
-/// until they edit it, and a <see cref="WatcherOperations.DeleteBlocked"/> delete (the entity is still referenced, and
+/// <em>content</em> reasons (invalid markdown, a PUCK or policy violation, a foreign file, a change the backlog's state rules
+/// refuse), which stand in the user's file until they edit it, and a <see cref="WatcherOperations.DeleteBlocked"/> delete (the entity is still referenced, and
 /// nothing at the path will change that). Both are re-evaluated by a file event at their path and by every sweep
 /// (startup and wakeup), and can be dismissed.
 /// </remarks>
@@ -89,6 +89,7 @@ public sealed class WatcherRetryScheduler
 		WatcherOperations.PuckViolation,
 		WatcherOperations.PolicyViolation,
 		WatcherOperations.ForeignFile,
+		WatcherOperations.StateRefused,
 	};
 
 	/// <summary>Computes the retry backoff for a status that has been observed <paramref name="occurrenceCount"/> times.</summary>

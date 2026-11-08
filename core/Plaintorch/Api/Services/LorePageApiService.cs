@@ -48,6 +48,7 @@ public sealed class LorePageApiService(
 			.ToListAsync(cancellationToken);
 	}
 
+	/// <inheritdoc />
 	public async Task<IReadOnlyList<LorePage>> ListActiveAsync(CancellationToken cancellationToken = default)
 	{
 		var index = await context.LorePages

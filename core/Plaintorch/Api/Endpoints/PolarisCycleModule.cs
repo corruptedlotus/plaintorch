@@ -35,6 +35,21 @@ public sealed class PolarisCycleModule : Module
 		cycles.MapGet("/forecasts", async (IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.ListForecastsAsync(cancellationToken)));
 
+		cycles.MapGet("/days", async (DateOnly from, DateOnly? to, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+			Results.Ok(await api.ListByDayAsync(from, to, cancellationToken)));
+
+		// The lore PUCK rides the query: it spans several path segments (Era1/Cha2), which a route parameter here cannot hold.
+		cycles.MapGet("/lore", async (string? puck, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+		{
+			if (string.IsNullOrWhiteSpace(puck))
+			{
+				return Results.BadRequest("A lore PUCK is required.");
+			}
+
+			var listing = await api.ListForLoreAsync(puck, cancellationToken);
+			return listing is null ? Results.NotFound() : Results.Ok(listing);
+		});
+
 		cycles.MapGet("/{polarisCycleId}", async (string polarisCycleId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 		{
 			var cycle = await api.GetAsync(polarisCycleId, cancellationToken);
@@ -43,6 +58,12 @@ public sealed class PolarisCycleModule : Module
 
 		cycles.MapPut("/{polarisCycleId}", async (string polarisCycleId, PolarisCycleUpdate request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.UpdateAsync(polarisCycleId, request, cancellationToken)));
+
+		cycles.MapDelete("/{polarisCycleId}", async (string polarisCycleId, IPolarisCycleApi api, CancellationToken cancellationToken) =>
+		{
+			await api.DeleteAsync(polarisCycleId, cancellationToken);
+			return Results.NoContent();
+		});
 
 		cycles.MapPost("/plan", async (PolarisCyclePlanRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 		{
@@ -85,12 +106,6 @@ public sealed class PolarisCycleModule : Module
 
 		cycles.MapPost("/{polarisCycleId}/decrees", async (string polarisCycleId, PolarisDecreeAdd request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
 			Results.Ok(await api.AddDecreeExecutiveAsync(request, polarisCycleId, cancellationToken)));
-
-		cycles.MapPost("/{polarisCycleId}/reflectives/draw", async (string polarisCycleId, ReflectiveDrawRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.DrawReflectivesAsync(request with { PolarisCycleId = polarisCycleId }, cancellationToken)));
-
-		cycles.MapPost("/current/reflectives/draw", async (ReflectiveDrawRequest request, IPolarisCycleApi api, CancellationToken cancellationToken) =>
-			Results.Ok(await api.DrawReflectivesAsync(request with { PolarisCycleId = null }, cancellationToken)));
 
 		var executives = endpoints.MapEnrichedGroup("/api/executives");
 		executives.MapPut("/{executiveId:long}", async (long executiveId, ExecutiveUpdate request, IPolarisCycleApi api, CancellationToken cancellationToken) =>

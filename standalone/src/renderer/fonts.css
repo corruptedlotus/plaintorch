@@ -1,0 +1,12 @@
+/*
+ * The shell's type, embedded rather than borrowed from the machine: the SIPA tokens (--font-interface, --font-text,
+ * --font-monospace) and the splash name these families first. Bundled by esbuild into dist/fonts.css, with each face
+ * copied to dist/assets/fonts; every page links it. Variable faces (one file per script subset, fetched only when a
+ * page draws a character in its unicode-range), under the SIL Open Font License.
+ *
+ * The families are named "… Variable", so no installed font of the same name — such as a stale Outfit without
+ * accented letters — can shadow the embedded one.
+ */
+@import "@fontsource-variable/outfit/wght.css";
+@import "@fontsource-variable/space-grotesk/wght.css";
+@import "@fontsource-variable/cascadia-code/wght.css";

@@ -2,6 +2,7 @@ import {
 	DependencyConstraint,
 	DependencyEndpointKind,
 	DependencyTrigger,
+	entityKey,
 	type Checkpoint,
 	type DependencyEndpointRequest,
 	type EndpointHit,
@@ -10,9 +11,9 @@ import {
 } from '@pleiades/sdk'
 import { core, PromptTextModal } from '..'
 import { host, toast } from '../../host'
-import { effectiveConstraint, effectiveTrigger, sourceRef, targetRef, type CanvasEdge, type CanvasNode } from './graphModel'
-import type { CanvasContextMode } from './graphContext'
-import { GLOBAL_CONTEXT_EXTENSION, serializeGlobalContext } from './globalContextFile'
+import { effectiveConstraint, effectiveTrigger, endpointTypeNames, sourceRef, targetRef, type CanvasEdge, type CanvasEntity, type CanvasNode } from './graphModel'
+import { neighbourPins, pinKey, type CanvasContextMode } from './graphContext'
+import { serializeGlobalContext } from './globalContextFile'
 
 /**
  * The canvas's writes.
@@ -35,8 +36,8 @@ function toRequest(ref: EndpointRef): DependencyEndpointRequest {
 /**
  * Sends a create with the trigger and constraint each end actually admits.
  *
- * A checkpoint has no begin or finish, so its side is left empty however the caller asked; the core rejects a
- * checkpoint endpoint that carries one. The single place both drawing and reshaping route through, so neither
+ * A checkpoint is one-shot — its only event is its unlock — so its side is left empty however the caller asked; the
+ * core rejects a checkpoint endpoint that carries one. The single place both drawing and reshaping route through, so neither
  * can send an edge the validator will refuse for that reason.
  */
 function sendCreate(source: EndpointRef, target: EndpointRef, trigger: DependencyTrigger, constraint: DependencyConstraint) {
@@ -53,8 +54,8 @@ function sendCreate(source: EndpointRef, target: EndpointRef, trigger: Dependenc
  *
  * Defaults to the pairing the core itself defaults to — satisfied when the prerequisite finishes, gating the
  * dependant's begin — which is the ordinary reading of "this comes before that". A checkpoint endpoint is the
- * exception on its own side: it has no begin or finish, so a checkpoint source carries no trigger and a
- * checkpoint target no constraint, which the core requires to be empty rather than defaulted.
+ * exception on its own side: it is one-shot, its unlock its only event, so a checkpoint source carries no trigger
+ * and a checkpoint target no constraint, which the core requires to be empty rather than defaulted.
  */
 export async function createDependency(
 	source: EndpointRef,
@@ -137,6 +138,33 @@ export async function addObjectiveToOnrush(objectiveId: string, sprint: OnrushSp
 	return added
 }
 
+/** Makes a stellar directive a member of a sprint (PEP102 patch 10), moving it from whichever sprint held it. */
+export async function addDirectiveToOnrush(directiveId: string, sprint: OnrushSprint): Promise<boolean> {
+	const added = await core.repos.directives.mutate(directiveId, async () =>
+		await core.directives.addToOnrush(directiveId, sprint.id))
+
+	toast(added ? `Added to ${sprint.title}.` : 'Could not add to that Onrush.', added ? 'success' : 'error')
+	if (added) {
+		await refreshOnrush()
+	}
+
+	return added
+}
+
+/** Takes a stellar directive out of whichever sprint holds it. The directive itself survives. */
+export async function removeDirectiveFromOnrush(directiveId: string): Promise<boolean> {
+	const removed = await core.repos.directives.mutate(directiveId, async () =>
+		await core.directives.removeFromOnrush(directiveId))
+
+	if (!removed) {
+		toast('Could not remove that directive from the Onrush.', 'error')
+		return false
+	}
+
+	await refreshOnrush()
+	return true
+}
+
 /** Takes an objective out of whichever sprint holds it. The objective itself survives. */
 export async function removeObjectiveFromOnrush(objectiveId: string): Promise<boolean> {
 	const removed = await core.repos.objectives.mutate(objectiveId, async () =>
@@ -156,9 +184,10 @@ export async function removeObjectiveFromOnrush(objectiveId: string): Promise<bo
  *
  * With a sprint it is created already bound to it, so it appears on the canvas as one of the sprint's
  * checkpoints beside its milestone; without one it is created free, for a global context to pin. Resolves to
- * the new checkpoint, or nothing when the prompt was dismissed (not a failure) or the core refused.
+ * the new checkpoint, or nothing when the prompt was dismissed (not a failure) or the core refused. `onCreated`
+ * hears of the checkpoint before the sprint is refreshed, so a canvas can place it before it is first drawn.
  */
-export async function createCheckpoint(sprint?: OnrushSprint): Promise<Checkpoint | undefined> {
+export async function createCheckpoint(sprint?: OnrushSprint, onCreated?: (checkpoint: Checkpoint) => void): Promise<Checkpoint | undefined> {
 	let title: string | undefined
 	try {
 		title = await PromptTextModal.prompt('New Checkpoint', 'Title')
@@ -178,6 +207,7 @@ export async function createCheckpoint(sprint?: OnrushSprint): Promise<Checkpoin
 	}
 
 	toast(`Checkpoint added: ${title}`, 'success')
+	onCreated?.(created)
 	await (sprint ? refreshOnrush() : core.repos.checkpointList.refresh())
 	return created
 }
@@ -332,35 +362,82 @@ export async function saveGraphLayout(sprintId: string, layout: string | undefin
  * Writes a scratch global context to a new `.p7tpx` file and opens it, graduating it into something durable.
  *
  * The file's own view takes over from there — this is a one-time hand-off, not the ongoing save, which the
- * file view does as the context is edited. A dismissed name prompt does nothing; a name already taken is
- * refused rather than overwritten.
+ * file view does as the context is edited. Where the file goes is the host's to ask (a name at the vault root in
+ * Obsidian, a save dialog in the standalone shell); backing out of that saves nothing. `origin` is the canvas that
+ * asked, so a popped-out context's own tab can become the file's.
  */
-export async function saveGlobalContextToFile(pinned: readonly EndpointHit[], layout: string | undefined): Promise<void> {
-	let name: string | undefined
-	try {
-		name = await PromptTextModal.prompt('Save global context', 'File name', '', 'Save')
-	}
-	catch {
-		return
-	}
-
-	if (!name) {
-		return
-	}
-
+export async function saveGlobalContextToFile(pinned: readonly EndpointHit[], layout: string | undefined, origin?: HTMLElement): Promise<void> {
 	const contexts = host.globalContexts
 	if (!contexts) {
 		return
 	}
 
-	const fileName = `${name.replace(/[\\/:*?"<>|]/g, '').trim()}.${GLOBAL_CONTEXT_EXTENSION}`
-	const { created, path } = await contexts.createAndOpen(fileName, serializeGlobalContext(pinned, layout))
-	if (!created) {
-		toast(`A file named "${path}" already exists.`, 'warning')
+	let saved: { readonly path: string } | undefined
+	try {
+		saved = await contexts.saveAndOpen(serializeGlobalContext(pinned, layout), origin)
+	}
+	catch (error) {
+		toast(`PLAINTORCH could not save the global context: ${error instanceof Error ? error.message : String(error)}`, 'error')
 		return
 	}
 
-	toast(`Saved global context to ${path}.`, 'success')
+	if (saved) {
+		toast(`Saved global context to ${saved.path}.`, 'success')
+	}
+}
+
+/**
+ * The entity an endpoint names, when some surface has already loaded it into the store — under each runtime type an
+ * endpoint of that kind may be ({@link endpointTypeNames}). Never fetches: a miss is for the caller to fill.
+ */
+export function peekEndpoint(kind: DependencyEndpointKind, id: string): CanvasEntity | undefined {
+	for (const typeName of endpointTypeNames(kind)) {
+		const stored = core.store.peek<CanvasEntity>(entityKey(typeName, id))
+		if (stored) {
+			return stored
+		}
+	}
+
+	return undefined
+}
+
+/**
+ * Whether a stellar directive can be opened in a planning view of its own here: the host can pop a planning view out
+ * (see {@link openInPlanning}), and the entity is a stellar directive — a lunar one is never a dependency endpoint.
+ */
+export function canOpenInPlanning(typeName: string | undefined): boolean {
+	return !!host.canvasPopOut && typeName === 'StellarDirective'
+}
+
+/**
+ * Opens a stellar directive in a new global planning view — a window in the standalone shell, a tab in Obsidian — with
+ * its direct neighbours pinned beside it: every endpoint one edge away in either direction, what it depends on and what
+ * depends on it, intrinsic edges included, so its open children and the parent it feeds come too ({@link neighbourPins}).
+ * Not the chain beyond them.
+ *
+ * The view opens unsaved, as a popped-out global context does, and lays itself out. Each neighbour is titled from the
+ * store, else from the endpoint listing, so the pins read as names before the view has loaded anything. Reports a
+ * failure to open; a host with no pop-out offers no such entry, so the call does nothing there.
+ */
+export async function openInPlanning(directive: { readonly id: string, readonly title: string }): Promise<boolean> {
+	const popOut = host.canvasPopOut
+	if (!popOut) {
+		return false
+	}
+
+	const self = { kind: DependencyEndpointKind.Directive, id: directive.id, title: directive.title }
+	const [dependencies, endpoints] = await Promise.all([core.dependencies.list(directive.id), core.dependencies.listEndpoints()])
+	const listed = new Map(endpoints.map(hit => [pinKey(hit), hit]))
+	const neighbours = neighbourPins(dependencies, self, new Set(), (kind, id) => peekEndpoint(kind, id) ?? listed.get(pinKey({ kind, id })))
+
+	try {
+		await popOut.popOut({ mode: 'global', text: serializeGlobalContext([self, ...neighbours], undefined) })
+		return true
+	}
+	catch {
+		toast(`PLAINTORCH could not open "${directive.title}" in planning.`, 'error')
+		return false
+	}
 }
 
 /** Which repository record a mode reads its sprint from. */

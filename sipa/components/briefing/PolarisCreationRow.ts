@@ -1,6 +1,6 @@
 import { component, css, html, property, state } from "@a11d/lit"
 import { PolarisExecutivePlanningMode, type Activity, type Executive, type PolarisCycle, type PolarisExecutivePlan } from "@pleiades/sdk"
-import { core, ExecutiveModal, isObjectiveInCycle, type ActivityChoice, type EditableTimeUnit, type TimeframeChoice, type TimeframeSelect, type ActivitySelect } from ".."
+import { core, ExecutiveModal, isIncentiveInCycle, revalidatePolarisCycles, type ActivityChoice, type EditableTimeUnit, type TimeframeChoice, type TimeframeSelect, type ActivitySelect } from ".."
 import { CreationRowBase } from "../editing/CreationRowBase"
 import { toast } from "../../host"
 
@@ -8,13 +8,15 @@ import { toast } from "../../host"
 export type PolarisActivityCreated = Executive
 
 /**
- * The inline row that adds an activity to the Polaris cycle: an estimation, the activity — an existing objective
+ * The inline row that adds an activity to a Polaris cycle: an estimation, the activity — an existing objective
  * or decree, or a new one named on the spot — and a timeframe affinity.
  *
- * Committing plans the activity into the cycle as an executive (PEP111): an objective is planned (a new one
+ * Committing plans the activity into {@link cycle} as an executive (PEP111): an objective is planned (a new one
  * created standalone by the same plan call), a decree is added as a decree-backed executive (a new decree is
- * created first). The estimation seeds the allocation. Objectives already in the cycle are listed but cannot be
- * chosen — a cycle holds one instance of an objective.
+ * created first). The estimation seeds the allocation. The row adds to the cycle it is given — the active one on the
+ * briefing, a planned day's on the forecast — and only without one to "the current cycle", which the core starts
+ * when none is active. Objectives and decrees already in the cycle are listed but cannot be chosen — a cycle holds
+ * one executive per incentive.
  *
  * The affinity is sent inside the create request itself, on both paths (PEP100 patch 2), and defaults to **Auto**:
  * left on Auto the key is omitted and the core assigns the affinity — the incentive's directive availability, else
@@ -25,7 +27,7 @@ export type PolarisActivityCreated = Executive
  */
 @component('p7t-polaris-creation-row')
 export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> {
-	/** The cycle the row adds to — what "already in the cycle" is judged against. */
+	/** The cycle the row adds to — and what "already in the cycle" is judged against. */
 	@property({ type: Object }) cycle?: PolarisCycle
 
 	@state() private estimation?: number
@@ -33,11 +35,16 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 	/** The affinity: undefined is Auto (the reset default), `null` an explicit none, a record a picked timeframe. */
 	@state() private timeframe?: TimeframeChoice
 
-	/** A cycle holds one instance of an objective, so one already in it is found but cannot be added again. */
-	private readonly unavailableInCycle = (activity: Activity) =>
-		activity.kind === 'objective' && !!activity.objective && isObjectiveInCycle(activity.objective.id, this.cycle)
-			? 'In cycle'
-			: undefined
+	/** A cycle holds one executive per objective or decree, so one already in it is found but cannot be added again. */
+	private readonly unavailableInCycle = (activity: Activity) => {
+		const incentiveId = activity.kind === 'objective' ? activity.objective?.id : activity.decree?.id
+		return incentiveId && isIncentiveInCycle(incentiveId, this.cycle) ? 'In cycle' : undefined
+	}
+
+	/** How the toasts name the cycle added to. */
+	private get cycleName() {
+		return this.cycle?.title || 'the active Polaris cycle'
+	}
 
 	static override get styles() {
 		return css`
@@ -109,19 +116,21 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 			? { mode: PolarisExecutivePlanningMode.Standalone, title: activity.title, estimation: this.estimation, affinityTimeframeId }
 			: { mode: PolarisExecutivePlanningMode.FromObjective, objectiveId: activity.objective!.id, estimation: this.estimation, affinityTimeframeId }
 
+		const cycleId = this.cycle?.id
+		const planExecutive = () => cycleId ? core.polaris.planExecutiveForCycle(cycleId, plan) : core.polaris.planExecutive(plan)
 		// An existing objective changes state when planned, so its write runs through its repository; a new one
 		// has no canonical instance yet and is simply created.
 		const result = activity.isNew
-			? await core.polaris.planExecutive(plan)
-			: await core.repos.objectives.mutate(activity.objective!.id, async () => await core.polaris.planExecutive(plan))
+			? await planExecutive()
+			: await core.repos.objectives.mutate(activity.objective!.id, planExecutive)
 		if (!result) {
-			toast(`PLAINTORCH could not add ${activity.title} to the cycle.`, 'error')
+			toast(`PLAINTORCH could not add ${activity.title} to ${this.cycleName}.`, 'error')
 			return undefined
 		}
 
 		const executive: Executive = { ...result.executive, incentive: result.executive.incentive ?? result.objective ?? activity.objective }
 		await this.refresh(activity.isNew ? core.repos.objectiveList : undefined)
-		toast(`Added ${activity.title} to the active Polaris cycle.`, 'success')
+		toast(`Added ${activity.title} to ${this.cycleName}.`, 'success')
 		return executive
 	}
 
@@ -132,22 +141,24 @@ export class PolarisCreationRow extends CreationRowBase<PolarisActivityCreated> 
 			return undefined
 		}
 
-		const executive = await core.polaris.addDecreeExecutive({ decreeId: decree.id, estimation: this.estimation, affinityTimeframeId: this.affinityTimeframeId })
+		const request = { decreeId: decree.id, estimation: this.estimation, affinityTimeframeId: this.affinityTimeframeId }
+		const executive = this.cycle
+			? await core.polaris.addDecreeExecutiveForCycle(this.cycle.id, request)
+			: await core.polaris.addDecreeExecutive(request)
 		if (!executive) {
-			toast(`PLAINTORCH could not add ${activity.title} to the cycle.`, 'error')
+			toast(`PLAINTORCH could not add ${activity.title} to ${this.cycleName}.`, 'error')
 			return undefined
 		}
 
 		await this.refresh(activity.isNew ? core.repos.decreeList : undefined)
-		toast(`Added ${activity.title} to the active Polaris cycle.`, 'success')
+		toast(`Added ${activity.title} to ${this.cycleName}.`, 'success')
 		return { ...executive, incentive: executive.incentive ?? decree }
 	}
 
-	/** The new activity rides on the owning cycle and the briefing; a newly created incentive also on its listing. */
+	/** The new activity rides on every surface drawing the cycle; a newly created incentive also on its listing. */
 	private async refresh(listing?: { revalidateIfObserved(): Promise<void> }) {
 		await Promise.all([
-			core.repos.polaris.revalidateObserved(),
-			core.repos.briefing.revalidateIfObserved(),
+			revalidatePolarisCycles(),
 			listing?.revalidateIfObserved()
 		])
 	}

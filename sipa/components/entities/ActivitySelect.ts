@@ -20,9 +20,9 @@ const listLimit = 12
 /**
  * Picks an activity — an objective or a decree — as an inline select.
  *
- * The whole activity listing is fetched once per opening and matched here, fuzzily: every typed character must
- * appear in the title in order but need not be adjacent, case-insensitively, so "plr" finds "Polaris" and a
- * misremembered middle still lands. Rows and the chosen face draw the activity as a {@link MiniActivityItem}.
+ * The whole activity listing is fetched once per opening and matched here by {@link fuzzyFilter}: the typed words
+ * in any order, ignoring case and accents, each forgiving a typo — so "polaros" finds "Polaris" and "quest sky"
+ * finds "Sky Quest". Rows and the chosen face draw the activity as a {@link MiniActivityItem}.
  *
  * With {@link allowCreation}, typing a title that no activity carries offers to create it, one option per kind,
  * at the top of the list: choosing one resolves to an {@link ActivityChoice} flagged `isNew`, to be made by the

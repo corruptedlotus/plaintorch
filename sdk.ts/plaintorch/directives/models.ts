@@ -1,5 +1,6 @@
 import { model, ModelValueConstructor } from "@a11d/api-dotnet"
 import type { Objective, ObjectiveCollege } from "../objectives/models"
+import type { OnrushSlot, OnrushSprint } from "../onrush/models"
 export enum DirectiveStatus {
 	Planned = 0,
 	Committed = 1,
@@ -9,6 +10,11 @@ export enum DirectiveStatus {
 	Failed = 5
 }
 
+/**
+ * A lunar directive's status (PEP100). A lunar directive is created Active and moves at will between Active (started),
+ * OnHold (set aside) and Stale (finished). Only lunar reflection follows it: reflection runs under an Active lineage
+ * (PEP103 patch 6).
+ */
 export enum LunarDirectiveStatus {
 	OnHold = 0,
 	Active = 1,
@@ -39,10 +45,14 @@ export class Directive {
 	status: DirectiveStatus | LunarDirectiveStatus = DirectiveStatus.Planned
 	tags: string[] = []
 	objectives: Objective[] = []
-	/** Scheduling dates; only present on stellar directives. */
+	/**
+	 * The due date; only present on stellar directives. When a directive is planned to begin or finish, and when it
+	 * actually did, are backlog schedules (PEP101, {@link BacklogSchedule}), listed through `client.schedules`.
+	 */
 	due?: string | undefined
-	startDate?: string | undefined
-	endDate?: string | undefined
+	/** The onrush sprint this directive is a member of (PEP102 patch 10); only present on stellar directives. */
+	onrushSprintId?: string | undefined
+	onrushSprint?: OnrushSprint | undefined
 	/** Timeframes; only present on lunar directives (PEP100). */
 	timeframes?: Timeframe[]
 	/** Icon key (PEP105): a glyph/lucide name, a `media:` self image, or a `vault:` shared image. */
@@ -151,7 +161,10 @@ export interface InitDirectiveRequest {
 	path: string
 }
 
-/** Stellar directive update, including scheduling dates. Nullable fields: omit to keep, a value to set, `null` to clear. */
+/**
+ * Stellar directive update, including its due date. Nullable fields: omit to keep, a value to set, `null` to clear.
+ * A planned begin or finish is a backlog schedule (PEP101), added through `client.schedules`.
+ */
 export interface StellarDirectiveUpdate {
 	title?: string | undefined
 	codename?: string | null | undefined
@@ -159,11 +172,9 @@ export interface StellarDirectiveUpdate {
 	parentDirectiveId?: string | null | undefined
 	tags?: string[] | undefined
 	due?: string | null | undefined
-	startDate?: string | null | undefined
-	endDate?: string | null | undefined
 }
 
-/** Lunar directive update. Lunar directives are everglow and carry no scheduling dates (PEP100). */
+/** Lunar directive update. Lunar directives are everglow and carry no due date (PEP100). */
 export interface LunarDirectiveUpdate {
 	title?: string | undefined
 	codename?: string | null | undefined
@@ -245,6 +256,15 @@ export interface DirectiveIconRequest {
 export interface DirectiveBannerRequest {
 	reference?: string | undefined
 	clear?: boolean
+}
+
+/**
+ * Payload to make a stellar directive a member of an onrush sprint (PEP102 patch 10): a sprint by id, or a slot that is
+ * created when it does not exist yet (PEP103 patch 4).
+ */
+export interface AddDirectiveToOnrushRequest {
+	onrushSprintId?: string | undefined
+	slot?: OnrushSlot | undefined
 }
 
 /**

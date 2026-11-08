@@ -1,5 +1,6 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian"
 import type { EntityExistence, SystemBriefing } from "@pleiades/sdk/plaintorch"
+import { concludeConfirmation, confirmAction } from "@pleiades/sipa"
 
 export const PLAINTORCH_BRIEFING_VIEW_TYPE = "plaintorch-briefing"
 
@@ -157,7 +158,12 @@ export class PlaintorchBriefingView extends ItemView {
 					: "Conclude"
 		})
 
-		button.addEventListener("click", () => {
+		button.addEventListener("click", async (event) => {
+			const concluding = briefing?.currentOnrush && briefing.onrushSelectionMode !== "planning"
+			if (concluding && !await confirmAction(event, concludeConfirmation(`Conclude the Onrush "${briefing.currentOnrush!.title}"? It ends now.`))) {
+				return
+			}
+
 			void this.handleOnrushAction(briefing?.onrushSelectionMode, briefing?.currentOnrush?.id)
 		})
 	}
@@ -186,7 +192,12 @@ export class PlaintorchBriefingView extends ItemView {
 					: "Conclude"
 		})
 
-		button.addEventListener("click", () => {
+		button.addEventListener("click", async (event) => {
+			const concluding = briefing?.currentPolaris && !briefing.currentPolaris.isForecast
+			if (concluding && !await confirmAction(event, concludeConfirmation(`Conclude "${briefing.currentPolaris!.title}"? It ends now.`))) {
+				return
+			}
+
 			void this.handlePolarisAction(briefing?.currentPolaris?.isForecast ?? false, !!briefing?.currentPolaris)
 		})
 	}

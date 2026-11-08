@@ -4,12 +4,14 @@ import type {
 	ExecutiveOrder,
 	ExecutiveOrderPlan,
 	ExecutiveOrderUpdate,
+	EnsureOnrushRequest,
 	OnrushSprint,
 	OnrushSprintDateRequest,
 	OnrushSprintPlan,
 	OnrushSprintUpdate,
 	SetGraphLayoutRequest
 } from "./contracts"
+import type { OnrushSlot } from "./models"
 export class PlaintorchOnrushSdk {
 	public constructor(private readonly client: PlaintorchCoreClient) { }
 
@@ -42,6 +44,16 @@ export class PlaintorchOnrushSdk {
 		return await this.client.postForJson<OnrushSprint>(`/api/onrush/${encodeURIComponent(onrushId)}/begin`, request)
 	}
 
+	/**
+	 * Makes sure the sprint in a slot exists and returns it (PEP103 patch 4): the active one (the running sprint, else the plan
+	 * begun, else a sprint started for today) or the planning one (planned under a default title when there is none).
+	 */
+	public async ensure(slot: OnrushSlot): Promise<OnrushSprint | undefined> {
+		const request: EnsureOnrushRequest = { slot }
+		return await this.client.postForJson<OnrushSprint>("/api/onrush/ensure", request)
+	}
+
+	/** Makes sure a sprint is active: the running one is returned as it is, else the plan is begun, else one is started. */
 	public async startNew(date: string | undefined = undefined): Promise<OnrushSprint | undefined> {
 		const request: OnrushSprintDateRequest = { date }
 		return await this.client.postForJson<OnrushSprint>("/api/onrush/start-new", request)
@@ -67,10 +79,11 @@ export class PlaintorchOnrushSdk {
 		return await this.client.putJson(`/api/onrush/${encodeURIComponent(onrushId)}/graph-layout`, request)
 	}
 
-	public async assignOnrushStateObjectives(onrushId: string): Promise<Objective[]> {
+	/** Pulls every objective whose status is Onboard into the sprint, wherever it sits now. */
+	public async assignOnboardObjectives(onrushId: string): Promise<Objective[]> {
 		return (
 			(await this.client.postForJson<Objective[]>(
-				`/api/onrush/${encodeURIComponent(onrushId)}/assign-onrush`,
+				`/api/onrush/${encodeURIComponent(onrushId)}/assign-onboard`,
 				{}
 			)) ?? []
 		)

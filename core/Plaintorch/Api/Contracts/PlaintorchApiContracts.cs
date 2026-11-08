@@ -178,20 +178,19 @@ public enum DirectiveKind
 }
 
 /// <summary>
-/// Represents the mutable fields of a stellar directive for update actions, including its scheduling dates.
+/// Represents the mutable fields of a stellar directive for update actions, including its due date. When it is planned
+/// to begin or finish is a backlog schedule (PEP101), set through <see cref="Abstractions.IBacklogScheduleApi"/>.
 /// </summary>
 public sealed record StellarDirectiveUpdate(
 	string? Title = null,
 	Optional<string?> Codename = default,
 	Optional<string?> ParentDirectiveId = default,
 	IReadOnlyList<string>? Tags = null,
-	Optional<DateOnly?> Due = default,
-	Optional<DateOnly?> StartDate = default,
-	Optional<DateOnly?> EndDate = default);
+	Optional<DateOnly?> Due = default);
 
 /// <summary>
 /// Represents the mutable fields of a lunar directive for update actions. Lunar directives are everglow and
-/// therefore carry no scheduling dates (PEP100).
+/// therefore carry no due date (PEP100).
 /// </summary>
 public sealed record LunarDirectiveUpdate(
 	string? Title = null,
@@ -253,19 +252,13 @@ public sealed record DirectiveAvailabilityRequest(long? TimeframeId);
 /// <summary>
 /// Represents the mutable fields of an objective for generic update actions.
 /// </summary>
-/// <remarks>
-/// <paramref name="ParentIncentiveId"/> participates in the PEP100 parent system: an objective may name
-/// another objective (subtask) or a fate declarative as its parent. <paramref name="ClearParentIncentive"/>
-/// distinguishes "leave unchanged" (null) from "unset".
-/// </remarks>
 public sealed record ObjectiveUpdate(
 	string? Title = null,
 	Optional<string?> DirectiveId = default,
 	string? OnrushSprintId = null,
 	ObjectiveCollege? College = null,
 	int? CelestronValue = null,
-	Optional<Due?> Due = default,
-	Optional<string?> ParentIncentiveId = default);
+	Optional<Due?> Due = default);
 
 /// <summary>
 /// Represents the editable fields of a checkpoint (PEP102): its name, its Celestron toll, its external
@@ -296,12 +289,45 @@ public sealed record PolarisCycleUpdate(
 	string? Title = null);
 
 /// <summary>
+/// The Polaris cycles of a lore page's active period (<see cref="LorePage.ResolveActivePeriod"/>), in day order. A page
+/// with no beginning has no period: its dates are <see langword="null"/> and it lists no cycle.
+/// </summary>
+/// <param name="Beginning">The page's beginning, the first day of the period.</param>
+/// <param name="EndingExclusive">The day the period ends, exclusive, or <see langword="null"/> while it is still running.</param>
+/// <param name="Through">The last day listed: the day before the period ends, or today while it runs. Before
+/// <paramref name="Beginning"/> for a running page that has not begun yet.</param>
+/// <param name="Cycles">The cycles of the days from the beginning through <paramref name="Through"/>, as
+/// <see cref="Abstractions.IPolarisCycleApi.ListByDayAsync"/> serves them.</param>
+public sealed record LorePolarisCycles(
+	DateOnly? Beginning,
+	DateOnly? EndingExclusive,
+	DateOnly? Through,
+	IReadOnlyList<PolarisCycle> Cycles);
+
+/// <summary>
 /// Represents the mutable fields of an onrush sprint for generic update actions.
 /// </summary>
 public sealed record OnrushSprintUpdate(
 	string? Title = null,
 	Optional<DateOnly?> StartDate = default,
 	Optional<DateOnly?> EndDate = default);
+
+/// <summary>
+/// Which onrush sprint something joins when no sprint is named (PEP103 patch 4): the active one, or the one being planned.
+/// Either is created when it does not exist yet, the way adding to the current Polaris cycle starts one.
+/// </summary>
+public enum OnrushSlot
+{
+	/// <summary>
+	/// The active sprint: the running one, else the plan begun, else a sprint started for today.
+	/// </summary>
+	Active,
+
+	/// <summary>
+	/// The sprint being planned: the planning placeholder, planned now when there is none.
+	/// </summary>
+	Planning,
+}
 
 /// <summary>
 /// Represents the data required to plan an onrush sprint.
@@ -412,15 +438,6 @@ public sealed record ExecutiveUpdate(
 	string? MoveToPolarisCycleId = null);
 
 /// <summary>
-/// Represents the inputs used to draw reflectives for a Polaris cycle.
-/// </summary>
-public sealed record ReflectiveDrawRequest(
-	string? PolarisCycleId = null,
-	int Count = 1,
-	bool IncludeRoutine = true,
-	bool IncludeRandom = true);
-
-/// <summary>
 /// Represents a mutable update to a reflective record.
 /// </summary>
 public sealed record ReflectiveUpdate(
@@ -445,7 +462,6 @@ public sealed record FatePlan(
 	string Title,
 	string? Id = null,
 	string? DirectiveId = null,
-	string? ParentIncentiveId = null,
 	DateOnly? Date = null,
 	TimeOnly? StartTime = null,
 	TimeOnly? EndTime = null,
@@ -457,12 +473,19 @@ public sealed record FatePlan(
 /// so rescheduling — whether a one-off or a recurrence — is done by setting a new <paramref name="Orbit"/>
 /// (a <c>Z{…}</c> literal for a one-off).
 /// </summary>
+/// <param name="Calendar">
+/// The calendar the orbit resolves against: omit to keep, a value to override, <see langword="null"/> to follow the
+/// vault default. Sent with an <paramref name="Orbit"/>, it is the calendar that orbit's literal is written in; sent
+/// alone on a one-off fate, the literal is rewritten into it so the fate keeps its day.
+/// </param>
+/// <param name="TimeZone">The fate's IANA time zone: omit to keep, a zone to set, <see langword="null"/> for floating.</param>
 public sealed record FateUpdate(
 	string? Title = null,
 	FateStatus? Status = null,
 	Optional<string?> DirectiveId = default,
-	Optional<string?> ParentIncentiveId = default,
-	string? Orbit = null);
+	string? Orbit = null,
+	Optional<DeclarativeCalendar?> Calendar = default,
+	Optional<string?> TimeZone = default);
 
 /// <summary>
 /// Represents the data required to create a decree declarative (PEP100).
@@ -479,6 +502,11 @@ public sealed record DecreePlan(
 /// <summary>
 /// Represents the mutable fields of a decree declarative for generic update actions.
 /// </summary>
+/// <param name="Calendar">
+/// The calendar the orbit resolves against: omit to keep, a value to override, <see langword="null"/> to follow the
+/// vault default. A lone <c>Z{…}</c> literal orbit is rewritten into a calendar sent alone, as a fate's is.
+/// </param>
+/// <param name="TimeZone">The decree's IANA time zone: omit to keep, a zone to set, <see langword="null"/> for floating.</param>
 public sealed record DecreeUpdate(
 	string? Title = null,
 	DecreeStatus? Status = null,
@@ -486,38 +514,71 @@ public sealed record DecreeUpdate(
 	string? Orbit = null,
 	int? DefaultLength = null,
 	int? ActiveCelestron = null,
-	bool? Reflect = null);
+	bool? Reflect = null,
+	Optional<DeclarativeCalendar?> Calendar = default,
+	Optional<string?> TimeZone = default);
 
 /// <summary>
 /// Represents a mutable update to an eventive occurrence. Eventives are never Polaris-bound, so their time
 /// specification can always be moved.
 /// </summary>
+/// <param name="Epoch">
+/// The occurrence's whole position in time, replacing its own: moment, granularity, duration and time zone, read and
+/// validated as <see cref="EventivePlan"/> reads one. The occurrence keeps its RECURRENCE-ID. A
+/// <paramref name="Date"/>, <paramref name="StartTime"/> or <paramref name="EndTime"/> given beside it applies on top.
+/// </param>
 public sealed record EventiveUpdate(
 	DateOnly? Date = null,
 	Optional<TimeOnly?> StartTime = default,
 	Optional<TimeOnly?> EndTime = default,
-	EventiveResolution? Resolution = null);
+	EventiveResolution? Resolution = null,
+	Epoch? Epoch = null);
 
 /// <summary>
 /// Represents a mutable update to an attentive occurrence. An attentive is always unbound (PEP111), so
 /// <paramref name="Date"/> reschedules it freely.
 /// </summary>
+/// <param name="Epoch">
+/// The occurrence's whole position in time, replacing its own, as on <see cref="EventiveUpdate.Epoch"/>. A
+/// <paramref name="Date"/> or <paramref name="Time"/> given beside it applies on top.
+/// </param>
 public sealed record AttentiveUpdate(
 	DateOnly? Date = null,
 	Optional<TimeOnly?> Time = default,
 	AttentiveResolution? Resolution = null,
-	Optional<long?> AffinityTimeframeId = default);
+	Optional<long?> AffinityTimeframeId = default,
+	Epoch? Epoch = null);
 
 /// <summary>
-/// Addresses a single eventive occurrence by its owner UID (a fate or objective id) and RECURRENCE-ID
-/// (Strategy 1): the recurrence-id resolves a projected occurrence and its hardened twin identically, so an
-/// interaction hardens the occurrence and applies to it without ever needing a database row id.
+/// Adds a <b>manual</b> eventive to a fate: an occurrence added by hand rather than generated from the fate's orbit,
+/// so it carries no RECURRENCE-ID and is addressed by its row id from then on. It is given its position in time
+/// whole, as the <see cref="Pleiades.Orchestration.Epoch"/> it will own: the civil moment, its granularity, an
+/// optional nominal duration (Orbit duration notation) and an optional time zone (floating when absent).
 /// </summary>
-/// <param name="OwnerId">The owning fate or objective id (the iCalendar <c>UID</c>).</param>
+/// <param name="FateId">The fate the eventive belongs to.</param>
+/// <param name="Epoch">
+/// Its position in time. Only <see cref="Pleiades.Orchestration.Epoch.Moment"/>,
+/// <see cref="Pleiades.Orchestration.Epoch.Granularity"/>, <see cref="Pleiades.Orchestration.Epoch.Duration"/> and
+/// <see cref="Pleiades.Orchestration.Epoch.TimeZone"/> are read; the rest is computed from them.
+/// </param>
+public sealed record EventivePlan(
+	string FateId,
+	Epoch Epoch);
+
+/// <summary>
+/// Addresses a single eventive occurrence by its owner UID (a fate id) and RECURRENCE-ID
+/// (Strategy 1): the recurrence-id resolves a projected occurrence and its hardened twin identically, so an
+/// interaction hardens the occurrence and applies to it without ever needing a database row id. A manual eventive
+/// has no RECURRENCE-ID, so it — like any hardened row — is addressed by its row <paramref name="Id"/> instead,
+/// which wins when given.
+/// </summary>
+/// <param name="OwnerId">The owning fate id (the iCalendar <c>UID</c>).</param>
 /// <param name="RecurrenceId">The occurrence's original slot moment (<see cref="Occurrence.RecurrenceId"/>).</param>
+/// <param name="Id">The hardened row's id — the only address a manual eventive has.</param>
 public sealed record EventiveOccurrenceRef(
-	string OwnerId,
-	DateTime RecurrenceId);
+	string? OwnerId = null,
+	DateTime? RecurrenceId = null,
+	long? Id = null);
 
 /// <summary>
 /// Addresses a single attentive occurrence by its decree + RECURRENCE-ID: the recurrence-id resolves a projected
@@ -530,6 +591,29 @@ public sealed record EventiveOccurrenceRef(
 public sealed record AttentiveOccurrenceRef(
 	string? DecreeId = null,
 	DateTime? RecurrenceId = null);
+
+/// <summary>
+/// The change a user makes to a terminative (PEP103 patch 7): its ignore flag, the one field the engine leaves to the
+/// user. An omitted flag leaves it as it is.
+/// </summary>
+/// <param name="Ignored">Whether the agenda no longer lists the terminative.</param>
+public sealed record TerminativeUpdate(bool? Ignored = null);
+
+/// <summary>
+/// Addresses a terminative (PEP103 patch 7) by its origin — the objective, stellar directive or checkpoint whose due it
+/// is, which has at most one — so a projected terminative and its hardened twin resolve identically. A hardened one may
+/// instead be addressed by its row <paramref name="Id"/>, which wins when given.
+/// </summary>
+/// <param name="OriginId">The origin's PUCK id.</param>
+/// <param name="Id">The hardened row's id.</param>
+public sealed record TerminativeOccurrenceRef(
+	string? OriginId = null,
+	long? Id = null);
+
+/// <summary>
+/// The request body for updating a terminative over the wire: the terminative to address plus the update to apply.
+/// </summary>
+public sealed record TerminativeUpdateRequest(TerminativeOccurrenceRef Occurrence, TerminativeUpdate Update);
 
 /// <summary>
 /// The request body for updating an eventive occurrence over the wire: the occurrence to address plus the
@@ -561,20 +645,24 @@ public sealed record PolarisDecreeAdd(
 
 /// <summary>
 /// Represents the unbound items a Polaris cycle includes non-structurally because they fall within 24h of
-/// its beginning (PEP100). The cycle never relationally owns these records.
+/// its beginning (PEP100), the terminatives of the dues there among them (PEP103 patch 7). The cycle never relationally
+/// owns these records.
 /// </summary>
 public sealed record PolarisCycleInclusions(
 	IReadOnlyList<Eventive> Eventives,
-	IReadOnlyList<Attentive> Attentives);
+	IReadOnlyList<Attentive> Attentives,
+	IReadOnlyList<Terminative> Terminatives);
 
 /// <summary>
 /// Represents the day-level agenda: unbound attentives requiring attention (same-day/24h and previous
-/// unattended) and upcoming eventives within a short horizon. Computed relative to today, independent of
-/// any Polaris cycle (PEP100).
+/// unattended), upcoming eventives within a short horizon, and the terminatives of the dues still pending up to that
+/// horizon, overdue ones included, unless ignored (PEP103 patch 7). Computed relative to today, independent of any Polaris
+/// cycle (PEP100).
 /// </summary>
 public sealed record PolarisAgenda(
 	IReadOnlyList<Attentive> Attentives,
-	IReadOnlyList<Eventive> Eventives);
+	IReadOnlyList<Eventive> Eventives,
+	IReadOnlyList<Terminative> Terminatives);
 
 /// <summary>
 /// Represents the data required to define a directive-level timeframe (PEP100). <paramref name="Icon"/> and the

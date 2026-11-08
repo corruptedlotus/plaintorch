@@ -12,6 +12,7 @@ namespace Pleiades.Tests.Core;
 /// <summary>
 /// Polaris activation routes through one service-level path: starting a cycle activates the one already planned for the
 /// day rather than duplicating it (the id IS the day), and adding to "the current cycle" with none active starts one.
+/// Today's cycle is current while it is planned or running, never once it has concluded.
 /// </summary>
 public sealed class PolarisActivationTests : VaultTestBase
 {
@@ -74,21 +75,6 @@ public sealed class PolarisActivationTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Drawing_reflectives_on_the_current_cycle_with_none_active_starts_one()
-	{
-		Assert.Equal(0, await CycleCountAsync());
-
-		var reflectives = await PolarisAsync(api => api.DrawReflectivesAsync(
-			new ReflectiveDrawRequest(Count: 1), TestContext.Current.CancellationToken));
-
-		Assert.Single(reflectives);
-		Assert.Equal(1, await CycleCountAsync());
-		var cycle = await SingleCycleAsync();
-		Assert.NotNull(cycle.StartTime);
-		Assert.Equal(cycle.Id, reflectives[0].PolarisCycleId);
-	}
-
-	[Fact]
 	public async Task Activating_a_cycle_supersedes_forecasts_on_or_before_its_date()
 	{
 		// Polaris ids are Pleiadean date stamps; the forecast-supersession cleanup parsed them as Gregorian and so was
@@ -148,5 +134,35 @@ public sealed class PolarisActivationTests : VaultTestBase
 		Assert.Equal(90, moved.Minimum);
 		Assert.Equal(90, moved.Maximum);
 		Assert.Equal(0, moved.Elapsed);
+	}
+
+	[Fact]
+	public async Task Todays_cycle_is_current_while_planned_or_running_but_not_once_concluded()
+	{
+		var ct = TestContext.Current.CancellationToken;
+		var today = DateOnly.FromDateTime(DateTime.Today);
+
+		// Planned for today: current, so the briefing can show it planned and offer to begin it.
+		var planned = await PolarisAsync(api => api.PlanAsync(today.AddDays(-1), 1, cancellationToken: ct));
+		Assert.Equal(planned.Id, (await CurrentCycleAsync())?.Id);
+		Assert.Equal(planned.Id, (await BriefingCycleAsync())?.Id);
+
+		await PolarisAsync(api => api.StartNewAsync(cancellationToken: ct));
+		Assert.Equal(planned.Id, (await CurrentCycleAsync())?.Id);
+
+		// Concluded: today's cycle is no longer current, rather than coming back to be timed as if it still ran.
+		await PolarisAsync(api => api.EndAsync(cancellationToken: ct));
+		Assert.Null(await CurrentCycleAsync());
+		Assert.Null(await BriefingCycleAsync());
+		Assert.NotNull((await SingleCycleAsync()).EndTime);
+	}
+
+	private Task<PolarisCycle?> CurrentCycleAsync()
+		=> PolarisAsync(api => api.GetAsync(cancellationToken: TestContext.Current.CancellationToken));
+
+	private async Task<PolarisCycle?> BriefingCycleAsync()
+	{
+		var briefing = await Vault.WithScopeAsync(services => services.GetRequiredService<ISystemApi>().GetBriefingAsync(TestContext.Current.CancellationToken));
+		return briefing.CurrentPolaris;
 	}
 }

@@ -32,6 +32,10 @@ let anchorSequence = 0
  * A plain Enter stays with the cell it was pressed in — it finishes that cell's edit, as everywhere else.
  * Before the entity is made, whichever cell still has focus is blurred so its pending edit lands first.
  *
+ * For a pointer, a faint **Create** button closes the hints line: a click creates and starts a fresh row, as
+ * Shift+Enter does, and a Ctrl-click (or ⌘-click) creates and opens the editor, as Ctrl+Enter does. It sits outside
+ * the cells, so Tab never lands on it.
+ *
  * A subclass supplies its {@link cells}, how to {@link create} the entity from them, how to
  * {@link openEditor} on it, and how to {@link reset} for the next one. The row fires `created` with the entity
  * and the mode, and `cancel`; the host decides whether the row stays (a `created` in `again` mode) or goes.
@@ -134,10 +138,28 @@ export abstract class CreationRowBase<T> extends Component {
 			.hints {
 				font-family: var(--font-text);
 				display: flex;
+				align-items: center;
 				margin-top: .1em;
 				gap: 1.2em;
 				font-size: .7em;
 				color: var(--text-faint);
+			}
+
+			/* The pointer's way to commit: faint like the hints it closes, pushed to the line's end, costing it no height. */
+			.hints .create {
+				margin-inline-start: auto;
+				margin-block: -.3em;
+				font-size: 1.15em;
+			}
+
+			/* A native button keeps its own text colour; this one reads a step above the hints, and lights on hover. */
+			.hints .create::part(button) {
+				color: var(--text-muted);
+			}
+
+			/* Restated: a rule from outside the button outranks its own hover colour. */
+			.hints .create::part(button):hover {
+				color: var(--text-accent);
 			}
 
 			kbd {
@@ -173,6 +195,7 @@ export abstract class CreationRowBase<T> extends Component {
 					<span><kbd>Enter</kbd> create & next</span>
 					<span><kbd>Ctrl+Enter</kbd> create & edit</span>
 					<span><kbd>Esc</kbd> cancel</span>
+					<p7t-button ghost emphasis class='create' icon='lucide:check' @click=${(e: MouseEvent) => void this.commit(e.ctrlKey || e.metaKey ? 'open' : 'again')}>Create</p7t-button>
 				</div>
 			</div>
 		`
@@ -243,7 +266,7 @@ export abstract class CreationRowBase<T> extends Component {
 			return
 		}
 
-		if (e.ctrlKey) {
+		if (e.ctrlKey || e.metaKey) {
 			e.preventDefault()
 			e.stopPropagation()
 			void this.commit('open')

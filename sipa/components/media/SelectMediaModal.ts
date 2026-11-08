@@ -3,6 +3,7 @@ import { core } from '..'
 import { IconName } from '../PleiadesIcon'
 import { ASSET_FOLDER, pickImageFile, resolveMediaUrl } from './mediaAssets'
 import { searchIconKeys } from './iconCatalog'
+import { fuzzyFilter } from '../editing/fuzzy'
 import { createChild, sleep, SuggestModalBase, toast } from '../../host'
 
 /**
@@ -92,8 +93,7 @@ export class SelectMediaModal extends SuggestModalBase<MediaItem> {
 
 	private async assetItems(scope: AssetScope, filter: string): Promise<MediaItem[]> {
 		const files = scope === 'self' ? await this.selfAssets() : await core.media.listVault()
-		const needle = filter.trim().toLowerCase()
-		const matched = needle ? files.filter(name => name.toLowerCase().includes(needle)) : files
+		const matched = fuzzyFilter(filter, files, name => name)
 		return [{ kind: 'upload', scope }, ...matched.map(file => ({ kind: 'asset', scope, file } as MediaItem))]
 	}
 

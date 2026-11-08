@@ -1,5 +1,12 @@
-import { Directive, Objective, typeNameOf } from '@pleiades/sdk'
-import { addObjectiveToPolaris, core, ExpandingAction, IconName, PromptTextModal, type ScheduleValue } from '..'
+import {
+	DecreeStatus, Directive, DirectiveStatus, FateStatus, LunarDirectiveStatus, Objective, ObjectiveStatus, typeNameOf,
+	type DecreeUpdate, type FateUpdate
+} from '@pleiades/sdk'
+import {
+	addObjectiveToPolaris, core, ExpandingAction, IconName, isArchivedStatus, isInactiveStatus, offerEstimation,
+	OnrushPickerModal, PromptTextModal, SelectDirectiveModal, type ContextMenuAction, type DirectiveChoice, type ScheduleValue,
+	type Status
+} from '..'
 import { host, toast } from '../../host'
 import type { GridEntity } from './entityTree'
 
@@ -55,6 +62,45 @@ export function entityIcon(entity: GridEntity): IconName {
 
 export function entityKindLabel(kind: EntityKind): string {
 	return kindLabels[kind]
+}
+
+/**
+ * The descriptor name of an entity's workflow state.
+ *
+ * Every kind numbers its own state enum from zero, so the value alone is ambiguous — a directive's `2` is Active while
+ * an objective's is Onboard. The kind has to pick the enum.
+ */
+export function entityStatusName(entity: GridEntity): Status {
+	const status = (entity as { status?: number }).status ?? 0
+	switch (entityKindOf(entity)) {
+		case 'lunar-directive': return (LunarDirectiveStatus[status] ?? 'OnHold') as Status
+		case 'stellar-directive': return (DirectiveStatus[status] ?? 'Planned') as Status
+		case 'fate': return (FateStatus[status] ?? 'Active') as Status
+		case 'decree': return (DecreeStatus[status] ?? 'Active') as Status
+		default: return (ObjectiveStatus[status] ?? 'Standby') as Status
+	}
+}
+
+/** The runtime types {@link entityStatusName} can read a state off. */
+const statusedTypes = new Set(['StellarDirective', 'LunarDirective', 'Objective', 'Fate', 'Decree'])
+
+/**
+ * The state an entity is in, or `undefined` for a kind without one of these states (a checkpoint, an eventive). Told
+ * apart by runtime type first, since {@link entityKindOf} reads anything it does not know as an objective.
+ */
+function statusOf(entity: unknown): Status | undefined {
+	const typeName = typeNameOf(entity)
+	return typeName && statusedTypes.has(typeName) ? entityStatusName(entity as GridEntity) : undefined
+}
+
+/** Whether an entity is done with, one way or another, and so drawn dimmed (see {@link isInactiveStatus}). */
+export function isInactiveEntity(entity: unknown): boolean {
+	return isInactiveStatus(statusOf(entity))
+}
+
+/** Whether an entity is also put away, so the backlog hides it until a search asks for it (see {@link isArchivedStatus}). */
+export function isArchivedEntity(entity: unknown): boolean {
+	return isArchivedStatus(statusOf(entity))
 }
 
 /**
@@ -249,6 +295,49 @@ export async function reparentEntity(entity: GridEntity, parent: Directive | und
 	return moved
 }
 
+/** The runtime types {@link moveEntity} can move through the hierarchy: the directives and the three incentives. */
+const movableTypes = new Set(['StellarDirective', 'LunarDirective', 'Objective', 'Fate', 'Decree'])
+
+/** Whether an entity of this runtime type can be moved through the hierarchy here — the show/hide test a "Move to…" row uses. */
+export function canMoveEntity(typeName: string | undefined): boolean {
+	return !!typeName && movableTypes.has(typeName)
+}
+
+/**
+ * Asks where to move an entity and moves it there — the picker-driven form of the grid's drop, behind the hierarchy
+ * editable and the "Move to…" row of an entity's menu.
+ *
+ * The directive picker offers only what {@link reparentRefusal} lets the entity go under (never itself or anything
+ * beneath it, never across the lunar/stellar line, never where it already is), led by the top level — a
+ * constellation directive, a world quest — when the entity is not there already. The chosen place is written through
+ * {@link reparentEntity}, which reports the outcome.
+ *
+ * Resolves to the new parent (`null` for the top level) once moved; `undefined` when the picker was dismissed or the
+ * move was not written.
+ */
+export async function moveEntity(entity: GridEntity): Promise<Directive | null | undefined> {
+	const directiveKind = isDirectiveKind(entityKindOf(entity))
+	let choice: DirectiveChoice | undefined
+	try {
+		choice = await SelectDirectiveModal.prompt({
+			placeholder: `Move ${entity.title} to…`,
+			nullText: reparentRefusal(entity, undefined) !== undefined
+				? undefined
+				: directiveKind ? 'Top level (a constellation directive)' : 'No directive (a world quest)',
+			allow: directive => reparentRefusal(entity, directive) === undefined
+		})
+	}
+	catch {
+		return undefined
+	}
+
+	if (choice === undefined) {
+		return undefined
+	}
+
+	return await reparentEntity(entity, choice ?? undefined) ? choice : undefined
+}
+
 /** Whether a fate is a one-off occurrence — an orbit that is a fixed-datetime `Z{…}` literal (PEP111). */
 export function isSingleInstanceFate(entity: GridEntity): boolean {
 	const fate = entity as { orbit?: string }
@@ -256,59 +345,25 @@ export function isSingleInstanceFate(entity: GridEntity): boolean {
 }
 
 /**
- * Folds a chosen schedule into the orbit a fate stores (PEP111). A fate is orbit-only, so an orbit passes
- * through while a fixed date/time becomes a `Z{y/M/d[Th:m]}` literal (with a `=<dur>` span for an event
- * window). An empty result clears the schedule server-side.
+ * The update a schedule chosen through the editable schedule makes to a declarative, a fate (PEP111) or a decree: its
+ * orbit — empty clears the schedule server-side — and, for a one-shot `Z{…}` literal, the calendar the literal was
+ * written on, so the core reads its day on that calendar. A recurring orbit leaves the declarative's calendar as it is.
  */
-export function fateScheduleToOrbit(schedule: ScheduleValue): string {
-	if (schedule.mode === 'orbit') {
-		return schedule.orbit ?? ''
-	}
-
-	if (!schedule.date) {
-		return ''
-	}
-
-	const [year = '', month = '', day = ''] = schedule.date.split('-')
-	let literal = `Z{${Number(year)}/${Number(month)}/${Number(day)}`
-	if (schedule.time) {
-		const [hour = '', minute = ''] = schedule.time.split(':')
-		literal += `T${Number(hour)}:${minute}`
-	}
-
-	literal += '}'
-	const span = eventSpanNotation(schedule.time, schedule.endTime)
-	return span ? `${literal}=${span}` : literal
+export function declarativeScheduleUpdate(schedule: ScheduleValue): Pick<FateUpdate & DecreeUpdate, 'orbit' | 'calendar'> {
+	const orbit = schedule.orbit ?? ''
+	return schedule.calendar === undefined ? { orbit } : { orbit, calendar: schedule.calendar }
 }
 
-/** The `=<dur>` span notation from a start/end time pair, or undefined when there is no positive window. */
-function eventSpanNotation(startTime: string | undefined, endTime: string | undefined): string | undefined {
-	if (!startTime || !endTime) {
-		return undefined
-	}
-
-	const minutes = timeToMinutes(endTime) - timeToMinutes(startTime)
-	if (minutes <= 0) {
-		return undefined
-	}
-
-	const hours = Math.floor(minutes / 60)
-	const mins = minutes % 60
-	return `${hours > 0 ? `${hours}h` : ''}${mins > 0 ? `${mins}m` : ''}` || undefined
-}
-
-function timeToMinutes(time: string): number {
-	const [hour = '', minute = ''] = time.split(':')
-	return Number(hour) * 60 + Number(minute)
-}
-
-/**
- * Persists a fate's chosen schedule as its orbit (PEP111): a recurring orbit or a one-off `Z{…}` literal
- * folded from a fixed date/time. A fate is orbit-only, so there is only ever one shape to send.
- */
+/** Persists a fate's chosen schedule (see {@link declarativeScheduleUpdate}). */
 export async function saveFateSchedule(entity: GridEntity, schedule: ScheduleValue): Promise<boolean> {
 	return !!await core.repos.fates.mutate(entity.id, async () =>
-		await core.declaratives.updateFate(entity.id, { orbit: fateScheduleToOrbit(schedule) }))
+		await core.declaratives.updateFate(entity.id, declarativeScheduleUpdate(schedule)))
+}
+
+/** Persists a decree's chosen schedule (see {@link declarativeScheduleUpdate}). */
+export async function saveDecreeSchedule(entity: GridEntity, schedule: ScheduleValue): Promise<boolean> {
+	return !!await core.repos.decrees.mutate(entity.id, async () =>
+		await core.declaratives.updateDecree(entity.id, declarativeScheduleUpdate(schedule)))
 }
 
 /** Opens the note an entity is the authority for, in a new tab. Takes any entity with a PUCK identity. */
@@ -406,44 +461,60 @@ export function creationActions(directiveId?: string, kinds?: readonly EntityKin
 }
 
 /**
- * The choices offered on a directive row.
- *
- * A child directive is always of the parent's own kind: a lunar hierarchy stays lunar, and a stellar one
- * stays stellar (PEP100).
+ * The same creation choices as {@link creationActions}, as context-menu rows: the same icons, labels and creation
+ * call, under the directive given (or at the top level without one).
  */
-export function directiveActions(directive: Directive): ExpandingAction[] {
+export function creationMenuEntries(directiveId: string | undefined, kinds: readonly EntityKind[]): ContextMenuAction[] {
+	return kinds.map(kind => ({
+		label: kindLabels[kind],
+		icon: kindIcons[kind],
+		run: () => void createEntity(kind, directiveId)
+	}))
+}
+
+/**
+ * What a directive offers to create beneath it: the three incentives, then a child directive of its own kind. A lunar
+ * hierarchy stays lunar, and a stellar one stays stellar (PEP100). This one list is behind both the directive row's
+ * actions and the Add submenu of the directive's context menu, so the two always offer the same choices.
+ */
+export function directiveCreationKinds(directive: Directive): EntityKind[] {
 	const ownKind: EntityKind = entityKindOf(directive) === 'lunar-directive' ? 'lunar-directive' : 'stellar-directive'
-	return creationActions(directive.id, ['objective', 'fate', 'decree', ownKind])
+	return ['objective', 'fate', 'decree', ownKind]
+}
+
+/** The runtime types things can be created beneath: the two directives. */
+const creationParentTypes = new Set(['StellarDirective', 'LunarDirective'])
+
+/** Whether things can be created beneath an entity of this runtime type, which is the show/hide test for an Add row. */
+export function canCreateUnder(typeName: string | undefined): boolean {
+	return !!typeName && creationParentTypes.has(typeName)
+}
+
+/** The choices offered on a directive row (see {@link directiveCreationKinds}). */
+export function directiveActions(directive: Directive): ExpandingAction[] {
+	return creationActions(directive.id, directiveCreationKinds(directive))
 }
 
 /** The choices offered on an objective row. */
 export function objectiveActions(objective: Objective): ExpandingAction[] {
-	const objectiveId = objective.id
 	return [
 		{
 			key: 'polaris',
 			icon: 'polaris',
 			label: 'Add to Polaris',
-			run: async () => {
-				await addObjectiveToPolaris(objective)
+			run: async origin => {
+				const executive = await addObjectiveToPolaris(objective)
+				if (executive) {
+					void offerEstimation(executive, origin)
+				}
 			}
 		},
 		{
 			key: 'onrush',
 			icon: 'onrush',
 			label: 'Add to Onrush',
-			run: async () => {
-				// The active sprint when one is running, otherwise the one still being planned.
-				const sprint = await core.onrush.getCurrent() ?? await core.onrush.getPlanning()
-				if (!sprint) {
-					toast('There is no Onrush to add to.', 'warning')
-					return
-				}
-
-				const added = await core.repos.objectives.mutate(objectiveId, async () =>
-					await core.objectives.addToOnrush(objectiveId, sprint.id))
-				toast(added ? `Added to ${sprint.title}.` : 'Could not add to Onrush.', added ? 'success' : 'error')
-			}
+			// The active or the planning sprint, each offered whether it exists yet or not (PEP103 patch 4).
+			run: () => new OnrushPickerModal('objective', objective).open()
 		}
 	]
 }

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
 using Pleiades.Vault.Database;
 
 namespace Pleiades.Plaintorch.Materialization;
@@ -58,9 +59,11 @@ public sealed class TimeframeAffinityResolver(PlainfraContext context)
 	{
 		// The colleges are a JSON list column, not SQL-queryable, so the college-mode timeframes (few per directive)
 		// are materialized and the membership test runs in memory.
+		// A Stale lunar directive's timeframes lend no affinity (PEP103 patch 6).
+		var acting = TemporalActivation.TimeframeStatuses();
 		var candidates = await context.Timeframes
 			.AsNoTracking()
-			.Where(timeframe => timeframe.AutoInclusion == TimeframeInclusion.College)
+			.Where(timeframe => timeframe.AutoInclusion == TimeframeInclusion.College && acting.Contains(timeframe.Directive!.Status))
 			.OrderBy(timeframe => timeframe.Id)
 			.ToListAsync(cancellationToken);
 
@@ -125,10 +128,12 @@ public sealed class TimeframeAffinityResolver(PlainfraContext context)
 			.ToDictionaryAsync(item => item.Id, StringComparer.Ordinal, cancellationToken);
 
 		// Only availabilities that still point at an Availability-mode timeframe count (defence in depth: leaving the
-		// mode clears references, but a hand-edited or legacy row must not auto-assign through a non-availability).
+		// mode clears references, but a hand-edited or legacy row must not auto-assign through a non-availability). A
+		// Stale lunar directive's timeframe does not act (PEP103 patch 6), so the walk passes on to the next availability up.
+		var acting = TemporalActivation.TimeframeStatuses();
 		var availabilityIds = (await context.Timeframes
 			.AsNoTracking()
-			.Where(timeframe => timeframe.AutoInclusion == TimeframeInclusion.Availability)
+			.Where(timeframe => timeframe.AutoInclusion == TimeframeInclusion.Availability && acting.Contains(timeframe.Directive!.Status))
 			.Select(timeframe => timeframe.Id)
 			.ToListAsync(cancellationToken))
 			.ToHashSet();

@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using Pleiades.Puck;
 using Pleiades.Vault;
 using Pleiades.Vault.Markdown;
+using Pleiades.Orchestration.Lifecycle;
 
 namespace Pleiades.Orchestration;
 
@@ -11,7 +12,7 @@ namespace Pleiades.Orchestration;
 /// </summary>
 /// <remarks>
 /// Decrees are event-like: they are never acted on directly; each occurrence materializes an
-/// <see cref="Attentive"/> instead. Decrees are exempt from the incentive parent system.
+/// <see cref="Attentive"/> instead.
 /// </remarks>
 [PuckEntity("decree")]
 [PuckFormat("r{S:8}")]
@@ -28,7 +29,8 @@ public sealed class Decree : Declarative
 	/// Gets or sets the current decree state.
 	/// </summary>
 	[MarkdownField("status")]
-	public DecreeStatus Status { get; set; } = DecreeStatus.Active;
+	[LifecycleStatus(History = true)]
+	public DecreeStatus Status { get; set; } = LifecycleDeclarations.InitialStatus<DecreeStatus>();
 
 	/// <summary>
 	/// Gets or sets the optional Orbit scheduling notation that defines the decree's routine.
@@ -52,9 +54,12 @@ public sealed class Decree : Declarative
 	public int ActiveCelestron { get; set; }
 
 	/// <summary>
-	/// Gets or sets a value indicating whether the decree participates in daily reflective generation.
-	/// Only meaningful for decrees living inside a Moonlight (lunar) directive hierarchy; the generation
-	/// engine itself belongs to PEP104.
+	/// Gets or sets a value indicating whether the decree participates in daily reflective generation (lunar
+	/// reflection, PEP100/PEP104). Any decree may reflect, whether it lives in a Moonlight (lunar) hierarchy, a stellar
+	/// one, or none; reflection pauses while any lunar directive on its lineage is not active. With an orbit, the decree
+	/// yields a reflective whenever its orbit resolves onto a beginning Polaris cycle's day; without one, it joins the
+	/// pool that each cycle draws its base number of daily reflectives from. A reflecting decree never produces
+	/// attentives.
 	/// </summary>
 	[MarkdownField("reflect")]
 	public bool Reflect { get; set; }

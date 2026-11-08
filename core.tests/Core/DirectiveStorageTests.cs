@@ -41,7 +41,7 @@ public sealed class DirectiveStorageTests : VaultTestBase
 
 		var content = File.ReadAllText(path);
 		Assert.Contains($"puck: {lunar.Id}", content);
-		Assert.Contains("status: OnHold", content);
+		Assert.Contains("status: Active", content);
 
 		// The stellar location must not receive the lunar file.
 		Assert.False(Vault.VaultFileExists("Directives/Sleep Law/Sleep Law.md"));

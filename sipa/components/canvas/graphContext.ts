@@ -1,4 +1,4 @@
-import { DependencyEndpointKind, type Checkpoint, type Dependency, type EndpointHit, type Objective, type OnrushSprint } from '@pleiades/sdk'
+import { DependencyEndpointKind, type Checkpoint, type Dependency, type Directive, type EndpointHit, type EndpointRef, type Objective, type OnrushSprint } from '@pleiades/sdk'
 import { endpointKey, resolveEdges, sourceRef, targetRef, unresolvedPrerequisites, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
 
 /**
@@ -25,9 +25,10 @@ export type EndpointResolver = (kind: DependencyEndpointKind, id: string) => Can
 /**
  * Resolves the graph of an onrush sprint.
  *
- * Every objective and checkpoint the sprint holds becomes a node, including the ones no edge touches: in this
- * context the canvas shows the sprint, and a member with no dependencies is still part of it. The milestone is
- * one of the checkpoints, flagged.
+ * Every objective, stellar directive and checkpoint the sprint holds becomes a node, including the ones no edge
+ * touches: in this context the canvas shows the sprint, and a member with no dependencies is still part of it. The
+ * milestone is one of the checkpoints, flagged. A directive member brings its intrinsic edges with it (PEP102 patch
+ * 9): each of its children that is also a member is drawn feeding its finish, dashed.
  *
  * Beyond the members, the graph pulls in the prerequisites *outside* the sprint that hold a member back — and
  * not only the immediate ones: the whole unmet chain, each blocker's own blocker on down, so a member held
@@ -45,10 +46,11 @@ export function onrushContext(
 	// same defensiveness the entity tree applies to a hand-edited vault applies to a collection that
 	// travelled here as part of some other entity's payload.
 	const objectives = (sprint?.objectives ?? []).filter(isEntity).map(objectiveNode)
+	const directives = (sprint?.directives ?? []).filter(isEntity).map(directiveNode)
 	const milestoneId = sprint?.milestoneCheckpointId
 	const checkpoints = (sprint?.checkpoints ?? []).filter(isEntity).map(checkpoint => checkpointNode(checkpoint, checkpoint.id === milestoneId))
 
-	const members = [...objectives, ...checkpoints]
+	const members = [...objectives, ...directives, ...checkpoints]
 	const memberKeys = new Set(members.map(node => node.key))
 	const ghosts = ghostlyBlockers(dependencies, memberKeys, resolve)
 
@@ -97,6 +99,12 @@ export function objectiveNode(objective: Objective): CanvasNode {
 	return { key: endpointKey(ref), ref, entity: objective }
 }
 
+/** Addresses a stellar directive as a dependency endpoint (PEP102 patch 10). */
+export function directiveNode(directive: Directive): CanvasNode {
+	const ref = { kind: DependencyEndpointKind.Directive, id: directive.id }
+	return { key: endpointKey(ref), ref, entity: directive }
+}
+
 /** Addresses a checkpoint as a dependency endpoint, flagging the sprint's milestone. */
 export function checkpointNode(checkpoint: Checkpoint, milestone: boolean): CanvasNode {
 	const ref = { kind: DependencyEndpointKind.Checkpoint, id: checkpoint.id }
@@ -133,12 +141,76 @@ export function globalContext(
 	return { nodes, edges: resolveEdges(dependencies, seen) }
 }
 
-/** The endpoints a dependency joins, as the pins a global context would need to show that edge. */
-export function edgeEndpoints(dependency: Dependency): { source: EndpointHit, target: EndpointHit } {
-	const source = sourceRef(dependency)
-	const target = targetRef(dependency)
-	return {
-		source: { kind: source.kind, id: source.id, title: source.id },
-		target: { kind: target.kind, id: target.id, title: target.id }
+/** The key a pin is shown under in a {@link globalContext}: its kind and id, never an occurrence slot. */
+export function pinKey(hit: Pick<EndpointHit, 'kind' | 'id'>): string {
+	return endpointKey({ kind: hit.kind, id: hit.id })
+}
+
+/**
+ * The endpoints one edge away from an endpoint, as the pins a global context needs to show those edges: its direct
+ * neighbours in both directions — what it depends on and what depends on it — intrinsic edges included, so a
+ * directive's open children and the parent it feeds count alike. Only direct neighbours: the chain is not walked.
+ *
+ * An edge touches the endpoint when one of its ends has the endpoint's key exactly, so an edge on one occurrence of an
+ * eventive touches that occurrence, not its owner. The far end becomes a pin of its kind and id, as a global context
+ * holds it: an eventive neighbour is pinned as an eventive under its owner's id, its slot dropped, the same as "Add
+ * with dependencies" always pinned one. Each pin is named by `resolve`, falling back to its id, so the pin — and a
+ * `.p7tpx` it is saved to — carries a title rather than a PUCK wherever the entity is loaded.
+ *
+ * Deduplicated by pin key, in the order the edges list them, and never the endpoint itself or anything in `present`
+ * (the {@link pinKey}s already shown).
+ */
+export function neighbourPins(
+	dependencies: readonly Dependency[],
+	endpoint: EndpointRef,
+	present: ReadonlySet<string> = new Set(),
+	resolve: EndpointResolver = () => undefined
+): EndpointHit[] {
+	const key = endpointKey(endpoint)
+	const seen = new Set([pinKey(endpoint)])
+	const pins: EndpointHit[] = []
+	for (const dependency of dependencies) {
+		const source = sourceRef(dependency)
+		const target = targetRef(dependency)
+		const far = endpointKey(source) === key ? target
+			: endpointKey(target) === key ? source
+				: undefined
+		if (!far) {
+			continue
+		}
+
+		const farKey = pinKey(far)
+		if (seen.has(farKey) || present.has(farKey)) {
+			continue
+		}
+
+		seen.add(farKey)
+		pins.push({ kind: far.kind, id: far.id, title: resolve(far.kind, far.id)?.title ?? far.id })
 	}
+
+	return pins
+}
+
+/**
+ * The keys of the shown endpoints that have a direct neighbour not yet shown: those {@link neighbourPins} would add to,
+ * given the same `present` pin keys. One pass over the edges, so a surface can decide for every node at once whether
+ * an expansion would bring anything in.
+ */
+export function expandableKeys(dependencies: readonly Dependency[], present: ReadonlySet<string>): Set<string> {
+	const expandable = new Set<string>()
+	for (const dependency of dependencies) {
+		const source = sourceRef(dependency)
+		const target = targetRef(dependency)
+		const sourceKey = endpointKey(source)
+		const targetKey = endpointKey(target)
+		if (present.has(sourceKey) && !present.has(pinKey(target))) {
+			expandable.add(sourceKey)
+		}
+
+		if (present.has(targetKey) && !present.has(pinKey(source))) {
+			expandable.add(targetKey)
+		}
+	}
+
+	return expandable
 }

@@ -1,5 +1,5 @@
 import { component, Component, css, html, HTMLTemplateResult, nothing, property, type PropertyValues } from '@a11d/lit'
-import { ContextMenuController, EntityWatch, type ContextMenuSpec } from '..'
+import { ContextMenuController, EntityWatch, removedEntityStyles, type ContextMenuSpec } from '..'
 import { entityContextMenu, openEntityEditor } from './entityMenu'
 import { itemLayoutStyles } from './itemStyles'
 
@@ -56,6 +56,7 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 	static override get styles() {
 		return css`
 			${itemLayoutStyles}
+			${removedEntityStyles}
 
 			.extra-action {
 				position: fixed;
@@ -104,7 +105,7 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 	protected override get template() {
 		return html`
 			<div class='grid ${this.disabled ? 'disabled' : ''}'>
-				<div @click=${async () => await this.notchAction()} class='notch part'>${this.notchTemplate}</div>
+				<div @click=${(e: Event) => this.notchAction(e.currentTarget as HTMLElement)} class='notch part'>${this.notchTemplate}</div>
 				<div class='toplane'>
 					${this.preTitle}
 					<div class='filler'></div>
@@ -152,7 +153,8 @@ export class EntityItem<T extends { id: string, title: string }> extends Compone
 
 	protected async extraAction() { }
 
-	protected async notchAction() { }
+	/** The notch was pressed. It is handed in, for a bubble the action raises to point at. */
+	protected async notchAction(_notch: HTMLElement) { }
 }
 
 declare global {

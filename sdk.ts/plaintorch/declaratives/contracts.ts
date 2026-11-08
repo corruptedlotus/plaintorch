@@ -5,16 +5,23 @@ export type {
 	Decree,
 	DecreePlan,
 	DecreeUpdate,
+	EpochPlan,
 	Eventive,
 	EventiveOccurrenceRef,
+	EventivePlan,
 	EventiveUpdate,
 	Fate,
 	FatePlan,
-	FateUpdate
+	FateUpdate,
+	Terminative,
+	TerminativeOccurrenceRef,
+	TerminativeOriginKind,
+	TerminativeUpdate
 } from "./models"
 export {
 	AttentiveResolution,
 	DecreeStatus,
 	EventiveResolution,
-	FateStatus
+	FateStatus,
+	TerminativeResolution
 } from "./models"

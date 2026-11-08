@@ -1,12 +1,13 @@
 import { Component, component, css, event, eventListener, html, nothing, property, query, repeat, state, svg } from '@a11d/lit'
-import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, entityKey, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
-import { ContextMenu, core, DerivedRef, navigateToEntity, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
-import { activatePlanningOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
+import { DependencyConstraint, DependencyEndpointKind, DependencyTrigger, typeNameOf, type Dependency, type EndpointHit, type EntitySubscription } from '@pleiades/sdk'
+import { concludeConfirmation, ContextMenu, ContextMenuController, core, deleteConfirmation, DerivedRef, entityMenuEntries, removeConfirmation, type ContextMenuEntry, type ContextMenuSpec, type ExpandingAction, type IconName } from '..'
+import { activatePlanningOnrush, addDirectiveToOnrush, addObjectiveToOnrush, concludeOnrush, createCheckpoint, createDependency, createPlanningOnrush, deleteCheckpoint, deleteDependency, deleteEntity, deletePlanningOnrush, peekEndpoint, removeDirectiveFromOnrush, removeObjectiveFromOnrush, reshapeDependency, saveGlobalContextToFile, saveGraphLayout, startActiveOnrush } from './canvasActions'
 import { EntityDetailModal } from './EntityDetailModal'
 import { OnrushDetailModal } from './OnrushDetailModal'
-import { contextModeLabels, edgeEndpoints, globalContext, onrushContext, type CanvasContextMode, type EndpointResolver } from './graphContext'
-import { edgeCurve, edgeEnds, edgeMidpoint, layoutGraph, linkCurve, parsePositions, serializePositions, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
-import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, endpointTypeNames, sourceRef, targetRef, wouldCycle, type CanvasEdge, type CanvasEntity, type CanvasGraph, type CanvasNode } from './graphModel'
+import { contextModeLabels, expandableKeys, globalContext, neighbourPins, onrushContext, pinKey, type CanvasContextMode, type EndpointResolver } from './graphContext'
+import { serializeGlobalContext } from './globalContextFile'
+import { edgeCurve, edgeEnds, edgeMidpoint, freeSlotNear, layoutDefaults, layoutGraph, linkCurve, parsePositions, serializePositions, type CanvasLayout, type NodeBox, type Point } from './graphLayout'
+import { describeEdge, effectiveConstraint, effectiveTrigger, endpointKey, isIntrinsic, sourceRef, targetRef, wouldContradict, type CanvasEdge, type CanvasGraph, type CanvasNode } from './graphModel'
 import { SelectObjectiveModal } from './SelectObjectiveModal'
 import { SelectEndpointModal } from './SelectEndpointModal'
 import type { CanvasNodePointer, NodeLock } from './CanvasNodeItem'
@@ -53,6 +54,8 @@ interface NodeSize {
 
 const minimumScale = 0.3
 const maximumScale = 2.5
+/** The margin a framed graph keeps from the viewport's edges, in screen pixels. */
+const framePadding = 48
 /** How far a pointer must travel before it is a drag rather than an unsteady click. */
 const dragThreshold = 3
 /**
@@ -81,6 +84,25 @@ function isMouseWheel(e: WheelEvent): boolean {
 }
 
 /**
+ * How far to pan along one axis so that spans of the surface (their `starts` and `ends`, in surface units) show in a
+ * viewport `extent` pixels long, {@link framePadding} kept clear: nothing when they already show, the least that shows
+ * them all when they fit, and centred on them when they do not.
+ */
+function revealShift(starts: readonly number[], ends: readonly number[], pan: number, scale: number, extent: number): number {
+	const low = pan + Math.min(...starts) * scale
+	const high = pan + Math.max(...ends) * scale
+	if (high - low > extent - 2 * framePadding) {
+		return (extent - (high - low)) / 2 - low
+	}
+
+	if (low < framePadding) {
+		return framePadding - low
+	}
+
+	return high > extent - framePadding ? extent - framePadding - high : 0
+}
+
+/**
  * The dependency canvas: the backlog as a graph you can draw on.
  *
  * Edges are read and written here rather than merely displayed — dragging from one node to another creates
@@ -91,6 +113,8 @@ function isMouseWheel(e: WheelEvent): boolean {
  * Keeping the nodes as elements is what lets each one be an {@link CanvasNodeItem} — a real entity item, with
  * the same reactivity and the same theming as every other surface — rather than something redrawn by hand
  * inside the SVG.
+ *
+ * @slot toolbar - A host's own items at the start of the toolbar, such as a popped-out tab's "Unsaved" mark.
  */
 @component('p7t-dependency-canvas')
 export class DependencyCanvas extends Component {
@@ -112,9 +136,16 @@ export class DependencyCanvas extends Component {
 
 	/**
 	 * Whether this canvas *is* a global context rather than hosting the onrush tabs. The file view sets it, so
-	 * a `.p7tpx` leaf shows only its one context, no mode switcher.
+	 * a `.p7tpx` leaf shows only its one context, no mode switcher, and it has no "Save to file".
 	 */
 	@property({ type: Boolean, reflect: true }) fileBacked = false
+
+	/**
+	 * Whether this canvas is the whole of a window or tab of its own, showing its one context — an onrush or an
+	 * unsaved global context popped out — with no mode switcher and no pop-out. A move to another context (the
+	 * planning onrush, the active one it was activated into) pops that context out instead of switching this one.
+	 */
+	@property({ type: Boolean, reflect: true }) singleContext = false
 
 	/** Announces a global context change (pins or layout) so a file-backed host can persist it. */
 	@event({ bubbles: true, composed: true }) contextChanged!: EventDispatcher<GlobalContextSnapshot>
@@ -154,12 +185,40 @@ export class DependencyCanvas extends Component {
 	private readonly activeSprint = new DerivedRef(this, core.repos.onrushCurrent, () => this.mode === 'onrush-active' ? '' : undefined)
 	private readonly planningSprint = new DerivedRef(this, core.repos.onrushPlanning, () => this.mode === 'onrush-planning' ? '' : undefined)
 
+	/**
+	 * The backdrop's right-click menu ({@link backdropMenuSpec}). A node raises its own menu and stops the event, so this
+	 * only hears a right-click no node claimed; of those it answers only the ones on the backdrop itself, the same test a
+	 * pan starts by, and leaves the tray, the FABs and an edge to their own.
+	 */
+	protected readonly backdropMenu = new ContextMenuController(this, event =>
+		this.isBackground(event.composedPath()[0] ?? null) ? this.backdropMenuSpec(event.clientX, event.clientY) : undefined)
+
 	private storeSubscription?: EntitySubscription
 	private resizeObserver?: ResizeObserver
 	/** The node set the observer is currently watching, so it is re-pointed only when that set changes. */
 	private observedSignature?: string
 	private layoutCache?: { readonly signature: string, readonly layout: CanvasLayout }
+	/** The {@link expandable} set, with the edge listing and pin set it was worked out from. */
+	private expandableCache?: {
+		readonly dependencies: readonly Dependency[] | undefined
+		readonly pinned: readonly EndpointHit[]
+		readonly keys: ReadonlySet<string>
+	}
 	private framed = false
+	/**
+	 * The pan and zoom the last framing left, which tells a resize whether the reader has panned or zoomed since (every
+	 * gesture assigns a new pan or scale). While nobody has, the framing follows the viewport rather than staying fitted
+	 * to a size it no longer has: a pane resized, a page coming out of dormancy at its real size, the briefing's hero
+	 * ducking away and giving the canvas its height.
+	 */
+	private framedView?: { readonly pan: Point, readonly scale: number }
+	/**
+	 * Watches the viewport's own size: a canvas that could not frame yet (its viewport had no size) frames once it can,
+	 * and a framed one follows the viewport as long as nobody has panned or zoomed.
+	 */
+	private viewportObserver?: ResizeObserver
+	/** The viewport element the observer is watching. */
+	private observedViewport?: HTMLElement
 	/** Whether the drag in progress has actually moved, which is what tells a drag from a click. */
 	private dragged = false
 	/**
@@ -186,6 +245,12 @@ export class DependencyCanvas extends Component {
 				height: 100%;
 				min-height: 0;
 				font-family: var(--font-interface);
+				/*
+				 * The canvas is all controls: a pan or a drag that sweeps over the tray's tallies or the readout would
+				 * otherwise select their text and stall the gesture. The nodes were already unselectable on their own,
+				 * so this reaches only the chrome around them.
+				 */
+				user-select: none;
 				--p7t-canvas-node-width: 15em;
 				/* The two edge colours, shared by the line, its arrow, and its midpoint badge so they match. */
 				--p7t-edge-line: color-mix(in srgb, var(--text-normal) 70%, var(--background-primary, #1e1e1e));
@@ -281,6 +346,11 @@ export class DependencyCanvas extends Component {
 			.edge.linking {
 				stroke: var(--p7t-flare-accent, var(--interactive-accent));
 				stroke-dasharray: 5 4;
+			}
+
+			/* Implied by the structure rather than drawn (PEP102 patch 9): dashed, so it reads as given, not made. */
+			.edge.intrinsic {
+				stroke-dasharray: 7 5;
 			}
 
 			/*
@@ -419,14 +489,17 @@ export class DependencyCanvas extends Component {
 	protected override connected() {
 		// A node's own state — an objective moving to Done — changes nothing about the listings the graph is
 		// built from, so no listing subscription would report it. The same reasoning as the entity grid; this
-		// observes the graph's node kinds (its dependency endpoints) and no others.
+		// observes the graph's node kinds (its dependency endpoints) and the sprint. The sprint is an entity too, so
+		// a refetch that changes its members updates it in place and its record never reports a change: only its own
+		// notification says that a node joined or left.
 		this.storeSubscription = core.store.subscribeTypes(
-			['StellarDirective', 'LunarDirective', 'Objective', 'Fate', 'Checkpoint'],
+			['StellarDirective', 'LunarDirective', 'Objective', 'Fate', 'Checkpoint', 'OnrushSprint'],
 			() => this.requestUpdate()
 		)
 		// A node grows when its title is edited or its content loads, and that is not a canvas render on its own —
 		// the observer is what keeps the edges attached to it through changes the canvas never hears about.
 		this.resizeObserver = new ResizeObserver(entries => this.onNodesResized(entries))
+		this.viewportObserver = new ResizeObserver(() => this.onViewportResized())
 	}
 
 	protected override disconnected() {
@@ -434,6 +507,9 @@ export class DependencyCanvas extends Component {
 		this.storeSubscription = undefined
 		this.resizeObserver?.disconnect()
 		this.resizeObserver = undefined
+		this.viewportObserver?.disconnect()
+		this.viewportObserver = undefined
+		this.observedViewport = undefined
 		this.observedSignature = undefined
 		this.livePointers.clear()
 		window.clearTimeout(this.layoutSaveTimer)
@@ -458,11 +534,9 @@ export class DependencyCanvas extends Component {
 	 * leaves the blocker to be labelled by its id, which is enough to say what is holding a member back.
 	 */
 	private readonly resolveEndpoint: EndpointResolver = (kind, id) => {
-		for (const typeName of endpointTypeNames(kind)) {
-			const stored = core.store.peek<CanvasEntity>(entityKey(typeName, id))
-			if (stored) {
-				return stored
-			}
+		const stored = peekEndpoint(kind, id)
+		if (stored) {
+			return stored
 		}
 
 		switch (kind) {
@@ -472,6 +546,22 @@ export class DependencyCanvas extends Component {
 			case DependencyEndpointKind.Fate: return this.fateList.value?.find(fate => fate.id === id)
 			default: return undefined
 		}
+	}
+
+	/**
+	 * The keys of the global nodes with a neighbour not shown yet, which are the ones offered "Expand Connections"
+	 * ({@link expandableKeys}). Every node's menu is rebuilt on every render, panning included, so the set is worked out
+	 * once per edge listing and pin set rather than per node: both are replaced, never changed in place, when they change.
+	 */
+	private get expandable(): ReadonlySet<string> {
+		const dependencies = this.dependencies.value
+		const cache = this.expandableCache
+		if (cache?.dependencies !== dependencies || cache?.pinned !== this.pinned) {
+			const present = new Set(this.pinned.map(pinKey))
+			this.expandableCache = { dependencies, pinned: this.pinned, keys: expandableKeys(dependencies ?? [], present) }
+		}
+
+		return this.expandableCache!.keys
 	}
 
 	private get loading() {
@@ -558,7 +648,8 @@ export class DependencyCanvas extends Component {
 
 		return html`
 			<div class='toolbar'>
-				${this.fileBacked ? nothing : (['onrush-active', 'onrush-planning', 'global'] as const).map(mode => html`
+				<slot name='toolbar'></slot>
+				${this.fileBacked || this.singleContext ? nothing : (['onrush-active', 'onrush-planning', 'global'] as const).map(mode => html`
 					<button
 						class='mode'
 						aria-pressed=${this.mode === mode}
@@ -568,6 +659,10 @@ export class DependencyCanvas extends Component {
 				`)}
 				<div class='spacer'></div>
 				<span class='readout'>${graph.nodes.length} nodes · ${graph.edges.length} edges · ${Math.round(this.scale * 100)}%</span>
+				${this.fileBacked || this.singleContext || !host.canvasPopOut ? nothing : html`
+					<p7t-button ghost class='pop-out' icon='lucide:square-arrow-out-up-right' label=${host.canvasPopOut.label}
+						@click=${() => void this.onPopOut()}></p7t-button>
+				`}
 			</div>
 			<div
 				class='viewport'
@@ -617,13 +712,13 @@ export class DependencyCanvas extends Component {
 								large='secondary'
 								icon='lucide:badge-plus'
 								actionLabel='Create New'
-								.actions=${this.creations}>
+								.actions=${this.creations()}>
 							</p7t-expanding-actions>
 							<p7t-expanding-actions
 								large='main'
 								icon='lucide:copy-plus'
 								actionLabel=${'Add to Canvas'}
-								.actions=${this.additions}>
+								.actions=${this.additions()}>
 							</p7t-expanding-actions>
 						</div>
 					` : nothing}
@@ -668,7 +763,7 @@ export class DependencyCanvas extends Component {
 						<p7t-button emphasis icon='state-onrush' @click=${() => void this.onStartNow()}>
 							<span>Start now</span>
 						</p7t-button>
-						<p7t-button icon='lucide:arrow-right' @click=${() => this.setMode('onrush-planning')}>
+						<p7t-button icon='lucide:arrow-right' @click=${() => void this.showMode('onrush-planning')}>
 							<span>Go to planning</span>
 						</p7t-button>
 					` : html`
@@ -684,8 +779,8 @@ export class DependencyCanvas extends Component {
 	/**
 	 * The management tray, shown whenever a sprint is on screen (PEP102.5).
 	 *
-	 * Three tallies — objectives, checkpoints (the milestone among them), executive orders — sit above a row
-	 * that opens the sprint's own detail window and offers the lifecycle actions its mode admits.
+	 * Four tallies — objectives, stellar directives, checkpoints (the milestone among them), executive orders — sit
+	 * above a row that opens the sprint's own detail window and offers the lifecycle actions its mode admits.
 	 */
 	private get trayTemplate() {
 		const sprint = this.sprint
@@ -694,6 +789,7 @@ export class DependencyCanvas extends Component {
 				${!sprint ? nothing : html`
 					<div class='counts'>
 						<span class='count'><p7t-icon icon='objective'></p7t-icon>${sprint.objectives?.length ?? 0}</span>
+						<span class='count'><p7t-icon icon='directive'></p7t-icon>${sprint.directives?.length ?? 0}</span>
 						<span class='count'><p7t-icon icon='checkpoint'></p7t-icon>${sprint.checkpoints?.length ?? 0}</span>
 						<span class='count'><p7t-icon icon='exec-order'></p7t-icon>${sprint.executiveOrders?.length ?? 0}</span>
 					</div>
@@ -718,17 +814,32 @@ export class DependencyCanvas extends Component {
 		`
 	}
 
-	/** The sprint-lifecycle actions the tray's menu offers, which differ by mode; empty in a global context. */
+	/**
+	 * The sprint-lifecycle actions the tray's menu offers, which differ by mode; empty in a global context. Deleting and
+	 * concluding ask first.
+	 */
 	private get lifecycleActions(): ExpandingAction[] {
 		if (this.mode === 'onrush-planning' && this.sprint) {
 			return [
 				{ key: 'activate', icon: 'state-onrush', label: 'Activate', run: () => this.onActivate() },
-				{ key: 'delete', icon: 'lucide:trash-2', label: 'Delete', run: () => this.onDelete() }
+				{
+					key: 'delete',
+					icon: 'lucide:trash-2',
+					label: 'Delete',
+					confirm: deleteConfirmation(`Delete the planned Onrush "${this.sprint.title}"?`),
+					run: () => this.onDelete()
+				}
 			]
 		}
 
 		if (this.sprint) {
-			return [{ key: 'conclude', icon: 'state-archived', label: 'Conclude', run: () => this.onConclude() }]
+			return [{
+				key: 'conclude',
+				icon: 'state-archived',
+				label: 'Conclude',
+				confirm: concludeConfirmation(`Conclude the Onrush "${this.sprint.title}"?`),
+				run: () => this.onConclude()
+			}]
 		}
 
 		return []
@@ -764,7 +875,54 @@ export class DependencyCanvas extends Component {
 	private async onActivate() {
 		const sprint = this.sprint
 		if (sprint && await activatePlanningOnrush(sprint.id)) {
-			this.setMode('onrush-active')
+			await this.showMode('onrush-active')
+		}
+	}
+
+	/**
+	 * Moves to another context: this canvas switches to it, unless it is a popped-out {@link singleContext}, which
+	 * pops that context out on its own instead and stays on its own.
+	 */
+	private async showMode(mode: 'onrush-active' | 'onrush-planning') {
+		const popOut = host.canvasPopOut
+		if (!this.singleContext || !popOut) {
+			this.setMode(mode)
+			return
+		}
+
+		try {
+			await popOut.popOut({ mode })
+		}
+		catch {
+			toast(`PLAINTORCH could not open the ${contextModeLabels[mode].toLowerCase()}.`, 'error')
+		}
+	}
+
+	/**
+	 * Pops the context on screen out on its own — a window or a tab, as the host has it. An onrush stays on screen here
+	 * too — the vault holds it, so both stay current. A scratch global context moves: it is held nowhere but here, so
+	 * the popped-out one takes it, unsaved, and this canvas starts a fresh one.
+	 */
+	private async onPopOut() {
+		const popOut = host.canvasPopOut
+		if (!popOut) {
+			return
+		}
+
+		try {
+			if (this.mode === 'global') {
+				await popOut.popOut({ mode: 'global', text: serializeGlobalContext(this.pinned, serializePositions(this.overrides)) })
+				this.pinned = []
+				this.overrides = new Map()
+				this.framed = false
+				this.emitContextChanged()
+			}
+			else {
+				await popOut.popOut({ mode: this.mode })
+			}
+		}
+		catch {
+			toast(`PLAINTORCH could not open the ${contextModeLabels[this.mode].toLowerCase()} on its own.`, 'error')
 		}
 	}
 
@@ -785,7 +943,7 @@ export class DependencyCanvas extends Component {
 	/**
 	 * The right node element for what the node stands for.
 	 *
-	 * A checkpoint gets its own component — no lifecycle, its milestone flagged — while everything else is an
+	 * A checkpoint gets its own component — one-shot, no status, its milestone flagged — while everything else is an
 	 * entity node. Both share the pointer contract the container drives them by.
 	 */
 	private nodeTemplate(node: CanvasNode, lock: NodeLock) {
@@ -849,7 +1007,7 @@ export class DependencyCanvas extends Component {
 		const beginTriggered = effectiveTrigger(edge.dependency) === DependencyTrigger.OnBegin
 		return svg`
 			<path
-				class='edge ${satisfied ? 'satisfied' : 'pending'}'
+				class='edge ${satisfied ? 'satisfied' : 'pending'} ${isIntrinsic(edge.dependency) ? 'intrinsic' : ''}'
 				d=${path}
 				marker-end='url(#${satisfied ? 'arrow-satisfied' : 'arrow-pending'})'
 				marker-start=${beginTriggered ? 'url(#edge-begin)' : nothing}>
@@ -924,10 +1082,18 @@ export class DependencyCanvas extends Component {
 	}
 
 	private edgeMenuSpec(edge: CanvasEdge): ContextMenuSpec {
+		// An intrinsic edge is the structure's, not the reader's: it has no identity to delete and no shape to change.
+		if (isIntrinsic(edge.dependency)) {
+			return {
+				title: 'Intrinsic dependency',
+				entries: [{ note: 'Finishing a directive depends on finishing each of its direct children. Implied by where the child sits; it cannot be changed or removed, and it goes when the child is moved out or fails.' }]
+			}
+		}
+
 		const trigger = effectiveTrigger(edge.dependency)
 		const constraint = effectiveConstraint(edge.dependency)
-		// A checkpoint has no begin or finish, so it offers no trigger on its source side and no constraint on
-		// its target side — those are empty by rule, not a choice, so the menu withholds them entirely.
+		// A checkpoint is one-shot — its only event is its unlock — so it offers no trigger on its source side and no
+		// constraint on its target side: those are empty by rule, not a choice, so the menu withholds them entirely.
 		const sourceIsCheckpoint = edge.dependency.sourceKind === DependencyEndpointKind.Checkpoint
 		const targetIsCheckpoint = edge.dependency.targetKind === DependencyEndpointKind.Checkpoint
 		const entries: ContextMenuEntry[] = []
@@ -947,7 +1113,13 @@ export class DependencyCanvas extends Component {
 				{ label: "Gates the dependant's finish", icon: 'lucide:flag', pressed: constraint === DependencyConstraint.ToFinish, run: () => this.reshape(edge, trigger, DependencyConstraint.ToFinish) })
 		}
 
-		entries.push({ separator: true }, { label: 'Remove dependency', icon: 'lucide:unlink', danger: true, run: () => deleteDependency(edge) })
+		entries.push({ separator: true }, {
+			label: 'Remove dependency',
+			icon: 'lucide:unlink',
+			danger: true,
+			confirm: { ...removeConfirmation('Remove this dependency? The entities it joins stay.'), actionIcon: 'lucide:unlink' },
+			run: () => deleteDependency(edge)
+		})
 		return { title: `This ${describeEdge(edge.dependency)}`, entries }
 	}
 
@@ -966,7 +1138,7 @@ export class DependencyCanvas extends Component {
 					? this.globalMenuEntries(node)
 					: isCheckpoint
 						? this.checkpointMenuEntries(node)
-						: this.entityMenuEntries(node))
+						: this.entityNodeMenuEntries(node))
 			]
 		}
 	}
@@ -975,32 +1147,90 @@ export class DependencyCanvas extends Component {
 	 * A global node's menu: removing only *hides* it, whichever kind it is.
 	 *
 	 * The edge it carried is untouched and reappears when the node is pinned again — that is the whole of what
-	 * global add and remove do. Deleting the entity is a separate, destructive step kept behind a separator.
+	 * global add and remove do. Expanding is the opposite: it shows the node's neighbours, offered only while one of
+	 * them is not shown yet. Deleting the entity is a separate, destructive step kept behind a separator.
 	 */
 	private globalMenuEntries(node: CanvasNode): ContextMenuEntry[] {
 		const entries: ContextMenuEntry[] = []
 		if (node.ref.kind !== DependencyEndpointKind.Checkpoint) {
-			entries.push({ label: 'Open note', icon: 'lucide:file-text', run: () => navigateToEntity(node.entity.id) })
+			entries.push(entityMenuEntries.openNote(node.entity))
+		}
+
+		if (this.expandable.has(node.key)) {
+			entries.push({ label: 'Expand Connections', icon: 'lucide:git-branch-plus', run: () => this.expandConnections(node) })
 		}
 
 		entries.push(
 			{ label: 'Remove from view', icon: 'lucide:eye-off', run: () => this.removeFromView(node, false) },
 			{ label: 'Remove with connected group', icon: 'lucide:git-fork', run: () => this.removeFromView(node, true) },
 			{ separator: true },
-			{ label: 'Delete', icon: 'lucide:trash-2', danger: true, run: () => deleteEntity(node) }
+			this.deleteEntry(node)
 		)
 		return entries
 	}
 
-	private entityMenuEntries(node: CanvasNode): ContextMenuEntry[] {
+	/**
+	 * An Onrush node's menu: its note, its membership, and — set apart — deleting the entity. A member can leave the
+	 * Onrush; a ghostly objective or stellar directive can join it; any other ghost is only context.
+	 */
+	private entityNodeMenuEntries(node: CanvasNode): ContextMenuEntry[] {
+		// A directive and an objective leave the sprint through their own endpoints (PEP102 patch 10).
+		const remove = node.ref.kind === DependencyEndpointKind.Directive ? removeDirectiveFromOnrush : removeObjectiveFromOnrush
 		return [
-			{ label: 'Open note', icon: 'lucide:file-text', run: () => navigateToEntity(node.entity.id) },
-			node.ghostly
-				? { note: 'A prerequisite outside this Onrush. It goes when the block is resolved.' }
-				: { label: 'Remove from Onrush', icon: 'onrush', run: () => removeObjectiveFromOnrush(node.entity.id) },
+			entityMenuEntries.openNote(node.entity),
+			!node.ghostly
+				? {
+					label: 'Remove from Onrush',
+					icon: 'onrush',
+					confirm: removeConfirmation(`Remove "${node.entity.title}" from this Onrush?`, 'default'),
+					run: () => remove(node.entity.id)
+				}
+				: this.joinOnrushEntry(node) ?? { note: 'A prerequisite outside this Onrush. It goes when the block is resolved.' },
 			{ separator: true },
-			{ label: 'Delete', icon: 'lucide:trash-2', danger: true, run: () => deleteEntity(node) }
+			this.deleteEntry(node)
 		]
+	}
+
+	/**
+	 * Brings a ghostly objective or stellar directive into the Onrush being graphed, turning the outside blocker into a
+	 * member (PEP102 patch 10). The core places each in one Onrush at a time, so one that belongs to another Onrush asks
+	 * before it is moved out of it. None for any other kind of ghost — a lunar directive, a fate, a checkpoint — which no
+	 * Onrush can hold, nor for a directive ghost whose entity was never resolved, since its kind cannot be told.
+	 */
+	private joinOnrushEntry(node: CanvasNode): ContextMenuEntry | undefined {
+		const sprint = this.sprint
+		const join = node.ref.kind === DependencyEndpointKind.Objective
+			? addObjectiveToOnrush
+			: node.ref.kind === DependencyEndpointKind.Directive && typeNameOf(node.entity) === 'StellarDirective'
+				? addDirectiveToOnrush
+				: undefined
+		if (!sprint || !join) {
+			return undefined
+		}
+
+		const member = node.entity as { onrushSprintId?: string, onrushSprint?: { title: string } }
+		const elsewhere = !!member.onrushSprintId && member.onrushSprintId !== sprint.id
+		return {
+			label: 'Add to This Onrush',
+			icon: 'onrush',
+			confirm: !elsewhere ? undefined : {
+				message: `"${node.entity.title}" is in ${member.onrushSprint?.title ? `the Onrush "${member.onrushSprint.title}"` : 'another Onrush'}. Move it into this one?`,
+				action: 'Move',
+				actionIcon: 'onrush'
+			},
+			run: () => join(node.entity.id, sprint)
+		}
+	}
+
+	/** Deleting the entity behind a node, which asks first — the one destructive row a node's menu offers. */
+	private deleteEntry(node: CanvasNode): ContextMenuEntry {
+		return {
+			label: 'Delete',
+			icon: 'lucide:trash-2',
+			danger: true,
+			confirm: deleteConfirmation(`Delete "${node.entity.title}"?`),
+			run: () => deleteEntity(node)
+		}
 	}
 
 	private checkpointMenuEntries(node: CanvasNode): ContextMenuEntry[] {
@@ -1016,24 +1246,34 @@ export class DependencyCanvas extends Component {
 
 		return [
 			{ separator: true },
-			{ label: 'Delete checkpoint', icon: 'lucide:trash-2', danger: true, run: () => deleteCheckpoint(node.entity.id) }
+			{
+				label: 'Delete checkpoint',
+				icon: 'lucide:trash-2',
+				danger: true,
+				confirm: deleteConfirmation(`Delete the checkpoint "${node.entity.title}" and the dependencies through it?`),
+				run: () => deleteCheckpoint(node.entity.id)
+			}
 		]
 	}
 
-	private get additions(): ExpandingAction[] {
+	/**
+	 * What the add-FAB offers: existing entities brought onto the canvas. The backdrop's menu offers the same, placing
+	 * the node `at` the surface point it was raised over; from the FAB the layout places it.
+	 */
+	private additions(at?: Point): ExpandingAction[] {
 		if (this.mode === 'global') {
 			return [
 				{
 					key: 'endpoint',
 					icon: 'lucide:plus',
 					label: 'Add to view',
-					run: async () => await this.addEndpoint()
+					run: async () => await this.addEndpoint(false, at)
 				},
 				{
 					key: 'endpoint-deps',
 					icon: 'lucide:git-fork',
 					label: 'Add with dependencies',
-					run: async () => await this.addEndpoint(true)
+					run: async () => await this.addEndpoint(true, at)
 				}
 			]
 		}
@@ -1043,7 +1283,13 @@ export class DependencyCanvas extends Component {
 				key: 'objective',
 				icon: 'objective',
 				label: 'Add objective',
-				run: async () => await this.addObjective()
+				run: async () => await this.addObjective(at)
+			},
+			{
+				key: 'directive',
+				icon: 'directive',
+				label: 'Add directive',
+				run: async () => await this.addDirective(at)
 			}
 		]
 	}
@@ -1051,17 +1297,78 @@ export class DependencyCanvas extends Component {
 	/**
 	 * What the create-FAB offers: brand-new entities, as opposed to the add-FAB's imports of existing ones. The
 	 * same in every mode — a checkpoint is the one kind made here for now; in an onrush it is created bound to
-	 * the sprint, in a global context it is created free and pinned into the view.
+	 * the sprint, in a global context it is created free and pinned into the view. Placed `at` a surface point, as
+	 * {@link additions} are.
 	 */
-	private get creations(): ExpandingAction[] {
+	private creations(at?: Point): ExpandingAction[] {
 		return [
 			{
 				key: 'checkpoint',
 				icon: 'checkpoint',
 				label: 'New checkpoint',
-				run: async () => await this.createCheckpoint()
+				run: async () => await this.createCheckpoint(at)
 			}
 		]
+	}
+
+	/**
+	 * The backdrop's menu, raised by a right-click on the empty canvas: the quick actions the FABs and the tray offer,
+	 * from the pointer. What it adds or creates lands where the menu was raised. With no sprint to show it offers the
+	 * empty state's way to one instead, and while the graph loads it offers nothing.
+	 */
+	private backdropMenuSpec(clientX: number, clientY: number): ContextMenuSpec | undefined {
+		if (this.loading) {
+			return undefined
+		}
+
+		const sprint = this.sprint
+		if (this.mode !== 'global' && !sprint) {
+			return {
+				title: contextModeLabels[this.mode],
+				entries: this.mode === 'onrush-active'
+					? [
+						{ label: 'Start now', icon: 'state-onrush', run: () => void this.onStartNow() },
+						{ label: 'Go to planning', icon: 'lucide:arrow-right', run: () => void this.showMode('onrush-planning') }
+					]
+					: [{ label: 'Create new', icon: 'lucide:star', run: () => void this.onCreatePlanning() }]
+			}
+		}
+
+		const at = this.toCanvas(clientX, clientY)
+		const quick: ContextMenuEntry[] = [...this.additions(at), ...this.creations(at)]
+			.map(action => ({ label: action.label, icon: action.icon, confirm: action.confirm, run: () => void action.run() }))
+		const view: ContextMenuEntry[] = []
+		if (this.graph.nodes.length > 0) {
+			view.push(
+				{ label: 'Fit to view', icon: 'lucide:scan', run: () => void this.frame(this.layoutFor(this.graph)) },
+				{ label: 'Reset layout', icon: 'lucide:rotate-ccw', run: () => this.resetLayout() })
+		}
+
+		if (sprint) {
+			view.push({ label: 'Onrush details', icon: 'lucide:pen', run: () => this.openOnrushDetails() })
+		}
+		else if (!this.fileBacked && host.globalContexts) {
+			view.push({ label: 'Save to file', icon: 'lucide:save', run: () => void this.onSaveToFile() })
+		}
+
+		return {
+			title: sprint?.title ?? contextModeLabels[this.mode],
+			entries: view.length === 0 ? quick : [...quick, { separator: true }, ...view]
+		}
+	}
+
+	/**
+	 * Puts a node that is about to join the canvas at a surface point, as if it had been dragged there, and saves the
+	 * arrangement. Set before the node arrives, so it never draws first at its laid-out place; a position kept for a
+	 * node that then never arrives is harmless, as a saved one for a removed node already is.
+	 */
+	private placeAt(key: string, at: Point | undefined) {
+		if (!at) {
+			return
+		}
+
+		this.overrides = new Map(this.overrides).set(key, at)
+		this.scheduleLayoutSave()
 	}
 
 	@eventListener('requestLinkStart')
@@ -1120,7 +1427,8 @@ export class DependencyCanvas extends Component {
 		this.scheduleLayoutSave()
 	}
 
-	private async addObjective() {
+	/** Brings an existing objective into the sprint, placed `at` a surface point when one is given. */
+	private async addObjective(at?: Point) {
 		const sprint = this.sprint
 		if (!sprint) {
 			toast(`There is no ${contextModeLabels[this.mode].toLowerCase()} to add to.`, 'warning')
@@ -1130,18 +1438,41 @@ export class DependencyCanvas extends Component {
 		const present = new Set(this.graph.nodes.map(node => node.ref.id))
 		const objective = await SelectObjectiveModal.prompt(present)
 		if (objective) {
+			this.placeAt(endpointKey({ kind: DependencyEndpointKind.Objective, id: objective.id }), at)
 			await addObjectiveToOnrush(objective.id, sprint)
 		}
 	}
 
 	/**
-	 * Creates a checkpoint where the canvas is looking: bound to the sprint in an onrush context, or free and
-	 * pinned into a global one — a global context has no membership, so showing the new node *is* the add.
+	 * Brings a stellar directive into the sprint (PEP102 patch 10), picked through the cross-kind endpoint search and
+	 * placed `at` a surface point when one is given.
 	 */
-	private async createCheckpoint() {
+	private async addDirective(at?: Point) {
+		const sprint = this.sprint
+		if (!sprint) {
+			toast(`There is no ${contextModeLabels[this.mode].toLowerCase()} to add to.`, 'warning')
+			return
+		}
+
+		const present = new Set(this.graph.nodes.map(node => node.key))
+		const hit = await SelectEndpointModal.prompt(present, [DependencyEndpointKind.Directive])
+		if (hit) {
+			this.placeAt(endpointKey({ kind: DependencyEndpointKind.Directive, id: hit.id }), at)
+			await addDirectiveToOnrush(hit.id, sprint)
+		}
+	}
+
+	/**
+	 * Creates a checkpoint where the canvas is looking: bound to the sprint in an onrush context, or free and
+	 * pinned into a global one — a global context has no membership, so showing the new node *is* the add. Placed
+	 * `at` a surface point when one is given.
+	 */
+	private async createCheckpoint(at?: Point) {
+		const place = (checkpoint: { id: string }) => this.placeAt(endpointKey({ kind: DependencyEndpointKind.Checkpoint, id: checkpoint.id }), at)
 		if (this.mode === 'global') {
 			const created = await createCheckpoint()
 			if (created) {
+				place(created)
 				this.pinned = [...this.pinned, { kind: DependencyEndpointKind.Checkpoint, id: created.id, title: created.title }]
 				this.emitContextChanged()
 			}
@@ -1154,46 +1485,123 @@ export class DependencyCanvas extends Component {
 			return
 		}
 
-		await createCheckpoint(sprint)
+		await createCheckpoint(sprint, place)
 	}
 
 	/**
 	 * Pins a node into the global context, optionally pulling its dependency neighbours in with it.
 	 *
 	 * A pin is a `kind:id` key; the picker excludes what is already pinned. With `withDependencies`, every
-	 * endpoint one hop away along an edge touching the new node is pinned too, resolved to a title from the
-	 * edge itself so it draws before anything is fetched.
+	 * endpoint one hop away along an edge touching the new node is pinned too ({@link neighbourPins}), named from what
+	 * is loaded so it draws as a title before anything is fetched. The chosen node is placed `at` a surface point when
+	 * one is given; its neighbours take their laid-out places.
 	 */
-	private async addEndpoint(withDependencies = false) {
-		const present = new Set(this.pinned.map(hit => endpointKey({ kind: hit.kind, id: hit.id })))
+	private async addEndpoint(withDependencies = false, at?: Point) {
+		const present = new Set(this.pinned.map(pinKey))
 		const hit = await SelectEndpointModal.prompt(present)
 		if (!hit) {
 			return
 		}
 
-		const additions = new Map<string, EndpointHit>()
-		additions.set(endpointKey({ kind: hit.kind, id: hit.id }), hit)
+		this.placeAt(pinKey(hit), at)
+		const neighbours = withDependencies ? neighbourPins(this.dependencies.value ?? [], hit, present, this.resolveEndpoint) : []
+		this.pinned = [...this.pinned, hit, ...neighbours]
+		this.emitContextChanged()
+	}
 
-		if (withDependencies) {
-			const key = endpointKey({ kind: hit.kind, id: hit.id })
-			for (const dependency of this.dependencies.value ?? []) {
-				const ends = edgeEndpoints(dependency)
-				const sourceKey = endpointKey(sourceRef(dependency))
-				const targetKey = endpointKey(targetRef(dependency))
-				const neighbour = sourceKey === key ? { key: targetKey, hit: ends.target }
-					: targetKey === key ? { key: sourceKey, hit: ends.source }
-						: undefined
-				if (neighbour && !present.has(neighbour.key) && !additions.has(neighbour.key)) {
-					// The edge only knows the neighbour's id; name it from what is loaded so the pin — and the file it
-					// may be saved to — carries a title rather than a PUCK.
-					const entity = this.resolveEndpoint(neighbour.hit.kind, neighbour.hit.id)
-					additions.set(neighbour.key, entity ? { ...neighbour.hit, title: entity.title } : neighbour.hit)
-				}
+	/**
+	 * Brings a node's direct neighbours onto the global context, those not on it yet: what it depends on and what depends
+	 * on it, intrinsic edges included ({@link neighbourPins}). Only the global context offers it: there a node is only
+	 * shown, where in an onrush it is a membership, and pulling one in would join it to the sprint.
+	 *
+	 * Where the reader placed the node (dragged there, or kept from a saved layout), the neighbours are placed beside it
+	 * ({@link placeBeside}). Otherwise the layout places them, and its left-to-right ranks already put each beside the
+	 * node it joins. Either way the view follows ({@link followExpansion}), so the node and its new neighbours are in
+	 * sight.
+	 */
+	private expandConnections(node: CanvasNode) {
+		const dependencies = this.dependencies.value ?? []
+		const neighbours = neighbourPins(dependencies, node.ref, new Set(this.pinned.map(pinKey)), this.resolveEndpoint)
+		if (neighbours.length === 0) {
+			return
+		}
+
+		const pinned = [...this.pinned, ...neighbours]
+		const next = globalContext(pinned, dependencies, this.resolveEndpoint)
+		const before = this.boxesFor(this.layoutFor(this.graph)).get(node.key)
+		if (this.overrides.has(node.key)) {
+			this.placeBeside(node, neighbours, next)
+		}
+
+		this.followExpansion(node, neighbours, before, next)
+		this.pinned = pinned
+		this.emitContextChanged()
+	}
+
+	/**
+	 * Moves the view after an expansion: first by however far the layout moved the node as it made room, so the node
+	 * stays where the reader saw it, then by as little as brings its new neighbours into view too (centring the group when
+	 * it is wider or taller than the view). Following an expansion is not the reader panning: a view still framed as it
+	 * was counts as framed afterwards, and goes on following the viewport's size.
+	 */
+	private followExpansion(node: CanvasNode, neighbours: readonly EndpointHit[], before: NodeBox | undefined, next: CanvasGraph) {
+		const boxes = this.boxesFor(this.layoutFor(next))
+		const after = boxes.get(node.key)
+		if (!after) {
+			return
+		}
+
+		const scale = this.scale
+		let pan = before ? { x: this.pan.x - (after.x - before.x) * scale, y: this.pan.y - (after.y - before.y) * scale } : this.pan
+		const rect = this.viewportElement?.getBoundingClientRect()
+		if (rect && rect.width > 0 && rect.height > 0) {
+			const group = [after, ...neighbours.flatMap(hit => boxes.get(pinKey(hit)) ?? [])]
+			pan = {
+				x: pan.x + revealShift(group.map(box => box.x), group.map(box => box.x + box.width), pan.x, scale, rect.width),
+				y: pan.y + revealShift(group.map(box => box.y), group.map(box => box.y + box.height), pan.y, scale, rect.height)
 			}
 		}
 
-		this.pinned = [...this.pinned, ...additions.values()]
-		this.emitContextChanged()
+		if (pan.x === this.pan.x && pan.y === this.pan.y) {
+			return
+		}
+
+		const untouched = this.framedView?.pan === this.pan && this.framedView.scale === this.scale
+		this.pan = pan
+		if (untouched) {
+			this.framedView = { pan, scale }
+		}
+	}
+
+	/**
+	 * Places neighbours just brought in beside the node they came from, as if dragged there: its prerequisites in a column
+	 * one rank before it and its dependants one rank after, as the flow runs left to right. Each takes the free place
+	 * nearest the node's middle in its column ({@link freeSlotNear}), free of every other node of `next`, the graph about
+	 * to be shown, wherever the layout or the reader puts it.
+	 */
+	private placeBeside(node: CanvasNode, neighbours: readonly EndpointHit[], next: CanvasGraph) {
+		const boxes = this.boxesFor(this.layoutFor(next))
+		const anchor = boxes.get(node.key)
+		if (!anchor) {
+			return
+		}
+
+		const prerequisites = new Set((this.dependencies.value ?? [])
+			.filter(dependency => endpointKey(targetRef(dependency)) === node.key)
+			.map(dependency => pinKey(sourceRef(dependency))))
+		const incoming = new Set(neighbours.map(pinKey))
+		const taken = [...boxes].filter(([key]) => !incoming.has(key)).map(([, box]) => box)
+		const { nodeWidth: width, nodeHeight: height, rankSeparation, nodeSeparation } = layoutDefaults
+		const y = anchor.y + (anchor.height - height) / 2
+		const overrides = new Map(this.overrides)
+		for (const neighbour of neighbours) {
+			const x = prerequisites.has(pinKey(neighbour)) ? anchor.x - rankSeparation - width : anchor.x + anchor.width + rankSeparation
+			const slot = freeSlotNear({ x, y, width, height }, taken, nodeSeparation)
+			taken.push(slot)
+			overrides.set(pinKey(neighbour), { x: slot.x, y: slot.y })
+		}
+
+		this.overrides = overrides
 	}
 
 	/**
@@ -1227,9 +1635,12 @@ export class DependencyCanvas extends Component {
 		const pending = [start]
 		while (pending.length > 0) {
 			const current = pending.pop()!
-			if (!group.add(current)) {
+			// Tested before it is added: `Set.add` returns the set, and every edge here runs both ways.
+			if (group.has(current)) {
 				continue
 			}
+
+			group.add(current)
 
 			pending.push(...adjacency.get(current) ?? [])
 		}
@@ -1239,7 +1650,7 @@ export class DependencyCanvas extends Component {
 
 	/** Graduates a scratch global context into a `.p7tpx` file and opens it. */
 	private async onSaveToFile() {
-		await saveGlobalContextToFile(this.pinned, serializePositions(this.overrides))
+		await saveGlobalContextToFile(this.pinned, serializePositions(this.overrides), this)
 	}
 
 	private async reshape(edge: CanvasEdge, trigger: DependencyTrigger, constraint: DependencyConstraint) {
@@ -1599,8 +2010,9 @@ export class DependencyCanvas extends Component {
 	/**
 	 * Finishes an edge drawn onto whatever node it was released over.
 	 *
-	 * Both refusals the core would make are made here first — a loop, and an edge that already exists — so
-	 * the gesture is answered where it happened rather than by a write coming back rejected.
+	 * Both refusals the core would make are made here first — an ordering the graph already contradicts, and an
+	 * edge that already exists — so the gesture is answered where it happened rather than by a write coming back
+	 * rejected.
 	 */
 	private async completeLink(sourceKey: string, clientX: number, clientY: number) {
 		const targetKey = this.nodeKeyAt(clientX, clientY)
@@ -1620,8 +2032,9 @@ export class DependencyCanvas extends Component {
 			return
 		}
 
-		if (wouldCycle(graph.edges, sourceKey, targetKey)) {
-			toast('That dependency would close a loop.', 'warning')
+		// The default shape a drawn edge takes: satisfied when the prerequisite finishes, gating the dependant's begin.
+		if (wouldContradict(graph.edges, source.ref, target.ref)) {
+			toast('That dependency would contradict the order already in place.', 'warning')
 			return
 		}
 
@@ -1717,13 +2130,24 @@ export class DependencyCanvas extends Component {
 	protected override updated() {
 		this.adoptSavedLayout()
 		this.syncNodeMeasurement()
-
-		// Framed once, when there is finally something to frame, and never again — refitting on every change
-		// would move the graph out from under someone reading it.
-		if (!this.framed && this.layoutCache && this.layoutCache.layout.nodes.size > 0 && this.viewportElement) {
-			this.framed = true
-			this.frame(this.layoutCache.layout)
+		if (this.viewportObserver && this.viewportElement && this.viewportElement !== this.observedViewport) {
+			this.observedViewport = this.viewportElement
+			this.viewportObserver.disconnect()
+			this.viewportObserver.observe(this.viewportElement)
 		}
+
+		// Framed once, when there is finally something to frame and somewhere to frame it, and never again —
+		// refitting on every change would move the graph out from under someone reading it. Not before the edges have
+		// answered, though: they decide the ranks, and nodes framed without them stand in one column that spreads off
+		// screen once they arrive — every pinned set opened without saved positions did so.
+		if (!this.framed && this.edgesAnswered && this.layoutCache && this.layoutCache.layout.nodes.size > 0) {
+			this.framed = this.frame(this.layoutCache.layout)
+		}
+	}
+
+	/** Whether the edge listing has answered, or could not be asked — so a canvas without one still frames its nodes. */
+	private get edgesAnswered(): boolean {
+		return !this.dependencies.notLoaded || this.dependencies.error !== undefined
 	}
 
 	/**
@@ -1841,18 +2265,54 @@ export class DependencyCanvas extends Component {
 		this.contextChanged.dispatch({ pinned: this.pinned, layout: serializePositions(this.overrides) })
 	}
 
-	/** Centres the graph and zooms out far enough to hold it, never past life size. */
-	private frame(layout: CanvasLayout) {
+	/**
+	 * Centres the nodes and zooms out far enough to hold them, never past life size.
+	 *
+	 * Fitted to the nodes where they actually are — dragged or saved positions and measured sizes — not to the
+	 * layout's own box, which starts at the origin wherever the reader has since moved the graph. Resolves whether
+	 * it could: a viewport not laid out yet (a hidden tab, a view still opening) has nothing to fit into, and the
+	 * canvas frames again once it has a size.
+	 */
+	private frame(layout: CanvasLayout): boolean {
 		const rect = this.viewportElement?.getBoundingClientRect()
-		if (!rect || layout.width === 0 || layout.height === 0) {
+		const boxes = [...this.boxesFor(layout).values()]
+		if (!rect || rect.width === 0 || rect.height === 0 || boxes.length === 0) {
+			return false
+		}
+
+		const left = Math.min(...boxes.map(box => box.x))
+		const top = Math.min(...boxes.map(box => box.y))
+		const width = Math.max(...boxes.map(box => box.x + box.width)) - left
+		const height = Math.max(...boxes.map(box => box.y + box.height)) - top
+		const room = {
+			width: Math.max(rect.width - 2 * framePadding, 1),
+			height: Math.max(rect.height - 2 * framePadding, 1)
+		}
+
+		const scale = Math.min(1, Math.max(minimumScale, Math.min(room.width / width, room.height / height)))
+		this.scale = scale
+		this.pan = {
+			x: (rect.width - width * scale) / 2 - left * scale,
+			y: (rect.height - height * scale) / 2 - top * scale
+		}
+		this.framedView = { pan: this.pan, scale: this.scale }
+		return true
+	}
+
+	/**
+	 * The viewport changed size. A canvas loaded while its viewport had none (a hidden tab, a view still opening) could
+	 * not frame, and now can; a framed one is framed afresh for the new size, unless the reader has panned or zoomed
+	 * since it was framed.
+	 */
+	private onViewportResized() {
+		if (!this.framed) {
+			this.requestUpdate()
 			return
 		}
 
-		const scale = Math.min(1, Math.max(minimumScale, Math.min(rect.width / layout.width, rect.height / layout.height)))
-		this.scale = scale
-		this.pan = {
-			x: (rect.width - layout.width * scale) / 2,
-			y: (rect.height - layout.height * scale) / 2
+		const layout = this.layoutCache?.layout
+		if (layout && this.framedView?.pan === this.pan && this.framedView.scale === this.scale) {
+			this.frame(layout)
 		}
 	}
 }

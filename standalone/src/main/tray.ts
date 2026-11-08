@@ -1,15 +1,11 @@
 import path from "node:path"
 import { Menu, Tray, nativeImage, nativeTheme, type MenuItemConstructorOptions } from "electron"
 import type { ShellStatus } from "../shared/contracts"
-import { hostsCore } from "./flavor"
+import { hostsCore, isDevelopmentBuild } from "./flavor"
 
 export interface TrayActions {
 	openBriefing(): void
 	openStatus(): void
-	activateVault(): void
-	deactivateVault(): void
-	setAutostart(enabled: boolean): void
-	openLogs(): void
 	restartCore(): void
 	checkForUpdates(): void
 	installUpdate(): void
@@ -17,7 +13,7 @@ export interface TrayActions {
 }
 
 /**
- * The tray icon and its menu, rebuilt from every status so the phase line, the vault entries, and the update entry
+ * The tray icon and its menu, rebuilt from every status so the phase line, the vault line, and the update entry
  * always reflect the shell's state. Clicking the icon opens the briefing, the shell's main window.
  */
 export class ShellTray {
@@ -75,7 +71,7 @@ export class ShellTray {
 			return
 		}
 
-		this.tray.setToolTip(`PLAINTORCH: ${describe(status)}`)
+		this.tray.setToolTip(`PLAINTORCH${isDevelopmentBuild ? '-DEV' : ''}: ${describe(status)}`)
 		this.tray.setContextMenu(Menu.buildFromTemplate(this.template(status)))
 	}
 

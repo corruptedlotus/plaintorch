@@ -29,8 +29,28 @@ public sealed class Fate : Declarative
 	/// Gets or sets the current fate state.
 	/// </summary>
 	[MarkdownField("status")]
-	[LifecycleStatus]
-	public FateStatus Status { get; set; } = FateStatus.Active;
+	[LifecycleStatus(History = true)]
+	public FateStatus Status { get; set; } = LifecycleDeclarations.InitialStatus<FateStatus>();
+
+	/// <summary>
+	/// Gets or sets whether the fate's <see cref="FateStatus.Passed"/> was inferred by the engine rather than selected by hand
+	/// (PEP103 I-191). An inferred pass goes back to <see cref="PassedFrom"/> when an orbit change begets an occurrence still
+	/// to close; a selected one does not. Only a manual occurrence still to close brings either back. Always
+	/// <see langword="false"/> while the fate is not Passed.
+	/// </summary>
+	/// <remarks>
+	/// Database-only state the engine keeps: a note shows <c>status: Passed</c> for both, so the watcher carries this over a
+	/// frontmatter sync rather than clearing it. A database rebuilt from the notes reads every pass as selected.
+	/// </remarks>
+	public bool PassInferred { get; set; }
+
+	/// <summary>
+	/// Gets or sets the started status the fate held when it passed — <see cref="FateStatus.Active"/> or
+	/// <see cref="FateStatus.OptOut"/> — which bringing it back restores, so an opted-out fate stays hidden. <see langword="null"/>
+	/// while it is not Passed, and when it passed from <see cref="FateStatus.Stopped"/>: coming back then restores Active.
+	/// </summary>
+	/// <remarks>Database-only, carried over a frontmatter sync like <see cref="PassInferred"/>.</remarks>
+	public FateStatus? PassedFrom { get; set; }
 
 	/// <summary>
 	/// Gets or sets the Orbit scheduling notation that drives the fate's occurrences (PEP111). A recurring fate

@@ -1,6 +1,18 @@
 using Pleiades.Orchestration;
+using Pleiades.Orchestration.Lifecycle;
+using Pleiades.Plaintorch.Api.Contracts;
 
 namespace Pleiades.Plaintorch.Api.Transport;
+
+/// <summary>
+/// Represents the transport payload used to add a backlog schedule to an incentive, a directive or a checkpoint
+/// (PEP101). The owner's schedule of the same type and state is replaced. <see cref="Time"/> is a civil ISO datetime.
+/// </summary>
+public sealed record AddBacklogScheduleRequest(
+	string EntityId,
+	BacklogScheduleType Type,
+	LifecycleState State,
+	DateTime Time);
 
 /// <summary>
 /// Represents one endpoint of a dependency in a transport payload (PEP101): a kind plus an id, optionally
@@ -69,9 +81,21 @@ public sealed record CreateObjectiveRequest(
 	string? OnrushSprintId = null);
 
 /// <summary>
-/// Represents the transport payload used to assign an objective to onrush.
+/// Represents the transport payload used to assign an objective to onrush: a sprint by id, or a slot (active or planning)
+/// that is created when it does not exist yet (PEP103 patch 4).
 /// </summary>
-public sealed record AddObjectiveToOnrushRequest(string OnrushSprintId);
+public sealed record AddObjectiveToOnrushRequest(string? OnrushSprintId = null, OnrushSlot? Slot = null);
+
+/// <summary>
+/// Represents the transport payload used to add a stellar directive to an onrush sprint (PEP102 patch 10): a sprint by id,
+/// or a slot that is created when it does not exist yet (PEP103 patch 4).
+/// </summary>
+public sealed record AddDirectiveToOnrushRequest(string? OnrushSprintId = null, OnrushSlot? Slot = null);
+
+/// <summary>
+/// Represents the transport payload used to ensure an onrush slot exists (PEP103 patch 4).
+/// </summary>
+public sealed record EnsureOnrushRequest(OnrushSlot Slot);
 
 /// <summary>
 /// Represents the transport payload used to shift onrush sprint dates.

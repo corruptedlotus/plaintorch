@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Pleiades.Orbits;
 using Pleiades.Orchestration;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
@@ -91,20 +92,28 @@ public sealed class RollingMaterializationTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Harden_on_time_leaves_reflect_lunar_decrees_for_cycle_begin()
+	public async Task Harden_on_time_leaves_reflect_decrees_for_cycle_begin()
 	{
 		var lunar = await Vault.WithScopeAsync(s => s.GetRequiredService<IDirectiveApi>()
 			.CreateLunarAsync("Moon Law", cancellationToken: Ct));
-		var reflectDecree = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
-			.CreateDecreeAsync(new DecreePlan("Evening reflection", DirectiveId: lunar.Id, Orbit: "d", Reflect: true), Ct));
+		var stellar = await Vault.WithScopeAsync(s => s.GetRequiredService<IDirectiveApi>()
+			.CreateStandaloneAsync("Star Project", cancellationToken: Ct));
+		var reflectDecreeIds = new List<string>();
+		foreach (var directiveId in new[] { lunar.Id, stellar.Id })
+		{
+			var reflectDecree = await Vault.WithScopeAsync(s => s.GetRequiredService<IDeclarativeApi>()
+				.CreateDecreeAsync(new DecreePlan("Evening reflection", DirectiveId: directiveId, Orbit: "d", Reflect: true), Ct));
+			reflectDecreeIds.Add(reflectDecree.Id);
+		}
 
 		await HardenNowAsync();
 
+		// Reflect-decrees in either hierarchy are cycle-bound: the pass hardens no attentive and mints no reflective.
 		var attentiveCount = await Vault.QueryAsync(context => context.Attentives
-			.CountAsync(item => item.DecreeId == reflectDecree.Id, Ct));
+			.CountAsync(item => reflectDecreeIds.Contains(item.DecreeId!), Ct));
 		Assert.Equal(0, attentiveCount);
 		var reflectiveCount = await Vault.QueryAsync(context => context.Set<Reflective>()
-			.CountAsync(item => item.DecreeId == reflectDecree.Id, Ct));
+			.CountAsync(item => reflectDecreeIds.Contains(item.DecreeId!), Ct));
 		Assert.Equal(0, reflectiveCount);
 	}
 
@@ -154,10 +163,16 @@ public sealed class RollingMaterializationTests : VaultTestBase
 			.UpdateAsync(objective.Id, new ObjectiveUpdate(Due: Due.On(pastDue)), Ct));
 
 		await HardenNowAsync();
+		await HardenNowAsync();
 
-		var eventive = await Vault.QueryAsync(context => context.Eventives
-			.SingleAsync(item => item.ObjectiveId == objective.Id && item.RecurrenceId == pastDue.ToDateTime(TimeOnly.MinValue), Ct));
-		Assert.Equal(pastDue, eventive.Epoch.Date);
+		// Its due hardens its one terminative (PEP103 patch 7), pending while the objective is open; a second pass adds none.
+		var terminative = await Vault.QueryAsync(context => context.Terminatives
+			.SingleAsync(item => item.ObjectiveId == objective.Id, Ct));
+		Assert.Equal(pastDue.ToDateTime(TimeOnly.MinValue), terminative.RecurrenceId);
+		Assert.Equal(pastDue, terminative.Epoch.Date);
+		Assert.Equal(OrbitUnit.Day, terminative.Epoch.Granularity);
+		Assert.Equal(TerminativeResolution.Pending, terminative.Resolution);
+		Assert.Equal(0, await Vault.QueryAsync(context => context.Eventives.CountAsync(Ct)));
 	}
 
 	[Fact]
@@ -199,7 +214,7 @@ public sealed class RollingMaterializationTests : VaultTestBase
 		Assert.Equal(0, persisted);
 
 		var agenda = await AgendaAsync();
-		Assert.Contains(agenda.Attentives, item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId) == new TimeOnly(21, 0));
+		Assert.Contains(agenda.Attentives, item => item.DecreeId == decree.Id && TimeOnly.FromDateTime(item.RecurrenceId!.Value) == new TimeOnly(21, 0));
 	}
 
 	[Fact]

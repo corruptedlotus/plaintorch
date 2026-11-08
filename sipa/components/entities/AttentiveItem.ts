@@ -1,14 +1,17 @@
 import { component, html, property } from "@a11d/lit"
-import { Attentive, AttentiveResolution, type DeclarativeCalendar } from "@pleiades/sdk"
+import { Attentive, AttentiveResolution } from "@pleiades/sdk"
 import { OccurrenceItem } from "./OccurrenceItem"
 import { occurrenceMenu, openOccurrenceModal, type OccurrenceTarget } from "./OccurrenceModal"
+import { attentiveStateDescriptors } from "./occurrenceDescriptors"
+import { occurrenceTime } from "./occurrenceTime"
 import { core, type ContextMenuSpec } from ".."
 import "../system/DatetimeView"
 import { toast } from "../../host"
 
 /**
  * A single attentive occurrence of a decree. Its notch quick-switches between undone (Pending) and done;
- * skip/reschedule are deliberately deferred. Its toplane surfaces the decree's lunar directive.
+ * skip/reschedule are deliberately deferred. Its toplane surfaces the decree's lunar directive. As a {@link mini}
+ * line its state glyph is the same switch.
  *
  * Rendered both for the agenda's unbound attentives and for a cycle's bound attentives, so a committed
  * toggle is announced upward with a bubbling `attentivechange` event and the host reconciles.
@@ -17,11 +20,6 @@ import { toast } from "../../host"
 export class AttentiveItem extends OccurrenceItem {
 	@property({ type: Object }) attentive?: Attentive
 
-	/**
-	 * The owning decree's calendar, supplied by a host that knows it when the attentive arrives without its decree (a
-	 * decree's own agenda lists them bare). The attentive's own decree wins when it carries one.
-	 */
-	@property({ type: Number }) calendar?: DeclarativeCalendar
 
 	private get done() {
 		return this.attentive?.resolution === AttentiveResolution.Done
@@ -89,25 +87,27 @@ export class AttentiveItem extends OccurrenceItem {
 		this.dispatchEvent(new CustomEvent<Attentive>('attentivechange', { detail: merged, bubbles: true, composed: true }))
 	}
 
+	/** Born of its decree's orbit, when it carries its decree. */
+	protected override get schedule() {
+		return this.attentive?.decree
+	}
+
+	protected override get occurrence() {
+		return this.attentive
+	}
+
+	protected override get state() {
+		return this.attentive ? attentiveStateDescriptors[this.attentive.resolution] : undefined
+	}
+
 	override get info() {
 		const attentive = this.attentive
 		if (!attentive) {
 			return html``
 		}
 
-		// The relative chip states the direction itself ("in 2 hours", "3 minutes ago"), ticking live off the shared
-		// clock, and — while pending — flags an overdue occurrence red with a clock-alert via warn="past". It carries
-		// the exact date/time in its tooltip. It reads the occurrence at its granularity, so an all-day attentive is "Today"
-		// rather than overdue from midnight, and a week-born one is "This week" on its decree's calendar.
 		if (!this.done) {
-			return html`
-				<p7t-datetime-view relative warn='past'
-					.date=${attentive.epoch.date}
-					.time=${attentive.epoch.timeOfDay}
-					.granularity=${attentive.epoch.granularity}
-					.calendar=${attentive.decree?.calendar ?? this.calendar}>
-				</p7t-datetime-view>
-			`
+			return this.moment
 		}
 
 		if (!attentive.resolvedOn) {
@@ -116,6 +116,32 @@ export class AttentiveItem extends OccurrenceItem {
 
 		return html`
 			<p7t-datetime-view relative .date=${attentive.resolvedOn}></p7t-datetime-view>
+		`
+	}
+
+	/**
+	 * When the occurrence falls. The relative chip states the direction itself ("in 2 hours", "3 minutes ago"), ticking
+	 * live off the shared clock, and — while pending — flags an overdue occurrence red with a clock-alert via
+	 * warn="past". It carries the exact date/time in its tooltip. It reads the occurrence at its granularity, so an
+	 * all-day attentive is "Today" rather than overdue from midnight, and a week-born one is "This week" on its decree's
+	 * calendar. The full row trades it for when the attentive was done once it is; the mini line always reads it.
+	 */
+	protected override get moment() {
+		const attentive = this.attentive
+		if (!attentive) {
+			return html``
+		}
+
+		// A zoned attentive reads on this device's clock, its own wall time in the tooltip.
+		const time = occurrenceTime(attentive.epoch)
+		return html`
+			<p7t-datetime-view relative warn=${this.done ? 'none' : 'past'}
+				.date=${time.date}
+				.time=${time.time}
+				.anchor=${time.anchor?.label}
+				.granularity=${attentive.epoch.granularity}
+				.calendar=${this.ownerCalendar}>
+			</p7t-datetime-view>
 		`
 	}
 }

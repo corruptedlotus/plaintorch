@@ -1,6 +1,7 @@
 import { bindingDefaultProperty, Component, component, css, event, eventListener, html, nothing, property, type HTMLTemplateResult } from "@a11d/lit"
 import { IconName } from "../PleiadesIcon"
 import { defaultNullGlyph, nullGlyphStyle, nullGlyphTemplate } from "../design/nullGlyph"
+import { InteractionBubbleBase } from "../design/InteractionBubbleBase"
 
 /**
  * The root of every editable field — free text, numbers, dates, media, and the searching selects.
@@ -59,6 +60,24 @@ export class EditablePart<T> extends Component {
 	/** The value the current edit started from — what {@link cancelEditing} returns to. */
 	protected valueAtFocus?: T
 
+	/**
+	 * Whether the field is being edited right now: holding the caret, showing its input, or waiting on its prompt. The
+	 * public face of `active`, for a surface around the field that must stay out of an edit's way (a grid row's
+	 * double-click).
+	 */
+	get editing(): boolean {
+		return this.active
+	}
+
+	/**
+	 * Whether a press on the field's content would act: begin an edit, or reach the one under way. False while the field
+	 * is {@link disabled}, and while it is idle behind its {@link editButton}, whose content is then free to be something
+	 * else.
+	 */
+	get answersPress(): boolean {
+		return !this.disabled && (!this.editButton || this.active)
+	}
+
 	/** Whether the value is absent. */
 	protected get isNull() {
 		return this.value === undefined || this.value === null
@@ -67,6 +86,12 @@ export class EditablePart<T> extends Component {
 	@eventListener({ type: 'click', target: this })
 	protected handleClick() {
 		if (this.editButton) {
+			return
+		}
+
+		// A second press of a field waiting on the bubble it raised closes that bubble, as a second press of any bubble's
+		// trigger does. The bubble leaves a press on its anchor to the anchor, and an edit under way refuses to begin again.
+		if (this.active && InteractionBubbleBase.dismissRaisedFrom(this)) {
 			return
 		}
 
@@ -105,7 +130,7 @@ export class EditablePart<T> extends Component {
 	}
 
 	protected beginEditing() {
-		this.editingPromise = this.doEdit(this.value)
+		this.editingPromise = this.doEdit(this.value, this)
 		if (!!this.editingPromise) {
 			this.active = true
 			this.editingPromise.then(
@@ -166,7 +191,11 @@ export class EditablePart<T> extends Component {
 		return !this.editButton || this.disabled || this.active ? nothing : this.affordanceTemplate('edit', 'lucide:pencil', 'Edit', () => this.startEditing())
 	}
 
-	doEdit = (value: T | undefined): Promise<T | undefined> | undefined => undefined
+	/**
+	 * Turns the current value into a promise of the next one; a rejection is a cancel. It is handed the field too, for a
+	 * prompt that points at what is being edited — a bubble.
+	 */
+	doEdit = (_value: T | undefined, _field: EditablePart<T>): Promise<T | undefined> | undefined => undefined
 
 	static override get styles() {
 		return css`

@@ -95,6 +95,25 @@ public sealed class OrbitLimitTests
 	}
 
 	[Fact]
+	public void Percent_one_steps_an_index_too_as_a_run_of_every_value_on_from_it()
+	{
+		// The 5th to the 8th of every month, where d{5}*4 (no %) is the 5th alone.
+		Assert.Equal(
+			["10-05 Mon", "10-06 Tue", "10-07 Wed", "10-08 Thu", "11-05 Thu", "11-06 Fri"],
+			Stream("d{5}%1*4", "2026-09-28", 6));
+		Assert.Equal(["10-05 Mon", "11-05 Thu"], Stream("d{5}*4", "2026-09-28", 2));
+
+		// Without a *x the run reaches the end of the parent period: February has no 29th, so nothing then.
+		Assert.Equal(
+			["01-29 Thu", "01-30 Fri", "01-31 Sat", "03-29 Sun", "03-30 Mon", "03-31 Tue"],
+			Stream("M[d{29}%1]", "2026-01-01", 6));
+		Assert.Equal(["10-02 Fri", "10-03 Sat", "10-04 Sun", "10-09 Fri"], Stream("w[d{5}%1]", "2026-09-28", 4));
+		Assert.Equal(
+			["09-28 21:00 Mon", "09-28 22:00 Mon", "09-28 23:00 Mon", "09-29 21:00 Tue"],
+			Stream("d[h{21}%1]", "2026-09-28", 4));
+	}
+
+	[Fact]
 	public void A_repetition_counts_whether_or_not_its_children_fire_in_it()
 	{
 		// February has no 31st, but it is still the second of the three months.
@@ -112,7 +131,13 @@ public sealed class OrbitLimitTests
 	[Fact]
 	public void A_top_level_at_counts_once_then_the_stream_ends()
 	{
-		Assert.Equal(["10-02 Fri", "10-04 Sun", "end"], Stream("d{2,4,6,8}@2", "2026-09-28", 3));
+		Assert.Equal(["10-02 Fri", "10-04 Sun", "end"], Stream("M[d{2,4,6,8}]@2", "2026-09-28", 3));
+	}
+
+	[Fact]
+	public void An_indexed_globals_at_counts_in_its_implicit_cycle()
+	{
+		Assert.Equal(["10-02 Fri", "10-04 Sun", "11-02 Mon", "11-04 Wed"], Stream("d{2,4,6,8}@2", "2026-09-28", 4));
 	}
 
 	[Fact]
@@ -145,13 +170,17 @@ public sealed class OrbitLimitTests
 	{
 		Assert.Equal(
 			["10-01 Thu", "10-15 Thu", "11-01 Sun", "11-15 Sun", "12-15 Tue"],
-			Stream("d{1}@2+d{15}", "2026-09-28", 5));
+			Stream("M[d{1}]@2+d{15}", "2026-09-28", 5));
 	}
 
 	[Fact]
 	public void A_literal_carries_its_limits()
 	{
-		Assert.Equal(["09-28 09:00 Mon", "09-29 09:00 Tue", "09-30 09:00 Wed", "end"], Stream("z{09:00}@3", "2026-09-28", 4));
+		Assert.Equal(["09-28 09:00 Mon", "09-29 09:00 Tue", "09-30 09:00 Wed", "end"], Stream("d[z{09:00}]@3", "2026-09-28", 4));
+		// A z{h:m} is an indexed hour, bound to the day: its own limits count per day.
+		Assert.Equal(
+			["09-28 09:00 Mon", "09-28 11:00 Mon", "09-28 13:00 Mon", "09-29 09:00 Tue"],
+			Stream("z{09:00}%2*3", "2026-09-28", 4));
 	}
 
 	[Fact]
@@ -189,7 +218,114 @@ public sealed class OrbitLimitTests
 	[Fact]
 	public void The_stream_starts_after_a_lower_bound_the_same_way()
 	{
+		Assert.Equal(["10-05 Mon", "10-09 Fri"], Stream("w[d{1,5}]>2026/10/1", "2026-09-28", 2));
+	}
+
+	// --- Implicit cycles: an indexed global is bound to the cycle it recurs in ---
+
+	[Theory]
+	[InlineData("m{15}", "h[m{15}]")]
+	[InlineData("h{11}", "d[h{11}]")]
+	[InlineData("s{30}", "m[s{30}]")]
+	[InlineData("d{1,15}", "M[d{1,15}]")]
+	[InlineData("w{12}", "y[w{12}]")]
+	[InlineData("M{6}", "y[M{6}]")]
+	[InlineData("z{09:30}", "d[h{9}[m{30}]]")]
+	[InlineData("d{1}+d{15}", "M[d{1}]+M[d{15}]")]
+	public void An_indexed_global_reads_as_if_its_cycle_were_written_around_it(string bound, string written)
+	{
+		Assert.Equal(Stream(written, "2026-09-28T09:20:00Z", 5), Stream(bound, "2026-09-28T09:20:00Z", 5));
+	}
+
+	[Fact]
+	public void An_indexed_global_starts_at_its_cycles_first_complete_period()
+	{
+		// Minute 15 of the 09:00 hour has passed at 09:20, so the first hour is the next one.
+		Assert.Equal(["09-28 10:15 Mon", "09-28 11:15 Mon", "09-28 12:15 Mon"], Stream("m{15}", "2026-09-28T09:20:00Z", 3));
+		Assert.Equal(["09-29 11:00 Tue", "09-30 11:00 Wed"], Stream("h{11}", "2026-09-28T12:00:00Z", 2));
+		Assert.Equal(["10-01 Thu", "10-15 Thu", "11-01 Sun"], Stream("d{1,15}", "2026-09-10", 3));
+	}
+
+	[Fact]
+	public void A_year_and_a_bare_unit_have_no_implicit_cycle()
+	{
+		Assert.Equal(["01-01 Fri", "end"], Stream("y{2027}", "2026-09-28", 2));
+		Assert.Equal(["09-28 Mon", "09-29 Tue", "end"], Stream("d@2", "2026-09-28", 3));
+	}
+
+	// --- Window bounds: >t and <t name a calendar date as Z{…} does ---
+
+	[Fact]
+	public void A_bound_is_written_y_M_d_with_an_optional_time_as_Z_is()
+	{
+		Assert.Equal(["01-01 Thu", "01-02 Fri", "end"], Stream("d<2026/1/3", "2026-01-01", 3));
+		Assert.Equal(["01-01 09:00 Thu", "01-02 09:00 Fri"], Stream("d[h{9}]>2026/1/1T08:59:59", "2025-12-01", 2));
+		Assert.Equal(["01-05 Mon", "end"], Stream("Z{2026/1/5}>2026/1/1", "2025-12-01", 2));
+	}
+
+	[Fact]
+	public void A_lower_bound_inside_a_period_skips_that_period_instead_of_ending_the_stream()
+	{
+		Assert.Equal(["01-02 Fri", "01-03 Sat"], Stream("d>2026/1/1T12:00", "2025-12-01", 2));
+		Assert.Equal(["01-02 09:00 Fri", "01-03 09:00 Sat"], Stream("d[h{9}]>2026/1/1T12:00", "2025-12-01", 2));
+		Assert.Equal(["01-02 Fri", "01-03 Sat"], Stream("d>2026-01-01T12:00", "2025-12-01", 2));
+	}
+
+	[Fact]
+	public void An_ISO_bound_the_older_form_still_reads_as_a_UTC_instant()
+	{
 		Assert.Equal(["10-05 Mon", "10-09 Fri"], Stream("w[d{1,5}]>2026-10-01", "2026-09-28", 2));
+	}
+
+	[Fact]
+	public void A_dash_right_after_a_bound_is_the_set_difference()
+	{
+		Assert.Equal(["01-05 Mon", "01-07 Wed", "01-08 Thu"], Stream("d>2026/1/5-d{6}", "2026-01-01", 3));
+		Assert.Equal(["01-05 Mon", "01-07 Wed", "01-08 Thu"], Stream("d>2026-01-05-d{6}", "2026-01-01", 3));
+	}
+
+	[Fact]
+	public void A_bound_that_names_no_date_of_its_calendar_or_no_date_at_all_is_refused()
+	{
+		Assert.Contains("does not have", Assert.Throws<FormatException>(() => Stream("d>2026/2/30", "2026-01-01", 1)).Message);
+		Assert.Contains("does not have", Assert.Throws<FormatException>(() => Stream("d>2026/13/1", "2026-01-01", 1)).Message);
+		Assert.Contains("after year in a bound", Assert.Throws<FormatException>(() => Stream("d>1-1-1", "2026-01-01", 1)).Message);
+		Assert.Contains("after month in a bound", Assert.Throws<FormatException>(() => Stream("d>2026/1", "2026-01-01", 1)).Message);
+	}
+
+	[Fact]
+	public void A_lower_bound_is_the_origin_and_a_continuous_interval_is_phased_from_it_whatever_the_anchor()
+	{
+		Assert.Equal(["01-01 Thu", "01-03 Sat", "01-05 Mon"], Stream("d%2>2026/1/1", "2025-12-01", 3));
+		Assert.Equal(["01-02 Fri", "01-04 Sun", "01-06 Tue"], Stream("d%2>2026/1/2", "2025-12-01", 3));
+		Assert.Equal(["03-10 Tue", "03-12 Thu"], Stream("d%2>2026/1/1", "2026-03-10", 2));
+		Assert.Equal(["03-11 Wed", "03-13 Fri"], Stream("d%2>2026/1/2", "2026-03-10", 2));
+		Assert.Equal(["01-12 Mon", "01-26 Mon"], Stream("w[d{1}]%2>2026/1/12", "2025-12-01", 2));
+		// A mid-period bound phases from the day it falls in; that day's occurrence is before it.
+		Assert.Equal(["01-03 Sat", "01-05 Mon"], Stream("d%2>2026/1/1T12:00", "2025-12-01", 2));
+	}
+
+	[Fact]
+	public void A_schedule_joined_after_its_origin_keeps_what_has_fired_since()
+	{
+		// The stream is joined at the anchor (10 March); the life and its limits count from the bound.
+		Assert.Equal(["end"], Stream("d*5>2026/1/1", "2026-03-10", 1));
+		Assert.Equal(["end"], Stream("M[d{1}]@3>2026/1/1", "2026-03-10", 1));
+		Assert.Equal(["03-15 Sun", "04-01 Wed"], Stream("M[d{1,15}]>2026/1/1", "2026-03-10", 2));
+		Assert.Equal(["04-01 Wed", "04-15 Wed"], Stream("M[d{1,15}]", "2026-03-10", 2));
+	}
+
+	[Fact]
+	public void A_bound_names_its_date_in_the_orbits_calendar_as_Z_does()
+	{
+		// The 7th of Solaria (the second Pleiadean month) of year 4.
+		var calendar = OrbitDays.Pleiadean;
+		var bounded = OrbitEngine.FromNotation("d>4/2/7", Instant("2026-05-01"), calendar, 1).Next() as OrbitResolutionEntry;
+		var literal = OrbitEngine.FromNotation("Z{4/2/7}", Instant("2026-05-01"), calendar, 1).Next() as OrbitResolutionEntry;
+		Assert.NotNull(bounded);
+		Assert.NotNull(literal);
+		Assert.Equal(literal.TimestampMs, bounded.TimestampMs);
+		Assert.Equal((4, 2, 7), (calendar.Get(bounded.TimestampMs, OrbitUnit.Year), calendar.Get(bounded.TimestampMs, OrbitUnit.Month), calendar.Get(bounded.TimestampMs, OrbitUnit.Day)));
 	}
 
 	// --- Weeks within a month ---
@@ -219,9 +355,10 @@ public sealed class OrbitLimitTests
 	}
 
 	[Fact]
-	public void A_top_level_week_index_addresses_its_implicit_month_but_a_bare_week_runs_across_months()
+	public void A_top_level_week_index_is_a_calendar_week_but_a_bare_week_runs_across_months()
 	{
-		Assert.Equal(["06-01 Mon", "07-06 Mon", "08-03 Mon"], Stream("w{1}[d{1}]", "2026-06-01", 3));
+		Assert.Equal(["01-04 Mon", "01-03 Mon", "01-01 Mon"], Stream("w{1}[d{1}]", "2026-06-01", 3));
+		Assert.Equal(["06-01 Mon", "07-06 Mon", "08-03 Mon"], Stream("M[w{1}[d{1}]]", "2026-06-01", 3));
 		Assert.Equal(["07-27 Mon", "07-29 Wed", "07-31 Fri", "08-02 Sun", "08-03 Mon"], Stream("w[d{1}%2]", "2026-07-27", 5));
 	}
 
@@ -278,9 +415,13 @@ public sealed class OrbitLimitTests
 	[InlineData("M[w[d{1}%2]@7]")]
 	[InlineData("w[d*3]*4")]
 	[InlineData("d{2,4,6,8}@2")]
+	[InlineData("M[d{2,4,6,8}]@2")]
 	[InlineData("w[d{#3}]")]
 	[InlineData("d[h{9,12,15,18}@2]")]
 	[InlineData("d{5}%3*4")]
+	[InlineData("d%2>2026/7/14")]
+	[InlineData("w[d{1}]%2>2026/7/13")]
+	[InlineData("d%3*40>2026/6/20")]
 	public void A_stream_resumed_at_every_step_matches_one_long_lived_engine(string notation)
 	{
 		var reference = Stream(notation, "2026-07-01", 60, seed: 7);
@@ -343,7 +484,8 @@ public sealed class OrbitLimitTests
 	public void Only_a_top_level_limit_blocks_promotion()
 	{
 		Assert.False(OrbitEngine.FromNotation("w[d{1}]*3", 0, Calendar).IsAnchorStable());
-		Assert.False(OrbitEngine.FromNotation("d{2,4}@1", 0, Calendar).IsAnchorStable());
+		Assert.False(OrbitEngine.FromNotation("M[d{2,4}]@1", 0, Calendar).IsAnchorStable());
+		Assert.True(OrbitEngine.FromNotation("d{2,4}@1", 0, Calendar).IsAnchorStable());
 		Assert.True(OrbitEngine.FromNotation("M[w[d{1}%2]@7]", 0, Calendar).IsAnchorStable());
 		Assert.True(OrbitEngine.FromNotation("w[d*3]", 0, Calendar).IsAnchorStable());
 	}

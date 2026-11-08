@@ -154,11 +154,23 @@ public sealed class UserPreferencesTests : VaultTestBase
 		var list = await Vault.WithScopeAsync(services => services.GetRequiredService<IPreferenceApi>()
 			.ListAsync(TestContext.Current.CancellationToken));
 
-		Assert.Equal(4, list.Count);
+		Assert.Equal(7, list.Count);
 		var noteQueue = list.Single(preference => preference.Key == PreferenceKeys.NoteQueueTimeout);
 		Assert.Equal("Integer", noteQueue.Kind);
 		Assert.Equal(2000, noteQueue.Value.GetInt32());
 		Assert.Equal(2000, noteQueue.Default.GetInt32());
+
+		var baseReflectives = list.Single(preference => preference.Key == PreferenceKeys.BaseDailyReflectives);
+		Assert.Equal("Integer", baseReflectives.Kind);
+		Assert.Equal(3, baseReflectives.Default.GetInt32());
+		var dailyReward = list.Single(preference => preference.Key == PreferenceKeys.ReflectionDailyReward);
+		Assert.Equal("Integer", dailyReward.Kind);
+		Assert.Equal(4, dailyReward.Default.GetInt32());
+
+		var enforcement = list.Single(preference => preference.Key == PreferenceKeys.BacklogStateEnforcement);
+		Assert.Equal("Enum", enforcement.Kind);
+		Assert.Equal("Warn", enforcement.Default.GetString());
+		Assert.Equal(["Ignore", "Auto", "Warn", "Block"], enforcement.Options!);
 
 		var calDav = list.Single(preference => preference.Key == PreferenceKeys.CalDavFloatingRender);
 		Assert.Equal("Enum", calDav.Kind);

@@ -1,12 +1,19 @@
 import { model } from "@a11d/api-dotnet"
+import type { Checkpoint } from "../dependencies/models"
 import type { Directive, Timeframe } from "../directives/models"
 import { ObjectiveCollege, type Objective } from "../objectives/models"
 import type { Executive } from "../polaris/models"
 
+/**
+ * A fate's status (PEP100). Active and OptOut are both under way (started); Stopped sets the fate aside, and was named
+ * Cancelled before PEP103 patch 6. Passed is its finish (PEP103 I-191): the core infers it once every occurrence has
+ * passed, and it can be selected by hand, when it acts like Stopped — {@link Fate.passInferred} tells the two apart.
+ */
 export enum FateStatus {
 	Active = 0,
 	OptOut = 1,
-	Cancelled = 2
+	Stopped = 2,
+	Passed = 3
 }
 
 export enum DecreeStatus {
@@ -62,6 +69,47 @@ export interface Epoch {
 	timeOfDay: string | undefined
 	/** Server-computed: the exclusive end moment ({@link moment} plus {@link duration}, or one granularity unit). Read-only. */
 	endMoment: string
+	/**
+	 * Server-computed: the absolute instant a timed epoch anchored in a {@link timeZone} names — {@link moment} read on
+	 * that zone's clock — as an ISO timestamp with its offset. Undefined for a floating or all-day epoch. Read it
+	 * through {@link epochOnLocalClock}. Read-only.
+	 */
+	instant?: string | undefined
+}
+
+/** An epoch's day and time of day as they fall on this device's clock. */
+export interface LocalEpochReading {
+	/** The day (`'YYYY-MM-DD'`). */
+	date: string
+	/** The time of day (`'HH:mm:ss'`), or undefined for an all-day epoch. */
+	timeOfDay: string | undefined
+}
+
+const pad = (value: number) => String(value).padStart(2, "0")
+
+/**
+ * Where an epoch falls on this device's clock: a timed epoch anchored in a time zone at the instant it names, read
+ * here ("18:00 in Tehran" is 16:30 in Berlin); a floating or all-day one exactly as written, as such a time is meant
+ * on whatever clock reads it.
+ */
+export function epochOnLocalClock(epoch: Epoch): LocalEpochReading {
+	const instant = epoch.instant ? new Date(epoch.instant) : undefined
+	if (!instant || Number.isNaN(instant.valueOf())) {
+		return { date: epoch.date, timeOfDay: epoch.timeOfDay ?? undefined }
+	}
+
+	const date = `${instant.getFullYear()}-${pad(instant.getMonth() + 1)}-${pad(instant.getDate())}`
+	const timeOfDay = `${pad(instant.getHours())}:${pad(instant.getMinutes())}:${pad(instant.getSeconds())}`
+	return { date, timeOfDay }
+}
+
+/** Whether a pending occurrence's time has passed: a timed one at its moment (its instant, when anchored), an all-day one once its day has begun. */
+function epochHasPassed(epoch: Epoch): boolean {
+	if (epoch.instant) {
+		return new Date(epoch.instant) < new Date()
+	}
+
+	return new Date(epoch.date) < new Date()
 }
 
 export enum EventiveResolution {
@@ -79,6 +127,16 @@ export enum AttentiveResolution {
 }
 
 /**
+ * How a {@link Terminative} resolves (PEP103 patch 7). Only the core sets it, from the origin's lifecycle: pending while the
+ * origin's due acts, resolved once the origin is finished or set aside. A checkpoint's stays pending past its due until it
+ * unlocks.
+ */
+export enum TerminativeResolution {
+	Pending = 0,
+	Resolved = 1
+}
+
+/**
  * Fate declarative (PEP100): an event-like incentive that happens rather than gets done. Orbit-only (PEP111):
  * a one-off is a fixed-datetime `Z{…}` literal, a recurring fate a recurrence orbit — there are no bare
  * date/time fields, the occurrence's shape comes from the resolved orbit.
@@ -89,14 +147,27 @@ export class Fate {
 	title: string = ''
 	directiveId: string | undefined
 	directive?: Directive | undefined
-	parentIncentiveId: string | undefined
 	status: FateStatus = FateStatus.Active
+	/**
+	 * Read-only: whether the core inferred the fate's {@link FateStatus.Passed} once every occurrence had passed, rather than
+	 * it being selected by hand (PEP103 I-191). An inferred pass comes back when its orbit begets an occurrence still to come;
+	 * either comes back for an occurrence still to come added by hand. Always false while the fate is not Passed.
+	 */
+	passInferred: boolean = false
+	/**
+	 * Read-only: the started status (Active or OptOut) the fate held when it passed, which coming back restores; undefined
+	 * while it is not Passed, or when it passed from Stopped (it then comes back Active).
+	 */
+	passedFrom: FateStatus | undefined
 	orbit: string | undefined
 	/**
 	 * The calendar the orbit resolves against (PEP111); undefined falls back to the vault's preferred calendar. A
-	 * one-off (`Z{…}`) fate is pinned to Gregorian by the core.
+	 * one-off (`Z{…}`) literal names a day on it: the core pins one written with no calendar named to Gregorian, and
+	 * rewrites the literal when the calendar is changed alone, so the fate keeps its day.
 	 */
 	calendar: DeclarativeCalendar | undefined
+	/** The IANA time zone the fate's orbit runs on — its occurrences are stamped with it — or undefined for floating (wall-clock) time. */
+	timeZone: string | undefined
 	/** Read-only denormalized moment of the next upcoming occurrence, or undefined when none is scheduled (PEP111). */
 	nextOccurrence: string | undefined
 	eventives?: Eventive[]
@@ -113,13 +184,15 @@ export class Decree {
 	orbit: string | undefined
 	/** The calendar the orbit resolves against (PEP111); undefined falls back to the vault's preferred calendar. */
 	calendar: DeclarativeCalendar | undefined
+	/** The IANA time zone the decree's orbit runs on — its occurrences are stamped with it — or undefined for floating (wall-clock) time. */
+	timeZone: string | undefined
 	/** Read-only denormalized moment of the next upcoming occurrence, or undefined when none is scheduled (PEP111). */
 	nextOccurrence: string | undefined
 	/** Default length in whole minutes, seeding the allocation of executives this decree materializes. */
 	defaultLength: number | undefined
 	/** Celestron reward granted on each occurrence execution; not overridable per occurrence. */
 	activeCelestron: number = 0
-	/** Whether the decree participates in daily reflective generation (lunar hierarchies only). */
+	/** Whether the decree participates in daily reflective generation (lunar reflection, PEP104), in any hierarchy. */
 	reflect: boolean = false
 	college: ObjectiveCollege = ObjectiveCollege.Unspecified
 	/** The unbound attentive occurrences this decree has materialized (PEP111). */
@@ -129,13 +202,12 @@ export class Decree {
 }
 
 /**
- * The non-hierarchical base of a declarative's materialized occurrences (PEP111): an {@link Eventive} of a fate
- * or of an objective's due, or an {@link Attentive} of a decree. It carries what every occurrence shares — its
- * row identity, its position in time, and its iCalendar identity ({@link recurrenceOwnerUid} +
- * {@link recurrenceId}).
+ * The non-hierarchical base of materialized occurrences (PEP111): an {@link Eventive} of a fate, an {@link Attentive} of
+ * a decree, or a {@link Terminative} of an item's due (PEP103 patch 7). It carries what every occurrence shares — its row
+ * identity, its position in time, and its iCalendar identity ({@link recurrenceOwnerUid} + {@link recurrenceId}).
  *
  * Abstract and never registered with `@model`: the core stamps the concrete kind as the runtime type, so a
- * response revives into {@link Eventive} or {@link Attentive}, never into this base.
+ * response revives into {@link Eventive}, {@link Attentive} or {@link Terminative}, never into this base.
  */
 export abstract class Occurrence {
 	/** The database identity; `0` for an occurrence still projected from its schedule (not yet hardened). */
@@ -145,30 +217,36 @@ export abstract class Occurrence {
 	/**
 	 * The iCalendar RECURRENCE-ID: the occurrence's original {@link Epoch.moment}, pinned when it materializes and
 	 * never moved by a reschedule — a civil ISO datetime (`'2026-07-20T14:30:00'`; midnight for an all-day slot).
+	 * Absent (null on the wire) for a {@link isManual manual} occurrence, which belongs to no recurrence set and is
+	 * addressed by its {@link id} alone.
 	 */
-	recurrenceId: string = ''
+	recurrenceId: string | undefined
 	/**
-	 * Server-computed: the owning declarative's UID — the fate or objective id for an eventive, the decree id for
-	 * an attentive. With {@link recurrenceId} it addresses the occurrence. Read-only.
+	 * Server-computed: the owner's UID — the fate id for an eventive, the decree id for an attentive, the origin's id for a
+	 * terminative. With {@link recurrenceId} it addresses the occurrence. Read-only.
 	 */
 	recurrenceOwnerUid: string = ''
+	/**
+	 * Server-computed: whether the occurrence was added by hand rather than generated from its owner's schedule —
+	 * it carries no {@link recurrenceId}. Only a fate's eventive can be manual. Read-only.
+	 */
+	isManual: boolean = false
 }
 
 /**
- * Per-occurrence instance of a fate or of an objective's due date. Never Polaris-bound. Its position in time is
- * the owned {@link Epoch} (PEP111); it carries no time allocation — allocation lives on the executive.
+ * Per-occurrence instance of a fate. Never Polaris-bound. Its position in time is the owned {@link Epoch} (PEP111); it
+ * carries no time allocation — allocation lives on the executive. An item's due is a {@link Terminative}, no longer an
+ * eventive (PEP103 patch 7).
  */
 @model('Eventive')
 export class Eventive extends Occurrence {
-	fateId: string | undefined
+	fateId: string = ''
 	fate?: Fate | undefined
-	objectiveId: string | undefined
-	objective?: Objective | undefined
 	resolution: EventiveResolution = EventiveResolution.Pending
 
 	get isOverdue() {
 		return this.resolution === EventiveResolution.Pending
-			&& new Date(this.epoch.date) < new Date()
+			&& epochHasPassed(this.epoch)
 	}
 }
 
@@ -191,7 +269,52 @@ export class Attentive extends Occurrence {
 
 	get isOverdue() {
 		return this.resolution === AttentiveResolution.Pending
-			&& new Date(this.epoch.date) < new Date()
+			&& epochHasPassed(this.epoch)
+	}
+}
+
+/** The kind of item a {@link Terminative} is the due of. */
+export type TerminativeOriginKind = 'objective' | 'directive' | 'checkpoint'
+
+/**
+ * The occurrence of an item's due (PEP103 patch 7): the one terminative an objective, a stellar directive or a checkpoint
+ * spawns from its deadline. It sits on the agenda beside the eventives. The core keeps it its origin's mirror, hardened or
+ * not: it follows the due, takes its {@link resolution} from the origin's lifecycle, and goes when the due is cleared or
+ * the origin deleted. The one thing a user sets is {@link ignored}.
+ */
+@model('Terminative')
+export class Terminative extends Occurrence {
+	objectiveId: string | undefined
+	objective?: Objective | undefined
+	directiveId: string | undefined
+	/** The stellar directive whose due this is. */
+	directive?: Directive | undefined
+	checkpointId: string | undefined
+	checkpoint?: Checkpoint | undefined
+	/** Set by the core alone, from the origin's lifecycle. */
+	resolution: TerminativeResolution = TerminativeResolution.Pending
+	/** Whether the user raised the ignore flag: the agenda no longer lists the terminative. */
+	ignored: boolean = false
+
+	/** The id of the item whose due this is. */
+	get originId() {
+		return this.objectiveId ?? this.directiveId ?? this.checkpointId ?? ''
+	}
+
+	/** Which kind of item this is the due of. */
+	get originKind(): TerminativeOriginKind {
+		return this.objectiveId ? 'objective' : this.directiveId ? 'directive' : 'checkpoint'
+	}
+
+	/** The origin, when the core sent it along. */
+	get origin(): Objective | Directive | Checkpoint | undefined {
+		return this.objective ?? this.directive ?? this.checkpoint
+	}
+
+	/** Whether the due has passed while it is still pending. */
+	get isOverdue() {
+		return this.resolution === TerminativeResolution.Pending
+			&& epochHasPassed(this.epoch)
 	}
 }
 
@@ -205,7 +328,6 @@ export interface FatePlan {
 	title: string
 	id?: string | undefined
 	directiveId?: string | undefined
-	parentIncentiveId?: string | undefined
 	date?: string | undefined
 	startTime?: string | undefined
 	endTime?: string | undefined
@@ -218,10 +340,16 @@ export interface FateUpdate {
 	status?: FateStatus | undefined
 	/** The owning directive. Omit to keep, a value to move under it, `null` to lift to the top level. */
 	directiveId?: string | null | undefined
-	/** Parent incentive. Omit to keep, an id to set, `null` to clear. */
-	parentIncentiveId?: string | null | undefined
 	/** A fate is orbit-only (PEP111): reschedule — a one-off (`Z{…}` literal) or a recurrence — by setting a new orbit. */
 	orbit?: string | undefined
+	/**
+	 * The calendar the orbit resolves against: omit to keep, a value to override, `null` to follow the vault default.
+	 * Sent with an {@link orbit}, it is the calendar that orbit's literal is written in; sent alone on a one-off fate,
+	 * the core rewrites the literal into it so the fate keeps its day.
+	 */
+	calendar?: DeclarativeCalendar | null | undefined
+	/** The IANA time zone: omit to keep, a zone to set, `null` for floating. */
+	timeZone?: string | null | undefined
 }
 
 export interface DecreePlan {
@@ -243,6 +371,10 @@ export interface DecreeUpdate {
 	defaultLength?: number | undefined
 	activeCelestron?: number | undefined
 	reflect?: boolean | undefined
+	/** The calendar the orbit resolves against: omit to keep, a value to override, `null` to follow the vault default. */
+	calendar?: DeclarativeCalendar | null | undefined
+	/** The IANA time zone: omit to keep, a zone to set, `null` for floating. */
+	timeZone?: string | null | undefined
 }
 
 export interface EventiveUpdate {
@@ -252,6 +384,11 @@ export interface EventiveUpdate {
 	startTime?: string | null | undefined
 	endTime?: string | null | undefined
 	resolution?: EventiveResolution | undefined
+	/**
+	 * Reschedules the occurrence whole: its moment, granularity, duration and zone replace its own, validated as a new
+	 * manual eventive's are. It keeps its RECURRENCE-ID. A date or time given beside it applies on top.
+	 */
+	epoch?: EpochPlan | undefined
 }
 
 export interface AttentiveUpdate {
@@ -262,17 +399,67 @@ export interface AttentiveUpdate {
 	resolution?: AttentiveResolution | undefined
 	/** Preferred timeframe (affinity). Omit to keep, an id to set, `null` to clear. */
 	affinityTimeframeId?: number | null | undefined
+	/** Reschedules the occurrence whole, as {@link EventiveUpdate.epoch} does. */
+	epoch?: EpochPlan | undefined
 }
 
 /**
- * Addresses a single eventive occurrence by its owner UID (a fate or objective id) and RECURRENCE-ID
- * (Strategy 1). Interacting with the occurrence hardens it, so a projected occurrence needs no row id.
+ * An {@link Epoch} as a client gives it: the stored members alone, without the ones the server computes from them. A
+ * day-or-finer {@link moment} is cut down to the start of its {@link granularity} unit; a week, month or year one is
+ * kept as given, since where those begin depends on the calendar it was chosen on.
+ */
+export interface EpochPlan {
+	/** The civil (wall-clock) moment (`'YYYY-MM-DDTHH:mm:ss'`), read in {@link timeZone} or as floating time. */
+	moment: string
+	/** How much of {@link moment} is meaningful — the unit window the occurrence stands for. */
+	granularity: OrbitUnit
+	/** Nominal block length in Orbit duration notation (`"90m"`, `"1d6h"`, `"1M"`); omit to fill one granularity unit. */
+	duration?: string | undefined
+	/** The IANA time zone {@link moment} is anchored in; omit for wall/floating time. */
+	timeZone?: string | undefined
+}
+
+/**
+ * Adds a manual eventive to a fate: an occurrence added by hand rather than generated from the fate's orbit, so it
+ * carries no RECURRENCE-ID and is addressed by its row id from then on. It is given its whole position in time.
+ */
+export interface EventivePlan {
+	/** The fate the eventive belongs to. */
+	fateId: string
+	/** Its position in time — the {@link Epoch} it will own. */
+	epoch: EpochPlan
+}
+
+/**
+ * Addresses a single eventive occurrence by its owner UID (a fate id) and RECURRENCE-ID
+ * (Strategy 1). Interacting with the occurrence hardens it, so a projected occurrence needs no row id. A manual
+ * eventive has no RECURRENCE-ID, so it — like any hardened row — is addressed by its {@link id} instead, which wins
+ * when given.
  */
 export interface EventiveOccurrenceRef {
-	/** The owning fate or objective id (the iCalendar UID). */
-	ownerId: string
+	/** The owning fate id (the iCalendar UID). */
+	ownerId?: string | undefined
 	/** The occurrence's {@link Occurrence.recurrenceId} — its original slot moment. */
-	recurrenceId: string
+	recurrenceId?: string | undefined
+	/** The hardened row's id — the only address a manual eventive has. */
+	id?: number | undefined
+}
+
+/** The one change a user makes to a {@link Terminative} (PEP103 patch 7). Omit to keep. */
+export interface TerminativeUpdate {
+	ignored?: boolean | undefined
+}
+
+/**
+ * Addresses a {@link Terminative} by its origin — the item whose due it is, which has at most one — so a projected
+ * terminative and its hardened twin resolve identically. A hardened one may instead be addressed by its {@link id}, which
+ * wins when given.
+ */
+export interface TerminativeOccurrenceRef {
+	/** The origin's id: an objective, a stellar directive or a checkpoint. */
+	originId?: string | undefined
+	/** The hardened row's id. */
+	id?: number | undefined
 }
 
 /**

@@ -6,5 +6,7 @@ export * from "./Briefing"
 export * from './BriefingCard'
 export * from './BriefingCardOnrush'
 export * from './PolarisCreationRow'
+export * from './PolarisBriefingBase'
 export * from './BriefingCardPolaris'
+export * from './PolarisColumn'
 export * from './BriefingCardAgenda'

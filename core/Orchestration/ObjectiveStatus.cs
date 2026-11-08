@@ -1,43 +1,59 @@
 using Pleiades.Orchestration.Lifecycle;
+using Pleiades.Vault.Markdown;
 
 namespace Pleiades.Orchestration;
 
 /// <summary>
 /// Defines the workflow states available to objectives.
 /// </summary>
+/// <remarks>
+/// Each member declares its <see cref="LifecycleState"/> (PEP103). An objective starts when it is set to <see cref="Polaris"/>,
+/// its only started status; coming on board the active onrush sprint commits it to the sprint without starting it. Joining
+/// the active sprint or the active Polaris cycle moves an objective to <see cref="Onboard"/> or <see cref="Polaris"/> where
+/// nothing blocks it, and leaving either never moves it back (Patch103.3).
+/// </remarks>
 public enum ObjectiveStatus
 {
 	/// <summary>
-	/// The objective exists but is waiting to be acted on.
+	/// The objective exists but is waiting to be acted on. The objectives' default open status, and the one an objective is
+	/// created in.
 	/// </summary>
+	[LifecycleState(LifecycleState.Open, Initial = true)]
 	Standby = 0,
 	/// <summary>
-	/// The objective is temporarily blocked.
+	/// The objective is temporarily blocked. Still open: it is meant to go on once it is unblocked.
 	/// </summary>
+	[LifecycleState(LifecycleState.Open)]
 	Blocked = 1,
 	/// <summary>
-	/// The objective is being pursued during onrush.
+	/// The objective is on board an onrush sprint, to be pursued during it. Not yet started. Named <c>Onrush</c> before
+	/// Patch103.3: the <c>OnboardStatus</c> database migration and the v7 vault migration rename what was stored, and a note
+	/// that still reads <c>status: Onrush</c> reads as Onboard.
 	/// </summary>
-	[LifecyclePhase(LifecyclePhase.Begin)]
-	Onrush = 2,
+	[LifecycleState(LifecycleState.Open)]
+	[MarkdownEnumAlias("Onrush")]
+	Onboard = 2,
 	/// <summary>
-	/// The objective is currently part of Polaris execution.
+	/// The objective is currently part of Polaris execution. Entering this state is what starts it.
 	/// </summary>
-	[LifecyclePhase(LifecyclePhase.Begin)]
+	[LifecycleState(LifecycleState.Started)]
 	Polaris = 3,
 	/// <summary>
-	/// The objective has been completed.
+	/// The objective has been completed. The objectives' default finished status.
 	/// </summary>
-	[LifecyclePhase(LifecyclePhase.Finish)]
+	[LifecycleState(LifecycleState.Finished)]
 	Done = 4,
 	/// <summary>
-	/// The objective has been archived.
+	/// The objective has been archived: finished and closed (PEP103 patch 5). It stands only while every dependency it has
+	/// holds; an objective that gains one that does not, or joins the active onrush sprint or Polaris cycle, steps back to
+	/// <see cref="Done"/>, as the backlog state enforcement level decides.
 	/// </summary>
-	[LifecyclePhase(LifecyclePhase.Finish)]
+	[LifecycleState(LifecycleState.Finished, Closed = true)]
 	Archived = 5,
 	/// <summary>
-	/// The objective can no longer be completed successfully.
+	/// The objective has failed. Deferred: neither started nor finished, and its intrinsic dependency on its directive is
+	/// switched off while it stands (PEP102 patch 9).
 	/// </summary>
-	[LifecyclePhase(LifecyclePhase.Finish)]
+	[LifecycleState(LifecycleState.Deferred)]
 	Failed = 6,
 }

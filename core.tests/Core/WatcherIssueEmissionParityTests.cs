@@ -139,22 +139,21 @@ public sealed class WatcherIssueEmissionParityTests
 	[Fact]
 	public async Task A_blocked_delete_emits_the_same_standing_error_in_sweep_and_runtime()
 	{
-		// A begun objective's note is deleted while another incentive still names it as its parent: the sweep finds it gone
-		// in its vanished-note pass, runtime in the check that follows the delete event, and both must raise the one
-		// delete-blocked error — keyed on the identity, naming the objective's canonical location — and no sync-failed.
+		// A directive's note is deleted while an objective (never begun, so it lives only in the database) still names it:
+		// the sweep finds it gone in its vanished-note pass, runtime in the check that follows the delete event, and both
+		// must raise the one delete-blocked error — keyed on the identity, naming the directive's canonical location — and
+		// no sync-failed.
 		var (sweep, runtime) = await RunBothWaysAsync(async vault =>
 		{
-			var objective = await vault.SeedStandaloneObjectiveAsync("Held");
-			await vault.BeginObjectiveBoundaryAsync(objective.Id);
-			var child = await vault.SeedStandaloneObjectiveAsync("Held Child");
-			await vault.QueryAsync(context => context.Incentives
-				.Where(item => item.Id == child.Id)
-				.ExecuteUpdateAsync(setters => setters.SetProperty(item => item.ParentIncentiveId, objective.Id), TestContext.Current.CancellationToken));
-			File.Delete(vault.AbsolutePath("Objectives/Held.md"));
-			return "Objectives/Held.md";
+			var directive = await vault.WithScopeAsync(services => services.GetRequiredService<IDirectiveApi>()
+				.CreateStandaloneAsync("Held", cancellationToken: TestContext.Current.CancellationToken));
+			await vault.WithScopeAsync(services => services.GetRequiredService<IObjectiveApi>()
+				.CreateFromDirectiveAsync(directive.Id, "Held Quest", cancellationToken: TestContext.Current.CancellationToken));
+			File.Delete(vault.AbsolutePath("Directives/Held/Held.md"));
+			return "Directives/Held/Held.md";
 		});
 
 		Assert.Equal(sweep, runtime);
-		Assert.Equal([$"{WatcherOperations.Identity}|Objectives/Held.md|{WatcherOperations.DeleteBlocked}|{OperationSeverity.Error}"], sweep);
+		Assert.Equal([$"{WatcherOperations.Identity}|Directives/Held/Held.md|{WatcherOperations.DeleteBlocked}|{OperationSeverity.Error}"], sweep);
 	}
 }

@@ -1,5 +1,5 @@
 import { model } from "@a11d/api-dotnet"
-import type { Attentive, Decree, Eventive } from "../declaratives/models"
+import type { Attentive, Decree, Eventive, Terminative } from "../declaratives/models"
 import type { Objective, ObjectiveCollege } from "../objectives/models"
 import type { Timeframe } from "../directives/models"
 
@@ -53,9 +53,19 @@ export class PolarisCycle {
 	id: string = ''
 	title: string = ''
 	forecast: PolarisForecast | undefined
+	/**
+	 * When the cycle began. Unset for one that has not begun — a forecast, which the briefing still shows when it is
+	 * today's — and the core sends that as `null`, not as a missing key: test it for truthiness, never parse it bare.
+	 */
 	startTime: string | undefined
+	/** When the cycle concluded; unset (`null` on the wire) while it is planned or running. */
 	endTime: string | undefined
 	isForecast?: boolean
+	/**
+	 * The calendar day the cycle stands for, as an ISO date (`2026-09-30`): a forecast's target day, a begun cycle's
+	 * start day. A day holds at most one cycle — the core derives the cycle's id from it.
+	 */
+	day?: string
 	/** Everything the cycle holds to work at (PEP111): objective- and decree-backed executives alike. */
 	executives: Executive[] = []
 	reflectives: Reflective[] = []
@@ -63,20 +73,44 @@ export class PolarisCycle {
 
 /**
  * Unbound eventives and attentives a Polaris cycle includes non-structurally because they fall within
- * 24h of its beginning (PEP100). The cycle never relationally owns these records.
+ * 24h of its beginning (PEP100), and the terminatives of the dues there (PEP103 patch 7). The cycle never relationally
+ * owns these records.
  */
 export interface PolarisCycleInclusions {
 	eventives: Eventive[]
 	attentives: Attentive[]
+	terminatives: Terminative[]
+}
+
+/**
+ * The Polaris cycles of a lore page's active period, in day order: from its beginning until its next sibling begins,
+ * never past the end of an ancestor's period, and through today while nothing has ended it. The core resolves the
+ * period, as it does which lore is active. A page with no beginning has no period: its dates are unset (`null` on the
+ * wire) and it lists no cycle.
+ */
+export interface LorePolarisCycles {
+	/** The page's beginning (ISO date), the period's first day. */
+	beginning: string | undefined
+	/** The day the period ends, exclusive (ISO date), or unset while it is still running. */
+	endingExclusive: string | undefined
+	/**
+	 * The last day listed (ISO date): the day before the period ends, or today while it runs. Earlier than
+	 * {@link beginning} for a page that has not begun yet.
+	 */
+	through: string | undefined
+	/** The cycles of the period's days, canonical and shaped as the day listing serves them. */
+	cycles: PolarisCycle[]
 }
 
 /**
  * The day-level agenda relative to today: unbound attentives requiring attention (same-day/24h and
- * previous unattended) and upcoming eventives within a short horizon (PEP100).
+ * previous unattended), upcoming eventives within a short horizon (PEP100), and the terminatives of the dues still
+ * pending up to that horizon, overdue ones included, unless ignored (PEP103 patch 7).
  */
 export interface PolarisAgenda {
 	attentives: Attentive[]
 	eventives: Eventive[]
+	terminatives: Terminative[]
 }
 
 /**
@@ -131,11 +165,14 @@ export interface Reflective {
 	polarisCycleId: string
 	polarisCycle?: PolarisCycle | undefined
 	executed: boolean
-	/** Optional time of day (PEP100); further reflective behavior belongs to PEP104. */
+	/** Optional time of day (PEP100). */
 	time: string | undefined
-	/** Originating decree when generated through lunar reflection (PEP100). */
+	/**
+	 * Originating decree when generated through lunar reflection (PEP104): its orbit landed on the cycle's day, or the
+	 * cycle drew it from the orbit-less pool. Executing the reflective also grants that decree's per-run reward.
+	 */
 	decreeId: string | undefined
-	/** Originating decree, carrying the relevant lunar directive when served. Absent for manual/drawn reflectives. */
+	/** Originating decree, carrying the relevant lunar directive when served. Absent once the decree is deleted. */
 	decree?: Decree | undefined
 	/**
 	 * Preferred timeframe for this reflective (affinity, PEP100 patch). Seeded at cycle begin through auto-inclusion:
@@ -188,13 +225,6 @@ export interface ExecutiveUpdate {
 	affinityTimeframeId?: number | null | undefined
 	/** Relocates the executive to another Polaris cycle (successor to moving a bound attentive, PEP111). */
 	moveToPolarisCycleId?: string | undefined
-}
-
-export interface ReflectiveDrawRequest {
-	polarisCycleId?: string | undefined
-	count?: number
-	includeRoutine?: boolean
-	includeRandom?: boolean
 }
 
 export interface ReflectiveUpdate {

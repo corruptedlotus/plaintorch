@@ -131,6 +131,45 @@ export interface WindowFrameState {
  */
 export const mediaScheme = "plaintorch-media"
 
+/**
+ * The extension of a saved global planning context — a planning graph file (PEP102). SIPA's
+ * `GLOBAL_CONTEXT_EXTENSION`, restated here for the main process, which does not bundle the UI; the installer's file
+ * association (`installer/electron-builder.yml`) names it too.
+ */
+export const planningFileExtension = "p7tpx"
+
+/** A planning window's file, as the main process last read it. */
+export interface PlanningFileSnapshot {
+	kind: "file"
+	/** The file's absolute path. */
+	path: string
+	/** The file's name without its extension, for the window's title. */
+	name: string
+	/** The file's text, or `undefined` while there is no file at the path: it was moved or deleted elsewhere. */
+	text?: string
+}
+
+/** Which onrush a canvas shows: the one under way, or the one being planned (SIPA's onrush canvas modes). */
+export type OnrushCanvasMode = "onrush-active" | "onrush-planning"
+
+/**
+ * What a planning window shows: a planning graph file; a global context popped out of a canvas and not saved to a
+ * file yet, as the text the file would hold; or an onrush.
+ */
+export type PlanningWindowContent =
+	| PlanningFileSnapshot
+	| { kind: "unsaved", text: string }
+	| { kind: "onrush", mode: OnrushCanvasMode }
+
+/** A canvas context to open in a planning window: an onrush, or a global context as the text its file would hold. */
+export type PlanningPopOut = { mode: OnrushCanvasMode } | { mode: "global", text: string }
+
+/**
+ * What saving a new planning file came to: the path it was saved to, as the user knows it (vault-relative inside the
+ * served vault, absolute elsewhere), or why it could not be saved.
+ */
+export type PlanningSaveOutcome = { path: string } | { error: string }
+
 /** IPC channel names, in one place so the preload and the main process cannot drift. */
 export const ipc = {
 	getStatus: "shell:get-status",
@@ -155,7 +194,12 @@ export const ipc = {
 	frameState: "frame:state",
 	frameMinimize: "frame:minimize",
 	frameToggleMaximize: "frame:toggle-maximize",
-	frameClose: "frame:close"
+	frameClose: "frame:close",
+	planningRead: "planning:read",
+	planningWrite: "planning:write",
+	planningChanged: "planning:changed",
+	planningSaveAs: "planning:save-as",
+	planningPopOut: "planning:pop-out"
 } as const
 
 /** The API the preload exposes on `window.plaintorch`. */
@@ -194,5 +238,31 @@ export interface PlaintorchBridge {
 		/** Maximizes the window, or restores it when it is maximized. */
 		toggleMaximize(): Promise<void>
 		close(): Promise<void>
+	}
+	/**
+	 * Planning windows and their files. `read`, `write` and `onChanged` are a planning window's own content: each call
+	 * acts on the window that makes it, and only that one, so any other page reads `undefined` and writes nothing.
+	 * `saveAs` and `popOut` work from any window.
+	 */
+	planning: {
+		read(): Promise<PlanningWindowContent | undefined>
+		/**
+		 * Replaces the global context's text: a file's, written once edits rest (closing the window lands the last
+		 * one), or an unsaved one's, kept so a reload finds it. An onrush has nothing to write; the vault holds it.
+		 */
+		write(text: string): Promise<void>
+		/**
+		 * The window's content changed from outside the page: its file changed on disk from elsewhere — another editor,
+		 * Obsidian, a sync — or went missing or came back, or its unsaved context was saved and it is now that file's.
+		 */
+		onChanged(listener: (content: PlanningWindowContent) => void): () => void
+		/**
+		 * Asks where to save a new planning file — a save dialog, modal to this window, starting in the served vault —
+		 * and writes `text` there. An unsaved planning window that saves becomes the file's window; from anywhere else
+		 * the file opens in one. `undefined` when the dialog was cancelled.
+		 */
+		saveAs(text: string): Promise<PlanningSaveOutcome | undefined>
+		/** Opens a canvas context in a planning window, as a planning graph file opens. */
+		popOut(context: PlanningPopOut): Promise<void>
 	}
 }

@@ -1,20 +1,24 @@
 import { app, BrowserWindow, dialog, ipcMain, shell as electronShell, nativeTheme } from "electron"
 import { mkdirSync } from "node:fs"
+import path from "node:path"
 import { ipc, type BridgeRequest, type ShellStatus } from "../shared/contracts"
 import { setAutostartEnabled } from "./autostart"
 import { relayCoreStreams } from "./core-streams"
 import { hostsCore } from "./flavor"
 import { handleMediaScheme, registerMediaScheme } from "./media-protocol"
+import { handlePlanningWindows, planningFilesIn } from "./planning-files"
 import { resolveUserProfile } from "./profile"
 import { refuseRemoteFiles } from "./request-guard"
 import { Shell } from "./shell"
 import { ShellTray } from "./tray"
+import { isVaultInitialized } from "./vault-initialization"
 import { handleFrameControls } from "./window-frame"
 import { ShellWindows } from "./windows"
 
 /**
  * The main process: one instance per user, a tray icon, a splash while the core comes up, the briefing (the SIPA
- * UI) and a status window on demand, and a clean stop of the core on quit. Everything stateful lives in {@link Shell}; this file only wires
+ * UI) and a status window on demand, a planning window for each planning graph file (`.p7tpx`) the app is asked to
+ * open and each canvas context popped out, and a clean stop of the core on quit. Everything stateful lives in {@link Shell}; this file only wires
  * Electron's lifecycle and the surfaces to it.
  */
 
@@ -24,6 +28,8 @@ function readArgument(name: string): string | undefined {
 }
 
 const launchedHidden = process.argv.includes("--hidden")
+/** The planning graph files the launch names: opening one from the file manager launches the app with its path. */
+const launchFiles = planningFilesIn(process.argv, process.cwd())
 const profile = resolveUserProfile(readArgument("--profile"))
 mkdirSync(profile.shellDataPath, { recursive: true })
 // Electron keys its single-instance lock on the userData folder, so moving it into the profile, before the lock is
@@ -62,8 +68,49 @@ async function run(): Promise<void> {
 		app.exit(0)
 	}
 
+	/** Shows a message box, modal to a window when there is one. */
+	const showMessage = (parent: BrowserWindow | undefined, options: Electron.MessageBoxOptions) =>
+		parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options)
+
+	/**
+	 * Makes a chosen folder that is no PLAINTORCH vault yet into one, once the user agrees — a stray pick would
+	 * otherwise scaffold a vault into the wrong folder. Resolves whether the folder is a vault now.
+	 */
+	const initializeChosenVault = async (parent: BrowserWindow | undefined, folder: string): Promise<boolean> => {
+		const { response } = await showMessage(parent, {
+			type: "question",
+			title: "Initialize vault",
+			message: `${path.basename(folder) || folder} is not a PLAINTORCH vault yet.`,
+			detail: `Initialize it to activate it: PLAINTORCH adds its settings file (.plaintorch), its data folder (.plaintorch-data) and its entity folders to\n${folder}`,
+			buttons: ["Initialize and activate", "Cancel"],
+			defaultId: 0,
+			cancelId: 1,
+			noLink: true
+		})
+		if (response !== 0 || quitting) {
+			return false
+		}
+
+		const result = await shell.initializeVault(folder)
+		if (!result.initialized && !quitting) {
+			await showMessage(parent, {
+				type: "error",
+				title: "Initialize vault",
+				message: `PLAINTORCH could not initialize ${path.basename(folder) || folder}.`,
+				detail: result.reason,
+				noLink: true
+			})
+		}
+
+		return result.initialized
+	}
+
 	let choosingVault = false
-	/** Asks for a vault folder, modal to the window that asked (the tray has none); one picker at a time. */
+	/**
+	 * Asks for a vault folder, modal to the window that asked (the tray has none); one picker at a time. A folder that
+	 * is not a vault yet is initialized first, before it is written as the active vault, so the core only ever sees
+	 * it ready to serve.
+	 */
 	const activateVault = async (owner?: BrowserWindow) => {
 		if (choosingVault) {
 			return
@@ -73,13 +120,21 @@ async function run(): Promise<void> {
 		try {
 			const options: Electron.OpenDialogOptions = {
 				title: "Activate a PLAINTORCH vault",
-				message: "Choose an initialized PLAINTORCH vault folder",
+				message: "Choose a PLAINTORCH vault folder, or a folder to initialize as one",
 				properties: ["openDirectory"]
 			}
 			const parent = owner ?? windows.statusWindow
 			const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options)
 			const chosen = result.filePaths[0]
-			if (!result.canceled && chosen && !quitting) {
+			if (result.canceled || !chosen || quitting) {
+				return
+			}
+
+			if (!isVaultInitialized(chosen) && !await initializeChosenVault(parent, chosen)) {
+				return
+			}
+
+			if (!quitting) {
 				shell.activateVault(chosen)
 			}
 		}
@@ -91,26 +146,47 @@ async function run(): Promise<void> {
 	const tray = new ShellTray({
 		openBriefing: () => windows.showBriefing(),
 		openStatus: () => windows.showStatus(),
-		activateVault: () => void activateVault(),
-		deactivateVault: () => shell.deactivateVault(),
-		setAutostart: enabled => {
-			setAutostartEnabled(enabled)
-			shell.configuration.updateShell(section => {
-				section.autostart = enabled
-			})
-			shell.publish()
-		},
-		openLogs: () => {
-			mkdirSync(profile.logsPath, { recursive: true })
-			void electronShell.openPath(profile.logsPath)
-		},
 		restartCore: () => void shell.restartCore(),
 		checkForUpdates: () => void shell.updater.check(),
 		installUpdate: () => void shell.updater.downloadAndInstall(),
 		quit: () => void quit()
 	})
 
-	let briefingShownAfterSplash = false
+	/** Planning files waiting for the launch's windows: those the launch named, and any asked for before they show. */
+	const pendingFiles = [...launchFiles]
+	let launchWindowsShown = false
+	/**
+	 * The windows a launch ends in, once: the planning files waiting, or — for a visible launch that asked for none —
+	 * the main window. A login launch stays in the tray.
+	 */
+	const showLaunchWindows = () => {
+		if (launchWindowsShown) {
+			return
+		}
+
+		launchWindowsShown = true
+		const files = pendingFiles.splice(0)
+		if (files.length === 0 && !launchedHidden) {
+			windows.showBriefing()
+		}
+
+		for (const file of files) {
+			windows.showPlanning(file)
+		}
+	}
+
+	/** Opens planning files, or holds them for the launch's windows while the app is not ready or the splash is up. */
+	const openPlanningFiles = (files: readonly string[]) => {
+		if (!launchWindowsShown && (!app.isReady() || windows.isSplashOpen)) {
+			pendingFiles.push(...files)
+			return
+		}
+
+		for (const file of files) {
+			windows.showPlanning(file)
+		}
+	}
+
 	const publish = (status: ShellStatus) => {
 		tray.update(status)
 		windows.broadcast(status)
@@ -123,11 +199,7 @@ async function run(): Promise<void> {
 				}
 
 				windows.closeSplash()
-				// A visible launch ends in the main window once the core is up; a login launch stays in the tray.
-				if (!launchedHidden && !briefingShownAfterSplash) {
-					briefingShownAfterSplash = true
-					windows.showBriefing()
-				}
+				showLaunchWindows()
 			}, 900)
 		}
 	}
@@ -157,8 +229,37 @@ async function run(): Promise<void> {
 
 	relayCoreStreams(shell.transport)
 	handleFrameControls()
+	handlePlanningWindows({
+		contentOf: contents => windows.planningContentOf(contents),
+		write: (contents, text) => windows.writePlanning(contents, text),
+		fileAt: filePath => windows.planningFileAt(filePath),
+		servedVault: () => shell.servedVault,
+		saved: (contents, filePath) => windows.savedPlanning(contents, filePath),
+		popOut: context => windows.showPlanningContext(context)
+	})
 
-	app.on("second-instance", () => !quitting && windows.showBriefing())
+	// A second launch hands its command line over: the planning files it names open here, and a launch naming none
+	// brings the main window forward.
+	app.on("second-instance", (_, argv, workingDirectory) => {
+		if (quitting) {
+			return
+		}
+
+		const files = planningFilesIn(argv, workingDirectory)
+		if (files.length === 0) {
+			windows.showBriefing()
+		}
+		else {
+			openPlanningFiles(files)
+		}
+	})
+	// macOS hands a file over as an event instead, before the app is ready when the file launched it.
+	app.on("open-file", (event, file) => {
+		event.preventDefault()
+		if (!quitting) {
+			openPlanningFiles(planningFilesIn([file], process.cwd()))
+		}
+	})
 	// A tray app stays alive with no windows.
 	app.on("window-all-closed", () => { })
 	app.on("before-quit", event => {
@@ -180,9 +281,8 @@ async function run(): Promise<void> {
 	if (showSplash) {
 		windows.showSplash()
 	}
-
-	if (!launchedHidden && !showSplash) {
-		windows.showBriefing()
+	else {
+		showLaunchWindows()
 	}
 
 	await shell.start()

@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using Pleiades.Puck;
 using Pleiades.Vault;
 using Pleiades.Vault.Markdown;
+using Pleiades.Orchestration.Lifecycle;
 
 namespace Pleiades.Orchestration;
 
@@ -29,7 +30,8 @@ public sealed class LunarDirective : Directive
 	/// Gets or sets the moonlight state of the lunar directive.
 	/// </summary>
 	[MarkdownField("status")]
-	public LunarDirectiveStatus Status { get; set; } = LunarDirectiveStatus.OnHold;
+	[LifecycleStatus(History = true)]
+	public LunarDirectiveStatus Status { get; set; } = LifecycleDeclarations.InitialStatus<LunarDirectiveStatus>();
 
 	[InverseProperty(nameof(Timeframe.Directive))]
 	/// <summary>

@@ -54,12 +54,12 @@ public sealed class DeclarativeNextOccurrenceTests : VaultTestBase
 	}
 
 	[Fact]
-	public async Task Cancelling_a_fate_clears_its_next_occurrence_and_resuming_restores_it()
+	public async Task Stopping_a_fate_clears_its_next_occurrence_and_resuming_restores_it()
 	{
 		var fate = await Declarative(api => api.CreateFateAsync(new FatePlan("Daily standup", Orbit: "d"), Ct));
 		Assert.NotNull((await StoredFate(fate.Id)).NextOccurrence);
 
-		await Declarative(api => api.UpdateFateAsync(fate.Id, new FateUpdate(Status: FateStatus.Cancelled), Ct));
+		await Declarative(api => api.UpdateFateAsync(fate.Id, new FateUpdate(Status: FateStatus.Stopped), Ct));
 		Assert.Null((await StoredFate(fate.Id)).NextOccurrence);
 
 		await Declarative(api => api.UpdateFateAsync(fate.Id, new FateUpdate(Status: FateStatus.Active), Ct));

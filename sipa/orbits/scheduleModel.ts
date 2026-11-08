@@ -82,7 +82,11 @@ export interface Frame {
 	unit: CalendarUnit
 	/** The enclosing unit — an actual parent when nested, else the unit's natural parent. Drives naming. */
 	parent?: CalendarUnit
-	/** `%N`: recur every N of this unit. Undefined/1 = every one. */
+	/**
+	 * `%N`: recur every N of this unit, set only when it steps. On a selection it runs on from each value, every N-th to
+	 * the end of the parent period — `%1` included, every value after it. On a bare unit it is every N-th; a bare unit's
+	 * `%1` is every one, so it is left unset, as for no `%` at all.
+	 */
 	interval?: number
 	/** Which values within the parent this frame selects. */
 	selection: Selection
@@ -118,6 +122,7 @@ export interface NamedValue {
 
 /** A time of day. Kept as raw numbers so the realizer decides the format ("09:00", "9am", "@9"). */
 export interface ClockTime {
+	/** The listed hours; empty when the time recurs in an hour {@link ClockTime.cycle}. */
 	hours: number[]
 	/** The listed minutes; empty when the minutes run as a {@link ClockTime.step} stream. */
 	minutes: number[]
@@ -125,6 +130,20 @@ export interface ClockTime {
 	seconds: number[]
 	/** A `%N` (or a bare, streaming unit) on one clock unit, when the time recurs within the day rather than once. */
 	step?: ClockStep
+	/**
+	 * The clock unit the time recurs in, when it names no value of it: `h[m{15}]` is minute 15 of every hour, `m[s{30}]`
+	 * second 30 of every minute — the shape an indexed minute or second takes, bound to its implicit cycle. The cycling
+	 * unit and every coarser one name no values (`hours` is empty, and `minutes` too for a minute cycle).
+	 */
+	cycle?: ClockCycle
+}
+
+/** A bare hour or minute a clock recurs in: every {@link interval} of {@link unit}, phased from the schedule's anchor. */
+export interface ClockCycle {
+	unit: 'h' | 'm'
+	interval: number
+	/** A top-level cycle's `*x`: the schedule runs for x of its periods ("for 3 hours"). */
+	run?: number
 }
 
 /**
@@ -141,11 +160,23 @@ export interface ClockStep {
 	times?: number
 }
 
-/** A bound on the stream. */
+/** A bound on the stream. A window bound keeps its text as written (`at`) and, when it names a calendar date, that date. */
 export type Bound =
-	| { kind: 'count'; times: number; per?: TimeUnit } // @x — at most x of a node's instances per period of its parent, or in all
-	| { kind: 'after'; at: string }                    // >t — not before this timestamp
-	| { kind: 'before'; at: string }                   // <t — not after this timestamp
+	| { kind: 'count'; times: number; per?: TimeUnit }   // @x — at most x of a node's instances per period of its parent, or in all
+	| { kind: 'after'; at: string; date?: CalendarDate }  // >t — not before this moment
+	| { kind: 'before'; at: string; date?: CalendarDate } // <t — before this moment
+
+/**
+ * A calendar date a window bound names, written as `Z{…}` writes one (`>2027/6/5`, `<2027/6/5T18:00`), its month
+ * carrying the calendar's name for it. An ISO bound (`>2027-06-05`, the older form) names none and reads as written.
+ */
+export interface CalendarDate {
+	year: number
+	month: NamedValue
+	day: number
+	/** The time of day, when the bound pinned one (its `T` part). */
+	time?: ClockTime
+}
 
 /** The natural enclosing unit of a calendar unit when it is not explicitly nested under another. */
 export function naturalParent(unit: CalendarUnit): CalendarUnit | undefined {

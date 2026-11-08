@@ -1,10 +1,12 @@
-import { Component, component, css, html, nothing, property, state } from "@a11d/lit"
+import { Component, component, css, html, nothing, property, query, state } from "@a11d/lit"
 import { DirectiveTimeframeRecord, Executive, ExecutiveUpdate, isDecreeIncentive, isObjectiveIncentive, ObjectiveStatus, Timeframe } from "@pleiades/sdk"
-import { core, objectiveStatusDescriptors, openEntityEditor, SelectStatusModal, SelectTimeframeModal } from ".."
+import { core, editState, EntityWatch, openEntityEditor, SelectTimeframeModal } from ".."
+import "./EntityAbsence"
 import type { TimeframeChoice } from "../editing/SelectTimeframeModal"
 import type { EditablePart } from "../editing/EditableDataLink"
 import type { EditableTimeUnit } from "../editing/EditableTimeUnit"
 import { createChild, ModalBase, toast } from "../../host"
+import { offerObjectiveDone } from "./polarisActivity"
 
 type Allocation = 'elapsed' | 'estimation' | 'minimum' | 'maximum'
 
@@ -33,6 +35,25 @@ export class ExecutiveEditor extends Component {
 	}) executive?: Executive
 
 	@state() private draft: Record<Allocation, number | undefined> = { elapsed: 0, estimation: undefined, minimum: undefined, maximum: undefined }
+
+	@query('.tracked p7t-editable-time-unit') private readonly trackedField?: EditableTimeUnit
+
+	/**
+	 * Starts editing the tracked time, so it can be typed the moment the editor shows. Once drawn, and a task later: an
+	 * editable hears its focus only a few microtasks after it connects, and a dialog opening around the editor in the
+	 * meantime moves the focus to a control of its own.
+	 */
+	async editTracked() {
+		await this.updateComplete
+		setTimeout(() => this.trackedField?.startEditing())
+	}
+
+	/**
+	 * Observes the incentive the executive works at — the entity this editor is really about. An executive is a
+	 * work record and may outlive its objective or decree; once that is removed there is nothing left here to
+	 * edit, and the editor says so instead of offering allocations on something that no longer exists.
+	 */
+	private readonly incentive = new EntityWatch(this, () => this.executive?.incentive)
 
 	static override get styles() {
 		return css`
@@ -192,6 +213,10 @@ export class ExecutiveEditor extends Component {
 		const executive = this.executive
 		if (!executive) return html``
 
+		if (this.incentive.removed) {
+			return html`<p7t-entity-absence state='removed' puck=${executive.incentive?.id ?? ''}></p7t-entity-absence>`
+		}
+
 		// An executive works an objective or a decree (PEP111); only an objective carries a shiftable workflow status.
 		const incentive = executive.incentive
 		const objective = isObjectiveIncentive(incentive) ? incentive : undefined
@@ -232,8 +257,8 @@ export class ExecutiveEditor extends Component {
 					${!objective ? nothing : html`
 						<p7t-editable
 							.value=${objective.status}
-							.doEdit=${() => SelectStatusModal.prompt(objectiveStatusDescriptors)}
-							@change=${(e: Event) => this.commitStatus(e)}>
+							.doEdit=${(_: unknown, field: HTMLElement) => editState(field, objective)}
+							@change=${(e: Event) => this.statusShifted(e)}>
 							<p7t-status-item
 								small
 								.status=${ObjectiveStatus[objective.status] as keyof typeof ObjectiveStatus}>
@@ -291,11 +316,19 @@ export class ExecutiveEditor extends Component {
 		this.applyUpdate({ [allocation]: value ?? null } as ExecutiveUpdate)
 	}
 
-	private commitExecuted(e: Event) {
-		const executed = (e.target as EditablePart<boolean>).value
+	/** Toggles the executed flag; marked done, it then offers beside the switch to mark the objective done too. */
+	private async commitExecuted(e: Event) {
+		const toggle = e.target as EditablePart<boolean>
+		const executed = toggle.value
 		if (executed === undefined || executed === this.executive?.executed) return
 
-		this.applyUpdate({ executed })
+		if (!await this.applyUpdate({ executed }) || !executed) return
+
+		const objective = await offerObjectiveDone(this.executive!, toggle)
+		if (objective) {
+			this.executive = { ...this.executive!, incentive: objective }
+			this.notifyChange()
+		}
 	}
 
 	private async commitAffinity(e: Event) {
@@ -340,30 +373,29 @@ export class ExecutiveEditor extends Component {
 		}
 	}
 
-	private async commitStatus(e: Event) {
+	/**
+	 * The state bubble saved the objective's shift; the modal's copy of the executive takes the objective as the core now
+	 * has it, and the cycle is told.
+	 */
+	private statusShifted(e: Event) {
 		const status = (e.target as EditablePart<ObjectiveStatus>).value
 		const incentive = this.executive?.incentive
 		const objective = isObjectiveIncentive(incentive) ? incentive : undefined
 		if (status === undefined || !objective) return
 
-		const updated = await core.objectives.shiftWorkflow(objective.id, { status })
-		if (!updated) {
-			toast('Failed to update objective status.', 'error')
-			return
-		}
-
-		this.executive = { ...this.executive!, incentive: updated }
+		this.executive = { ...this.executive!, incentive: core.repos.objectives.peek(objective.id) ?? objective }
 		this.notifyChange()
 	}
 
-	private async applyUpdate(update: ExecutiveUpdate) {
+	/** Persists an executive edit and folds the answer back in. Resolves to whether the core accepted it. */
+	private async applyUpdate(update: ExecutiveUpdate): Promise<boolean> {
 		const executive = this.executive
-		if (!executive) return
+		if (!executive) return false
 
 		const updated = await core.polaris.updateExecutive(executive.id, update)
 		if (!updated) {
 			toast('Failed to update executive.', 'error')
-			return
+			return false
 		}
 
 		// The update response carries no navigation properties, so the known incentive and affinity timeframe are
@@ -375,6 +407,7 @@ export class ExecutiveEditor extends Component {
 			affinityTimeframe: updated.affinityTimeframe ?? executive.affinityTimeframe,
 		}
 		this.notifyChange()
+		return true
 	}
 
 	private notifyChange() {
@@ -387,7 +420,8 @@ export class ExecutiveEditor extends Component {
 }
 
 /**
- * Hosts {@link ExecutiveEditor} in a modal, relaying every persisted change to the opener.
+ * Hosts {@link ExecutiveEditor} in a modal, relaying every persisted change to the opener. It opens on the tracked time
+ * already editing: digits, the arrows or a step land there at once.
  */
 export class ExecutiveModal extends ModalBase {
 	constructor(
@@ -401,6 +435,7 @@ export class ExecutiveModal extends ModalBase {
 		const editor = createChild(this.contentEl, 'p7t-executive-editor')
 		editor.executive = this.executive
 		editor.addEventListener('executivechange', e => this.onChange?.((e as CustomEvent<Executive>).detail))
+		void editor.editTracked()
 	}
 }
 

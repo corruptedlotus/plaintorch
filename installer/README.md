@@ -13,12 +13,34 @@ target runtime identifier) into `standalone/core-dist`, which electron-builder p
 is git-ignored and stays after the build; a development shell runs it only when the core has no build of its own, and
 warns when it does (see `standalone/README.md`).
 
+## File associations
+
+Both flavours register planning graph files (`.p7tpx`, `fileAssociations` in `electron-builder.yml`), so opening one
+from the file manager opens it in a planning window of the shell (see `standalone/README.md`, *Planning files*). On
+Windows the per-user install writes the ProgID `PLAINTORCH.PlanningGraph` ("PLAINTORCH Planning Graph") under
+`HKCU\Software\Classes`, whose open verb runs the app with the file's path, and the uninstaller removes it. The files
+take the app's icon; a `branding/p7tpx.ico` would give them one of their own. A development shell registers nothing.
+
 ## Updates
 
 `electron-builder.yml` configures electron-updater with a generic provider pointing at the update web repository.
 Nothing downloads on its own: the shell checks, offers the download, and on install stops its core (so the core
 executable is not locked) and quits into the new installer. Publishing a release means uploading the installer and
 the `latest*.yml` manifest electron-builder emits beside it. winget later reuses the same installer artefacts.
+
+## Versions
+
+Every part ships under one semver version, moved together (0.3.0 is the 0.3a private build):
+
+- `standalone/package.json`: electron-builder reads it, so it names the installer
+  (`PLAINTORCH-<flavor>-<version>-<os>-<arch>`), the update manifest and the shell's `app.getVersion()`.
+- `sdk.ts`, `sipa` and `obsidian` `package.json`, plus the root and `../sdk.ts` / `../sipa` entries of each
+  `package-lock.json` (edit those lines; a fresh `npm install` re-resolves the whole tree).
+- `obsidian/manifest.json`, with a matching `obsidian/versions.json` entry mapping the version to its `minAppVersion`.
+- `<Version>` in `core/plaintorch.csproj` and `cli/plaintorch.cli.csproj`, which stamps the executables' file and
+  product versions (the product version carries the source commit).
+
+electron-builder refuses a version that is not semver (it refused `0.2c` before building anything).
 
 ## Before shipping
 

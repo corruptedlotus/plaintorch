@@ -13,6 +13,7 @@ This is the initial scaffold for the PLAINTORCH Obsidian plugin.
 - onrush objectives and executive-linked objectives are navigable links back into vault notes
 - objective note decoration includes quick actions for adding the objective to onrush or Polaris
 - objective note decoration also includes a directive picker that edits the note frontmatter so watcher-driven sync can reconcile the directive change back into core state
+- the dependency canvas pops its context out into a tab of its own (*Open in a new tab*, `PlaintorchPlanningView`): one tab per onrush, and a new tab for a scratch global context, marked *Unsaved* (in its title and its canvas toolbar) and kept in the tab's view state across reloads until its *Save to file* turns that tab into the saved `.p7tpx` file's view
 
 ## Authority lookup
 The plugin now asks the local PLAINTORCH core for the authoritative entity kind of a vault note by calling `/api/system/resolve-note`.
@@ -25,6 +26,9 @@ If the core is unavailable, entity detection and PLAINTORCH rendering do not run
 1. Install dependencies with `npm install` here, in `../sipa`, and in `../sdk.ts` (both packages are bundled from source and resolve their own dependencies).
 2. Build once with `npm run build` or run watch mode with `npm run dev`.
 3. Copy or symlink this folder into your Obsidian vault plugins directory.
+
+## Installing a build
+`npm run build` writes the release plugin to `../bin/obsidian`: `main.js`, `manifest.json` and `styles.css`. Copy those three files into `<vault>/.obsidian/plugins/plaintorch/` and enable PLAINTORCH under *Community plugins*. The plugin needs a running core on the same user profile (the standalone shell's, or `serve`); a production build talks to the real per-user profile, never the dev sub-profile. The manifest asks for Obsidian 1.7.2 or later: the plugin awaits `Workspace.revealLeaf`, which returns a promise and loads deferred views from 1.7.2.
 
 ## The element library (`@pleiades/sipa`)
 The lit components, the orbit humaniser and the icon/design assets live in the shared `@pleiades/sipa` package (`../sipa`), which the plugin bundles from source exactly like `@pleiades/sdk`. `src/main.ts` imports the package once to register every custom element; the views and the on-note banner import what they need from it.

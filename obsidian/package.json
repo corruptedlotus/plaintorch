@@ -1,8 +1,8 @@
 {
 	"name": "@pleiades/plaintorch-obsidian",
-	"version": "0.2.4",
+	"version": "0.3.0",
 	"private": true,
-	"description": "Obsidian plugin scaffold for PLAINTORCH entity rendering and briefing surfaces.",
+	"description": "PLAINTORCH's Obsidian plugin: the Obsidian adapter around SIPA, with the briefing, the planning canvas and the on-note banners, served by the local PLAINTORCH core.",
 	"type": "module",
 	"scripts": {
 		"build": "node esbuild.config.mjs production",

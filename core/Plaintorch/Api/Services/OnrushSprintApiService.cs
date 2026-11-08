@@ -3,6 +3,7 @@ using Pleiades.Orchestration;
 using Pleiades.Puck;
 using Pleiades.Plaintorch.Api.Abstractions;
 using Pleiades.Plaintorch.Api.Contracts;
+using Pleiades.Plaintorch.Enforcement;
 using Pleiades.Plaintorch.Markdown;
 using Pleiades.Plaintorch.State;
 using Pleiades.Vault.Database;
@@ -21,7 +22,8 @@ public sealed class OnrushSprintApiService(
 	PlaintorchMarkdownStorageService markdownFileService,
 	VaultWriteQueue writeQueue,
 	VaultTemporalDataService temporalDataService,
-	VaultAuditLogService auditLogService) : IOnrushSprintApi
+	VaultAuditLogService auditLogService,
+	StateDecisionService decisions) : IOnrushSprintApi
 {
 	/// <inheritdoc />
 	public async Task<OnrushSprint> PlanAsync(OnrushSprintPlan plan, CancellationToken cancellationToken = default)
@@ -38,18 +40,23 @@ public sealed class OnrushSprintApiService(
 		};
 
 		context.OnrushSprints.Add(sprint);
-		AttachMilestone(sprint);
 		await writeQueue.WriteAsync(sprint, cancellationToken: cancellationToken);
+		await AttachMilestoneAsync(sprint, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.plan", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
 
 	/// <summary>
-	/// Gives a sprint its milestone checkpoint (PEP102), unless it already has one. The checkpoint is tracked
-	/// by the sprint like an objective, and named as its milestone; it carries no toll or external condition,
+	/// Gives a sprint its milestone checkpoint (PEP102), unless it already has one, and saves it. The checkpoint is
+	/// tracked by the sprint like an objective, and named as its milestone; it carries no toll or external condition,
 	/// so it stands purely for the sprint's completion.
 	/// </summary>
-	private void AttachMilestone(OnrushSprint sprint)
+	/// <remarks>
+	/// The sprint must already be saved: the sprint and its milestone name each other, and one save cannot insert both
+	/// sides of that cycle. Both links are database-only, so this save writes no note. (The old order leaned on minting the
+	/// milestone's id, which saved the sprint on the caller's context as a side effect.)
+	/// </remarks>
+	private async Task AttachMilestoneAsync(OnrushSprint sprint, CancellationToken cancellationToken)
 	{
 		if (!string.IsNullOrWhiteSpace(sprint.MilestoneCheckpointId))
 		{
@@ -66,6 +73,7 @@ public sealed class OnrushSprintApiService(
 		context.Checkpoints.Add(milestone);
 		sprint.MilestoneCheckpointId = milestone.Id;
 		sprint.MilestoneCheckpoint = milestone;
+		await context.SaveChangesAsync(cancellationToken);
 	}
 
 	/// <inheritdoc />
@@ -74,17 +82,27 @@ public sealed class OnrushSprintApiService(
 		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
 		var sprint = await context.OnrushSprints
 			.Include(item => item.Objectives)
+			.Include(item => item.Directives)
 			.Include(item => item.MilestoneCheckpoint)
 			.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
 			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
 
-		if (sprint.StartDate is not null && sprint.EndDate is null && sprint.Id != OnrushSprint.PlanningPlaceholderId)
+		switch (CyclePhases.Of(sprint))
 		{
-			return sprint;
+			case CyclePhase.Active:
+				return sprint;
+			case CyclePhase.Ended:
+				// Nothing a save could read says this is a begin when no new start is named, so the verb asks itself.
+				var subject = StateJudge.SubjectOf(sprint);
+				decisions.RefuseOutright(StateJudge.SprintRestartRule, subject, StateJudge.RestartMessage(subject)).ThrowIfStopped();
+				break;
 		}
 
 		var previous = Clone(sprint);
-		var resolvedStartDate = startDate ?? sprint.StartDate ?? DateOnly.FromDateTime(DateTime.Today);
+		// A plan's date is when it was meant to begin; beginning it now on a day still to come would be refused (PEP103
+		// patch 5, onrush.early-start), so a plan dated ahead begins today. A date named by the caller is taken as named.
+		var today = DateOnly.FromDateTime(DateTime.Today);
+		var resolvedStartDate = startDate ?? (sprint.StartDate is { } planned && planned <= today ? planned : today);
 
 		if (sprint.Id == OnrushSprint.PlanningPlaceholderId)
 		{
@@ -100,6 +118,11 @@ public sealed class OnrushSprintApiService(
 			foreach (var objective in sprint.Objectives)
 			{
 				objective.OnrushSprintId = activatedSprint.Id;
+			}
+
+			foreach (var directive in sprint.Directives)
+			{
+				directive.OnrushSprintId = activatedSprint.Id;
 			}
 
 			// Carry the milestone (and any other tracked checkpoints) onto the real sprint before the
@@ -120,20 +143,18 @@ public sealed class OnrushSprintApiService(
 				// would otherwise still name it.
 				sprint.MilestoneCheckpointId = null;
 			}
-			else
-			{
-				AttachMilestone(activatedSprint);
-			}
 
 			context.OnrushSprints.Remove(sprint);
 			await writeQueue.WriteAsync(activatedSprint, previous, cancellationToken);
+			// Only a placeholder that carried no milestone leaves the real sprint without one; it gets its own now.
+			await AttachMilestoneAsync(activatedSprint, cancellationToken);
 			await auditLogService.WriteAsync("api", "onrush.begin", subject: activatedSprint, cancellationToken: cancellationToken);
 			return activatedSprint;
 		}
 
 		sprint.StartDate = resolvedStartDate;
-		AttachMilestone(sprint);
 		await writeQueue.WriteAsync(sprint, previous, cancellationToken);
+		await AttachMilestoneAsync(sprint, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.begin", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
 	}
@@ -141,6 +162,18 @@ public sealed class OnrushSprintApiService(
 	/// <inheritdoc />
 	public async Task<OnrushSprint> StartNewAsync(DateOnly? startDate = null, CancellationToken cancellationToken = default)
 	{
+		// "Start new" ensures a sprint is active, as Polaris's does: the running one is kept, a plan is begun rather than
+		// left behind, and a sprint is created only when there is neither.
+		if (await stateService.GetActiveOnrushSprintAsync(cancellationToken) is { } active)
+		{
+			return active;
+		}
+
+		if (await context.OnrushSprints.AnyAsync(sprint => sprint.Id == OnrushSprint.PlanningPlaceholderId, cancellationToken))
+		{
+			return await BeginAsync(OnrushSprint.PlanningPlaceholderId, startDate, cancellationToken);
+		}
+
 		var resolvedStartDate = startDate ?? DateOnly.FromDateTime(DateTime.Today);
 		var sprint = new OnrushSprint
 		{
@@ -150,10 +183,22 @@ public sealed class OnrushSprintApiService(
 		};
 
 		context.OnrushSprints.Add(sprint);
-		AttachMilestone(sprint);
 		await writeQueue.WriteAsync(sprint, cancellationToken: cancellationToken);
+		await AttachMilestoneAsync(sprint, cancellationToken);
 		await auditLogService.WriteAsync("api", "onrush.start-new", subject: sprint, cancellationToken: cancellationToken);
 		return sprint;
+	}
+
+	/// <inheritdoc />
+	public async Task<OnrushSprint> EnsureAsync(OnrushSlot slot, CancellationToken cancellationToken = default)
+	{
+		if (slot == OnrushSlot.Active)
+		{
+			return await StartNewAsync(cancellationToken: cancellationToken);
+		}
+
+		return await context.OnrushSprints.FirstOrDefaultAsync(sprint => sprint.Id == OnrushSprint.PlanningPlaceholderId, cancellationToken)
+			?? await PlanAsync(new OnrushSprintPlan(PlaintorchDefaultTitleFactory.CreateOnrushPlanTitle()), cancellationToken);
 	}
 
 	/// <inheritdoc />
@@ -162,6 +207,19 @@ public sealed class OnrushSprintApiService(
 		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
 		var sprint = await context.OnrushSprints.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
 			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
+
+		// No sprint ends twice or before it begins (PEP103 patch 4). The save would be refused too, but ending again on the
+		// day it ended changes nothing a save could read.
+		var subject = StateJudge.SubjectOf(sprint);
+		switch (CyclePhases.Of(sprint))
+		{
+			case CyclePhase.Ended:
+				decisions.RefuseOutright(StateJudge.SprintRestartRule, subject, StateJudge.EndedMessage(subject)).ThrowIfStopped();
+				break;
+			case CyclePhase.Planned:
+				decisions.RefuseOutright(StateJudge.SprintEndRule, subject, StateJudge.UnbegunEndMessage(subject)).ThrowIfStopped();
+				break;
+		}
 
 		var previous = Clone(sprint);
 		sprint.EndDate = endDate ?? DateOnly.FromDateTime(DateTime.Today);
@@ -176,45 +234,58 @@ public sealed class OnrushSprintApiService(
 		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
 		var sprint = await context.OnrushSprints
 			.Include(item => item.Objectives)
+			.Include(item => item.Directives)
 			.Include(item => item.ExecutiveOrders)
 			.Include(item => item.MilestoneCheckpoint)
 			.FirstOrDefaultAsync(item => item.Id == onrushSprintId, cancellationToken)
 			?? throw new InvalidOperationException($"Onrush sprint '{onrushSprintId}' was not found.");
 
-		// Executive orders belong to the sprint outright, so they go with it — markdown and all.
-		foreach (var order in sprint.ExecutiveOrders.ToList())
-		{
-			temporalDataService.StageEntityArchive(order, "api-delete", Environment.UserName);
-			context.ExecutiveOrders.Remove(order);
-			await markdownFileService.DeleteExecutiveOrderAsync(order, cancellationToken);
-		}
-
 		// The milestone is the sprint's own — the one deletion the checkpoint service refuses on its own terms
 		// is exactly this one, done because the sprint is going. The sprint and its milestone point at each
-		// other, so the cycle is broken and the milestone removed in this first save, before the sprint itself
-		// is deleted below; deleting both ends of the cycle in one save leaves EF unable to order the commands.
-		if (sprint.MilestoneCheckpoint is { } milestone)
+		// other, so the cycle is broken in this first save, and both go in the second; deleting both ends of the
+		// cycle in one save leaves EF unable to order the commands. Breaking it only lets the milestone leave the
+		// sprint, which an ended sprint allows (PEP103 patch 5): what it holds stays as it was until the sprint goes.
+		var milestone = sprint.MilestoneCheckpoint;
+		if (milestone is not null)
 		{
 			sprint.MilestoneCheckpointId = null;
 			sprint.MilestoneCheckpoint = null;
 			milestone.OnrushSprintId = null;
 			milestone.OnrushSprint = null;
+			await context.SaveChangesAsync(cancellationToken);
+		}
+
+		// Executive orders belong to the sprint outright, so they go with it — markdown and all. Their notes are archived
+		// first, while nothing is pending removal: archiving saves, and what an ended sprint holds may only go in the save
+		// that removes the sprint (PEP103 patch 5).
+		var orders = sprint.ExecutiveOrders.ToList();
+		foreach (var order in orders)
+		{
+			await markdownFileService.DeleteExecutiveOrderAsync(order, cancellationToken);
+		}
+
+		foreach (var order in orders)
+		{
+			temporalDataService.StageEntityArchive(order, "api-delete", Environment.UserName);
+			context.ExecutiveOrders.Remove(order);
+		}
+
+		if (milestone is not null)
+		{
 			context.Checkpoints.Remove(milestone);
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
-
-		// The sprint no longer names a milestone, so it can go. Its SetNull foreign keys free the objectives and
-		// any other checkpoints it merely tracked — they live on, detached — and EF drops the reference on each
-		// tracked one, which is what the markdown re-save below then records.
-		var detached = sprint.Objectives.ToList();
+		// The sprint no longer names a milestone, so it can go. Its SetNull foreign keys free the objectives, the
+		// directives and any other checkpoints it merely tracked — they live on, detached — and EF drops the reference
+		// on each tracked one, which is what the markdown re-save below then records.
+		var detached = sprint.Objectives.Cast<object>().Concat(sprint.Directives).ToList();
 		var graveyardEntry = temporalDataService.StageEntityArchive(sprint, "api-delete", Environment.UserName);
 		context.OnrushSprints.Remove(sprint);
 		await context.SaveChangesAsync(cancellationToken);
 
-		foreach (var objective in detached)
+		foreach (var member in detached)
 		{
-			await writeQueue.WriteAsync(objective, cancellationToken: cancellationToken);
+			await writeQueue.WriteAsync(member, cancellationToken: cancellationToken);
 		}
 
 		await markdownFileService.DeleteOnrushSprintAsync(sprint, cancellationToken);
@@ -240,6 +311,7 @@ public sealed class OnrushSprintApiService(
 			return await context.OnrushSprints
 				.AsNoTracking()
 				.Include(sprint => sprint.Objectives)
+			.Include(sprint => sprint.Directives)
 				.Include(sprint => sprint.ExecutiveOrders)
 				.Include(sprint => sprint.Checkpoints)
 				.Include(sprint => sprint.MilestoneCheckpoint)
@@ -255,6 +327,7 @@ public sealed class OnrushSprintApiService(
 		return await context.OnrushSprints
 			.AsNoTracking()
 			.Include(sprint => sprint.Objectives)
+			.Include(sprint => sprint.Directives)
 			.Include(sprint => sprint.ExecutiveOrders)
 			.Include(sprint => sprint.Checkpoints)
 			.Include(sprint => sprint.MilestoneCheckpoint)
@@ -273,6 +346,7 @@ public sealed class OnrushSprintApiService(
 		return await context.OnrushSprints
 			.AsNoTracking()
 			.Include(sprint => sprint.Objectives)
+			.Include(sprint => sprint.Directives)
 			.Include(sprint => sprint.ExecutiveOrders)
 			.Include(sprint => sprint.Checkpoints)
 			.Include(sprint => sprint.MilestoneCheckpoint)
@@ -353,7 +427,7 @@ public sealed class OnrushSprintApiService(
 	}
 
 	/// <inheritdoc />
-	public async Task<IReadOnlyList<Objective>> AssignAllOnrushStateObjectivesToSelfAsync(string onrushSprintId, CancellationToken cancellationToken = default)
+	public async Task<IReadOnlyList<Objective>> AssignAllOnboardObjectivesToSelfAsync(string onrushSprintId, CancellationToken cancellationToken = default)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(onrushSprintId);
 		var sprintExists = await context.OnrushSprints.AnyAsync(sprint => sprint.Id == onrushSprintId, cancellationToken);
@@ -363,7 +437,7 @@ public sealed class OnrushSprintApiService(
 		}
 
 		var objectives = await context.Objectives
-			.Where(objective => objective.Status == ObjectiveStatus.Onrush)
+			.Where(objective => objective.Status == ObjectiveStatus.Onboard)
 			.ToListAsync(cancellationToken);
 
 		foreach (var objective in objectives)
@@ -374,7 +448,7 @@ public sealed class OnrushSprintApiService(
 		await context.SaveChangesAsync(cancellationToken);
 		await auditLogService.WriteAsync(
 			"api",
-			"onrush.assign-onrush-state-objectives",
+			"onrush.assign-onboard-objectives",
 			subjectType: nameof(OnrushSprint),
 			subjectId: onrushSprintId,
 			details: new { objectiveCount = objectives.Count },

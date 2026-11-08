@@ -22,6 +22,11 @@ export class AllocationItem extends InfoItem {
 		return css`
 			${super.styles}
 
+			.face {
+				display: inline-flex;
+				align-items: center;
+			}
+
 			p7t-icon {
 				width: 1.9em;
 				height: 1.9em;
@@ -34,7 +39,12 @@ export class AllocationItem extends InfoItem {
 		`
 	}
 
+	/** The chip draws its own face, so it attaches the progress summary to that face itself. */
 	protected override get content() {
+		return html`<span class='face' ${this.tooltipAttachment}>${this.face}</span>`
+	}
+
+	private get face() {
 		if (this.executed) {
 			return html`<p7t-icon icon='state-done'></p7t-icon>`
 		}

@@ -145,6 +145,39 @@ public class LorePage : PuckNamedEntity
 	}
 
 	/// <summary>
+	/// Resolves the period a lore page is active in: from its beginning until its next sibling begins
+	/// (<see cref="ResolveEndingExclusive"/>), and never past the end of an ancestor's own period, so the last page
+	/// under a concluded parent ends with that parent. The lore hierarchy is a nested timeline (D17), which makes this
+	/// the span in which <see cref="LoreIndex"/> keeps the page on the active spine. A period no sibling or ancestor
+	/// sibling closes is still running. <see langword="null"/> for a page with no beginning, which is never active.
+	/// </summary>
+	/// <param name="lorePage">The page whose period is resolved.</param>
+	/// <param name="pages">Every lore page, the page itself included; its siblings and ancestors are found among them.</param>
+	public static LoreActivePeriod? ResolveActivePeriod(LorePage lorePage, IReadOnlyCollection<LorePage> pages)
+	{
+		ArgumentNullException.ThrowIfNull(lorePage);
+		ArgumentNullException.ThrowIfNull(pages);
+
+		if (lorePage.Beginning is not { } beginning)
+		{
+			return null;
+		}
+
+		DateOnly? endingExclusive = null;
+		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		for (var current = lorePage; current is not null && visited.Add(current.Id); current = pages.FirstOrDefault(page => page.Id == current.ParentId))
+		{
+			var siblings = pages.Where(page => page.ParentId == current.ParentId && page.Id != current.Id);
+			if (ResolveEndingExclusive(current, siblings) is { } ending && (endingExclusive is null || ending < endingExclusive))
+			{
+				endingExclusive = ending;
+			}
+		}
+
+		return new LoreActivePeriod(beginning, endingExclusive);
+	}
+
+	/// <summary>
 	/// Applies saga lore composition from a canonical markdown path.
 	/// </summary>
 	public static bool TryApplyCompositionFromPath(LorePage lorePage, string fullPath, string vaultRoot, string sagaRoot, ILogger? logger = null)
