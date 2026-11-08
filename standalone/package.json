@@ -1,6 +1,6 @@
 {
 	"name": "@pleiades/plaintorch-standalone",
-	"version": "0.2.4",
+	"version": "0.3.0",
 	"private": true,
 	"description": "PLAINTORCH desktop shell: a per-user tray app that hosts (standalone flavour) or attaches to (client flavour) the core.",
 	"main": "dist/main.cjs",
@@ -30,6 +30,6 @@
 		"electron-updater": "^6.6.2"
 	},
 	"allowScripts": {
-		"electron@39.8.10": true
+		"electron@44.4.0": true
 	}
 }

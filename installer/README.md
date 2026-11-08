@@ -28,6 +28,20 @@ Nothing downloads on its own: the shell checks, offers the download, and on inst
 executable is not locked) and quits into the new installer. Publishing a release means uploading the installer and
 the `latest*.yml` manifest electron-builder emits beside it. winget later reuses the same installer artefacts.
 
+## Versions
+
+Every part ships under one semver version, moved together (0.3.0 is the 0.3a private build):
+
+- `standalone/package.json`: electron-builder reads it, so it names the installer
+  (`PLAINTORCH-<flavor>-<version>-<os>-<arch>`), the update manifest and the shell's `app.getVersion()`.
+- `sdk.ts`, `sipa` and `obsidian` `package.json`, plus the root and `../sdk.ts` / `../sipa` entries of each
+  `package-lock.json` (edit those lines; a fresh `npm install` re-resolves the whole tree).
+- `obsidian/manifest.json`, with a matching `obsidian/versions.json` entry mapping the version to its `minAppVersion`.
+- `<Version>` in `core/plaintorch.csproj` and `cli/plaintorch.cli.csproj`, which stamps the executables' file and
+  product versions (the product version carries the source commit).
+
+electron-builder refuses a version that is not semver (it refused `0.2c` before building anything).
+
 ## Before shipping
 
 - Sign Windows builds; SmartScreen warns on unsigned installers and electron-updater refuses an update whose signature

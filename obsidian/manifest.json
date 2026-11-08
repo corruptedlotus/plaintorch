@@ -1,8 +1,8 @@
 {
 	"id": "plaintorch",
 	"name": "PLAINTORCH",
-	"version": "0.2.4",
-	"minAppVersion": "0.12.0",
+	"version": "0.3.0",
+	"minAppVersion": "1.7.2",
 	"description": "Pleiades Affairs Intelligence & Tristate Orchestrator",
 	"author": "Soraya Voidblume (Pleiades)",
 	"authorUrl": "https://pleiades.corruptedlotus.com",
